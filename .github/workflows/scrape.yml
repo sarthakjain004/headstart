@@ -1,0 +1,39 @@
+name: scrape-jobs
+
+# Refreshes docs/jobs.json on a schedule. GitHub Pages (set to serve the
+# /docs folder of the default branch) then serves the dashboard + feed.
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours (UTC)
+  workflow_dispatch: {}      # allow manual runs
+
+permissions:
+  contents: write            # to commit the refreshed feed back
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Scrape and build feed
+        run: python -m headstart
+
+      - name: Commit refreshed feed if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/jobs.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: refresh job feed"
+            git push
+          fi
