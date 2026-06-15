@@ -14,7 +14,7 @@ employers, which is the segment this project targets.
 
 The coverage is whatever set of companies you point it at — there is no master "all
 Greenhouse jobs" feed, so the curated company list in `config/companies.toml` *is* the
-product.
+product (grown from the full slug universe in `data/ats-companies/`).
 
 ## How it works
 
@@ -26,23 +26,26 @@ GitHub Actions (cron)
 GitHub Pages serves docs/  → static dashboard filters jobs.json client-side
 ```
 
-No server: scheduled Actions + a static Pages site. (v2 adds a Telegram bot for
-new-job notifications, also driven by Actions.)
+No server: scheduled Actions + a static Pages site. A second workflow runs the Telegram
+alert bot (v2) — `/start`, set filters, get pinged when new matching roles appear
+(setup in `docs/telegram-bot.md`).
 
 ## Scope
 
 Locked for v1: portfolio-quality build; sources are Greenhouse + Lever + Ashby (Zoho
 Recruit / India-specific ATS come next); deterministic rule-based filtering (no LLM yet);
-output is a GitHub Pages dashboard. v2: Telegram bot — `/start`, set filters, get notified
-of new matching roles.
+output is a GitHub Pages dashboard. v2 (implemented): Telegram bot — `/start`, set filters,
+get notified of new matching roles.
 
 ## Layout
 
-- `src/headstart/` — the package: `models.py` (Job + normalization), `scrapers/`
-  (per-ATS), `config.py`, `pipeline.py`, `__main__.py`.
-- `config/companies.toml` — the curated company list (coverage).
+- `src/headstart/` — the package: `models.py` (Job + normalization), `scrapers/` (per-ATS),
+  `config.py`, `pipeline.py`, `__main__.py`; plus the v2 bot: `filters.py`, `bot.py`,
+  `telegram.py`, `state.py`.
+- `config/companies.toml` — the curated active company list (coverage).
+- `data/ats-companies/` — the full slug universe to grow that list from.
 - `docs/` — `index.html` dashboard + generated `jobs.json` (served by Pages).
-- `.github/workflows/scrape.yml` — scheduled refresh.
+- `.github/workflows/` — `scrape.yml` (refresh feed) and `bot.yml` (Telegram alerts).
 
 ## Development
 
