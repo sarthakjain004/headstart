@@ -1,89 +1,77 @@
-# Companies HeadStart scrapes — one [[company]] block each.
-#   ats:  one of "greenhouse", "lever", "ashby"
-#   slug: the tenant id in the board URL (e.g. boards.greenhouse.io/<slug>)
-#   name: display name (optional; defaults to slug)
-# This curated list IS the project's coverage — add or remove freely.
-# All slugs below were verified to return live postings on 2026-06-15.
-
-[[company]]
-ats = "greenhouse"
-slug = "stripe"
-name = "Stripe"
-
-[[company]]
-ats = "greenhouse"
-slug = "airbnb"
-name = "Airbnb"
-
-[[company]]
-ats = "greenhouse"
-slug = "databricks"
-name = "Databricks"
-
-[[company]]
-ats = "greenhouse"
-slug = "coinbase"
-name = "Coinbase"
-
-[[company]]
-ats = "greenhouse"
-slug = "dropbox"
-name = "Dropbox"
-
-[[company]]
-ats = "greenhouse"
-slug = "robinhood"
-name = "Robinhood"
-
-[[company]]
-ats = "greenhouse"
-slug = "figma"
-name = "Figma"
-
-[[company]]
-ats = "greenhouse"
-slug = "anthropic"
-name = "Anthropic"
-
-[[company]]
-ats = "greenhouse"
-slug = "cloudflare"
-name = "Cloudflare"
-
-[[company]]
-ats = "greenhouse"
-slug = "gusto"
-name = "Gusto"
-
-[[company]]
-ats = "greenhouse"
-slug = "samsara"
-name = "Samsara"
-
-[[company]]
-ats = "lever"
-slug = "spotify"
-name = "Spotify"
-
-[[company]]
-ats = "lever"
-slug = "palantir"
-name = "Palantir"
+# Curated active scrape list for HeadStart.
+# Built 2026-06-15 by matching a seed of recognizable companies against the jobhive
+# universe in data/ats-companies/ (every slug verified present there), unioned with
+# the original hand-verified seed. Edit freely; ats must be greenhouse|lever|ashby.
 
 [[company]]
 ats = "ashby"
-slug = "ramp"
-name = "Ramp"
+slug = "1password"
+name = "1Password"
 
 [[company]]
 ats = "ashby"
-slug = "openai"
-name = "OpenAI"
+slug = "atlan"
+name = "Atlan"
 
 [[company]]
 ats = "ashby"
-slug = "notion"
-name = "Notion"
+slug = "baseten"
+name = "Baseten"
+
+[[company]]
+ats = "ashby"
+slug = "character"
+name = "Character.AI"
+
+[[company]]
+ats = "ashby"
+slug = "cohere"
+name = "Cohere"
+
+[[company]]
+ats = "ashby"
+slug = "confluent"
+name = "Confluent"
+
+[[company]]
+ats = "ashby"
+slug = "deel"
+name = "Deel"
+
+[[company]]
+ats = "ashby"
+slug = "deepgram"
+name = "Deepgram"
+
+[[company]]
+ats = "ashby"
+slug = "docker"
+name = "Docker"
+
+[[company]]
+ats = "ashby"
+slug = "drata"
+name = "Drata"
+
+[[company]]
+ats = "ashby"
+slug = "elevenlabs"
+name = "ElevenLabs"
+
+[[company]]
+ats = "ashby"
+slug = "frontcareers"
+name = "Front"
+
+[[company]]
+ats = "ashby"
+slug = "harvey"
+name = "Harvey"
+
+[[company]]
+ats = "ashby"
+slug = "langchain"
+name = "LangChain"
 
 [[company]]
 ats = "ashby"
@@ -92,5 +80,415 @@ name = "Linear"
 
 [[company]]
 ats = "ashby"
+slug = "loom"
+name = "Loom"
+
+[[company]]
+ats = "ashby"
+slug = "modal"
+name = "Modal"
+
+[[company]]
+ats = "ashby"
+slug = "notion"
+name = "Notion"
+
+[[company]]
+ats = "ashby"
+slug = "openai"
+name = "OpenAI"
+
+[[company]]
+ats = "ashby"
+slug = "perplexity"
+name = "Perplexity"
+
+[[company]]
+ats = "ashby"
+slug = "pinecone"
+name = "Pinecone"
+
+[[company]]
+ats = "ashby"
+slug = "plaid"
+name = "Plaid"
+
+[[company]]
+ats = "ashby"
 slug = "posthog"
-name = "PostHog"
+name = "Posthog"
+
+[[company]]
+ats = "ashby"
+slug = "ramp"
+name = "Ramp"
+
+[[company]]
+ats = "ashby"
+slug = "runway"
+name = "Runway Financial"
+
+[[company]]
+ats = "ashby"
+slug = "scaler"
+name = "Scaler"
+
+[[company]]
+ats = "ashby"
+slug = "sentry"
+name = "Sentry"
+
+[[company]]
+ats = "ashby"
+slug = "sierra"
+name = "Sierra"
+
+[[company]]
+ats = "ashby"
+slug = "snowflake"
+name = "Snowflake"
+
+[[company]]
+ats = "ashby"
+slug = "supabase"
+name = "Supabase"
+
+[[company]]
+ats = "ashby"
+slug = "vanta"
+name = "Vanta"
+
+[[company]]
+ats = "ashby"
+slug = "zapier"
+name = "Zapier"
+
+[[company]]
+ats = "greenhouse"
+slug = "abnormalsecurity"
+name = "Abnormal"
+
+[[company]]
+ats = "greenhouse"
+slug = "affirm"
+name = "Affirm"
+
+[[company]]
+ats = "greenhouse"
+slug = "airbnb"
+name = "Airbnb"
+
+[[company]]
+ats = "greenhouse"
+slug = "airtable"
+name = "Airtable"
+
+[[company]]
+ats = "greenhouse"
+slug = "amplitude"
+name = "Amplitude"
+
+[[company]]
+ats = "greenhouse"
+slug = "anthropic"
+name = "Anthropic"
+
+[[company]]
+ats = "greenhouse"
+slug = "asana"
+name = "Asana"
+
+[[company]]
+ats = "greenhouse"
+slug = "assemblyai"
+name = "AssemblyAI"
+
+[[company]]
+ats = "greenhouse"
+slug = "block"
+name = "Block"
+
+[[company]]
+ats = "greenhouse"
+slug = "brex"
+name = "Brex"
+
+[[company]]
+ats = "greenhouse"
+slug = "calendly"
+name = "Calendly"
+
+[[company]]
+ats = "greenhouse"
+slug = "carta"
+name = "Carta"
+
+[[company]]
+ats = "greenhouse"
+slug = "chime"
+name = "Chime Financial, Inc"
+
+[[company]]
+ats = "greenhouse"
+slug = "cloudflare"
+name = "Cloudflare"
+
+[[company]]
+ats = "greenhouse"
+slug = "cockroachlabs"
+name = "Cockroach Labs"
+
+[[company]]
+ats = "greenhouse"
+slug = "coinbase"
+name = "Coinbase"
+
+[[company]]
+ats = "greenhouse"
+slug = "cresta"
+name = "Cresta"
+
+[[company]]
+ats = "greenhouse"
+slug = "databricks"
+name = "Databricks"
+
+[[company]]
+ats = "greenhouse"
+slug = "datadog"
+name = "Datadog"
+
+[[company]]
+ats = "greenhouse"
+slug = "dbtlabsinc"
+name = "dbt Labs"
+
+[[company]]
+ats = "greenhouse"
+slug = "discord"
+name = "Discord"
+
+[[company]]
+ats = "greenhouse"
+slug = "dropbox"
+name = "Dropbox"
+
+[[company]]
+ats = "greenhouse"
+slug = "druva"
+name = "Druva"
+
+[[company]]
+ats = "greenhouse"
+slug = "elastic"
+name = "Elastic"
+
+[[company]]
+ats = "greenhouse"
+slug = "faire"
+name = "Faire"
+
+[[company]]
+ats = "greenhouse"
+slug = "figma"
+name = "Figma"
+
+[[company]]
+ats = "greenhouse"
+slug = "intercom"
+name = "Fin"
+
+[[company]]
+ats = "greenhouse"
+slug = "fivetran"
+name = "Fivetran"
+
+[[company]]
+ats = "greenhouse"
+slug = "gitlab"
+name = "GitLab"
+
+[[company]]
+ats = "greenhouse"
+slug = "gleanwork"
+name = "Glean"
+
+[[company]]
+ats = "greenhouse"
+slug = "groww"
+name = "Groww"
+
+[[company]]
+ats = "greenhouse"
+slug = "gusto"
+name = "Gusto, Inc."
+
+[[company]]
+ats = "greenhouse"
+slug = "instabase"
+name = "Instabase"
+
+[[company]]
+ats = "greenhouse"
+slug = "instacart"
+name = "instacart"
+
+[[company]]
+ats = "greenhouse"
+slug = "lattice"
+name = "lattice"
+
+[[company]]
+ats = "greenhouse"
+slug = "lyft"
+name = "lyft"
+
+[[company]]
+ats = "greenhouse"
+slug = "mercury"
+name = "Mercury"
+
+[[company]]
+ats = "greenhouse"
+slug = "mongodb"
+name = "mongodb"
+
+[[company]]
+ats = "greenhouse"
+slug = "phonepe"
+name = "PhonePe"
+
+[[company]]
+ats = "greenhouse"
+slug = "pinterest"
+name = "pinterest"
+
+[[company]]
+ats = "greenhouse"
+slug = "planetscale"
+name = "PlanetScale"
+
+[[company]]
+ats = "greenhouse"
+slug = "postman"
+name = "Postman"
+
+[[company]]
+ats = "greenhouse"
+slug = "reddit"
+name = "Reddit"
+
+[[company]]
+ats = "greenhouse"
+slug = "robinhood"
+name = "Robinhood"
+
+[[company]]
+ats = "greenhouse"
+slug = "roblox"
+name = "roblox"
+
+[[company]]
+ats = "greenhouse"
+slug = "samsara"
+name = "samsara"
+
+[[company]]
+ats = "greenhouse"
+slug = "scaleai"
+name = "Scale AI"
+
+[[company]]
+ats = "greenhouse"
+slug = "stripe"
+name = "Stripe"
+
+[[company]]
+ats = "greenhouse"
+slug = "tailscale"
+name = "Tailscale"
+
+[[company]]
+ats = "greenhouse"
+slug = "temporal"
+name = "Temporal"
+
+[[company]]
+ats = "greenhouse"
+slug = "togetherai"
+name = "Together AI"
+
+[[company]]
+ats = "greenhouse"
+slug = "twilio"
+name = "Twilio"
+
+[[company]]
+ats = "greenhouse"
+slug = "twitch"
+name = "Twitch"
+
+[[company]]
+ats = "greenhouse"
+slug = "vercel"
+name = "Vercel"
+
+[[company]]
+ats = "greenhouse"
+slug = "verkada"
+name = "Verkada"
+
+[[company]]
+ats = "greenhouse"
+slug = "webflow"
+name = "Webflow"
+
+[[company]]
+ats = "lever"
+slug = "Coda"
+name = "Coda"
+
+[[company]]
+ats = "lever"
+slug = "cred"
+name = "CRED"
+
+[[company]]
+ats = "lever"
+slug = "freshworks"
+name = "Freshworks"
+
+[[company]]
+ats = "lever"
+slug = "meesho"
+name = "Meesho"
+
+[[company]]
+ats = "lever"
+slug = "metabase"
+name = "Metabase"
+
+[[company]]
+ats = "lever"
+slug = "mindtickle"
+name = "Mindtickle"
+
+[[company]]
+ats = "lever"
+slug = "mistral"
+name = "Mistral AI"
+
+[[company]]
+ats = "lever"
+slug = "outreach"
+name = "Outreach"
+
+[[company]]
+ats = "lever"
+slug = "palantir"
+name = "Palantir Technologies"
+
+[[company]]
+ats = "lever"
+slug = "spotify"
+name = "Spotify"
