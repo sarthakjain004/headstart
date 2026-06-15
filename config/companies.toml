@@ -1,0 +1,96 @@
+# Companies HeadStart scrapes — one [[company]] block each.
+#   ats:  one of "greenhouse", "lever", "ashby"
+#   slug: the tenant id in the board URL (e.g. boards.greenhouse.io/<slug>)
+#   name: display name (optional; defaults to slug)
+# This curated list IS the project's coverage — add or remove freely.
+# All slugs below were verified to return live postings on 2026-06-15.
+
+[[company]]
+ats = "greenhouse"
+slug = "stripe"
+name = "Stripe"
+
+[[company]]
+ats = "greenhouse"
+slug = "airbnb"
+name = "Airbnb"
+
+[[company]]
+ats = "greenhouse"
+slug = "databricks"
+name = "Databricks"
+
+[[company]]
+ats = "greenhouse"
+slug = "coinbase"
+name = "Coinbase"
+
+[[company]]
+ats = "greenhouse"
+slug = "dropbox"
+name = "Dropbox"
+
+[[company]]
+ats = "greenhouse"
+slug = "robinhood"
+name = "Robinhood"
+
+[[company]]
+ats = "greenhouse"
+slug = "figma"
+name = "Figma"
+
+[[company]]
+ats = "greenhouse"
+slug = "anthropic"
+name = "Anthropic"
+
+[[company]]
+ats = "greenhouse"
+slug = "cloudflare"
+name = "Cloudflare"
+
+[[company]]
+ats = "greenhouse"
+slug = "gusto"
+name = "Gusto"
+
+[[company]]
+ats = "greenhouse"
+slug = "samsara"
+name = "Samsara"
+
+[[company]]
+ats = "lever"
+slug = "spotify"
+name = "Spotify"
+
+[[company]]
+ats = "lever"
+slug = "palantir"
+name = "Palantir"
+
+[[company]]
+ats = "ashby"
+slug = "ramp"
+name = "Ramp"
+
+[[company]]
+ats = "ashby"
+slug = "openai"
+name = "OpenAI"
+
+[[company]]
+ats = "ashby"
+slug = "notion"
+name = "Notion"
+
+[[company]]
+ats = "ashby"
+slug = "linear"
+name = "Linear"
+
+[[company]]
+ats = "ashby"
+slug = "posthog"
+name = "PostHog"
