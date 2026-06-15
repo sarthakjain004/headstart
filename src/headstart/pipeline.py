@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,8 @@ from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
 
+_MAX_WORKERS = 8
+
 
 @dataclass
 class RunResult:
@@ -19,22 +22,29 @@ class RunResult:
     errors: dict[str, str] = field(default_factory=dict)  # "ats:slug" -> message
 
 
-def scrape_all(companies: list[CompanyRef]) -> RunResult:
-    """Scrape every company, deduping by job id and isolating failures.
+def scrape_all(companies: list[CompanyRef], max_workers: int = _MAX_WORKERS) -> RunResult:
+    """Scrape every company concurrently, deduping by job id and isolating failures.
 
-    A single company that errors (network blip, slug retired, bad payload) is
-    recorded in ``errors`` and skipped; it never aborts the whole run.
+    Each company runs in its own thread (the work is network-bound). A single
+    company that errors is recorded in ``errors`` and skipped; merging of results
+    happens on the main thread, so dedup stays deterministic.
     """
+
+    def run_one(company: CompanyRef) -> list[Job]:
+        return get_scraper(company.ats, company.slug, company.name).fetch()
+
     seen: dict[str, Job] = {}
     errors: dict[str, str] = {}
-    for company in companies:
-        key = f"{company.ats}:{company.slug}"
-        try:
-            scraper = get_scraper(company.ats, company.slug, company.name)
-            for job in scraper.fetch():
-                seen[job.id] = job
-        except Exception as exc:  # noqa: BLE001 - isolate per-company failures
-            errors[key] = f"{type(exc).__name__}: {exc}"
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(run_one, c): c for c in companies}
+        for future in as_completed(futures):
+            company = futures[future]
+            key = f"{company.ats}:{company.slug}"
+            try:
+                for job in future.result():
+                    seen[job.id] = job
+            except Exception as exc:  # noqa: BLE001 - isolate per-company failures
+                errors[key] = f"{type(exc).__name__}: {exc}"
     return RunResult(jobs=list(seen.values()), errors=errors)
 
 
