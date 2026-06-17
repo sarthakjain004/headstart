@@ -549,3 +549,23 @@ name = "Sarvam AI"
 ats = "zoho"
 slug = "pnbcsl.zohorecruit.in"
 name = "PNB Cards & Services"
+
+[[company]]
+ats = "zoho"
+slug = "advenxa.zohorecruit.in"
+name = "Advenxa"
+
+[[company]]
+ats = "zoho"
+slug = "staples.zohorecruit.in"
+name = "Staples India"
+
+[[company]]
+ats = "zoho"
+slug = "ncircletech.zohorecruit.com"
+name = "nCircle Tech"
+
+[[company]]
+ats = "zoho"
+slug = "careersinternational.zohorecruit.com"
+name = "Careers International"
