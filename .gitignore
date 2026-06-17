@@ -22,3 +22,6 @@ venv/
 # Not part of this project (local Claude config / unrelated Fable-5 experiment)
 .claude/
 CLAUDE-FABLE-5.md
+
+# HAR captures — large and contain browser session data; keep local only
+har_analysis/

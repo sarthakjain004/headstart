@@ -21,8 +21,9 @@ class BaseScraper(ABC):
     """Fetch one company's postings from an ATS and normalize them to Jobs.
 
     Network and parsing are split on purpose: ``parse`` is pure and is what the
-    tests exercise against recorded fixtures, while ``fetch_raw`` is the only
-    part that touches the network.
+    tests exercise against recorded fixtures, while ``_get`` is the only part that
+    touches the network. JSON boards use the default ``fetch_raw`` (decode + parse);
+    HTML boards (Zoho) override ``fetch_raw`` to keep the raw text.
     """
 
     ats: str  # set by each subclass
@@ -33,23 +34,23 @@ class BaseScraper(ABC):
 
     @abstractmethod
     def url(self) -> str:
-        """The public JSON endpoint for this company's board."""
+        """The public endpoint for this company's board."""
 
     @abstractmethod
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        """Turn a raw API response into normalized Jobs."""
+        """Turn a raw API/page response into normalized Jobs."""
 
-    def fetch_raw(self) -> Any:
-        """GET the board JSON, retrying transient failures (rate limits, 5xx)."""
+    def _get(self) -> str:
+        """GET the board URL as text, retrying transient failures (rate limits, 5xx)."""
         last_error: Exception | None = None
         for attempt in range(_MAX_ATTEMPTS):
             request = urllib.request.Request(
                 self.url(),
-                headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+                headers={"User-Agent": _USER_AGENT, "Accept": "application/json, text/html"},
             )
             try:
                 with urllib.request.urlopen(request, timeout=30) as response:
-                    return json.load(response)
+                    return response.read().decode("utf-8", "replace")
             except urllib.error.HTTPError as exc:
                 last_error = exc
                 if exc.code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
@@ -62,7 +63,10 @@ class BaseScraper(ABC):
                     time.sleep(1.5 * (attempt + 1))
                     continue
                 raise
-        raise last_error  # pragma: no cover - loop always returns or raises first
+        raise last_error  # pragma: no cover - loop returns or raises first
+
+    def fetch_raw(self) -> Any:
+        return json.loads(self._get())
 
     def fetch(self) -> list[Job]:
         scraped_at = datetime.now(timezone.utc).isoformat()

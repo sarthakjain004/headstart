@@ -492,3 +492,60 @@ name = "Palantir Technologies"
 ats = "lever"
 slug = "spotify"
 name = "Spotify"
+
+# India — Stage 2 probe (seed_india.csv), verified to return live India-located roles 2026-06-15
+
+[[company]]
+ats = "greenhouse"
+slug = "highradius"
+name = "HighRadius"
+
+[[company]]
+ats = "greenhouse"
+slug = "inmobi"
+name = "InMobi"
+
+[[company]]
+ats = "greenhouse"
+slug = "observeai"
+name = "Observe.ai"
+
+[[company]]
+ats = "greenhouse"
+slug = "zenoti"
+name = "Zenoti"
+
+[[company]]
+ats = "lever"
+slug = "paytm"
+name = "Paytm"
+
+[[company]]
+ats = "lever"
+slug = "fampay"
+name = "FamPay"
+
+[[company]]
+ats = "lever"
+slug = "pocketfm"
+name = "Pocket FM"
+
+[[company]]
+ats = "lever"
+slug = "zeta"
+name = "Zeta"
+
+[[company]]
+ats = "ashby"
+slug = "clueso"
+name = "Clueso"
+
+[[company]]
+ats = "ashby"
+slug = "sarvam"
+name = "Sarvam AI"
+
+[[company]]
+ats = "zoho"
+slug = "pnbcsl.zohorecruit.in"
+name = "PNB Cards & Services"
