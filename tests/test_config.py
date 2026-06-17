@@ -10,5 +10,5 @@ def test_seed_companies_load():
     assert len(companies) >= 15
     pairs = {(c.ats, c.slug) for c in companies}
     assert ("greenhouse", "stripe") in pairs
-    assert all(c.ats in {"greenhouse", "lever", "ashby"} for c in companies)
+    assert all(c.ats in {"greenhouse", "lever", "ashby", "zoho"} for c in companies)
     assert all(c.slug for c in companies)

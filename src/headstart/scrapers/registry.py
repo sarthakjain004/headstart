@@ -6,9 +6,11 @@ from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.lever import LeverScraper
+from headstart.scrapers.zoho import ZohoScraper
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
-    cls.ats: cls for cls in (GreenhouseScraper, LeverScraper, AshbyScraper)
+    cls.ats: cls
+    for cls in (GreenhouseScraper, LeverScraper, AshbyScraper, ZohoScraper)
 }
 
 
