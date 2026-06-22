@@ -7,10 +7,9 @@ and fall back to EU when the slug isn't found there.
 
 from __future__ import annotations
 
-import json
-import urllib.error
 from typing import Any
 
+from headstart import http
 from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -18,27 +17,18 @@ from headstart.scrapers.base import BaseScraper
 class LeverScraper(BaseScraper):
     ats = "lever"
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
-        self._host = "api.lever.co"
-
     def url(self) -> str:
-        return f"https://{self._host}/v0/postings/{self.slug}?mode=json"
+        return f"https://api.lever.co/v0/postings/{self.slug}?mode=json"
 
     def fetch_raw(self) -> Any:
-        self._host = "api.lever.co"
-        try:
-            return json.loads(self._get())
-        except urllib.error.HTTPError as exc:
-            if exc.code != 404:
-                raise
-        self._host = "api.eu.lever.co"  # global 404 -> company is on the EU instance
-        try:
-            return json.loads(self._get())
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                return []
-            raise
+        # try the global instance, then EU; a 404 on both means the company isn't on Lever.
+        for host in ("api.lever.co", "api.eu.lever.co"):
+            response = http.fetch("GET", f"https://{host}/v0/postings/{self.slug}?mode=json")
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            return response.json()
+        return []
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

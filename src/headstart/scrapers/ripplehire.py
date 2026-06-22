@@ -35,7 +35,7 @@ class RippleHireScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         # step 1: the careers URL redirects to /candidate/?token=… — grab the token (the pooled
         # session follows the redirect and keeps the session cookie for the search call)
-        response = http.get(self.url(), headers={"User-Agent": _UA}, timeout=30)
+        response = http.fetch("GET", self.url(), headers={"User-Agent": _UA}, timeout=30)
         m = _TOKEN.search(response.url)
         if not m:
             return []
@@ -52,7 +52,7 @@ class RippleHireScraper(BaseScraper):
             params = json.dumps({"page": page, "search": "*:*", "token": token,
                                  "source": "CAREERSITE", "pagesize": _PAGE_SIZE})
             body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
-            data = http.post(api, data=body, headers=headers, timeout=30).json()
+            data = http.fetch("POST", api, data=body, headers=headers, timeout=30).json()
             batch = data.get("jobVoList") or []
             jobs.extend(batch)
             page += 1

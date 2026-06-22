@@ -27,7 +27,6 @@ import json
 import re
 import sys
 import threading
-import time
 import urllib.parse
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -40,7 +39,6 @@ from headstart import http  # noqa: E402 - needs src on sys.path first
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12              # reassigned per pass by the runner
-_RETRY = {429, 500, 502, 503, 504}
 _DNS_ERR = 6             # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
 # each pass: (timeout_seconds, workers). Later passes are slower but more patient so a board
 # that was merely congested gets a fair chance before we give up on it.
@@ -59,49 +57,30 @@ def _is_dns(exc):
 
 
 def _get(url, headers=None):
-    """GET, retrying transient failures. Returns (status, body) where status is the HTTP code,
-    "dns" if the host can't resolve (definitive), or None for an exhausted transient failure.
-    Reads the full body (Zoho parks its jobs <input> at the end of a ~1.7MB page)."""
+    """GET via the reliable-fetch seam. Returns (status, body): the HTTP code, "dns" if the host
+    can't resolve (definitive), or None for an exhausted transient failure. Reads the full body
+    (Zoho parks its jobs <input> at the end of a ~1.7MB page)."""
     h = {"User-Agent": UA, **(headers or {})}
-    for attempt in range(3):
-        try:
-            r = http.get(url, headers=h, timeout=TIMEOUT, verify=False)
-        except http.RequestsError as e:
-            if _is_dns(e):
-                return "dns", b""
-            if attempt == 2:
-                return None, b""
-            time.sleep(1.0 * (attempt + 1))
-            continue
-        if r.status_code in _RETRY and attempt < 2:
-            time.sleep(1.0 * (attempt + 1))
-            continue
-        return r.status_code, r.content
-    return None, b""
+    try:
+        r = http.fetch("GET", url, headers=h, timeout=TIMEOUT, verify=False)
+    except http.RequestsError as e:
+        return ("dns", b"") if _is_dns(e) else (None, b"")
+    return r.status_code, r.content
 
 
 def _post(url, json_body, headers):
-    """POST JSON. Returns (status, parsed_json|None); status is the code, "dns", or None."""
-    for attempt in range(3):
+    """POST JSON via the reliable-fetch seam. Returns (status, parsed_json|None); status is the
+    code, "dns", or None."""
+    try:
+        r = http.fetch("POST", url, json=json_body, headers=headers, timeout=TIMEOUT, verify=False)
+    except http.RequestsError as e:
+        return ("dns", None) if _is_dns(e) else (None, None)
+    if r.status_code == 200:
         try:
-            r = http.post(url, json=json_body, headers=headers, timeout=TIMEOUT, verify=False)
-        except http.RequestsError as e:
-            if _is_dns(e):
-                return "dns", None
-            if attempt == 2:
-                return None, None
-            time.sleep(1.0 * (attempt + 1))
-            continue
-        if r.status_code in _RETRY and attempt < 2:
-            time.sleep(1.0 * (attempt + 1))
-            continue
-        if r.status_code == 200:
-            try:
-                return 200, r.json()
-            except Exception:
-                return None, None  # 200 but unparseable -> treat as transient
-        return r.status_code, None
-    return None, None
+            return 200, r.json()
+        except Exception:
+            return None, None  # 200 but unparseable -> treat as transient
+    return r.status_code, None
 
 
 def _verdict(status, jobs):
@@ -204,8 +183,8 @@ def p_workday(t, u):
 def p_ripplehire(t, u):
     headers = {"User-Agent": UA}
     try:
-        r = http.get(f"https://{t}.ripplehire.com/candidate/careers",
-                     headers=headers, timeout=TIMEOUT, verify=False)
+        r = http.fetch("GET", f"https://{t}.ripplehire.com/candidate/careers",
+                       headers=headers, timeout=TIMEOUT, verify=False)
     except http.RequestsError as e:
         return (DEAD, None) if _is_dns(e) else (UNKNOWN, None)
     m = _TOKEN.search(r.url)
@@ -215,11 +194,11 @@ def p_ripplehire(t, u):
                          "source": "CAREERSITE", "pagesize": 1})
     data = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
     try:
-        r2 = http.post(f"https://{t}.ripplehire.com/candidate/candidatejobsearch", data=data,
-                       headers={"User-Agent": UA, "Accept": "application/json",
-                                "X-Requested-With": "XMLHttpRequest",
-                                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
-                       timeout=TIMEOUT, verify=False)
+        r2 = http.fetch("POST", f"https://{t}.ripplehire.com/candidate/candidatejobsearch", data=data,
+                        headers={"User-Agent": UA, "Accept": "application/json",
+                                 "X-Requested-With": "XMLHttpRequest",
+                                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
+                        timeout=TIMEOUT, verify=False)
     except http.RequestsError:
         return UNKNOWN, None
     if r2.status_code != 200:
@@ -236,10 +215,10 @@ def p_darwinbox(t, u):
     for tld in (host_tld, *[x for x in ("in", "com") if x != host_tld]):
         api = f"https://{t}.darwinbox.{tld}/ms/candidateapi/job/alljobs?companyId=main"
         try:
-            r = http.post(api, json={"companyId": "main", "page": 1,
-                                     "sort_option": "new", "limit": 100},
-                          headers={"Accept": "application/json", "User-Agent": UA},
-                          timeout=TIMEOUT, verify=False)
+            r = http.fetch("POST", api, json={"companyId": "main", "page": 1,
+                                              "sort_option": "new", "limit": 100},
+                           headers={"Accept": "application/json", "User-Agent": UA},
+                           timeout=TIMEOUT, verify=False)
         except http.RequestsError as e:
             if _is_dns(e):
                 dns_fails += 1

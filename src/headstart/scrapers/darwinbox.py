@@ -21,7 +21,6 @@ recruitment_enabled:false) return an empty list.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from headstart import http
@@ -30,8 +29,6 @@ from headstart.scrapers.base import BaseScraper
 
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
 _TLDS = ("in", "com")
-_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}  # 403 = transient Cloudflare TLS block
-_MAX_ATTEMPTS = 3
 _UA = "headstart/0.1 (job-board reader)"
 
 
@@ -43,28 +40,13 @@ class DarwinboxScraper(BaseScraper):
         return f"{host}/ms/candidate/careers"
 
     def _alljobs(self, host: str, page: int) -> list[dict]:
-        """POST one page of the board, retrying transient failures (Cloudflare 403, 429, 5xx)."""
+        """POST one page of the board (retry — incl. the Cloudflare 403 blip — lives in fetch)."""
         api = f"{host}/ms/candidateapi/job/alljobs?companyId=main"
         body = {"companyId": "main", "page": page, "sort_option": "new", "limit": _PAGE_SIZE}
-        last_error: Exception | None = None
-        for attempt in range(_MAX_ATTEMPTS):
-            try:
-                response = http.post(
-                    api, json=body, timeout=30,
-                    headers={"User-Agent": _UA, "Accept": "application/json"},
-                )
-            except http.RequestsError as exc:  # connection reset, timeout, TLS error
-                last_error = exc
-                if attempt < _MAX_ATTEMPTS - 1:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                raise
-            if response.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            response.raise_for_status()
-            return response.json().get("data") or []
-        raise last_error  # pragma: no cover - loop returns or raises first
+        response = http.fetch("POST", api, json=body, timeout=30,
+                              headers={"User-Agent": _UA, "Accept": "application/json"})
+        response.raise_for_status()
+        return response.json().get("data") or []
 
     def fetch_raw(self) -> Any:
         # data-center TLD varies per tenant; resolve it on the first page, then paginate.

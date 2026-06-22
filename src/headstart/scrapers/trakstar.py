@@ -65,12 +65,12 @@ class TrakstarScraper(BaseScraper):
 
     def _job_description(self, code: str) -> str | None:
         try:
-            response = http.get(
-                f"https://{self.slug}.hire.trakstar.com/jobs/{code}/",
+            response = http.fetch(
+                "GET", f"https://{self.slug}.hire.trakstar.com/jobs/{code}/",
                 timeout=30, headers={"User-Agent": _UA},
             )
-        except Exception:  # noqa: BLE001 - network/TLS error
-            return None
+        except http.RequestsError:
+            return None  # a missing description must not drop the job
         if response.status_code != 200:
             return None
         return _jsonld_description(response.text)
