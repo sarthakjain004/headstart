@@ -1,85 +1,253 @@
 {
-  "jobs": [
+ "jobs": [
+  {
+   "absolute_url": "https://stripe.com/jobs/search?gh_jid=7954688",
+   "data_compliance": [
     {
-      "absolute_url": "https://stripe.com/jobs/search?gh_jid=7954688",
-      "data_compliance": [
-        {
-          "type": "gdpr",
-          "requires_consent": false,
-          "requires_processing_consent": false,
-          "requires_retention_consent": false,
-          "retention_period": null,
-          "demographic_data_consent_applies": false
-        }
-      ],
-      "internal_job_id": 3453698,
-      "location": {
-        "name": "San Francisco, CA"
-      },
-      "metadata": null,
-      "id": 7954688,
-      "updated_at": "2026-06-02T08:58:57-04:00",
-      "requisition_id": "See Opening ID",
-      "title": "Account Executive, AI Sales (Grower)",
-      "company_name": "Stripe",
-      "first_published": "2026-06-02T08:58:57-04:00",
-      "language": "en",
-      "application_deadline": null
-    },
-    {
-      "absolute_url": "https://stripe.com/jobs/search?gh_jid=7789539",
-      "data_compliance": [
-        {
-          "type": "gdpr",
-          "requires_consent": false,
-          "requires_processing_consent": false,
-          "requires_retention_consent": false,
-          "retention_period": null,
-          "demographic_data_consent_applies": false
-        }
-      ],
-      "internal_job_id": 3407094,
-      "location": {
-        "name": "Japan"
-      },
-      "metadata": null,
-      "id": 7789539,
-      "updated_at": "2026-06-05T14:43:43-04:00",
-      "requisition_id": "See Opening ID",
-      "title": "Account Executive, Commercial Hunter (Japanese fluency)",
-      "company_name": "Stripe",
-      "first_published": "2026-04-17T00:47:42-04:00",
-      "language": "ja",
-      "application_deadline": null
-    },
-    {
-      "absolute_url": "https://stripe.com/jobs/search?gh_jid=7893199",
-      "data_compliance": [
-        {
-          "type": "gdpr",
-          "requires_consent": false,
-          "requires_processing_consent": false,
-          "requires_retention_consent": false,
-          "retention_period": null,
-          "demographic_data_consent_applies": false
-        }
-      ],
-      "internal_job_id": 3431456,
-      "location": {
-        "name": "Singapore"
-      },
-      "metadata": null,
-      "id": 7893199,
-      "updated_at": "2026-06-05T14:55:17-04:00",
-      "requisition_id": "See Opening ID",
-      "title": "Account Executive, Cross Border China",
-      "company_name": "Stripe",
-      "first_published": "2026-05-06T04:59:55-04:00",
-      "language": "en",
-      "application_deadline": null
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
     }
-  ],
-  "meta": {
-    "total": 508
+   ],
+   "internal_job_id": 3453698,
+   "location": {
+    "name": "San Francisco, CA"
+   },
+   "metadata": null,
+   "id": 7954688,
+   "updated_at": "2026-06-19T12:11:02-04:00",
+   "requisition_id": "See Opening ID",
+   "title": "Account Executive, AI Sales (Grower)",
+   "company_name": "Stripe",
+   "first_published": "2026-06-02T08:58:57-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;h2&gt;Who we are&lt;/h2&gt;\n&lt;h3&gt;About Stripe&lt;/h3&gt;\n&lt;p&gt;Stripe is a financial infrastructure platform for businesses. Millions of companies - from the world’s largest enterprises to the most ambitious startups - use Stripe to accept payments, grow their revenue, and accelerate new business opportunities. Our mission is to increase the GDP of the internet, and we have a staggering amount of work ahead. That means you have an unprecedented opportunity to put the global economy within everyone&#39;s reach while doing the most important work of your career.&lt;/p&gt;\n&lt;h3&gt;About the team&lt;/h3&gt;\n&lt;p&gt;The AI team is focused on one of Stripe’s most strategic growth areas: enabling the monetization and scaling of AI-native and AI-enabled businesses. We’re in a unique position – partnering with the world’s most ambitious AI companies (the likes of OpenAI, Anthropic, NVIDIA, etc) building on the frontier of artificial intelligence -- across infrastructure, foundation models, agents, and applications -- to help them grow and commercialize globally using Stripe’s full financial stack.&lt;/p&gt;\n&lt;p&gt;As part of Stripe’s GTM / Sales organization, this team works closely with Product, Engineering, and Marketing to shape Stripe’s AI GTM strategy and ensure that the world’s leading AI companies -- from early-stage innovators to the largest public players -- choose Stripe as their monetization platform.&lt;/p&gt;\n&lt;h3&gt;What you’ll do&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Work with existing Stripe customers in the AI Industry to develop and execute long-term sales strategies to expand Stripe’s revenue&lt;/li&gt;\n&lt;li&gt;Own the full sales cycle, from business case development, to deal structuring and negotiating, to close&lt;/li&gt;\n&lt;li&gt;Develop account plans and cross sell into your list of strategic AI customers, driving growth through expansion and new revenue streams&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Drive deal strategy and commercial negotiations for large, complex renewals&lt;/li&gt;\n&lt;li&gt;Develop relationships with executive stakeholders within your book of business, deeply understanding problems they are solving and helping drive to solutions&lt;/li&gt;\n&lt;li&gt;Be responsible for account mapping and coordinating effective meetings with the appropriate external stakeholders expanding the customer relationship&lt;/li&gt;\n&lt;li&gt;Lead and contribute to team projects to develop and refine our sales process and help shape the Stripe sales culture&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;Minimum requirements&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;6+ years of sales experience, preferably selling a technical product, with a track record of top performance&lt;/li&gt;\n&lt;li&gt;2+ years leading complex sales cycles with Enterprise organizations required&lt;/li&gt;\n&lt;li&gt;Ability to understand technical requirements and craft solutions across multiple products&lt;/li&gt;\n&lt;li&gt;Ability to develop and execute account plans spanning multiple business units across complex organizations&lt;/li&gt;\n&lt;li&gt;A knack for working well with a wide range of people, both internally and externally&lt;/li&gt;\n&lt;li&gt;Strong presentation skills, particularly for in-person meetings with multiple stakeholders&lt;/li&gt;\n&lt;li&gt;Proven ability to lead complex negotiations involving bespoke commercial agreements&lt;/li&gt;\n&lt;li&gt;Superior verbal and written communication skills&lt;/li&gt;\n&lt;li&gt;Ability to operate in a highly ambiguous and fast-paced environment&lt;/li&gt;\n&lt;li&gt;Strong interest in technology and a deep understanding of the space&lt;/li&gt;\n&lt;/ul&gt;",
+   "departments": [
+    {
+     "id": 295360,
+     "name": "1650 AI GTM Strategy & Solutions",
+     "child_ids": [],
+     "parent_id": 297997
+    }
+   ],
+   "offices": [
+    {
+     "id": 65234,
+     "name": "US",
+     "location": null,
+     "child_ids": [
+      89623,
+      249942,
+      249943,
+      230657,
+      61413,
+      80440,
+      344486,
+      83778,
+      61414,
+      83767,
+      83768,
+      83776,
+      83769,
+      83770,
+      83771,
+      83772,
+      83773,
+      83774,
+      89624,
+      83789,
+      83775,
+      83777,
+      83779,
+      83780,
+      83820,
+      83781,
+      83782,
+      83783,
+      83784,
+      83785,
+      83786,
+      83787,
+      83821,
+      83788,
+      83790,
+      83791,
+      83792,
+      83793,
+      83794,
+      83854,
+      83861,
+      83795,
+      83796,
+      83797,
+      83831,
+      83798,
+      83799,
+      83856,
+      83800,
+      83801,
+      83819,
+      83802,
+      83850,
+      83803,
+      83804,
+      83805,
+      83806,
+      83807,
+      83808,
+      83809,
+      83810,
+      83811,
+      83812,
+      83813,
+      83815,
+      83817,
+      83822,
+      83824,
+      83846,
+      83825,
+      83829,
+      83830,
+      65238,
+      83834,
+      83849,
+      83859,
+      83835,
+      83836,
+      83837,
+      83839,
+      83840,
+      83841,
+      83842,
+      83843,
+      83844,
+      83847,
+      83848,
+      83851,
+      83852,
+      83853,
+      83855,
+      83857,
+      83858,
+      83860,
+      83862,
+      83814,
+      83818,
+      83823,
+      83826,
+      83827,
+      83828,
+      83832,
+      83833,
+      83816,
+      85342,
+      83838,
+      83845,
+      223073,
+      265365,
+      16654
+     ],
+     "parent_id": 673
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://stripe.com/jobs/search?gh_jid=7789539",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 3407094,
+   "location": {
+    "name": "Japan"
+   },
+   "metadata": null,
+   "id": 7789539,
+   "updated_at": "2026-06-19T12:11:02-04:00",
+   "requisition_id": "See Opening ID",
+   "title": "Account Executive, Commercial Hunter (Japanese fluency)",
+   "company_name": "Stripe",
+   "first_published": "2026-04-17T00:47:42-04:00",
+   "language": "ja",
+   "application_deadline": null,
+   "content": "&lt;h2&gt;&lt;strong&gt;Who we are&lt;/strong&gt;&lt;/h2&gt;\n&lt;h3&gt;&lt;strong&gt;About Stripe&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;Stripe is a financial infrastructure platform for businesses. Millions of companies—from the world’s largest enterprises to the most ambitious startups—use Stripe to accept payments, grow their revenue, and accelerate new business opportunities. Our mission is to increase the GDP of the internet, and we have a staggering amount of work ahead. That means you have an unprecedented opportunity to put the global economy within everyone’s reach while doing the most important work of your career.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;About The Team&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;A Stripe Commercial (Mid-Market) Account Executive partners with high-growth, under-penetrated mid-market businesses to help them scale and modernize their financial infrastructure. These companies—often tech-forward, founder-led, and rapidly scaling—represent Stripe&#39;s next generation of breakout users.&lt;/p&gt;\n&lt;p&gt;Stripe Commercial AEs are responsible for both acquiring new users and expanding existing relationships. They guide companies through the full sales lifecycle, uncovering pain points, aligning on solutions across the Stripe product suite, and driving long-term value. Commercial AEs serve as strategic advisors, helping users unlock new revenue, streamline operations, and launch ambitious new products on top of the Stripe platform.&lt;/p&gt;\n&lt;h2&gt;&lt;strong&gt;What you’ll do&lt;/strong&gt;&lt;/h2&gt;\n&lt;p&gt;Commercial AEs own a book of high-potential accounts—some already using Stripe, others still evaluating. They operate with a dual motion—hunting for new growth opportunities and farming existing relationships for deeper adoption and expansion. They work cross-functionally with Solutions, Product, Post-Sales, and Sales Ops to craft tailored strategies and execute at high velocity.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;Responsibilities&lt;/strong&gt;&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Identify high-potential, fast-growing eCommerce platforms for a full-stack Stripe implementation, from payments to Connect&lt;/li&gt;\n&lt;li&gt;Lead a product and pricing workshop with an existing user to introduce Radar and optimize their fraud stack&lt;/li&gt;\n&lt;li&gt;Develop and execute an outbound play to target a new vertical in their region or territory&lt;/li&gt;\n&lt;li&gt;Create and deliver compelling product walkthroughs to showcase how the expanding Stripe product suite (like Issuing or Treasury) maps to customer goals&lt;/li&gt;\n&lt;li&gt;Drive commercial discussions and close complex, high-impact deals—both net-new and upsell&lt;/li&gt;\n&lt;li&gt;Partner with Customer Success and Solutions Architects to resolve user pain points and deepen Stripe integration&lt;/li&gt;\n&lt;li&gt;Share feedback with Product and Marketing teams to help inform roadmap and messaging prioritie&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h2&gt;Who you are&lt;/h2&gt;\n&lt;p&gt;We&#39;re looking for someone who meets the minimum requirements to be considered for the role. If you meet these requirements, you are encouraged to apply. The preferred qualifications are a bonus, not a requirement.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;Minimum requirements&lt;/strong&gt;&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;3 years of experience in solution sales field&lt;/li&gt;\n&lt;li&gt;High professional fluency in Japanese and English&lt;/li&gt;\n&lt;li&gt;Ability to understand complex requirements and craft custom solutions&lt;/li&gt;\n&lt;li&gt;Strong problem-solving and quantitative capabilities including comfort with basic financial modeling&lt;/li&gt;\n&lt;li&gt;Ability to operate in a highly ambiguous and fast-paced environment&lt;/li&gt;\n&lt;li&gt;Strong interest in technology&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;Preferred qualifications&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Ability to understand the Stripe API&lt;/li&gt;\n&lt;li&gt;Experience with Excel and SQL, or a willingness to learn&lt;/li&gt;\n&lt;/ul&gt;",
+   "departments": [
+    {
+     "id": 81432,
+     "name": "1195 Account Executives (APAC)",
+     "child_ids": [],
+     "parent_id": 81963
+    }
+   ],
+   "offices": [
+    {
+     "id": 87012,
+     "name": "Japan Locations",
+     "location": null,
+     "child_ids": [
+      80448,
+      80447
+     ],
+     "parent_id": 4260
+    }
+   ]
+  },
+  {
+   "absolute_url": "https://stripe.com/jobs/search?gh_jid=7893199",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 3431456,
+   "location": {
+    "name": "Singapore"
+   },
+   "metadata": null,
+   "id": 7893199,
+   "updated_at": "2026-06-19T12:11:02-04:00",
+   "requisition_id": "See Opening ID",
+   "title": "Account Executive, Cross Border China",
+   "company_name": "Stripe",
+   "first_published": "2026-05-06T04:59:55-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;h2&gt;Who we are&lt;/h2&gt;\n&lt;h3&gt;About Stripe&lt;/h3&gt;\n&lt;p&gt;Stripe is a financial infrastructure platform for businesses. Millions of companies—from the world&#39;s largest enterprises to the most ambitious startups—use Stripe to accept payments, grow their revenue, and accelerate new business opportunities. Our mission is to increase the GDP of the internet, and we have a staggering amount of work ahead. That means you have an unprecedented opportunity to put the global economy within everyone&#39;s reach while doing the most important work of your career.&lt;/p&gt;\n&lt;h3&gt;About the team&lt;/h3&gt;\n&lt;p&gt;As an Account Executive, Cross Border, Greater China, at Stripe, you&#39;ll drive future growth at Stripe by building relationships with prospective users and turning them into happy Stripe users.&lt;/p&gt;\n&lt;h2&gt;What you&#39;ll do&lt;/h2&gt;\n&lt;p&gt;As an Account Executive, Cross Border, Greater China, at Stripe, you&#39;ll drive future growth at Stripe by building relationships with prospective users and turning them into happy Stripe users.&lt;/p&gt;\n&lt;p&gt;You are an adept salesperson, capable of engaging in business-level and technical conversations at multiple levels of the organization, including the CTO, COO, and CFO. You have experience working with mid-market and enterprise companies. You have an in-depth understanding of the buyer journey and can lead a complex, multi-party sale in a highly consultative manner. You are used to building value in competitive situations and enjoy working on products that require deep product understanding, combined with technical knowledge. You are naturally curious and enjoy digging into business models and helping businesses quantify their investment decisions. You get excited about prospecting, and are capable of independently leading a sales cycle from start to finish. Finally, you enjoy building—you like to actively participate in the development of our sales process, the articulation of our value proposition, and the creation of key tools and assets.&lt;/p&gt;\n&lt;p&gt;If you&#39;re motivated, smart, persistent, and a great teammate, we want to hear from you.&lt;/p&gt;\n&lt;h3&gt;Responsibilities&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Own a named account list and develop account plans for winning and expanding business with mid-market and enterprise companies in the Greater China region&lt;/li&gt;\n&lt;li&gt;Develop outbound strategies to create and nurture opportunities&lt;/li&gt;\n&lt;li&gt;Own the full sales cycle from lead to close for upper-middle-market and enterprise companies&lt;/li&gt;\n&lt;li&gt;Develop relationships with executive stakeholders at new and existing clients&lt;/li&gt;\n&lt;li&gt;Work with company leaders from multiple functions (e.g., Engineering, Product, and Finance) to lead complex product workshops and financial analyses&lt;/li&gt;\n&lt;li&gt;Lead and contribute to team projects to develop and refine our sales process&lt;/li&gt;\n&lt;li&gt;Engage with Product and Engineering teams to help drive product strategy&lt;/li&gt;\n&lt;li&gt;Build a compelling partner strategy for your key accounts, engage with the channel team and lead the joint sales approach&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h2&gt;Who you are&lt;/h2&gt;\n&lt;p&gt;We&#39;re looking for someone who meets the minimum requirements to be considered for the role. If you meet these requirements, you are encouraged to apply. The preferred qualifications are a bonus, not a requirement.&lt;/p&gt;\n&lt;h3&gt;Minimum requirements&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;8+ years of software sales experience selling to large users in the Greater China market, preferably at a technology company, with a track record of top performance&lt;/li&gt;\n&lt;li&gt;Ability to understand the Stripe API and build great relationships with highly technical customers&lt;/li&gt;\n&lt;li&gt;Ability to understand complex requirements and craft custom solutions&lt;/li&gt;\n&lt;li&gt;Strong problem-solving and quantitative capabilities including comfort with basic modeling&lt;/li&gt;\n&lt;li&gt;High professional fluency in Mandarin and English&lt;/li&gt;\n&lt;li&gt;Deep understanding of the China cross-border business landscape&lt;/li&gt;\n&lt;li&gt;Ability to operate in a highly ambiguous and fast-paced environment&lt;/li&gt;\n&lt;li&gt;Strong interest in technology&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;Preferred qualifications&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Prior experience at a growth-stage internet or software company&lt;/li&gt;\n&lt;/ul&gt;",
+   "departments": [
+    {
+     "id": 81432,
+     "name": "1195 Account Executives (APAC)",
+     "child_ids": [],
+     "parent_id": 81963
+    }
+   ],
+   "offices": [
+    {
+     "id": 86997,
+     "name": "Singapore Locations",
+     "location": null,
+     "child_ids": [
+      81542,
+      106345
+     ],
+     "parent_id": 4260
+    }
+   ]
   }
+ ]
 }

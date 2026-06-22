@@ -4,11 +4,26 @@ from __future__ import annotations
 
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
+from headstart.scrapers.keka import KekaScraper
 from headstart.scrapers.lever import LeverScraper
+from headstart.scrapers.oracle import OracleScraper
+from headstart.scrapers.recruitee import RecruiteeScraper
+from headstart.scrapers.ripplehire import RippleHireScraper
+from headstart.scrapers.sensehq import SenseHQScraper
+from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+from headstart.scrapers.trakstar import TrakstarScraper
+from headstart.scrapers.workable import WorkableScraper
+from headstart.scrapers.workday import WorkdayScraper
+from headstart.scrapers.zoho import ZohoScraper
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
-    cls.ats: cls for cls in (GreenhouseScraper, LeverScraper, AshbyScraper)
+    cls.ats: cls
+    for cls in (GreenhouseScraper, LeverScraper, AshbyScraper, ZohoScraper, WorkdayScraper,
+                WorkableScraper, SmartRecruitersScraper, RecruiteeScraper, OracleScraper,
+                SenseHQScraper, KekaScraper, TrakstarScraper, RippleHireScraper,
+                DarwinboxScraper)
 }
 
 
