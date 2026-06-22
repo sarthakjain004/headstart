@@ -654,3 +654,14 @@ name = "Agnikul Cosmos"
 ats = "zoho"
 slug = "zupee.zohorecruit.in"
 name = "Zupee"
+
+# Recovered from the greenhouse EU data-center blind spot (job-boards.eu.greenhouse.io), 2026-06-18
+[[company]]
+ats = "greenhouse"
+slug = "nksecuritiesresearch"
+name = "NK Securities Research"
+
+[[company]]
+ats = "lever"
+slug = "hevodata"
+name = "Hevo Data"
