@@ -1,0 +1,17 @@
+# Source: TheirStack — Companies that use Lever
+# URL: https://theirstack.com/en/technology/lever
+# Stated total: 11,602 companies (Page 1 of 1,161)
+# Visible/saved here: 10
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Ci&T | ciandt.com
+Paytm | paytm.com
+WinnCompanies | winncompanies.com
+Shield AI | shield.ai
+Zoox | zoox.com
+Edelman | edelman.com
+Dun & Bradstreet | dnb.com
+Veepee | veepee.com
+Xero | xero.com
+Mobileye | mobileye.com

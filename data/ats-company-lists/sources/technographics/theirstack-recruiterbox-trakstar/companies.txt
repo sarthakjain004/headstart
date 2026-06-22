@@ -1,0 +1,19 @@
+# Source: TheirStack — Companies that use Recruiterbox (now Trakstar Hire)
+# URL: https://theirstack.com/en/technology/recruiterbox
+# Stated total: 74 companies (Page 1 of 8)
+# Visible/saved here: 10
+# Note: Recruiterbox is the former name of Trakstar Hire ({slug}.hire.trakstar.com),
+#       a TODO ATS in CLAUDE.md. Small total (74) — full 8-page pull is cheap later.
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Frontline Managed Services | frontlinems.com
+Dental Choice | dentalchoice.ca
+C2 Labs, Inc. | c2labs.com
+Red Star 3D | redstar3d.com
+Burgundy Diamond Mines | burgundydiamonds.com
+New Voices for Reproductive Justice | newvoicesrj.org
+Hudson's Furniture | hudsonsfurniture.com
+The Inspired Teaching Demonstration School | inspiredteachingschool.org
+TRICO Companies, LLC | tricocompanies.com
+EC M&A | ec-ma.com

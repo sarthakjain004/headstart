@@ -1,0 +1,70 @@
+name	ats_platform	ats_slug	endpoint
+airbnb	greenhouse	airbnb	https://boards-api.greenhouse.io/v1/boards/airbnb/jobs?content=true
+airtable	greenhouse	airtable	https://boards-api.greenhouse.io/v1/boards/airtable/jobs?content=true
+anduril	greenhouse	anduril	https://boards-api.greenhouse.io/v1/boards/anduril/jobs?content=true
+anthropic	greenhouse	anthropic	https://boards-api.greenhouse.io/v1/boards/anthropic/jobs?content=true
+auth0_okta_lever	lever	auth0-okta	https://api.lever.co/v0/postings/auth0-okta
+authentic_jobs	custom		https://authenticjobs.com/
+brex	greenhouse	brex	https://boards-api.greenhouse.io/v1/boards/brex/jobs?content=true
+builtin	custom		https://builtin.com/jobs/remote/dev-engineering
+chime	greenhouse	chime	https://boards-api.greenhouse.io/v1/boards/chime/jobs?content=true
+cloudflare	greenhouse	cloudflare	https://boards-api.greenhouse.io/v1/boards/cloudflare/jobs?content=true
+cockroachlabs_lever	lever	cockroachlabs	https://api.lever.co/v0/postings/cockroachlabs
+cohere	greenhouse	cohere	https://boards-api.greenhouse.io/v1/boards/cohere/jobs?content=true
+coinbase	greenhouse	coinbase	https://boards-api.greenhouse.io/v1/boards/coinbase/jobs?content=true
+confluent_lever	lever	confluent	https://api.lever.co/v0/postings/confluent
+databricks	greenhouse	databricks	https://boards-api.greenhouse.io/v1/boards/databricks/jobs?content=true
+dice	custom		https://www.dice.com/jobs?q=software+engineer&location=Remote
+discord	greenhouse	discord	https://boards-api.greenhouse.io/v1/boards/discord/jobs?content=true
+doordash	greenhouse	doordash	https://boards-api.greenhouse.io/v1/boards/doordash/jobs?content=true
+figma	ashby	figma	https://api.ashbyhq.com/posting-api/job-board/figma
+flexjobs	custom		https://www.flexjobs.com/search?search=software+engineer&location=remote
+github_jobs	custom		https://github.com/about/careers
+glassdoor	custom		https://www.glassdoor.com/Job/remote-software-engineer-jobs-SRCH_IL.0,6_IS11047_KO7,24.htm
+gusto	greenhouse	gusto	https://boards-api.greenhouse.io/v1/boards/gusto/jobs?content=true
+hackernews_whoishiring	custom		https://hacker-news.firebaseio.com/v0/item/
+himalayas	custom		https://himalayas.app/jobs/api
+indeed	custom		https://www.indeed.com/jobs?q=software+engineer&l=remote&sc=0kf%3Aattr%28DSQF7%29%3B
+instacart	greenhouse	instacart	https://boards-api.greenhouse.io/v1/boards/instacart/jobs?content=true
+jobspresso	custom		https://jobspresso.co/
+lattice	greenhouse	lattice	https://boards-api.greenhouse.io/v1/boards/lattice/jobs?content=true
+linear	greenhouse	linear	https://boards-api.greenhouse.io/v1/boards/linear/jobs?content=true
+linear_ashby	ashby	linear	https://jobs.ashbyhq.com/linear
+linkedin	custom		https://www.linkedin.com/jobs/search/?keywords=software%20engineer&location=Remote&f_WT=2
+linkedin_eu	custom		https://www.linkedin.com/jobs/search/?keywords=software%20engineer&location=Europe&f_WT=2
+loom	greenhouse	loom	https://boards-api.greenhouse.io/v1/boards/loom/jobs?content=true
+lyft	greenhouse	lyft	https://boards-api.greenhouse.io/v1/boards/lyft/jobs?content=true
+mercury	greenhouse	mercury	https://boards-api.greenhouse.io/v1/boards/mercury/jobs?content=true
+mistral	greenhouse	mistral	https://boards-api.greenhouse.io/v1/boards/mistral/jobs?content=true
+netflix_lever	lever	netflix	https://api.lever.co/v0/postings/netflix
+netlify_lever	lever	netlify	https://api.lever.co/v0/postings/netlify
+notion	greenhouse	notion	https://boards-api.greenhouse.io/v1/boards/notion/jobs?content=true
+notion_ashby	ashby	notion	https://jobs.ashbyhq.com/notion
+openai	greenhouse	openai	https://boards-api.greenhouse.io/v1/boards/openai/jobs?content=true
+otta	custom		https://otta.com/
+pinterest	greenhouse	pinterest	https://boards-api.greenhouse.io/v1/boards/pinterest/jobs?content=true
+plaid	greenhouse	plaid	https://boards-api.greenhouse.io/v1/boards/plaid/jobs?content=true
+planetscale_lever	lever	planetscale	https://api.lever.co/v0/postings/planetscale
+ramp	ashby	ramp	https://api.ashbyhq.com/posting-api/job-board/ramp?includeCompensation=true
+ramp_ashby	ashby	ramp	https://jobs.ashbyhq.com/ramp
+relocateme	custom		https://relocate.me/api/v1/jobs
+retool	greenhouse	retool	https://boards-api.greenhouse.io/v1/boards/retool/jobs?content=true
+rippling	greenhouse	rippling	https://boards-api.greenhouse.io/v1/boards/rippling/jobs?content=true
+robinhood	greenhouse	robinhood	https://boards-api.greenhouse.io/v1/boards/robinhood/jobs?content=true
+scale	greenhouse	scale	https://boards-api.greenhouse.io/v1/boards/scale/jobs?content=true
+shopify	greenhouse	shopify	https://boards-api.greenhouse.io/v1/boards/shopify/jobs?content=true
+snapchat	greenhouse	snapchat	https://boards-api.greenhouse.io/v1/boards/snapchat/jobs?content=true
+spotify_lever	lever	spotify	https://api.lever.co/v0/postings/spotify
+square	greenhouse	square	https://boards-api.greenhouse.io/v1/boards/square/jobs?content=true
+stackoverflow_jobs	custom		https://stackoverflow.com/jobs/companies
+startupjobs	custom		https://startup.jobs/api/job_postings
+stripe	greenhouse	stripe	https://boards-api.greenhouse.io/v1/boards/stripe/jobs?content=true
+supabase_lever	lever	supabase	https://api.lever.co/v0/postings/supabase
+temporal_lever	lever	temporal	https://api.lever.co/v0/postings/temporal
+twitch	greenhouse	twitch	https://boards-api.greenhouse.io/v1/boards/twitch/jobs?content=true
+vercel	greenhouse	vercel	https://boards-api.greenhouse.io/v1/boards/vercel/jobs?content=true
+vercel_ashby	ashby	vercel	https://jobs.ashbyhq.com/vercel
+watershed	greenhouse	watershed	https://boards-api.greenhouse.io/v1/boards/watershed/jobs?content=true
+wellfound	custom		https://wellfound.com/role/l/software-engineer
+weworkremotely	custom		https://weworkremotely.com/api/listings.json
+ycombinator	custom		https://www.workatastartup.com/jobs

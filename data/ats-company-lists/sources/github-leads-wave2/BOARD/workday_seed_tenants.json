@@ -1,0 +1,482 @@
+[
+ {
+  "name": "NVIDIA",
+  "tenant": "nvidia",
+  "instance": "wd5",
+  "jobsite": "NVIDIAExternalCareerSite",
+  "ats": "workday",
+  "endpoint": "https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs"
+ },
+ {
+  "name": "AMD",
+  "tenant": "amd",
+  "instance": "wd5",
+  "jobsite": "AMD",
+  "ats": "workday",
+  "endpoint": "https://amd.wd5.myworkdayjobs.com/wday/cxs/amd/AMD/jobs"
+ },
+ {
+  "name": "Intel",
+  "tenant": "intel",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://intel.wd1.myworkdayjobs.com/wday/cxs/intel/External/jobs"
+ },
+ {
+  "name": "Qualcomm",
+  "tenant": "qualcomm",
+  "instance": "wd5",
+  "jobsite": "careers",
+  "ats": "workday",
+  "endpoint": "https://qualcomm.wd5.myworkdayjobs.com/wday/cxs/qualcomm/careers/jobs"
+ },
+ {
+  "name": "Broadcom",
+  "tenant": "broadcom",
+  "instance": "wd1",
+  "jobsite": "External_Career_Site",
+  "ats": "workday",
+  "endpoint": "https://broadcom.wd1.myworkdayjobs.com/wday/cxs/broadcom/External_Career_Site/jobs"
+ },
+ {
+  "name": "Marvell",
+  "tenant": "marvell",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://marvell.wd1.myworkdayjobs.com/wday/cxs/marvell/External/jobs"
+ },
+ {
+  "name": "Applied Materials",
+  "tenant": "amat",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://amat.wd1.myworkdayjobs.com/wday/cxs/amat/External/jobs"
+ },
+ {
+  "name": "Lam Research",
+  "tenant": "lamresearch",
+  "instance": "wd3",
+  "jobsite": "LRCareers",
+  "ats": "workday",
+  "endpoint": "https://lamresearch.wd3.myworkdayjobs.com/wday/cxs/lamresearch/LRCareers/jobs"
+ },
+ {
+  "name": "KLA",
+  "tenant": "kla",
+  "instance": "wd1",
+  "jobsite": "Search",
+  "ats": "workday",
+  "endpoint": "https://kla.wd1.myworkdayjobs.com/wday/cxs/kla/Search/jobs"
+ },
+ {
+  "name": "Micron Technology",
+  "tenant": "micron",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://micron.wd5.myworkdayjobs.com/wday/cxs/micron/External/jobs"
+ },
+ {
+  "name": "Western Digital",
+  "tenant": "wdc",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://wdc.wd1.myworkdayjobs.com/wday/cxs/wdc/External/jobs"
+ },
+ {
+  "name": "TE Connectivity",
+  "tenant": "te",
+  "instance": "wd5",
+  "jobsite": "TECareers",
+  "ats": "workday",
+  "endpoint": "https://te.wd5.myworkdayjobs.com/wday/cxs/te/TECareers/jobs"
+ },
+ {
+  "name": "Salesforce",
+  "tenant": "salesforce",
+  "instance": "wd12",
+  "jobsite": "External_Career_Site",
+  "ats": "workday",
+  "endpoint": "https://salesforce.wd12.myworkdayjobs.com/wday/cxs/salesforce/External_Career_Site/jobs"
+ },
+ {
+  "name": "Oracle",
+  "tenant": "oracle",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://oracle.wd1.myworkdayjobs.com/wday/cxs/oracle/External/jobs"
+ },
+ {
+  "name": "SAP",
+  "tenant": "sap",
+  "instance": "wd3",
+  "jobsite": "SAP",
+  "ats": "workday",
+  "endpoint": "https://sap.wd3.myworkdayjobs.com/wday/cxs/sap/SAP/jobs"
+ },
+ {
+  "name": "ServiceNow",
+  "tenant": "servicenow",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://servicenow.wd5.myworkdayjobs.com/wday/cxs/servicenow/External/jobs"
+ },
+ {
+  "name": "Workday",
+  "tenant": "wday",
+  "instance": "wd5",
+  "jobsite": "Workday",
+  "ats": "workday",
+  "endpoint": "https://wday.wd5.myworkdayjobs.com/wday/cxs/wday/Workday/jobs"
+ },
+ {
+  "name": "Adobe",
+  "tenant": "adobe",
+  "instance": "wd5",
+  "jobsite": "external_university",
+  "ats": "workday",
+  "endpoint": "https://adobe.wd5.myworkdayjobs.com/wday/cxs/adobe/external_university/jobs"
+ },
+ {
+  "name": "Palo Alto Networks",
+  "tenant": "paloaltonetworks",
+  "instance": "wd3",
+  "jobsite": "PAN_Career_Site",
+  "ats": "workday",
+  "endpoint": "https://paloaltonetworks.wd3.myworkdayjobs.com/wday/cxs/paloaltonetworks/PAN_Career_Site/jobs"
+ },
+ {
+  "name": "Citrix",
+  "tenant": "citrix",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://citrix.wd5.myworkdayjobs.com/wday/cxs/citrix/External/jobs"
+ },
+ {
+  "name": "Juniper Networks",
+  "tenant": "juniper",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://juniper.wd5.myworkdayjobs.com/wday/cxs/juniper/External/jobs"
+ },
+ {
+  "name": "NetApp",
+  "tenant": "netapp",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://netapp.wd1.myworkdayjobs.com/wday/cxs/netapp/External/jobs"
+ },
+ {
+  "name": "Cisco",
+  "tenant": "cisco",
+  "instance": "wd5",
+  "jobsite": "Cisco_External_Site",
+  "ats": "workday",
+  "endpoint": "https://cisco.wd5.myworkdayjobs.com/wday/cxs/cisco/Cisco_External_Site/jobs"
+ },
+ {
+  "name": "HP Inc",
+  "tenant": "hp",
+  "instance": "wd5",
+  "jobsite": "ExternalCareerSite",
+  "ats": "workday",
+  "endpoint": "https://hp.wd5.myworkdayjobs.com/wday/cxs/hp/ExternalCareerSite/jobs"
+ },
+ {
+  "name": "Dell Technologies",
+  "tenant": "dell",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://dell.wd1.myworkdayjobs.com/wday/cxs/dell/External/jobs"
+ },
+ {
+  "name": "IBM",
+  "tenant": "ibm",
+  "instance": "wd12",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://ibm.wd12.myworkdayjobs.com/wday/cxs/ibm/External/jobs"
+ },
+ {
+  "name": "Goldman Sachs",
+  "tenant": "goldmansachs",
+  "instance": "wd1",
+  "jobsite": "TechCareerOpportunities",
+  "ats": "workday",
+  "endpoint": "https://goldmansachs.wd1.myworkdayjobs.com/wday/cxs/goldmansachs/TechCareerOpportunities/jobs"
+ },
+ {
+  "name": "Morgan Stanley",
+  "tenant": "morganstanley",
+  "instance": "wd3",
+  "jobsite": "Experienced_Jobs",
+  "ats": "workday",
+  "endpoint": "https://morganstanley.wd3.myworkdayjobs.com/wday/cxs/morganstanley/Experienced_Jobs/jobs"
+ },
+ {
+  "name": "BlackRock",
+  "tenant": "blackrock",
+  "instance": "wd1",
+  "jobsite": "Careers",
+  "ats": "workday",
+  "endpoint": "https://blackrock.wd1.myworkdayjobs.com/wday/cxs/blackrock/Careers/jobs"
+ },
+ {
+  "name": "Vanguard",
+  "tenant": "vanguard",
+  "instance": "wd5",
+  "jobsite": "Vanguard_Careers",
+  "ats": "workday",
+  "endpoint": "https://vanguard.wd5.myworkdayjobs.com/wday/cxs/vanguard/Vanguard_Careers/jobs"
+ },
+ {
+  "name": "State Street",
+  "tenant": "statestreet",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://statestreet.wd1.myworkdayjobs.com/wday/cxs/statestreet/External/jobs"
+ },
+ {
+  "name": "Citigroup",
+  "tenant": "citi",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://citi.wd5.myworkdayjobs.com/wday/cxs/citi/External/jobs"
+ },
+ {
+  "name": "Bank of America",
+  "tenant": "bofa",
+  "instance": "wd1",
+  "jobsite": "Global",
+  "ats": "workday",
+  "endpoint": "https://bofa.wd1.myworkdayjobs.com/wday/cxs/bofa/Global/jobs"
+ },
+ {
+  "name": "Wells Fargo",
+  "tenant": "wellsfargo",
+  "instance": "wd5",
+  "jobsite": "WellsFargoJobs",
+  "ats": "workday",
+  "endpoint": "https://wellsfargo.wd5.myworkdayjobs.com/wday/cxs/wellsfargo/WellsFargoJobs/jobs"
+ },
+ {
+  "name": "TIAA",
+  "tenant": "tiaa",
+  "instance": "wd5",
+  "jobsite": "TIAA_Jobs",
+  "ats": "workday",
+  "endpoint": "https://tiaa.wd5.myworkdayjobs.com/wday/cxs/tiaa/TIAA_Jobs/jobs"
+ },
+ {
+  "name": "Northern Trust",
+  "tenant": "northerntrust",
+  "instance": "wd1",
+  "jobsite": "Careers",
+  "ats": "workday",
+  "endpoint": "https://northerntrust.wd1.myworkdayjobs.com/wday/cxs/northerntrust/Careers/jobs"
+ },
+ {
+  "name": "Cloudflare",
+  "tenant": "cloudflare",
+  "instance": "wd5",
+  "jobsite": "Cloudflare",
+  "ats": "workday",
+  "endpoint": "https://cloudflare.wd5.myworkdayjobs.com/wday/cxs/cloudflare/Cloudflare/jobs"
+ },
+ {
+  "name": "Datadog",
+  "tenant": "datadog",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://datadog.wd5.myworkdayjobs.com/wday/cxs/datadog/External/jobs"
+ },
+ {
+  "name": "MongoDB",
+  "tenant": "mongodb",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://mongodb.wd5.myworkdayjobs.com/wday/cxs/mongodb/External/jobs"
+ },
+ {
+  "name": "Elastic",
+  "tenant": "elastic",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://elastic.wd5.myworkdayjobs.com/wday/cxs/elastic/External/jobs"
+ },
+ {
+  "name": "Splunk",
+  "tenant": "splunk",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://splunk.wd5.myworkdayjobs.com/wday/cxs/splunk/External/jobs"
+ },
+ {
+  "name": "New Relic",
+  "tenant": "newrelic",
+  "instance": "wd5",
+  "jobsite": "Jobs",
+  "ats": "workday",
+  "endpoint": "https://newrelic.wd5.myworkdayjobs.com/wday/cxs/newrelic/Jobs/jobs"
+ },
+ {
+  "name": "Dynatrace",
+  "tenant": "dynatrace",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://dynatrace.wd5.myworkdayjobs.com/wday/cxs/dynatrace/External/jobs"
+ },
+ {
+  "name": "CrowdStrike",
+  "tenant": "crowdstrike",
+  "instance": "wd5",
+  "jobsite": "CrowdStrikeCareers",
+  "ats": "workday",
+  "endpoint": "https://crowdstrike.wd5.myworkdayjobs.com/wday/cxs/crowdstrike/CrowdStrikeCareers/jobs"
+ },
+ {
+  "name": "OKTA",
+  "tenant": "okta",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://okta.wd5.myworkdayjobs.com/wday/cxs/okta/External/jobs"
+ },
+ {
+  "name": "Zscaler",
+  "tenant": "zscaler",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://zscaler.wd5.myworkdayjobs.com/wday/cxs/zscaler/External/jobs"
+ },
+ {
+  "name": "Fortinet",
+  "tenant": "fortinet",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://fortinet.wd5.myworkdayjobs.com/wday/cxs/fortinet/External/jobs"
+ },
+ {
+  "name": "F5",
+  "tenant": "f5",
+  "instance": "wd5",
+  "jobsite": "f5jobs",
+  "ats": "workday",
+  "endpoint": "https://f5.wd5.myworkdayjobs.com/wday/cxs/f5/f5jobs/jobs"
+ },
+ {
+  "name": "Zoom",
+  "tenant": "zoom",
+  "instance": "wd5",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://zoom.wd5.myworkdayjobs.com/wday/cxs/zoom/External/jobs"
+ },
+ {
+  "name": "EA",
+  "tenant": "ea",
+  "instance": "wd3",
+  "jobsite": "EA",
+  "ats": "workday",
+  "endpoint": "https://ea.wd3.myworkdayjobs.com/wday/cxs/ea/EA/jobs"
+ },
+ {
+  "name": "Warner Bros",
+  "tenant": "warnermediajobs",
+  "instance": "wd5",
+  "jobsite": "WarnerBrosTechJobs",
+  "ats": "workday",
+  "endpoint": "https://warnermediajobs.wd5.myworkdayjobs.com/wday/cxs/warnermediajobs/WarnerBrosTechJobs/jobs"
+ },
+ {
+  "name": "Boeing",
+  "tenant": "boeing",
+  "instance": "wd1",
+  "jobsite": "EXTERNAL_CAREERS",
+  "ats": "workday",
+  "endpoint": "https://boeing.wd1.myworkdayjobs.com/wday/cxs/boeing/EXTERNAL_CAREERS/jobs"
+ },
+ {
+  "name": "Raytheon",
+  "tenant": "rtx",
+  "instance": "wd5",
+  "jobsite": "RTX_External_Career_Site",
+  "ats": "workday",
+  "endpoint": "https://rtx.wd5.myworkdayjobs.com/wday/cxs/rtx/RTX_External_Career_Site/jobs"
+ },
+ {
+  "name": "Lockheed Martin",
+  "tenant": "lmco",
+  "instance": "wd1",
+  "jobsite": "External",
+  "ats": "workday",
+  "endpoint": "https://lmco.wd1.myworkdayjobs.com/wday/cxs/lmco/External/jobs"
+ },
+ {
+  "name": "Northrop Grumman",
+  "tenant": "northropgrumman",
+  "instance": "wd1",
+  "jobsite": "NGCCareers",
+  "ats": "workday",
+  "endpoint": "https://northropgrumman.wd1.myworkdayjobs.com/wday/cxs/northropgrumman/NGCCareers/jobs"
+ },
+ {
+  "name": "L3Harris",
+  "tenant": "l3harris",
+  "instance": "wd5",
+  "jobsite": "L3Harris",
+  "ats": "workday",
+  "endpoint": "https://l3harris.wd5.myworkdayjobs.com/wday/cxs/l3harris/L3Harris/jobs"
+ },
+ {
+  "name": "GM",
+  "tenant": "generalmotors",
+  "instance": "wd5",
+  "jobsite": "careers-home",
+  "ats": "workday",
+  "endpoint": "https://generalmotors.wd5.myworkdayjobs.com/wday/cxs/generalmotors/careers-home/jobs"
+ },
+ {
+  "name": "Ford",
+  "tenant": "ford",
+  "instance": "wd5",
+  "jobsite": "Ford_Career_Page",
+  "ats": "workday",
+  "endpoint": "https://ford.wd5.myworkdayjobs.com/wday/cxs/ford/Ford_Career_Page/jobs"
+ },
+ {
+  "name": "Rivian",
+  "tenant": "rivian",
+  "instance": "wd5",
+  "jobsite": "Rivian",
+  "ats": "workday",
+  "endpoint": "https://rivian.wd5.myworkdayjobs.com/wday/cxs/rivian/Rivian/jobs"
+ },
+ {
+  "name": "Lucid Motors",
+  "tenant": "lucidmotors",
+  "instance": "wd5",
+  "jobsite": "LucidMotors",
+  "ats": "workday",
+  "endpoint": "https://lucidmotors.wd5.myworkdayjobs.com/wday/cxs/lucidmotors/LucidMotors/jobs"
+ }
+]

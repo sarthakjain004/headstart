@@ -1,0 +1,26 @@
+# Source: Bloomberry — Companies using iCIMS (active customer list)
+# URL: https://bloomberry.com/data/icims/
+# Stated total: 2,570 companies detected
+# Visible/saved here: 19
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+NYK Line | nyk.com
+Stephenson Harwood LLP | stephensonharwood.com
+Danone | danone.com
+Johnstone Supply | johnstonesupply.com
+Hyland | hyland.com
+Entarian | entarian.com
+Doyon, Limited | doyon.com
+Valeris | valeris.com
+Flagger Force | flaggerforce.com
+Frisco ISD | friscoisd.org
+Atlas Van Lines (Canada) Ltd. | atlasvanlines.ca
+Alaskan Air Conditioning & Heating | alaskanac.com
+Alliance Laundry Systems Distribution | alliancelaundry.com
+Gee Heating and Air | geehvac.com
+Hansen Super Techs | hansensupertechs.com
+Mechanical Rubber | mechanicalrubber.com
+Ezee Fiber | ezeefiber.com
+Navanta | navanta.com
+Aerotek | aerotek.com
