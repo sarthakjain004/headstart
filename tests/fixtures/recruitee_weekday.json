@@ -1,0 +1,100 @@
+{
+ "offers": [
+  {
+   "position": 1,
+   "state_name": "Karnātaka",
+   "location": "Remote job",
+   "city": "Bangalore",
+   "close_at": null,
+   "min_hours": 40,
+   "locations_question_type": "multiple_choice",
+   "country": "India",
+   "translations": {
+    "en": {
+     "description": "<p><strong><span style=\"color:#000000\">Funding</span></strong><span style=\"color:#000000\">: We are backed by Y Combinator (early investors in Stripe, Airbnb, DoorDash, Coinbase etc), General Catalyst (prev. VH), Kunal Shah (founder, Cred), Cloud Capital and many more reputed angels.</span></p><p><span style=\"color:#000000\">At Weekday, we are building the next frontier in hiring. We have built the largest database of white collar talent in India and have built outreach tools on top of it to generate highest response rates.</span></p><p><span style=\"color:#000000\">We are profitable and growing substantially month on month.</span></p><p><span style=\"color:#000000\">We pair companies with a Program Manager who uses our technology and outreach tools to find the best talent, get them interested and handles their hiring pipeline end to end.</span></p><p><br><br><br><br><br></p><p><strong><span style=\"color:#000000\">What work will you do?</span></strong></p><p><br></p><p><strong><span style=\"color:#000000\">Your first 30 days</span></strong></p><p><br></p><ul><li><p><span style=\"color:#000000\">You will go through a training period during which you will work with a senior Account Manager in assisting them for handling hiring pipeline of their portfolio companies.</span></p></li><li><p><span style=\"color:#000000\">You will source candidates using Weekday’s database product for those portfolio companies.</span></p></li><li><p><span style=\"color:#000000\">You will do shadow weekly check-in calls with founders of those portfolio of client companies</span></p></li></ul><p><br></p><p><strong><span style=\"color:#000000\">Next 60 days</span></strong></p><p><br></p><ul><li><p><span style=\"color:#000000\">You will be assigned your own portfolio companies for whom you will be solely responsible for hiring.</span></p></li><li><p><span style=\"color:#000000\">You will lead check-in calls with client company founders/hiring managers</span></p></li><li><p><span style=\"color:#000000\">You will be responsible for sourcing candidates</span></p></li><li><p><span style=\"color:#000000\">You will do status check with interview stage candidates and help resolve any blockers for them</span></p></li><li><p><span style=\"color:#000000\">In short, you will be solely responsible for revenue coming from your portfolio</span></p></li></ul><p><br></p><p><strong><span style=\"color:#000000\">Benefits</span></strong></p><p><span style=\"color:#000000\">Why should you join us?</span></p><ul><li><p><span style=\"color:#000000\">Relatively small team size: Our full time team size is 35 people. You get to work with an experienced founding team and get one-to-one interaction on a daily basis.</span></p></li><li><p><span style=\"color:#000000\">Very strong bias for action. We don't do any unnecessary meetings.</span></p></li><li><p><span style=\"color:#000000\">You will get to see results of your efforts from day 1.</span></p></li><li><p><span style=\"color:#000000\">You will work with clients directly</span></p></li></ul><p><br><br><br></p><p><strong><span style=\"color:#000000\">Frequently Asked Questions</span></strong></p><p><br></p><p><strong><span style=\"color:#000000\">Will I be responsible for bringing on new clients?&nbsp;</span></strong></p><p><span style=\"color:#000000\">Answer: Not particularly You will be responsible for handling the experience of companies who have already been onboarded. With that being said, happy customers bring other customers; so in some sense you will be responsible for getting more referrals.</span></p><p><br></p><p><strong><span style=\"color:#000000\">How will my day look like?&nbsp;</span></strong></p><p><span style=\"color:#000000\">Answer: It will be distributed between doing check-in calls with client company founders/hiring managers; responding to their queries or taking updates to them on Slack/Email/Whatsapp; and finding great candidates for them.</span></p><p><br></p><p><strong><span style=\"color:#000000\">How core is this role to the company’s functioning?&nbsp;</span></strong></p><p><span style=\"color:#000000\">Answer: It is as core as it gets. You will be directly responsible for revenue of the company; hence you will be at the centre of all things we do. Every other function in the company (like Growth, Calling team, Sourcing team) will work to assist you in closing more hires.</span></p><p><br></p><p><strong><span style=\"color:#000000\">How is the work culture at Weekday?</span></strong></p><p><span style=\"color:#000000\">&nbsp;Answer: We like to be very direct at what we do. We don’t have crazy parties or vanity events of the type. But we treat everyone with utmost respect and dignity; as everyone deserves. Highly meritocratic. If you are good at what you do, you don’t need to show it. It will speak for itself. Workplace politics is highly discouraged.</span></p><p style=\"min-height: 1.7em;\"></p>",
+     "title": "Key Account Manager",
+     "highlight": null,
+     "sharing_image": null,
+     "requirements": "<p><strong><span style=\"color:#000000\">Requirements</span></strong></p><ul><li><p><span style=\"color:#000000\">What qualities you should have?</span></p></li><li><p><span style=\"color:#000000\">Very strong work ethic</span></p></li><li><p><span style=\"color:#000000\">Great at pro-active communication - You will be directly talking to founders; you are expected to be very thorough with all your communication (written as well as verbal)</span></p></li><li><p><span style=\"color:#000000\">Ability to sit down and focus on job at hand and not get distracted</span></p></li></ul><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p>",
+     "sharing_title": "Key Account Manager",
+     "sharing_description": "Funding: We are backed by Y Combinator (early investors in Stripe, Airbnb, DoorDash, Coinbase etc), General Catalyst (prev. VH), Kunal Shah (founder, Cred), Cloud Capital and many more reputed angels.",
+     "locations_question": "What is your preferred work location?"
+    }
+   },
+   "careers_url": "https://weekday.recruitee.com/o/key-account-manager",
+   "options_photo": "off",
+   "location_question_visible": false,
+   "postal_code": null,
+   "company_name": "Weekday",
+   "department": "Sales",
+   "experience_code": "mid_level",
+   "employment_type_code": "fulltime_permanent",
+   "state_code": "KA",
+   "options_phone": "required",
+   "open_questions": [],
+   "requirements": "<p><strong><span style=\"color:#000000\">Requirements</span></strong></p><ul><li><p><span style=\"color:#000000\">What qualities you should have?</span></p></li><li><p><span style=\"color:#000000\">Very strong work ethic</span></p></li><li><p><span style=\"color:#000000\">Great at pro-active communication - You will be directly talking to founders; you are expected to be very thorough with all your communication (written as well as verbal)</span></p></li><li><p><span style=\"color:#000000\">Ability to sit down and focus on job at hand and not get distracted</span></p></li></ul><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p>",
+   "created_at": "2025-05-16 15:04:37 UTC",
+   "on_site": false,
+   "category_code": "information_technology",
+   "slug": "key-account-manager",
+   "sharing_title": "Key Account Manager",
+   "hybrid": false,
+   "updated_at": "2025-05-16 15:07:44 UTC",
+   "country_code": "IN",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": null,
+    "currency": null
+   },
+   "highlight": null,
+   "options_cover_letter": "optional",
+   "published_at": "2025-05-16 15:07:44 UTC",
+   "max_hours": 60,
+   "description": "<p><strong><span style=\"color:#000000\">Funding</span></strong><span style=\"color:#000000\">: We are backed by Y Combinator (early investors in Stripe, Airbnb, DoorDash, Coinbase etc), General Catalyst (prev. VH), Kunal Shah (founder, Cred), Cloud Capital and many more reputed angels.</span></p><p><span style=\"color:#000000\">At Weekday, we are building the next frontier in hiring. We have built the largest database of white collar talent in India and have built outreach tools on top of it to generate highest response rates.</span></p><p><span style=\"color:#000000\">We are profitable and growing substantially month on month.</span></p><p><span style=\"color:#000000\">We pair companies with a Program Manager who uses our technology and outreach tools to find the best talent, get them interested and handles their hiring pipeline end to end.</span></p><p><br><br><br><br><br></p><p><strong><span style=\"color:#000000\">What work will you do?</span></strong></p><p><br></p><p><strong><span style=\"color:#000000\">Your first 30 days</span></strong></p><p><br></p><ul><li><p><span style=\"color:#000000\">You will go through a training period during which you will work with a senior Account Manager in assisting them for handling hiring pipeline of their portfolio companies.</span></p></li><li><p><span style=\"color:#000000\">You will source candidates using Weekday’s database product for those portfolio companies.</span></p></li><li><p><span style=\"color:#000000\">You will do shadow weekly check-in calls with founders of those portfolio of client companies</span></p></li></ul><p><br></p><p><strong><span style=\"color:#000000\">Next 60 days</span></strong></p><p><br></p><ul><li><p><span style=\"color:#000000\">You will be assigned your own portfolio companies for whom you will be solely responsible for hiring.</span></p></li><li><p><span style=\"color:#000000\">You will lead check-in calls with client company founders/hiring managers</span></p></li><li><p><span style=\"color:#000000\">You will be responsible for sourcing candidates</span></p></li><li><p><span style=\"color:#000000\">You will do status check with interview stage candidates and help resolve any blockers for them</span></p></li><li><p><span style=\"color:#000000\">In short, you will be solely responsible for revenue coming from your portfolio</span></p></li></ul><p><br></p><p><strong><span style=\"color:#000000\">Benefits</span></strong></p><p><span style=\"color:#000000\">Why should you join us?</span></p><ul><li><p><span style=\"color:#000000\">Relatively small team size: Our full time team size is 35 people. You get to work with an experienced founding team and get one-to-one interaction on a daily basis.</span></p></li><li><p><span style=\"color:#000000\">Very strong bias for action. We don't do any unnecessary meetings.</span></p></li><li><p><span style=\"color:#000000\">You will get to see results of your efforts from day 1.</span></p></li><li><p><span style=\"color:#000000\">You will work with clients directly</span></p></li></ul><p><br><br><br></p><p><strong><span style=\"color:#000000\">Frequently Asked Questions</span></strong></p><p><br></p><p><strong><span style=\"color:#000000\">Will I be responsible for bringing on new clients?&nbsp;</span></strong></p><p><span style=\"color:#000000\">Answer: Not particularly You will be responsible for handling the experience of companies who have already been onboarded. With that being said, happy customers bring other customers; so in some sense you will be responsible for getting more referrals.</span></p><p><br></p><p><strong><span style=\"color:#000000\">How will my day look like?&nbsp;</span></strong></p><p><span style=\"color:#000000\">Answer: It will be distributed between doing check-in calls with client company founders/hiring managers; responding to their queries or taking updates to them on Slack/Email/Whatsapp; and finding great candidates for them.</span></p><p><br></p><p><strong><span style=\"color:#000000\">How core is this role to the company’s functioning?&nbsp;</span></strong></p><p><span style=\"color:#000000\">Answer: It is as core as it gets. You will be directly responsible for revenue of the company; hence you will be at the centre of all things we do. Every other function in the company (like Growth, Calling team, Sourcing team) will work to assist you in closing more hires.</span></p><p><br></p><p><strong><span style=\"color:#000000\">How is the work culture at Weekday?</span></strong></p><p><span style=\"color:#000000\">&nbsp;Answer: We like to be very direct at what we do. We don’t have crazy parties or vanity events of the type. But we treat everyone with utmost respect and dignity; as everyone deserves. Highly meritocratic. If you are good at what you do, you don’t need to show it. It will speak for itself. Workplace politics is highly discouraged.</span></p><p style=\"min-height: 1.7em;\"></p>",
+   "careers_apply_url": "https://weekday.recruitee.com/o/key-account-manager/c/new",
+   "sharing_image": null,
+   "remote": true,
+   "tags": [],
+   "locations_question_required": true,
+   "max_hours_per_week": "60",
+   "options_cv": "required",
+   "id": 2141029,
+   "education_code": "bachelor_degree",
+   "sharing_description": "Funding: We are backed by Y Combinator (early investors in Stripe, Airbnb, DoorDash, Coinbase etc), General Catalyst (prev. VH), Kunal Shah (founder, Cred), Cloud Capital and many more reputed angels.",
+   "options_title": "off",
+   "locations_question": "What is your preferred work location?",
+   "cover_image": null,
+   "mailbox_email": "job.19uy8@weekday.recruitee.com",
+   "locations": [
+    {
+     "id": 224293,
+     "name": "Bangalore",
+     "state": "Karnātaka",
+     "country": "India",
+     "city": "Bangalore",
+     "translations": {
+      "en": {
+       "name": "Bangalore",
+       "city": "Bangalore",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "IN",
+     "postal_code": null,
+     "state_code": "KA",
+     "street": null,
+     "note": null
+    }
+   ],
+   "min_hours_per_week": "40",
+   "options_salutation": "off",
+   "guid": "19uy8",
+   "title": "Key Account Manager",
+   "dynamic_fields": [],
+   "status": "published"
+  }
+ ]
+}

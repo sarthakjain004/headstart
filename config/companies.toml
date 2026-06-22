@@ -492,3 +492,176 @@ name = "Palantir Technologies"
 ats = "lever"
 slug = "spotify"
 name = "Spotify"
+
+# India — Stage 2 probe (seed_india.csv), verified to return live India-located roles 2026-06-15
+
+[[company]]
+ats = "greenhouse"
+slug = "highradius"
+name = "HighRadius"
+
+[[company]]
+ats = "greenhouse"
+slug = "inmobi"
+name = "InMobi"
+
+[[company]]
+ats = "greenhouse"
+slug = "observeai"
+name = "Observe.ai"
+
+[[company]]
+ats = "greenhouse"
+slug = "zenoti"
+name = "Zenoti"
+
+[[company]]
+ats = "lever"
+slug = "paytm"
+name = "Paytm"
+
+[[company]]
+ats = "lever"
+slug = "fampay"
+name = "FamPay"
+
+[[company]]
+ats = "lever"
+slug = "pocketfm"
+name = "Pocket FM"
+
+[[company]]
+ats = "lever"
+slug = "zeta"
+name = "Zeta"
+
+[[company]]
+ats = "ashby"
+slug = "clueso"
+name = "Clueso"
+
+[[company]]
+ats = "ashby"
+slug = "sarvam"
+name = "Sarvam AI"
+
+[[company]]
+ats = "zoho"
+slug = "pnbcsl.zohorecruit.in"
+name = "PNB Cards & Services"
+
+[[company]]
+ats = "zoho"
+slug = "advenxa.zohorecruit.in"
+name = "Advenxa"
+
+[[company]]
+ats = "zoho"
+slug = "staples.zohorecruit.in"
+name = "Staples India"
+
+[[company]]
+ats = "zoho"
+slug = "ncircletech.zohorecruit.com"
+name = "nCircle Tech"
+
+[[company]]
+ats = "zoho"
+slug = "careersinternational.zohorecruit.com"
+name = "Careers International"
+
+[[company]]
+ats = "zoho"
+slug = "vedantu.zohorecruit.in"
+name = "Vedantu"
+
+[[company]]
+ats = "zoho"
+slug = "skyroot.zohorecruit.in"
+name = "Skyroot Aerospace"
+
+[[company]]
+ats = "zoho"
+slug = "orangewood.zohorecruit.in"
+name = "Orangewood Labs"
+
+[[company]]
+ats = "zoho"
+slug = "leena.zohorecruit.in"
+name = "Leena AI"
+
+[[company]]
+ats = "zoho"
+slug = "cityfurnish.zohorecruit.com"
+name = "Cityfurnish"
+
+[[company]]
+ats = "zoho"
+slug = "synapsica.zohorecruit.in"
+name = "Synapsica Healthcare"
+
+[[company]]
+ats = "zoho"
+slug = "salarybox.zohorecruit.in"
+name = "SalaryBox"
+
+[[company]]
+ats = "zoho"
+slug = "bharatx.zohorecruit.in"
+name = "BharatX"
+
+[[company]]
+ats = "zoho"
+slug = "antwalk.zohorecruit.in"
+name = "AntWalk"
+
+[[company]]
+ats = "zoho"
+slug = "clinikally.zohorecruit.in"
+name = "Clinikally"
+
+[[company]]
+ats = "zoho"
+slug = "pragmaticleaders.zohorecruit.com"
+name = "Pragmatic Leaders"
+
+[[company]]
+ats = "zoho"
+slug = "cheq.zohorecruit.in"
+name = "CheqUPI"
+
+[[company]]
+ats = "zoho"
+slug = "nucleussoftware.zohorecruit.in"
+name = "Nucleus Software"
+
+[[company]]
+ats = "zoho"
+slug = "kissflow.zohorecruit.in"
+name = "Kissflow"
+
+[[company]]
+ats = "zoho"
+slug = "winzogames.zohorecruit.in"
+name = "WinZO"
+
+[[company]]
+ats = "zoho"
+slug = "agnikul.zohorecruit.in"
+name = "Agnikul Cosmos"
+
+[[company]]
+ats = "zoho"
+slug = "zupee.zohorecruit.in"
+name = "Zupee"
+
+# Recovered from the greenhouse EU data-center blind spot (job-boards.eu.greenhouse.io), 2026-06-18
+[[company]]
+ats = "greenhouse"
+slug = "nksecuritiesresearch"
+name = "NK Securities Research"
+
+[[company]]
+ats = "lever"
+slug = "hevodata"
+name = "Hevo Data"
