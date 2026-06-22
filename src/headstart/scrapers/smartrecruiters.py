@@ -12,7 +12,6 @@ fill it in. A failed detail fetch leaves description None — the job is still k
 from __future__ import annotations
 
 import json
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -22,8 +21,6 @@ from headstart.scrapers.base import BaseScraper
 
 _UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 8
-_RETRY_STATUSES = {429, 500, 502, 503, 504}
-_MAX_ATTEMPTS = 3
 
 
 class SmartRecruitersScraper(BaseScraper):
@@ -55,23 +52,15 @@ class SmartRecruitersScraper(BaseScraper):
         if not posting_id:
             return None
         url = f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
-        headers = {"User-Agent": _UA, "Accept": "application/json"}
-        for attempt in range(_MAX_ATTEMPTS):
-            try:
-                response = http.get(url, headers=headers, timeout=30)
-            except http.RequestsError:
-                if attempt < _MAX_ATTEMPTS - 1:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                return None
-            if response.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            if response.status_code != 200:
-                return None
-            sections = ((response.json().get("jobAd") or {}).get("sections") or {})
-            return (sections.get("jobDescription") or {}).get("text")
-        return None
+        try:
+            response = http.fetch("GET", url, timeout=30,
+                                  headers={"User-Agent": _UA, "Accept": "application/json"})
+        except http.RequestsError:
+            return None  # a missing description must not drop the job
+        if response.status_code != 200:
+            return None
+        sections = ((response.json().get("jobAd") or {}).get("sections") or {})
+        return (sections.get("jobDescription") or {}).get("text")
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
