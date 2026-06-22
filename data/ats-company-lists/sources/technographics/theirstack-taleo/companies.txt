@@ -1,0 +1,17 @@
+# Source: TheirStack — Companies that use Taleo (Oracle Talent Management Cloud)
+# URL: https://theirstack.com/en/technology/taleo
+# Stated total: 3,826 companies (Page 1 of 383)
+# Visible/saved here: 10
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Clark County School District | ccsd.net
+HDR | hdrinc.com
+Optum | optum.com
+Worley | worley.com
+University of Colorado | cu.edu
+Schneider Electric | se.com
+Chicago Public Schools | cps.edu
+State of Ohio | ohio.gov
+Government of Saskatchewan | saskatchewan.ca
+Standard Chartered Bank | sc.com

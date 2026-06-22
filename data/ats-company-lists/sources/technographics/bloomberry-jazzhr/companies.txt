@@ -1,0 +1,27 @@
+# Source: Bloomberry — Companies using JazzHR (active customer list)
+# URL: https://bloomberry.com/data/jazzhr/
+# Stated total: 4,509 companies detected
+# Visible/saved here: 20 (rest paywalled)
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Morgan, Akins & Jackson, PLLC | morganakins.com
+Moldcell | moldcell.md
+Fantastic Sams Franchise Corp | fantasticsams.com
+Spalding Hall Enterprises, LLC | spaldinghall.org
+FanDuel Sportsbook & Horse Racing | fairmountpark.com
+Earthwork Solutions Inc | earthwork.us.com
+Aadmi Consulting | aadmi.com
+Cedar and Sage Homes | cedarandsagehomes.com
+Touching Hearts at Home | touchinghearts.com
+VoteRiders | voteriders.org
+Antelope | antelopepets.com
+Yoder Family of Companies | yoderfamilyco.com
+Oxford Builders Inc. | oxfordbuilders.com
+EDS Strategy | edsstrategy.com
+IV ACTIVE | iv-active.com
+Death Wish Coffee Company | deathwishcoffee.com
+Amaray Care | amaraycares.com
+Pure Property Group US | purepropertygroupus.com
+PORTER W. YETT COMPANY | porteryett.com
+Mentor Technical Group | mentortg.com

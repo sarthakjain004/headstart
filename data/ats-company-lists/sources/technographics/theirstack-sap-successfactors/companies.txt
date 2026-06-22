@@ -1,0 +1,17 @@
+# Source: TheirStack — Companies that use SAP SuccessFactors
+# URL: https://theirstack.com/en/technology/sap-successfactors
+# Stated total: 22,603 companies (Page 1 of 2,261)
+# Visible/saved here: 10
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Nova Scotia Health Authority | nshealth.ca
+Meliá Hotels International | melia.com
+The Hershey Company | thehersheycompany.com
+Metso | metso.com
+BASF | basf.com
+Kaufland | kaufland.de
+Gentera | gentera.com.mx
+Woolworths | woolworths.co.za
+EY | ey.com
+NRG Energy | nrg.com
