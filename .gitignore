@@ -24,4 +24,25 @@ venv/
 CLAUDE-FABLE-5.md
 
 # HAR captures — large and contain browser session data; keep local only
-har_analysis/
+HAR_Analysis/
+
+# Experiment captures — screenshots/HTML with anti-bot session tokens; keep local.
+experiment/
+
+# Local config and data inputs — keep out of the repo
+config/
+
+# Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
+data/scratch/
+
+# Large local pipeline data — kept local, regenerable from the discovery/resolve scripts.
+# Of data/ats-tenants-merged/ only the liveness-validated active/ subset is committed; the
+# raw merged candidate CSVs and the scraped job feeds stay local.
+data/resolve/
+data/wayback-ats/
+data/ats-companies/
+data/discover/
+data/ats-tenants-merged/*.csv
+data/jobs/
+# liveness resume checkpoints (.{ats}_checked / .{ats}_dead), not data
+data/ats-tenants-merged/active/.*
