@@ -1,8 +1,9 @@
 """Zoho Recruit career-site scraper.
 
 Zoho server-renders the job list into the careers page as an HTML-entity-encoded
-JSON array inside `<input type="hidden" id="jobs" value="[...]">`. There is no XHR
-or CSRF handshake for the listing — we GET the page and extract that array.
+JSON array inside `<input type="hidden" value="[...]" id="jobs">` (value before id —
+that order is what `_JOBS_INPUT` relies on). There is no XHR or CSRF handshake for the
+listing — we GET the page and extract that array.
 
 A Zoho company's `slug` is its full careers host, e.g. "pnbcsl.zohorecruit.in"
 (the data center varies: .in / .com / .eu), so the slug carries the right host.
@@ -15,7 +16,7 @@ import json
 import re
 from typing import Any
 
-from headstart.models import Job
+from headstart.models import Job, html_to_text
 from headstart.scrapers.base import BaseScraper
 
 _JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
@@ -25,6 +26,10 @@ _SLUG = re.compile(r"[^A-Za-z0-9]+")
 
 class ZohoScraper(BaseScraper):
     ats = "zoho"
+
+    @staticmethod
+    def slug_from(tenant: str, url: str) -> str:
+        return url.split("://", 1)[-1].rstrip("/")  # the careers host, e.g. acme.zohorecruit.in
 
     def url(self) -> str:
         return f"https://{self.slug}/jobs/Careers"
@@ -65,6 +70,9 @@ class ZohoScraper(BaseScraper):
                     url=f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite",
                     posted_at=r.get("Date_Opened") or None,
                     scraped_at=scraped_at,
+                    description=html_to_text(r.get("Job_Description")),
+                    experience=r.get("Work_Experience"),
+                    employment_type=r.get("Job_Type"),
                 )
             )
         return jobs

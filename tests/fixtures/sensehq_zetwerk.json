@@ -1,0 +1,60 @@
+{
+ "data": {
+  "rows": [
+   {
+    "id": 56117,
+    "created_on": 1781320769434,
+    "organization_id": 202,
+    "job_status": "OPEN",
+    "updated_on": 1781772327352,
+    "department": "Aerospace & Defence",
+    "department_id": 38726,
+    "title": "CA Industrial Trainee",
+    "location": "Bangalore",
+    "open_positions": 1,
+    "experience_end": 1,
+    "experience_start": 0,
+    "description_external": "<p><strong>About Zetwerk</strong></p>\n<p>Founded in 2018, Zetwerk is a global manufacturing platform that enables businesses to bring world-class products to life through a network of trusted suppliers and cutting-edge technology. As a managed marketplace for contract manufacturing, we connect global enterprises with small and medium manufacturers to deliver high-quality, cost-efficient, and timely solutions.</p>\n<p>Our operations span across India, the USA, Europe, Asia, and the Middle East, supported by multiple state-of-the-art manufacturing facilities and a strong network of over 10,000 supplier partners. Together, we serve thousands of customers across industries such as renewable energy, precision engineering, automotive, and electronics - helping them scale their manufacturing capabilities with reliability and precision.</p>\n<p>At Zetwerk, technology drives everything we do. Our proprietary Manufacturing Operating System (MOS) digitizes the entire production cycle - from supplier selection and order tracking to real-time quality assurance - enabling faster decision-making, transparency, and efficiency for our clients.</p>\n<p>We take pride in contributing to landmark national and global initiatives, from advancing renewable energy and EV infrastructure to supporting defence and high-speed rail projects. Our commitment to innovation and excellence has earned us recognition among India’s strongest engineering brands and as one of the Best Workplaces in Manufacturing.</p>\n<p>As we continue to grow, Zetwerk remains focused on empowering manufacturers, creating jobs, and strengthening India’s position as a global manufacturing powerhouse - in line with the vision of Make in India, Digital India, and Startup India.</p>\n<p><br></p>\n<p>Pinaka Aerospace, a Zetwerk company, is a leading aerospace and defence technology organization specializing in avionics, communication systems, defence electronics, simulation systems, and advanced engineering solutions. With a strong presence in India's defence and aerospace ecosystem, Pinaka partners with leading defence organizations, research institutions, and industrial customers to develop mission-critical technologies that support national security and aerospace innovation. As part of Zetwerk's Aerospace &amp; Defence business, Pinaka combines deep engineering expertise with large-scale manufacturing capabilities to deliver world-class solutions for India and global markets.</p>\n<p><br></p>\n<p><strong>About the Role</strong></p>\n<p>Pinaka Aerospace is looking for a highly motivated CA Industrial Trainee to join the Business Finance team. This role offers hands-on exposure to financial planning, business partnering, cost analysis, MIS reporting, budgeting, and strategic decision-making within a fast-growing aerospace and manufacturing environment. The trainee will work closely with finance leaders and cross-functional teams to support business performance and operational excellence.</p>\n<p><br></p>\n<p><strong>Key Responsibilities</strong></p>\n<p>• Support monthly MIS preparation, financial reporting, and management dashboards.</p>\n<p>• Assist in budgeting, forecasting, and variance analysis for business units and projects.</p>\n<p>• Analyze revenue, costs, margins, and profitability across products and programs.</p>\n<p>• Partner with operations, procurement, and supply chain teams to track key business metrics.</p>\n<p>• Support inventory, working capital, and cash flow analysis.</p>\n<p>• Assist in preparation of business cases, investment proposals, and financial models.</p>\n<p>• Participate in month-end closing activities, reconciliations, and financial reviews.</p>\n<p>• Support internal controls, audits, and compliance-related activities.</p>\n<p>• Drive process improvement initiatives through automation and data-driven insights.</p>",
+    "job_type": "INTERN",
+    "code": "FIN03751",
+    "is_critical": true,
+    "workplace_type": null,
+    "office": {
+     "city": "Bangalore",
+     "country": "India",
+     "location": "Site Office Bangalore",
+     "name": "Bangalore",
+     "state": "Karnataka",
+     "pin_code": "123456"
+    }
+   },
+   {
+    "id": 56071,
+    "created_on": 1780287297744,
+    "organization_id": 202,
+    "job_status": "OPEN",
+    "updated_on": 1780642003363,
+    "department": "Zetwerk Corporate",
+    "department_id": 38380,
+    "title": "Assistant Program Manager",
+    "location": "Bangalore",
+    "open_positions": 1,
+    "experience_end": 5,
+    "experience_start": 3,
+    "description_external": "<p><strong>About Zetwerk</strong></p>\n<p>Founded in 2018, Zetwerk is a global manufacturing platform that enables businesses to bring world-class products to life through a network of trusted suppliers and cutting-edge technology. As a managed marketplace for contract manufacturing, we connect global enterprises with small and medium manufacturers to deliver high-quality, cost-efficient, and timely solutions.</p>\n<p><br></p>\n<p>Our operations span across India, the USA, Europe, Asia, and the Middle East, supported by multiple state-of-the-art manufacturing facilities and a strong network of over 10,000 supplier partners. Together, we serve thousands of customers across industries such as renewable energy, precision engineering, automotive, and electronics - helping them scale their manufacturing capabilities with reliability and precision.</p>\n<p><br></p>\n<p>At Zetwerk, technology drives everything we do. Our proprietary Manufacturing Operating System (MOS) digitizes the entire production cycle - from supplier selection and order tracking to real-time quality assurance - enabling faster decision-making, transparency, and efficiency for our clients.</p>\n<p>We take pride in contributing to landmark national and global initiatives, from advancing renewable energy and EV infrastructure to supporting defence and high-speed rail projects. Our commitment to innovation and excellence has earned us recognition among India’s strongest engineering brands and as one of the Best Workplaces in Manufacturing.</p>\n<p>As we continue to grow, Zetwerk remains focused on empowering manufacturers, creating jobs, and strengthening India’s position as a global manufacturing powerhouse - in line with the vision of Make in India, Digital India, and Startup India.</p>\n<p><br></p>\n<p><strong>About the Role</strong></p>\n<p>We are looking for an Assistant Program Manager to drive end-to-end execution of key projects across functions at Zetwerk. This role involves planning, coordinating, and delivering projects within defined timelines and scope while working closely with cross-functional stakeholders.&nbsp;</p>\n<p><br></p>\n<p><strong>Responsibilities:</strong></p>\n<p>• Develop detailed project plans outlining tasks, timelines, and resource requirements.</p>\n<p>• Coordinate project activities, ensuring timely completion and delivery within scope.</p>\n<p>• Act as the primary point of contact for internal and external stakeholders.</p>\n<p>• Communicate project progress, risks, and issues to ensure transparency and alignment.</p>\n<p>• Identify, assess, and mitigate project risks to ensure successful project delivery.</p>\n<p>• Implement contingency plans as needed to address unforeseen challenges.</p>\n<p>• Collaborate with cross-functional teams to allocate and manage project resources effectively.</p>\n<p>• Implement quality control processes to ensure deliverables meet or exceed client expectations.</p>\n<p>• Conduct regular project reviews to assess and improve overall project quality.</p>\n<p><br></p>\n<p><br></p>",
+    "job_type": "FULLTIME",
+    "code": "PRO03705",
+    "is_critical": false,
+    "workplace_type": null,
+    "office": {
+     "city": "Bangalore",
+     "country": "India",
+     "location": "HO Bangalore",
+     "name": "Zetwerk HO",
+     "state": "Karnataka",
+     "pin_code": "560102"
+    }
+   }
+  ]
+ }
+}

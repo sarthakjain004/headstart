@@ -8,7 +8,7 @@ version = "0.0.0"
 description = "Find software-engineering openings straight from company ATS boards."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerprinting
 
 [project.optional-dependencies]
 dev = ["pytest"]

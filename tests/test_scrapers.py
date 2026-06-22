@@ -28,6 +28,9 @@ def test_greenhouse_parse():
     assert j.remote is False
     assert j.url.startswith("https://")
     assert j.scraped_at == SCRAPED_AT
+    # ?content=true also yields department + description in the same request
+    assert j.department == "1650 AI GTM Strategy & Solutions"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
 def test_lever_parse():
@@ -43,6 +46,8 @@ def test_lever_parse():
     assert j.remote is False
     assert j.department == "Administrative"
     assert j.url.startswith("https://jobs.lever.co/palantir/")
+    assert j.employment_type == "Full-time"  # categories.commitment
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
 def test_ashby_parse_skips_unlisted():
@@ -55,8 +60,192 @@ def test_ashby_parse_skips_unlisted():
     assert j.title == "Security Engineer, Cloud"  # leading space stripped
     assert j.department == "Engineering"
     assert j.remote is True
+    assert j.employment_type == "FullTime"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_darwinbox_parse():
+    jobs = get_scraper("darwinbox", "licious", "Licious").parse(
+        _load("darwinbox_licious.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "darwinbox:licious:5ebea18409d3e"
+    assert j.ats == "darwinbox"
+    assert j.company == "Licious"
+    assert j.title == "Dispatch Supervisor"
+    # multi-location job: real cities recovered from tool_tip_locations, not "Multiple Locations"
+    assert j.location == "Bengaluru, Gurgaon, Mumbai"
+    assert j.remote is False
+    assert j.department == "Dispatch"
+    assert j.posted_at == "3-Feb-2025"
+    assert j.url == "https://licious.darwinbox.in/ms/candidate/careers/jobs/5ebea18409d3e"
+    assert j.scraped_at == SCRAPED_AT
+    assert j.experience == "2 - 4 Years"
+    assert j.employment_type == "Onroll"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_keka_parse():
+    jobs = get_scraper("keka", "jupiter", "Jupiter").parse(
+        _load("keka_jupiter.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "keka:jupiter:132016"
+    assert j.title == "Product Manager"
+    assert j.location == "Bengaluru, KA, India"  # city, state, country joined
+    assert j.department == "Product"
+    assert j.url == "https://jupiter.keka.com/careers/jobdetails/132016"
+    assert j.experience == "3-5"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_recruitee_parse():
+    jobs = get_scraper("recruitee", "weekday", "Weekday").parse(
+        _load("recruitee_weekday.json"), SCRAPED_AT
+    )
+    j = jobs[0]
+    assert j.id == "recruitee:weekday:2141029"
+    assert j.title == "Key Account Manager"
+    assert j.remote is True  # location "Remote job"
+    assert j.department == "Sales"
+    assert j.url == "https://weekday.recruitee.com/o/key-account-manager"
+    assert j.experience == "mid_level"
+    assert j.employment_type == "fulltime_permanent"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_workable_parse():
+    jobs = get_scraper("workable", "apna", "Apna").parse(
+        _load("workable_apna.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "workable:apna:41CF6A5AAA"
+    assert j.title == "Account Manager- Enterprise Business"
+    assert j.location == "Bengaluru, Karnataka, India"
+    assert j.department == "Sales & Account Management"
+    assert j.url == "https://apply.workable.com/j/41CF6A5AAA/apply"
+    assert j.experience == "Mid-Senior level"
+    assert j.employment_type == "Full-time"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_smartrecruiters_parse():
+    jobs = get_scraper("smartrecruiters", "freshworks", "Freshworks").parse(
+        _load("smartrecruiters_freshworks.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "smartrecruiters:freshworks:744000133057378"
+    assert j.title == "Specialist - Marketing Operations (North America)"
+    assert "Chennai" in j.location and "India" in j.location
+    assert j.url == "https://jobs.smartrecruiters.com/freshworks/744000133057378"
+    assert j.experience == "Associate"  # experienceLevel.label
+    assert j.employment_type == "Full-time"  # typeOfEmployment.label
+    assert j.description and "</" not in j.description  # detail fetch; populated, HTML-stripped
+
+
+def test_sensehq_parse():
+    jobs = get_scraper("sensehq", "zetwerk", "Zetwerk").parse(
+        _load("sensehq_zetwerk.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "sensehq:zetwerk:56117"
+    assert j.title == "CA Industrial Trainee"
+    assert j.location == "Bangalore"
+    assert j.department == "Aerospace & Defence"
+    assert j.posted_at == "2026-06-13T03:19:29.434000+00:00"  # epoch ms -> ISO
+    assert j.url == "https://zetwerk.sensehq.com/careers/jobs/56117"
+    assert j.experience == "0-1"  # experience_start-experience_end
+    assert j.employment_type == "INTERN"
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_ripplehire_parse():
+    jobs = get_scraper("ripplehire", "7-eleven-gsc", "7-Eleven GSC").parse(
+        _load("ripplehire_7-eleven-gsc.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "ripplehire:7-eleven-gsc:10454"
+    assert j.title == "Analyst - RO"
+    assert j.location == "Bengaluru"
+    assert j.url == "https://7-eleven-gsc.ripplehire.com/candidate/careers"
+    assert j.experience == "3 - 5 Years"  # jobReqExp
+    # this tenant leaves jobDesc/jobType empty — fields stay None, job still emitted
+    assert j.description is None
+    assert j.employment_type is None
+
+
+def test_oracle_parse():
+    slug = "fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/CX_2"
+    jobs = get_scraper("oracle", slug, "Oracle CE Tenant").parse(
+        _load("oracle_fa-etqo_cx2.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "oracle:fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com:NAG_002"
+    assert j.company == "Oracle CE Tenant"  # LegalEmployer empty -> fallback to company
+    assert j.title == "Executive - Non Voice - Nagpur"
+    assert j.posted_at == "2026-03-16"
+    assert j.url == (
+        "https://fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/"
+        "CandidateExperience/en/sites/CX_2/job/NAG_002"
+    )
+    assert j.description and "</" not in j.description  # short ShortDescriptionStr, HTML-stripped
+
+
+def test_workday_parse():
+    slug = "https://3m.wd1.myworkdayjobs.com/search"
+    jobs = get_scraper("workday", slug, "3M").parse(
+        _load("workday_3m.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "workday:3m/search:R01165862"  # site-scoped id, bulletFields req id
+    assert j.company == "3M"
+    assert j.title == "Procurement Service Center Operational Manager"
+    assert j.location == "IN, BANGALORE"
+    assert j.url == (
+        "https://3m.wd1.myworkdayjobs.com/search/job/IN-BANGALORE/"
+        "Procurement-Operations-Manager---India_R01165862-1"
+    )
+    # description now comes from a per-job detail fetch (injected into the fixture as _jobDescription)
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+    assert j.experience is None  # list/detail give no clean experience field
+    assert j.employment_type is None
+
+
+def test_trakstar_parse():
+    # raw is {html: listing, descriptions: {code: detail-page JSON-LD description}}
+    jobs = get_scraper("trakstar", "exotel", "Exotel").parse(
+        _load("trakstar_exotel.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "trakstar:exotel:fk0zvv1"
+    assert j.title == "Application Security Engineer - L4"
+    assert j.location == "Bengaluru/Gurugram"
+    assert j.department == "Security"  # now read from the card's rb-text-4 div
+    assert j.employment_type == "Full-time"  # from the opening-meta span
+    assert j.url == "https://exotel.hire.trakstar.com/jobs/fk0zvv1/"
+    assert j.description and "</" not in j.description  # from the detail page JSON-LD
+
+
+def test_recruitee_salary_formatting():
+    from headstart.scrapers.recruitee import _salary
+
+    assert _salary(None) is None
+    assert _salary({"min": None, "max": None}) is None  # blank -> None, job still kept
+    assert _salary({"min": 50000, "max": 70000, "currency": "EUR", "period": "year"}) == (
+        "50000-70000 EUR year"
+    )
+    assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
 
 
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
-        get_scraper("workday", "foo")
+        get_scraper("nonexistent", "foo")
