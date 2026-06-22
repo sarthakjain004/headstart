@@ -1,0 +1,122 @@
+{
+ "content": [
+  {
+   "id": "744000133057378",
+   "name": "Specialist - Marketing Operations (North America) ",
+   "uuid": "66e4d897-9b92-4ad2-8b1e-ef804be076fb",
+   "jobAdId": "b5c44a06-66b9-4e9d-a7ce-b5b29abd2f90",
+   "defaultJobAd": true,
+   "refNumber": "P-1008413_1",
+   "company": {
+    "identifier": "Freshworks",
+    "name": "Freshworks"
+   },
+   "releasedDate": "2026-06-19T12:21:50.697Z",
+   "location": {
+    "city": "Chennai",
+    "country": "in",
+    "remote": false,
+    "hybrid": false,
+    "fullLocation": "Chennai, , India"
+   },
+   "industry": {
+    "id": "it_and_services",
+    "label": "Information Technology And Services"
+   },
+   "department": {},
+   "function": {
+    "id": "other",
+    "label": "Other"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "associate",
+    "label": "Associate"
+   },
+   "customField": [
+    {
+     "fieldId": "618bba30fa9dfa25d877c58b",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "Freshworks"
+    },
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "in",
+     "valueLabel": "India"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/freshworks/postings/744000133057378",
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   },
+   "_description": "<p><strong>Key Responsibilities:</strong><br>\n• Manage lead operations, including lead routing, assignment updates, and<br>\nenrichment processes to ensure timely and accurate lead distribution.<br>\n• Handle ticket management by addressing and resolving requests related to<br>\nlead assignment, campaign execution, and system updates.<br>\n• Assist in basic reporting and data analysis, helping teams track lead flow,<br>\nfunnel performance, and SLA adherence.<br>\n• Ensure data integrity and hygiene in Salesforce and Marketo by conducting<br>\nregular audits and updates.<br>\n• Work closely with Sales and Marketing stakeholders to refine lead<br>\nqualification criteria, segmentation, and campaign execution.<br>\n• Support the implementation of automation workflows to enhance marketing<br>\nand sales alignment.<br>\n• Troubleshoot lead-related issues in Salesforce and Marketo, coordinating with<br>\nIT and RevOps teams for resolution.<br>\n&#xa0;</p>"
+  },
+  {
+   "id": "744000133004339",
+   "name": "Senior Account Management - Top Tier EX (North America) ",
+   "uuid": "f51a57a0-5d23-4515-8fbc-9b1f0cf8583f",
+   "jobAdId": "bbb6ed39-a5a8-48ed-8366-72424ed423bf",
+   "defaultJobAd": true,
+   "refNumber": "P-1009554_2",
+   "company": {
+    "identifier": "Freshworks",
+    "name": "Freshworks"
+   },
+   "releasedDate": "2026-06-19T07:20:38.160Z",
+   "location": {
+    "city": "Bengaluru",
+    "country": "in",
+    "remote": false,
+    "hybrid": false,
+    "fullLocation": "Bengaluru, , India"
+   },
+   "industry": {
+    "id": "it_and_services",
+    "label": "Information Technology And Services"
+   },
+   "department": {},
+   "function": {
+    "id": "other",
+    "label": "Other"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "associate",
+    "label": "Associate"
+   },
+   "customField": [
+    {
+     "fieldId": "618bba30fa9dfa25d877c58b",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "Freshworks"
+    },
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "in",
+     "valueLabel": "India"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/freshworks/postings/744000133004339",
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   },
+   "_description": "<p>We are looking for an experienced and strategic Enterprise Account/Portfolio Manager who<br>\nhas a knack in building deep customer relationships and driving incremental business in<br>\nexisting Freshworks customers by delivering value. They should have a consultative sales<br>\napproach, a successful track record retaining, growing and on-boarding clients with<br>\npolished presentation skills. This person must demonstrate all the behaviors associated<br>\nwith a high performance sales and customer success culture, specifically managing a<br>\npipeline of business opportunities and delivering results against a quota. This individual<br>\nwill provide the best consultative experience possible for our customers.<br>\n<br>\n<strong>Responsibilities:</strong><br>\n• You’ll become the resident expert on the Freshworks EX product (Freshservice) and will expand our<br>\ncloud-based software usage in existing customers<br>\n• Drive expansion through upsell and cross-sell to meet or exceed revenue targets<br>\n• Professionally manage relationships with a portfolio of assigned accounts<br>\n• Demonstrating / selling value to key stakeholders within the accounts with Customer<br>\nSuccess Plans and strategies<br>\n• Build a plan to maximize revenue, and customer satisfaction within your accounts<br>\n• Gain a thorough understanding of assigned client’s needs, objectives, and processes to<br>\nensure that they successfully adopt and deploy Freshworks suite of products<br>\n• Create &amp; articulate compelling value conversations with C-Level stakeholders also work<br>\nin alignment with inside stakeholders namely Implementations, Billing, Support, deals<br>\nteams etc.</p>"
+  }
+ ]
+}
