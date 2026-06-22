@@ -30,7 +30,6 @@ pooled ``http`` client, no asyncio), mapped onto our leaner Job.
 from __future__ import annotations
 
 import re
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -46,8 +45,6 @@ _USER_AGENT = "headstart/0.1 (job-board reader)"
 _PAGE_LIMIT = 20  # Workday hard-caps `limit` at 20 (higher returns 400).
 _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide.
 _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceiling.
-_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}  # 403 = burst throttle, retryable.
-_MAX_ATTEMPTS = 3
 _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit one host
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
@@ -96,8 +93,8 @@ class WorkdayScraper(BaseScraper):
         return match.group("company"), match.group("instance"), match.group("site")
 
     def _post(self, applied_facets: dict[str, list[str]], offset: int) -> dict[str, Any] | None:
-        """POST one page of the jobs query. Returns the JSON dict, or None on 404
-        (site gone) / exhausted retries on a transient block."""
+        """POST one page of the jobs query (retry lives in fetch). Returns the JSON dict, or
+        None on 404 (site gone)."""
         body = {
             "appliedFacets": applied_facets,
             "limit": _PAGE_LIMIT,
@@ -106,24 +103,11 @@ class WorkdayScraper(BaseScraper):
         }
         headers = {"User-Agent": _USER_AGENT, "Content-Type": "application/json",
                    "Accept": "application/json"}
-        last_error: Exception | None = None
-        for attempt in range(_MAX_ATTEMPTS):
-            try:
-                response = http.post(self.url(), json=body, headers=headers, timeout=30)
-            except http.RequestsError as exc:
-                last_error = exc
-                if attempt < _MAX_ATTEMPTS - 1:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                raise
-            if response.status_code == 404:
-                return None  # site not found — treat as no jobs
-            if response.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            response.raise_for_status()
-            return response.json()
-        raise last_error  # pragma: no cover
+        response = http.fetch("POST", self.url(), json=body, headers=headers, timeout=30)
+        if response.status_code == 404:
+            return None  # site not found — treat as no jobs
+        response.raise_for_status()
+        return response.json()
 
     def fetch_raw(self) -> Any:
         """Crawl the tenant (paginate + recursively subdivide capped queries) and
@@ -166,22 +150,14 @@ class WorkdayScraper(BaseScraper):
         company, instance, site = self._parts()
         url = (f"https://{company}.{instance}.myworkdayjobs.com"
                f"/wday/cxs/{company}/{site}{external_path}")
-        headers = {"User-Agent": _USER_AGENT, "Accept": "application/json"}
-        for attempt in range(_MAX_ATTEMPTS):
-            try:
-                response = http.get(url, headers=headers, timeout=30)
-            except http.RequestsError:
-                if attempt < _MAX_ATTEMPTS - 1:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                return None
-            if response.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS - 1:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            if response.status_code != 200:
-                return None
-            return (response.json().get("jobPostingInfo") or {}).get("jobDescription")
-        return None
+        try:
+            response = http.fetch("GET", url, timeout=30,
+                                  headers={"User-Agent": _USER_AGENT, "Accept": "application/json"})
+        except http.RequestsError:
+            return None  # a missing description must not drop the job
+        if response.status_code != 200:
+            return None
+        return (response.json().get("jobPostingInfo") or {}).get("jobDescription")
 
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:
         """Exhaust one filter combination: paginate normally, or subdivide when the
