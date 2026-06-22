@@ -1,0 +1,17 @@
+# Source: TheirStack — Companies that use Jobvite
+# URL: https://theirstack.com/en/technology/jobvite
+# Stated total: 4,809 companies (Page 1 of 481)
+# Visible/saved here: 9 (1 without domain)
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+GroupM |
+Splunk | splunk.com
+Martin Marietta | martinmarietta.com
+VON Canada | von.ca
+EvergreenHealth | evergreenhealth.com
+Tyler Technologies | tylertech.com
+Generations Healthcare | lifegen.net
+MedVet | medvet.com
+MedSpeed | medspeed.com
+Angels of Care Pediatric Home Health | angelsofcare.com

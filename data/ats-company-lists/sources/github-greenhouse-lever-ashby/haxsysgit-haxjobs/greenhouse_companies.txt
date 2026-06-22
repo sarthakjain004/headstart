@@ -1,0 +1,19 @@
+# Greenhouse target companies
+# Format: subdomain used in boards.greenhouse.io/{subdomain}
+
+wise
+gocardless
+intercom
+datadog
+gitlab
+deliveroo
+adyen
+sumup
+truelayer
+tide
+asana
+hubspot
+anthropic
+deepmind
+twilio
+disney

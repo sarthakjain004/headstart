@@ -1,0 +1,16 @@
+{"company": "adient", "ats": "workday", "slug": "adient", "endpoint": "https://adient.wd3.myworkdayjobs.com/wday/cxs/adient/External/jobs", "scraper": "sites/adient.js"}
+{"company": "airbus", "ats": "workday", "slug": "ag", "endpoint": "https://ag.wd3.myworkdayjobs.com/wday/cxs/ag/Airbus/jobs", "scraper": "sites/airbus.js"}
+{"company": "borgwarner", "ats": "workday", "slug": "borgwarner", "endpoint": "https://borgwarner.wd5.myworkdayjobs.com/wday/cxs/borgwarner/BorgWarner_Careers/jobs", "scraper": "sites/borgwarner.js"}
+{"company": "crowdstrike", "ats": "workday", "slug": "crowdstrike", "endpoint": "https://crowdstrike.wd5.myworkdayjobs.com/wday/cxs/crowdstrike/crowdstrikecareers/jobs", "scraper": "sites/crowdstrike.js"}
+{"company": "dynata", "ats": "workday", "slug": "dynata", "endpoint": "https://dynata.wd108.myworkdayjobs.com/wday/cxs/dynata/careers/jobs", "scraper": "sites/dynata.js"}
+{"company": "finastra", "ats": "workday", "slug": "finastra", "endpoint": "https://finastra.wd3.myworkdayjobs.com/wday/cxs/finastra/FINC/jobs", "scraper": "sites/finastra.js"}
+{"company": "flex", "ats": "workday", "slug": "flextronics", "endpoint": "https://flextronics.wd1.myworkdayjobs.com/wday/cxs/flextronics/Careers/jobs", "scraper": "sites/flex.js"}
+{"company": "kone", "ats": "workday", "slug": "kone", "endpoint": "https://kone.wd3.myworkdayjobs.com/wday/cxs/kone/Careers/jobs", "scraper": "sites/kone.js"}
+{"company": "maersk", "ats": "workday", "slug": "maersk", "endpoint": "https://maersk.wd3.myworkdayjobs.com/wday/cxs/maersk/Maersk_Careers/jobs", "scraper": "sites/maersk.js"}
+{"company": "metgroup", "ats": "smartrecruiters", "slug": "metgroup", "endpoint": "smartrecruiters.com/v1/companies/metgroup", "scraper": "sites/metgroup.js"}
+{"company": "michelin", "ats": "workday", "slug": "michelinhr", "endpoint": "https://michelinhr.wd3.myworkdayjobs.com/wday/cxs/michelinhr/Michelin/jobs", "scraper": "sites/michelin.js"}
+{"company": "nxp", "ats": "workday", "slug": "nxp", "endpoint": "https://nxp.wd3.myworkdayjobs.com/wday/cxs/nxp/careers/jobs", "scraper": "sites/nxp.js"}
+{"company": "philips", "ats": "workday", "slug": "philips", "endpoint": "https://philips.wd3.myworkdayjobs.com/wday/cxs/philips/jobs-and-careers/jobs", "scraper": "sites/philips.js"}
+{"company": "plexus", "ats": "workday", "slug": "plexus", "endpoint": "https://plexus.wd5.myworkdayjobs.com/wday/cxs/plexus/Plexus_Careers/jobs", "scraper": "sites/plexus.js"}
+{"company": "regnology", "ats": "personio", "slug": "regnology", "endpoint": "https://regnology.jobs.personio.", "scraper": "sites/regnology.js"}
+{"company": "wns", "ats": "smartrecruiters", "slug": "WNSGlobalServices144", "endpoint": "smartrecruiters.com/WNSGlobalServices144", "scraper": "sites/wns.js"}

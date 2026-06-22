@@ -1,0 +1,27 @@
+# Source: Bloomberry — Companies using Ashby (active customer list)
+# URL: https://bloomberry.com/data/ashby/
+# Stated total: 3,446 companies detected
+# Visible/saved here: 20 (rest paywalled)
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Menlo Research | menlo.ai
+MacroHealth | macrohealth.com
+Gravie | gravie.com
+Polaroid | polaroid.com
+Harmony | harmony.io
+VÆRIDION | vaeridion.com
+Sitecore | sitecore.com
+Hadrius | hadrius.com
+Absci | absci.com
+Oxa | oxa.tech
+OpenEd.co | opened.co
+cosmos | cosmos.one
+Conviction | conviction.com
+Arch | getarch.com
+WebFX | webfx.com
+Wayve | wayve.ai
+Healf | healf.com
+Terra | terrateamup.com
+Rivet Industries | rivet.us
+materialg.com | materialg.com

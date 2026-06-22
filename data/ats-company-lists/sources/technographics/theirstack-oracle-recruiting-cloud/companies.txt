@@ -1,0 +1,17 @@
+# Source: TheirStack — Companies that use Oracle Recruiting Cloud (Oracle Cloud HCM)
+# URL: https://theirstack.com/en/technology/oracle-recruiting-cloud
+# Stated total: 5,456 companies (Page 1 of 546)
+# Visible/saved here: 10
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Macy's | macysjobs.com
+Albertsons | albertsonscompanies.com
+Next | next.co.uk
+Emerson | emerson.com
+Kotak Mahindra Bank | kotak.com
+Goldman Sachs | goldmansachs.com
+WM | wm.com
+Caesars Entertainment | caesars.com
+Safeway | safeway.com
+JPMorganChase | jpmorganchase.com

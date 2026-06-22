@@ -1,0 +1,1985 @@
+{
+  "adp": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions",
+      "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html"
+    ]
+  },
+  "akkencloud": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://jobs.akkencloud.com/jobdetails/{slug}/{location}/{jobId}",
+      "https://{host}/",
+      "https://{host}/jobdetails/{jobId}",
+      "https://{host}/jobdetails/{slug}/{location}/{jobId}",
+      "https://{tenant}.akkencloud.com",
+      "https://{tenant}.akkencloud.com/"
+    ],
+    "api_hosts": [
+      "https://jobs.akkencloud.com",
+      "https://jobs.akkencloud.com/"
+    ]
+  },
+  "altamira": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.altamiraweb.com",
+      "https://{tenant}.altamiraweb.com/",
+      "https://{tenant}.sites.altamiraweb.com/"
+    ],
+    "api_hosts": [
+      "https://etinars.sites.altamiraweb.com/",
+      "https://rina.altamiraweb.com",
+      "https://rina.altamiraweb.com/"
+    ]
+  },
+  "applicantpro": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www.applicantpro.com/openings/{tenant}/jobs/{jobId}/\u2026",
+      "https://{tenant}.applicantpro.com",
+      "https://{tenant}.applicantpro.com/jobs/",
+      "https://{tenant}.applicantpro.com/jobs/{jobId}.html",
+      "https://{tenant}.applicantpro.com/sitemap.xml"
+    ],
+    "api_hosts": [
+      "https://communitybridge.applicantpro.com/jobs/995117.html",
+      "https://pharrtx.applicantpro.com/sitemap.xml"
+    ]
+  },
+  "applicantstack": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.applicantstack.com",
+      "https://{tenant}.applicantstack.com/x/detail/{jobId}",
+      "https://{tenant}.applicantstack.com/x/openings"
+    ],
+    "api_hosts": [
+      "https://atwork443.applicantstack.com/x/detail/a2v6venn6ji9",
+      "https://atwork443.applicantstack.com/x/openings"
+    ]
+  },
+  "applied": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.beapplied.com/apply/{jobSlug}",
+      "https://app.beapplied.com/org/{orgId}/{orgSlug}"
+    ],
+    "api_hosts": [
+      "https://app.beapplied.com",
+      "https://app.beapplied.com/api/v1/organisations/1549/jobs",
+      "https://app.beapplied.com/apply/cuxl7vasjy",
+      "https://app.beapplied.com/org/1549/citizens-uk"
+    ]
+  },
+  "apploi": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.apploi.com/v1/company_profiles/{slug}",
+      "https://ats-integrations.apploi.com/search/jobs/?teams={csv}&page={n}&source=company_profile_page",
+      "https://jobs.apploi.com/profile/{slug}",
+      "https://jobs.apploi.com/view/{id}?\u2026",
+      "https://jobs.apploi.com/view/{jobId}"
+    ],
+    "api_hosts": [
+      "https://api.apploi.com",
+      "https://api.apploi.com/v1/company_profiles/apploi.com",
+      "https://ats-integrations.apploi.com",
+      "https://ats-integrations.apploi.com/search/jobs/?teams=30610,\u2026&page=1",
+      "https://jobs.apploi.com",
+      "https://jobs.apploi.com/"
+    ]
+  },
+  "arcoro": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{host}/job/{jobId}",
+      "https://{tenant}.birddoghr.com",
+      "https://{tenant}.birddoghr.com/"
+    ],
+    "api_hosts": [
+      "https://jobs.ourcareerpages.com",
+      "https://jobs.ourcareerpages.com/",
+      "https://jobs.ourcareerpages.com/job/62256",
+      "https://jobs.ourcareerpages.com/job/77551"
+    ]
+  },
+  "ashby": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.ashbyhq.com/posting-api/job-board"
+    ]
+  },
+  "avature": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://bloomberg.avature.net",
+      "https://careers.ibm.com/en_US"
+    ]
+  },
+  "avionte": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www.myavionte.com/buildjobs_rss.aspx?compid={buildId}",
+      "https://www.myavionte.com/buildjobs_rss.aspx?compid={buildId}&format=xml",
+      "https://www.myavionte.com/staff/jsonjobsv3.aspx?ID={apiKey}"
+    ],
+    "api_hosts": [
+      "https://www.myavionte.com",
+      "https://www.myavionte.com/buildjobs_rss.aspx"
+    ]
+  },
+  "bamboohr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.bamboohr.com/careers/list"
+    ],
+    "api_hosts": [
+      "https://documentation.bamboohr.com/reference/get-job-summaries"
+    ]
+  },
+  "beamery": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${BEAMERY_CAREER_HOST_SUFFIX}",
+      "https://careers.{tenant-domain}/",
+      "https://{host}/jobs/job/{uuid}-{title-slug}/",
+      "https://{tenant}.beamery.com/"
+    ],
+    "api_hosts": [
+      "https://careers.beamery.com/"
+    ]
+  },
+  "beesite": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${slug}.${BEESITE_ROOT_DOMAIN}",
+      "https://{host}/cust/beesite/",
+      "https://{host}/cust/beesite/?ac=start",
+      "https://{host}/index.php?ac=application&id={PositionID}(apply",
+      "https://{host}/index.php?ac=jobad&id={PositionID}",
+      "https://{host}/index.php?ac=search_result"
+    ],
+    "api_hosts": [
+      "https://frontend-demo.beesite.de"
+    ]
+  },
+  "beetween": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://emploi.beetween.com/WeaselWeb/p/{tenant}",
+      "https://recrutement.{tenant}.fr/offres-emploi/"
+    ],
+    "api_hosts": [
+      "https://api.beetween.com/WeaselWeb/",
+      "https://emploi.beetween.com"
+    ]
+  },
+  "beisen": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${encodeURIComponent(slug",
+      "https://{slug}.zhiye.com",
+      "https://{slug}.zhiye.com/api/Jobad/GetJobAdPageList",
+      "https://{slug}.zhiye.com/portal/jobs/{JobAdId}",
+      "https://{slug}.zhiye.com/portal/registerSystemInfo"
+    ],
+    "api_hosts": []
+  },
+  "bizneo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.bizneo.com",
+      "https://{tenant}.bizneo.com/jobs",
+      "https://{tenant}.bizneo.com/jobs/{slug}"
+    ],
+    "api_hosts": [
+      "https://groundforce.bizneo.com/jobs"
+    ]
+  },
+  "brassring": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://sjobs.brassring.com/TGnewUI/Search/Home/Home?partnerid={P}&siteid={S}"
+    ],
+    "api_hosts": [
+      "https://sjobs.brassring.com",
+      "https://sjobs.brassring.com/TGnewUI/Search/home/HomeWithPreLoad",
+      "https://sjobs.brassring.com/TgNewUI/Search/Ajax/MatchedJobs",
+      "https://sjobs.brassring.com/TgNewUI/Search/Ajax/ProcessSortAndShowMoreJobs"
+    ]
+  },
+  "breathehr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://hr.breathehr.com/v/{slug}-{id}",
+      "https://hr.breathehr.com/v/{slug}-{vacancyId}"
+    ],
+    "api_hosts": [
+      "https://hr.breathehr.com",
+      "https://hr.breathehr.com/"
+    ]
+  },
+  "breezyhr": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": []
+  },
+  "bullhorn": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://public-rest{cls}.bullhornstaffing.com/rest-services/{corpToken}/search/JobOrder"
+    ],
+    "api_hosts": [
+      "https://bullhorn.github.io/rest-api-docs/"
+    ]
+  },
+  "careerplug": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.careerplug.com",
+      "https://{tenant}.careerplug.com/",
+      "https://{tenant}.careerplug.com/jobs"
+    ],
+    "api_hosts": [
+      "https://schema.org",
+      "https://www.careerplug.com"
+    ]
+  },
+  "carerix": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}.${CARERIX_ROOT_DOMAIN}",
+      "https://{tenant}.carerix.com/",
+      "https://{tenant}.carerix.com/cxtools/",
+      "https://{tenant}.carerix.com/cxtools/RSSx.php",
+      "https://{tenant}.carerix.com/cxtools/indeedFeed.php",
+      "https://{tenant}.carerix.com/cxtools/jobboardFeed.php?start=0&count=300[&medium={code}]"
+    ],
+    "api_hosts": [
+      "https://acme.carerix.com"
+    ]
+  },
+  "catsone": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.catsone.com/v3/portals/{id}/jobs",
+      "https://{slug}.catsone.com",
+      "https://{slug}.catsone.com/careers/",
+      "https://{slug}.catsone.com/careers/{portalID}-{name}",
+      "https://{slug}.catsone.com/careers/{portalID}-{name}/jobs/{jobID}-{slug}"
+    ],
+    "api_hosts": [
+      "https://authoritypartnersinc.catsone.com",
+      "https://authoritypartnersinc.catsone.com/careers/",
+      "https://authoritypartnersinc.catsone.com/careers/86212-General",
+      "https://swan.catsone.com/careers/26625-EPCM-Portal?page=2"
+    ]
+  },
+  "ceipal": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.ceipal.com/{apiKey}/",
+      "https://api.ceipal.com/{apiKey}/job-postings/",
+      "https://api.ceipal.com/{apiKey}/job-postings/?page={n}[&<filter>]",
+      "https://api.ceipal.com/{apiKey}/job-postings/{job_id}/",
+      "https://api.ceipal.com/{apiKey}/\u2026",
+      "https://api.ceipal.com/{key}/"
+    ],
+    "api_hosts": [
+      "https://api.ceipal.com/",
+      "https://api.ceipal.com/careers_v3/js/app.min.js",
+      "https://avcend.com/careers/",
+      "https://joblist.smartdata.net/"
+    ]
+  },
+  "cezanne": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${CEZANNE_CAREER_HOST}",
+      "https://cezanneondemand.intervieweb.it/{tenant}/{lang}/career",
+      "https://cezanneondemand.intervieweb.it/{tenant}/{lang}/jobvacancy/{slug}/{id}"
+    ],
+    "api_hosts": []
+  },
+  "clearcompany": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.clearcompany.com/careers/jobs/{id}/apply"
+    ],
+    "api_hosts": [
+      "https://careers-page.clearcompany.com",
+      "https://careers-page.clearcompany.com/api/v1/careers/jobs"
+    ]
+  },
+  "cleverconnect": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://career.{tenant}.cleverconnect.com",
+      "https://career.{tenant}.cleverconnect.com/jobads/{id}",
+      "https://career.{tenant}.cleverconnect.com/jobs"
+    ],
+    "api_hosts": []
+  },
+  "comeet": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": []
+  },
+  "concludis": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://hwk-stuttgart.concludis.de/prj/shw/{hash}_0/932/Slug.htm?b=0",
+      "https://{tenant}.concludis.de",
+      "https://{tenant}.concludis.de/",
+      "https://{tenant}.concludis.de/prj/lst/{listHash}/GesamtlisteOffenePositionen.htm",
+      "https://{tenant}.concludis.de/prj/shw/{detailHash}_0/{oid}/{slug}.htm?b=0"
+    ],
+    "api_hosts": [
+      "http://schema.org",
+      "https://hwk-stuttgart.concludis.de/",
+      "https://smurfitkappa.concludis.de/",
+      "https://smurfitkappa.concludis.de/prj/lst/\u2026"
+    ]
+  },
+  "connexys": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www.connexys.nl/{site}public/run/xml_feed.startup?p_pub_id={channelId}"
+    ],
+    "api_hosts": [
+      "https://www.connexys.nl",
+      "https://www.example.nl/jobs/job/financieel-controller/rotterdam/123456</url>"
+    ]
+  },
+  "cornerstone": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{client}.csod.com",
+      "https://{client}.csod.com/ux/ats/careersite/{careerSiteId}/home?c={client}",
+      "https://{slug}.csod.com"
+    ],
+    "api_hosts": [
+      "https://eu.api.csod.com",
+      "https://us.api.csod.com",
+      "https://\u2026"
+    ]
+  },
+  "crelate": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://app.crelate.com/api3/jobs"
+    ]
+  },
+  "cvwarehouse": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://jobpage.cvwarehouse.com/?companyGuid={guid}&job=394655&lang={lang}",
+      "https://jobpage.cvwarehouse.com/?companyGuid={guid}&lang={lang}",
+      "https://jobpage.cvwarehouse.com/?companyGuid={guid}&lang={lang}&job={id}"
+    ],
+    "api_hosts": [
+      "https://jobpage.cvwarehouse.com",
+      "https://jobpage.cvwarehouse.com/",
+      "https://jobpage.cvwarehouse.com/?companyGuid=0875aa48-21be-43a2-b7cd-1ca7b94b2249&lang=en-US"
+    ]
+  },
+  "darwinbox": {
+    "known_tenants": [
+      "dbox"
+    ],
+    "host_templates": [
+      "https://{tenant}.darwinbox.com",
+      "https://{tenant}.darwinbox.com/ms/candidate/careers",
+      "https://{tenant}.darwinbox.in",
+      "https://{tenant}.darwinbox.in/ms/candidate/careers"
+    ],
+    "api_hosts": [
+      "https://dbox.darwinbox.in/ms/candidate/careers",
+      "https://dbox.darwinbox.in/ms/candidateapi/getCompanyDetails"
+    ]
+  },
+  "dayforce": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://jobs.dayforcehcm.com/api/geo/{client}/jobposting/search",
+      "https://{client}.dayforcehcm.com",
+      "https://{client}.dayforcehcm.com/CandidatePortal/"
+    ],
+    "api_hosts": [
+      "https://jobs.dayforcehcm.com"
+    ]
+  },
+  "deel": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.letsdeel.com/rest/v2/ats/job-postings",
+      "https://developer.letsdeel.com"
+    ]
+  },
+  "digitalrecruiters": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.digitalrecruiters.com",
+      "https://{tenant}.digitalrecruiters.com/",
+      "https://{tenant}.digitalrecruiters.com/{lang}/annonce/{job_ad_id}-{slug}",
+      "https://{tenant}.digitalrecruiters.com/{lang}/annonce/{slug}"
+    ],
+    "api_hosts": [
+      "https://api.digitalrecruiters.com"
+    ]
+  },
+  "dover": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.dover.com/api/v1/careers-page/{slug}",
+      "https://app.dover.com/jobs/{slug}",
+      "https://app.dover.com/{company}/careers/{careersPageId}"
+    ],
+    "api_hosts": [
+      "https://app.dover.com",
+      "https://app.dover.com/dover/careers/733c3162-cbbd-6558-9866-1d6b8561f8b9",
+      "https://app.dover.com/jobs/beimpact",
+      "https://app.dover.com/jobs/dover"
+    ]
+  },
+  "dvinci": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.dvinci-hr.com",
+      "https://{slug}.dvinci-hr.com/",
+      "https://{slug}.dvinci-hr.com/jobPublication/list.json?lang={lang}"
+    ],
+    "api_hosts": [
+      "https://inverto.dvinci-hr.com"
+    ]
+  },
+  "easycruit": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.easycruit.com",
+      "https://{tenant}.easycruit.com/",
+      "https://{tenant}.easycruit.com/export/xml/vacancy/list.xml",
+      "https://{tenant}.easycruit.com/vacancy/3628965/66550?iso=gb</VacancyURL>"
+    ],
+    "api_hosts": [
+      "https://esvagt.easycruit.com/?iso=gb",
+      "https://esvagt.easycruit.com/export/xml/vacancy/list.xml",
+      "https://www.easycruit.com/dtd/vacancy-list.xsd"
+    ]
+  },
+  "eddy": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.eddy.com/api/ats/public/job-opening/organization/{organizationUuid}",
+      "https://app.eddy.com/api/ats/public/job-opening/{jobOpeningUuid}/organization/{organizationUuid}",
+      "https://app.eddy.com/careers/{organizationUuid}",
+      "https://app.eddy.com/careers/{organizationUuid}/{jobOpeningUuid}"
+    ],
+    "api_hosts": [
+      "https://app.eddy.com"
+    ]
+  },
+  "eightfold": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.eightfold.ai"
+    ],
+    "api_hosts": [
+      "https://apply.careers.<company>.com"
+    ]
+  },
+  "elmo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${ELMO_HOST_SUFFIXES[0]}",
+      "https://{tenant}.elmotalent.co.nz/careers/{board}",
+      "https://{tenant}.elmotalent.com.au/careers/{board}",
+      "https://{tenant}.elmotalent.com.au/careers/{board}/job/apply/{jobId}",
+      "https://{tenant}.elmotalent.com.au/careers/{board}/job/view/{jobId}",
+      "https://{tenant}.elmotalent.com.au/careers/\u2026"
+    ],
+    "api_hosts": [
+      "https://anzca.elmotalent.com.au/",
+      "https://securecorp.elmotalent.com.au/careers/SECUREcorp"
+    ]
+  },
+  "employmenthero": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://employmenthero.com/jobs/organisations/{slug}/",
+      "https://employmenthero.com/jobs/position/{friendlyId}/",
+      "https://jobs.employmenthero.com/organisations/{slug}",
+      "https://services.employmenthero.com/ats/api/v1/career_page/organisations/{slug}/jobs"
+    ],
+    "api_hosts": [
+      "https://employmenthero.com",
+      "https://services.employmenthero.com",
+      "https://services.employmenthero.com/ats/api/v1/career_page/organisations/employmenthero/jobs"
+    ]
+  },
+  "emply": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${EMPLY_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.career.emply.com/",
+      "https://{tenant}.career.emply.com/{locale}/ad/{titleAsUrl}/{shortId}",
+      "https://{tenant}.career.emply.com/{locale}/apply/{titleAsUrl}/{shortId}",
+      "https://{tenant}.career.emply.com/{locale}/available-positions(alt",
+      "https://{tenant}.career.emply.com/{locale}/vacancies"
+    ],
+    "api_hosts": [
+      "https://au.career.emply.com/en/vacant-positions"
+    ]
+  },
+  "eploy": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.eploy.net"
+    ],
+    "api_hosts": [
+      "https://customerweb.eploy.net",
+      "https://jobs.islington.gov.uk",
+      "https://jobs.islington.gov.uk/feeds/datafeed.ashx?Format=xml",
+      "https://jobs.islington.gov.uk/vacancies/2895/ks1-class-teacher.html",
+      "https://\u2026/vacancies/2895/ks1-\u2026html</Link>"
+    ]
+  },
+  "exacthire": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.hirecentric.com",
+      "https://{tenant}.hirecentric.com/jobs/{jobId}.html",
+      "https://{tenant}.hirecentric.com/jobsearch/",
+      "https://{tenant}.hirecentric.com/sitemap.xml"
+    ],
+    "api_hosts": [
+      "https://aflcio.hirecentric.com/jobs/230695.html",
+      "https://aflcio.hirecentric.com/jobsearch/"
+    ]
+  },
+  "expr3ss": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}.${EXPR3SS_ROOT_DOMAIN}",
+      "https://{tenant}.expr3ss.com/ApplyOnline/Default.aspx?ID={id}",
+      "https://{tenant}.expr3ss.com/home",
+      "https://{tenant}.expr3ss.com/home?mobile=no"
+    ],
+    "api_hosts": [
+      "https://cos.expr3ss.com"
+    ]
+  },
+  "factorial": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.factorialhr.com",
+      "https://{slug}.factorialhr.com/",
+      "https://{slug}.factorialhr.com/apply/{title-slug}-{id}",
+      "https://{slug}.factorialhr.com/job_posting/ai-developer-304592",
+      "https://{slug}.factorialhr.com/job_posting/{title-slug}-{id}",
+      "https://{slug}.factorialhr.com/sitemap.xml"
+    ],
+    "api_hosts": [
+      "https://jobs-tendencys.factorialhr.com"
+    ]
+  },
+  "flatchr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://careers.flatchr.io/company/{slug}.json",
+      "https://careers.flatchr.io/company/{slug}/vacancy/{vacancy_slug}/"
+    ],
+    "api_hosts": [
+      "http://www.flatchr.io",
+      "https://careers.flatchr.io",
+      "https://careers.flatchr.io/company/<unknown>.json",
+      "https://careers.flatchr.io/company/flatchr.json",
+      "https://careers.flatchr.io/company/groupeaudeo.json",
+      "https://careers.flatchr.io/fr/company/flatchr/"
+    ]
+  },
+  "fountain": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.fountain.com/v2/openings"
+    ]
+  },
+  "freshteam": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.freshteam.com/api/job_postings"
+    ],
+    "api_hosts": [
+      "https://developers.freshteam.com/api/#job_postings"
+    ]
+  },
+  "gem": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://jobs.gem.com"
+    ]
+  },
+  "gohire": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.gohire.io/widget-job?clientHash={clientHash}&jobId={id}",
+      "https://api.gohire.io/widget-job?clientHash={hash}&jobId={id}",
+      "https://api2.gohire.io/widget-jobs/{clientHash}",
+      "https://widget.gohire.io/widget/{clientHash}"
+    ],
+    "api_hosts": [
+      "https://api.gohire.io",
+      "https://api2.gohire.io",
+      "https://jobs.gohire.io"
+    ]
+  },
+  "greenhouse": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.greenhouse.io/v1/boards",
+      "https://developers.greenhouse.io/harvest.html#the-job-object",
+      "https://harvest.greenhouse.io/v1"
+    ]
+  },
+  "greeting": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${GREETING_CAREER_HOST_SUFFIX}",
+      "https://api.greetinghr.com/ats/v3.5/career/workspaces/{workspaceId}/openings/{openingId}",
+      "https://{tenant}.career.greetinghr.com/",
+      "https://{tenant}.career.greetinghr.com/{locale}/home",
+      "https://{tenant}.career.greetinghr.com/{locale}/o/{openingId}",
+      "https://{tenant}.career.greetinghr.com/{locale}/o/{openingId}/apply"
+    ],
+    "api_hosts": [
+      "https://ablelabs.career.greetinghr.com/",
+      "https://api.greetinghr.com"
+    ]
+  },
+  "greythr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${GREYTHR_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.greythr.com/hire/api/career/published_jobs/",
+      "https://{tenant}.greythr.com/hire/jobs/",
+      "https://{tenant}.greythr.com/hire/jobs/{slug}"
+    ],
+    "api_hosts": []
+  },
+  "gupy": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${GUPY_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.gupy.io/",
+      "https://{tenant}.gupy.io/jobs/{jobId}"
+    ],
+    "api_hosts": [
+      "https://sicredi.gupy.io/"
+    ]
+  },
+  "harri": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://harri.com/{employerSlug}"
+    ],
+    "api_hosts": [
+      "https://harri.com",
+      "https://harri.com/HHospitality",
+      "https://harri.com/riverstation-careers",
+      "https://harri.com/riverstation-careers/job/2734396-deputy-general-manager"
+    ]
+  },
+  "heyrecruit": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{subdomain}.heyrecruit.de",
+      "https://{subdomain}.heyrecruit.de/?page=job&id={jobId}&location={locationId}",
+      "https://{subdomain}.heyrecruit.de/?page=jobs"
+    ],
+    "api_hosts": [
+      "https://app.heyrecruit.de/api/v2"
+    ]
+  },
+  "hibob": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.hibob.com/v1/hiring/job-ads/{id}",
+      "https://{tenant}.careers.hibob.com/jobs",
+      "https://{tenant}.careers.hibob.com/jobs/{id}",
+      "https://{tenant}.careers.hibob.com/jobs/{id}/apply",
+      "https://{tenant}.careers.hibob.com/jobs/{jobId}",
+      "https://{tenant}.careers.hibob.com/jobs/{jobId}/apply"
+    ],
+    "api_hosts": [
+      "https://api.hibob.com",
+      "https://api.hibob.com/v1/hiring/job-ads/search"
+    ]
+  },
+  "hireful": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.livevacancies.co.uk",
+      "https://{tenant}.livevacancies.co.uk/",
+      "https://{tenant}.livevacancies.co.uk/sitemap.xml",
+      "https://{tenant}.livevacancies.co.uk/vacancy/{vacancyId}/{slug}",
+      "https://{tenant}.livevacancies.co.uk/vacancy/\u2026"
+    ],
+    "api_hosts": []
+  },
+  "hirehive": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${HIREHIVE_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.hirehive.com/",
+      "https://{tenant}.hirehive.com/api/v2/jobs?page={n}&page_size={k}&source=CareerSite",
+      "https://{tenant}.hirehive.com/{title}-{location}-{shortId}"
+    ],
+    "api_hosts": []
+  },
+  "hireology": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.hireology.com/v2/public/careers/{slug}",
+      "https://careers.hireology.com/{slug}"
+    ],
+    "api_hosts": [
+      "https://api.hireology.com",
+      "https://careers.hireology.com"
+    ]
+  },
+  "hireserve": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{host}/vacancy/{title-slug}-{ID}.html",
+      "https://{host}/wd/plsql/wd_portal.list?p_web_site_id={siteId}&p_function=map&p_title=Current+Vacancies",
+      "https://{tenant}.hireserve-projects.com/",
+      "https://{tenant}.hireserve-test.com/"
+    ],
+    "api_hosts": [
+      "https://ats8.hireserve.com",
+      "https://ats8.hireserve.com/",
+      "https://university.hireserve-projects.com/"
+    ]
+  },
+  "hiringthing": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.hiringthing.com",
+      "https://api.hiringthing.com/api/v1/jobs"
+    ]
+  },
+  "homerun": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://app.homerun.co/api/v2/jobs"
+    ]
+  },
+  "hreasily": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${HREASILY_CAREERS_HOST}",
+      "https://{HREASILY_CAREERS_HOST}/{slug}",
+      "https://{HREASILY_CAREERS_HOST}/{slug}/{jobId}"
+    ],
+    "api_hosts": []
+  },
+  "hron": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://hr-on.com",
+      "https://hr-on.com/careers/"
+    ]
+  },
+  "hrone": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${HRONE_CAREER_HOST_SUFFIX}",
+      "https://api.${tenant}${HRONE_CAREER_HOST_SUFFIX}",
+      "https://api.{tenant}.hrone.cloud",
+      "https://api.{tenant}.hrone.cloud/api/recruitment/referralposting/v1",
+      "https://{tenant}.hrone.cloud/career-portal?appId={appId}&dc={domainCode}"
+    ],
+    "api_hosts": []
+  },
+  "hrpartner": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${HRPARTNER_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.hrpartner.io/jobs",
+      "https://{tenant}.hrpartner.io/jobs/{slug}"
+    ],
+    "api_hosts": []
+  },
+  "icims": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${company}.icims.com/jobs/search",
+      "https://${company}.icims.com/jobs/search?${params.toString(",
+      "https://{company}.icims.com/jobs/search?pr=0&schemaId=&o={offset}&mode=job&iis=Internet",
+      "https://{company}.icims.com/jobs/search?ss=1&searchKeyword={term}&searchLocation={location}"
+    ],
+    "api_hosts": []
+  },
+  "inrecruiting": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{host}.intervieweb.it/{tenant}/jobs/{slug}-{id}/{lang}/",
+      "https://{host}.intervieweb.it/{tenant}/{lang}/career",
+      "https://{tenant}.intervieweb.it/jobs/{slug}-{id}/{lang}/",
+      "https://{tenant}.intervieweb.it/{lang}/career"
+    ],
+    "api_hosts": [
+      "https://inrecruiting.intervieweb.it/orbyta/en/career",
+      "https://rinascente.intervieweb.it/en/career"
+    ]
+  },
+  "ismartrecruit": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://app.ismartrecruit.com/WebsiteJSONAPI"
+    ]
+  },
+  "isolved": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${ISOLVED_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.isolvedhire.com/",
+      "https://{tenant}.isolvedhire.com/job_site_map.xml",
+      "https://{tenant}.isolvedhire.com/jobs/{jobId}.html",
+      "https://{tenant}.isolvedhire.com/jobs/{jobId}.html</loc>"
+    ],
+    "api_hosts": []
+  },
+  "jazzhr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.applytojob.com/apply/jobs/"
+    ],
+    "api_hosts": []
+  },
+  "jobadder": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://clientapps.jobadder.com/{accountId}/{slug}",
+      "https://clientapps.jobadder.com/{accountId}/{slug}/{jobId}/{title-slug}"
+    ],
+    "api_hosts": [
+      "https://clientapps.jobadder.com"
+    ]
+  },
+  "jobdiva": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www1.jobdiva.com/candidates/myjobs/getportaljobs.jsp?a={portalId}",
+      "https://www1.jobdiva.com/employers/connect/listofportaljobs.jsp?a={portalId}",
+      "https://www1.jobdiva.com/portal/?a={portalId}"
+    ],
+    "api_hosts": [
+      "https://www1.jobdiva.com",
+      "https://www1.jobdiva.com/candidates/myjobs/getportaljobs.jsp?a=\u2026",
+      "https://www1.jobdiva.com/employers/connect/listofportaljobs.jsp?a=\u2026",
+      "https://www1.jobdiva.com/portal/",
+      "https://www1.jobdiva.com/portal/?a=a7jdnwsus2fmiuqyajck4mcntz54pf05a6mnogtaphm9mt9tz8opkrtglw4v6gqf",
+      "https://www1.jobdiva.com/portal/\u2026</portal_url>"
+    ]
+  },
+  "jobscore": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://careers.jobscore.com/jobs"
+    ]
+  },
+  "jobsoid": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.jobsoid.com",
+      "https://{tenant}.jobsoid.com/api/v1/jobs",
+      "https://{tenant}.jobsoid.com/api/v1/jobs/{id}",
+      "https://{tenant}.jobsoid.com/apply/{id}",
+      "https://{tenant}.jobsoid.com/j/{id}/{slug}"
+    ],
+    "api_hosts": [
+      "https://<unknown-tenant>.jobsoid.com/api/v1/jobs",
+      "https://simpler.jobsoid.com/",
+      "https://simpler.jobsoid.com/api/v1/jobs",
+      "https://simpler.jobsoid.com/api/v1/jobs/91392"
+    ]
+  },
+  "jobtoolz": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${JOBTOOLZ_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.jobtoolz.com/en",
+      "https://{tenant}.jobtoolz.com/fr",
+      "https://{tenant}.jobtoolz.com/nl",
+      "https://{tenant}.jobtoolz.com/{locale}",
+      "https://{tenant}.jobtoolz.com/{locale}/{title-slug}"
+    ],
+    "api_hosts": [
+      "https://tordale.jobtoolz.com/nl"
+    ]
+  },
+  "jobtrain": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www.jobtrain.co.uk/{tenant}/Home/Job",
+      "https://www.jobtrain.co.uk/{tenant}/Home/_JobCard",
+      "https://www.jobtrain.co.uk/{tenant}/Job/JobDetail?JobId={jobId}",
+      "https://www.jobtrain.co.uk/{tenant}/Job/JobDetail?JobId={jobId}&Source=\u2026"
+    ],
+    "api_hosts": [
+      "https://www.jobtrain.co.uk",
+      "https://www.jobtrain.co.uk/crossreach/Home/_JobCard",
+      "https://www.jobtrain.co.uk/crossreach/Job/JobDetail?JobId=14496"
+    ]
+  },
+  "jobvite": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.jobvite.com/api/v2/job",
+      "https://developer.jobvite.com",
+      "https://jobs.jobvite.com/api/v2/job-feed"
+    ]
+  },
+  "jobylon": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://feed.jobylon.com/feeds"
+    ]
+  },
+  "joincom": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://join.com",
+      "https://join.com/api/public/companies/<id>/jobs",
+      "https://join.com/api/public/companies/<id>/jobs?",
+      "https://join.com/companies/<slug>"
+    ]
+  },
+  "keka": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.keka.com",
+      "https://{tenant}.keka.com/careers/",
+      "https://{tenant}.keka.com/careers/jobdetails/{jobId}",
+      "https://{tenant}.keka.com/k/careers/api/mwf/careers/jobs"
+    ],
+    "api_hosts": []
+  },
+  "kenjo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${KENJO_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.kenjo.io/",
+      "https://{tenant}.kenjo.io/api/controller/career-site/public/{tenant}",
+      "https://{tenant}.kenjo.io/api/controller/career-site/public/{tenant}/positions",
+      "https://{tenant}.kenjo.io/api/controller/career-site/public/{tenant}/positions/{customUrl}",
+      "https://{tenant}.kenjo.io/positions/{customUrl}"
+    ],
+    "api_hosts": [
+      "https://careers.kenjo.io/positions/initiative"
+    ]
+  },
+  "lever": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.lever.co/v0/postings"
+    ]
+  },
+  "livehire": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www.livehire.com/careers/{tenant}/job/{CODE}/{ID}/{slug}",
+      "https://www.livehire.com/careers/{tenant}/job/{CODE}/{ID}/{title-slug}",
+      "https://www.livehire.com/careers/{tenant}/job/{CODE}/{ID}/{title-slug}?useBrowserBack=true",
+      "https://www.livehire.com/careers/{tenant}/jobs",
+      "https://www.livehire.com/talent/community/{tenant}/careers/",
+      "https://www.livehire.com/widgets/job-listings/{tenant}"
+    ],
+    "api_hosts": [
+      "https://www.livehire.com"
+    ]
+  },
+  "loxo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.loxo.co/api/{companySlug}/jobs"
+    ],
+    "api_hosts": [
+      "https://app.loxo.co/api"
+    ]
+  },
+  "manatal": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.manatal.com/open/v1/career-page"
+    ]
+  },
+  "mercor": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://aws.api.mercor.com",
+      "https://aws.api.mercor.com/work/listings-explore-page",
+      "https://work.mercor.com"
+    ]
+  },
+  "mindscope": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://portal{N}.mindscope.com/{TENANTCODE}_V2Portal/",
+      "https://portal{N}.mindscope.com/{TENANTCODE}_V2Portal/Modules/Candidate/JobBoard.aspx",
+      "https://portal{N}.mindscope.com/{TENANTCODE}_V2Portal/Modules/Candidate/JobDetails.aspx?JobId={jobId}"
+    ],
+    "api_hosts": [
+      "https://portal2.mindscope.com",
+      "https://portal2.mindscope.com/WHITEC04415_V2Portal/"
+    ]
+  },
+  "mokahr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.mokahr.com/api-platform/v1/jobs/{orgId}?mode=social&limit=&offset=",
+      "https://app.mokahr.com/apply/{tenant}/{orgId}#/job/{jobId}",
+      "https://app.mokahr.com/campus-recruitment/{tenant}/{orgId}",
+      "https://app.mokahr.com/social-recruitment/{tenant}/{orgId}",
+      "https://{tenant}.mokahr.com/social-recruitment/{tenant}/{orgId}"
+    ],
+    "api_hosts": [
+      "https://api.mokahr.com",
+      "https://app.mokahr.com"
+    ]
+  },
+  "namely": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.namely.com",
+      "https://{tenant}.namely.com/careersite",
+      "https://{tenant}.namely.com/careersite/job/{jobId}/{slug}",
+      "https://{tenant}.namely.com/careersite/job/\u2026",
+      "https://{tenant}.namely.com/sitemap.xml"
+    ],
+    "api_hosts": []
+  },
+  "niceboard": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{board}.niceboard.co",
+      "https://{board}.niceboard.co/api/jobs"
+    ],
+    "api_hosts": [
+      "https://avajobboard.niceboard.co"
+    ]
+  },
+  "occupop": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.occupop-careers.com",
+      "https://{slug}.occupop-careers.com/jobs/{uuid}/apply"
+    ],
+    "api_hosts": [
+      "https://gateway.server.occupop.com/graphql"
+    ]
+  },
+  "oleeo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.tal.net",
+      "https://{tenant}.tal.net/",
+      "https://{tenant}.tal.net/candidate/jobboard/vacancy/1/adv/",
+      "https://{tenant}.tal.net/vx/lang-en-GB/mobile-0/appcentre-{n}/brand-{n}/"
+    ],
+    "api_hosts": [
+      "https://fcdo.tal.net/"
+    ]
+  },
+  "oorwin": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.oorwin.com",
+      "https://{tenant}.oorwin.com/careers/#/job/{job_id}"
+    ],
+    "api_hosts": [
+      "https://api.oorwin.ai/api/v2/",
+      "https://api.oorwin.ai/api/v2/careers",
+      "https://api.oorwin.ai/api/v2/careers/getJobList",
+      "https://api.oorwin.ai/api/v2/careers/job_view",
+      "https://purpledrive.oorwin.com/careers/"
+    ]
+  },
+  "oracle": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://eeho.fa.us2.oraclecloud.com"
+    ]
+  },
+  "otys": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://vacancy.{company}.com/",
+      "https://www.{company}.nl/",
+      "https://{clientprefix}.otysapp.com/",
+      "https://{host}/vacatures.html",
+      "https://{host}/vacatures/vacature-{slug}-{id}-{websiteId}.html",
+      "https://{tenant}.otysapp.com"
+    ],
+    "api_hosts": [
+      "https://host/vacatures/\u2026",
+      "https://webapi.otys.app/api",
+      "https://www.middendorprecruitment.nl/vacatures.html"
+    ]
+  },
+  "pageup": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://careers.pageuppeople.com/{instanceId}/caw/en/job/{jobId}/{slug}",
+      "https://careers.pageuppeople.com/{instanceId}/caw/en/listing/",
+      "https://careers.pageuppeople.com/{instanceId}/caw/en/listing/?page=1&page-items=100"
+    ],
+    "api_hosts": [
+      "https://careers.pageuppeople.com",
+      "https://careers.pageuppeople.com/\u2026/job/\u2026"
+    ]
+  },
+  "paychex": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.applybypaychex.com",
+      "https://{tenant}.applybypaychex.com/",
+      "https://{tenant}.applybypaychex.com/job/{jobId}/{slug}",
+      "https://{tenant}.applybypaychex.com/job/\u2026",
+      "https://{tenant}.applybypaychex.com/sitemap.xml"
+    ],
+    "api_hosts": []
+  },
+  "paycom": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://www.paycomonline.net/v4/ats/web.php/jobs?clientkey={CLIENTKEY}",
+      "https://www.paycomonline.net/v4/ats/web.php/jobs?clientkey={KEY}"
+    ],
+    "api_hosts": [
+      "https://portal-applicant-tracking.us-cent.paycomonline.net",
+      "https://www.paycomonline.net"
+    ]
+  },
+  "paycor": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://recruitingbypaycor.com/career/CareerHome.action?clientId={clientId}"
+    ],
+    "api_hosts": [
+      "https://newton.newtonsoftware.com/career/CareerHome.action?clientId=8afc05ca3677c9a501367a8b233e51f1",
+      "https://recruitingbypaycor.com",
+      "https://recruitingbypaycor.com/career/CareerHome.action?clientId=8afc05ca3677c9a501367a8b233e51f1"
+    ]
+  },
+  "paylocity": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://recruiting.paylocity.com/recruiting/api/feed/jobs/{companySlug}"
+    ],
+    "api_hosts": [
+      "https://recruiting.paylocity.com/recruiting/api/feed/jobs"
+    ]
+  },
+  "pcrecruiter": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://www2.pcrecruiter.net",
+      "https://www2.pcrecruiter.net/pcrbin/jobboard.aspx",
+      "https://www2.pcrecruiter.net/pcrbin/jobboard.aspx?uid=alliance"
+    ]
+  },
+  "peoplefluent": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${PEOPLEFLUENT_CAREERS_HOST}/careerscp/client_${tenant}/external/${localeSeg}",
+      "https://careers.peopleclick.com/careerscp/client_{tenant}/external/"
+    ],
+    "api_hosts": []
+  },
+  "peoplehr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}.${PEOPLEHR_ROOT_DOMAIN}",
+      "https://{tenant}.peoplehr.net/JobBoard",
+      "https://{tenant}.peoplehr.net/Pages/JobBoard/Opening.aspx?v={GUID}"
+    ],
+    "api_hosts": [
+      "https://efigroup.peoplehr.net/JobBoard"
+    ]
+  },
+  "peoplestrong": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${PEOPLESTRONG_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.peoplestrong.com/",
+      "https://{tenant}.peoplestrong.com/job/detail/{jobId}"
+    ],
+    "api_hosts": []
+  },
+  "personio": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.jobs.personio.com/job",
+      "https://{slug}.jobs.personio.com/xml",
+      "https://{slug}.jobs.personio.de/job",
+      "https://{slug}.jobs.personio.de/xml"
+    ],
+    "api_hosts": [
+      "https://api.personio.de/v1/auth",
+      "https://api.personio.de/v1/recruiting/positions",
+      "https://developer.personio.de/reference/get_v1-recruiting-positions"
+    ]
+  },
+  "phenom": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://jobs.{companySlug}.com/api/jobs"
+    ],
+    "api_hosts": []
+  },
+  "pinpoint": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": []
+  },
+  "polymer": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.polymer.co/v1/hire/organizations/{slug}/jobs/{id}",
+      "https://api.polymer.co/v1/hire/organizations/{slug}/jobs?page={n}&per_page=50",
+      "https://jobs.polymer.co/{slug}/{id}"
+    ],
+    "api_hosts": [
+      "https://api.polymer.co",
+      "https://api.polymer.co/v1/hire",
+      "https://jobs.polymer.co"
+    ]
+  },
+  "prescreen": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{handle}.jobbase.io/",
+      "https://{handle}.onlyfy.jobs",
+      "https://{handle}.onlyfy.jobs/",
+      "https://{handle}.onlyfy.jobs/job/{token}",
+      "https://{handle}.prescreenapp.io/"
+    ],
+    "api_hosts": [
+      "https://v2c2.jobbase.io/",
+      "https://v2c2.onlyfy.jobs/",
+      "https://v2c2.prescreenapp.io/"
+    ]
+  },
+  "pyjamahr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.pyjamahr.com/api/career/jobs/?company_slug={tenant}&page={n}",
+      "https://api.pyjamahr.com/api/career/jobs/{id}/?company_slug={tenant}",
+      "https://app.pyjamahr.com/careers/{tenant}",
+      "https://jobs.pyjamahr.com/{tenant}",
+      "https://jobs.pyjamahr.com/{tenant}?job_uuid={id}"
+    ],
+    "api_hosts": [
+      "https://api.pyjamahr.com",
+      "https://jobs.pyjamahr.com"
+    ]
+  },
+  "radancy": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${host}",
+      "https://{host}/{lang}/job/{location}/{slug}/{orgId}/{jobId}",
+      "https://{host}/{lang}/search-jobs/results?ActiveFacetID=0&CurrentPage={n}&RecordsPerPage={k}&FacetType=0"
+    ],
+    "api_hosts": []
+  },
+  "reachmee": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://site{NNN}.reachmee.com/Public/rssfeed/external.ashx",
+      "https://site{site}.reachmee.com"
+    ],
+    "api_hosts": [
+      "https://site106.reachmee.com/Public/rssfeed/external.ashx?id=12&InstallationID=I003&CustomerName=oru&lang=UK",
+      "https://web103.reachmee.com/ext/I003/354/main?site=12&amp;validator=\u2026&amp;lang=UK&amp;rmpage=job&amp;rmjob=12743</link>"
+    ]
+  },
+  "recooty": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://careerspage.io/{slug}",
+      "https://standaloneapi.recooty.app/api/widget/{widgetId}?language={lang}"
+    ],
+    "api_hosts": [
+      "https://careerspage.io/",
+      "https://standaloneapi.recooty.app"
+    ]
+  },
+  "recruitcrm": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://recruitcrm.io/jobs/{account_job_page_name}",
+      "https://recruitcrm.io/jobs/{jobSlug}",
+      "https://recruitcrm.io/jobs/{slug}"
+    ],
+    "api_hosts": [
+      "https://albatross.recruitcrm.io/v1",
+      "https://albatross.recruitcrm.io/v1/external-pages/jobs-by-account/get",
+      "https://recruitcrm.io",
+      "https://recruitcrm.io/jobs"
+    ]
+  },
+  "recruitee": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.recruitee.com/api/offers"
+    ],
+    "api_hosts": [
+      "https://api.recruitee.com/c"
+    ]
+  },
+  "recruiterflow": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.recruiterflow.com/api/external/job/list"
+    ]
+  },
+  "recruiteze": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${RECRUITEZE_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.recruiteze.com/Jobs/AllJobs",
+      "https://{tenant}.recruiteze.com/Jobs/AllJobsEmbed",
+      "https://{tenant}.recruiteze.com/Jobs/LoadFilteredJobs",
+      "https://{tenant}.recruiteze.com/jobs/jobdetail?id={encryptedId}"
+    ],
+    "api_hosts": [
+      "https://SpearMC.recruiteze.com/jobs/jobdetail?id=urbC%2ftDVyBjlfvk6Aeq5fg%3d%3d"
+    ]
+  },
+  "recruitis": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://jobs.recruitis.io/{tenant}",
+      "https://jobs.recruitis.io/{tenant}/{jobId}-{slug}",
+      "https://jobs.recruitis.io/{tenant}?page={n}"
+    ],
+    "api_hosts": [
+      "https://api.recruitis.io/",
+      "https://app.recruitis.io/api2/jobs",
+      "https://jobs.recruitis.io",
+      "https://jobs.recruitis.io/allwyn",
+      "https://jobs.recruitis.io/recruitisio",
+      "https://jobs.recruitis.io/recruitisio/490653-"
+    ]
+  },
+  "recruitly": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${RECRUITLY_API_HOST}${RECRUITLY_JOB_PATH}?apiKey=${encodeURIComponent(apiKey",
+      "https://${RECRUITLY_BOARD_HOST}${RECRUITLY_APPLY_PATH}/${encodeURIComponent(atsId",
+      "https://api.recruitly.io/api/job?apiKey={apiKey}",
+      "https://jobs.recruitly.io/widget/apply/{id}",
+      "https://secure.recruitly.io/public/jobs/t?theme={n}&apiKey={apiKey}"
+    ],
+    "api_hosts": [
+      "https://api.recruitly.io/api/job"
+    ]
+  },
+  "rexx": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}-portal.rexx-systems.com"
+    ],
+    "api_hosts": [
+      "https://icotek-portal.rexx-systems.com/"
+    ]
+  },
+  "rippling": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://ats.rippling.com"
+    ]
+  },
+  "roubler": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.roubler.com/careers/{companyId}",
+      "https://app.roubler.com/careers/{companyId}/{advertId}",
+      "https://graphql.${ROUBLER_API_REGION}.roubler.com",
+      "https://graphql.au.roubler.com/static/careers/{companyId}/adverts?page={n}",
+      "https://graphql.{region}.roubler.com/"
+    ],
+    "api_hosts": [
+      "https://app.roubler.com",
+      "https://app.roubler.com.au/",
+      "https://app.roubler.com/",
+      "https://app.roubler.com/config.js",
+      "https://graphql.au.roubler.com/",
+      "https://production.roubler.net/"
+    ]
+  },
+  "sagehr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://talent.sage.hr/jobs/{positionId}",
+      "https://talent.sage.hr/{careerSiteId}/vacancies"
+    ],
+    "api_hosts": [
+      "https://talent.sage.hr"
+    ]
+  },
+  "sagepeople": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${SAGEPEOPLE_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.my.salesforce-sites.com/",
+      "https://{tenant}.my.salesforce-sites.com/{path}/fRecruit__ApplyJob?vacancyNo={VN}",
+      "https://{tenant}.my.salesforce-sites.com/{path}/fRecruit__ApplyJobList"
+    ],
+    "api_hosts": []
+  },
+  "scouttalent": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.applynow.net.au",
+      "https://{tenant}.applynow.net.au/",
+      "https://{tenant}.applynow.net.au/jobs/{code}-{slug}"
+    ],
+    "api_hosts": [
+      "https://krg.applynow.net.au/"
+    ]
+  },
+  "sense": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${SENSE_CAREER_HOST_SUFFIX}",
+      "https://{tenant}.sensehq.com/careers",
+      "https://{tenant}.sensehq.com/careers/api/jobs?page={n}",
+      "https://{tenant}.sensehq.com/careers/jobs/{id}",
+      "https://{tenant}.sensehq.com/careers/jobs/{jobId}"
+    ],
+    "api_hosts": []
+  },
+  "sesamehr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.sesametime.com/jobs/Sesame/{id}",
+      "https://app.sesametime.com/jobs/{company}/all",
+      "https://app.sesametime.com/jobs/{company}/{id}",
+      "https://app.sesametime.com/jobs/{company}/{vacancyId}",
+      "https://app.sesametime.com/jobs/{company}/{vacancyId}/apply",
+      "https://back-${region.toLowerCase("
+    ],
+    "api_hosts": [
+      "https://app.sesametime.com",
+      "https://login.sesametime.com"
+    ]
+  },
+  "skeeled": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://app.skeeled.com/board/{boardId}",
+      "https://app.skeeled.com/offer/c/{offerId}",
+      "https://app.skeeled.com/offer/c/{offerId}?show_description=true&language={lang}"
+    ],
+    "api_hosts": [
+      "https://app.skeeled.com",
+      "https://app.skeeled.com/board/62729efbe4a2052d5d569fcd",
+      "https://app.skeeled.com/board/63ff6b1561114076fed6be2d",
+      "https://app.skeeled.com/offer/c/69b3c143160b83099ff3ffb9"
+    ]
+  },
+  "smartrecruiters": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.smartrecruiters.com/v1/companies"
+    ]
+  },
+  "snaphunt": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://snaphunt.com/jobs/{jobId}",
+      "https://{tenant}.snaphunt.com",
+      "https://{tenant}.snaphunt.com/",
+      "https://{tenant}.snaphunt.com/job/\u2026",
+      "https://{tenant}.snaphunt.com/sitemap.xml"
+    ],
+    "api_hosts": []
+  },
+  "softgarden": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.career.softgarden.de",
+      "https://{slug}.career.softgarden.de/",
+      "https://{tenant}/jobs/61985494/Key-Account-Manager-.../"
+    ],
+    "api_hosts": [
+      "https://schema.org/",
+      "https://schema.org/JobPosting"
+    ]
+  },
+  "softy": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.softy.pro/offers",
+      "https://{tenant}.softy.pro/offre/{ID}-{title-slug}",
+      "https://{tenant}.softy.pro/offres"
+    ],
+    "api_hosts": []
+  },
+  "solides": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${SOLIDES_CAREER_HOST_SUFFIX}",
+      "https://apigw.solides.com.br/jobs/v3/home/company/{tenant}",
+      "https://apigw.solides.com.br/jobs/v3/home/vacancy?slug={tenant}",
+      "https://apigw.solides.com.br/jobs/v3/home/vacancy?slug={tenant}&take=&page=",
+      "https://apigw.solides.com.br/jobs/v3/home/vacancy?slug={tenant}&take={n}&page={p}",
+      "https://{tenant}.vagas.solides.com.br/"
+    ],
+    "api_hosts": [
+      "https://apigw.solides.com.br/jobs/v3",
+      "https://solides.vagas.solides.com.br/vaga/858464"
+    ]
+  },
+  "subscribehr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${encodeURIComponent(tenant",
+      "https://{tenant}.careers.subscribe-hr.com/",
+      "https://{tenant}.careers.subscribe-hr.com/?page={n}",
+      "https://{tenant}.careers.subscribe-hr.com/jobs/{id}-{slug}"
+    ],
+    "api_hosts": [
+      "https://subscribehr16.careers.subscribe-hr.com/",
+      "https://subscribehr16.careers.subscribe-hr.com/?page=2",
+      "https://subscribehr16.careers.subscribe-hr.com/jobs/1042-gosnells-aboriginal-mental-health-worker-50d"
+    ]
+  },
+  "successfactors": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${instance}.successfactors.com/career?company=${encodeURIComponent(companyId",
+      "https://${instance}.successfactors.com/odata/v2/JobRequisitionPosting",
+      "https://{instance}.successfactors.com/career?company={companyId}&keyword={term}",
+      "https://{instance}.successfactors.com/odata/v2/JobRequisitionPosting"
+    ],
+    "api_hosts": []
+  },
+  "sympa": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${encodeURIComponent(slug",
+      "https://{board}/o/{slug}",
+      "https://{board}/o/{slug}/c/new",
+      "https://{slug}.recruitee.com",
+      "https://{slug}.recruitee.com/",
+      "https://{slug}.recruitee.com/api/offers/"
+    ],
+    "api_hosts": [
+      "https://sympa.recruitee.com/api/offers/",
+      "https://\u2026/o/\u2026",
+      "https://\u2026/o/\u2026/c/new"
+    ]
+  },
+  "symphonytalent": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${SYMPHONYTALENT_API_HOST}",
+      "https://jobsapi-internal.m-cloud.io/api/job?Organization={orgId}&Limit={n}&offset={k}"
+    ],
+    "api_hosts": [
+      "https://careers.symphonytalent.com/job/23398009/technical-project-manager-us-remote-remote/",
+      "https://jobsapi-internal.m-cloud.io",
+      "https://jobsapi-internal.m-cloud.io/api/",
+      "https://jobsapi-internal.m-cloud.io/api/job"
+    ]
+  },
+  "taleez": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://taleez.com/apply/{slug}",
+      "https://taleez.com/careers/{tenant}",
+      "https://{tenant}.taleez.com/"
+    ],
+    "api_hosts": [
+      "https://api.taleez.com/0/jobs",
+      "https://taleez.com",
+      "https://tehtris.taleez.com/"
+    ]
+  },
+  "talentadore": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://ats.talentadore.com/positions/{feedKey}/json",
+      "https://{tenant}.careers.talentadore.com/"
+    ],
+    "api_hosts": [
+      "https://amersports.careers.talentadore.com/",
+      "https://ats.talentadore.com",
+      "https://ats.talentadore.com/positions/mwRcjSn/json?v=2&display_description=job_description"
+    ]
+  },
+  "talentera": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{codename}.talentera.com/",
+      "https://{codename}.talentera.com/en/job-application/?jb_id={id}",
+      "https://{codename}.talentera.com/en/job-search-results/",
+      "https://{codename}.talentera.com/en/{country}/jobs/{slug}-{id}/"
+    ],
+    "api_hosts": []
+  },
+  "talentlyft": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.talentlyft.com/v2/public"
+    ]
+  },
+  "talentreef": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://apply.jobappnetwork.com/{tenant}/{lang}",
+      "https://{secure|cf-apply}.jobappnetwork.com/apply/c_{code}/l_{lang}/"
+    ],
+    "api_hosts": [
+      "https://apply.jobappnetwork.com",
+      "https://apply.jobappnetwork.com/jibinc/en",
+      "https://apply.jobappnetwork.com/mcm/en",
+      "https://apply.jobappnetwork.com/rtg/en",
+      "https://apply.jobappnetwork.com/surf-sand-careers/en"
+    ]
+  },
+  "talentsoft": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{host}/handlers/offerRss.ashx?LCID={lcid}",
+      "https://{tenant}-career.talent-soft.com/",
+      "https://{tenant}-recrute.talent-soft.com",
+      "https://{tenant}-recrute.talent-soft.com/",
+      "https://{tenant}careers.talent-soft.com/"
+    ],
+    "api_hosts": [
+      "https://elis-recrute.talent-soft.com/handlers/offerRss.ashx?LCID=1036",
+      "https://elis-recrute.talent-soft.com/offre-de-emploi/tous-les-flux-rss.aspx",
+      "https://\u2026/r/15918/502/1036?reference=2025-15918</link>"
+    ]
+  },
+  "taleo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${company}.taleo.net/careersection/rest/jobboard/searchjobs",
+      "https://{company}.taleo.net/careersection/rest/jobboard/searchjobs"
+    ],
+    "api_hosts": []
+  },
+  "teamdash": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.teamdash.com",
+      "https://{tenant}.teamdash.com/p/job/{landingToken}/{slug}",
+      "https://{tenant}.teamdash.com/p/job/{token}/{slug}"
+    ],
+    "api_hosts": [
+      "https://cr14.teamdash.com/",
+      "https://cr14.teamdash.com/p/job/20eH77Ul/career-page",
+      "https://cr14.teamdash.com/p/job/DJQJDUk1/full-stack-developer"
+    ]
+  },
+  "teamtailor": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://api.teamtailor.com/v1",
+      "https://career.teamtailor.com/widget/jobs"
+    ]
+  },
+  "tempworks": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://hrcenter.ontempworks.com/en/{tenant}?orders={orderId}",
+      "https://jobboard.ontempworks.com/{tenant}",
+      "https://jobboard.ontempworks.com/{tenant}/Jobs/Details/{orderId}",
+      "https://jobboard.ontempworks.com/{tenant}/Jobs/Search?Keywords=&Location="
+    ],
+    "api_hosts": [
+      "https://hrcenter.ontempworks.com",
+      "https://jobboard.ontempworks.com"
+    ]
+  },
+  "trackerrms": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://evoportal{region}.tracker-rms.com/{database}/apply?jobcode={reference}",
+      "https://evoportal{region}.tracker-rms.com/{database}/jobs?fields={csv}",
+      "https://evoportal{region}.tracker-rms.com/{database}/jobs?fields={csv}[&filters={f}]",
+      "https://evoportal{us|uk|ca}.tracker-rms.com/{database}/jobs?fields=\u2026"
+    ],
+    "api_hosts": [
+      "https://evoportalca.tracker-rms.com",
+      "https://evoportaluk.tracker-rms.com",
+      "https://evoportalus.tracker-rms.com"
+    ]
+  },
+  "traffit": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.traffit.com",
+      "https://{tenant}.traffit.com/public/an/{token}?source=career_page",
+      "https://{tenant}.traffit.com/public/form/a/{token}?source=career_page",
+      "https://{tenant}.traffit.com/public/job_posts/published"
+    ],
+    "api_hosts": []
+  },
+  "trakstar": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.hire.trakstar.com/api/v1"
+    ],
+    "api_hosts": [
+      "https://hire.trakstar.com/api"
+    ]
+  },
+  "tribepad": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.tribepad-gro.com",
+      "https://{slug}.tribepad.com"
+    ],
+    "api_hosts": [
+      "https://apply.tesco-careers.com"
+    ]
+  },
+  "turbohire": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.turbohire.co/api/careerpage/publicjobs/{id}?companySlug={tenant}",
+      "https://api.turbohire.co/api/careerpage/publicjobs?companySlug={tenant}&page={n}&pageSize={size}",
+      "https://app.turbohire.co/job/publicjobs/{token}",
+      "https://portal.turbohire.co/job/publicjobs/{token}",
+      "https://{tenant}.turbohire.co/",
+      "https://{tenant}.turbohire.co/dashboardv2?orgId={uuid}"
+    ],
+    "api_hosts": [
+      "https://api.turbohire.co",
+      "https://careers.turbohire.co/",
+      "https://portal.turbohire.co",
+      "https://portal.turbohire.co/job/publicjobs/1dUz\u2026",
+      "https://tatamotors.turbohire.co/dashboardv2?orgId=39ddba0d-\u2026"
+    ]
+  },
+  "ukg": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://recruiting.ultipro.com"
+    ]
+  },
+  "umantis": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://recruitingapp-{tenantId}.de.umantis.com/Jobs/All",
+      "https://recruitingapp-{tenantId}.umantis.com/Jobs/All"
+    ],
+    "api_hosts": []
+  },
+  "varbi": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{tenant}.varbi.com",
+      "https://{tenant}.varbi.com/en/",
+      "https://{tenant}.varbi.com/en/what:job/jobID:{jobID}/",
+      "https://{tenant}.varbi.com/se/apply/positionquick/{jobID}/"
+    ],
+    "api_hosts": [
+      "https://kth.varbi.com/en/",
+      "https://kth.varbi.com/en/what:job/jobID:935474/",
+      "https://kth.varbi.com/se/apply/positionquick/935474/"
+    ]
+  },
+  "vidcruiter": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${vidcruiterBoardHost(tenant",
+      "https://{tenant}.hiringplatform.com/list/{slug}.json?page={n}",
+      "https://{tenant}.hiringplatform.com/list/{slug}/",
+      "https://{tenant}.hiringplatform.com/processes/{uuid}?locale=en"
+    ],
+    "api_hosts": [
+      "https://vidcruiter.hiringplatform.com/list/careers.json",
+      "https://vidcruiter.hiringplatform.com/list/careers/",
+      "https://vidcruiter.hiringplatform.com/processes/4acebf9f-\u2026?locale=en"
+    ]
+  },
+  "vincere": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.vincere.io",
+      "https://{slug}.vincere.io/api/v2/job/search/",
+      "https://{slug}.vincere.io/careers/",
+      "https://{slug}.vincere.io/careers/ajax/search-jobs",
+      "https://{slug}.vincere.io/careers/job/{id}/{slug-and-location}"
+    ],
+    "api_hosts": []
+  },
+  "vivahr": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://jobs.avahr.com/{tenant}/jobs",
+      "https://jobs.avahr.com/{tenant}/{jobId}-{jobSlug}/"
+    ],
+    "api_hosts": [
+      "https://avahr.com",
+      "https://jobs.avahr.com"
+    ]
+  },
+  "webcruiter": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://candidate.webcruiter.com/api/company/companymeta/{companyLock}?language={lang}",
+      "https://candidate.webcruiter.com/api/odvert/companysearch/{companyLock}?language={lang}",
+      "https://{companyLock}.webcruiter.no",
+      "https://{companyLock}.webcruiter.no/Main/Recruit/Public/{Id}",
+      "https://{companyLock}.webcruiter.no/Main/Recruit/Public/{Id}?language=",
+      "https://{companyLock}.webcruiter.no/Main/Recruit/Public/{advertId}"
+    ],
+    "api_hosts": [
+      "https://candidate.webcruiter.com",
+      "https://candidate.webcruiter.com/en-gb/home/companyadverts?companyLock=23109900"
+    ]
+  },
+  "workable": {
+    "known_tenants": [],
+    "host_templates": [],
+    "api_hosts": [
+      "https://apply.workable.com/api/v1/widget/accounts",
+      "https://workable.readme.io/reference/jobs"
+    ]
+  },
+  "workday": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${company}.wd${wdNumber}.myworkdayjobs.com/wday/cxs/${company}/${site}/jobs",
+      "https://{company}.wd{n}.myworkdayjobs.com/wday/cxs/{company}/{site}/jobs"
+    ],
+    "api_hosts": []
+  },
+  "workforce": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${host}",
+      "https://eu.workforce.com/ats/apply/job/{uuid}",
+      "https://{region}.workforce.com/ats/apply/job/general/{jobUuid}",
+      "https://{region}.workforce.com/ats/apply/job/{jobUuid}"
+    ],
+    "api_hosts": [
+      "https://app.workforce.com/",
+      "https://eu.workforce.com/"
+    ]
+  },
+  "workstream": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://got.work/{brandSlug}",
+      "https://www.workstream.us/j/{accountId}/{brandSlug}",
+      "https://www.workstream.us/j/{accountId}/{brandSlug}/positions",
+      "https://www.workstream.us/j/{accountId}/{brandSlug}/{locationSlug}/{jobSlug}-{jobId}?locale=en",
+      "https://www.workstream.us/j/{companyIdentifier}-careers-open-positions"
+    ],
+    "api_hosts": [
+      "https://www.workstream.us"
+    ]
+  },
+  "workwise": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${tenant}${WORKWISE_CAREER_HOST_SUFFIX}",
+      "https://www.workwise.io/job/{id}-{slug}",
+      "https://{tenant}.workwise.io/"
+    ],
+    "api_hosts": [
+      "https://api.workwise.io",
+      "https://api.workwise.io/v1/jobs/search",
+      "https://www.workwise.io"
+    ]
+  },
+  "wttj": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://${WTTJ_ALGOLIA_APP_ID.toLowerCase(",
+      "https://www.welcometothejungle.com/{lang}/companies/{org.slug}/jobs/{job.slug}",
+      "https://www.welcometothejungle.com/{lang}/companies/{org.slug}/jobs/{job.slug}/apply",
+      "https://www.welcometothejungle.com/{lang}/companies/{slug}/jobs",
+      "https://{appId-lower}-dsn.algolia.net/1/indexes/{index}/query"
+    ],
+    "api_hosts": [
+      "https://www.welcometothejungle.com",
+      "https://www.welcometothejungle.com/"
+    ]
+  },
+  "zimyo": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://zimyo.work/recruit/career/details/{base64(jobId",
+      "https://zimyo.work/recruit/careerJoblist/{base64(orgId"
+    ],
+    "api_hosts": [
+      "https://ats.zimyo.work/ats/ats",
+      "https://zimyo.work"
+    ]
+  },
+  "zohorecruit": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://{slug}.zohorecruit.com",
+      "https://{slug}.zohorecruit.eu",
+      "https://{slug}.zohorecruit.in"
+    ],
+    "api_hosts": []
+  },
+  "zwayam": {
+    "known_tenants": [],
+    "host_templates": [
+      "https://api.zwayam.com/company/{tenant}/jobs?host={careerHost}&page={n}&size={k}",
+      "https://api.zwayam.com/job_preview/?jobUrl={jobSlug}&host={careerHost}",
+      "https://api.zwayam.com/job_preview/?jobUrl={jobSlug}&host={careerHost}&apiDomain=api.zwayam.com",
+      "https://{careerHost}/{tenant}/",
+      "https://{tenant}.openings.co/"
+    ],
+    "api_hosts": [
+      "https://api.zwayam.com",
+      "https://careers.beacon-india.com/",
+      "https://public.zwayam.com"
+    ]
+  }
+}

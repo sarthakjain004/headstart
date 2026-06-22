@@ -1,0 +1,27 @@
+# Source: Bloomberry — Companies using Lever (active customer list)
+# URL: https://bloomberry.com/data/lever/
+# Stated total: 1,615 companies detected
+# Visible/saved here: 20 (rest paywalled)
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Okanagan College | okanagancollege.ca
+FYZICAL Chicago | fyzical.com
+Thomas & Hutton | thomasandhutton.com
+Copper | copper.com
+Fenway Sports Management (FSM) | fenwaysportsmanagement.com
+Commerce Undergraduate Society of UBC Vancouver | cus.ca
+Terrific | terrificlive.com
+West Yost | westyost.com
+Independence Home Loans | independencehl.com
+Welo Global | weloglobal.com
+Onboarded | onboarded.com
+RAVL | ravl.io
+APCO Holdings, LLC | apcoholdings.com
+Hayes Locums | hayeslocums.com
+UX Woman | uxwoman.com
+NextOvation | nextovation.com
+BreezeBio | breezebio.com
+Restore Dispensaries | restoredispensaries.com
+Mars Men | mengotomars.com
+KMA Human Resources Consulting | skillcloudhcm.com

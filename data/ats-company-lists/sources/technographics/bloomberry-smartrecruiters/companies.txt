@@ -1,0 +1,26 @@
+# Source: Bloomberry — Companies using SmartRecruiters (active customer list)
+# URL: https://bloomberry.com/data/smartrecruiters/
+# Stated total: 1,127 companies detected
+# Visible/saved here: 19 (one row had no clean domain)
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+Reputation Partners, LLC | reputationpartners.com
+Better Rehab | betterrehab.com.au
+Wellbeam Consumer Health | wellbeam.com
+Sevways - Information Systems Engineering | sevways.cloud
+SNG India | sngindia.org
+SoCal Deliveries | socaldeliveries.com
+Etihad | etihad.com
+WayPoint Logistics Inc. | waypointlogistics.com
+4 Way Logistics, Inc. | 4way.com
+Oterra | oterra.com
+Mitsubishi Power EMEA | mhi.com
+SOCOTEC UK & Ireland | socotec.co.uk
+Kronospan | kronospan.com
+SP Audit | sp-audit.com
+Bapcor Limited | bapcor.com.au
+Frontier Agriculture | frontierag.co.uk
+Manpower France | manpower.fr
+TestSolutions GmbH | testsolutions.de
+Alpha Zulu Transportation, LLC | driveforaz.com

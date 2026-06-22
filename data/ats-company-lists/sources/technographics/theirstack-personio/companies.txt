@@ -1,0 +1,17 @@
+# Source: TheirStack — Companies that use Personio
+# URL: https://theirstack.com/en/technology/personio
+# Stated total: 4,895 companies (Page 1 of 490)
+# Visible/saved here: 7 (3 without domains)
+# Format: Company Name | domain
+# Date: 2026-06-23
+
+SENEC GmbH | senec.com
+Motel a Miio GmbH |
+Wolfgang Denzel Auto AG | denzel.at
+Aion Bank |
+METRO MARKETS GmbH | metro-markets.de
+ZDF Digital |
+Agile Robots SE | agile-robots.com
+Clicars | clicars.com
+EGYM | egym.com
+Contabo | contabo.com

@@ -1,0 +1,257 @@
+company,ats,slug,endpoint,platform_label,careers_url,file
+11x,,11x-ai,,Gem,https://jobs.gem.com/11x-ai,11x.md
+1Password,ashby,1password,api.ashbyhq.com/posting-api/job-board/1password,Ashby,https://1password.com/careers,1password.md
+Abbott,phenom,,,Phenom,https://www.jobs.abbott/us/en/search-results,abbott.md
+Abnormal Security,greenhouse,abnormalsecurity,boards-api.greenhouse.io/v1/boards/abnormalsecurity,Greenhouse,https://abnormal.ai/careers/open-roles,abnormal_security.md
+Abridge,ashby,Abridge,api.ashbyhq.com/posting-api/job-board/Abridge,Ashby,https://abridge.com/careers,abridge.md
+Accenture,,,,,,accenture.md
+"Adept (adept.ai) — DEFERRED, no scrapeable inventory",,,,widget,https://www.adept.ai/about-careers/,adept_ai_skipped.md
+Adyen,greenhouse,adyen,boards-api.greenhouse.io/v1/boards/adyen,Greenhouse,https://careers.adyen.com/vacancies?locale=en,adyen.md
+Airwallex,,,,,https://careers.airwallex.com/jobs/?order=newest,airwallex.md
+Alibaba,,,,,,alibaba.md
+Allstate,workday,allstate,allstate.wd5.myworkdayjobs.com,workday,https://www.allstate.jobs/job-search-results/,allstate.md
+Ally,avature,ally,ally.avature.net,Avature,https://ally.avature.net/careers,ally.md
+Alto,workday,alto,alto.wd1.myworkdayjobs.com,workday,https://alto.wd1.myworkdayjobs.com/FuzeHealthCareerSite,alto.md
+Anduril,greenhouse,andurilindustries,boards-api.greenhouse.io/v1/boards/andurilindustries,greenhouse,https://www.anduril.com/careers,anduril.md
+Anyscale,ashby,anyscale,api.ashbyhq.com/posting-api/job-board/anyscale,Ashby,https://www.anyscale.com/careers,anyscale.md
+Apex Fintech Solutions,,jobs-production,,Engineer,https://careers.apexfintechsolutions.com/,apex_fintech_solutions.md
+Arm,talentbrew,,,TalentBrew,https://careers.arm.com/search-jobs,arm.md
+ASML,,,,Next,https://www.asml.com/en/careers/find-your-job,asml.md
+Assembled,ashby,assembledhq,jobs.ashbyhq.com/assembledhq,Ashby,https://www.assembled.com/careers-at-assembled,assembled.md
+AssemblyAI,greenhouse,assemblyai,job-boards.greenhouse.io/assemblyai,Greenhouse,https://www.assemblyai.com/careers,assemblyai.md
+Astranis,greenhouse,astranis,job-boards.greenhouse.io/astranis,Greenhouse,https://www.astranis.com/careers,astranis.md
+Atlassian,greenhouse,atlassian,boards-api.greenhouse.io/v1/boards/atlassian,,,atlassian.md
+AT&T,,,,,,att.md
+Axon,greenhouse,axon,boards-api.greenhouse.io/v1/boards/axon,Greenhouse,https://www.axon.com/careers,axon.md
+Bain & Company,,,,,,bain.md
+"Bambus — DEFERRED (Salesforce Experience Cloud, auth-walled API)",,bambusdev,,,https://bambusdev.my.site.com/s/,bambus.md
+Baseten,ashby,baseten,api.ashbyhq.com/posting-api/job-board/baseten,Ashby,https://www.baseten.co/careers,baseten.md
+Bayer,eightfold,bayer,bayer.eightfold.ai,Eightfold,https://bayer.eightfold.ai/careers,bayer.md
+Boston Consulting Group,,,,,,bcg.md
+Betterment,greenhouse,betterment,boards-api.greenhouse.io/v1/boards/betterment,greenhouse,https://www.betterment.com/careers/current-openings,betterment.md
+Bezos Academy,greenhouse,day1academies,job-boards.greenhouse.io/day1academies,Greenhouse,https://bezosacademy.org/open-roles/,bezos_academy.md
+Blackhawk Network,icims,careers-blackhawknetwork,careers-blackhawknetwork.icims.com,Engineer,https://careers-blackhawknetwork.icims.com/jobs/search?ss=1,blackhawk_network.md
+Block,greenhouse,block,boards-api.greenhouse.io/v1/boards/block,Greenhouse,https://block.xyz/careers/jobs?businessUnits[]=square&businessUnits[]=block&businessUnits[]=cashapp&businessUnits[]=afterpay,block.md
+Bluesky,,bluesky,,gem,https://jobs.gem.com/bluesky,bluesky.md
+Boston Scientific,eightfold,bostonscientific,bostonscientific.eightfold.ai,Eightfold,https://bostonscientific.eightfold.ai/careers,boston_scientific.md
+Brex,greenhouse,brex,boards-api.greenhouse.io/v1/boards/brex,greenhouse,https://www.brex.com/careers,brex.md
+Bunkerhill Health,ashby,bunkerhillhealth,api.ashbyhq.com/posting-api/job-board/bunkerhillhealth,Ashby,https://jobs.ashbyhq.com/bunkerhillhealth,bunkerhill_health.md
+Canonical,greenhouse,canonical,boards-api.greenhouse.io/v1/boards/canonical,Greenhouse,https://canonical.com/careers,canonical.md
+Cartesia,ashby,cartesia,api.ashbyhq.com/posting-api/job-board/cartesia,Ashby,https://cartesia.ai/careers,cartesia.md
+Caterpillar,,,,first-party static careers listing,https://careers.caterpillar.com/en/jobs/,caterpillar.md
+CBRE,avature,,,Avature,,cbre.md
+Chan Zuckerberg Initiative,greenhouse,chanzuckerberginitiative,job-boards.greenhouse.io/chanzuckerberginitiative,Greenhouse,https://chanzuckerberg.com/careers/career-opportunities/,chan_zuckerberg_initiative.md
+Chewy,phenom,,,Phenom,https://careers.chewy.com/us/en,chewy.md
+Chime,greenhouse,chime,boards-api.greenhouse.io/v1/boards/chime,greenhouse,https://careers.chime.com/jobs/,chime.md
+Chronosphere,ashby,chronospherejobs,api.ashbyhq.com/posting-api/job-board/chronospherejobs,Ashby,https://chronosphere.io/careers,chronosphere.md
+Circle,workday,circle,circle.wd1.myworkdayjobs.com,Workday behind a Phenom-branded UI,https://careers.circle.com/us/en/search-results,circle.md
+Cloudflare,greenhouse,cloudflare,boards-api.greenhouse.io/v1/boards/cloudflare,greenhouse,https://www.cloudflare.com/careers/,cloudflare.md
+"Coda (coda.io) — DEFERRED, no scrapeable inventory",greenhouse,coda,boards.greenhouse.io/coda,,https://coda.io/about/jobs,coda_skipped.md
+Codeium (Windsurf),,codeium,,,,codeium.md
+CodeRabbit,ashby,coderabbit,api.ashbyhq.com/posting-api/job-board/coderabbit,,https://www.coderabbit.ai/careers,coderabbit.md
+Coherent,oracle,CX_1,,Oracle Recruiting Cloud,https://www.coherent.com/careers,coherent.md
+Coinbase,greenhouse,coinbase,boards-api.greenhouse.io/v1/boards/coinbase,greenhouse,https://www.coinbase.com/careers/positions,coinbase.md
+Colossal Biosciences,greenhouse,colossalbiosciences,boards-api.greenhouse.io/v1/boards/colossalbiosciences,Greenhouse,https://colossal.com/careers/,colossal_biosciences.md
+Comcast — SKIPPED (robots.txt disallow),,,,,,comcast.md
+Copart,workday,copart,copart.wd12.myworkdayjobs.com,,https://www.copart.com/careers,copart.md
+CoreWeave,greenhouse,coreweave,boards-api.greenhouse.io/v1/boards/coreweave,greenhouse,https://www.coreweave.com/careers,coreweave.md
+Corgi,ashby,corgi,api.ashbyhq.com/posting-api/job-board/corgi,Ashby,https://jobs.ashbyhq.com/corgi,corgi.md
+Coursera,greenhouse,coursera,boards-api.greenhouse.io/v1/boards/coursera,Greenhouse,https://www.coursera.org/careers,coursera.md
+Crusoe,ashby,crusoe,api.ashbyhq.com/posting-api/job-board/crusoe,ashby,https://www.crusoe.ai/about/careers,crusoe.md
+Cursor,ashby,cursor,api.ashbyhq.com/posting-api/job-board/cursor,ashby API,https://cursor.com/careers,cursor.md
+CVS Health,,,,,https://jobs.cvshealth.com/us/en/search-results,cvs_health.md
+Databricks,greenhouse,databricks,boards-api.greenhouse.io/v1/boards/databricks,Greenhouse,https://www.databricks.com/company/careers/open-positions?department=all&location=United%20States,databricks.md
+Dave,ashby,dave,api.ashbyhq.com/posting-api/job-board/dave,Ashby,https://dave.com/careers,dave.md
+Decagon,ashby,decagon,api.ashbyhq.com/posting-api/job-board/decagon,Ashby,https://decagon.ai/careers,decagon.md
+Decart.ai,ashby,decart-ai,api.ashbyhq.com/posting-api/job-board/decart-ai,Ashby,https://jobs.ashbyhq.com/decart-ai,decart_ai.md
+Deepgram,ashby,Deepgram,api.ashbyhq.com/posting-api/job-board/Deepgram,Ashby,https://deepgram.com/careers,deepgram.md
+Dell Technologies,,,,,,dell_technologies.md
+Deloitte,avature,deloitteus,deloitteus.avature.net,,https://apply.deloitte.com/en_US/careers/SearchJobs/,deloitte.md
+Delta Air Lines,avature,delta,delta.avature.net,,,delta_air_lines.md
+DigitalOcean,greenhouse,digitalocean98,api.greenhouse.io/v1/boards/digitalocean98,Greenhouse,https://www.digitalocean.com/careers,digital_ocean.md
+The Walt Disney Company,,,,,,disney.md
+Docker,ashby,docker,api.ashbyhq.com/posting-api/job-board/docker,Ashby,https://www.docker.com/career-openings/,docker.md
+DocuSign,icims,latamcareers-docusign,latamcareers-docusign.icims.com,,,docusign.md
+Draper,workday,draper,draper.wd5.myworkdayjobs.com,workday,https://www.draper.com/careers,draper.md
+Dyna Robotics,ashby,dyna-robotics,jobs.ashbyhq.com/dyna-robotics,Ashby,https://www.dyna.co/careers,dyna_robotics.md
+Elastic,greenhouse,elastic,job-boards.greenhouse.io/elastic,vendor,,elastic.md
+Elastix AI,ashby,elastix,api.ashbyhq.com/posting-api/job-board/elastix,Ashby,https://www.elastix.ai/career,elastix_ai.md
+ElevenLabs,ashby,elevenlabs,api.ashbyhq.com/posting-api/job-board/elevenlabs,Ashby,https://elevenlabs.io/careers,elevenlabs.md
+Ema,ashby,ema,jobs.ashbyhq.com/ema,Ashby,https://jobs.ashbyhq.com/ema,ema.md
+Epic Systems,avature,epic,epic.avature.net,Next,,epic-systems.md
+Equifax,,,,bespoke Equifax careers SPA,https://careers.equifax.com/en/jobs/,equifax.md
+Exact Sciences,workday,exactsciences,exactsciences.wd1.myworkdayjobs.com,Workday,https://exactsciences.wd1.myworkdayjobs.com/Exact_Sciences,exact_sciences.md
+Experian,smartrecruiters,,,SmartRecruiters,https://jobs.experian.com/jobs,experian.md
+FedEx,,,,,https://careers.fedex.com/jobs,fedex.md
+FuboTV,greenhouse,fubotv,boards-api.greenhouse.io/v1/boards/fubotv,greenhouse,https://careers.fubo.tv/fubotv-job-openings/,fubotv.md
+Galileo Financial Technologies,greenhouse,galileofinancialtechnologies,boards-api.greenhouse.io/v1/boards/galileofinancialtechnologies,Greenhouse,https://www.galileo-ft.com/careers/,galileo_financial_technologies.md
+Garmin,icims,,,Jibe / iCIMS stack,https://careers.garmin.com/jobs,garmin.md
+Gates Foundation,workday,gatesfoundation,gatesfoundation.wd1.myworkdayjobs.com,Workday,https://gatesfoundation.wd1.myworkdayjobs.com/Gates?source=gatesfoundation.org,gates_foundation.md
+GE HealthCare,workday,gehc,gehc.wd5.myworkdayjobs.com,Phenom,https://careers.gehealthcare.com/global/en/search-results,ge_healthcare.md
+GE Vernova,paradox,,,Paradox,https://careers.gevernova.com/jobs,ge_vernova.md
+Generalist AI,,,,,https://generalistai.com/careers,generalist_ai.md
+Giga,ashby,gigaml,jobs.ashbyhq.com/gigaml,Ashby,https://giga.ai/careers#3-list,giga.md
+Gilead,workday,gilead,gilead.wd1.myworkdayjobs.com,Workday,https://www.gilead.com/careers/opportunities-,gilead.md
+GitHub,,,,,,github.md
+GM Financial,,,,,https://www.gmfinancial.com/en-us/about-us/careers.html,gm_financial.md
+Guidewire,,guidewire,,Workday,https://www.guidewire.com/careers,guidewire.md
+HackerOne,,hackerone,,Ashby,https://www.hackerone.com/careers,hackerone.md
+HappyRobot,ashby,happyrobot.ai,api.ashbyhq.com/posting-api/job-board/happyrobot.ai,Ashby,https://happyrobot.ai/careers,happyrobot.md
+Hark,greenhouse,hark,job-boards.greenhouse.io/hark,,https://hark.com/careers,hark.md
+Harmonic,ashby,Harmonic,api.ashbyhq.com/posting-api/job-board/Harmonic,Ashby,https://jobs.ashbyhq.com/Harmonic,harmonic.md
+Highnote,greenhouse,highnote,boards-api.greenhouse.io/v1/boards/highnote,Greenhouse,https://highnote.com/careers,highnote.md
+Hightouch,greenhouse,hightouch,boards-api.greenhouse.io/v1/boards/hightouch,Greenhouse,https://hightouch.com/careers,hightouch.md
+Hinge Health,ashby,hinge-health,api.ashbyhq.com/posting-api/job-board/hinge-health,Ashby,https://www.hingehealth.com/careers,hinge_health.md
+Honeywell,oracle,,,Oracle Recruiting Cloud,https://careers.honeywell.com/en/sites/Honeywell/jobs?mode=location,honeywell.md
+Honeywell Aerospace,oracle,,,Oracle Recruiting Cloud,https://icfcjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Aerospace/jobs?mode=location,honeywell_aerospace.md
+Hewlett Packard Enterprise (HPE),workday,hpe,hpe.wd5.myworkdayjobs.com,Workday,https://careers.hpe.com/us/en/search-results,hpe.md
+Hugging Face,workable,huggingface,apply.workable.com/huggingface,workable,https://apply.workable.com/huggingface/,hugging_face.md
+ID.me,greenhouse,idme,boards-api.greenhouse.io/v1/boards/idme,Greenhouse,https://www.id.me/careers,id_me.md
+Ideogram,ashby,ideogram,jobs.ashbyhq.com/ideogram,,https://jobs.ashbyhq.com/ideogram,ideogram.md
+IMC Trading,greenhouse,imc,boards-api.greenhouse.io/v1/boards/imc,Greenhouse,https://www.imc.com/us/search-careers,imc_trading.md
+Interactive Brokers,greenhouse,ibkr,boards-api.greenhouse.io/v1/boards/ibkr,Greenhouse,https://www.interactivebrokers.com/en/general/about/careers.php,interactive_brokers.md
+IREN,,,,hibob,https://iren.careers.hibob.com/jobs,iren.md
+John Deere,eightfold,,,Eightfold,https://careers.deere.com/careers,john_deere.md
+Kalshi,ashby,kalshi,api.ashbyhq.com/posting-api/job-board/kalshi,ashby,https://kalshi.com/careers,kalshi.md
+Klarna,,,,Next,,klarna.md
+Klaviyo,greenhouse,klaviyo,job-boards.greenhouse.io/klaviyo,Greenhouse,https://www.klaviyo.com/careers,klaviyo.md
+Kleiner Perkins Talent Network,,,,,,kleiner_perkins.md
+Kraken,ashby,kraken.com,api.ashbyhq.com/posting-api/job-board/kraken.com,Ashby,https://www.kraken.com/careers,kraken.md
+Krea,ashby,krea,jobs.ashbyhq.com/krea,,https://jobs.ashbyhq.com/krea,krea.md
+Kustomer,ashby,Kustomer,api.ashbyhq.com/posting-api/job-board/Kustomer,Ashby,https://www.kustomer.com/careers,kustomer.md
+Kyndryl,workday,kyndryl,kyndryl.wd5.myworkdayjobs.com,Workday,https://kyndryl.wd5.myworkdayjobs.com/KyndrylProfessionalCareers,kyndryl.md
+LangChain,ashby,langchain,api.ashbyhq.com/posting-api/job-board/langchain,Ashby,https://www.langchain.com/careers,langchain.md
+Lassie,ashby,lassie,jobs.ashbyhq.com/lassie,,https://jobs.ashbyhq.com/lassie,lassie.md
+Later,greenhouse,later,job-boards.greenhouse.io/later,Greenhouse,https://job-boards.greenhouse.io/later,later.md
+Leidos,workday,leidos,leidos.wd5.myworkdayjobs.com,workday,https://careers.leidos.com/search/jobs,leidos.md
+Linear,ashby,Linear,api.ashbyhq.com/posting-api/job-board/Linear,Ashby,https://linear.app/careers,linear.md
+Linktree,,linktree,,gem,https://linktr.ee/careers,linktree.md
+Liquid AI,ashby,liquid-ai,jobs.ashbyhq.com/liquid-ai,,https://www.liquid.ai/careers,liquid_ai.md
+Live Nation Entertainment,workday,livenation,livenation.wd503.myworkdayjobs.com,Workday,https://www.livenationentertainment.com/careers/,live_nation_entertainment.md
+Lowe's Technology,phenom,,,Phenom,https://talent.lowes.com/us/en/c/technology-jobs,lowes_technology.md
+Lululemon,,,,,,lululemon.md
+Lumentum,workday,lumentum,lumentum.wd5.myworkdayjobs.com,Workday,https://www.lumentum.com/en/careers,lumentum.md
+Mapbox,ashby,mapbox,api.ashbyhq.com/posting-api/job-board/mapbox,Ashby,https://www.mapbox.com/careers,mapbox.md
+Mastercard,workday,mastercard,mastercard.wd1.myworkdayjobs.com,,,mastercard.md
+Match Group,lever,matchgroup,api.lever.co/v0/postings/matchgroup,Lever,https://join.matchgroupcareers.com/careers,match_group.md
+McKesson,,,,,https://careers.mckesson.com/en/search-jobs,mckesson.md
+McKinsey & Company,,,,,,mckinsey.md
+MEDITECH,,,,,https://ehr.meditech.com/careers/job-listings,meditech.md
+Mercari,greenhouse,mercari,boards-api.greenhouse.io/v1/boards/mercari,Greenhouse,https://www.mercari.com/careers/,mercari.md
+Merck,workday,msd,msd.wd5.myworkdayjobs.com,Phenom,https://jobs.merck.com/us/en/search-results,merck.md
+Merge,greenhouse,merge,boards-api.greenhouse.io/v1/boards/merge,Greenhouse,https://www.merge.dev/careers#opportunities,merge.md
+Millennium Management,,,,,,millennium_management.md
+Modular,,modular,,Gem,https://www.modular.com/company/careers,modular.md
+Monolithic Power Systems (monolithicpower.com → Workday),workday,monolithicpower,monolithicpower.wd12.myworkdayjobs.com,via posting-link inspection is the,https://www.monolithicpower.com/about-mps/careers/job-listings.html,monolithic_power_systems.md
+Motional,greenhouse,motional,boards-api.greenhouse.io/v1/boards/motional,Greenhouse,https://motional.com/open-positions#/,motional.md
+Motorola Solutions,workday,motorolasolutions,motorolasolutions.wd5.myworkdayjobs.com,Workday,https://motorolasolutions.wd5.myworkdayjobs.com/Careers,motorola_solutions.md
+MSCI,icims,uscareers-msci,uscareers-msci.icims.com,InstantSearch,,msci.md
+Nasdaq,workday,nasdaq,nasdaq.wd1.myworkdayjobs.com,workday,https://www.nasdaq.com/about/careers,nasdaq.md
+Navina (navina.ai → Comeet),,,,popular with,https://www.navina.ai/careers,navina.md
+Navitas Semiconductor (navitassemi.com → Paycom),,,,,https://navitassemi.com/navitas-careers/,navitas_semiconductor.md
+Nebius,greenhouse,nebius,boards-api.greenhouse.io/v1/boards/nebius,greenhouse,https://careers.nebius.com/,nebius.md
+NetApp,talentbrew,,,TalentBrew,https://careers.netapp.com/search-jobs,netapp.md
+Netflix,eightfold,,,Eightfold,https://explore.jobs.netflix.net/careers,netflix.md
+News Corp,,,,,https://careers.newscorp.com/jobs/,news_corp.md
+NewtonX,ashby,newtonx,api.ashbyhq.com/posting-api/job-board/newtonx,Ashby,https://www.newtonx.com/careers,newtonx.md
+Niantic Spatial,ashby,niantic-spatial,api.ashbyhq.com/posting-api/job-board/niantic-spatial,Ashby,https://nianticspatial.com/careers,niantic_spatial.md
+Nike,workday,nike,nike.wd1.myworkdayjobs.com,Paradox,,nike.md
+Novartis,,,,first-party Drupal careers table,https://www.novartis.com/careers/career-search,novartis.md
+Novo Nordisk,,,,first-party Novo Nordisk careers API,https://www.novonordisk.com/careers/find-a-job/career-search-results.html,novo_nordisk.md
+OnePay,ashby,oneapp,api.ashbyhq.com/posting-api/job-board/oneapp,Ashby,https://www.onepay.com/careers,onepay.md
+Open (open.cx),,,,Next,,opencx.md
+Opendoor,greenhouse,opendoor,boards-api.greenhouse.io/v1/boards/opendoor,Greenhouse,https://www.opendoor.com/careers/open-positions,opendoor.md
+OpenEvidence,ashby,openevidence,jobs.ashbyhq.com/openevidence,,https://www.openevidence.com/careers,openevidence.md
+Optimal Dynamics,greenhouse,optimaldynamics,boards-api.greenhouse.io/v1/boards/optimaldynamics,Greenhouse,https://www.optimaldynamics.com/careers,optimal_dynamics.md
+Optimum (Altice USA brand),peoplefluent,,,PeopleFluent-style Mosaic Talent Acquisition tenant on optimumcareers,https://www.optimumcareers.com/search/,optimum.md
+Oscar Health,greenhouse,oscar,boards-api.greenhouse.io/v1/boards/oscar,greenhouse,https://www.hioscar.com/careers/search,oscar_health.md
+Oura,greenhouse,oura,boards-api.greenhouse.io/v1/boards/oura,Greenhouse,https://ouraring.com/careers,oura.md
+Ouster (ouster.com → applytojob.com / JazzHR),,,,heading,,ouster.md
+Overland AI,,overland-ai,,Rippling,https://ats.rippling.com/overland-ai/jobs,overland_ai.md
+PayPal,eightfold,paypal,paypal.eightfold.ai,eightfold,https://careers.pypl.com/,paypal.md
+PDT Partners,greenhouse,pdtpartners,job-boards.greenhouse.io/pdtpartners,,,pdt_partners.md
+PEAK6,,,,PEAK6 custom Inertia app backed by Elastic App Search,https://peak6.com/careers/?size=n_10_n,peak6.md
+Peloton,greenhouse,peloton,job-boards.greenhouse.io/peloton,,,peloton.md
+Phantom,ashby,phantom,api.ashbyhq.com/posting-api/job-board/phantom,Ashby,https://phantom.com/careers,phantom.md
+Pinterest,greenhouse,pinterest,boards-api.greenhouse.io/v1/boards/pinterest,Greenhouse,https://www.pinterestcareers.com/jobs/,pinterest.md
+Plaid,lever,plaid,api.lever.co/v0/postings/plaid,Lever,https://plaid.com/careers/,plaid.md
+Polygon Labs,ashby,polygon-labs,api.ashbyhq.com/posting-api/job-board/polygon-labs,Ashby,https://polygon.technology/careers,polygon_labs.md
+Postman,greenhouse,postman,boards-api.greenhouse.io/v1/boards/postman,greenhouse,https://www.postman.com/company/careers/open-positions/,postman.md
+PowerSchool,,,,powerschool_custom,https://www.powerschool.com/company/careers/,powerschool.md
+Verification process log,workday,jnj,jnj.wd5.myworkdayjobs.com,families but intentionally have no live config users yet,,PROCESS.md
+Prologis,workday,prologis,prologis.wd5.myworkdayjobs.com,Workday,https://prologis.wd5.myworkdayjobs.com/Prologis_External_Careers,prologis.md
+PwC (PricewaterhouseCoopers),,,,,,pwc.md
+Quizlet,lever,quizlet-2,api.lever.co/v0/postings/quizlet-2,Lever,https://quizlet.com/careers,quizlet.md
+Rapid7 (rapid7.com → Clinch / Symphony Talent),,,,,https://www.rapid7.com/careers/,rapid7.md
+Reflection AI,ashby,reflectionai,jobs.ashbyhq.com/reflectionai,,https://reflection.ai/careers,reflection_ai.md
+Renaissance Technologies,,,,,https://www.rentec.com/Careers.action?jobs=true,renaissance.md
+Robinhood,greenhouse,robinhood,api.greenhouse.io/v1/boards/robinhood,Greenhouse,https://careers.robinhood.com/,robinhood.md
+Roche,phenom,,,Phenom,https://careers.roche.com/global/en/search-results,roche.md
+Rocket Companies,,,,,https://careers.rocket.com/careers,rocket_companies.md
+Rune Technologies,ashby,runetech,jobs.ashbyhq.com/runetech,Ashby,https://jobs.ashbyhq.com/runetech,rune_technologies.md
+Sabi,ashby,sabi,jobs.ashbyhq.com/sabi,,https://jobs.ashbyhq.com/sabi,sabi.md
+Samsung Research America (SRA),greenhouse,samsungresearchamerica,boards-api.greenhouse.io/v1/boards/samsungresearchamerica,WordPress theme with a Vue,https://sra.samsung.com/careers/#filter=init,samsung_research_america.md
+Samsung Semiconductor,greenhouse,samsungsemiconductor,boards-api.greenhouse.io/v1/boards/samsungsemiconductor,Greenhouse,https://semiconductor.samsung.com/us/careers/,samsung_semiconductor.md
+Sanofi,talentbrew,,,TalentBrew / Radancy,https://jobs.sanofi.com/en/search-jobs,sanofi.md
+SAP,,,,,https://jobs.sap.com/search/?q=&locationsearch=United+States,sap.md
+Saronic,ashby,saronic,jobs.ashbyhq.com/saronic,,https://www.saronic.com/careers,saronic.md
+Scopely,greenhouse,scopely,boards-api.greenhouse.io/v1/boards/scopely,Greenhouse,https://www.scopely.com/en/careers,scopely.md
+Scribd,ashby,ScribdInc,api.ashbyhq.com/posting-api/job-board/ScribdInc,Ashby,https://www.scribd.com/careers,scribd.md
+Seesaw,greenhouse,seesaw,job-boards.greenhouse.io/seesaw,Greenhouse,,seesaw.md
+Sesame,ashby,sesame,api.ashbyhq.com/posting-api/job-board/sesame,Ashby,https://jobs.ashbyhq.com/sesame,sesame.md
+7-Eleven,,,,,,seven_eleven.md
+Sierra,ashby,Sierra,api.ashbyhq.com/posting-api/job-board/Sierra,Ashby,https://sierra.ai/careers#open-roles,sierra.md
+Skyworks Solutions (skyworksinc.com → ADP WorkforceNow),,,,,https://careers.skyworksinc.com/search/,skyworks_solutions.md
+Slack,workday,salesforce,salesforce.wd12.myworkdayjobs.com,,https://slack.com/careers#openings,slack.md
+SLB (Schlumberger),,,,,https://careers.slb.com/job-listing,slb.md
+SoFi,greenhouse,sofi,boards-api.greenhouse.io/v1/boards/sofi,Greenhouse,https://www.sofi.com/careers/,sofi.md
+Sony Interactive Entertainment,greenhouse,sonyinteractiveentertainmentglobal,boards-api.greenhouse.io/v1/boards/sonyinteractiveentertainmentglobal,Greenhouse,https://www.playstation.com/en-us/corporate/playstation-careers/,sony_interactive_entertainment.md
+Speechify,greenhouse,speechify,boards-api.greenhouse.io/v1/boards/speechify,,https://speechify.com/careers/,speechify.md
+Starbucks,eightfold,starbucks,starbucks.eightfold.ai,,https://starbucks.eightfold.ai/careers,starbucks.md
+Starcloud,greenhouse,Starcloud,boards-api.greenhouse.io/v1/boards/Starcloud,Greenhouse,https://www.starcloud.com/careers,starcloud.md
+State Farm,,statefarm,,,https://jobs.statefarm.com/main/jobs,state_farm.md
+Strava,ashby,Strava,jobs.ashbyhq.com/Strava,Ashby,https://www.strava.com/careers,strava.md
+Stryker,workday,stryker,stryker.wd1.myworkdayjobs.com,Paradox,https://careers.stryker.com/jobs,stryker.md
+StubHub,greenhouse,stubhubinc,job-boards.greenhouse.io/stubhubinc,Greenhouse,https://careers.stubhub.com/,stubhub.md
+Supercell,,,,,https://supercell.com/en/careers/,supercell.md
+Superhuman,ashby,Superhuman,api.ashbyhq.com/posting-api/job-board/Superhuman,Ashby,https://superhuman.com/company/careers/jobs,superhuman.md
+Surge AI (surgehq.ai),,,,,https://surgehq.ai/careers,surge_ai.md
+T-Mobile US,workday,tmobile,tmobile.wd1.myworkdayjobs.com,Engineer,,t_mobile_us.md
+Tailscale,greenhouse,tailscale,boards-api.greenhouse.io/v1/boards/tailscale,Greenhouse,https://tailscale.com/careers,tailscale.md
+Target,workday,target,target.wd5.myworkdayjobs.com,React SPA,https://corporate.target.com/careers/job-search?currentPage=1,target.md
+Tencent,workday,tencent,tencent.wd1.myworkdayjobs.com,,https://careers.tencent.com/en-us/search.html,tencent.md
+Tesla,,,,first-party Tesla React careers app,https://www.tesla.com/careers/search/?site=US,tesla.md
+Teva,successfactors,,,SAP SuccessFactors,https://careers.teva/search/,teva.md
+Texas Instruments,,,,,,texas_instruments.md
+The Bot Company,ashby,thebotcompany,jobs.ashbyhq.com/thebotcompany,,,the_bot_company.md
+TikTok USDS,,,,TikTok first-party careers app,https://careers.tiktokusds.com/usds/position,tiktok_usds.md
+Toyota Connected,greenhouse,toyotaconnected,boards-api.greenhouse.io/v1/boards/toyotaconnected,Greenhouse,https://www.toyotaconnected.com/careers,toyota_connected.md
+TransUnion,workday,transunion,transunion.wd5.myworkdayjobs.com,workday,https://www.transunion.com/about-us/careers,transunion.md
+TrueUp AI / Hot / Space Batch,greenhouse,apolloio,job-boards.greenhouse.io/apolloio,,,trueup_ai_hot_space_batch.md
+Uber,,,,,https://www.uber.com/us/en/careers/list/,uber.md
+Ulysses (theoceancompany.com),,,,,https://www.theoceancompany.com/careers,ulysses.md
+United Airlines,,,,,,united_airlines.md
+UnitedHealth Group,talentbrew,,,TalentBrew-style,https://careers.unitedhealthgroup.com/search-jobs,unitedhealth_group.md
+Upstart,radancy,,,Clinch / Radancy rendered search,https://careers.upstart.com/jobs/search,upstart.md
+USAA,workday,usaa,usaa.wd1.myworkdayjobs.com,Workday,https://www.usaa.com/careers/,usaa.md
+Valve,,,,First-party static HTML,https://www.valvesoftware.com/en/jobs,valve.md
+Varda,greenhouse,vardaspace,job-boards.greenhouse.io/vardaspace,,https://www.varda.com/careers,varda.md
+VC Consider boards (Kleiner Perkins / Sequoia / CapitalG / YC),ashby,ycombinator,jobs.ashbyhq.com/ycombinator,,,vc_consider_boards.md
+vCluster (vcluster.com),,,,,https://www.vcluster.com/careers,vcluster.md
+Visa,workday,visa,visa.wd5.myworkdayjobs.com,,,visa.md
+VSCO,greenhouse,vsco39,boards-api.greenhouse.io/v1/boards/vsco39,Greenhouse,https://www.vsco.co/about/careers,vsco.md
+Walmart Global Tech,,,,,,walmart_global_tech.md
+Waymo,,,,waymo_custom,https://careers.withwaymo.com/jobs/search,waymo.md
+Wayve,greenhouse,wayve,job-boards.greenhouse.io/wayve,,https://wayve.ai/careers,wayve.md
+Wells Fargo,,,,Wells Fargo uses a first-party paginated HTML board on,https://www.wellsfargo.com/about/careers/,wells_fargo.md
+Welltower,ukg,,,UKG Pro / UltiPro,https://recruiting.ultipro.com/WEL1008WLLT/JobBoard/30969ce4-3b7e-40a6-b86c-34d3616fe0ed/,welltower.md
+WEX,workday,wexinc,wexinc.wd5.myworkdayjobs.com,workday,https://careers.wexinc.com/us/en/c/product-developmentengineering-jobs,wex.md
+Whoop,lever,whoop,api.lever.co/v0/postings/whoop,Lever,https://www.whoop.com/us/en/careers/,whoop.md
+Workato,greenhouse,workato,boards-api.greenhouse.io/v1/boards/workato,Greenhouse,https://www.workato.com/careers,workato.md
+World,ashby,Tools,jobs.ashbyhq.com/Tools,Ashby,https://world.org/careers,world.md
+XTX Markets,greenhouse,xtxmarketstechnologies,job-boards.greenhouse.io/xtxmarketstechnologies,,,xtx_markets.md
+Yahoo,workday,ouryahoo,ouryahoo.wd5.myworkdayjobs.com,Workday behind a first-party Yahoo search UI,https://www.yahooinc.com/careers/search.html,yahoo.md
+Zip,ashby,zip,api.ashbyhq.com/posting-api/job-board/zip,Ashby,https://ziphq.com/careers,zip.md
+Zipline,greenhouse,flyzipline,job-boards.greenhouse.io/flyzipline,Greenhouse,https://www.zipline.com/careers#open-roles,zipline.md
+Zoom,radancy,,,Clinch / Radancy rendered search,https://careers.zoom.us/jobs/search,zoom.md
+Zoox,lever,zoox,api.lever.co/v0/postings/zoox,Lever,https://zoox.com/careers/,zoox.md
