@@ -246,6 +246,22 @@ def test_recruitee_salary_formatting():
     assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
 
 
+def test_teamtailor_parse():
+    jobs = get_scraper("teamtailor", "1komma5", "1KOMMA5").parse(
+        _load("teamtailor_1komma5.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "teamtailor:1komma5:d47f17ae-f550-4511-b046-594892a59734"
+    assert j.ats == "teamtailor"
+    assert "1KOMMA5" in j.company
+    assert j.title  # non-empty
+    assert j.location.startswith("Stockholm") and j.location.endswith("SE")
+    assert j.url.startswith("https://1komma5.teamtailor.com/jobs/")
+    assert j.posted_at.startswith("2026-")
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
