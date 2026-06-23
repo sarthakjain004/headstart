@@ -10,7 +10,6 @@ fetched in a bounded thread pool. A failed detail fetch leaves description None 
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from headstart import http
@@ -51,20 +50,13 @@ class RipplingScraper(BaseScraper):
             return []
         data = resp.json()
         items = data if isinstance(data, list) else (data.get("items") or data.get("jobs") or [])
-        self._attach_details(items)
+        # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
+        details = self.fan_out(
+            items, lambda it: self._detail(it.get("uuid")), workers=_DETAIL_WORKERS, default={}
+        )
+        for item, detail in zip(items, details):
+            item["_detail"] = detail
         return items
-
-    def _attach_details(self, items: list[dict]) -> None:
-        """Fetch each posting's detail concurrently (bounded) and attach it as ``_detail``."""
-        if not items:
-            return
-        with ThreadPoolExecutor(max_workers=_DETAIL_WORKERS) as pool:
-            futures = {pool.submit(self._detail, it.get("uuid")): it for it in items}
-            for fut in as_completed(futures):
-                try:
-                    futures[fut]["_detail"] = fut.result()
-                except Exception:  # noqa: BLE001 - one bad detail must not sink the batch
-                    futures[fut]["_detail"] = {}
 
     def _detail(self, uuid: str | None) -> dict:
         if not uuid:
