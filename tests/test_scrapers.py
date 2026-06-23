@@ -278,6 +278,24 @@ def test_personio_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def test_join_parse():
+    jobs = get_scraper("join", "indie-solutions", "indie").parse(
+        _load("join_indie-solutions.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 12
+    j = jobs[0]
+    assert j.id == "join:indie-solutions:16244456"
+    assert j.ats == "join"
+    assert j.title  # non-empty
+    assert j.location  # present
+    assert j.department == "Electrical Engineering"
+    assert j.employment_type == "Employee"
+    assert j.url.startswith("https://join.com/companies/indie-solutions/")
+    assert j.posted_at
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+    assert sum(1 for x in jobs if x.description) == 12  # the bounded detail-fetch filled all 12
+
+
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
