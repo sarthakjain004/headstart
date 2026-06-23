@@ -296,6 +296,22 @@ def test_join_parse():
     assert sum(1 for x in jobs if x.description) == 12  # the bounded detail-fetch filled all 12
 
 
+def test_rippling_parse():
+    jobs = get_scraper("rippling", "acrn", "Acrn").parse(
+        _load("rippling_acrn.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "rippling:acrn:26708222-0b57-42df-8f52-b6b927351d18"
+    assert j.ats == "rippling"
+    assert j.title == "Clinical Operations Manager"
+    assert j.location  # workLocation present
+    assert j.url == "https://ats.rippling.com/acrn/jobs/26708222-0b57-42df-8f52-b6b927351d18"
+    assert j.employment_type  # employmentType.id
+    assert j.posted_at  # createdOn from the detail fetch
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
