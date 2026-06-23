@@ -12,7 +12,6 @@ fill it in. A failed detail fetch leaves description None — the job is still k
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from headstart import http
@@ -30,22 +29,16 @@ class SmartRecruitersScraper(BaseScraper):
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit=100"
 
     def fetch_raw(self) -> Any:
+        # Second pass: fill each posting's description concurrently (bounded); a failed detail
+        # fetch leaves ``_description`` None so the job is still kept.
         data = json.loads(self._get())
-        self._attach_descriptions(data.get("content") or [])
+        postings = data.get("content") or []
+        descriptions = self.fan_out(
+            postings, lambda p: self._job_description(p.get("id")), workers=_DETAIL_WORKERS
+        )
+        for posting, description in zip(postings, descriptions):
+            posting["_description"] = description
         return data
-
-    def _attach_descriptions(self, postings: list[dict]) -> None:
-        """Second pass: fetch each posting's description concurrently (bounded). A failed
-        detail fetch leaves ``_description`` None so the job is still kept."""
-        if not postings:
-            return
-        with ThreadPoolExecutor(max_workers=_DETAIL_WORKERS) as pool:
-            futures = {pool.submit(self._job_description, p.get("id")): p for p in postings}
-            for future in as_completed(futures):
-                try:
-                    futures[future]["_description"] = future.result()
-                except Exception:  # noqa: BLE001 - one bad detail must not sink the batch
-                    futures[future]["_description"] = None
 
     def _job_description(self, posting_id: str | None) -> str | None:
         """GET one posting's detail and return its raw-HTML jobDescription (None on failure)."""

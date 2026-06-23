@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TypeVar
 
 from headstart import http
 from headstart.models import Job
 
 _USER_AGENT = "headstart/0.1 (job-board reader)"
+_T = TypeVar("_T")
+_R = TypeVar("_R")
 
 
 class BaseScraper(ABC):
@@ -63,3 +67,32 @@ class BaseScraper(ABC):
     def fetch(self) -> list[Job]:
         scraped_at = datetime.now(timezone.utc).isoformat()
         return self.parse(self.fetch_raw(), scraped_at)
+
+    @staticmethod
+    def fan_out(
+        items: Sequence[_T],
+        fn: Callable[[_T], _R],
+        *,
+        workers: int = 8,
+        default: _R | None = None,
+    ) -> list[_R | None]:
+        """Apply ``fn`` to each item across a bounded thread pool, isolating per-item failures.
+
+        Returns results aligned to ``items`` — input order, not completion order — where each
+        entry is ``fn(item)`` or ``default`` if that call raised. One item's failure never sinks
+        the batch: the detail passes are network-bound, so a single 404 or timeout must not drop
+        the rest of the Board's Jobs. ``workers`` bounds the pool; a scraper hammering one
+        rate-limited host passes a smaller value (trakstar uses 4 under DataDome).
+        """
+        results: list[_R | None] = [default] * len(items)
+        if not items:
+            return results
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(fn, item): i for i, item in enumerate(items)}
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    results[index] = future.result()
+                except Exception:  # noqa: BLE001 - one item's failure must not sink the batch
+                    results[index] = default
+        return results

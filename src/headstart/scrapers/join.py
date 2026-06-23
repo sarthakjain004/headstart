@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from headstart import http
@@ -62,20 +61,13 @@ class JoinScraper(BaseScraper):
             if page >= (data.get("pagination") or {}).get("pageCount", 1):
                 break
             page += 1
-        self._attach_descriptions(items)
+        # Fill each posting's description concurrently (bounded); a failed fetch leaves it None.
+        descriptions = self.fan_out(
+            items, lambda it: self._job_description(it.get("id")), workers=_DETAIL_WORKERS
+        )
+        for item, description in zip(items, descriptions):
+            item["_description"] = description
         return {"company": company, "items": items}
-
-    def _attach_descriptions(self, items: list[dict]) -> None:
-        """Fetch each posting's description concurrently (bounded). Failures -> None."""
-        if not items:
-            return
-        with ThreadPoolExecutor(max_workers=_DETAIL_WORKERS) as pool:
-            futures = {pool.submit(self._job_description, it.get("id")): it for it in items}
-            for fut in as_completed(futures):
-                try:
-                    futures[fut]["_description"] = fut.result()
-                except Exception:  # noqa: BLE001 - one bad detail must not sink the batch
-                    futures[fut]["_description"] = None
 
     def _job_description(self, jid) -> str | None:
         """GET one posting's detail and return its raw description body (None on failure)."""

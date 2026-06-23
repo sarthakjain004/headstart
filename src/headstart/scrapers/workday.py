@@ -30,7 +30,6 @@ pooled ``http`` client, no asyncio), mapped onto our leaner Job.
 from __future__ import annotations
 
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from headstart import http
@@ -124,24 +123,15 @@ class WorkdayScraper(BaseScraper):
                 postings.append(item)
 
         self._exhaust({}, absorb, depth=0)
-        self._attach_descriptions(postings)
+        # Second pass: fill each posting's description concurrently (bounded); a failed detail
+        # fetch leaves ``_jobDescription`` None so the job is still kept.
+        descriptions = self.fan_out(
+            postings, lambda item: self._job_description(item.get("externalPath")),
+            workers=_DETAIL_WORKERS,
+        )
+        for item, description in zip(postings, descriptions):
+            item["_jobDescription"] = description
         return postings
-
-    def _attach_descriptions(self, postings: list[dict[str, Any]]) -> None:
-        """Second pass: fetch each posting's description concurrently (bounded). A failed
-        detail fetch leaves ``_jobDescription`` None so the job is still kept."""
-        if not postings:
-            return
-        with ThreadPoolExecutor(max_workers=_DETAIL_WORKERS) as pool:
-            futures = {
-                pool.submit(self._job_description, item.get("externalPath")): item
-                for item in postings
-            }
-            for future in as_completed(futures):
-                try:
-                    futures[future]["_jobDescription"] = future.result()
-                except Exception:  # noqa: BLE001 - one bad detail must not sink the batch
-                    futures[future]["_jobDescription"] = None
 
     def _job_description(self, external_path: str | None) -> str | None:
         """GET one posting's detail and return its raw-HTML jobDescription (None on failure)."""

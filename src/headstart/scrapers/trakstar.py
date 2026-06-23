@@ -18,7 +18,6 @@ from __future__ import annotations
 import html as _html
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from headstart import http
@@ -47,21 +46,9 @@ class TrakstarScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
         codes = [m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))]
-        return {"html": html, "descriptions": self._fetch_descriptions(codes)}
-
-    def _fetch_descriptions(self, codes: list[str]) -> dict[str, str | None]:
-        """Fetch each job page's JSON-LD description concurrently (bounded). Failures -> None."""
-        out: dict[str, str | None] = {}
-        if not codes:
-            return out
-        with ThreadPoolExecutor(max_workers=_DETAIL_WORKERS) as pool:
-            futures = {pool.submit(self._job_description, c): c for c in codes}
-            for future in as_completed(futures):
-                try:
-                    out[futures[future]] = future.result()
-                except Exception:  # noqa: BLE001 - one bad detail must not sink the batch
-                    out[futures[future]] = None
-        return out
+        # Each job page's JSON-LD description, fetched concurrently (bounded); failures -> None.
+        descriptions = dict(zip(codes, self.fan_out(codes, self._job_description, workers=_DETAIL_WORKERS)))
+        return {"html": html, "descriptions": descriptions}
 
     def _job_description(self, code: str) -> str | None:
         try:
