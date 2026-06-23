@@ -44,5 +44,7 @@ data/ats-companies/
 data/discover/
 data/ats-tenants-merged/*.csv
 data/jobs/
+# harvested external ATS company lists — large and regenerable from the merge scripts
+data/ats-company-lists/
 # liveness resume checkpoints (.{ats}_checked / .{ats}_dead), not data
 data/ats-tenants-merged/active/.*
