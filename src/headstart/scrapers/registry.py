@@ -13,6 +13,7 @@ from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.recruitee import RecruiteeScraper
 from headstart.scrapers.ripplehire import RippleHireScraper
+from headstart.scrapers.rippling import RipplingScraper
 from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 from headstart.scrapers.teamtailor import TeamtailorScraper
@@ -26,7 +27,8 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     for cls in (GreenhouseScraper, LeverScraper, AshbyScraper, ZohoScraper, WorkdayScraper,
                 WorkableScraper, SmartRecruitersScraper, RecruiteeScraper, OracleScraper,
                 SenseHQScraper, KekaScraper, TrakstarScraper, RippleHireScraper,
-                DarwinboxScraper, TeamtailorScraper, PersonioScraper, JoinScraper)
+                DarwinboxScraper, TeamtailorScraper, PersonioScraper, JoinScraper,
+                RipplingScraper)
 }
 
 
