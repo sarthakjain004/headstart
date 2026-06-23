@@ -1,4 +1,5 @@
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -259,6 +260,21 @@ def test_teamtailor_parse():
     assert j.location.startswith("Stockholm") and j.location.endswith("SE")
     assert j.url.startswith("https://1komma5.teamtailor.com/jobs/")
     assert j.posted_at.startswith("2026-")
+    assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_personio_parse():
+    raw = ET.fromstring((FIXTURES / "personio_avian.xml").read_bytes())
+    jobs = get_scraper("personio", "avian.jobs.personio.com", "Avian").parse(raw, SCRAPED_AT)
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "personio:avian:2642824"
+    assert j.ats == "personio"
+    assert j.title == "Business Development Summer Intern"
+    assert j.location  # office present
+    assert j.department == "Operations"
+    assert j.url == "https://avian.jobs.personio.com/job/2642824"
+    assert j.posted_at  # createdAt
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
