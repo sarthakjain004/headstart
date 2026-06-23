@@ -39,6 +39,7 @@ ALIASES = {
     "breezyhr": "breezy",
     "sap": "successfactors", "sapsf": "successfactors",
     "oraclecloud": "oracle", "oraclehcm": "oracle", "oraclerecruitingcloud": "oracle",
+    "oraclecloudhcm": "oracle", "oraclerecruiting": "oracle",
     "zoho": "zohorecruit",
     "sensehq": "sense",
 }
@@ -151,16 +152,40 @@ def valid_slug(s: str) -> bool:
     return True
 
 
+# Multi-ATS files (company->ats maps): columns that name the ATS / slug / URL / company.
+ATS_COLS = ("ats", "ats_platform", "ats_name", "ats_system", "provider", "board_type")
+SLUG_COLS = ("slug", "ats_slug", "token", "tenant", "company_slug")
+URL_COLS = ("url", "careers_url", "board_url", "endpoint", "url_string", "apply_url")
+NAME_COLS = ("name", "company", "company_name", "label", "company_plugin")
+# ats values meaning "not a scrapable ATS board" -> skip (custom/in-house/own domain)
+NON_ATS = {"custom", "customowndomain", "owndomain", "firstparty", "internalats",
+           "internal", "inhouse", "proprietary", "none", "unknown", "na", "other", ""}
+
+
+def _slugify(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
+
+
+def _non_ats(ats: str) -> bool:
+    """True for in-house / own-domain 'ats' values that aren't a scrapable board."""
+    return (not ats or ats in NON_ATS or ats.startswith("internal")
+            or "proprietary" in ats or "owndomain" in ats or "inhouse" in ats)
+
+
 def provider_from_name(stem: str):
+    """The single ATS this file is about, from its filename, or None. Tries the
+    structured suffixes, then any known-provider token in the name (so
+    greenhouse_company_slugs / ashby_known_seed_slugs / greenhouse_updated all resolve)."""
     stem = stem.lower()
     for pat in (r"^slugs[_-](.+)$", r"^(.+?)[_-]slugs$", r"^(.+?)[_-]companies$",
                 r"^(.+?)[_-]companies[_-].+$", r"^(.+?)[_-]sources$",
                 r"^(.+?)[_-]customers$", r"^([a-z0-9]+)$"):
         m = re.match(pat, stem)
-        if m:
-            cand = norm_ats(m.group(1))
-            if cand in KNOWN_NORM:
-                return cand
+        if m and norm_ats(m.group(1)) in KNOWN_NORM:
+            return norm_ats(m.group(1))
+    for tok in re.split(r"[^a-z0-9]+", stem):
+        if tok and norm_ats(tok) in KNOWN_NORM:
+            return norm_ats(tok)
     return None
 
 
@@ -214,19 +239,72 @@ def filename_keyed_slugs(ats: str, path: Path):
         except Exception:
             return []
     if suf == ".csv":
-        rows = list(csv.reader(io.StringIO(raw)))
+        rows = [r for r in csv.reader(io.StringIO(raw))
+                if r and not r[0].lstrip().startswith("#")]
         if not rows:
             return []
         header = [c.strip().lower() for c in rows[0]]
-        if "slug" in header:
-            i = header.index("slug")
-            return [r[i] for r in rows[1:] if len(r) > i]
+        col = next((i for i, h in enumerate(header)
+                    if h in SLUG_COLS or h.endswith("_slug")), None)
+        if col is not None:
+            return [r[col] for r in rows[1:] if len(r) > col]
         if len(header) == 1:
             return [r[0] for r in rows if r]          # single column, no header assumed
-        return []                                      # multi-col w/o slug -> url_scan covers
+        return []                                      # multi-col w/o slug -> url/columnar covers
     if suf == ".txt":
-        return [re.split(r"[,\t ]", ln.strip())[0] for ln in raw.splitlines() if ln.strip()]
+        return [re.split(r"[,\t ]", ln.strip())[0]
+                for ln in raw.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+    if suf in (".py", ".ts", ".js", ".yaml", ".yml"):
+        # quoted values of slug-ish keys: "token": "x"  slug='x'  companySlug: "x"
+        return re.findall(
+            r"(?:token|slug|tenant|company_?[sS]lug)['\"]?\s*[:=]\s*['\"]([A-Za-z0-9._-]+)['\"]",
+            raw)
     return []
+
+
+def columnar_scan(path: Path, text: str):
+    """Yield (ats, slug, url) from multi-ATS files keyed by an ``ats`` column
+    (company,ats,slug maps) and from Workday tenant/domain/board JSON objects."""
+    suf = path.suffix.lower()
+    if suf == ".csv":
+        rdr = csv.DictReader(ln for ln in io.StringIO(text) if not ln.lstrip().startswith("#"))
+        for row in rdr:
+            low = {(k or "").strip().lower(): (v or "") for k, v in row.items()}
+            ats = norm_ats(next((low[c] for c in ATS_COLS if low.get(c)), "").split("/")[0])
+            if _non_ats(ats):
+                continue
+            slug = next((low[c] for c in SLUG_COLS if low.get(c)), "").strip()
+            if not slug:
+                slug = _slugify(next((low[c] for c in NAME_COLS if low.get(c)), ""))
+            url = next((low[c].strip() for c in URL_COLS if low.get(c)), "")
+            if valid_slug(slug):
+                yield ats, slug, url
+    elif suf == ".json":
+        try:
+            data = json.loads(text)
+        except Exception:
+            return
+        items = data if isinstance(data, list) else (
+            data.get("companies") if isinstance(data, dict) else None)
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            low = {k.lower(): v for k, v in it.items()}
+            dom, ten = low.get("domain") or low.get("instance") or "", low.get("tenant")
+            if ten and isinstance(dom, str) and re.fullmatch(r"wd\d+", dom):
+                board = low.get("board") or low.get("site") or ""
+                host = f"{ten}.{dom}.myworkdayjobs.com" + (f"/{board}" if board else "")
+                yield "workday", host, "https://" + host
+                continue
+            ats = norm_ats(str(next((low[c] for c in ATS_COLS if low.get(c)), "")).split("/")[0])
+            if _non_ats(ats):
+                continue
+            slug = str(next((low[c] for c in SLUG_COLS if low.get(c)), "")).strip()
+            if not slug:
+                slug = _slugify(str(next((low[c] for c in NAME_COLS if low.get(c)), "")))
+            url = str(next((low[c] for c in URL_COLS if low.get(c)), "")).strip()
+            if valid_slug(slug):
+                yield ats, slug, url
 
 
 def main() -> int:
@@ -265,12 +343,27 @@ def main() -> int:
         for ats, slug, url in url_scan(text):
             add(ats, slug, url, source)
 
-        # strategy 2: filename-keyed bare slugs (single-provider files)
-        ats = provider_from_name(path.stem)
-        if ats and path.suffix.lower() in (".csv", ".txt", ".json"):
-            for slug in filename_keyed_slugs(ats, path):
-                if valid_slug(slug):
-                    add(ats, slug, CANON.get(ats, "").format(s=slug.strip().strip("/")) if ats in CANON else "", source)
+        # strategy 2: multi-ATS columnar maps (company,ats,slug) + workday tenant JSON
+        for ats, slug, url in columnar_scan(path, text):
+            add(ats, slug, url or (CANON.get(ats, "").format(s=slug) if ats in CANON else ""), source)
+
+        # strategy 3: filename-keyed lists (single-provider files)
+        kats = provider_from_name(path.stem)
+        if kats and path.suffix.lower() in (".csv", ".txt", ".json", ".py", ".ts", ".js", ".yaml", ".yml"):
+            keyed = [s for s in filename_keyed_slugs(kats, path) if valid_slug(s)]
+            for slug in keyed:
+                add(kats, slug,
+                    CANON.get(kats, "").format(s=slug.strip().strip("/")) if kats in CANON else "",
+                    source)
+            # phenom-style: single-provider CSV of careers URL + name, no slug column
+            if not keyed and path.suffix.lower() == ".csv":
+                for row in csv.DictReader(io.StringIO(text)):
+                    low = {(k or "").strip().lower(): (v or "") for k, v in row.items()}
+                    url = next((low[c].strip() for c in URL_COLS if low.get(c)), "")
+                    nm = low.get("company_code") or low.get("code") or _slugify(
+                        next((low[c] for c in NAME_COLS if low.get(c)), ""))
+                    if valid_slug(nm):
+                        add(kats, nm, url, source)
 
     # write outputs
     OUT.mkdir(parents=True, exist_ok=True)
