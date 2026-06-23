@@ -1,0 +1,782 @@
+{
+ "company": {
+  "id": 24945,
+  "name": "INDIE Solutions GmbH",
+  "domain": "indie-solutions",
+  "desc": "Wir verstehen uns als Boutique-Agentur für die IT-Branche. Individuell, unabhängig und irgendwie ein wenig anders.",
+  "url": "http://indie-solutions.de",
+  "logoId": "650d793dcf679b000741add3",
+  "isPublic": true,
+  "inReview": false,
+  "numberOfEmployees": {
+   "id": 2,
+   "name": "1-10",
+   "order": 2,
+   "createdAt": "2018-07-10T15:10:57.955Z",
+   "updatedAt": "2022-12-06T00:00:00.000Z"
+  },
+  "linkedinCompanyUrl": "https://www.linkedin.com/company/indie-solutions-gmbh/",
+  "offices": [
+   {
+    "id": 40151,
+    "companyId": 24945,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "isDefault": true,
+    "name": "Berlin",
+    "isPendingDeletion": false,
+    "jobsCount": {
+     "onlineJobsCount": 6,
+     "totalJobsCount": 165,
+     "offlineJobsCount": 0,
+     "archivedJobsCount": 159,
+     "draftJobsCount": 0
+    },
+    "cityName": "Berlin",
+    "countryName": "Germany"
+   },
+   {
+    "id": 210177,
+    "companyId": 24945,
+    "countryId": 86,
+    "cityId": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc",
+    "isDefault": false,
+    "name": "Dresden",
+    "isPendingDeletion": false,
+    "jobsCount": {
+     "onlineJobsCount": 2,
+     "totalJobsCount": 15,
+     "offlineJobsCount": 0,
+     "archivedJobsCount": 13,
+     "draftJobsCount": 0
+    },
+    "cityName": "Dresden",
+    "countryName": "Germany"
+   },
+   {
+    "id": 110486,
+    "companyId": 24945,
+    "countryId": 86,
+    "cityId": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605",
+    "isDefault": false,
+    "name": "Düsseldorf",
+    "isPendingDeletion": false,
+    "jobsCount": {
+     "onlineJobsCount": 2,
+     "totalJobsCount": 53,
+     "offlineJobsCount": 0,
+     "archivedJobsCount": 51,
+     "draftJobsCount": 0
+    },
+    "cityName": "Düsseldorf",
+    "countryName": "Germany"
+   },
+   {
+    "id": 110488,
+    "companyId": 24945,
+    "countryId": 86,
+    "cityId": "dde19cc8-623e-422b-b333-916821ac73bc",
+    "isDefault": false,
+    "name": "Leipzig",
+    "isPendingDeletion": false,
+    "jobsCount": {
+     "onlineJobsCount": 1,
+     "totalJobsCount": 12,
+     "offlineJobsCount": 0,
+     "archivedJobsCount": 11,
+     "draftJobsCount": 0
+    },
+    "cityName": "Leipzig",
+    "countryName": "Germany"
+   },
+   {
+    "id": 213602,
+    "companyId": 24945,
+    "countryId": 86,
+    "cityId": "f005f6e6-32a0-49d3-b1b5-0fe6496e2968",
+    "isDefault": false,
+    "isPendingDeletion": false,
+    "jobsCount": {
+     "onlineJobsCount": 1,
+     "totalJobsCount": 3,
+     "offlineJobsCount": 0,
+     "archivedJobsCount": 2,
+     "draftJobsCount": 0
+    },
+    "cityName": "Hamburg",
+    "countryName": "Germany"
+   }
+  ],
+  "industry": {
+   "id": 422,
+   "name": "Staffing and Recruiting"
+  },
+  "preference": {
+   "accountType": "CLIENT",
+   "mission": "Indie Solutions - Wir bringen erfahrene Tech-Gurus, Digitale Ninjas, Daten-Jongleure und Algorithmen-Akrobaten mit populären Unternehmen der Tech/IT Branche zusammen - und das europaweit!",
+   "isSpontaneousApplicationEnabled": false
+  }
+ },
+ "items": [
+  {
+   "id": 16244456,
+   "idParam": "16304018-bauprojektleiter-m-w-d-elektrotechnik-oder-berlin",
+   "title": "Bauprojektleiter (m/w/d) Elektrotechnik | Berlin",
+   "createdAt": "2026-06-01T14:59:22.433Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 7500000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 9000000,
+    "currency": "EUR"
+   },
+   "categoryId": 360,
+   "countryId": 86,
+   "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 40151,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d"
+   },
+   "category": {
+    "id": 360,
+    "name": "Electrical Engineering"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "countryCode": "de",
+    "lat": 52.5200080871582,
+    "lng": 13.404953956604004,
+    "defaultZipCode": "10115",
+    "cityName": "Berlin",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJAVkDPzdOqEcRcDteW0YgIQQ",
+    "regionName": "Berlin"
+   },
+   "_description": "Für ein technologisch anspruchsvolles und sicherheitsrelevantes Arbeitsumfeld suchen wir eine erfahrenen Projektleiter (m/w/x), der Bauprojekte im Bereich technischer Gebäudeausrüstung verantwortungsvoll steuert und aktiv gestaltet. Im Mittelpunkt stehen komplexe Bau- und Umbauvorhaben mit Fokus auf elektrotechnische Anlagen und sicherheitsrelevante Systeme.\n\n## Aufgaben\n\n*   Eigenverantwortliche Projektleitung sowie Bauherrenvertretung bei **Neubau-, Umbau- und Modernisierungsprojekten**\n*   Steuerung und Koordination externer Dienstleister, wie Fachplaner, Architekten, Ingenieurbüros und ausführender Unternehmen\n*   Planung und Konzeption elektrotechnischer Anlagen im Bereich **DIN 276 Kostengruppen 440–450** mit Schwerpunkt in Sicherheitstechnik (EMA, Video, Zutritt, BMA) \n*   Erstellung, Prüfung und technische Bewertung von Ausschreibungsunterlagen und Leistungsverzeichnissen\n*   Fachliche Bewertung bestehender elektrotechnischer Anlagen sowie Entwicklung von Optimierungsmaßnahmen\n*   Überwachung von Terminen, Budgets, Qualität und Ausführung\n*   Dokumentation der Projektfortschritte und Sicherstellung einer revisionssicheren Projektdokumentation\n\n## Qualifikation\n\n*   Studium im Bereich Elektrotechnik, Wirtschaftsingenieurwesen, Versorgungstechnik oder Meister im Bereich Elektrotechnik\n*   Mehrjährige Berufserfahrung im Projektmanagement von Bau- oder TGA-Projekten\n*   Fundierte Kenntnisse in **VOB B/C**, relevanten **DIN-Normen** und **VDE-Richtlinien**\n*   Erfahrung in der Planung und Umsetzung elektrotechnischer Infrastrukturprojekte\n*   Erfahrung in der Abnahme von elektrotechnischer Anlagen (Neubau, Sanierung, etc.)\n*   Gute Anwenderkenntnisse in MS Office, idealerweise erste Berührungspunkte mit SAP und Coor\n*   Strukturierte, eigenständige und lösungsorientierte Arbeitsweise\n*   **Kommunikationsstärke**, Durchsetzungsvermögen und Organisationstalent\n\n## Benefits\n\n*   Verantwortungsvolle Projekte mit hoher technischer und organisatorischer Komplexität\n*   Langfristige Perspektive in einem stabilen Unternehmensumfeld\n*   Flexible Arbeitszeitmodelle\n*   30 Urlaubstage\n*   Fachliche und persönliche Weiterentwicklungsmöglichkeiten\n*   Moderne technische Ausstattung und interdisziplinäre Zusammenarbeit\n\nLass uns entspannt über weitere Details verständigen!\n\nBewirb dich direkt oder schreib mir: [randy.adam(at)indie-solutions.de](mailto:randy.adam\\(at\\)indie-solutions.de)"
+  },
+  {
+   "id": 16262550,
+   "idParam": "16336062-bereichsleitung-cybersecurity-und-quality-governance-m-w-d-oder-berlin",
+   "title": "Bereichsleitung Cybersecurity & Quality Governance (m/w/d) | Berlin",
+   "createdAt": "2026-06-05T09:58:02.909Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 9000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 10500000,
+    "currency": "EUR"
+   },
+   "categoryId": 348,
+   "countryId": 86,
+   "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 40151,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d"
+   },
+   "category": {
+    "id": 348,
+    "name": "IT Security"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "countryCode": "de",
+    "lat": 52.5200080871582,
+    "lng": 13.404953956604004,
+    "defaultZipCode": "10115",
+    "cityName": "Berlin",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJAVkDPzdOqEcRcDteW0YgIQQ",
+    "regionName": "Berlin"
+   },
+   "_description": "Informationssicherheit, Governance und Qualitätsmanagement sind für dich mehr als Compliance-Themen? Du möchtest Strukturen gestalten, Verantwortung übernehmen und die Weiterentwicklung eines hochrelevanten Sicherheitsumfelds aktiv vorantreiben?\n\nFür ein etabliertes Technologieunternehmen mit anspruchsvollen Sicherheits- und Compliance-Anforderungen suchen wir eine erfahrene Führungspersönlichkeit für die **Leitung des Bereichs Cybersecurity & Quality Governance**.\n\nIn dieser Schlüsselposition gestaltest du die strategische Weiterentwicklung zentraler Managementsysteme und trägst maßgeblich dazu bei, Sicherheits-, Qualitäts- und Governance-Standards nachhaltig zu verankern.\n\n## Aufgaben\n\n*   Fachliche und disziplinarische Führung sowie Weiterentwicklung eines spezialisierten Expertenteams\n*   Verantwortung für die Erreichung strategischer und operativer Bereichsziele\n*   Initiierung, Steuerung und Umsetzung bereichsübergreifender Projekte und Transformationsvorhaben\n*   Weiterentwicklung und Optimierung zentraler Governance- und Managementsysteme, insbesondere in den Bereichen Informationssicherheitsmanagement, Risikomanagement, Business-Continuity-Management, Datenschutz, Notfall- und Krisenmanagement, Vulnerability- und Incident-Management\n*   Sicherstellung effizienter Prozesse sowie kontinuierliche Verbesserung von Qualitäts- und Sicherheitsstandards\n*   Identifikation, Bewertung und Steuerung relevanter Risiken\n*   Förderung einer offenen, kollaborativen Unternehmenskultur und eines aktiven Wissensaustauschs\n\n## Qualifikation\n\n*   Erfolgreich abgeschlossenes Studium mit technischem, wirtschaftlichem oder organisatorischem Schwerpunkt oder eine vergleichbare Qualifikation\n*   Mehrjährige Berufserfahrung im Umfeld Informationssicherheit, Governance, Compliance oder Qualitätsmanagement\n*   Erfahrung in der Führung von Teams oder Projektorganisationen\n*   Fundierte Kenntnisse etablierter Informationssicherheitsstandards, insbesondere ISO/IEC 27001\n*   Sehr gutes Verständnis von Sicherheitsprozessen, Governance-Strukturen und modernen Cybersecurity-Anforderungen\n*   Analytisches Denkvermögen sowie eine strukturierte und lösungsorientierte Arbeitsweise\n*   Ausgeprägte Kommunikations- und Moderationsfähigkeiten auf allen Hierarchieebenen\n*   Verhandlungssichere Deutschkenntnisse sowie gute Englischkenntnisse\n\n## Benefits\n\n*   Eine strategisch wichtige Führungsrolle mit hoher Sichtbarkeit im Unternehmen\n*   Ein modernes, innovationsgetriebenes Umfeld mit gesellschaftlicher Relevanz\n*   Die Möglichkeit, Governance-, Sicherheits- und Qualitätsstandards aktiv mitzugestalten\n*   Flexible Arbeitszeitmodelle und eine ausgewogene Work-Life-Balance\n*   Umfangreiche Weiterbildungs- und Entwicklungsmöglichkeiten für Fach- und Führungskräfte\n*   Attraktive Zusatzleistungen wie betriebliche Altersvorsorge, Gesundheitsangebote und familienfreundliche Unterstützungsprogramme\n*   Ein sicherer Arbeitsplatz in einem langfristig stabilen und zukunftsorientierten Unternehmensumfeld\n\nLass uns entspannt über weitere Details verständigen!\n\n🎯Bewirb dich direkt: [randy.adam@indie-solutions.de](mailto:randy.adam@indie-solutions.de)"
+  },
+  {
+   "id": 16190099,
+   "idParam": "16305239-buchhalter-m-w-d",
+   "title": "Buchhalter (m/w/d)",
+   "createdAt": "2026-05-21T09:05:59.470Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 4000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 5500000,
+    "currency": "EUR"
+   },
+   "categoryId": 243,
+   "countryId": 86,
+   "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 40151,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d"
+   },
+   "category": {
+    "id": 243,
+    "name": "Accounts Receivable"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "countryCode": "de",
+    "lat": 52.5200080871582,
+    "lng": 13.404953956604004,
+    "defaultZipCode": "10115",
+    "cityName": "Berlin",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJAVkDPzdOqEcRcDteW0YgIQQ",
+    "regionName": "Berlin"
+   },
+   "_description": "**Payment-Solutions neu gedacht!**\n\nUnter diesem Motto entwickelt unser Partner, als führendes Unternehmen im DACH-Raum, innovative und individuelle POS-Software-Lösungen - von Self-Check-Kassen, über Click & Collect Systeme, bis hin zu spannenden inhouse Projekten.\n\nFür den Ausbau der internen Verwaltung, wird derzeit am Standort Berlin ein **Debitorenbuchhalter (m/w/d)** gesucht.\n\n## Aufgaben\n\n*   Erstellung, Prüfung und Abstimmung von Ausgangsrechnungen unter Berücksichtigung interner Vorgaben und individueller Kundenanforderungen\n*   Eigenverantwortliche Betreuung der Debitorenbuchhaltung inklusive Kontenpflege, Abstimmung und Klärung offener Sachverhalte\n*   Sicherstellung der ordnungsgemäßen Verbuchung von Zahlungseingängen\n*   Analyse offener Posten sowie selbstständige Klärung von Differenzen mit Kunden und internen Ansprechpartnern\n*   Unterstützung bei Monats-, Quartals- und Jahresabschlüssen nach HGB\n*   Mitarbeit bei der Optimierung bestehender buchhalterischer Abläufe sowie Weiterentwicklung von Prozessen und Systemen\n*   Enge Zusammenarbeit mit angrenzenden Fachbereichen innerhalb des Unternehmens\n\n## Qualifikation\n\n*   Abgeschlossene kaufmännische Ausbildung\n*   erste praktische Erfahrung in der Debitorenbuchhaltung\n*   Sicherer Umgang mit ERP-Systemen (DATEV etc.) sowie sehr gute Kenntnisse in MS Excel\n*   Verständnis buchhalterischer Zusammenhänge und Abschlusssicherheit nach HGB\n*   Hohe Zuverlässigkeit, Verantwortungsbewusstsein und sorgfältiger Umgang mit sensiblen Daten\n*   Kommunikationsstärke im Austausch mit Kunden und internen Stakeholdern\n*   Teamorientierte Arbeitsweise sowie strukturierte Herangehensweise\n*   Sehr gute Deutschkenntnisse und gute Englischkenntnisse\n\n## Benefits\n\n*   30 Urlaubstage\n*   Weiterbildungen in buchhalterischen Bereichen (Bilanzbuchhalter o.ä.)\n*   Hybrides Homeofficemodell mit flexibler Arbeitszeitgestaltung\n*   Workation Office in Portugal\n*   Open-Door-Policy und Duz-Kultur im gesamten Unternehmen\n*   2x pro Monat Unternehmensfreitag (Get-Togehter mit den Teams und dem Management + Raum für Fortbildung, Präsentationen und eigenen Projekten)\n*   jährliche Sommerkonferenz (Event für die gesamte Familie)\n*   Jobrad und Mobilitätsunterstützung"
+  },
+  {
+   "id": 16285394,
+   "idParam": "16285394-devops-engineer-m-w-d-oder-cloud-kubernetes-und-ci-cd-oder-hamburg",
+   "title": "DevOps Engineer (m/w/d) | Cloud, Kubernetes & CI/CD | Hamburg",
+   "createdAt": "2026-06-10T08:51:39.917Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 7500000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 8500000,
+    "currency": "EUR"
+   },
+   "categoryId": 170,
+   "countryId": 86,
+   "cityId": "f005f6e6-32a0-49d3-b1b5-0fe6496e2968",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 213602,
+    "countryId": 86,
+    "cityId": "f005f6e6-32a0-49d3-b1b5-0fe6496e2968"
+   },
+   "category": {
+    "id": 170,
+    "name": "Software Development"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "f005f6e6-32a0-49d3-b1b5-0fe6496e2968",
+    "countryCode": "de",
+    "lat": 53.55108642578125,
+    "lng": 9.993681907653809,
+    "defaultZipCode": "20095",
+    "cityName": "Hamburg",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJuRMYfoNhsUcRoDrWe_I9JgQ",
+    "regionName": "Hamburg"
+   },
+   "_description": "**Du möchtest moderne Cloud-Plattformen mitgestalten und den gesamten Software-Lifecycle aktiv vorantreiben?**\n\nFür ein etabliertes Technologieunternehmen mit anspruchsvollen Digitalisierungsprojekten suchen wir einen **DevOps Engineer (m/w/d)**, der Entwicklung und Betrieb zusammenbringt und moderne Deployment- und Automatisierungsprozesse auf das nächste Level hebt.\n\nDich erwartet ein innovationsgetriebenes Umfeld, in dem Zuverlässigkeit, Skalierbarkeit und Sicherheit eine zentrale Rolle spielen.\n\n## Aufgaben\n\n*   Konzeption, Aufbau und kontinuierliche Optimierung moderner CI/CD-Pipelines\n*   Automatisierung und Sicherstellung effizienter Deployment-Prozesse über verschiedene Umgebungen hinweg\n*   Containerisierung und Betrieb moderner Webanwendungen in Cloud- und Kubernetes-Umgebungen\n*   Einrichtung und Weiterentwicklung von Monitoring-, Logging- und Alerting-Lösungen\n*   Mitarbeit an der Entwicklung und Optimierung von Softwarekomponenten im Java-Umfeld\n*   Aktive Beteiligung an agilen Entwicklungsprozessen und technischen Architekturentscheidungen\n*   Enge Zusammenarbeit mit Softwareentwicklung, Architektur und Betrieb\n\n## Qualifikation\n\n*   Erfolgreich abgeschlossenes Studium oder eine Ausbildung im Bereich Informatik bzw. eine vergleichbare Qualifikation\n*   Erfahrung im Aufbau und Betrieb von CI/CD-Prozessen sowie im Deployment komplexer Softwarelösungen\n*   Praxiskenntnisse in GitLab oder vergleichbaren DevOps-Plattformen\n*   Erfahrung mit Kubernetes-basierten Plattformen, idealerweise OpenShift\n*   Kenntnisse im Bereich Monitoring und Logging, z. B. mit Grafana, Prometheus oder dem ELK-Stack\n*   Sicherer Umgang mit Git sowie gängigen Methoden des Release- und Versionsmanagements\n*   Gute Kenntnisse in Java sowie modernen Backend-Technologien und Frameworks wie Spring Boot oder Quarkus\n*   Erfahrung mit APIs (REST/SOAP) sowie Datenformaten wie JSON und XML\n*   Strukturierte, eigenverantwortliche Arbeitsweise und Freude an Teamarbeit in agilen Umgebungen\n\n## Benefits\n\n*   Spannende und langfristige Projekte in einem technologisch anspruchsvollen Umfeld\n*   Moderne Cloud- und DevOps-Landschaften mit aktuellem Tech Stack\n*   Hoher Gestaltungsspielraum und die Möglichkeit, technische Standards aktiv mitzuentwickeln\n*   Flexible Arbeitszeiten und eine ausgewogene Work-Life-Balance\n*   30 Urlaubstage\n*   Individuelle Weiterbildungs- und Entwicklungsmöglichkeiten\n*   Moderne Arbeitsausstattung und professionelle Kollaborationstools\n*   Betriebliche Altersvorsorge sowie weitere attraktive Zusatzleistungen\n*   Zentraler Standort in Hamburg mit guter Erreichbarkeit\n\nLass uns entspannt über weitere Details verständigen!\n\n🎯Bewirb dich direkt: [randy.adam@indie-solutions.de](mailto:randy.adam@indie-solutions.de)"
+  },
+  {
+   "id": 16189837,
+   "idParam": "16315801-gebaeudetechniker-m-w-d",
+   "title": "Gebäudetechniker (m/w/d)",
+   "createdAt": "2026-05-21T08:55:59.961Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 5000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 6000000,
+    "currency": "EUR"
+   },
+   "categoryId": 368,
+   "countryId": 86,
+   "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "ONSITE",
+   "office": {
+    "id": 40151,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d"
+   },
+   "category": {
+    "id": 368,
+    "name": "Building, Supply, Safety Services Engineering"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "countryCode": "de",
+    "lat": 52.5200080871582,
+    "lng": 13.404953956604004,
+    "defaultZipCode": "10115",
+    "cityName": "Berlin",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJAVkDPzdOqEcRcDteW0YgIQQ",
+    "regionName": "Berlin"
+   },
+   "_description": "Für ein technologisch geprägtes Unternehmen mit hochmodernen Infrastruktur- und Sicherheitsanforderungen suchen wir zum nächstmöglichen Zeitpunkt einen **Gebäudetechniker (m/w/d)** zur Verstärkung des technischen Gebäudebetriebs am Standort Berlin.\n\nDas Unternehmen betreibt komplexe technische Anlagen in einem Umfeld, in dem Zuverlässigkeit, Sicherheit und ein störungsfreier Betrieb höchste Priorität haben. Gesucht wird daher ein technikaffines Profil, das Freude an anspruchsvoller Gebäudetechnik, modernen Anlagen und einer vielseitigen Tätigkeit innerhalb eines professionellen technischen Umfelds mitbringt.\n\nDie Position bietet langfristige Perspektiven, moderne Arbeitsbedingungen und die Möglichkeit, aktiv zur Betriebssicherheit und Effizienz zentraler technischer Systeme beizutragen.\n\n## Aufgaben\n\n*   Wartung, Instandhaltung und Überwachung gebäudetechnischer Anlagen mit Schwerpunkt Wärmeversorgung und Regelungstechnik\n*   Durchführung von Reparatur-, Installations- und Instandsetzungsarbeiten an technischen Anlagen\n*   Unterstützung in angrenzenden technischen Gewerken wie Sanitär-, Klima-, Lüftungs- und Elektrotechnik\n*   Bedienung und Überwachung moderner Gebäudeleittechniksysteme\n*   Durchführung technischer Inspektionen sowie Umsetzung von Optimierungsmaßnahmen zur Effizienzsteigerung\n*   Dokumentation sämtlicher durchgeführter Wartungs- und Servicearbeiten\n*   Sicherstellung eines zuverlässigen technischen Anlagenbetriebs gemeinsam mit internen Fachbereichen und externen Dienstleistern\n*   Mitarbeit in einem geregelten Schicht- und Bereitschaftsmodell\n\n## Qualifikation\n\n*   Abgeschlossene technische Ausbildung, z. B. als Anlagenmechaniker SHK oder vergleichbare Qualifikation\n*   Mehrjährige Erfahrung in Wartung, Inspektion und Instandsetzung gebäudetechnischer Anlagen\n*   Gute Kenntnisse im Bereich Heizungs-, Wärmeversorgungs- oder Sanitärtechnik\n*   Handwerkliches Geschick sowie ausgeprägtes technisches Verständnis\n*   Grundkenntnisse im Umgang mit MS Office und Bereitschaft zur Einarbeitung in technische Softwaresysteme\n*   Bereitschaft zur Tätigkeit in unterschiedlichen technischen Arbeitsumgebungen\n*   Flexibilität für Schichtbetrieb und Rufbereitschaft\n*   Strukturierte, zuverlässige und teamorientierte Arbeitsweise\n\n## Benefits\n\n*   Langfristige Perspektive in einem stabilen und technologisch anspruchsvollen Unternehmensumfeld\n*   Moderne Arbeitsmittel und professionelle technische Infrastruktur\n*   Flexible Arbeitszeitmodelle sowie 30 Urlaubstage\n*   Individuelle Weiterbildungs- und Entwicklungsmöglichkeiten\n*   Kollegiales Teamumfeld mit hoher fachlicher Kompetenz\n*   Sehr gute Anbindung an den öffentlichen Nahverkehr\n*   Gesundheitsangebote und Sportprogramme\n*   Zusätzliche Leistungen wie betriebliche Altersvorsorge und vermögenswirksame Leistungen\n*   Unterstützung bei familiären Themen wie Kinderbetreuung und Pflege von Angehörigen"
+  },
+  {
+   "id": 16313418,
+   "idParam": "16313418-lead-backend-developer-m-w-d",
+   "title": "Lead Backend Developer (m/w/d)",
+   "createdAt": "2026-06-16T08:39:17.239Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 9000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 11000000,
+    "currency": "EUR"
+   },
+   "categoryId": 170,
+   "countryId": 86,
+   "cityId": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 210177,
+    "countryId": 86,
+    "cityId": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc"
+   },
+   "category": {
+    "id": 170,
+    "name": "Software Development"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc",
+    "countryCode": "de",
+    "lat": 51.05040740966797,
+    "lng": 13.737261772155762,
+    "defaultZipCode": "01067",
+    "cityName": "Dresden",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJqdYaECnPCUcRsP6IQsuxIQQ",
+    "regionName": "Saxony"
+   },
+   "_description": "Werde Teil eines Teams, das digitale Visionen Wirklichkeit werden lässt! Seit über einem Jahrzehnt unterstützt unser Partner als unabhängiger Dienstleister im Bereich TV- und Sport-Streaming, Web Design und Ad-Management. Die solide finanzielle Grundlage – ganz ohne Fremdfinanzierung – ermöglicht es, auf exzellente technische Ressourcen zurückzugreifen. Für den Dresdner Standort wird aktuell ein erfahrener **Lead Backend Developer (m/w/d)** gesucht.\n\n## Aufgaben\n\n**Service-Entwicklung:** Du entwickelst performante, skalierbare Backend-Services mit Go, die hohe Datenlasten effizient verarbeiten und in einer containerisierten Cloud-Umgebung betrieben werden. Darüber hinaus arbeitest Du an der Erstellung moderner Dashboards – für eine optimale User Experience.\n\n**API-Konzepte:** Du planst und implementierst leistungsstarke REST-Schnittstellen, die eine reibungslose Integration unserer Services ermöglichen.\n\n**Arbeiten mit Daten:** Du modellierst relationale und NoSQL-Datenbanken (PostgreSQL, Google Cloud Spanner, BigQuery, Datastore, Redis) und sorgst für eine performante Datenverarbeitung.\n\n**Codequalität & Testing:** Automatisierte Tests, regelmäßige Code-Reviews und umfassende Qualitätssicherungen gehören für Dich zum Standard, um die Stabilität unserer Systeme zu gewährleisten.\n\n**Deployment & Betrieb:** Du verantwortest den gesamten Lebenszyklus unserer Services – von der Entwicklung bis zum Live-Betrieb inklusive Monitoring und Fehlerbehebung.\n\n**Cloud-Architektur:** Du entwickelst und pflegst unsere Infrastruktur in der Cloud – insbesondere mit Fokus auf Services innerhalb der Google Cloud Plattform.\n\n**Security & Datenschutz:** Die Absicherung und Integrität unserer Daten liegt in Deiner Verantwortung – durch Umsetzung moderner Sicherheits- und Datenschutzmaßnahmen.\n\n## Qualifikation\n\n**Berufserfahrung:** Du bist als Senior oder Principal tief verwurzelt in der Backend Entwicklung oder hast bereist Lead Erfahrung gesammelt.\n\n**Tech-Skills:** Sehr gute Kenntnisse in Go, SQL und REST API-Design. Erfahrung mit Python, Django, TypeScript oder React ist ein willkommenes Plus.\n\n**Testing-Know-how:** Du bist routiniert in der Entwicklung automatisierter Tests und arbeitest qualitätsbewusst.\n\n**DevOps & Infrastruktur:** Containerisierung mit Docker ist für Dich selbstverständlich, ebenso wie der Umgang mit modernen Cloud-Plattformen (idealerweise GCP).\n\n**Soft Skills:** Du arbeitest strukturiert und selbstständig, bringst Dich aktiv im Team ein und legst Wert auf offene Kommunikation und ein kollegiales Miteinander. Flache Strukturen und kurze Wege sagen Dir zu? Perfekt.\n\n## Benefits\n\n**Team & Verantwortung:** Dich erwartet ein motiviertes Umfeld, das auf Eigenverantwortung setzt, Entscheidungsfreiräume lässt und Wert auf effiziente Zusammenarbeit legt.\n\n**Individuelles Wachstum:** Die Möglichkeit, eigene Ideen zu verfolgen, Neues auszuprobieren und Dich in Projekten mit echten Herausforderungen weiterzuentwickeln.\n\n**Attraktive Vergütung:** Neben einem wettbewerbsfähigen Gehalt bekommst Du die Chance auf eine unternehmerische Beteiligung.\n\n**Ausstattung nach Maß:** Ob Mac oder PC, Monitor-Setup oder mobile Devices – Du entscheidest, womit Du arbeiten willst.\n\n**Flexibilität im Alltag:** Hybridmodell (Standort Dresden mit flexiblem Homeofficeanteil)\n\n30 Urlaubstage\n\n**Büro mit Wohlfühlfaktor:** Am Standort in Dresden erwartet Dich ein modernes, klimatisiertes Büro mit ruhiger Atmosphäre im Grünen"
+  },
+  {
+   "id": 16243138,
+   "idParam": "16307497-office-manager-m-w-d-teilzeit",
+   "title": "Office Manager (m/w/d) Teilzeit",
+   "createdAt": "2026-06-01T12:29:06.108Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 3000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 4000000,
+    "currency": "EUR"
+   },
+   "categoryId": 229,
+   "countryId": 86,
+   "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "ONSITE",
+   "office": {
+    "id": 40151,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d"
+   },
+   "category": {
+    "id": 229,
+    "name": "Assistance, Secretarial"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "countryCode": "de",
+    "lat": 52.5200080871582,
+    "lng": 13.404953956604004,
+    "defaultZipCode": "10115",
+    "cityName": "Berlin",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJAVkDPzdOqEcRcDteW0YgIQQ",
+    "regionName": "Berlin"
+   },
+   "_description": "**Payment-Solutions neu gedacht!**\n\nUnter diesem Motto entwickelt unser Partner, als führendes Unternehmen im DACH-Raum, innovative und individuelle POS-Software-Lösungen. Von Self-Check-Kassen, über Click & Collect Systeme, bis hin zu spannenden inhouse Projekten.\n\nWerde jetzt Teil dieses innovativen Unternehmens als **Office Manager (m/w/d) in Teilzeit** am Standort Berlin und manage als Teil des Orga-Teams die vielfältigen Fassetten des Büroalltags.\n\n## Aufgaben\n\n*   Verantwortung für die Organisation und Verwaltung administrativer Tätigkeiten\n*   Koordination von Teamevents, Terminen und Meetings\n*   Ansprechperson für Kolleg:innen und externen Gästen\n*   Organisation und Koordination täglicher Aufgaben innerhalb des Orga-Teams\n*   Unterstützung des Dokumenten- und Rechnungsmanagements\n*   Organisation und Verwaltung von Bürobedarf sowie der Ein- und Ausgangspost\n*   Schaffung reibungsloser Abläufe im Büroalltag\n\n## Qualifikation\n\n*   eine abgeschlossene Ausbildung im kaufmännischen Bereich mit relevanter Berufserfahrung\n*   sehr gute organisatorische Fähigkeiten und ein hohes Maß an Eigeninitiative\n*   freundliches und professionelles Auftreten sowie Kommunikationsstärke\n*   sicherer Umgang mit MS Office (Word, Excel, Outlook, Teams)\n*   strukturierte, gewissenhafte und selbstständige Arbeitsweise\n*   Teamgeist und Spaß daran, in einem agilen Umfeld zu arbeiten\n*   Sehr gute Deutschkenntnisse\n\n## Benefits\n\n*   modernes Büro in Berlin\n*   4 Standorte in Deutschland (Düsseldorf, Berlin, Stuttgart und Leipzig) sowie einem Workation-Office in Lissabon mit insgesamt ca. 350 Mitarbeitenden\n*   30 Urlaubstage\n*   Teilzeit 20h - 30h\n*   Open-Door-Policy und Duz-Kultur im gesamten Unternehmen\n*   Jobrad und Zuschuss zum öffentlichen Nahverkehr\n*   individuelle Weiterbildungsmöglichkeiten\n*   2x pro Monat Unternehmensfreitag (Get-Togehter mit den Teams und dem Management + Raum für Fortbildung, Präsentationen und eigenen Projekten)\n*   jährliche Sommerkonferenz (Event für die gesamte Familie)"
+  },
+  {
+   "id": 16140627,
+   "idParam": "16323733-sales-manager-w-m-d-retail",
+   "title": "Sales Manager (w/m/d)  Retail ",
+   "createdAt": "2026-05-11T10:13:41.263Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 9000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 12000000,
+    "currency": "EUR"
+   },
+   "categoryId": 203,
+   "countryId": 86,
+   "cityId": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 110486,
+    "countryId": 86,
+    "cityId": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605"
+   },
+   "category": {
+    "id": 203,
+    "name": "Management, Team Leader"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605",
+    "countryCode": "de",
+    "lat": 51.22774124145508,
+    "lng": 6.773455619812012,
+    "defaultZipCode": "40213",
+    "cityName": "Düsseldorf",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJB1lG8XvJuEcRsHMqSvxgJwQ",
+    "regionName": "North Rhine-Westphalia"
+   },
+   "_description": "Ein führendes Technologieunternehmen im Bereich Retail-Software sucht einen erfahrenen **Sales Manager (w/m/d)**, der den internationalen Vertrieb innovativer Plattform-Lösungen im DACH-Raum und auf ausgewählten europäischen Märkten vorantreibt.\n\nDas Unternehmen entwickelt und betreibt eine leistungsstarke Retail-Plattform, die Checkout-, Kassen- und Paymentprozesse großer Handelspartner vereint. Die Lösungen reichen von maßgeschneiderter Softwareentwicklung bis zu skalierbaren SaaS- und Lizenzmodellen – immer mit dem Ziel, komplexe Handelsprozesse effizienter und zukunftsfähiger zu gestalten.\n\n## Aufgaben\n\n*   Aufbau und strategische Weiterentwicklung von Vertriebsaktivitäten bei großen Retail-Unternehmen in der DACH-Region und Europa\n*   Identifikation, Qualifizierung und Entwicklung von Enterprise-Accounts mit Fokus auf nachhaltige, partnerschaftliche Kundenbeziehungen\n*   Steuerung des gesamten Sales Cycles – vom Erstkontakt über Angebotserstellung (inkl. RFI/RFP) bis hin zum Vertragsabschluss\n*   Enge Zusammenarbeit mit Management, PreSales, Architektur-, Delivery- und Produktteams zur Entwicklung individueller Lösungskonzepte\n*   Durchführung von Pitches, Präsentationen und Workshops auf C-Level-Ebene\n*   Mitwirkung an der Weiterentwicklung von Vertriebsstrategie, Marktpositionierung und Partnernetzwerk\n*   Nutzung und Pflege von CRM-Systemen zur Steuerung von Pipeline, Forecast und Account-Strategien\n\n## Qualifikation\n\n*   Mehr als 5 Jahre Erfahrung im Vertrieb komplexer IT- oder Softwarelösungen an Großkunden (idealerweise im Retail- oder Omnichannel-Umfeld)\n*   Fundiertes Verständnis von Retail-Prozessen (POS, Checkout, Payment, Loyalty, ERP-Anbindung, Omnichannel)\n*   Erfahrung mit Ausschreibungsprozessen (RFI/RFP) und Entscheidungsstrukturen im Enterprise-Segment\n*   Kommunikations- und Verhandlungsgeschick auf Deutsch und Englisch – souverän auf C-Level\n*   Hohe Eigenmotivation, Abschlussstärke und strategisches Denken\n*   Reisebereitschaft innerhalb Europas\n*   Technisches Grundverständnis sowie idealerweise ein Studium in (Wirtschafts-)Informatik oder einem vergleichbaren Bereich\n*   Kenntnisse in Solution Selling, Value Selling oder Strategic Account Management von Vorteil\n*   Bestehende Kontakte in der Retail-Branche (z. B. Lebensmittel, Fashion, DIY, Consumer Electronics) sind ein Plus\n\n## Benefits\n\n*   Eine Schlüsselrolle im internationalen Vertrieb eines wachstumsstarken, inhabergeführten Technologieunternehmens\n*   Attraktives Vergütungspaket mit Fixgehalt, variablem Anteil und Firmenwagen bzw. Car Allowance\n*   Hybrides Arbeiten, flexible Arbeitszeiten und 30 Urlaubstage\n*   Großer Gestaltungsspielraum und direkter Einfluss auf Go-to-Market-Strategien\n*   Flache Hierarchien, kurze Entscheidungswege und kollegiales Miteinander\n*   Unternehmenskultur, die auf Vertrauen, Wertschätzung und Verlässlichkeit basiert\n*   Vielfältige Weiterbildungsmöglichkeiten über interne Akademien, Fach-Communities und externe Konferenzen\n*   Regelmäßige Firmen- und Teamevents, inklusive mehrtägiger Sommerkonferenz mit Familie\n*   Möglichkeit zur kostenfreien Nutzung eines Workation-Offices in Lissabon\n\nLass uns entspannt über weitere Details verständigen!\n\n🎯Bewirb dich direkt: [randy.adam@indie-solutions.de](mailto:randy.adam@indie-solutions.de)"
+  },
+  {
+   "id": 16244690,
+   "idParam": "16304623-sales-manager-w-m-d-retail",
+   "title": "Sales Manager (w/m/d) Retail ",
+   "createdAt": "2026-06-01T15:02:28.361Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 9000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 12000000,
+    "currency": "EUR"
+   },
+   "categoryId": 203,
+   "countryId": 86,
+   "cityId": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 110486,
+    "countryId": 86,
+    "cityId": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605"
+   },
+   "category": {
+    "id": 203,
+    "name": "Management, Team Leader"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "e67c99d1-0d0a-472d-ba93-e4f9da9b6605",
+    "countryCode": "de",
+    "lat": 51.22774124145508,
+    "lng": 6.773455619812012,
+    "defaultZipCode": "40213",
+    "cityName": "Düsseldorf",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJB1lG8XvJuEcRsHMqSvxgJwQ",
+    "regionName": "North Rhine-Westphalia"
+   },
+   "_description": "Ein führendes Technologieunternehmen im Bereich Retail-Software sucht einen erfahrenen **Sales Manager (w/m/d)**, der den internationalen Vertrieb innovativer Plattform-Lösungen im DACH-Raum und auf ausgewählten europäischen Märkten vorantreibt.\n\nDas Unternehmen entwickelt und betreibt eine leistungsstarke Retail-Plattform, die Checkout-, Kassen- und Paymentprozesse großer Handelspartner vereint. Die Lösungen reichen von maßgeschneiderter Softwareentwicklung bis zu skalierbaren SaaS- und Lizenzmodellen – immer mit dem Ziel, komplexe Handelsprozesse effizienter und zukunftsfähiger zu gestalten.\n\n## Aufgaben\n\n*   Aufbau und strategische Weiterentwicklung von Vertriebsaktivitäten bei großen Retail-Unternehmen in der DACH-Region und Europa\n*   Identifikation, Qualifizierung und Entwicklung von Enterprise-Accounts mit Fokus auf nachhaltige, partnerschaftliche Kundenbeziehungen\n*   Steuerung des gesamten Sales Cycles – vom Erstkontakt über Angebotserstellung (inkl. RFI/RFP) bis hin zum Vertragsabschluss\n*   Enge Zusammenarbeit mit Management, PreSales, Architektur-, Delivery- und Produktteams zur Entwicklung individueller Lösungskonzepte\n*   Durchführung von Pitches, Präsentationen und Workshops auf C-Level-Ebene\n*   Mitwirkung an der Weiterentwicklung von Vertriebsstrategie, Marktpositionierung und Partnernetzwerk\n*   Nutzung und Pflege von CRM-Systemen zur Steuerung von Pipeline, Forecast und Account-Strategien\n\n## Qualifikation\n\n*   Mehr als 5 Jahre Erfahrung im Vertrieb komplexer IT- oder Softwarelösungen an Großkunden (idealerweise im Retail- oder Omnichannel-Umfeld)\n*   Fundiertes Verständnis von Retail-Prozessen (POS, Checkout, Payment, Loyalty, ERP-Anbindung, Omnichannel)\n*   Erfahrung mit Ausschreibungsprozessen (RFI/RFP) und Entscheidungsstrukturen im Enterprise-Segment\n*   Kommunikations- und Verhandlungsgeschick auf Deutsch und Englisch – souverän auf C-Level\n*   Hohe Eigenmotivation, Abschlussstärke und strategisches Denken\n*   Reisebereitschaft innerhalb Europas\n*   Technisches Grundverständnis sowie idealerweise ein Studium in (Wirtschafts-)Informatik oder einem vergleichbaren Bereich\n*   Kenntnisse in Solution Selling, Value Selling oder Strategic Account Management von Vorteil\n*   Bestehende Kontakte in der Retail-Branche (z. B. Lebensmittel, Fashion, DIY, Consumer Electronics) sind ein Plus\n\n## Benefits\n\n*   Eine Schlüsselrolle im internationalen Vertrieb eines wachstumsstarken, inhabergeführten Technologieunternehmens\n*   Attraktives Vergütungspaket mit Fixgehalt, variablem Anteil und Firmenwagen bzw. Car Allowance\n*   Hybrides Arbeiten, flexible Arbeitszeiten und 30 Urlaubstage\n*   Großer Gestaltungsspielraum und direkter Einfluss auf Go-to-Market-Strategien\n*   Flache Hierarchien, kurze Entscheidungswege und kollegiales Miteinander\n*   Unternehmenskultur, die auf Vertrauen, Wertschätzung und Verlässlichkeit basiert\n*   Vielfältige Weiterbildungsmöglichkeiten über interne Akademien, Fach-Communities und externe Konferenzen\n*   Regelmäßige Firmen- und Teamevents, inklusive mehrtägiger Sommerkonferenz mit Familie\n*   Möglichkeit zur kostenfreien Nutzung eines Workation-Offices in Lissabon\n\nLass uns entspannt über weitere Details verständigen!\n\n🎯Bewirb dich direkt: [randy.adam@indie-solutions.de](mailto:randy.adam@indie-solutions.de)"
+  },
+  {
+   "id": 16035173,
+   "idParam": "16289636-senior-frontend-developer-m-w-d-react",
+   "title": "(Senior) Frontend Developer (m/w/d) React",
+   "createdAt": "2026-04-20T08:30:15.037Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 8000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 10000000,
+    "currency": "EUR"
+   },
+   "categoryId": 170,
+   "countryId": 86,
+   "cityId": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 210177,
+    "countryId": 86,
+    "cityId": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc"
+   },
+   "category": {
+    "id": 170,
+    "name": "Software Development"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "c0f4ee6e-cdf8-4530-9112-f876432ab4dc",
+    "countryCode": "de",
+    "lat": 51.05040740966797,
+    "lng": 13.737261772155762,
+    "defaultZipCode": "01067",
+    "cityName": "Dresden",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJqdYaECnPCUcRsP6IQsuxIQQ",
+    "regionName": "Saxony"
+   },
+   "_description": "Werde Teil eines Teams, das digitale Visionen Wirklichkeit werden lässt! Seit über einem Jahrzehnt unterstützt unser Partner als unabhängiger Dienstleister im Bereich TV- und Sport-Streaming, Web Design und Ad-Management. Die solide finanzielle Grundlage – ganz ohne Fremdfinanzierung – ermöglicht es, auf exzellente technische Ressourcen zurückzugreifen. Für den Dresdner Standort wird aktuell ein erfahrener (**Senior) Frontend Developer (m/w/d)** gesucht.\n\n## Aufgaben\n\n*   Weiterentwicklung der beiden Hauptprojekte (TV Streaming und Ad-Plattform)\n*   enge Zusammenarbeit mit den Mobile- (Android/iOS) und Backend Entwicklern (Python, Go)\n*   **Projektdetails TV-Streaming:**_Umsetzung der Clients zur Reichweitenmaximierung, Optimierung der Server- und Cloud-Infrastruktur, Aggregation des Inhaltskatalogs, Entwicklung des Shop-Systems für Abos und Einzelkäufe, Anbindung zu Zahlungsanbietern, Daten-Pipelines, Data-Warehouse-Lösungen, Anbindung externer Schnittstellen_\n*   **Projektdetails Ad-Plattform:**_Multi-Ad-Slot-Technologie, Umsetzung der SDKs für Android, iOS und Web, Monitoring und Optimierung der Server-Anwendungen/Cloud-Infrastruktur, Automatisierungen, Daten-Pipelines und Data-Warehouse-Lösungen, Reporting- und Abrechnungssysteme, Echtzeitauswertungen, Verknüpfung mit Drittpartnersystemen_\n*   Projektmanagement-Aufgaben bei neuen Projekten\n\n## Qualifikation\n\n*   abgeschlossenes IT-Studium oder Ausbildung\n*   min. 5 Jahre Erfahrung in der Umsetzung komplexer Web Projekte\n*   praktische Erfahrung mit: **Typescript, ES6, React, Git, HTML, CSS3, CI/CD**\n*   idealerweise erste Erfahrungen im UI/UX Design und Software Testing\n*   fließende Deutschkenntnisse (Englisch ist von Vorteil)\n*   selbständige Arbeitsweise mit viel Kreativität und Interesse an neuen Themen\n\n## Benefits\n\n*   **Team & Verantwortung:**  Dich erwartet ein motiviertes Umfeld, das auf Eigenverantwortung setzt, Entscheidungsfreiräume lässt und Wert auf effiziente Zusammenarbeit legt.\n*   **Individuelles Wachstum:**  Die Möglichkeit, eigene Ideen zu verfolgen, Neues auszuprobieren und Dich in Projekten mit echten Herausforderungen weiterzuentwickeln.\n*   **Attraktive Vergütung:**  Neben einem wettbewerbsfähigen Gehalt bekommst Du die Chance auf eine unternehmerische Beteiligung.\n*   **Ausstattung nach Maß:**  Ob Mac oder PC, Monitor-Setup oder mobile Devices – Du entscheidest, womit Du arbeiten willst.\n*   **Flexibilität im Alltag:** Hybridmodell (Standort Dresden mit flexiblem Homeofficeanteil)\n*   30 Urlaubstage\n*   **Büro mit Wohlfühlfaktor:**  Am Standort in Dresden erwartet Dich ein modernes, klimatisiertes Büro mit ruhiger Atmosphäre im Grünen"
+  },
+  {
+   "id": 16285062,
+   "idParam": "16285062-senior-software-architect-m-w-d-oder-leipzig",
+   "title": "(Senior) Software Architect (m/w/d) | Leipzig",
+   "createdAt": "2026-06-10T07:48:40.360Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 8500000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 9500000,
+    "currency": "EUR"
+   },
+   "categoryId": 170,
+   "countryId": 86,
+   "cityId": "dde19cc8-623e-422b-b333-916821ac73bc",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 110488,
+    "countryId": 86,
+    "cityId": "dde19cc8-623e-422b-b333-916821ac73bc"
+   },
+   "category": {
+    "id": 170,
+    "name": "Software Development"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "dde19cc8-623e-422b-b333-916821ac73bc",
+    "countryCode": "de",
+    "lat": 51.33969497680664,
+    "lng": 12.373074531555176,
+    "defaultZipCode": "04109",
+    "cityName": "Leipzig",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJcywPIBj4pkcRUvW0udKA35M",
+    "regionName": "Saxony"
+   },
+   "_description": "**Gestalte die Architektur zukunftsweisender Softwarelösungen**\n\nDu möchtest technische Entscheidungen maßgeblich beeinflussen, moderne Softwarearchitekturen entwickeln und Teams fachlich voranbringen? Dann könnte diese Position genau die richtige Herausforderung für dich sein.\n\nFür ein etabliertes Technologieunternehmen mit langfristiger Perspektive suchen wir zum nächstmöglichen Zeitpunkt einen erfahrenen **(Senior) Software Architect (m/w/d)** am Standort Leipzig.\n\nIn dieser Schlüsselrolle gestaltest du anspruchsvolle Softwarelösungen in einem innovationsgetriebenen Umfeld mit hohen Anforderungen an Qualität, Skalierbarkeit und Sicherheit.\n\n## Aufgaben\n\n*   Verantwortung für die Konzeption, Weiterentwicklung und Umsetzung moderner Softwarearchitekturen\n*   Fachliche Führung und technische Begleitung agiler Entwicklungsteams\n*   Erarbeitung tragfähiger technischer Lösungsansätze in enger Zusammenarbeit mit Entwicklern, Product Ownern und weiteren Architekten\n*   Analyse, Bewertung und Auswahl geeigneter Technologien, Frameworks und Plattformen\n*   Kontinuierliche Weiterentwicklung bestehender Systemlandschaften hinsichtlich Skalierbarkeit, Wartbarkeit und Sicherheit\n*   Erstellung technischer Entscheidungsgrundlagen und Architekturkonzepte\n*   Beratung relevanter Stakeholder bei technischen Fragestellungen\n*   Unterstützung bei der Definition von Sicherheits-, Datenschutz-, Betriebs- und Supportkonzepten\n*   Mitwirkung bei der technischen Planung und Priorisierung von Anforderungen\n\n## Qualifikation\n\n*   Erfolgreich abgeschlossenes Studium der Informatik oder eine vergleichbare Qualifikation\n*   Mehrjährige Erfahrung in der Softwareentwicklung und Softwarearchitektur komplexer IT-Systeme\n*   Sehr gute Kenntnisse moderner Architekturprinzipien und Architektur-Dokumentation (z. B. arc42)\n*   Erfahrung mit Technologien wie Java, Spring Boot, TypeScript, Kubernetes, PostgreSQL, GitLab CI/CD sowie modernen Frontend-Frameworks\n*   Kenntnisse im Umgang mit Open-Source-Technologien wie Kafka, RabbitMQ, Elasticsearch, Grafana oder vergleichbaren Lösungen\n*   Erfahrung in Cloud-nahen, containerisierten Umgebungen\n*   Idealerweise Know-how in den Bereichen Identitätsmanagement, IT-Sicherheit, Webplattformen oder sicherheitskritische Anwendungen\n*   Vertrautheit mit modernen Entwicklungsprozessen und agilen Methoden\n*   Kommunikationsstärke sowie die Fähigkeit, technische Sachverhalte zielgruppengerecht zu vermitteln\n\n## Benefits\n\n*   Anspruchsvolle Architekturaufgaben mit großem Gestaltungsspielraum\n*   Moderne Technologie-Stacks und innovative Entwicklungsumgebungen\n*   Fachlich starke Teams mit hoher technologischer Expertise\n*   Langfristige Perspektive in einem wirtschaftlich stabilen und zukunftsorientierten Umfeld\n*   Flexible Arbeitszeiten und hybride Arbeitsmodelle\n*   30 Urlaubstage\n*   Individuelle Weiterbildungs- und Entwicklungsmöglichkeiten\n*   Betriebliche Altersvorsorge und attraktive Zusatzleistungen\n*   Gesundheits- und Familienangebote zur Unterstützung einer ausgewogenen Work-Life-Balance\n\nLass uns entspannt über weitere Details verständigen!\n\n🎯Bewirb dich direkt: [randy.adam@indie-solutions.de](mailto:randy.adam@indie-solutions.de)"
+  },
+  {
+   "id": 16277279,
+   "idParam": "16344322-software-developer-m-w-d-virtualization-und-hypervisor-architecture-oder-berlin-oder-dresden",
+   "title": "Software Developer (m/w/d) Virtualization & Hypervisor Architecture | Berlin oder Dresden",
+   "createdAt": "2026-06-08T13:07:01.450Z",
+   "employmentTypeId": 6,
+   "salaryFrequency": "PER_YEAR",
+   "salaryAmountFrom": {
+    "amount": 7000000,
+    "currency": "EUR"
+   },
+   "salaryAmountTo": {
+    "amount": 9000000,
+    "currency": "EUR"
+   },
+   "categoryId": 353,
+   "countryId": 86,
+   "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+   "companyId": 24945,
+   "languageId": 1,
+   "settings": {
+    "showSalary": true
+   },
+   "workplaceType": "HYBRID",
+   "office": {
+    "id": 40151,
+    "countryId": 86,
+    "cityId": "04d66278-4ebb-4c00-a281-ed2aa195250d"
+   },
+   "category": {
+    "id": 353,
+    "name": "Embedded Systems, Firmware Development"
+   },
+   "employmentType": {
+    "id": 6,
+    "name": "Employee"
+   },
+   "country": {
+    "id": 86,
+    "iso3166": "DE",
+    "name": "Germany"
+   },
+   "city": {
+    "id": "04d66278-4ebb-4c00-a281-ed2aa195250d",
+    "countryCode": "de",
+    "lat": 52.5200080871582,
+    "lng": 13.404953956604004,
+    "defaultZipCode": "10115",
+    "cityName": "Berlin",
+    "countryName": "Germany",
+    "googlePlaceId": "ChIJAVkDPzdOqEcRcDteW0YgIQQ",
+    "regionName": "Berlin"
+   },
+   "_description": "**Entwickle die nächste Generation hochsicherer Virtualisierungsplattformen**\n\nDu bewegst Dich gerne nah an der Hardware, denkst in Systemarchitekturen und möchtest an Technologien arbeiten, die höchste Anforderungen an Sicherheit, Stabilität und Performance erfüllen?\n\nFür ein innovatives Technologieunternehmen im Bereich Cyber Security und sicherheitskritischer IT-Systeme suchen wir einen erfahrenen Software Developer (m/w/d) mit Schwerpunkt Virtualisierung, Hypervisor-Technologien und Betriebssystementwicklung.\n\nIn dieser Rolle arbeitest Du an anspruchsvollen Systemplattformen, die in besonders sensiblen und sicherheitsrelevanten Umgebungen zum Einsatz kommen.\n\n## Aufgaben\n\n*   Weiterentwicklung einer hochsicheren Virtualisierungsplattform und ihrer Systemarchitektur\n*   Entwicklung von Hypervisor- und Kernel-nahen Softwarekomponenten\n*   Konzeption und Implementierung neuer Funktionen im Bereich Virtualisierung und Isolationstechnologien\n*   Integration bestehender Frameworks, Tools und Systemkomponenten in eine leistungsfähige Gesamtplattform\n*   Analyse komplexer Fehlerbilder in virtualisierten Umgebungen\n*   Durchführung von Low-Level-Debugging sowie Root-Cause-Analysen\n*   Entwicklung und Durchführung automatisierter Tests zur Qualitätssicherung\n*   Performance-Analysen und Optimierung virtualisierter Systeme\n*   Enge Zusammenarbeit mit Experten aus den Bereichen Systemsicherheit, Architektur und Softwareentwicklung\n\n## Qualifikation\n\n*   Abgeschlossenes Studium der Informatik oder vergleichbare Qualifikation\n*   Mehrjährige Erfahrung in der systemnahen Softwareentwicklung\n*   Fundierte Kenntnisse in Betriebssystemen, Virtualisierungstechnologien oder Hypervisor-Architekturen\n*   Erfahrung mit Hardware-Virtualisierungstechnologien wie Intel VT-x oder AMD-V\n*   Praxis in der Analyse und Fehlerdiagnose komplexer Systemumgebungen\n*   Idealerweise Erfahrung im Linux- und/oder Windows-Kernel-Umfeld\n*   Sehr Gute Deutsch- und Englischkenntnisse \n\nBesonders interessant sind Erfahrungen in folgenden Bereichen:\n\n*   Hypervisor-Entwicklung\n*   Betriebssystementwicklung\n*   Systemsicherheit\n*   Embedded Systems\n*   Device Virtualization\n*   Security-by-Design\n*   Formale Verifikation oder sicherheitskritische Software\n\n## Benefits\n\n💡 Technologisch anspruchsvolle Entwicklungsaufgaben mit hoher fachlicher Tiefe\n\n🔐 Mitarbeit an Lösungen mit gesellschaftlicher Relevanz im Bereich Cyber Security und digitale Souveränität\n\n🚀 Große Gestaltungsspielräume und kurze Entscheidungswege\n\n📈 Individuelle Weiterbildungs- und Entwicklungsmöglichkeiten\n\n🏡 Flexible Arbeitsmodelle inklusive hybrider Zusammenarbeit\n\n🌍 Möglichkeit zum mobilen Arbeiten innerhalb der EU\n\n💰 Attraktives Vergütungspaket inklusive leistungsbezogener Komponenten\n\n🚲 Zusätzliche Benefits wie Mobilitätsangebote, Gesundheitsprogramme und weitere attraktive Zusatzleistungen\n\nLass uns entspannt über weitere Details verständigen!\n\n🎯Bewirb dich direkt: [randy.adam@indie-solutions.de](mailto:randy.adam@indie-solutions.de)"
+  }
+ ]
+}
