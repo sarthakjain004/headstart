@@ -24,12 +24,8 @@ _Avoid_: job board, careers board.
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
-**Tenant**:
-One company's presence on an ATS — an `(ATS, slug)` pair; the unit the discovery pipeline collects.
-_Avoid_: instance, account, org.
-
 **Slug**:
-The identifier that locates a Tenant within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday.
+The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`.
 _Avoid_: handle, id, key.
 
 **Scraper**:
@@ -37,32 +33,32 @@ The module for one ATS that reads a Board and normalizes its raw postings into J
 _Avoid_: adapter, parser, client.
 
 **Company**:
-The employer behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
+The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
 
 ### Discovery and validation
 
 **Discovery**:
-Finding Tenants — which companies sit on which ATS — without already having a company list.
+Finding Companies on ATSes — which companies sit on which ATS — without already having a company list.
 _Avoid_: crawling, harvesting.
 
 **Feeder**:
-A discovery source that surfaces Tenants (the Common Crawl miner, the Wayback feeder); each emits `(ats, tenant, url)` rows.
+A discovery source that surfaces Companies on ATSes (the Common Crawl miner, the Wayback feeder); each emits an `(ats, slug, url)` row (the slug column is still named `tenant` in the data files).
 
 **Resolve**:
 The inverse of Discovery — mapping a *known* Company to its `(ATS, slug)`.
 
 **Liveness**:
-Probing a Tenant's Board to decide whether it's real and counting its open Jobs, yielding a per-Tenant verdict.
+Probing a Company's Board to decide whether it's real and counting its open Jobs, yielding a per-Board verdict.
 
 **Live / Dead / Unknown**:
 The three Liveness verdicts — **Live** (the Board answered with a parseable job count), **Dead** (definitive: 404, or the host doesn't resolve), **Unknown** (couldn't tell — a transient or ambiguous response, re-probed).
 _Avoid_: up/down, valid/invalid.
 
 **Unresolved**:
-A Tenant still **Unknown** after every Liveness pass — surfaced for review, never silently dropped.
+A Board still **Unknown** after every Liveness pass — surfaced for review, never silently dropped.
 
 **Active list**:
-The Liveness-validated Boards (`active/{ats}.csv`) — the Tenants that answered **Live**. "Currently hiring" is the further subset whose job count is above zero.
+The Liveness-validated Boards (`active/{ats}.csv`) — the Companies whose Board answered **Live**. "Currently hiring" is the further subset whose job count is above zero.
 
 **Feed**:
 The assembled JSON of every scraped Job (`docs/jobs.json`) — the artifact the dashboard and the alert bot consume.
@@ -80,15 +76,15 @@ A message sent to a Subscriber for a Job that matches its Filter and hasn't been
 
 ## Relationships
 
-- A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**; that `(ATS, Slug)` pair is a **Tenant**.
+- A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**.
 - A **Scraper** (one per **ATS**) reads a **Board** and produces **Jobs**.
-- **Discovery** collects **Tenants** via **Feeders**; **Liveness** sorts them into Live / Dead / Unknown and writes the Live ones to the **Active list**; **Resolve** maps a known **Company** to its **Tenant**.
+- **Discovery** collects **Companies** (each as an `(ATS, slug)`) via **Feeders**; **Liveness** sorts their **Boards** into Live / Dead / Unknown and writes the Live ones to the **Active list**; **Resolve** maps a known **Company** to its `(ATS, slug)`.
 - The scrape step runs **Scrapers** over the **Active list** and assembles the **Feed**.
 - The alert bot matches **Jobs** from the **Feed** against each **Subscriber**'s **Filter** to emit **Notifications**.
 
 ## Example dialogue
 
-> **Dev:** "When Liveness marks a Tenant **Active**, does that mean the Company is hiring?"
+> **Dev:** "When Liveness marks a Company's Board **Live**, does that mean the Company is hiring?"
 > **Domain expert:** "No — **Active** just means the **Board** answered and we could read a count. A company with an open board but zero openings is still **Live**; 'currently hiring' is the subset with a count above zero. And don't conflate the **Board** with the **Careers page**: the careers page is the company's own HTML, the board is what the ATS serves — Discovery scans careers pages to *find* boards."
 
 ## Flagged ambiguities
@@ -97,3 +93,4 @@ A message sent to a Subscriber for a Job that matches its Filter and hasn't been
 - **"board" vs "careers page"** — distinct: **Board** is the ATS-hosted listing; **Careers page** is the company's own page that links or embeds it.
 - **"posting/opening" vs "Job"** — resolved: **Job** is the normalized record; "posting" names the raw ATS record before normalization.
 - **"active"** — overloaded between "the board responds" (**Live**) and "currently hiring" (Live with count > 0); resolved: the **Active list** is the Live set, and "hiring" is the count-filtered subset.
+- **"Tenant" (retired)** — previously the `(ATS, slug)` pair. Dropped as a term: a **Company** *is* the thing on an ATS, located by its **Slug**, so we just say "a Company's slug on an ATS." The data still carries a `tenant` column (and the `data/ats-tenants-merged/` dir, `slug_from(tenant, …)` param keep the name) — a code/data rename is a separate change, not yet done.
