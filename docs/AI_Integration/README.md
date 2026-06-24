@@ -5,7 +5,7 @@ scraped **Job** corpus into something a person can search in plain language and 
 roles that actually fit.
 
 **Status:** design / reference. Not yet implemented. When a piece gets built and a non-obvious
-call is made, record the decision in [`../design-choices.md`](../design-choices.md).
+call is made, record the decision as a new ADR under [`../adr/`](../adr/).
 
 ## The core idea (one paragraph)
 

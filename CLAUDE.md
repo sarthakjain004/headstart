@@ -100,7 +100,7 @@ build it.
 - Recommend the best one and say why — give a real opinion, not a neutral survey.
 - Present the options to the user and let them choose before you build.
 - Skip this for small or obvious changes; weighing options on trivial work is its own overkill.
-- Once a non-obvious call is made, record it in `docs/design-choices.md` so the reasoning lasts.
+- Once a non-obvious call is made, record it as a new numbered ADR in `docs/adr/` so the reasoning lasts.
 
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
@@ -128,3 +128,19 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   `docs/`. Name files so the date/source/meaning is obvious at a glance (e.g.
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues via the `gh` CLI; external PRs are not a triage
+surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles use their default label names (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` at the root + ADRs in `docs/adr/`. See `docs/agents/domain.md`.

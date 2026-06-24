@@ -3,7 +3,7 @@
 HeadStart reads software-engineering openings straight from the boards companies run on
 third-party Applicant Tracking Systems, normalizes them into one feed, and (optionally) alerts
 subscribers. This is the domain glossary; architecture decisions live in
-[`docs/design-choices.md`](./docs/design-choices.md).
+[`docs/adr/`](./docs/adr/).
 
 ## Language
 
