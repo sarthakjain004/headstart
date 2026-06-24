@@ -88,3 +88,63 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
     record = json.loads(gh_lines[0])
     assert set(record) == set(Job.__dataclass_fields__)  # full Job, not a reduced row
     assert record["description"] == "multi\nline, with comma"
+
+
+def test_scrape_all_streams_without_retaining_when_feed_off(monkeypatch, tmp_path):
+    """collect_feed=False (the harvest path): jobs stream to disk but are NOT held in memory."""
+    jobs = [make_job(f"greenhouse:acme:{i}", ats="greenhouse") for i in range(5)]
+    monkeypatch.setattr(pipeline, "get_scraper", lambda *a, **k: FakeScraper(jobs))
+
+    result = scrape_all([CompanyRef("greenhouse", "acme")], jobs_dir=tmp_path, collect_feed=False)
+
+    assert result.jobs == []          # nothing retained -> no OOM at scale
+    assert result.unique == 5         # but the count is still reported
+    assert result.boards == 1
+    assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 5
+
+
+def test_scrape_all_dedupes_duplicate_boards_in_jsonl(monkeypatch, tmp_path):
+    """Duplicate slug forms of one board (e.g. dollartree x3) must not triplicate its Jobs."""
+    shared = [make_job("workday:dollartree:1", ats="workday"),
+              make_job("workday:dollartree:2", ats="workday")]
+    monkeypatch.setattr(pipeline, "get_scraper", lambda *a, **k: FakeScraper(shared))
+    companies = [CompanyRef("workday", "dollartree"),
+                 CompanyRef("workday", "dollartree/dollartreeus"),
+                 CompanyRef("workday", "dollartree.wd5.myworkdayjobs.com/dollartreeus")]
+
+    result = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False)
+
+    assert result.unique == 2  # two distinct ids, not six
+    assert len((tmp_path / "workday.jsonl").read_text("utf-8").splitlines()) == 2
+
+
+def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
+    """A resume run skips boards already in .done and appends rather than re-scraping."""
+    calls: list[str] = []
+
+    def fake_get(ats, slug, name=None):
+        calls.append(slug)
+        return FakeScraper([make_job(f"{ats}:{slug}:1", ats=ats)])
+
+    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    companies = [CompanyRef("greenhouse", "a"), CompanyRef("greenhouse", "b")]
+
+    r1 = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False)
+    assert sorted(calls) == ["a", "b"]
+    assert r1.boards == 2
+    assert (tmp_path / ".done").read_text("utf-8").split() == ["greenhouse:a", "greenhouse:b"]
+    assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 2
+
+    # Resume: both boards are done -> none re-scraped, JSONL untouched (append, no new writes).
+    calls.clear()
+    r2 = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False, resume=True)
+    assert calls == []
+    assert r2.boards == 0
+    assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 2
+
+    # Resume with a new board appended -> only the new one scrapes, its line is appended.
+    companies.append(CompanyRef("greenhouse", "c"))
+    r3 = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False, resume=True)
+    assert calls == ["c"]
+    assert r3.boards == 1
+    assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 3
