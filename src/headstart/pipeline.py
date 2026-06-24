@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,32 +16,64 @@ from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
 
-_MAX_WORKERS = 8
+
+def _default_workers() -> int:
+    """Company-level thread count. The work is network-bound (``curl_cffi`` drops the GIL per
+    request, so threads use every core), so we run far more threads than cores. Default to
+    cores*4 capped at 64; override with ``HEADSTART_WORKERS=N`` to push it.
+
+    NB: each detail-fetching scraper fans out its *own* bounded pool per board (8 workers,
+    trakstar 4) to keep per-host concurrency polite, so peak in-flight requests is roughly
+    ``workers + workers*8`` — raising this multiplies accordingly.
+    """
+    env = os.environ.get("HEADSTART_WORKERS")
+    if env:
+        return max(1, int(env))
+    return min((os.cpu_count() or 8) * 4, 64)
 
 
 @dataclass
 class RunResult:
-    jobs: list[Job] = field(default_factory=list)
+    jobs: list[Job] = field(default_factory=list)  # populated only when collect_feed=True
     errors: dict[str, str] = field(default_factory=dict)  # "ats:slug" -> message
+    unique: int = 0  # distinct job ids seen (streamed and/or kept)
+    boards: int = 0  # boards completed, including those that errored
 
 
 class JobWriter:
     """Stream Jobs to per-ATS JSON Lines files (one full Job per line) under ``jobs_dir``.
 
-    Each ``{jobs_dir}/{ats}.jsonl`` is truncated once at the start of a run, then appended to
-    and flushed after every company — so a long local scrape writes incrementally (never
-    buffering to the end) and survives a crash with whatever finished already on disk.
-    Single-threaded by contract: ``write`` is only called from the scrape_all merge loop.
+    Each ``{jobs_dir}/{ats}.jsonl`` is appended to and flushed after every board — so a long
+    scrape writes incrementally (never buffering to the end) and survives a crash with whatever
+    finished already on disk. Single-threaded by contract: ``write``/``mark_done`` are only
+    called from the scrape_all merge loop.
+
+    Resume: a ``.done`` journal records each completed board key (``ats:slug``), flushed per
+    board. A fresh run (``resume=False``) truncates the ``.jsonl`` files and the journal; a
+    ``resume=True`` run opens them for append and exposes the already-done keys in ``done`` so
+    the caller can skip those boards. Marking happens after the board's jobs are flushed, so a
+    crash between write and mark merely re-scrapes that one board on the next resume (its lines
+    re-emit — dedup by ``id`` downstream).
     """
 
-    def __init__(self, jobs_dir: str | Path, atses: set[str]) -> None:
+    def __init__(self, jobs_dir: str | Path, atses: set[str], resume: bool = False) -> None:
         self._dir = Path(jobs_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
-        # Open (truncating) one handle per ATS up front so even an ATS that yields zero jobs
-        # this run leaves an empty file rather than stale rows from a previous run.
+        self._done_path = self._dir / ".done"
+        self.done: set[str] = set()
+        if resume and self._done_path.exists():
+            self.done = {
+                line.strip()
+                for line in self._done_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+        mode = "a" if resume else "w"
+        # Open one handle per ATS up front so even an ATS that yields zero jobs this run leaves
+        # an empty file (fresh) rather than a stale one. Append on resume, truncate on a fresh run.
         self._handles: dict[str, Any] = {
-            ats: (self._dir / f"{ats}.jsonl").open("w", encoding="utf-8") for ats in atses
+            ats: (self._dir / f"{ats}.jsonl").open(mode, encoding="utf-8") for ats in atses
         }
+        self._done_handle = self._done_path.open(mode, encoding="utf-8")
 
     def write(self, jobs: list[Job]) -> None:
         touched = set()
@@ -46,58 +81,100 @@ class JobWriter:
             handle = self._handles.get(job.ats)
             if handle is None:  # an ats not in the company list — open it lazily, just in case
                 handle = self._handles[job.ats] = (self._dir / f"{job.ats}.jsonl").open(
-                    "w", encoding="utf-8")
+                    "a", encoding="utf-8")
             handle.write(json.dumps(job.to_dict(), ensure_ascii=False) + "\n")
             touched.add(handle)
         for handle in touched:
             handle.flush()
 
+    def mark_done(self, board_key: str) -> None:
+        """Record a board as completed (so a resume skips it). Call after its jobs are flushed."""
+        self._done_handle.write(board_key + "\n")
+        self._done_handle.flush()
+
     def close(self) -> None:
         for handle in self._handles.values():
             handle.close()
+        self._done_handle.close()
+
+
+def _emit_progress(done: int, total: int, unique: int, errors: int, start: float) -> None:
+    elapsed = time.monotonic() - start
+    rate = done / elapsed if elapsed else 0.0
+    print(
+        f"[scrape] {done}/{total} boards | {unique} jobs | {errors} errors | "
+        f"{elapsed:0.0f}s | {rate:0.1f} boards/s",
+        file=sys.stderr, flush=True,
+    )
 
 
 def scrape_all(
     companies: list[CompanyRef],
-    max_workers: int = _MAX_WORKERS,
+    *,
+    max_workers: int | None = None,
     jobs_dir: str | Path | None = None,
+    collect_feed: bool = True,
+    progress_every: int = 0,
+    resume: bool = False,
 ) -> RunResult:
     """Scrape every company concurrently, deduping by job id and isolating failures.
 
-    Each company runs in its own thread (the work is network-bound). A single
-    company that errors is recorded in ``errors`` and skipped; merging of results
-    happens on the main thread, so dedup stays deterministic.
+    Each company runs in its own thread (the work is network-bound; ``max_workers`` defaults to
+    :func:`_default_workers`). A company that errors is recorded in ``errors`` and skipped.
+    Dedup is by job id on the main thread (collapsing duplicate slug forms of the same board,
+    e.g. ``dollartree`` appearing under three slugs), so it stays deterministic.
 
-    When ``jobs_dir`` is given, each company's Jobs are also streamed to
-    ``{jobs_dir}/{ats}.jsonl`` (full Job per line) as it completes, so the scrape's output
-    lands on disk incrementally instead of only in the returned result.
+    Memory: at full-harvest scale (millions of Jobs) retaining every Job would OOM. So when
+    ``collect_feed`` is False, only a set of seen ids is kept — each Job is streamed to disk and
+    discarded. Set ``collect_feed`` True (the default, for small runs) to also retain the Jobs in
+    ``RunResult.jobs`` for :func:`build_feed`.
+
+    When ``jobs_dir`` is given, each board's fresh Jobs stream to ``{jobs_dir}/{ats}.jsonl``
+    (full Job per line) as it completes — incremental and crash-safe. ``progress_every`` > 0
+    prints a progress line to stderr every that-many boards. ``resume`` (needs ``jobs_dir``)
+    appends to the existing output and skips boards already recorded in its ``.done`` journal,
+    so an interrupted harvest continues instead of restarting.
     """
+    workers = max_workers if max_workers is not None else _default_workers()
 
     def run_one(company: CompanyRef) -> list[Job]:
         return get_scraper(company.ats, company.slug, company.name).fetch()
 
-    seen: dict[str, Job] = {}
+    writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume) if jobs_dir else None
+    if writer is not None and writer.done:
+        companies = [c for c in companies if f"{c.ats}:{c.slug}" not in writer.done]
+
+    seen_ids: set[str] = set()
+    kept: list[Job] = []
     errors: dict[str, str] = {}
-    writer = JobWriter(jobs_dir, {c.ats for c in companies}) if jobs_dir else None
+    total, done = len(companies), 0
+    start = time.monotonic()
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(run_one, c): c for c in companies}
             for future in as_completed(futures):
                 company = futures[future]
+                done += 1
                 key = f"{company.ats}:{company.slug}"
                 try:
                     jobs = future.result()
                 except Exception as exc:  # noqa: BLE001 - isolate per-company failures
                     errors[key] = f"{type(exc).__name__}: {exc}"
-                    continue
-                for job in jobs:
-                    seen[job.id] = job
+                else:
+                    fresh = [j for j in jobs if j.id not in seen_ids]
+                    seen_ids.update(j.id for j in fresh)
+                    if writer is not None:
+                        writer.write(fresh)
+                    if collect_feed:
+                        kept.extend(fresh)
                 if writer is not None:
-                    writer.write(jobs)
+                    writer.mark_done(key)  # mark on completion (success or error): resume moves on
+                if progress_every and done % progress_every == 0:
+                    _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
         if writer is not None:
             writer.close()
-    return RunResult(jobs=list(seen.values()), errors=errors)
+    return RunResult(jobs=kept, errors=errors, unique=len(seen_ids), boards=done)
 
 
 def build_feed(result: RunResult) -> dict[str, Any]:
