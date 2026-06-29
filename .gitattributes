@@ -1,0 +1,4 @@
+# Normalize line endings to LF across the repo (the project standard). Git stores text as LF and
+# checks it out as LF on every platform — this fixes the CRLF churn from earlier Windows editing.
+# Binary files are auto-detected by `text=auto` and left untouched.
+* text=auto eol=lf

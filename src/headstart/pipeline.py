@@ -34,9 +34,8 @@ def _default_workers() -> int:
 
 @dataclass
 class RunResult:
-    jobs: list[Job] = field(default_factory=list)  # populated only when collect_feed=True
     errors: dict[str, str] = field(default_factory=dict)  # "ats:slug" -> message
-    unique: int = 0  # distinct job ids seen (streamed and/or kept)
+    unique: int = 0  # distinct job ids seen (all streamed to the .jsonl)
     boards: int = 0  # boards completed, including those that errored
 
 
@@ -111,41 +110,35 @@ def _emit_progress(done: int, total: int, unique: int, errors: int, start: float
 def scrape_all(
     companies: list[CompanyRef],
     *,
+    jobs_dir: str | Path,
     max_workers: int | None = None,
-    jobs_dir: str | Path | None = None,
-    collect_feed: bool = True,
     progress_every: int = 0,
     resume: bool = False,
 ) -> RunResult:
-    """Scrape every company concurrently, deduping by job id and isolating failures.
+    """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
 
     Each company runs in its own thread (the work is network-bound; ``max_workers`` defaults to
     :func:`_default_workers`). A company that errors is recorded in ``errors`` and skipped.
     Dedup is by job id on the main thread (collapsing duplicate slug forms of the same board,
-    e.g. ``dollartree`` appearing under three slugs), so it stays deterministic.
+    e.g. ``dollartree`` appearing under three slugs), so what's written stays deterministic.
 
-    Memory: at full-harvest scale (millions of Jobs) retaining every Job would OOM. So when
-    ``collect_feed`` is False, only a set of seen ids is kept — each Job is streamed to disk and
-    discarded. Set ``collect_feed`` True (the default, for small runs) to also retain the Jobs in
-    ``RunResult.jobs`` for :func:`build_feed`.
-
-    When ``jobs_dir`` is given, each board's fresh Jobs stream to ``{jobs_dir}/{ats}.jsonl``
-    (full Job per line) as it completes — incremental and crash-safe. ``progress_every`` > 0
-    prints a progress line to stderr every that-many boards. ``resume`` (needs ``jobs_dir``)
-    appends to the existing output and skips boards already recorded in its ``.done`` journal,
-    so an interrupted harvest continues instead of restarting.
+    Jobs are never retained in memory — each board's fresh Jobs stream to ``{jobs_dir}/{ats}.jsonl``
+    (full Job per line) as it completes, incremental and crash-safe (the ``.jsonl`` is the source of
+    truth; :func:`build_feed` reads it back for the dashboard). ``progress_every`` > 0 prints a
+    progress line to stderr every that-many boards. ``resume`` appends to the existing output and
+    skips boards already recorded in its ``.done`` journal, so an interrupted harvest continues
+    instead of restarting.
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
     def run_one(company: CompanyRef) -> list[Job]:
         return get_scraper(company.ats, company.slug, company.name).fetch()
 
-    writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume) if jobs_dir else None
-    if writer is not None and writer.done:
+    writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
+    if writer.done:
         companies = [c for c in companies if f"{c.ats}:{c.slug}" not in writer.done]
 
     seen_ids: set[str] = set()
-    kept: list[Job] = []
     errors: dict[str, str] = {}
     total, done = len(companies), 0
     start = time.monotonic()
@@ -163,27 +156,40 @@ def scrape_all(
                 else:
                     fresh = [j for j in jobs if j.id not in seen_ids]
                     seen_ids.update(j.id for j in fresh)
-                    if writer is not None:
-                        writer.write(fresh)
-                    if collect_feed:
-                        kept.extend(fresh)
-                if writer is not None:
-                    writer.mark_done(key)  # mark on completion (success or error): resume moves on
+                    writer.write(fresh)
+                writer.mark_done(key)  # mark on completion (success or error): resume moves on
                 if progress_every and done % progress_every == 0:
                     _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
-        if writer is not None:
-            writer.close()
-    return RunResult(jobs=kept, errors=errors, unique=len(seen_ids), boards=done)
+        writer.close()
+    return RunResult(errors=errors, unique=len(seen_ids), boards=done)
 
 
-def build_feed(result: RunResult) -> dict[str, Any]:
-    """Shape a RunResult into the JSON the dashboard consumes."""
+def build_feed(jobs_dir: str | Path, errors: dict[str, str]) -> dict[str, Any]:
+    """Assemble the dashboard feed by reading the per-ATS ``.jsonl`` files back (deduped by id).
+
+    The ``.jsonl`` files are the source of truth; this reverses them into the single JSON the
+    dashboard consumes. ``errors`` is carried in from the run (it isn't in the ``.jsonl``). Loads
+    every Job into memory, so it's for the small curated feed — the millions-scale harvest skips it.
+    """
+    seen: set[str] = set()
+    jobs: list[dict[str, Any]] = []
+    for path in sorted(Path(jobs_dir).glob("*.jsonl")):
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                job = json.loads(line)
+                if job["id"] in seen:  # resume can re-emit a board's lines
+                    continue
+                seen.add(job["id"])
+                jobs.append(job)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "count": len(result.jobs),
-        "errors": result.errors,
-        "jobs": [job.to_dict() for job in result.jobs],
+        "count": len(jobs),
+        "errors": errors,
+        "jobs": jobs,
     }
 
 
