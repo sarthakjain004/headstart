@@ -1,6 +1,6 @@
 # ADR-0004: Memory-safe, parallel, resumable full-board scrape
 
-- Status: Accepted
+- Status: Accepted — the `collect_feed` / in-memory-feed part is superseded by [ADR-0010](0010-feed-from-jsonl.md) (the streaming + resume mechanics here still stand)
 - Date: 2026-06-24
 
 ## Context

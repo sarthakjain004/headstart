@@ -61,7 +61,7 @@ A Board still **Unknown** after every Liveness pass — surfaced for review, nev
 The Liveness-validated Boards (`active/{ats}.csv`) — the Companies whose Board answered **Live**. "Currently hiring" is the further subset whose job count is above zero.
 
 **Feed**:
-The assembled JSON of every scraped Job (`docs/jobs.json`) — the artifact the dashboard and the alert bot consume.
+The assembled `docs/jobs.json` the dashboard (and alert bot) consume. It is *derived* — built by reading the per-board `{ats}.jsonl` (the source of truth) back and deduping by Slug-aware id — and is the small **served curated subset**: the millions-scale harvest produces only the `.jsonl`, never a single feed.
 
 ### Alerts
 
