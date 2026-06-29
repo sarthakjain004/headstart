@@ -3,7 +3,7 @@ import json
 import headstart.pipeline as pipeline
 from headstart.config import CompanyRef
 from headstart.models import Job
-from headstart.pipeline import RunResult, build_feed, scrape_all, write_feed
+from headstart.pipeline import build_feed, scrape_all, write_feed
 
 
 def make_job(job_id: str, ats: str = "x", description: str | None = None) -> Job:
@@ -25,7 +25,7 @@ class FakeScraper:
         return self._jobs
 
 
-def test_scrape_all_dedupes_and_isolates_errors(monkeypatch):
+def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
     job_a, job_a_dup, job_b = make_job("x:a:1"), make_job("x:a:1"), make_job("x:b:2")
 
     def fake_get(ats, slug, name=None):
@@ -38,25 +38,48 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch):
     monkeypatch.setattr(pipeline, "get_scraper", fake_get)
     companies = [CompanyRef("x", "good"), CompanyRef("x", "dup"), CompanyRef("x", "bad")]
 
-    result = scrape_all(companies)
+    result = scrape_all(companies, jobs_dir=tmp_path)
 
-    assert {j.id for j in result.jobs} == {"x:a:1", "x:b:2"}  # deduped
-    assert len(result.jobs) == 2
+    # x:a:1 came from two boards but is written once; the failed board is isolated.
+    ids = [json.loads(line)["id"] for line in (tmp_path / "x.jsonl").read_text("utf-8").splitlines()]
+    assert sorted(ids) == ["x:a:1", "x:b:2"]
+    assert result.unique == 2
     assert "x:bad" in result.errors and "boom" in result.errors["x:bad"]
 
 
-def test_build_and_write_feed(tmp_path):
-    result = RunResult(jobs=[make_job("x:a:1")], errors={"x:bad": "oops"})
-    feed = build_feed(result)
+def test_build_and_write_feed(monkeypatch, tmp_path):
+    """build_feed reads the streamed .jsonl back; errors are carried in from the run."""
+    def fake_get(ats, slug, name=None):
+        if slug == "bad":
+            return FakeScraper(error=RuntimeError("oops"))
+        return FakeScraper([make_job("x:a:1")])
+
+    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    result = scrape_all([CompanyRef("x", "a"), CompanyRef("x", "bad")], jobs_dir=tmp_path)
+
+    feed = build_feed(tmp_path, result.errors)
     assert feed["count"] == 1
     assert feed["jobs"][0]["id"] == "x:a:1"
     assert "generated_at" in feed
+    assert "x:bad" in feed["errors"]  # not in the .jsonl; passed in from the run
 
     out = tmp_path / "docs" / "jobs.json"
     write_feed(feed, out)
     loaded = json.loads(out.read_text(encoding="utf-8"))
     assert loaded["count"] == 1
-    assert loaded["errors"] == {"x:bad": "oops"}
+    assert "x:bad" in loaded["errors"]
+
+
+def test_build_feed_dedupes_duplicate_jsonl_lines(tmp_path):
+    """A crash-and-resume can re-emit a board's lines; build_feed dedups by id on read."""
+    line1 = json.dumps(make_job("greenhouse:acme:1", ats="greenhouse").to_dict()) + "\n"
+    line2 = json.dumps(make_job("greenhouse:acme:2", ats="greenhouse").to_dict()) + "\n"
+    # acme:1 appears twice (re-emitted on resume), acme:2 once.
+    (tmp_path / "greenhouse.jsonl").write_text(line1 + line2 + line1, encoding="utf-8")
+
+    feed = build_feed(tmp_path, errors={})
+    assert feed["count"] == 2  # deduped
+    assert sorted(j["id"] for j in feed["jobs"]) == ["greenhouse:acme:1", "greenhouse:acme:2"]
 
 
 def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
@@ -77,8 +100,8 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
 
     result = scrape_all(companies, jobs_dir=tmp_path)
 
-    # Combined result is unchanged: still deduped and error-isolated.
-    assert {j.id for j in result.jobs} == {"greenhouse:acme:1", "greenhouse:acme:2", "lever:beta:9"}
+    # Still deduped and error-isolated; three distinct jobs streamed.
+    assert result.unique == 3
     assert "greenhouse:bad" in result.errors
 
     # Each ATS streamed to its own JSONL, one full Job per line; the failed board wrote nothing.
@@ -90,19 +113,6 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
     assert record["description"] == "multi\nline, with comma"
 
 
-def test_scrape_all_streams_without_retaining_when_feed_off(monkeypatch, tmp_path):
-    """collect_feed=False (the harvest path): jobs stream to disk but are NOT held in memory."""
-    jobs = [make_job(f"greenhouse:acme:{i}", ats="greenhouse") for i in range(5)]
-    monkeypatch.setattr(pipeline, "get_scraper", lambda *a, **k: FakeScraper(jobs))
-
-    result = scrape_all([CompanyRef("greenhouse", "acme")], jobs_dir=tmp_path, collect_feed=False)
-
-    assert result.jobs == []          # nothing retained -> no OOM at scale
-    assert result.unique == 5         # but the count is still reported
-    assert result.boards == 1
-    assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 5
-
-
 def test_scrape_all_dedupes_duplicate_boards_in_jsonl(monkeypatch, tmp_path):
     """Duplicate slug forms of one board (e.g. dollartree x3) must not triplicate its Jobs."""
     shared = [make_job("workday:dollartree:1", ats="workday"),
@@ -112,7 +122,7 @@ def test_scrape_all_dedupes_duplicate_boards_in_jsonl(monkeypatch, tmp_path):
                  CompanyRef("workday", "dollartree/dollartreeus"),
                  CompanyRef("workday", "dollartree.wd5.myworkdayjobs.com/dollartreeus")]
 
-    result = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False)
+    result = scrape_all(companies, jobs_dir=tmp_path)
 
     assert result.unique == 2  # two distinct ids, not six
     assert len((tmp_path / "workday.jsonl").read_text("utf-8").splitlines()) == 2
@@ -129,7 +139,7 @@ def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "get_scraper", fake_get)
     companies = [CompanyRef("greenhouse", "a"), CompanyRef("greenhouse", "b")]
 
-    r1 = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False)
+    r1 = scrape_all(companies, jobs_dir=tmp_path)
     assert sorted(calls) == ["a", "b"]
     assert r1.boards == 2
     assert (tmp_path / ".done").read_text("utf-8").split() == ["greenhouse:a", "greenhouse:b"]
@@ -137,14 +147,14 @@ def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
 
     # Resume: both boards are done -> none re-scraped, JSONL untouched (append, no new writes).
     calls.clear()
-    r2 = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False, resume=True)
+    r2 = scrape_all(companies, jobs_dir=tmp_path, resume=True)
     assert calls == []
     assert r2.boards == 0
     assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 2
 
     # Resume with a new board appended -> only the new one scrapes, its line is appended.
     companies.append(CompanyRef("greenhouse", "c"))
-    r3 = scrape_all(companies, jobs_dir=tmp_path, collect_feed=False, resume=True)
+    r3 = scrape_all(companies, jobs_dir=tmp_path, resume=True)
     assert calls == ["c"]
     assert r3.boards == 1
     assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 3

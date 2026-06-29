@@ -15,7 +15,7 @@ Most student projects fake these; yours are real. Lead with them.
 
 - **Real scale** — ~3.3M Job postings across 16 **ATS** platforms, global.
 - **A production pipeline** — incremental, id-keyed indexing; liveness validation; dedup.
-- **Documented decisions** — `CONTEXT.md` (domain glossary) and `docs/design-choices.md` (the
+- **Documented decisions** — `CONTEXT.md` (domain glossary) and `docs/adr/` (ADRs — the
   reasoning behind non-obvious calls). Great for the writeup *and* for answering "why did you do
   it that way?" in an interview.
 - **A live demo surface** — the Telegram bot is a working product people can actually use.

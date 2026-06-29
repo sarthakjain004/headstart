@@ -11,6 +11,21 @@ HeadStart surfaces job openings read directly from company ATS boards.
   **company selection** (skip companies that don't hire engineers) and at the **source query**
   where the ATS allows it (Lever `?department=`, Workday `jobFamilyGroup` facet). A post-hoc
   filter over already-scraped jobs saves no scraping and is the wrong layer.
+- **Search corpus: English-only for now.** The AI semantic-search layer pre-filters non-English
+  descriptions out *before* embedding — an explicit language-detection gate at ingestion
+  (e.g. `langdetect` / fastText LID over `title + description`), not something the embedding
+  model does on its own. An English embedding model still embeds foreign text, just badly, so
+  the gate is a separate step. This scopes only the embedding/search index, not the scrape or
+  the job feed — non-English boards are still scraped; they're held out of the index until
+  multilingual retrieval is added. See `docs/AI_Integration/`.
+- **Search interface: explicit filters + a pure semantic query (no LLM query-parser for now).**
+  The user applies **structured filters** themselves (experience / `min_years`, salary, remote,
+  employment_type, …) and *separately* types a **natural-language query describing only the role
+  they want** — e.g. "backend engineer at a climate startup", never "3+ years" or other structured
+  constraints. So the hybrid split is made explicit at the UI: filters drive the structured
+  where-clause (deterministic), the query drives the embedding (semantic). The LLM query-parser
+  that would *infer* filters from one free-text paragraph is **deferred** — don't build query
+  understanding while the constraints come from explicit controls.
 
 ## TODO: ATS providers to add support for
 Discovered via web research / headless rendering on missed companies — the fingerprinter has no
@@ -100,7 +115,7 @@ build it.
 - Recommend the best one and say why — give a real opinion, not a neutral survey.
 - Present the options to the user and let them choose before you build.
 - Skip this for small or obvious changes; weighing options on trivial work is its own overkill.
-- Once a non-obvious call is made, record it in `docs/design-choices.md` so the reasoning lasts.
+- Once a non-obvious call is made, record it as a new numbered ADR in `docs/adr/` so the reasoning lasts.
 
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
@@ -128,3 +143,19 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   `docs/`. Name files so the date/source/meaning is obvious at a glance (e.g.
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues via the `gh` CLI; external PRs are not a triage
+surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles use their default label names (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` at the root + ADRs in `docs/adr/`. See `docs/agents/domain.md`.

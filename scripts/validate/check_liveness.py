@@ -24,6 +24,7 @@ Run:   python scripts/validate/check_liveness.py --dir data/ats-tenants-merged
 """
 import csv
 import json
+import os
 import re
 import sys
 import threading
@@ -41,8 +42,17 @@ UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12              # reassigned per pass by the runner
 _DNS_ERR = 6             # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
 # each pass: (timeout_seconds, workers). Later passes are slower but more patient so a board
-# that was merely congested gets a fair chance before we give up on it.
-PASSES = [(12, 64), (25, 24), (45, 8), (70, 4)]
+# that was merely congested gets a fair chance before we give up on it. Pass-1 workers scale
+# with the machine: the work is I/O-bound and curl_cffi releases the GIL on each request, so we
+# run far more threads than cores; interleaving across ATSes keeps per-host concurrency gentle.
+_CORES = os.cpu_count() or 8
+# Pass-1 concurrency. The work is network-bound and curl_cffi drops the GIL on every request,
+# so hundreds of threads run truly concurrently across all cores; processes wouldn't help (the
+# only GIL-bound bit is the small parse) and can't share the active/ write handles. Default to
+# cores*24; override with LIVENESS_WORKERS=N to push it (the ceiling becomes host rate-limiting,
+# not the machine — over-cranking just turns into UNKNOWNs that the patient retry passes mop up).
+_W = int(os.environ.get("LIVENESS_WORKERS") or _CORES * 24)
+PASSES = [(12, _W), (25, max(_W // 4, 16)), (45, max(_W // 12, 8)), (70, 4)]
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
@@ -232,10 +242,73 @@ def p_darwinbox(t, u):
     return (DEAD, None) if dns_fails == 2 else (UNKNOWN, None)
 
 
+def p_smartrecruiters(t, u):
+    def count(b):
+        try:
+            d = json.loads(b)
+        except Exception:
+            return None
+        tf = d.get("totalFound")
+        return tf if isinstance(tf, int) else len(d.get("content") or [])
+    return _classify(f"https://api.smartrecruiters.com/v1/companies/{t}/postings?limit=10", count)
+
+
+def p_teamtailor(t, u):
+    return _classify(f"https://{t}.teamtailor.com/jobs.json", lambda b: _len_of(b, "items"))
+
+
+def p_rippling(t, u):
+    return _classify(f"https://api.rippling.com/platform/api/ats/v1/board/{t}/jobs",
+                     lambda b: _len_of(b, "items", "jobs"))
+
+
+def p_trakstar(t, u):
+    status, body = _get(f"https://{t}.hire.trakstar.com/")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    n = len(body.decode("utf-8", "replace").split("js-careers-page-job-list-item")) - 1
+    return LIVE, max(n, 0)
+
+
+def p_personio(t, u):
+    host = (u or "").split("://", 1)[-1].rstrip("/") or f"{t}.jobs.personio.de"
+    status, body = _get(f"https://{host}/xml")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    return LIVE, body.decode("utf-8", "replace").count("<position>")
+
+
+def p_join(t, u):
+    status, body = _get(f"https://join.com/companies/{t}")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    m = re.search(rb'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', body, re.S)
+    if not m:
+        return UNKNOWN, None
+    try:
+        state = (json.loads(m.group(1)).get("props") or {}).get("pageProps") or {}
+        cid = ((state.get("initialState") or {}).get("company") or {}).get("id")
+    except Exception:
+        return UNKNOWN, None
+    if not cid:
+        return UNKNOWN, None
+    return _classify(
+        f"https://join.com/api/public/companies/{cid}/jobs?locale=en&page=1&pageSize=1",
+        lambda b: (lambda d: (d.get("pagination") or {}).get("rowCount"))(json.loads(b)))
+
+
 PROBES = {
     "greenhouse": p_greenhouse, "lever": p_lever, "ashby": p_ashby, "recruitee": p_recruitee,
     "workable": p_workable, "zoho": p_zoho, "workday": p_workday, "keka": p_keka,
     "ripplehire": p_ripplehire, "darwinbox": p_darwinbox,
+    "smartrecruiters": p_smartrecruiters, "teamtailor": p_teamtailor, "rippling": p_rippling,
+    "trakstar": p_trakstar, "personio": p_personio, "join": p_join,
 }
 
 

@@ -12,6 +12,11 @@ dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerpr
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
+# required by nomic's custom modeling code; langdetect gates the English-only corpus.
+embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb"]
+# Local dev UI for the semantic search (scripts/ui/serve.py)
+ui = ["flask"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/headstart"]

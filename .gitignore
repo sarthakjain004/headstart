@@ -44,6 +44,12 @@ data/ats-companies/
 data/discover/
 data/ats-tenants-merged/*.csv
 data/jobs/
+# embedding vectors — large binary, regenerable from scripts/embed/
+data/embeddings/
+# LanceDB vector store — regenerable from the embedding store via scripts/embed/build_index.py
+data/lancedb/
+# enrichment outputs (extracted experience, etc.) — regenerable from scripts/enrich/
+data/enrich/
 # harvested external ATS company lists — large and regenerable from the merge scripts
 data/ats-company-lists/
 # liveness resume checkpoints (.{ats}_checked / .{ats}_dead), not data
