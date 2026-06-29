@@ -11,6 +11,21 @@ HeadStart surfaces job openings read directly from company ATS boards.
   **company selection** (skip companies that don't hire engineers) and at the **source query**
   where the ATS allows it (Lever `?department=`, Workday `jobFamilyGroup` facet). A post-hoc
   filter over already-scraped jobs saves no scraping and is the wrong layer.
+- **Search corpus: English-only for now.** The AI semantic-search layer pre-filters non-English
+  descriptions out *before* embedding — an explicit language-detection gate at ingestion
+  (e.g. `langdetect` / fastText LID over `title + description`), not something the embedding
+  model does on its own. An English embedding model still embeds foreign text, just badly, so
+  the gate is a separate step. This scopes only the embedding/search index, not the scrape or
+  the job feed — non-English boards are still scraped; they're held out of the index until
+  multilingual retrieval is added. See `docs/AI_Integration/`.
+- **Search interface: explicit filters + a pure semantic query (no LLM query-parser for now).**
+  The user applies **structured filters** themselves (experience / `min_years`, salary, remote,
+  employment_type, …) and *separately* types a **natural-language query describing only the role
+  they want** — e.g. "backend engineer at a climate startup", never "3+ years" or other structured
+  constraints. So the hybrid split is made explicit at the UI: filters drive the structured
+  where-clause (deterministic), the query drives the embedding (semantic). The LLM query-parser
+  that would *infer* filters from one free-text paragraph is **deferred** — don't build query
+  understanding while the constraints come from explicit controls.
 
 ## TODO: ATS providers to add support for
 Discovered via web research / headless rendering on missed companies — the fingerprinter has no
