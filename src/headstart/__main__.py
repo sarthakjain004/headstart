@@ -19,7 +19,9 @@ def main() -> None:
     # Prefer the liveness-validated active lists; fall back to the curated seed if they
     # haven't been generated yet.
     using_active = any(_ACTIVE.glob("*.csv"))
-    companies = load_active_companies(_ACTIVE) if using_active else load_companies(_CONFIG)
+    companies = (
+        load_active_companies(_ACTIVE) if using_active else load_companies(_CONFIG)
+    )
 
     # The dashboard feed docs/jobs.json is rebuilt from the per-ATS JSONL (the source of truth) and
     # holds every Job in memory while doing so; at full-harvest scale (the active lists) that OOMs
@@ -31,15 +33,21 @@ def main() -> None:
     # HEADSTART_RESUME=1 continues an interrupted harvest (append + skip already-done boards).
     resume = os.environ.get("HEADSTART_RESUME") == "1"
 
-    result = scrape_all(companies, jobs_dir=_JOBS_DIR, progress_every=200, resume=resume)
+    result = scrape_all(
+        companies, jobs_dir=_JOBS_DIR, progress_every=200, resume=resume
+    )
 
     if build_dashboard_feed:
         feed = build_feed(_JOBS_DIR, result.errors)
         write_feed(feed, _OUTPUT)
-        print(f"wrote {feed['count']} jobs to {_OUTPUT} (+ per-ATS JSONL under {_JOBS_DIR})")
+        print(
+            f"wrote {feed['count']} jobs to {_OUTPUT} (+ per-ATS JSONL under {_JOBS_DIR})"
+        )
     else:
-        print(f"scraped {result.unique} unique jobs from {result.boards} boards "
-              f"-> per-ATS JSONL under {_JOBS_DIR}")
+        print(
+            f"scraped {result.unique} unique jobs from {result.boards} boards "
+            f"-> per-ATS JSONL under {_JOBS_DIR}"
+        )
 
     if result.errors:
         print(f"{len(result.errors)} board(s) failed:")

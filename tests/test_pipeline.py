@@ -8,8 +8,16 @@ from headstart.pipeline import build_feed, scrape_all, write_feed
 
 def make_job(job_id: str, ats: str = "x", description: str | None = None) -> Job:
     return Job(
-        id=job_id, ats=ats, company="C", title="T", location=None, remote=None,
-        department=None, url="u", posted_at=None, scraped_at="2026-01-01T00:00:00+00:00",
+        id=job_id,
+        ats=ats,
+        company="C",
+        title="T",
+        location=None,
+        remote=None,
+        department=None,
+        url="u",
+        posted_at=None,
+        scraped_at="2026-01-01T00:00:00+00:00",
         description=description,
     )
 
@@ -36,12 +44,19 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
         }[slug]
 
     monkeypatch.setattr(pipeline, "get_scraper", fake_get)
-    companies = [CompanyRef("x", "good"), CompanyRef("x", "dup"), CompanyRef("x", "bad")]
+    companies = [
+        CompanyRef("x", "good"),
+        CompanyRef("x", "dup"),
+        CompanyRef("x", "bad"),
+    ]
 
     result = scrape_all(companies, jobs_dir=tmp_path)
 
     # x:a:1 came from two boards but is written once; the failed board is isolated.
-    ids = [json.loads(line)["id"] for line in (tmp_path / "x.jsonl").read_text("utf-8").splitlines()]
+    ids = [
+        json.loads(line)["id"]
+        for line in (tmp_path / "x.jsonl").read_text("utf-8").splitlines()
+    ]
     assert sorted(ids) == ["x:a:1", "x:b:2"]
     assert result.unique == 2
     assert "x:bad" in result.errors and "boom" in result.errors["x:bad"]
@@ -49,13 +64,16 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
 
 def test_build_and_write_feed(monkeypatch, tmp_path):
     """build_feed reads the streamed .jsonl back; errors are carried in from the run."""
+
     def fake_get(ats, slug, name=None):
         if slug == "bad":
             return FakeScraper(error=RuntimeError("oops"))
         return FakeScraper([make_job("x:a:1")])
 
     monkeypatch.setattr(pipeline, "get_scraper", fake_get)
-    result = scrape_all([CompanyRef("x", "a"), CompanyRef("x", "bad")], jobs_dir=tmp_path)
+    result = scrape_all(
+        [CompanyRef("x", "a"), CompanyRef("x", "bad")], jobs_dir=tmp_path
+    )
 
     feed = build_feed(tmp_path, result.errors)
     assert feed["count"] == 1
@@ -79,11 +97,16 @@ def test_build_feed_dedupes_duplicate_jsonl_lines(tmp_path):
 
     feed = build_feed(tmp_path, errors={})
     assert feed["count"] == 2  # deduped
-    assert sorted(j["id"] for j in feed["jobs"]) == ["greenhouse:acme:1", "greenhouse:acme:2"]
+    assert sorted(j["id"] for j in feed["jobs"]) == [
+        "greenhouse:acme:1",
+        "greenhouse:acme:2",
+    ]
 
 
 def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
-    gh1 = make_job("greenhouse:acme:1", ats="greenhouse", description="multi\nline, with comma")
+    gh1 = make_job(
+        "greenhouse:acme:1", ats="greenhouse", description="multi\nline, with comma"
+    )
     gh2 = make_job("greenhouse:acme:2", ats="greenhouse")
     lev = make_job("lever:beta:9", ats="lever")
 
@@ -95,8 +118,11 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
         }[slug]
 
     monkeypatch.setattr(pipeline, "get_scraper", fake_get)
-    companies = [CompanyRef("greenhouse", "acme"), CompanyRef("lever", "beta"),
-                 CompanyRef("greenhouse", "bad")]
+    companies = [
+        CompanyRef("greenhouse", "acme"),
+        CompanyRef("lever", "beta"),
+        CompanyRef("greenhouse", "bad"),
+    ]
 
     result = scrape_all(companies, jobs_dir=tmp_path)
 
@@ -115,12 +141,16 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
 
 def test_scrape_all_dedupes_duplicate_boards_in_jsonl(monkeypatch, tmp_path):
     """Duplicate slug forms of one board (e.g. dollartree x3) must not triplicate its Jobs."""
-    shared = [make_job("workday:dollartree:1", ats="workday"),
-              make_job("workday:dollartree:2", ats="workday")]
+    shared = [
+        make_job("workday:dollartree:1", ats="workday"),
+        make_job("workday:dollartree:2", ats="workday"),
+    ]
     monkeypatch.setattr(pipeline, "get_scraper", lambda *a, **k: FakeScraper(shared))
-    companies = [CompanyRef("workday", "dollartree"),
-                 CompanyRef("workday", "dollartree/dollartreeus"),
-                 CompanyRef("workday", "dollartree.wd5.myworkdayjobs.com/dollartreeus")]
+    companies = [
+        CompanyRef("workday", "dollartree"),
+        CompanyRef("workday", "dollartree/dollartreeus"),
+        CompanyRef("workday", "dollartree.wd5.myworkdayjobs.com/dollartreeus"),
+    ]
 
     result = scrape_all(companies, jobs_dir=tmp_path)
 
@@ -142,7 +172,10 @@ def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
     r1 = scrape_all(companies, jobs_dir=tmp_path)
     assert sorted(calls) == ["a", "b"]
     assert r1.boards == 2
-    assert (tmp_path / ".done").read_text("utf-8").split() == ["greenhouse:a", "greenhouse:b"]
+    assert (tmp_path / ".done").read_text("utf-8").split() == [
+        "greenhouse:a",
+        "greenhouse:b",
+    ]
     assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 2
 
     # Resume: both boards are done -> none re-scraped, JSONL untouched (append, no new writes).

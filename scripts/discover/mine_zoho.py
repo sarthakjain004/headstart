@@ -14,6 +14,7 @@ After running, re-run scripts/merge/merge_tenants.py.
 
 Run:  python scripts/discover/mine_zoho.py
 """
+
 import csv
 import subprocess
 import sys
@@ -24,18 +25,20 @@ WB = ROOT / "data" / "wayback-ats"
 PAGES = ROOT / "scripts" / "wayback_pages.py"
 WORKERS = "4"
 
-CANON = ("zoho", "zohorecruit.com")        # writes zoho.csv directly (resumes prior state)
+CANON = ("zoho", "zohorecruit.com")  # writes zoho.csv directly (resumes prior state)
 REGIONAL = [
-    ("zoho_in", "zohorecruit.in"),         # India data center  <- the big India cohort
-    ("zoho_eu", "zohorecruit.eu"),         # EU
-    ("zoho_au", "zohorecruit.com.au"),     # Australia
-    ("zoho_ca", "zohorecruit.ca"),         # Canada
+    ("zoho_in", "zohorecruit.in"),  # India data center  <- the big India cohort
+    ("zoho_eu", "zohorecruit.eu"),  # EU
+    ("zoho_au", "zohorecruit.com.au"),  # Australia
+    ("zoho_ca", "zohorecruit.ca"),  # Canada
 ]
 
 
 def mine(label, host):
     print(f"=== mining {host} ===", flush=True)
-    subprocess.run([sys.executable, str(PAGES), label, host, "sub", WORKERS], check=False)
+    subprocess.run(
+        [sys.executable, str(PAGES), label, host, "sub", WORKERS], check=False
+    )
 
 
 def main():

@@ -31,8 +31,10 @@ _LOC = re.compile(r'js-job-list-opening-loc[^>]*\btitle="([^"]*)"')
 # the card also renders the department in a bare rb-text-4 div and the employment type in
 # the opening-meta span next to it — both sit in the same block, just unread until now.
 _DEPT = re.compile(r'"rb-text-4">\s*([^<]+?)\s*</div>')
-_EMPTYPE = re.compile(r'js-job-list-opening-meta[^>]*>\s*<span>\s*([^<]+?)\s*</span>')
-_JSONLD = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S | re.I)
+_EMPTYPE = re.compile(r"js-job-list-opening-meta[^>]*>\s*<span>\s*([^<]+?)\s*</span>")
+_JSONLD = re.compile(
+    r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.S | re.I
+)
 _UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 4  # detail pages sit behind DataDome — keep the concurrency gentle
 
@@ -45,16 +47,25 @@ class TrakstarScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
-        codes = [m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))]
+        codes = [
+            m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))
+        ]
         # Each job page's JSON-LD description, fetched concurrently (bounded); failures -> None.
-        descriptions = dict(zip(codes, self.fan_out(codes, self._job_description, workers=_DETAIL_WORKERS)))
+        descriptions = dict(
+            zip(
+                codes,
+                self.fan_out(codes, self._job_description, workers=_DETAIL_WORKERS),
+            )
+        )
         return {"html": html, "descriptions": descriptions}
 
     def _job_description(self, code: str) -> str | None:
         try:
             response = http.fetch(
-                "GET", f"https://{self.slug}.hire.trakstar.com/jobs/{code}/",
-                timeout=30, headers={"User-Agent": _UA},
+                "GET",
+                f"https://{self.slug}.hire.trakstar.com/jobs/{code}/",
+                timeout=30,
+                headers={"User-Agent": _UA},
             )
         except http.RequestsError:
             return None  # a missing description must not drop the job
@@ -87,7 +98,9 @@ class TrakstarScraper(BaseScraper):
                     url=f"https://{self.slug}.hire.trakstar.com/jobs/{code.group(1)}/",
                     posted_at=None,  # listing card has no date
                     scraped_at=scraped_at,
-                    employment_type=_html.unescape(emp.group(1)).strip() if emp else None,
+                    employment_type=_html.unescape(emp.group(1)).strip()
+                    if emp
+                    else None,
                     description=html_to_text(descriptions.get(code.group(1))),
                 )
             )
@@ -102,7 +115,7 @@ def _jsonld_description(html: str) -> str | None:
             data = json.loads(match.group(1), strict=False)
         except (json.JSONDecodeError, ValueError):
             continue
-        for item in (data if isinstance(data, list) else [data]):
+        for item in data if isinstance(data, list) else [data]:
             if isinstance(item, dict) and item.get("@type") == "JobPosting":
                 desc = item.get("description")
                 if desc:

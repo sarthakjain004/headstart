@@ -29,7 +29,9 @@ class ZohoScraper(BaseScraper):
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
-        return url.split("://", 1)[-1].rstrip("/")  # the careers host, e.g. acme.zohorecruit.in
+        return url.split("://", 1)[-1].rstrip(
+            "/"
+        )  # the careers host, e.g. acme.zohorecruit.in
 
     def url(self) -> str:
         return f"https://{self.slug}/jobs/Careers"
@@ -55,9 +57,11 @@ class ZohoScraper(BaseScraper):
             if not jid:
                 continue
             title = (r.get("Posting_Title") or r.get("Job_Opening_Name") or "").strip()
-            location = r.get("City") or ", ".join(
-                x for x in (r.get("State"), r.get("Country")) if x
-            ) or None
+            location = (
+                r.get("City")
+                or ", ".join(x for x in (r.get("State"), r.get("Country")) if x)
+                or None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{jid}",

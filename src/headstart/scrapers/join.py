@@ -24,7 +24,12 @@ _NEXT = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 _PAGE_SIZE = 50
 _MAX_PAGES = 200  # 200 * 50 = 10k jobs ceiling per company
 _DETAIL_WORKERS = 8
-_REMOTE = {"REMOTE": True, "FULLY_REMOTE": True, "ONSITE": False, "ON_SITE": False}  # else None
+_REMOTE = {
+    "REMOTE": True,
+    "FULLY_REMOTE": True,
+    "ONSITE": False,
+    "ON_SITE": False,
+}  # else None
 
 
 class JoinScraper(BaseScraper):
@@ -52,10 +57,15 @@ class JoinScraper(BaseScraper):
         items: list[dict] = []
         page = 1
         while page <= _MAX_PAGES:
-            api = (f"https://join.com/api/public/companies/{cid}/jobs"
-                   f"?locale=en&page={page}&pageSize={_PAGE_SIZE}")
+            api = (
+                f"https://join.com/api/public/companies/{cid}/jobs"
+                f"?locale=en&page={page}&pageSize={_PAGE_SIZE}"
+            )
             data = http.fetch(
-                "GET", api, headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=30
+                "GET",
+                api,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
             ).json()
             items.extend(data.get("items") or [])
             if page >= (data.get("pagination") or {}).get("pageCount", 1):
@@ -63,7 +73,9 @@ class JoinScraper(BaseScraper):
             page += 1
         # Fill each posting's description concurrently (bounded); a failed fetch leaves it None.
         descriptions = self.fan_out(
-            items, lambda it: self._job_description(it.get("id")), workers=_DETAIL_WORKERS
+            items,
+            lambda it: self._job_description(it.get("id")),
+            workers=_DETAIL_WORKERS,
         )
         for item, description in zip(items, descriptions):
             item["_description"] = description
@@ -75,17 +87,23 @@ class JoinScraper(BaseScraper):
             return None
         try:
             resp = http.fetch(
-                "GET", f"https://join.com/api/public/jobs/{jid}?locale=en",
-                headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=30,
+                "GET",
+                f"https://join.com/api/public/jobs/{jid}?locale=en",
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
             )
         except http.RequestsError:
             return None
         if resp.status_code != 200:
             return None
         d = resp.json()
-        return d.get("description") or "\n\n".join(
-            s for s in (d.get("intro"), d.get("tasks"), d.get("requirements")) if s
-        ) or None
+        return (
+            d.get("description")
+            or "\n\n".join(
+                s for s in (d.get("intro"), d.get("tasks"), d.get("requirements")) if s
+            )
+            or None
+        )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company_name = (raw.get("company") or {}).get("name") or self.company
@@ -93,9 +111,17 @@ class JoinScraper(BaseScraper):
         for it in raw.get("items", []):
             city = it.get("city") or {}
             country = it.get("country") or {}
-            location = ", ".join(
-                p for p in (city.get("label") or city.get("name"), country.get("name")) if p
-            ) or None
+            location = (
+                ", ".join(
+                    p
+                    for p in (
+                        city.get("label") or city.get("name"),
+                        country.get("name"),
+                    )
+                    if p
+                )
+                or None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{it['id']}",

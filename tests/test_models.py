@@ -17,17 +17,36 @@ def test_job_round_trips_to_dict():
     d = job.to_dict()
     assert d["id"] == "greenhouse:stripe:1"
     assert set(d) == {
-        "id", "ats", "company", "title", "location",
-        "remote", "department", "url", "posted_at", "scraped_at",
-        "description", "experience", "employment_type", "salary",
+        "id",
+        "ats",
+        "company",
+        "title",
+        "location",
+        "remote",
+        "department",
+        "url",
+        "posted_at",
+        "scraped_at",
+        "description",
+        "experience",
+        "employment_type",
+        "salary",
     }
 
 
 def test_job_optional_fields_default_to_none():
     # a scraper that supplies none of the richer fields still builds a valid Job
     job = Job(
-        id="x:y:1", ats="x", company="C", title="T", location=None, remote=None,
-        department=None, url="u", posted_at=None, scraped_at="2026-01-01T00:00:00+00:00",
+        id="x:y:1",
+        ats="x",
+        company="C",
+        title="T",
+        location=None,
+        remote=None,
+        department=None,
+        url="u",
+        posted_at=None,
+        scraped_at="2026-01-01T00:00:00+00:00",
     )
     assert job.description is None
     assert job.experience is None

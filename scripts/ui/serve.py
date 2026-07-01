@@ -33,8 +33,12 @@ print(f"ready: {_table.count_rows()} jobs on {_device}", flush=True)
 app = Flask(__name__)
 
 
-def _search(query: str, remote: bool, emp_type: str | None, max_years: int | None, k: int) -> list[dict]:
-    qv = _model.encode([_QUERY_PREFIX + query], normalize_embeddings=True)[0].astype("float32")
+def _search(
+    query: str, remote: bool, emp_type: str | None, max_years: int | None, k: int
+) -> list[dict]:
+    qv = _model.encode([_QUERY_PREFIX + query], normalize_embeddings=True)[0].astype(
+        "float32"
+    )
     search = _table.search(qv).metric("cosine")
     filters = []
     if remote:
@@ -46,12 +50,20 @@ def _search(query: str, remote: bool, emp_type: str | None, max_years: int | Non
     if filters:
         search = search.where(" AND ".join(filters), prefilter=True)
     rows = search.limit(k).to_list()
-    return [{
-        "score": round(1 - r["_distance"], 3),
-        "title": r["title"], "company": r["company"], "location": r.get("location"),
-        "remote": r["remote"], "employment_type": r.get("employment_type"),
-        "min_years": r.get("min_years"), "salary": r.get("salary"), "url": r.get("url"),
-    } for r in rows]
+    return [
+        {
+            "score": round(1 - r["_distance"], 3),
+            "title": r["title"],
+            "company": r["company"],
+            "location": r.get("location"),
+            "remote": r["remote"],
+            "employment_type": r.get("employment_type"),
+            "min_years": r.get("min_years"),
+            "salary": r.get("salary"),
+            "url": r.get("url"),
+        }
+        for r in rows
+    ]
 
 
 @app.route("/search")
@@ -60,13 +72,15 @@ def search():
     if not q:
         return jsonify([])
     max_years = request.args.get("max_years")
-    return jsonify(_search(
-        q,
-        remote=request.args.get("remote") == "true",
-        emp_type=request.args.get("type") or None,
-        max_years=int(max_years) if max_years else None,
-        k=int(request.args.get("k") or 20),
-    ))
+    return jsonify(
+        _search(
+            q,
+            remote=request.args.get("remote") == "true",
+            emp_type=request.args.get("type") or None,
+            max_years=int(max_years) if max_years else None,
+            k=int(request.args.get("k") or 20),
+        )
+    )
 
 
 @app.route("/")

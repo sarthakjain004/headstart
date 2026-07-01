@@ -80,7 +80,9 @@ def test_darwinbox_parse():
     assert j.remote is False
     assert j.department == "Dispatch"
     assert j.posted_at == "3-Feb-2025"
-    assert j.url == "https://licious.darwinbox.in/ms/candidate/careers/jobs/5ebea18409d3e"
+    assert (
+        j.url == "https://licious.darwinbox.in/ms/candidate/careers/jobs/5ebea18409d3e"
+    )
     assert j.scraped_at == SCRAPED_AT
     assert j.experience == "2 - 4 Years"
     assert j.employment_type == "Onroll"
@@ -145,7 +147,9 @@ def test_smartrecruiters_parse():
     assert j.url == "https://jobs.smartrecruiters.com/freshworks/744000133057378"
     assert j.experience == "Associate"  # experienceLevel.label
     assert j.employment_type == "Full-time"  # typeOfEmployment.label
-    assert j.description and "</" not in j.description  # detail fetch; populated, HTML-stripped
+    assert (
+        j.description and "</" not in j.description
+    )  # detail fetch; populated, HTML-stripped
 
 
 def test_sensehq_parse():
@@ -196,7 +200,9 @@ def test_oracle_parse():
         "https://fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/"
         "CandidateExperience/en/sites/CX_2/job/NAG_002"
     )
-    assert j.description and "</" not in j.description  # short ShortDescriptionStr, HTML-stripped
+    assert (
+        j.description and "</" not in j.description
+    )  # short ShortDescriptionStr, HTML-stripped
 
 
 def test_workday_parse():
@@ -241,9 +247,9 @@ def test_recruitee_salary_formatting():
 
     assert _salary(None) is None
     assert _salary({"min": None, "max": None}) is None  # blank -> None, job still kept
-    assert _salary({"min": 50000, "max": 70000, "currency": "EUR", "period": "year"}) == (
-        "50000-70000 EUR year"
-    )
+    assert _salary(
+        {"min": 50000, "max": 70000, "currency": "EUR", "period": "year"}
+    ) == ("50000-70000 EUR year")
     assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
 
 
@@ -265,7 +271,9 @@ def test_teamtailor_parse():
 
 def test_personio_parse():
     raw = ET.fromstring((FIXTURES / "personio_avian.xml").read_bytes())
-    jobs = get_scraper("personio", "avian.jobs.personio.com", "Avian").parse(raw, SCRAPED_AT)
+    jobs = get_scraper("personio", "avian.jobs.personio.com", "Avian").parse(
+        raw, SCRAPED_AT
+    )
     assert len(jobs) == 2
     j = jobs[0]
     assert j.id == "personio:avian:2642824"
@@ -293,7 +301,9 @@ def test_join_parse():
     assert j.url.startswith("https://join.com/companies/indie-solutions/")
     assert j.posted_at
     assert j.description and "</" not in j.description  # populated, HTML-stripped
-    assert sum(1 for x in jobs if x.description) == 12  # the bounded detail-fetch filled all 12
+    assert (
+        sum(1 for x in jobs if x.description) == 12
+    )  # the bounded detail-fetch filled all 12
 
 
 def test_rippling_parse():
@@ -306,7 +316,10 @@ def test_rippling_parse():
     assert j.ats == "rippling"
     assert j.title == "Clinical Operations Manager"
     assert j.location  # workLocation present
-    assert j.url == "https://ats.rippling.com/acrn/jobs/26708222-0b57-42df-8f52-b6b927351d18"
+    assert (
+        j.url
+        == "https://ats.rippling.com/acrn/jobs/26708222-0b57-42df-8f52-b6b927351d18"
+    )
     assert j.employment_type  # employmentType.id
     assert j.posted_at  # createdOn from the detail fetch
     assert j.description and "</" not in j.description  # populated, HTML-stripped

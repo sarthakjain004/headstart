@@ -84,7 +84,9 @@ def _format_alerts(chat_id: str, hits: list[dict[str, Any]]) -> list[tuple[str, 
     lines = [f"{len(hits)} new role(s) matching your filters:"]
     for j in hits[:_MAX_ALERTS]:
         loc = f" ({j['location']})" if j.get("location") else ""
-        lines.append(f"- {j.get('title', 'Role')} - {j.get('company', '')}{loc}\n{j.get('url', '')}")
+        lines.append(
+            f"- {j.get('title', 'Role')} - {j.get('company', '')}{loc}\n{j.get('url', '')}"
+        )
     if len(hits) > _MAX_ALERTS:
         lines.append(f"...and {len(hits) - _MAX_ALERTS} more.")
     return [(chat_id, "\n".join(lines))]

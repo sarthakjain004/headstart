@@ -15,7 +15,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_MAX_PLAUSIBLE_YEARS = 50  # reject absurd matches ("100 years"), almost always a parse error
+_MAX_PLAUSIBLE_YEARS = (
+    50  # reject absurd matches ("100 years"), almost always a parse error
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +26,9 @@ class ExperienceSpan:
 
     min_years: int
     max_years: int | None
-    source: str  # which tier produced it: "field" | "regex" (future: "llm" | "inferred")
+    source: (
+        str  # which tier produced it: "field" | "regex" (future: "llm" | "inferred")
+    )
 
 
 # --- Tier 1: parse a structured field like "5+", "3 to 5", "3-5" -------------------------------
@@ -52,7 +56,10 @@ def from_field(value: str | None) -> ExperienceSpan | None:
 # between the number and "experience" ("7+ years of proven experience"). Tried in order; range first.
 _DESC_PATTERNS = [
     # "7 to 12 years of experience", "3-5 years' experience" — captures (lo, hi)
-    re.compile(r"(\d{1,2})\s*(?:to|-|–|—|or)\s*(\d{1,2})\s*\+?\s*years?[\w\s'’/&,-]{0,25}?experience", re.I),
+    re.compile(
+        r"(\d{1,2})\s*(?:to|-|–|—|or)\s*(\d{1,2})\s*\+?\s*years?[\w\s'’/&,-]{0,25}?experience",
+        re.I,
+    ),
     # "7+ years of proven experience", "9+ years' experience", "minimum 3 years of experience"
     re.compile(r"(\d{1,2})\s*\+?\s*years?[\w\s'’/&,-]{0,25}?experience", re.I),
     # reversed: "experience of 5+ years", "Experience: 5 years"
@@ -69,7 +76,11 @@ def from_description(text: str | None) -> ExperienceSpan | None:
         if not match:
             continue
         lo = int(match.group(1))
-        hi = int(match.group(2)) if match.lastindex and match.lastindex >= 2 and match.group(2) else None
+        hi = (
+            int(match.group(2))
+            if match.lastindex and match.lastindex >= 2 and match.group(2)
+            else None
+        )
         if lo > _MAX_PLAUSIBLE_YEARS:
             continue
         if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):

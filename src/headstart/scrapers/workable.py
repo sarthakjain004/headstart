@@ -22,9 +22,12 @@ class WorkableScraper(BaseScraper):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for j in raw.get("jobs", []):
-            location = ", ".join(
-                p for p in (j.get("city"), j.get("state"), j.get("country")) if p
-            ) or None
+            location = (
+                ", ".join(
+                    p for p in (j.get("city"), j.get("state"), j.get("country")) if p
+                )
+                or None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{j['shortcode']}",

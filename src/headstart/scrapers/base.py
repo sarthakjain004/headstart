@@ -54,8 +54,12 @@ class BaseScraper(ABC):
         """GET the board URL as text via the reliable-fetch seam (retry lives there). Raises
         on a definitive HTTP error so a dead board surfaces as a per-company failure."""
         response = http.fetch(
-            "GET", self.url(),
-            headers={"User-Agent": _USER_AGENT, "Accept": "application/json, text/html"},
+            "GET",
+            self.url(),
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Accept": "application/json, text/html",
+            },
             timeout=30,
         )
         response.raise_for_status()

@@ -39,16 +39,40 @@ def test_invalid_ats_rejected():
 
 def test_build_notifications_seeds_then_alerts_matching_only():
     state = {"seen_job_ids": [], "subscribers": {}}
-    j1 = {"id": "a", "title": "Backend", "company": "X", "department": None,
-          "location": "Remote", "remote": True, "ats": "greenhouse", "url": "u1"}
+    j1 = {
+        "id": "a",
+        "title": "Backend",
+        "company": "X",
+        "department": None,
+        "location": "Remote",
+        "remote": True,
+        "ats": "greenhouse",
+        "url": "u1",
+    }
     assert build_notifications([j1], state) == []  # first run only seeds
     assert state["seen_job_ids"] == ["a"]
 
     state["subscribers"]["123"] = {"remote": True}
-    j2 = {"id": "b", "title": "Onsite", "company": "Y", "department": None,
-          "location": "NYC", "remote": False, "ats": "lever", "url": "u2"}
-    j3 = {"id": "c", "title": "SRE", "company": "Z", "department": None,
-          "location": "Remote", "remote": True, "ats": "ashby", "url": "u3"}
+    j2 = {
+        "id": "b",
+        "title": "Onsite",
+        "company": "Y",
+        "department": None,
+        "location": "NYC",
+        "remote": False,
+        "ats": "lever",
+        "url": "u2",
+    }
+    j3 = {
+        "id": "c",
+        "title": "SRE",
+        "company": "Z",
+        "department": None,
+        "location": "Remote",
+        "remote": True,
+        "ats": "ashby",
+        "url": "u3",
+    }
     out = build_notifications([j1, j2, j3], state)
     assert len(out) == 1 and out[0][0] == "123" and "SRE" in out[0][1]
     assert set(state["seen_job_ids"]) == {"a", "b", "c"}

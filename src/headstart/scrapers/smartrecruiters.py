@@ -34,7 +34,9 @@ class SmartRecruitersScraper(BaseScraper):
         data = json.loads(self._get())
         postings = data.get("content") or []
         descriptions = self.fan_out(
-            postings, lambda p: self._job_description(p.get("id")), workers=_DETAIL_WORKERS
+            postings,
+            lambda p: self._job_description(p.get("id")),
+            workers=_DETAIL_WORKERS,
         )
         for posting, description in zip(postings, descriptions):
             posting["_description"] = description
@@ -46,22 +48,32 @@ class SmartRecruitersScraper(BaseScraper):
             return None
         url = f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
         try:
-            response = http.fetch("GET", url, timeout=30,
-                                  headers={"User-Agent": _UA, "Accept": "application/json"})
+            response = http.fetch(
+                "GET",
+                url,
+                timeout=30,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+            )
         except http.RequestsError:
             return None  # a missing description must not drop the job
         if response.status_code != 200:
             return None
-        sections = ((response.json().get("jobAd") or {}).get("sections") or {})
+        sections = (response.json().get("jobAd") or {}).get("sections") or {}
         return (sections.get("jobDescription") or {}).get("text")
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for p in raw.get("content", []):
             loc = p.get("location") or {}
-            location = loc.get("fullLocation") or ", ".join(
-                x for x in (loc.get("city"), loc.get("region"), loc.get("country")) if x
-            ) or None
+            location = (
+                loc.get("fullLocation")
+                or ", ".join(
+                    x
+                    for x in (loc.get("city"), loc.get("region"), loc.get("country"))
+                    if x
+                )
+                or None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{p['id']}",

@@ -54,3 +54,5 @@ data/enrich/
 data/ats-company-lists/
 # liveness resume checkpoints (.{ats}_checked / .{ats}_dead), not data
 data/ats-tenants-merged/active/.*
+# eval harness candidate pool — large (full job descriptions), regenerable from scripts/eval/pool_candidates.py
+data/eval/pool.jsonl

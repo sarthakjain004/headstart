@@ -31,7 +31,9 @@ class AshbyScraper(BaseScraper):
                     url=j.get("jobUrl", ""),
                     posted_at=j.get("publishedAt"),
                     scraped_at=scraped_at,
-                    description=html_to_text(j.get("descriptionPlain") or j.get("descriptionHtml")),
+                    description=html_to_text(
+                        j.get("descriptionPlain") or j.get("descriptionHtml")
+                    ),
                     employment_type=j.get("employmentType"),
                 )
             )

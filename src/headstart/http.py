@@ -30,7 +30,14 @@ from curl_cffi.requests import RequestsError  # re-exported for callers' except 
 __all__ = ["fetch", "session", "RequestsError"]
 
 _local = threading.local()
-_TRANSIENT = {403, 429, 500, 502, 503, 504}  # retryable HTTP statuses (403 = bot-wall blip)
+_TRANSIENT = {
+    403,
+    429,
+    500,
+    502,
+    503,
+    504,
+}  # retryable HTTP statuses (403 = bot-wall blip)
 _ATTEMPTS = 3
 _DNS = 6  # curl CURLE_COULDNT_RESOLVE_HOST — host doesn't exist, never retried
 
@@ -64,4 +71,6 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
             time.sleep(1.5 * (attempt + 1))
             continue
         return response
-    raise AssertionError("unreachable: the final attempt returns or raises")  # pragma: no cover
+    raise AssertionError(
+        "unreachable: the final attempt returns or raises"
+    )  # pragma: no cover

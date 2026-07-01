@@ -8,6 +8,7 @@ site or uses a custom domain (the Greenhouse address never appears as a crawlabl
 
 Usage:  python scripts/resolve/fingerprint.py [n]   # first n companies from config/seed_india.csv
 """
+
 import asyncio
 import csv
 import json
@@ -19,8 +20,10 @@ from curl_cffi.requests import AsyncSession
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SEED = ROOT / "config" / "seed_india.csv"
-FETCH_DEADLINE = 10   # hard wall-clock cap per request
-COMPANY_BUDGET = 60   # hard cap per company (asyncio.wait_for), so nothing stalls the batch
+FETCH_DEADLINE = 10  # hard wall-clock cap per request
+COMPANY_BUDGET = (
+    60  # hard cap per company (asyncio.wait_for), so nothing stalls the batch
+)
 # Keep concurrency modest: each in-flight company also fetches its own (often heavy SPA) domain,
 # so too many at once saturates the link and slows every request until companies blow the budget
 # and get cancelled (empty). HTTP/2 multiplexes the shared ATS-API hosts; the unique company
@@ -34,24 +37,88 @@ CONCURRENCY = 10
 IMPERSONATE = "chrome"
 
 # token values that are never a real ATS slug (incl. provider-infra / marketing subdomains)
-BLOCK = {"embed", "job_board", "js", "jobs", "job", "board", "boards", "api", "v0", "v1",
-         "postings", "posting-api", "www", "careers", "career", "en", "content", "static",
-         "assets", "for", "apply", "widget", "client", "public", "search", "css", "images",
-         "app", "help", "blog", "support", "docs", "status", "mail", "portal", "secure",
-         "login", "auth", "home", "info", "go",
-         # provider marketing/infra subdomains seen self-matching (keka.com, darwinbox.com, ...)
-         "signup", "academy", "dbx", "explore", "newsroom", "hr", "c", "partners",
-         "developers", "community", "events", "demo", "resources", "pricing", "about",
-         "contact", "product", "products", "news", "get", "try", "marketing", "sales"}
+BLOCK = {
+    "embed",
+    "job_board",
+    "js",
+    "jobs",
+    "job",
+    "board",
+    "boards",
+    "api",
+    "v0",
+    "v1",
+    "postings",
+    "posting-api",
+    "www",
+    "careers",
+    "career",
+    "en",
+    "content",
+    "static",
+    "assets",
+    "for",
+    "apply",
+    "widget",
+    "client",
+    "public",
+    "search",
+    "css",
+    "images",
+    "app",
+    "help",
+    "blog",
+    "support",
+    "docs",
+    "status",
+    "mail",
+    "portal",
+    "secure",
+    "login",
+    "auth",
+    "home",
+    "info",
+    "go",
+    # provider marketing/infra subdomains seen self-matching (keka.com, darwinbox.com, ...)
+    "signup",
+    "academy",
+    "dbx",
+    "explore",
+    "newsroom",
+    "hr",
+    "c",
+    "partners",
+    "developers",
+    "community",
+    "events",
+    "demo",
+    "resources",
+    "pricing",
+    "about",
+    "contact",
+    "product",
+    "products",
+    "news",
+    "get",
+    "try",
+    "marketing",
+    "sales",
+}
 
 # Each subdomain-tier ATS's own base domains — used to drop self-referential matches (scanning
 # keka.com's site finds hr.keka.com etc., which are infra, not a tenant board).
 PROVIDER_DOMAINS = {
-    "greenhouse": {"greenhouse.io"}, "lever": {"lever.co"}, "ashby": {"ashbyhq.com"},
+    "greenhouse": {"greenhouse.io"},
+    "lever": {"lever.co"},
+    "ashby": {"ashbyhq.com"},
     "zoho": {"zohorecruit.com", "zohorecruit.eu", "zohorecruit.in", "zohorecruit.ca"},
-    "recruitee": {"recruitee.com"}, "workable": {"workable.com"},
-    "darwinbox": {"darwinbox.in", "darwinbox.com"}, "keka": {"keka.com"},
-    "qandle": {"qandle.com"}, "ripplehire": {"ripplehire.com"}, "turbohire": {"turbohire.co"},
+    "recruitee": {"recruitee.com"},
+    "workable": {"workable.com"},
+    "darwinbox": {"darwinbox.in", "darwinbox.com"},
+    "keka": {"keka.com"},
+    "qandle": {"qandle.com"},
+    "ripplehire": {"ripplehire.com"},
+    "turbohire": {"turbohire.co"},
 }
 
 
@@ -60,31 +127,34 @@ def reg_domain(domain):
     parts = domain.lower().split("//")[-1].split("/")[0].split(".")
     return ".".join(parts[-2:]) if len(parts) >= 2 else domain.lower()
 
+
 PATTERNS = {
     "greenhouse": [
         r'(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/embed/job_board[^"\'\s]*?[?&]for=([a-zA-Z0-9_-]+)',
-        r'boards-api(?:-eu)?\.greenhouse\.io/v1/boards/([a-zA-Z0-9_-]+)',
-        r'(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/([a-zA-Z0-9_-]+)',
+        r"boards-api(?:-eu)?\.greenhouse\.io/v1/boards/([a-zA-Z0-9_-]+)",
+        r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/([a-zA-Z0-9_-]+)",
     ],
     "lever": [
-        r'api\.lever\.co/v0/postings/([a-zA-Z0-9_-]+)',
-        r'jobs\.lever\.co/([a-zA-Z0-9_-]+)',
+        r"api\.lever\.co/v0/postings/([a-zA-Z0-9_-]+)",
+        r"jobs\.lever\.co/([a-zA-Z0-9_-]+)",
     ],
     "ashby": [
-        r'api\.ashbyhq\.com/posting-api/job-board/([a-zA-Z0-9_-]+)',
-        r'jobs\.ashbyhq\.com/([a-zA-Z0-9_-]+)',
+        r"api\.ashbyhq\.com/posting-api/job-board/([a-zA-Z0-9_-]+)",
+        r"jobs\.ashbyhq\.com/([a-zA-Z0-9_-]+)",
     ],
-    "zoho": [r'([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)'],
-    "recruitee": [r'([a-z0-9][a-z0-9-]*)\.recruitee\.com'],
-    "workable": [r'apply\.workable\.com/([a-zA-Z0-9_-]+)'],
+    "zoho": [r"([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)"],
+    "recruitee": [r"([a-z0-9][a-z0-9-]*)\.recruitee\.com"],
+    "workable": [r"apply\.workable\.com/([a-zA-Z0-9_-]+)"],
     # India subdomain tier — same providers the CC/Wayback miners cover; tenant = subdomain
-    "darwinbox": [r'([a-z0-9][a-z0-9-]*)\.darwinbox\.(?:in|com)'],
-    "keka": [r'([a-z0-9][a-z0-9-]*)\.keka\.com'],
-    "qandle": [r'([a-z0-9][a-z0-9-]*)\.qandle\.com'],
-    "ripplehire": [r'([a-z0-9][a-z0-9-]*)\.ripplehire\.com'],
-    "turbohire": [r'([a-z0-9][a-z0-9-]*)\.turbohire\.co'],
+    "darwinbox": [r"([a-z0-9][a-z0-9-]*)\.darwinbox\.(?:in|com)"],
+    "keka": [r"([a-z0-9][a-z0-9-]*)\.keka\.com"],
+    "qandle": [r"([a-z0-9][a-z0-9-]*)\.qandle\.com"],
+    "ripplehire": [r"([a-z0-9][a-z0-9-]*)\.ripplehire\.com"],
+    "turbohire": [r"([a-z0-9][a-z0-9-]*)\.turbohire\.co"],
 }
-WORKDAY = re.compile(r'([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[a-z]{2}/)?([a-zA-Z0-9_-]+)')
+WORKDAY = re.compile(
+    r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[a-z]{2}/)?([a-zA-Z0-9_-]+)"
+)
 
 
 def detect(html):
@@ -110,18 +180,23 @@ async def fetch(session, url, cap=900000, retries=0):
     # request so a slow site can't stall the batch.
     for attempt in range(retries + 1):
         try:
-            r = await session.get(url, impersonate=IMPERSONATE, timeout=FETCH_DEADLINE,
-                                  verify=False, allow_redirects=True)
+            r = await session.get(
+                url,
+                impersonate=IMPERSONATE,
+                timeout=FETCH_DEADLINE,
+                verify=False,
+                allow_redirects=True,
+            )
             if r.status_code >= 400:
                 if r.status_code == 429 or r.status_code >= 500:
-                    continue                    # transient — retry
-                return ""                       # definitive (404/403/...) — don't retry
+                    continue  # transient — retry
+                return ""  # definitive (404/403/...) — don't retry
             ct = r.headers.get("content-type", "")
             if not any(x in ct for x in ("html", "text", "javascript", "json", "xml")):
                 return ""
             return r.content[:cap].decode("utf-8", "replace")
         except Exception:
-            continue                            # transient (timeout, conn) — retry
+            continue  # transient (timeout, conn) — retry
     return ""
 
 
@@ -133,7 +208,8 @@ async def careers_html(session, domain):
     only there (e.g. BigBasket -> careers.bigbasket.com)."""
     home, careers = await asyncio.gather(
         fetch(session, f"https://{domain}/"),
-        fetch(session, f"https://{domain}/careers"))
+        fetch(session, f"https://{domain}/careers"),
+    )
     return home + "\n" + careers
 
 
@@ -143,18 +219,30 @@ async def careers_html(session, domain):
 # (slice -> slice.careers). Require jobs>0 so empty/wrong slugs don't register; real slug
 # collisions (a namesake board) still need an eyeball, as always.
 ATS_PROBES = {
-    "greenhouse": ("https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
-                   lambda d: len(d.get("jobs", []))),
-    "lever": ("https://api.lever.co/v0/postings/{s}?mode=json",
-              lambda d: len(d) if isinstance(d, list) else 0),
-    "ashby": ("https://api.ashbyhq.com/posting-api/job-board/{s}",
-              lambda d: len(d.get("jobs", []))),
-    "smartrecruiters": ("https://api.smartrecruiters.com/v1/companies/{s}/postings",
-                        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0),
-    "workable": ("https://apply.workable.com/api/v1/widget/accounts/{s}?details=true",
-                 lambda d: len(d.get("jobs", [])) if isinstance(d, dict) else 0),
-    "recruitee": ("https://{s}.recruitee.com/api/offers/",
-                  lambda d: len(d.get("offers", [])) if isinstance(d, dict) else 0),
+    "greenhouse": (
+        "https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
+        lambda d: len(d.get("jobs", [])),
+    ),
+    "lever": (
+        "https://api.lever.co/v0/postings/{s}?mode=json",
+        lambda d: len(d) if isinstance(d, list) else 0,
+    ),
+    "ashby": (
+        "https://api.ashbyhq.com/posting-api/job-board/{s}",
+        lambda d: len(d.get("jobs", [])),
+    ),
+    "smartrecruiters": (
+        "https://api.smartrecruiters.com/v1/companies/{s}/postings",
+        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0,
+    ),
+    "workable": (
+        "https://apply.workable.com/api/v1/widget/accounts/{s}?details=true",
+        lambda d: len(d.get("jobs", [])) if isinstance(d, dict) else 0,
+    ),
+    "recruitee": (
+        "https://{s}.recruitee.com/api/offers/",
+        lambda d: len(d.get("offers", [])) if isinstance(d, dict) else 0,
+    ),
 }
 
 
@@ -162,10 +250,10 @@ def candidate_slugs(name, domain):
     cands = set()
     label = domain.split("//")[-1].split("/")[0].split(".")[0].lower()
     if label and label != "www":
-        cands.add(label)                       # phonepe.com -> phonepe
+        cands.add(label)  # phonepe.com -> phonepe
     norm = re.sub(r"[^a-z0-9]", "", name.lower())
     if norm:
-        cands.add(norm)                        # "Pine Labs" -> pinelabs; "slice" -> slice
+        cands.add(norm)  # "Pine Labs" -> pinelabs; "slice" -> slice
     # min length 3: a 2-char slug (e.g. "fi" from fi.money) is too generic and collides with
     # unrelated namesakes (lever/fi is a US firm, not the Indian Fi Money) — false positives.
     return {c for c in cands if len(c) >= 3 and c not in BLOCK}
@@ -179,8 +267,14 @@ async def probe_slugs(session, name, domain):
     tasks = []
     for s in candidate_slugs(name, domain):
         for ats, (tmpl, count) in ATS_PROBES.items():
-            tasks.append((ats, s, count,
-                          fetch(session, tmpl.format(s=s), cap=2000000, retries=1)))
+            tasks.append(
+                (
+                    ats,
+                    s,
+                    count,
+                    fetch(session, tmpl.format(s=s), cap=2000000, retries=1),
+                )
+            )
     raws = await asyncio.gather(*[t[3] for t in tasks])
     hits = set()
     for (ats, s, count, _), raw in zip(tasks, raws):
@@ -201,8 +295,9 @@ async def run(session, row):
     # on-page India-tier embeds (BigBasket's darwinbox link); slug-probe catches clean-JSON
     # boards by candidate slug (PhonePe -> greenhouse). The subdomain title-probe is NOT here —
     # it's ~20 fetches/company; it lives in the separate verify_misses.py pass over the misses.
-    ch, ps = await asyncio.gather(careers_html(session, domain),
-                                  probe_slugs(session, name, domain))
+    ch, ps = await asyncio.gather(
+        careers_html(session, domain), probe_slugs(session, name, domain)
+    )
     hits = detect(ch) | ps
     # drop self-references: a company that IS an ATS provider (keka.com, darwinbox.com) matches
     # its own infra subdomains; that's not a tenant board.
@@ -242,8 +337,11 @@ async def main():
                 hit += 1
             print(f"  [{done}/{len(rows)}] {name} ({domain}): {shown}", flush=True)
     cf.close()
-    print(f"\n{hit}/{len(rows)} companies fingerprinted to an ATS "
-          f"-> {out.relative_to(ROOT)}", flush=True)
+    print(
+        f"\n{hit}/{len(rows)} companies fingerprinted to an ATS "
+        f"-> {out.relative_to(ROOT)}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

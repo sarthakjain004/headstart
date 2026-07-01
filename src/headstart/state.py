@@ -16,7 +16,9 @@ from typing import Any
 _FILE = "headstart-state.json"
 
 
-def _api(method: str, url: str, token: str, data: bytes | None = None) -> dict[str, Any]:
+def _api(
+    method: str, url: str, token: str, data: bytes | None = None
+) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
         data=data,

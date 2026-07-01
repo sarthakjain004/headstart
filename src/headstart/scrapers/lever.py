@@ -23,7 +23,9 @@ class LeverScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         # try the global instance, then EU; a 404 on both means the company isn't on Lever.
         for host in ("api.lever.co", "api.eu.lever.co"):
-            response = http.fetch("GET", f"https://{host}/v0/postings/{self.slug}?mode=json")
+            response = http.fetch(
+                "GET", f"https://{host}/v0/postings/{self.slug}?mode=json"
+            )
             if response.status_code == 404:
                 continue
             response.raise_for_status()
@@ -49,7 +51,9 @@ class LeverScraper(BaseScraper):
                     url=j.get("hostedUrl", ""),
                     posted_at=epoch_ms_to_iso(j.get("createdAt")),
                     scraped_at=scraped_at,
-                    description=html_to_text(j.get("descriptionPlain") or j.get("description")),
+                    description=html_to_text(
+                        j.get("descriptionPlain") or j.get("description")
+                    ),
                     employment_type=categories.get("commitment"),
                 )
             )

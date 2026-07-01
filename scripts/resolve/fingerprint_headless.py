@@ -14,6 +14,7 @@ an ATS host). Pages that contact no known ATS host are genuinely in-house — no
 
 Usage:  python scripts/resolve/fingerprint_headless.py [n]   # first n companies from seed_india.csv
 """
+
 import asyncio
 import csv
 import re
@@ -37,8 +38,13 @@ def opts():
     o = ChromiumOptions()
     o.binary_location = CHROME
     o.headless = True
-    for a in ("--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-              "--disable-blink-features=AutomationControlled", "--window-size=1280,900"):
+    for a in (
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1280,900",
+    ):
         o.add_argument(a)
     return o
 
@@ -56,7 +62,9 @@ def net_urls(logs):
 def careers_links(dom, base):
     seen, out = set(), []
     for h in re.findall(r'href=["\']([^"\']+)["\']', dom, re.I):
-        if re.search(r'career|/jobs?(?:[/"\'?]|$)|join-us|work-with|life-at|hiring', h, re.I):
+        if re.search(
+            r'career|/jobs?(?:[/"\'?]|$)|join-us|work-with|life-at|hiring', h, re.I
+        ):
             u = urllib.parse.urljoin(base, h)
             if u not in seen:
                 seen.add(u)
@@ -94,7 +102,9 @@ async def fingerprint_company(browser, sem, row):
         try:
             base = f"https://{domain}/"
             hits, home_dom, tried = set(), "", set()
-            for i, u in enumerate((base, f"https://{domain}/careers", f"https://{domain}/jobs")):
+            for i, u in enumerate(
+                (base, f"https://{domain}/careers", f"https://{domain}/jobs")
+            ):
                 if u in tried:
                     continue
                 tried.add(u)
@@ -128,13 +138,17 @@ async def main():
     async with Chrome(options=opts()) as browser:
         await browser.start()
         results = await asyncio.gather(
-            *[fingerprint_company(browser, sem, r) for r in rows])
+            *[fingerprint_company(browser, sem, r) for r in rows]
+        )
     hit = 0
     for name, domain, hits in results:
         if hits:
             hit += 1
-            print(f"  {name} ({domain}): "
-                  + ", ".join(f"{a}:{t}" for a, t in sorted(hits)), flush=True)
+            print(
+                f"  {name} ({domain}): "
+                + ", ".join(f"{a}:{t}" for a, t in sorted(hits)),
+                flush=True,
+            )
         else:
             print(f"  {name} ({domain}): -", flush=True)
     print(f"\n{hit}/{len(results)} companies fingerprinted (headless)", flush=True)

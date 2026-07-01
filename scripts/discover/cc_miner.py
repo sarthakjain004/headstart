@@ -44,19 +44,77 @@ DOMAINS = {
     "workable": ["workable.com"],
     "recruitee": ["recruitee.com"],
 }
-INFRA = {"www", "app", "apps", "api", "help", "support", "static", "cdn", "blog", "login",
-         "accounts", "account", "status", "docs", "mail", "go", "info", "assets", "img",
-         "images", "media", "hrms", "ats", "secure", "portal", "careers", "career", "jobs",
-         "dash", "embed", "content", "commune", "cloud", "ess", "selfservice", "mservices",
-         "qa", "demo", "test", "staging", "dev", "sandbox", "uat", "affiliate", "partners",
-         "partner", "community", "developer", "developers", "chatbot", "featurerequest",
-         "certification", "attend", "events", "customers", "ww1", "m"}
+INFRA = {
+    "www",
+    "app",
+    "apps",
+    "api",
+    "help",
+    "support",
+    "static",
+    "cdn",
+    "blog",
+    "login",
+    "accounts",
+    "account",
+    "status",
+    "docs",
+    "mail",
+    "go",
+    "info",
+    "assets",
+    "img",
+    "images",
+    "media",
+    "hrms",
+    "ats",
+    "secure",
+    "portal",
+    "careers",
+    "career",
+    "jobs",
+    "dash",
+    "embed",
+    "content",
+    "commune",
+    "cloud",
+    "ess",
+    "selfservice",
+    "mservices",
+    "qa",
+    "demo",
+    "test",
+    "staging",
+    "dev",
+    "sandbox",
+    "uat",
+    "affiliate",
+    "partners",
+    "partner",
+    "community",
+    "developer",
+    "developers",
+    "chatbot",
+    "featurerequest",
+    "certification",
+    "attend",
+    "events",
+    "customers",
+    "ww1",
+    "m",
+}
 
 
 def _run(cmd, timeout=90):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=timeout)
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
     except Exception:
         return None
 
@@ -66,11 +124,23 @@ def curl(url, attempts=6):
     API returns 404 {"message":"No Captures found"} for a domain absent from a crawl — that
     is a legitimate empty result, so 404 returns ("", True), not a throttle."""
     for a in range(attempts):
-        p = _run(["curl", "-s", "-w", "\n%{http_code}", "--connect-timeout", "10", "-m", "60", url])
+        p = _run(
+            [
+                "curl",
+                "-s",
+                "-w",
+                "\n%{http_code}",
+                "--connect-timeout",
+                "10",
+                "-m",
+                "60",
+                url,
+            ]
+        )
         if p is not None and p.returncode == 0:
             out = p.stdout
             nl = out.rfind("\n")
-            code = out[nl + 1:].strip() if nl >= 0 else out.strip()
+            code = out[nl + 1 :].strip() if nl >= 0 else out.strip()
             body = out[:nl] if nl >= 0 else ""
             if code == "200":
                 time.sleep(0.3)  # gentle pacing
@@ -89,7 +159,9 @@ def index_work(cdx):
     local = collections.defaultdict(set)
     for ats, ds in DOMAINS.items():
         for d in ds:
-            body, ok = curl(f"{cdx}?url={d}&matchType=domain&output=json&fl=url&limit=10000")
+            body, ok = curl(
+                f"{cdx}?url={d}&matchType=domain&output=json&fl=url&limit=10000"
+            )
             if not ok:
                 return local, False
             for line in body.splitlines():
@@ -99,7 +171,7 @@ def index_work(cdx):
                     continue
                 m = re.match(r"https?://([^/]+)", u)
                 if m and m.group(1).lower().endswith("." + d):
-                    label = m.group(1).lower()[:-(len(d) + 1)].split(".")[0]
+                    label = m.group(1).lower()[: -(len(d) + 1)].split(".")[0]
                     if label and label not in INFRA:
                         local[ats].add(m.group(1).lower())
     return local, True
@@ -129,7 +201,9 @@ def load_existing():
 
 def load_indexes():
     if os.path.exists(INDEX_CACHE):
-        cached = [ln.strip() for ln in open(INDEX_CACHE, encoding="utf-8") if ln.strip()]
+        cached = [
+            ln.strip() for ln in open(INDEX_CACHE, encoding="utf-8") if ln.strip()
+        ]
         if cached:
             return cached
     body, ok = curl(CC_PING)
@@ -146,10 +220,13 @@ def main():
     os.makedirs("data", exist_ok=True)
     indexes = load_indexes()
     if COUNT != "all":
-        indexes = indexes[:int(COUNT)]
+        indexes = indexes[: int(COUNT)]
     tenants, done = load_existing()
-    print(f"mining {len(indexes)} indexes | {len(done)} done | "
-          f"{sum(len(v) for v in tenants.values())} tenants known", flush=True)
+    print(
+        f"mining {len(indexes)} indexes | {len(done)} done | "
+        f"{sum(len(v) for v in tenants.values())} tenants known",
+        flush=True,
+    )
 
     for i, cdx in enumerate(indexes, 1):
         key = cdx.split("/")[-1]
@@ -157,8 +234,11 @@ def main():
             continue
         local, ok = index_work(cdx)
         if not ok:
-            print(f"[{i}/{len(indexes)}] {key.replace('-index','')} INCOMPLETE (throttled) "
-                  f"-> exiting to wait", flush=True)
+            print(
+                f"[{i}/{len(indexes)}] {key.replace('-index', '')} INCOMPLETE (throttled) "
+                f"-> exiting to wait",
+                flush=True,
+            )
             return  # clean exit; wrapper waits out the block then relaunches
         for ats, hosts in local.items():
             tenants[ats] |= hosts
@@ -167,10 +247,15 @@ def main():
         with open(DONE, "w", encoding="utf-8") as f:
             f.write("\n".join(sorted(done)))
         counts = " ".join(f"{a}={len(tenants[a])}" for a in DOMAINS)
-        print(f"[{i}/{len(indexes)}] {key.replace('-index','')} | {counts}", flush=True)
+        print(
+            f"[{i}/{len(indexes)}] {key.replace('-index', '')} | {counts}", flush=True
+        )
 
     write_csv(tenants)
-    print(f"DONE. distinct tenant hosts={sum(len(v) for v in tenants.values())} -> {CSV}", flush=True)
+    print(
+        f"DONE. distinct tenant hosts={sum(len(v) for v in tenants.values())} -> {CSV}",
+        flush=True,
+    )
     for ats in DOMAINS:
         if tenants[ats]:
             print(f"  {ats}: {len(tenants[ats])}", flush=True)

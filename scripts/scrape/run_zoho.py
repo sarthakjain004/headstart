@@ -8,6 +8,7 @@ tenants actually have open roles (true liveness) vs live-but-empty vs dead/error
 Usage:  python scripts/scrape/run_zoho.py [workers] [limit]
         python scripts/scrape/run_zoho.py 10 50   # 10 workers, first 50 tenants (smoke test)
 """
+
 import csv
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -45,7 +46,18 @@ def main():
     probed = hiring = empty = errors = total_jobs = 0
     with OUT.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["company", "title", "location", "remote", "department", "url", "posted_at", "host"])
+        w.writerow(
+            [
+                "company",
+                "title",
+                "location",
+                "remote",
+                "department",
+                "url",
+                "posted_at",
+                "host",
+            ]
+        )
         with ThreadPoolExecutor(max_workers=workers) as ex:
             for fut in as_completed([ex.submit(scrape, r) for r in rows]):
                 host, jobs, err = fut.result()
@@ -56,16 +68,32 @@ def main():
                     hiring += 1
                     total_jobs += len(jobs)
                     for j in jobs:
-                        w.writerow([j.company, j.title, j.location, j.remote,
-                                    j.department, j.url, j.posted_at, host])
+                        w.writerow(
+                            [
+                                j.company,
+                                j.title,
+                                j.location,
+                                j.remote,
+                                j.department,
+                                j.url,
+                                j.posted_at,
+                                host,
+                            ]
+                        )
                 else:
                     empty += 1
                 if probed % 250 == 0:
                     f.flush()
-                    print(f"  {probed}/{len(rows)} | hiring={hiring} jobs={total_jobs} "
-                          f"empty={empty} err={errors}", flush=True)
-    print(f"DONE: {probed} tenants | hiring={hiring} | live-empty={empty} | "
-          f"dead/error={errors} | total_jobs={total_jobs}", flush=True)
+                    print(
+                        f"  {probed}/{len(rows)} | hiring={hiring} jobs={total_jobs} "
+                        f"empty={empty} err={errors}",
+                        flush=True,
+                    )
+    print(
+        f"DONE: {probed} tenants | hiring={hiring} | live-empty={empty} | "
+        f"dead/error={errors} | total_jobs={total_jobs}",
+        flush=True,
+    )
     print("jobs -> data/jobs/zoho.csv", flush=True)
 
 
