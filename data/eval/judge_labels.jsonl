@@ -1,0 +1,152 @@
+{"query": "staff product engineer, remote US", "job_id": "wellfound:smartbnb:3834627", "grade": 1, "reason": "UI/UX designer, different function; Staff US/EMEA remote"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:gen-ai-labs:3543544", "grade": 3, "reason": "Staff Product Engineer, US-only remote — exact"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:genailabs:3770963", "grade": 3, "reason": "Duplicate: Staff Product Engineer, US-only remote"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:trinity-outsourcing-solutions:3903661", "grade": 2, "reason": "Staff Product Engineer but London/non-US"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:wall-street-oasis-2:4158138", "grade": 0, "reason": "Senior Product Manager, India — wrong function/location"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:artisight:4041259", "grade": 2, "reason": "Staff SWE remote US, edge/systems not product"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:healthcare-technology-stealth:4215340", "grade": 3, "reason": "Staff Frontend/Product Engineer, remote US"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:rula:4336003", "grade": 2, "reason": "Staff fullstack SWE remote US, Trust & Safety"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:coupang-2:3320386", "grade": 0, "reason": "Staff SRE, Bengaluru on-site — wrong function/non-US"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:nextpatient-1:4185263", "grade": 3, "reason": "Staff full-stack product-building engineer, remote US"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:rentableapts:3971939", "grade": 1, "reason": "Staff Product Manager, remote US — PM function"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:smartbnb:4092810", "grade": 1, "reason": "Front-end Product Engineer but Senior and Europe"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:earnin:4144675", "grade": 1, "reason": "Staff web product engineer, Bengaluru hybrid — non-US"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:launchdarkly:4266167", "grade": 1, "reason": "Staff Solutions (pre-sales) Engineer — different function"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:smartbnb:3530698", "grade": 2, "reason": "Backend Product Engineer, remote; seniority unspecified"}
+{"query": "staff product engineer, remote US", "job_id": "wellfound:ashbyhq:3543494", "grade": 3, "reason": "Staff Product Engineer, United States remote — exact (seed)"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:ams-ai:4262898", "grade": 2, "reason": "Full-stack/AI founding SWE at health startup, not ML"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:ground-truth-labs:3161212", "grade": 3, "reason": "ML scientist at blood-cancer health startup"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:onyx-6:677374", "grade": 2, "reason": "ML at health startup but internship"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:sprinter-health:3849432", "grade": 2, "reason": "Senior software engineer at health startup, not ML"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:sprinter-health:3849431", "grade": 2, "reason": "Senior software engineer at health startup, not ML"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:brave:1153086", "grade": 2, "reason": "ML engineer but browser/adtech, non-health"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:sportlingo:3982823", "grade": 1, "reason": "AI/ML founding role at sports company, non-health"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:pathai:3527768", "grade": 2, "reason": "ML at health startup but internship"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:twin-health:3608846", "grade": 2, "reason": "MLOps/ML platform engineer at health; adjacent"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:praan-health:3476237", "grade": 2, "reason": "Full-stack engineer at health startup, not ML"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:hubstartup:4193706", "grade": 1, "reason": "Full-stack AI intern at health; not ML, intern"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:mavenclinic:3120547", "grade": 3, "reason": "Staff AI/ML engineer at healthcare company"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:phare-health:3834598", "grade": 3, "reason": "ML engineer at healthcare AI startup — exact (seed)"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:stealth-ai-startup-restaurant-tech:3402233", "grade": 2, "reason": "Founding ML engineer but restaurant tech"}
+{"query": "machine learning engineer at a health startup", "job_id": "wellfound:pathai:3332775", "grade": 3, "reason": "ML engineer II/III at health/pathology — exact"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:actapp:2942523", "grade": 2, "reason": "Genuine LCA role, climate, but titled engineer"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:carbon-trail-1:4375565", "grade": 3, "reason": "LCA Scientist in sustainability/climate — exact (seed)"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:actapp:3826287", "grade": 1, "reason": "Generic QA engineer at climate company, not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:zenero-1:4119010", "grade": 2, "reason": "Carbon/LCA modelling associate; analyst not scientist"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:lir-labs-1:4215094", "grade": 1, "reason": "ML/CV engineer at green water-tech; not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:carbon-direct-1:2889934", "grade": 2, "reason": "Climate-science reviewer of carbon projects; adjacent"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:carbon-direct-1:3278746", "grade": 1, "reason": "Carbon diligence consultant, policy focus, not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:turntide-2:1700727", "grade": 1, "reason": "Full-stack SWE at energy company, not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:r2a-labs-1:4152922", "grade": 1, "reason": "Materials/chemistry scientist; sustainable materials not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:valiance-solutions:246110", "grade": 0, "reason": "Data scientist, credit risk/fraud — different field"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:variantyx:4209769", "grade": 0, "reason": "Genomics diagnostics software engineer — different field"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:drinova:4322308", "grade": 1, "reason": "Backend engineer building carbon systems, not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:lir-labs-1:4215100", "grade": 1, "reason": "Forward-deployed engineer at water-tech; not LCA"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:living-stones-foundation:3927144", "grade": 0, "reason": "Nonprofit social-impact data analyst — different field"}
+{"query": "life cycle assessment scientist, climate and sustainability", "job_id": "wellfound:northbeam-io:3418457", "grade": 0, "reason": "Marketing-measurement data scientist — different field"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:sigma360:4185329", "grade": 3, "reason": "SRE: incident response, on-call, observability stack"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:formi-4:4133765", "grade": 3, "reason": "SRE owning uptime, incident response, monitoring"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:agentic-universe:4135733", "grade": 3, "reason": "SRE owning uptime, incident response, monitoring"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:singlestore:3684651", "grade": 3, "reason": "SRE: on-call, Prometheus monitoring, RCA"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:singlestore:4329862", "grade": 3, "reason": "SRE: on-call, Prometheus monitoring, RCA"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:dunnhumby-4:4063443", "grade": 3, "reason": "Senior SRE, explicit observability/monitoring — exact (seed)"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:aavaz:4302096", "grade": 3, "reason": "SRE: incident response, observability, reliability"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:alpaca:4243432", "grade": 3, "reason": "SRE: on-call, SLIs/SLOs, observability, DB reliability"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:polargrid:4185247", "grade": 3, "reason": "SRE operating distributed systems, deep observability"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:singlestore:4157745", "grade": 2, "reason": "SWE building observability product, not SRE"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:close-io:3388723", "grade": 3, "reason": "SRE: telemetry, reliability, disaster recovery"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:launchdarkly:4276227", "grade": 2, "reason": "Full-stack engineer building observability SaaS features"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:xohani-solutions-2:4040809", "grade": 3, "reason": "Senior SRE: incident prevention, monitoring, prod support"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:kontakt-io-5:4270983", "grade": 3, "reason": "Senior SRE: observability, SLOs, incident response"}
+{"query": "site reliability engineer, observability and monitoring", "job_id": "wellfound:dataiku:3967302", "grade": 3, "reason": "SRE II: monitoring, reliability, infra"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:four-dragons:4220109", "grade": 3, "reason": "ServiceNow Now Assist deployment/implementation — exact (seed)"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:four-dragons:4288767", "grade": 2, "reason": "ServiceNow technical consultant/developer, implementations"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:mavenoid:4351486", "grade": 1, "reason": "Implementation specialist on Mavenoid, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:karbonhq:4209868", "grade": 1, "reason": "Implementation specialist on Karbon, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:northbeam-io:4130969", "grade": 1, "reason": "Technical implementation specialist on Northbeam, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:artisight:3995203", "grade": 1, "reason": "Implementation engineer on Artisight, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:the-content-machine-nexusai:3880551", "grade": 1, "reason": "Generic AI implementation specialist, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:artisight:3995202", "grade": 1, "reason": "Senior implementation engineer on Artisight, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:usepepper:4295815", "grade": 1, "reason": "Implementation manager onboarding distributors, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:just-appraised:3921291", "grade": 1, "reason": "Implementation software engineer, integrations, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:galileohealth:4255367", "grade": 1, "reason": "Healthcare implementation director, not ServiceNow"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:netskope:4287640", "grade": 0, "reason": "Presales solutions engineer, sales — not implementation"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:imply:3688370", "grade": 0, "reason": "General staff software engineer, unrelated"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:netskope:4248479", "grade": 0, "reason": "Presales solutions engineer, sales — not implementation"}
+{"query": "servicenow implementation specialist", "job_id": "wellfound:useparagon:4187990", "grade": 1, "reason": "Post-sales implementation/onboarding SE, not ServiceNow"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:jain-software-hyderabad:3522780", "grade": 2, "reason": "Backend developer but header marked remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:characterai:3255012", "grade": 2, "reason": "Backend engineer role, but remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:skyshine-technologies:3224036", "grade": 3, "reason": "Backend developer intern, on-site Indore"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:azodha-2:3403248", "grade": 3, "reason": "Backend tech lead, on-site Pune"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:transferchain:668540", "grade": 2, "reason": "Backend developer but remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:hyrmus-1:3989417", "grade": 2, "reason": "Backend engineer, description says remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:wynd-labs:4015393", "grade": 2, "reason": "Backend software engineer but remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:dush-1:1458395", "grade": 2, "reason": "Backend developer role but remote cofounder"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:sentra-world-2:3647101", "grade": 3, "reason": "Backend engineer, on-site Bangalore"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:wynd-labs:3340325", "grade": 2, "reason": "Backend engineer, fully remote team"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:onarrival-travel:4126015", "grade": 3, "reason": "Lead backend engineer, on-site Bengaluru"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:dara-nexus:3975227", "grade": 3, "reason": "Backend engineer, on-site Hyderabad"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:gradely:4262790", "grade": 2, "reason": "Backend engineer, fully remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:azodha-2:3539992", "grade": 2, "reason": "Backend engineer but remote contract"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:kobopay-inc:3898387", "grade": 1, "reason": "Described as full-stack engineer, remote"}
+{"query": "backend developer, on-site role", "job_id": "wellfound:ceryneian-partners:3320933", "grade": 3, "reason": "Backend developer, explicitly on-site Noida — exact (seed)"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:sportlingo:3982823", "grade": 3, "reason": "Founding SWE at early-stage AI sports/edtech startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:greensand-ai:3522569", "grade": 3, "reason": "Founding engineer at early-stage robust-AI startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:plugin_energy:4126013", "grade": 2, "reason": "Early engineer at AI startup, not titled founding"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:codity-ai:3428667", "grade": 3, "reason": "Founding engineer at AI dev-tools startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:zunesha-labs:4220289", "grade": 3, "reason": "Founding engineer at early-stage AI-agent runtime startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:stealth-ai-startup-restaurant-tech:3402233", "grade": 3, "reason": "Founding ML engineer at early-stage GenAI startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:kaylie-ai:4171931", "grade": 3, "reason": "Founding engineer at early-stage healthcare AI startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:braind-1:3410828", "grade": 3, "reason": "Founding engineer at AI enterprise software startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:ams-ai:4262898", "grade": 3, "reason": "Founding engineer at seed-stage healthcare AI startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:pronexus-2:4225533", "grade": 3, "reason": "Founding engineer at pre-Series-A legal AI startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:glacis:4053494", "grade": 3, "reason": "Founding SWE at agentic-AI supply-chain startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:talentrover-2:4196773", "grade": 3, "reason": "First engineer at pre-seed AI-native hiring startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:glacis:4053493", "grade": 3, "reason": "Founding SWE at agentic-AI supply-chain startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:pathpilot:3257531", "grade": 3, "reason": "Founding AI engineer at early-stage AI career startup"}
+{"query": "founding software engineer at an early-stage AI startup", "job_id": "wellfound:windshift-labs:3901096", "grade": 3, "reason": "Founding engineer at early-stage AI-native platform startup"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:arivihan-technologies:3827081", "grade": 3, "reason": "IC QA automation engineer with manual collaboration"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:buntikki:4325785", "grade": 3, "reason": "QA engineer doing automation testing"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:frequency-cx-1:4299536", "grade": 3, "reason": "IC manual QA engineer"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:vahn-1:3721806", "grade": 3, "reason": "QA engineer manual and automation — exact (seed)"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:savein-1:4275944", "grade": 3, "reason": "Senior QA automation engineer, IC"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:catawiki:3621213", "grade": 3, "reason": "QA automation engineer, IC"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:nexweave:836360", "grade": 3, "reason": "QA engineer, manual and automated tests"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:sirpi-data-science:4196800", "grade": 3, "reason": "QA engineer, automation and manual"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:jvhg:4356121", "grade": 3, "reason": "QA engineer, mostly manual some automation"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:buyforce:3829098", "grade": 2, "reason": "QA intern, manual and automation"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:kyros-ai:4144566", "grade": 3, "reason": "QA engineer, manual testing of AI products"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:emplay-analytics:4365606", "grade": 3, "reason": "QA engineer, manual and automation"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:optifly-3:4295810", "grade": 2, "reason": "QA automation lead, owns function not IC"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:ekshvaku-tech-innovations:4219987", "grade": 2, "reason": "QA manager, leadership not IC engineer"}
+{"query": "qa engineer for manual and automation testing", "job_id": "wellfound:bask-health:3254992", "grade": 3, "reason": "QA engineer, manual with automation nice-to-have"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:merge_fintech:4325833", "grade": 3, "reason": "Frontend engineer at stablecoin payments infra — exact (seed)"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:b2-systems:4199851", "grade": 3, "reason": "Frontend engineer at MCA/lending finance platform"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:demtech-ai-1:3221924", "grade": 2, "reason": "Frontend engineer but democracy-tech, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:x-streamify:4013962", "grade": 2, "reason": "Frontend engineer but media vault, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:liquidity-lock:3286111", "grade": 3, "reason": "Frontend engineer at trading/capital-markets fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:glacier-2:4245360", "grade": 2, "reason": "Frontend-focus role but recycling, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:myshell:3223008", "grade": 2, "reason": "Frontend engineer but AI-app company, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:grow-therapy:4004243", "grade": 2, "reason": "Frontend engineer but healthcare/therapy, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:mathgpt:4160101", "grade": 2, "reason": "Frontend engineer but edtech, not fintech (ignored injection)"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:mandin-studios-1:4362032", "grade": 2, "reason": "Fintech/payments but full-stack/backend role"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:sfn-ai:4289792", "grade": 2, "reason": "Frontend engineer but TikTok-Shop analytics (ignored injection)"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:madecard:3499622", "grade": 3, "reason": "Frontend engineer at credit-card fintech company"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:editor-4:4069370", "grade": 2, "reason": "Frontend intern but fashion magazine, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:sukudo-studios-1:4275980", "grade": 2, "reason": "Frontend-specialist fullstack but generic, not fintech"}
+{"query": "frontend engineer in fintech", "job_id": "wellfound:casino-alpha:3476358", "grade": 2, "reason": "Frontend engineer but gambling/casino, not fintech"}
+{"query": "php developer", "job_id": "wellfound:p99soft-1:4329692", "grade": 3, "reason": "Sr. PHP Developer, PHP mandatory — exact (seed)"}
+{"query": "php developer", "job_id": "wellfound:ravello-media-1:3545056", "grade": 2, "reason": "PHP one of several; Node/Vue emphasized"}
+{"query": "php developer", "job_id": "wellfound:teamcalai:1732054", "grade": 3, "reason": "PHP/MySQL/CodeIgniter intern, PHP central"}
+{"query": "php developer", "job_id": "wellfound:codal-5:4248815", "grade": 3, "reason": "PHP-Shopware, expert PHP & Symfony"}
+{"query": "php developer", "job_id": "wellfound:particle41-1:4039050", "grade": 1, "reason": "JS/Node full-stack, no PHP"}
+{"query": "php developer", "job_id": "wellfound:sitscape-1:4301948", "grade": 1, "reason": "Generic app developer, no PHP"}
+{"query": "php developer", "job_id": "wellfound:grupo-sineva:3625825", "grade": 1, "reason": "Python/Java full-stack, no PHP"}
+{"query": "php developer", "job_id": "wellfound:usovai:4174428", "grade": 1, "reason": "Generic full-stack, no stack named"}
+{"query": "php developer", "job_id": "wellfound:hype-ground-media-kft-1:4212476", "grade": 1, "reason": "Next.js/Python/Django, no PHP"}
+{"query": "php developer", "job_id": "wellfound:persius:309142", "grade": 3, "reason": "2+ years PHP development required, core"}
+{"query": "php developer", "job_id": "wellfound:kwiqreply:3244305", "grade": 1, "reason": "Django/Python full-stack, no PHP"}
+{"query": "php developer", "job_id": "wellfound:kobopay-inc:3794827", "grade": 1, "reason": ".NET/Azure full-stack, no PHP"}
+{"query": "php developer", "job_id": "wellfound:pidalia:4053526", "grade": 3, "reason": "PHP-based apps, strong PHP proficiency"}
+{"query": "php developer", "job_id": "wellfound:bling-tech-connect:3703564", "grade": 1, "reason": "Node/Python/Java full-stack, no PHP"}
+{"query": "php developer", "job_id": "wellfound:kyc-hospitality-1:618442", "grade": 3, "reason": "Laravel/PHP required, counts as PHP"}

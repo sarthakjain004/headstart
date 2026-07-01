@@ -20,6 +20,10 @@ dev = ["pytest", "ruff==0.15.20"]
 embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb"]
 # Local dev UI for the semantic search (scripts/ui/serve.py)
 ui = ["flask"]
+# Retrieval-eval harness (scripts/eval/). anthropic = the LLM-judge that grades the
+# pool; ranx = graded ranking metrics (nDCG@10) for the defensible score; scikit-learn
+# = Cohen's kappa validating the judge (arrives transitively via embed, named for clarity).
+eval = ["anthropic", "ranx", "scikit-learn"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/headstart"]
