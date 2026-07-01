@@ -16,6 +16,7 @@ host, so a liveness/feed check must derive the API host from the url, not assume
 
 Run:  python scripts/discover/mine_lever.py
 """
+
 import csv
 import subprocess
 import sys
@@ -26,16 +27,18 @@ WB = ROOT / "data" / "wayback-ats"
 PAGES = ROOT / "scripts" / "wayback_pages.py"
 WORKERS = "4"
 
-CANON = ("lever", "jobs.lever.co")          # writes lever.csv directly, resumes prior state
+CANON = ("lever", "jobs.lever.co")  # writes lever.csv directly, resumes prior state
 REGIONAL = [
-    ("lever_eu", "jobs.eu.lever.co"),       # EU instance  <- the blind spot
-    ("lever_us", "jobs.us.lever.co"),       # US explicit (usually empty)
+    ("lever_eu", "jobs.eu.lever.co"),  # EU instance  <- the blind spot
+    ("lever_us", "jobs.us.lever.co"),  # US explicit (usually empty)
 ]
 
 
 def mine(label, host):
     print(f"=== mining {host} ===", flush=True)
-    subprocess.run([sys.executable, str(PAGES), label, host, "path", WORKERS], check=False)
+    subprocess.run(
+        [sys.executable, str(PAGES), label, host, "path", WORKERS], check=False
+    )
 
 
 def main():
@@ -66,7 +69,10 @@ def main():
     for label, _ in REGIONAL:
         (WB / f"{label}.csv").unlink(missing_ok=True)
         (WB / f".{label}_pages_done").unlink(missing_ok=True)
-    print("done — re-run scripts/merge/merge_tenants.py to refresh the merged set.", flush=True)
+    print(
+        "done — re-run scripts/merge/merge_tenants.py to refresh the merged set.",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

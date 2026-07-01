@@ -22,6 +22,7 @@ Usage:  python scripts/scrape/run_wellfound.py [role] [location]
         python scripts/scrape/run_wellfound.py software-engineer india
         python scripts/scrape/run_wellfound.py software-architect remote   # -> /role/r/...
 """
+
 import asyncio
 import csv
 import json
@@ -35,7 +36,10 @@ from pydoll.browser import Chrome
 from pydoll.browser.options import ChromiumOptions
 from pydoll.interactions.scroll import ScrollPosition
 
-from datadome_slider import solve_slider, _safe_source  # same dir; sys.path[0] as a script
+from datadome_slider import (
+    solve_slider,
+    _safe_source,
+)  # same dir; sys.path[0] as a script
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 OUT = ROOT / "data" / "jobs" / "wellfound.csv"  # pipeline output stays under data/jobs/
@@ -44,9 +48,7 @@ EXP = ROOT / "experiment" / "wellfound-datadome" / "artifacts"
 DEBUG_HTML = EXP / "last-run_role-page.html"
 DEBUG_JSON = EXP / "last-run_nextdata.json"
 
-NEXT_DATA_RE = re.compile(
-    r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S
-)
+NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 
 # Stealth launch flags: drop the obvious automation tells without the cost of a heavier
 # anti-detect browser. Headful (default) keeps the UA + client hints genuine and consistent.
@@ -83,11 +85,18 @@ async def _human_pause(tab) -> None:
     mid-navigation can leave the CDP command unacked until pydoll's 60s timeout. The wait_for
     is a backstop so a stalled dispatch can never block the scrape.
     """
+
     async def _act():
-        await tab.mouse.move(300 + random.random() * 800,
-                             250 + random.random() * 450, humanize=True)
-        await tab.scroll.by(ScrollPosition.DOWN, 500 + int(random.random() * 900),
-                            smooth=True, humanize=True)
+        await tab.mouse.move(
+            300 + random.random() * 800, 250 + random.random() * 450, humanize=True
+        )
+        await tab.scroll.by(
+            ScrollPosition.DOWN,
+            500 + int(random.random() * 900),
+            smooth=True,
+            humanize=True,
+        )
+
     try:
         await asyncio.wait_for(_act(), 10)
         await asyncio.sleep(0.4 + random.random() * 0.8)
@@ -97,8 +106,11 @@ async def _human_pause(tab) -> None:
 
 def _is_blocked(html: str) -> bool:
     """True if we got an anti-bot page instead of the app (DataDome / Cloudflare)."""
-    return ("captcha-delivery.com" in html or "Just a moment" in html
-            or "__NEXT_DATA__" not in html)
+    return (
+        "captcha-delivery.com" in html
+        or "Just a moment" in html
+        or "__NEXT_DATA__" not in html
+    )
 
 
 async def _load_page(tab, url: str, browser=None) -> str:
@@ -109,7 +121,9 @@ async def _load_page(tab, url: str, browser=None) -> str:
     """
     await tab.go_to(url)
     html = await _safe_source(tab)
-    if not _is_blocked(html):  # SSR page returns __NEXT_DATA__ at once when not challenged
+    if not _is_blocked(
+        html
+    ):  # SSR page returns __NEXT_DATA__ at once when not challenged
         return html
     solve_tried = False
     for attempt in range(20):  # ~40s budget for the challenge to resolve
@@ -119,7 +133,9 @@ async def _load_page(tab, url: str, browser=None) -> str:
             return html
         if browser is not None and not solve_tried and "captcha-delivery.com" in html:
             solve_tried = True
-            print("  DataDome slider detected — attempting humanized solve...", flush=True)
+            print(
+                "  DataDome slider detected — attempting humanized solve...", flush=True
+            )
             if await solve_slider(tab, browser, EXP):
                 html = await _safe_source(tab)
                 if not _is_blocked(html):
@@ -157,8 +173,7 @@ def _ats_provider(src) -> str | None:
     return (parts[1] if len(parts) >= 2 else parts[0]).lower()
 
 
-_CURRENCY_SYMBOLS = {"₹": "INR", "$": "USD", "€": "EUR", "£": "GBP",
-                     "₦": "NGN"}
+_CURRENCY_SYMBOLS = {"₹": "INR", "$": "USD", "€": "EUR", "£": "GBP", "₦": "NGN"}
 
 
 def _currency(comp) -> str | None:
@@ -186,7 +201,12 @@ def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
     if not m:
         return [], 0
     data = json.loads(m.group(1))
-    cache = data.get("props", {}).get("pageProps", {}).get("apolloState", {}).get("data", {})
+    cache = (
+        data.get("props", {})
+        .get("pageProps", {})
+        .get("apolloState", {})
+        .get("data", {})
+    )
     if not isinstance(cache, dict):
         return [], 0
 
@@ -198,13 +218,17 @@ def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
         talent = cache.get(talent["__ref"], {})
     if isinstance(talent, dict):
         for key, val in talent.items():
-            if key.startswith("seoLandingPageJobSearchResults") and isinstance(val, dict):
+            if key.startswith("seoLandingPageJobSearchResults") and isinstance(
+                val, dict
+            ):
                 page_count = val.get("pageCount") or 0
                 break
 
     jobs = []
     for key, startup in cache.items():
-        if not (isinstance(startup, dict) and startup.get("__typename") == "StartupResult"):
+        if not (
+            isinstance(startup, dict) and startup.get("__typename") == "StartupResult"
+        ):
             continue
         company = startup.get("name") or startup.get("slug") or "?"
         for ref in startup.get("highlightedJobListings") or []:
@@ -223,13 +247,16 @@ def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
                     "location": ", ".join(locations) if locations else None,
                     "remote": entry.get("remote"),
                     "job_type": entry.get("jobType"),
-                    "years_experience": _yoe(entry.get("yearsExperienceMin"),
-                                             entry.get("yearsExperienceMax")),
+                    "years_experience": _yoe(
+                        entry.get("yearsExperienceMin"), entry.get("yearsExperienceMax")
+                    ),
                     "compensation": entry.get("compensation"),
                     "currency": _currency(entry.get("compensation")),
                     "department": entry.get("primaryRoleTitle"),
                     "ats_source": _ats_provider(entry.get("atsSource")),
-                    "url": f"https://wellfound.com/jobs/{listing_id}-{slug}".rstrip("-"),
+                    "url": f"https://wellfound.com/jobs/{listing_id}-{slug}".rstrip(
+                        "-"
+                    ),
                     "posted_at": _epoch_to_iso(entry.get("liveStartAt")),
                     "scraped_at": scraped_at,
                     "description": _lf(entry.get("description")),
@@ -238,16 +265,43 @@ def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
     return jobs, page_count
 
 
-COLS = ["id", "ats", "company", "title", "location", "remote", "job_type",
-        "years_experience", "compensation", "currency", "department", "ats_source", "url",
-        "posted_at", "scraped_at", "description"]
+COLS = [
+    "id",
+    "ats",
+    "company",
+    "title",
+    "location",
+    "remote",
+    "job_type",
+    "years_experience",
+    "compensation",
+    "currency",
+    "department",
+    "ats_source",
+    "url",
+    "posted_at",
+    "scraped_at",
+    "description",
+]
 
-BLOCK_ABORT = 2  # consecutive blocked pages before we stop (the IP is hot — don't hammer it)
+BLOCK_ABORT = (
+    2  # consecutive blocked pages before we stop (the IP is hot — don't hammer it)
+)
 
 
-async def scrape_url(tab, browser, base_url: str, scraped_at: str, writer, f,
-                     seen: set[str], max_pages: int, delay: float,
-                     warmup: bool, start_page: int = 1) -> tuple[int, bool]:
+async def scrape_url(
+    tab,
+    browser,
+    base_url: str,
+    scraped_at: str,
+    writer,
+    f,
+    seen: set[str],
+    max_pages: int,
+    delay: float,
+    warmup: bool,
+    start_page: int = 1,
+) -> tuple[int, bool]:
     """Scrape `?page=N` of one board from `start_page` onward into `writer`, deduping via `seen`.
 
     Returns (jobs_added, started_ok). started_ok is False only when the first page is blocked,
@@ -268,25 +322,34 @@ async def scrape_url(tab, browser, base_url: str, scraped_at: str, writer, f,
             fresh += 1
             added += 1
         f.flush()
-        print(f"    page {page}/{last}: +{fresh} new (board {added}, run total {len(seen)})",
-              flush=True)
+        print(
+            f"    page {page}/{last}: +{fresh} new (board {added}, run total {len(seen)})",
+            flush=True,
+        )
 
     # Warm-up: land on the jobs hub first so the first deep-link reads as in-site navigation,
     # not a cold deep-link (DataDome's intent-based detection, method #6).
     if warmup:
         warm = await _load_page(tab, "https://wellfound.com/jobs", browser)
-        if not _is_blocked(warm):  # only humanize on a resolved page, never the challenge
+        if not _is_blocked(
+            warm
+        ):  # only humanize on a resolved page, never the challenge
             await _human_pause(tab)
 
     # First page (start_page): clears the challenge and tells us how many pages exist.
     html = await _load_page(tab, f"{base_url}?page={start_page}", browser)
     DEBUG_HTML.write_text(html, encoding="utf-8")
     if _is_blocked(html):
-        print(f"  BLOCKED on page {start_page}: DataDome served the challenge instead of the app."
-              " Skipping this board (retry after a cooldown / cleaner IP).", flush=True)
+        print(
+            f"  BLOCKED on page {start_page}: DataDome served the challenge instead of the app."
+            " Skipping this board (retry after a cooldown / cleaner IP).",
+            flush=True,
+        )
         return 0, False
-    DEBUG_JSON.write_text(json.dumps(json.loads(NEXT_DATA_RE.search(html).group(1)), indent=1),
-                          encoding="utf-8")
+    DEBUG_JSON.write_text(
+        json.dumps(json.loads(NEXT_DATA_RE.search(html).group(1)), indent=1),
+        encoding="utf-8",
+    )
     jobs, page_count = parse_page(html, scraped_at)
     last = min(page_count, max_pages) if max_pages else page_count
     last = max(last, start_page)
@@ -301,13 +364,18 @@ async def scrape_url(tab, browser, base_url: str, scraped_at: str, writer, f,
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
         if _is_blocked(html):
             consecutive_blocks += 1
-            print(f"    page {page}/{last}: blocked ({consecutive_blocks}/{BLOCK_ABORT})",
-                  flush=True)
+            print(
+                f"    page {page}/{last}: blocked ({consecutive_blocks}/{BLOCK_ABORT})",
+                flush=True,
+            )
             # Once DataDome flips to the slider it challenges every request; grinding through
             # the rest only deepens the wait and burns the IP's trust further.
             if consecutive_blocks >= BLOCK_ABORT:
-                print(f"  DataDome is now challenging every request — stopping this board "
-                      f"with {added} jobs.", flush=True)
+                print(
+                    f"  DataDome is now challenging every request — stopping this board "
+                    f"with {added} jobs.",
+                    flush=True,
+                )
                 break
             continue
         consecutive_blocks = 0
@@ -317,8 +385,14 @@ async def scrape_url(tab, browser, base_url: str, scraped_at: str, writer, f,
     return added, True
 
 
-async def scrape(base_url: str, headless: bool, max_pages: int, delay: float,
-                 proxy: str | None, warmup: bool) -> int:
+async def scrape(
+    base_url: str,
+    headless: bool,
+    max_pages: int,
+    delay: float,
+    proxy: str | None,
+    warmup: bool,
+) -> int:
     """Single-board scrape: open one Chrome + the CSV, scrape `base_url`, stream rows."""
     opts = _options(headless, proxy)
     scraped_at = datetime.now(timezone.utc).isoformat()
@@ -336,8 +410,18 @@ async def scrape(base_url: str, headless: bool, max_pages: int, delay: float,
             await tab.enable_auto_solve_cloudflare_captcha()
         except Exception:  # non-fatal: DataDome is the real gate here
             pass
-        added, ok = await scrape_url(tab, browser, base_url, scraped_at, writer, f, seen,
-                                     max_pages, delay, warmup)
+        added, ok = await scrape_url(
+            tab,
+            browser,
+            base_url,
+            scraped_at,
+            writer,
+            f,
+            seen,
+            max_pages,
+            delay,
+            warmup,
+        )
     f.close()
     print(f"DONE: {added} jobs -> data/jobs/wellfound.csv", flush=True)
     return 0 if ok else 1
@@ -355,8 +439,8 @@ def main() -> int:
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
     proxy = _flag("--proxy", "") or None  # e.g. http://user:pass@host:port
-    max_pages = _flag("--max-pages", 0)   # 0 = all pages
-    delay = _flag("--delay", 4.0)         # seconds between pages
+    max_pages = _flag("--max-pages", 0)  # 0 = all pages
+    delay = _flag("--delay", 4.0)  # seconds between pages
     role = args[0] if args else "software-engineer"
     location = args[1] if len(args) > 1 else "india"
     # location "remote" → the location-agnostic remote board /role/r/{role};
@@ -365,8 +449,11 @@ def main() -> int:
         base_url = f"https://wellfound.com/role/r/{role}"
     else:
         base_url = f"https://wellfound.com/role/l/{role}/{location}"
-    print(f"GET {base_url}  (headless={headless}, max_pages={max_pages or 'all'},"
-          f" proxy={'yes' if proxy else 'no'}, warmup={warmup})", flush=True)
+    print(
+        f"GET {base_url}  (headless={headless}, max_pages={max_pages or 'all'},"
+        f" proxy={'yes' if proxy else 'no'}, warmup={warmup})",
+        flush=True,
+    )
     return asyncio.run(scrape(base_url, headless, max_pages, delay, proxy, warmup))
 
 

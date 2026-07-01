@@ -18,6 +18,7 @@ Writes ``by-provider/<ats>.csv`` (slug,url,n_sources,sources) plus
 Stdlib only. Idempotent - overwrites by-provider/ each run, so it can be re-run
 as more sources are added.
 """
+
 from __future__ import annotations
 
 import csv
@@ -34,12 +35,17 @@ OUT = ROOT / "data" / "ats-company-lists" / "by-provider"
 
 # --- ATS name normalization -------------------------------------------------
 ALIASES = {
-    "recruiterbox": "trakstar", "trakstarhire": "trakstar",
+    "recruiterbox": "trakstar",
+    "trakstarhire": "trakstar",
     "joincom": "join",
     "breezyhr": "breezy",
-    "sap": "successfactors", "sapsf": "successfactors",
-    "oraclecloud": "oracle", "oraclehcm": "oracle", "oraclerecruitingcloud": "oracle",
-    "oraclecloudhcm": "oracle", "oraclerecruiting": "oracle",
+    "sap": "successfactors",
+    "sapsf": "successfactors",
+    "oraclecloud": "oracle",
+    "oraclehcm": "oracle",
+    "oraclerecruitingcloud": "oracle",
+    "oraclecloudhcm": "oracle",
+    "oraclerecruiting": "oracle",
     "zoho": "zohorecruit",
     "sensehq": "sense",
 }
@@ -52,10 +58,27 @@ def norm_ats(a: str) -> str:
 
 # --- URL host patterns: group(1) = slug (host subdomain or path token) -------
 HOST_PATTERNS = [
-    ("greenhouse", re.compile(r"(?:boards|job-boards|boards-api)\.greenhouse\.io/(?:embed/job_board\?for=|v1/boards/)?([A-Za-z0-9_.-]+)", re.I)),
-    ("lever", re.compile(r"(?:jobs|api)\.(?:eu\.)?lever\.co/(?:v0/postings/)?([A-Za-z0-9_.-]+)", re.I)),
+    (
+        "greenhouse",
+        re.compile(
+            r"(?:boards|job-boards|boards-api)\.greenhouse\.io/(?:embed/job_board\?for=|v1/boards/)?([A-Za-z0-9_.-]+)",
+            re.I,
+        ),
+    ),
+    (
+        "lever",
+        re.compile(
+            r"(?:jobs|api)\.(?:eu\.)?lever\.co/(?:v0/postings/)?([A-Za-z0-9_.-]+)", re.I
+        ),
+    ),
     ("ashby", re.compile(r"(?:jobs|api)\.ashbyhq\.com/([A-Za-z0-9_.-]+)", re.I)),
-    ("smartrecruiters", re.compile(r"(?:jobs|api|careers)\.smartrecruiters\.com/(?:v1/companies/)?([A-Za-z0-9_.-]+)", re.I)),
+    (
+        "smartrecruiters",
+        re.compile(
+            r"(?:jobs|api|careers)\.smartrecruiters\.com/(?:v1/companies/)?([A-Za-z0-9_.-]+)",
+            re.I,
+        ),
+    ),
     ("workable", re.compile(r"apply\.workable\.com/([A-Za-z0-9_.-]+)", re.I)),
     ("workable", re.compile(r"\b([A-Za-z0-9_-]+)\.workable\.com", re.I)),
     ("recruitee", re.compile(r"\b([A-Za-z0-9_-]+)\.recruitee\.com", re.I)),
@@ -66,9 +89,18 @@ HOST_PATTERNS = [
     ("jobvite", re.compile(r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)", re.I)),
     ("jazzhr", re.compile(r"\b([A-Za-z0-9_-]+)\.applytojob\.com", re.I)),
     ("taleo", re.compile(r"\b([A-Za-z0-9_-]+)\.taleo\.net", re.I)),
-    ("successfactors", re.compile(r"\b([A-Za-z0-9_-]+)\.(?:sapsf|successfactors)\.(?:com|eu)", re.I)),
-    ("oracle", re.compile(r"\b([A-Za-z0-9_-]+)\.fa\.(?:[a-z0-9-]+\.)*oraclecloud\.com", re.I)),
-    ("zohorecruit", re.compile(r"\b([A-Za-z0-9_-]+)\.zohorecruit\.(?:com|in|eu|com\.au)", re.I)),
+    (
+        "successfactors",
+        re.compile(r"\b([A-Za-z0-9_-]+)\.(?:sapsf|successfactors)\.(?:com|eu)", re.I),
+    ),
+    (
+        "oracle",
+        re.compile(r"\b([A-Za-z0-9_-]+)\.fa\.(?:[a-z0-9-]+\.)*oraclecloud\.com", re.I),
+    ),
+    (
+        "zohorecruit",
+        re.compile(r"\b([A-Za-z0-9_-]+)\.zohorecruit\.(?:com|in|eu|com\.au)", re.I),
+    ),
     ("darwinbox", re.compile(r"\b([A-Za-z0-9_-]+)\.darwinbox\.(?:in|com)", re.I)),
     ("keka", re.compile(r"\b([A-Za-z0-9_-]+)\.keka\.com", re.I)),
     ("trakstar", re.compile(r"\b([A-Za-z0-9_-]+)\.hire\.trakstar\.com", re.I)),
@@ -85,8 +117,12 @@ HOST_PATTERNS = [
 # Workday boards need instance+site, so they are handled separately (not via the
 # slug-token machinery): from full myworkdayjobs URLs and from Feashliaa-style
 # ``company|wdN|site`` pipe tuples.
-WORKDAY_URL = re.compile(r"([A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com(?:/[A-Za-z0-9_-]+)?)", re.I)
-WORKDAY_PIPE = re.compile(r"\b([a-z0-9][a-z0-9-]{0,60})\|(wd\d+)\|([A-Za-z0-9_-]+)", re.I)
+WORKDAY_URL = re.compile(
+    r"([A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com(?:/[A-Za-z0-9_-]+)?)", re.I
+)
+WORKDAY_PIPE = re.compile(
+    r"\b([a-z0-9][a-z0-9-]{0,60})\|(wd\d+)\|([A-Za-z0-9_-]+)", re.I
+)
 
 # canonical URL templates for providers whose board is a simple function of slug
 CANON = {
@@ -112,27 +148,110 @@ CANON = {
 }
 
 STOP = {
-    "slug", "slugs", "name", "names", "company", "companies", "url", "urls", "token",
-    "tokens", "id", "ids", "ats", "careers", "career", "jobs", "job", "boards", "board",
-    "www", "api", "http", "https", "com", "co", "io", "net", "org", "embed", "for",
-    "v0", "v1", "postings", "example", "examples", "sample", "test", "null", "none",
-    "tbd", "todo", "search", "external_careers", "index", "main", "data", "list",
+    "slug",
+    "slugs",
+    "name",
+    "names",
+    "company",
+    "companies",
+    "url",
+    "urls",
+    "token",
+    "tokens",
+    "id",
+    "ids",
+    "ats",
+    "careers",
+    "career",
+    "jobs",
+    "job",
+    "boards",
+    "board",
+    "www",
+    "api",
+    "http",
+    "https",
+    "com",
+    "co",
+    "io",
+    "net",
+    "org",
+    "embed",
+    "for",
+    "v0",
+    "v1",
+    "postings",
+    "example",
+    "examples",
+    "sample",
+    "test",
+    "null",
+    "none",
+    "tbd",
+    "todo",
+    "search",
+    "external_careers",
+    "index",
+    "main",
+    "data",
+    "list",
 }
 
 KNOWN = {
-    "greenhouse", "lever", "ashby", "workday", "smartrecruiters", "workable", "recruitee",
-    "bamboohr", "teamtailor", "personio", "jazzhr", "jobvite", "icims", "taleo",
-    "successfactors", "oracle", "zohorecruit", "darwinbox", "keka", "trakstar",
-    "ripplehire", "sense", "freshteam", "comeet", "breezy", "pinpoint", "paylocity",
-    "phenom", "eightfold", "avature", "cornerstone", "gem", "join", "rippling",
-    "manatal", "oorwin", "softgarden", "polymer", "ceipal", "peoplestrong", "skillate",
-    "turbohire", "recruiterbox", "zoho", "breezyhr", "sensehq",
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+    "smartrecruiters",
+    "workable",
+    "recruitee",
+    "bamboohr",
+    "teamtailor",
+    "personio",
+    "jazzhr",
+    "jobvite",
+    "icims",
+    "taleo",
+    "successfactors",
+    "oracle",
+    "zohorecruit",
+    "darwinbox",
+    "keka",
+    "trakstar",
+    "ripplehire",
+    "sense",
+    "freshteam",
+    "comeet",
+    "breezy",
+    "pinpoint",
+    "paylocity",
+    "phenom",
+    "eightfold",
+    "avature",
+    "cornerstone",
+    "gem",
+    "join",
+    "rippling",
+    "manatal",
+    "oorwin",
+    "softgarden",
+    "polymer",
+    "ceipal",
+    "peoplestrong",
+    "skillate",
+    "turbohire",
+    "recruiterbox",
+    "zoho",
+    "breezyhr",
+    "sensehq",
 }
 KNOWN_NORM = {norm_ats(k) for k in KNOWN}
 
 # filename-keyed files we must NOT treat as slug lists (taxonomies / code / meta)
 SKIP_NAMES = {
-    "atsplatform.ts", "ats_detector.rs", "all_ats_providers.txt",
+    "atsplatform.ts",
+    "ats_detector.rs",
+    "all_ats_providers.txt",
     "supported_ats_providers.txt",
 }
 
@@ -158,8 +277,21 @@ SLUG_COLS = ("slug", "ats_slug", "token", "tenant", "company_slug")
 URL_COLS = ("url", "careers_url", "board_url", "endpoint", "url_string", "apply_url")
 NAME_COLS = ("name", "company", "company_name", "label", "company_plugin")
 # ats values meaning "not a scrapable ATS board" -> skip (custom/in-house/own domain)
-NON_ATS = {"custom", "customowndomain", "owndomain", "firstparty", "internalats",
-           "internal", "inhouse", "proprietary", "none", "unknown", "na", "other", ""}
+NON_ATS = {
+    "custom",
+    "customowndomain",
+    "owndomain",
+    "firstparty",
+    "internalats",
+    "internal",
+    "inhouse",
+    "proprietary",
+    "none",
+    "unknown",
+    "na",
+    "other",
+    "",
+}
 
 
 def _slugify(s: str) -> str:
@@ -168,8 +300,14 @@ def _slugify(s: str) -> str:
 
 def _non_ats(ats: str) -> bool:
     """True for in-house / own-domain 'ats' values that aren't a scrapable board."""
-    return (not ats or ats in NON_ATS or ats.startswith("internal")
-            or "proprietary" in ats or "owndomain" in ats or "inhouse" in ats)
+    return (
+        not ats
+        or ats in NON_ATS
+        or ats.startswith("internal")
+        or "proprietary" in ats
+        or "owndomain" in ats
+        or "inhouse" in ats
+    )
 
 
 def provider_from_name(stem: str):
@@ -177,9 +315,15 @@ def provider_from_name(stem: str):
     structured suffixes, then any known-provider token in the name (so
     greenhouse_company_slugs / ashby_known_seed_slugs / greenhouse_updated all resolve)."""
     stem = stem.lower()
-    for pat in (r"^slugs[_-](.+)$", r"^(.+?)[_-]slugs$", r"^(.+?)[_-]companies$",
-                r"^(.+?)[_-]companies[_-].+$", r"^(.+?)[_-]sources$",
-                r"^(.+?)[_-]customers$", r"^([a-z0-9]+)$"):
+    for pat in (
+        r"^slugs[_-](.+)$",
+        r"^(.+?)[_-]slugs$",
+        r"^(.+?)[_-]companies$",
+        r"^(.+?)[_-]companies[_-].+$",
+        r"^(.+?)[_-]sources$",
+        r"^(.+?)[_-]customers$",
+        r"^([a-z0-9]+)$",
+    ):
         m = re.match(pat, stem)
         if m and norm_ats(m.group(1)) in KNOWN_NORM:
             return norm_ats(m.group(1))
@@ -215,7 +359,16 @@ def _json_slugs(data):
             if isinstance(item, str):
                 out.append(item)
             elif isinstance(item, dict):
-                for k in ("slug", "token", "handle", "company_slug", "id", "guid", "name", "company"):
+                for k in (
+                    "slug",
+                    "token",
+                    "handle",
+                    "company_slug",
+                    "id",
+                    "guid",
+                    "name",
+                    "company",
+                ):
                     v = item.get(k)
                     if isinstance(v, str):
                         out.append(v)
@@ -239,26 +392,35 @@ def filename_keyed_slugs(ats: str, path: Path):
         except Exception:
             return []
     if suf == ".csv":
-        rows = [r for r in csv.reader(io.StringIO(raw))
-                if r and not r[0].lstrip().startswith("#")]
+        rows = [
+            r
+            for r in csv.reader(io.StringIO(raw))
+            if r and not r[0].lstrip().startswith("#")
+        ]
         if not rows:
             return []
         header = [c.strip().lower() for c in rows[0]]
-        col = next((i for i, h in enumerate(header)
-                    if h in SLUG_COLS or h.endswith("_slug")), None)
+        col = next(
+            (i for i, h in enumerate(header) if h in SLUG_COLS or h.endswith("_slug")),
+            None,
+        )
         if col is not None:
             return [r[col] for r in rows[1:] if len(r) > col]
         if len(header) == 1:
-            return [r[0] for r in rows if r]          # single column, no header assumed
-        return []                                      # multi-col w/o slug -> url/columnar covers
+            return [r[0] for r in rows if r]  # single column, no header assumed
+        return []  # multi-col w/o slug -> url/columnar covers
     if suf == ".txt":
-        return [re.split(r"[,\t ]", ln.strip())[0]
-                for ln in raw.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+        return [
+            re.split(r"[,\t ]", ln.strip())[0]
+            for ln in raw.splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#")
+        ]
     if suf in (".py", ".ts", ".js", ".yaml", ".yml"):
         # quoted values of slug-ish keys: "token": "x"  slug='x'  companySlug: "x"
         return re.findall(
             r"(?:token|slug|tenant|company_?[sS]lug)['\"]?\s*[:=]\s*['\"]([A-Za-z0-9._-]+)['\"]",
-            raw)
+            raw,
+        )
     return []
 
 
@@ -267,10 +429,14 @@ def columnar_scan(path: Path, text: str):
     (company,ats,slug maps) and from Workday tenant/domain/board JSON objects."""
     suf = path.suffix.lower()
     if suf == ".csv":
-        rdr = csv.DictReader(ln for ln in io.StringIO(text) if not ln.lstrip().startswith("#"))
+        rdr = csv.DictReader(
+            ln for ln in io.StringIO(text) if not ln.lstrip().startswith("#")
+        )
         for row in rdr:
             low = {(k or "").strip().lower(): (v or "") for k, v in row.items()}
-            ats = norm_ats(next((low[c] for c in ATS_COLS if low.get(c)), "").split("/")[0])
+            ats = norm_ats(
+                next((low[c] for c in ATS_COLS if low.get(c)), "").split("/")[0]
+            )
             if _non_ats(ats):
                 continue
             slug = next((low[c] for c in SLUG_COLS if low.get(c)), "").strip()
@@ -284,8 +450,11 @@ def columnar_scan(path: Path, text: str):
             data = json.loads(text)
         except Exception:
             return
-        items = data if isinstance(data, list) else (
-            data.get("companies") if isinstance(data, dict) else None)
+        items = (
+            data
+            if isinstance(data, list)
+            else (data.get("companies") if isinstance(data, dict) else None)
+        )
         for it in items or []:
             if not isinstance(it, dict):
                 continue
@@ -296,12 +465,16 @@ def columnar_scan(path: Path, text: str):
                 host = f"{ten}.{dom}.myworkdayjobs.com" + (f"/{board}" if board else "")
                 yield "workday", host, "https://" + host
                 continue
-            ats = norm_ats(str(next((low[c] for c in ATS_COLS if low.get(c)), "")).split("/")[0])
+            ats = norm_ats(
+                str(next((low[c] for c in ATS_COLS if low.get(c)), "")).split("/")[0]
+            )
             if _non_ats(ats):
                 continue
             slug = str(next((low[c] for c in SLUG_COLS if low.get(c)), "")).strip()
             if not slug:
-                slug = _slugify(str(next((low[c] for c in NAME_COLS if low.get(c)), "")))
+                slug = _slugify(
+                    str(next((low[c] for c in NAME_COLS if low.get(c)), ""))
+                )
             url = str(next((low[c] for c in URL_COLS if low.get(c)), "")).strip()
             if valid_slug(slug):
                 yield ats, slug, url
@@ -320,20 +493,28 @@ def main() -> int:
         key = slug.strip().strip("/").lower()
         rec = data[ats].get(key)
         if rec is None:
-            data[ats][key] = {"slug": slug.strip().strip("/"), "url": url, "sources": {source}}
+            data[ats][key] = {
+                "slug": slug.strip().strip("/"),
+                "url": url,
+                "sources": {source},
+            }
         else:
             rec["sources"].add(source)
             if not rec["url"] and url:
                 rec["url"] = url
 
-    files = [p for p in SRC.rglob("*")
-             if p.is_file() and p.suffix.lower() != ".md"
-             and not p.name.startswith("_")
-             and p.name.lower() not in SKIP_NAMES]
+    files = [
+        p
+        for p in SRC.rglob("*")
+        if p.is_file()
+        and p.suffix.lower() != ".md"
+        and not p.name.startswith("_")
+        and p.name.lower() not in SKIP_NAMES
+    ]
 
     for path in files:
         rel = path.relative_to(SRC).parts
-        source = rel[1] if len(rel) > 1 else rel[0]   # the <source-slug> folder
+        source = rel[1] if len(rel) > 1 else rel[0]  # the <source-slug> folder
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except Exception:
@@ -345,23 +526,45 @@ def main() -> int:
 
         # strategy 2: multi-ATS columnar maps (company,ats,slug) + workday tenant JSON
         for ats, slug, url in columnar_scan(path, text):
-            add(ats, slug, url or (CANON.get(ats, "").format(s=slug) if ats in CANON else ""), source)
+            add(
+                ats,
+                slug,
+                url or (CANON.get(ats, "").format(s=slug) if ats in CANON else ""),
+                source,
+            )
 
         # strategy 3: filename-keyed lists (single-provider files)
         kats = provider_from_name(path.stem)
-        if kats and path.suffix.lower() in (".csv", ".txt", ".json", ".py", ".ts", ".js", ".yaml", ".yml"):
+        if kats and path.suffix.lower() in (
+            ".csv",
+            ".txt",
+            ".json",
+            ".py",
+            ".ts",
+            ".js",
+            ".yaml",
+            ".yml",
+        ):
             keyed = [s for s in filename_keyed_slugs(kats, path) if valid_slug(s)]
             for slug in keyed:
-                add(kats, slug,
-                    CANON.get(kats, "").format(s=slug.strip().strip("/")) if kats in CANON else "",
-                    source)
+                add(
+                    kats,
+                    slug,
+                    CANON.get(kats, "").format(s=slug.strip().strip("/"))
+                    if kats in CANON
+                    else "",
+                    source,
+                )
             # phenom-style: single-provider CSV of careers URL + name, no slug column
             if not keyed and path.suffix.lower() == ".csv":
                 for row in csv.DictReader(io.StringIO(text)):
                     low = {(k or "").strip().lower(): (v or "") for k, v in row.items()}
                     url = next((low[c].strip() for c in URL_COLS if low.get(c)), "")
-                    nm = low.get("company_code") or low.get("code") or _slugify(
-                        next((low[c] for c in NAME_COLS if low.get(c)), ""))
+                    nm = (
+                        low.get("company_code")
+                        or low.get("code")
+                        or _slugify(next((low[c] for c in NAME_COLS if low.get(c)), ""))
+                    )
                     if valid_slug(nm):
                         add(kats, nm, url, source)
 

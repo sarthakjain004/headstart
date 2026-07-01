@@ -14,6 +14,7 @@ candidate pool the liveness checker consumes), reshaping to that pool's schema
 Leaves ``active/`` (the committed, liveness-validated subset) untouched. Idempotent /
 re-runnable. Run:  python scripts/merge/merge_harvest_into_tenants.py
 """
+
 from __future__ import annotations
 
 import csv
@@ -34,7 +35,10 @@ def load_existing(path: Path) -> dict[str, list[str]]:
             for r in csv.DictReader(f):
                 t = (r.get("tenant") or "").strip().lower()
                 if t:
-                    rows[t] = [(r.get("url") or "").strip(), (r.get("source") or "").strip()]
+                    rows[t] = [
+                        (r.get("url") or "").strip(),
+                        (r.get("source") or "").strip(),
+                    ]
     return rows
 
 
@@ -80,10 +84,14 @@ def main() -> int:
                 w.writerow([ats, t, pool[t][0], pool[t][1]])
         new_files += is_new
         added_total += added
-        print(f"{ats:<20}{len(pool) - added:>9}{added:>7}{len(pool):>8}  {'NEW' if is_new else ''}")
+        print(
+            f"{ats:<20}{len(pool) - added:>9}{added:>7}{len(pool):>8}  {'NEW' if is_new else ''}"
+        )
 
-    print(f"\nfolded harvest into {len(harvest)} providers "
-          f"({new_files} new CSVs, +{added_total} tenants new to the pool). active/ untouched.")
+    print(
+        f"\nfolded harvest into {len(harvest)} providers "
+        f"({new_files} new CSVs, +{added_total} tenants new to the pool). active/ untouched."
+    )
     return 0
 
 

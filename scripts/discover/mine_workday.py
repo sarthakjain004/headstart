@@ -10,6 +10,7 @@ resumable) and writes boards to data/wayback-ats/workday.csv as
 
 Run:  python scripts/discover/mine_workday.py [workers]
 """
+
 import csv
 import re
 import socket
@@ -56,28 +57,37 @@ def extract(url):
     if not hm:
         return None
     tenant = hm.group(1)
-    if tenant.startswith("2f"):                      # %2f URL-encoding artifact (e.g. "2fasmglobal")
+    if tenant.startswith("2f"):  # %2f URL-encoding artifact (e.g. "2fasmglobal")
         return None
     segs = [s for s in (m.group(2) or "").split("/") if s]
     if segs and segs[0].lower() == "wday":
         # careers API is /wday/cxs/{tenant}/{site}/jobs|job — require the trailing jobs/job so
         # we don't grab i18n cxs endpoints like /wday/cxs/{tenant}/videoLabels (no /jobs).
-        site = (segs[3] if len(segs) >= 5 and segs[1].lower() == "cxs"
-                and segs[4].lower() in ("jobs", "job") else None)
+        site = (
+            segs[3]
+            if len(segs) >= 5
+            and segs[1].lower() == "cxs"
+            and segs[4].lower() in ("jobs", "job")
+            else None
+        )
     else:
-        if segs and LOCALE_RE.match(segs[0]):        # drop a leading /{locale}
+        if segs and LOCALE_RE.match(segs[0]):  # drop a leading /{locale}
             segs = segs[1:]
         # require a /{site}/job/... path: the "job" segment confirms a real careers site,
         # not a static/asset path (videoLabels, cdn-cgi, ...) which share the same position.
         site = segs[0] if len(segs) >= 2 and segs[1].lower() == "job" else None
-    if not site or "." in site or site.lower() in SKIP_SITE:  # "." rejects favicon.ico, robots.txt, etc.
+    if (
+        not site or "." in site or site.lower() in SKIP_SITE
+    ):  # "." rejects favicon.ico, robots.txt, etc.
         return None
     return f"{tenant}/{site}", f"https://{host}/{site}"
 
 
 def main():
     workers = int(sys.argv[1]) if len(sys.argv) > 1 else 4
-    cdx = "https://web.archive.org/cdx/search/cdx?url=myworkdayjobs.com&matchType=domain"
+    cdx = (
+        "https://web.archive.org/cdx/search/cdx?url=myworkdayjobs.com&matchType=domain"
+    )
     base = cdx + "&fl=original&collapse=urlkey"
 
     npages_txt = get(cdx + "&showNumPages=true")
@@ -95,8 +105,11 @@ def main():
     if STATE.exists():
         done = {int(x) for x in STATE.read_text().split() if x.strip().isdigit()}
     todo = [p for p in range(npages) if p not in done]
-    print(f"workday: {npages} pages, {len(done)} done, {len(todo)} to fetch, "
-          f"{len(boards)} boards", flush=True)
+    print(
+        f"workday: {npages} pages, {len(done)} done, {len(todo)} to fetch, "
+        f"{len(boards)} boards",
+        flush=True,
+    )
 
     lock = threading.Lock()
     new_file = not OUT.exists()
@@ -122,14 +135,20 @@ def main():
             sf.flush()
             counter["n"] += 1
             if counter["n"] % 25 == 0:
-                print(f"  {counter['n']}/{len(todo)} pages, {len(boards)} boards", flush=True)
+                print(
+                    f"  {counter['n']}/{len(todo)} pages, {len(boards)} boards",
+                    flush=True,
+                )
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for fut in as_completed([ex.submit(do, p) for p in todo]):
             fut.result()
     f.close()
     sf.close()
-    print(f"DONE: {len(boards)} unique workday boards in data/wayback-ats/workday.csv", flush=True)
+    print(
+        f"DONE: {len(boards)} unique workday boards in data/wayback-ats/workday.csv",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

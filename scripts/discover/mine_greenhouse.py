@@ -17,6 +17,7 @@ on any host it resolves the same way.
 
 Run:  python scripts/discover/mine_greenhouse.py
 """
+
 import csv
 import subprocess
 import sys
@@ -29,12 +30,15 @@ WORKERS = "4"
 
 # (label, host). Add new regional data-center hosts here as Greenhouse adds them.
 HOSTS = [
-    ("greenhouse_b",     "boards.greenhouse.io"),       # US legacy
-    ("greenhouse_jb",    "job-boards.greenhouse.io"),   # US current
-    ("greenhouse_eu_jb", "job-boards.eu.greenhouse.io"),  # EU  <- the blind spot (NK lives here)
-    ("greenhouse_eu_b",  "boards.eu.greenhouse.io"),    # EU legacy
+    ("greenhouse_b", "boards.greenhouse.io"),  # US legacy
+    ("greenhouse_jb", "job-boards.greenhouse.io"),  # US current
+    (
+        "greenhouse_eu_jb",
+        "job-boards.eu.greenhouse.io",
+    ),  # EU  <- the blind spot (NK lives here)
+    ("greenhouse_eu_b", "boards.eu.greenhouse.io"),  # EU legacy
     ("greenhouse_us_jb", "job-boards.us.greenhouse.io"),  # US explicit (usually empty)
-    ("greenhouse_us_b",  "boards.us.greenhouse.io"),
+    ("greenhouse_us_b", "boards.us.greenhouse.io"),
 ]
 
 
@@ -42,7 +46,9 @@ def main():
     # 1. page-mine each host variant (resumable) into its own temp file
     for label, host in HOSTS:
         print(f"=== mining {host} ===", flush=True)
-        subprocess.run([sys.executable, str(PAGES), label, host, "path", WORKERS], check=False)
+        subprocess.run(
+            [sys.executable, str(PAGES), label, host, "path", WORKERS], check=False
+        )
 
     # 2. fold all tokens into data/wayback-ats/greenhouse.csv (dedupe by token)
     gh = WB / "greenhouse.csv"
@@ -63,13 +69,18 @@ def main():
         w.writerow(["ats", "tenant", "url"])
         for t in sorted(rows):
             w.writerow(["greenhouse", t, rows[t]])
-    print(f"greenhouse.csv: {before} -> {len(rows)} (+{len(rows) - before})", flush=True)
+    print(
+        f"greenhouse.csv: {before} -> {len(rows)} (+{len(rows) - before})", flush=True
+    )
 
     # 3. clean up the per-host temp files
     for label, _ in HOSTS:
         (WB / f"{label}.csv").unlink(missing_ok=True)
         (WB / f".{label}_pages_done").unlink(missing_ok=True)
-    print("done — re-run scripts/merge/merge_tenants.py to refresh the merged set.", flush=True)
+    print(
+        "done — re-run scripts/merge/merge_tenants.py to refresh the merged set.",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

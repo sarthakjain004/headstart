@@ -18,6 +18,7 @@ is weak on, to separate genuine "in-house / no public ATS" from a missed board:
 Writes data/resolve/verify_results.csv: name,domain,found (ats:slug;... or ""),method.
 Run:  python scripts/resolve/verify_misses.py
 """
+
 import csv
 import json
 import re
@@ -30,7 +31,7 @@ from concurrent.futures import as_completed, ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import BLOCK, candidate_slugs  # noqa: E402
+from fingerprint import candidate_slugs  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 RESULTS = ROOT / "data" / "resolve" / "fingerprint_results.csv"
@@ -43,14 +44,22 @@ CTX = ssl._create_unverified_context()
 socket.setdefaulttimeout(TIMEOUT)
 
 CLEAN_PROBES = {
-    "greenhouse": ("https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
-                   lambda d: len(d.get("jobs", []))),
-    "lever": ("https://api.lever.co/v0/postings/{s}?mode=json",
-              lambda d: len(d) if isinstance(d, list) else 0),
-    "ashby": ("https://api.ashbyhq.com/posting-api/job-board/{s}",
-              lambda d: len(d.get("jobs", []))),
-    "smartrecruiters": ("https://api.smartrecruiters.com/v1/companies/{s}/postings",
-                        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0),
+    "greenhouse": (
+        "https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
+        lambda d: len(d.get("jobs", [])),
+    ),
+    "lever": (
+        "https://api.lever.co/v0/postings/{s}?mode=json",
+        lambda d: len(d) if isinstance(d, list) else 0,
+    ),
+    "ashby": (
+        "https://api.ashbyhq.com/posting-api/job-board/{s}",
+        lambda d: len(d.get("jobs", [])),
+    ),
+    "smartrecruiters": (
+        "https://api.smartrecruiters.com/v1/companies/{s}/postings",
+        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0,
+    ),
 }
 
 # India-tier subdomain ATSes: tenant = {slug}.{host}. Wildcard — must use the title test.
@@ -139,7 +148,11 @@ def probe_subdomain(name, domain, deadline=None):
                 # real tenant: title differs from the generic baseline AND names the company —
                 # require the slug or the full normalized name in the title, not just any token
                 # (an "any token" match flags coincidental words; this is the FP guard).
-                if t and t != base and (s in t or (norm and norm in re.sub(r"[^a-z0-9]", "", t))):
+                if (
+                    t
+                    and t != base
+                    and (s in t or (norm and norm in re.sub(r"[^a-z0-9]", "", t)))
+                ):
                     hits.add((ats, s))
     return hits
 
@@ -147,9 +160,12 @@ def probe_subdomain(name, domain, deadline=None):
 # a company that IS an ATS provider matches its own infra subdomains (darwinbox -> darwinbox);
 # that's a self-reference, not a tenant board. Mirror fingerprint.py's PROVIDER_DOMAINS guard.
 PROVIDER_DOMAINS = {
-    "darwinbox": {"darwinbox.in", "darwinbox.com"}, "keka": {"keka.com"},
+    "darwinbox": {"darwinbox.in", "darwinbox.com"},
+    "keka": {"keka.com"},
     "zoho": {"zohorecruit.com", "zohorecruit.eu", "zohorecruit.in", "zohorecruit.ca"},
-    "qandle": {"qandle.com"}, "ripplehire": {"ripplehire.com"}, "turbohire": {"turbohire.co"},
+    "qandle": {"qandle.com"},
+    "ripplehire": {"ripplehire.com"},
+    "turbohire": {"turbohire.co"},
 }
 
 
@@ -192,11 +208,17 @@ def main():
             cf.flush()
             if hits:
                 recovered += 1
-                print(f"  [{done}/{len(misses)}] RECOVERED {name} ({domain}): "
-                      f"{label}  [{method}]", flush=True)
+                print(
+                    f"  [{done}/{len(misses)}] RECOVERED {name} ({domain}): "
+                    f"{label}  [{method}]",
+                    flush=True,
+                )
     cf.close()
-    print(f"\n{recovered}/{len(misses)} misses recovered to an ATS -> "
-          f"{OUT.relative_to(ROOT)}", flush=True)
+    print(
+        f"\n{recovered}/{len(misses)} misses recovered to an ATS -> "
+        f"{OUT.relative_to(ROOT)}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

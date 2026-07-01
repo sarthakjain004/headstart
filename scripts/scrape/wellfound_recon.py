@@ -14,6 +14,7 @@ Credentials come from .env (gitignored): EMAIL, PASSWORD. Never printed, never c
 
 Run:  python scripts/scrape/wellfound_recon.py
 """
+
 import asyncio
 import json
 import urllib.request
@@ -43,7 +44,9 @@ def load_env() -> dict:
 def warp_on() -> bool:
     """Standing rule: only ever request Wellfound through Cloudflare WARP."""
     try:
-        with urllib.request.urlopen("https://www.cloudflare.com/cdn-cgi/trace", timeout=10) as r:
+        with urllib.request.urlopen(
+            "https://www.cloudflare.com/cdn-cgi/trace", timeout=10
+        ) as r:
             return "warp=on" in r.read().decode("utf-8", "replace")
     except Exception:
         return False
@@ -64,8 +67,10 @@ async def login(tab, browser, email: str, password: str) -> tuple[bool, str]:
             # The login page itself is DataDome-gated on WARP — try the slider solver.
             if "captcha-delivery.com" in src and solve_calls < 2:
                 solve_calls += 1
-                print(f"login: DataDome slider detected — solve attempt {solve_calls}...",
-                      flush=True)
+                print(
+                    f"login: DataDome slider detected — solve attempt {solve_calls}...",
+                    flush=True,
+                )
                 await solve_slider(tab, browser, EXP)
             continue
         el = await tab.find(id="user_email", timeout=0, raise_exc=False)
@@ -86,8 +91,10 @@ async def login(tab, browser, email: str, password: str) -> tuple[bool, str]:
 
 async def main() -> int:
     if not warp_on():
-        print("ABORT: WARP is not on. Standing rule: never hit Wellfound on the residential IP.",
-              flush=True)
+        print(
+            "ABORT: WARP is not on. Standing rule: never hit Wellfound on the residential IP.",
+            flush=True,
+        )
         return 2
     print("WARP on — proceeding.", flush=True)
     EXP.mkdir(parents=True, exist_ok=True)
@@ -116,14 +123,16 @@ async def main() -> int:
             except Exception:
                 pass
             hdrs = {k.lower() for k in req.get("headers", {})}
-            captured.append({
-                "operationName": op,
-                "operationId": opid,
-                "has_apollo_signature": "x-apollo-signature" in hdrs,
-                "has_wf_cfp": "x-wf-cfp" in hdrs,
-                "variables": variables,
-                "url": url,
-            })
+            captured.append(
+                {
+                    "operationName": op,
+                    "operationId": opid,
+                    "has_apollo_signature": "x-apollo-signature" in hdrs,
+                    "has_wf_cfp": "x-wf-cfp" in hdrs,
+                    "variables": variables,
+                    "url": url,
+                }
+            )
         except Exception:
             pass
 
@@ -148,8 +157,11 @@ async def main() -> int:
         jobs_src = await tab.page_source
         HTML_OUT.write_text(jobs_src, encoding="utf-8")
         logged_in = ("/login" not in (await tab.current_url)) and not _blocked(jobs_src)
-        print(f"on /jobs: url-ok={logged_in} blocked={_blocked(jobs_src)} "
-              f"JobSearchPage_marker={'JobSearchPage' in jobs_src}", flush=True)
+        print(
+            f"on /jobs: url-ok={logged_in} blocked={_blocked(jobs_src)} "
+            f"JobSearchPage_marker={'JobSearchPage' in jobs_src}",
+            flush=True,
+        )
 
         await tab.go_to("https://wellfound.com/role/l/software-engineer/india")
         await asyncio.sleep(6)
@@ -164,10 +176,16 @@ async def main() -> int:
             uniq.append(c)
         OPS_OUT.write_text(json.dumps(uniq, indent=2), encoding="utf-8")
 
-        print(f"\ncaptured {len(captured)} /graphql calls, {len(uniq)} unique ops:", flush=True)
+        print(
+            f"\ncaptured {len(captured)} /graphql calls, {len(uniq)} unique ops:",
+            flush=True,
+        )
         for c in uniq:
-            print(f"  {c['operationName']:<28} id={c['operationId']}  "
-                  f"sig={c['has_apollo_signature']} cfp={c['has_wf_cfp']}", flush=True)
+            print(
+                f"  {c['operationName']:<28} id={c['operationId']}  "
+                f"sig={c['has_apollo_signature']} cfp={c['has_wf_cfp']}",
+                flush=True,
+            )
         print(f"\nfull detail -> {OPS_OUT}", flush=True)
     return 0
 

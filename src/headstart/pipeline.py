@@ -55,7 +55,9 @@ class JobWriter:
     re-emit — dedup by ``id`` downstream).
     """
 
-    def __init__(self, jobs_dir: str | Path, atses: set[str], resume: bool = False) -> None:
+    def __init__(
+        self, jobs_dir: str | Path, atses: set[str], resume: bool = False
+    ) -> None:
         self._dir = Path(jobs_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._done_path = self._dir / ".done"
@@ -70,7 +72,8 @@ class JobWriter:
         # Open one handle per ATS up front so even an ATS that yields zero jobs this run leaves
         # an empty file (fresh) rather than a stale one. Append on resume, truncate on a fresh run.
         self._handles: dict[str, Any] = {
-            ats: (self._dir / f"{ats}.jsonl").open(mode, encoding="utf-8") for ats in atses
+            ats: (self._dir / f"{ats}.jsonl").open(mode, encoding="utf-8")
+            for ats in atses
         }
         self._done_handle = self._done_path.open(mode, encoding="utf-8")
 
@@ -78,9 +81,12 @@ class JobWriter:
         touched = set()
         for job in jobs:
             handle = self._handles.get(job.ats)
-            if handle is None:  # an ats not in the company list — open it lazily, just in case
+            if (
+                handle is None
+            ):  # an ats not in the company list — open it lazily, just in case
                 handle = self._handles[job.ats] = (self._dir / f"{job.ats}.jsonl").open(
-                    "a", encoding="utf-8")
+                    "a", encoding="utf-8"
+                )
             handle.write(json.dumps(job.to_dict(), ensure_ascii=False) + "\n")
             touched.add(handle)
         for handle in touched:
@@ -97,13 +103,16 @@ class JobWriter:
         self._done_handle.close()
 
 
-def _emit_progress(done: int, total: int, unique: int, errors: int, start: float) -> None:
+def _emit_progress(
+    done: int, total: int, unique: int, errors: int, start: float
+) -> None:
     elapsed = time.monotonic() - start
     rate = done / elapsed if elapsed else 0.0
     print(
         f"[scrape] {done}/{total} boards | {unique} jobs | {errors} errors | "
         f"{elapsed:0.0f}s | {rate:0.1f} boards/s",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
 
@@ -157,7 +166,9 @@ def scrape_all(
                     fresh = [j for j in jobs if j.id not in seen_ids]
                     seen_ids.update(j.id for j in fresh)
                     writer.write(fresh)
-                writer.mark_done(key)  # mark on completion (success or error): resume moves on
+                writer.mark_done(
+                    key
+                )  # mark on completion (success or error): resume moves on
                 if progress_every and done % progress_every == 0:
                     _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:

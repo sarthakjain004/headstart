@@ -41,7 +41,9 @@ _MODEL = "nomic-ai/nomic-embed-text-v1.5"
 _DOC_PREFIX = "search_document: "  # ADR-0005: documents get this prefix at index time
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
-_MD_SYNTAX = re.compile(r"[*`#>]+")              # emphasis / heading / quote markers (keep `_`: tech terms)
+_MD_SYNTAX = re.compile(
+    r"[*`#>]+"
+)  # emphasis / heading / quote markers (keep `_`: tech terms)
 _WS = re.compile(r"\s+")
 
 _FLOAT_BYTES = 4  # float32
@@ -78,6 +80,7 @@ def to_meta(row: dict) -> dict:
     real types here; the messy ``experience`` / ``salary`` stay raw strings — the extraction
     component normalizes those to numbers later (B1 stops at deterministic typing).
     """
+
     def text(key: str) -> str | None:
         return (row.get(key) or "").strip() or None
 
@@ -88,10 +91,18 @@ def to_meta(row: dict) -> dict:
         "company": text("company"),
         "title": text("title"),
         "location": text("location"),
-        "remote": {"true": True, "false": False}.get(remote),  # canonical bool; None if blank/unknown
-        "employment_type": text("job_type"),     # Wellfound job_type -> Job employment_type
-        "experience": text("years_experience"),  # -> Job experience (raw "N+"; enriched to a number later)
-        "salary": text("compensation"),          # -> Job salary (raw range, carries its symbol; parsed later)
+        "remote": {"true": True, "false": False}.get(
+            remote
+        ),  # canonical bool; None if blank/unknown
+        "employment_type": text(
+            "job_type"
+        ),  # Wellfound job_type -> Job employment_type
+        "experience": text(
+            "years_experience"
+        ),  # -> Job experience (raw "N+"; enriched to a number later)
+        "salary": text(
+            "compensation"
+        ),  # -> Job salary (raw range, carries its symbol; parsed later)
         "department": text("department"),
         "url": text("url"),
         "posted_at": text("posted_at"),
@@ -162,18 +173,27 @@ class EmbeddingStore:
         self._mf.close()
         count = sum(1 for _ in self._meta_path.open(encoding="utf-8"))
         (self._dir / "manifest.json").write_text(
-            json.dumps({**manifest, "count": count}, indent=2), encoding="utf-8")
+            json.dumps({**manifest, "count": count}, indent=2), encoding="utf-8"
+        )
         return count
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--limit", type=int, default=0, help="embed only the first N new English rows (0 = all)")
+    ap.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="embed only the first N new English rows (0 = all)",
+    )
     # Attention memory scales with batch x seq^2; with descriptions up to ~4,800 tokens a large
     # batch makes a multi-GB attention tensor per layer and thrashes. 8 keeps peak ~9 GB.
     ap.add_argument("--batch-size", type=int, default=8)
-    ap.add_argument("--resume", action="store_true",
-                    help="skip Jobs already in meta.jsonl and append new ones (default: rebuild from scratch)")
+    ap.add_argument(
+        "--resume",
+        action="store_true",
+        help="skip Jobs already in meta.jsonl and append new ones (default: rebuild from scratch)",
+    )
     args = ap.parse_args()
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -185,7 +205,11 @@ def main() -> None:
 
     store = EmbeddingStore(_OUTDIR, dim, resume=args.resume)
     if store.done:
-        print(f"resume: {len(store.done)} Jobs already embedded — will skip those", file=sys.stderr, flush=True)
+        print(
+            f"resume: {len(store.done)} Jobs already embedded — will skip those",
+            file=sys.stderr,
+            flush=True,
+        )
 
     # Steps 1-4: select rows, skip already-done ids (A2), English-gate, build doc text + metadata.
     docs: list[str] = []
@@ -204,17 +228,30 @@ def main() -> None:
             metas.append(to_meta(row))
             if args.limit and len(docs) >= args.limit:
                 break
-    print(f"to embed: {len(docs)} (scanned {scanned}, already-done {already}, non-English {dropped})",
-          file=sys.stderr, flush=True)
+    print(
+        f"to embed: {len(docs)} (scanned {scanned}, already-done {already}, non-English {dropped})",
+        file=sys.stderr,
+        flush=True,
+    )
 
     manifest = {
-        "model": _MODEL, "dim": int(dim), "doc_prefix": _DOC_PREFIX, "normalized": True,
-        "device": device, "compute_dtype": "float16" if device == "mps" else "float32",
-        "source": _INPUT.name, "vectors_file": "embeddings.f32", "dtype": "float32",
+        "model": _MODEL,
+        "dim": int(dim),
+        "doc_prefix": _DOC_PREFIX,
+        "normalized": True,
+        "device": device,
+        "compute_dtype": "float16" if device == "mps" else "float32",
+        "source": _INPUT.name,
+        "vectors_file": "embeddings.f32",
+        "dtype": "float32",
     }
     if not docs:
         count = store.close(manifest)
-        print(f"nothing new to embed — store holds {count} vectors.", file=sys.stderr, flush=True)
+        print(
+            f"nothing new to embed — store holds {count} vectors.",
+            file=sys.stderr,
+            flush=True,
+        )
         return
 
     # Sort longest-first so each batch pads to a similar length (less wasted memory/compute) and
@@ -229,26 +266,40 @@ def main() -> None:
     done = failed = 0
     start = time.monotonic()
     for i in range(0, total, args.batch_size):
-        batch_docs = docs[i:i + args.batch_size]
-        batch_metas = metas[i:i + args.batch_size]
+        batch_docs = docs[i : i + args.batch_size]
+        batch_metas = metas[i : i + args.batch_size]
         try:
-            vectors = model.encode(batch_docs, normalize_embeddings=True,
-                                   batch_size=args.batch_size, show_progress_bar=False)
+            vectors = model.encode(
+                batch_docs,
+                normalize_embeddings=True,
+                batch_size=args.batch_size,
+                show_progress_bar=False,
+            )
         except Exception as exc:  # noqa: BLE001 - isolate the batch; its ids retry on the next --resume
             failed += len(batch_docs)
             bad = [m["id"] for m in batch_metas]
-            print(f"[embed] batch FAILED ({type(exc).__name__}: {exc}) — skipped {len(bad)} "
-                  f"(e.g. {bad[:2]}); retry with --resume", file=sys.stderr, flush=True)
+            print(
+                f"[embed] batch FAILED ({type(exc).__name__}: {exc}) — skipped {len(bad)} "
+                f"(e.g. {bad[:2]}); retry with --resume",
+                file=sys.stderr,
+                flush=True,
+            )
             continue
         store.add(vectors, batch_metas)
         done += len(batch_docs)
         rate = done / (time.monotonic() - start)
         msg = f"[embed] {done}/{total} | {rate:0.0f} jobs/s"
-        print(msg + (f" | {failed} failed" if failed else ""), file=sys.stderr, flush=True)
+        print(
+            msg + (f" | {failed} failed" if failed else ""), file=sys.stderr, flush=True
+        )
 
     count = store.close(manifest)
-    print(f"done: embedded {done} this run ({failed} failed) — store now holds {count} vectors "
-          f"of dim {dim} -> {_OUTDIR}", file=sys.stderr, flush=True)
+    print(
+        f"done: embedded {done} this run ({failed} failed) — store now holds {count} vectors "
+        f"of dim {dim} -> {_OUTDIR}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

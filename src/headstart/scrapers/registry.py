@@ -24,11 +24,26 @@ from headstart.scrapers.zoho import ZohoScraper
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.ats: cls
-    for cls in (GreenhouseScraper, LeverScraper, AshbyScraper, ZohoScraper, WorkdayScraper,
-                WorkableScraper, SmartRecruitersScraper, RecruiteeScraper, OracleScraper,
-                SenseHQScraper, KekaScraper, TrakstarScraper, RippleHireScraper,
-                DarwinboxScraper, TeamtailorScraper, PersonioScraper, JoinScraper,
-                RipplingScraper)
+    for cls in (
+        GreenhouseScraper,
+        LeverScraper,
+        AshbyScraper,
+        ZohoScraper,
+        WorkdayScraper,
+        WorkableScraper,
+        SmartRecruitersScraper,
+        RecruiteeScraper,
+        OracleScraper,
+        SenseHQScraper,
+        KekaScraper,
+        TrakstarScraper,
+        RippleHireScraper,
+        DarwinboxScraper,
+        TeamtailorScraper,
+        PersonioScraper,
+        JoinScraper,
+        RipplingScraper,
+    )
 }
 
 

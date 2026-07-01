@@ -22,6 +22,7 @@ Run:   python scripts/validate/check_liveness.py --dir data/ats-tenants-merged
        python scripts/validate/check_liveness.py --dir data/ats-tenants-merged zoho workday
        python scripts/validate/check_liveness.py --dir data/ats-tenants-merged --limit 20  # smoke
 """
+
 import csv
 import json
 import os
@@ -39,8 +40,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from headstart import http  # noqa: E402 - needs src on sys.path first
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
-TIMEOUT = 12              # reassigned per pass by the runner
-_DNS_ERR = 6             # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
+TIMEOUT = 12  # reassigned per pass by the runner
+_DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
 # each pass: (timeout_seconds, workers). Later passes are slower but more patient so a board
 # that was merely congested gets a fair chance before we give up on it. Pass-1 workers scale
 # with the machine: the work is I/O-bound and curl_cffi releases the GIL on each request, so we
@@ -82,7 +83,9 @@ def _post(url, json_body, headers):
     """POST JSON via the reliable-fetch seam. Returns (status, parsed_json|None); status is the
     code, "dns", or None."""
     try:
-        r = http.fetch("POST", url, json=json_body, headers=headers, timeout=TIMEOUT, verify=False)
+        r = http.fetch(
+            "POST", url, json=json_body, headers=headers, timeout=TIMEOUT, verify=False
+        )
     except http.RequestsError as e:
         return ("dns", None) if _is_dns(e) else (None, None)
     if r.status_code == 200:
@@ -126,9 +129,12 @@ def _classify(url, count):
 
 # --- per-ATS probes: return (verdict, jobs) ---
 
+
 def p_greenhouse(t, u):
-    return _classify(f"https://boards-api.greenhouse.io/v1/boards/{t}/jobs",
-                     lambda b: _len_of(b, "jobs"))
+    return _classify(
+        f"https://boards-api.greenhouse.io/v1/boards/{t}/jobs",
+        lambda b: _len_of(b, "jobs"),
+    )
 
 
 def p_lever(t, u):
@@ -137,21 +143,28 @@ def p_lever(t, u):
 
 
 def p_ashby(t, u):
-    return _classify(f"https://api.ashbyhq.com/posting-api/job-board/{t}",
-                     lambda b: _len_of(b, "jobs"))
+    return _classify(
+        f"https://api.ashbyhq.com/posting-api/job-board/{t}",
+        lambda b: _len_of(b, "jobs"),
+    )
 
 
 def p_recruitee(t, u):
-    return _classify(f"https://{t}.recruitee.com/api/offers/", lambda b: _len_of(b, "offers"))
+    return _classify(
+        f"https://{t}.recruitee.com/api/offers/", lambda b: _len_of(b, "offers")
+    )
 
 
 def p_workable(t, u):
-    return _classify(f"https://apply.workable.com/api/v1/widget/accounts/{t}",
-                     lambda b: _len_of(b, "jobs"))
+    return _classify(
+        f"https://apply.workable.com/api/v1/widget/accounts/{t}",
+        lambda b: _len_of(b, "jobs"),
+    )
 
 
 def _zoho_count(body):
     import html as _html
+
     m = _ZOHO_JOBS.search(body.decode("utf-8", "replace"))
     if not m:
         return None  # 200 but no jobs <input> -> odd/transient, re-probe
@@ -184,31 +197,59 @@ def p_workday(t, u):
         return DEAD, None  # not a Workday URL -> can't be a board
     co, inst, site = m.groups()
     api = f"https://{co}.{inst}.myworkdayjobs.com/wday/cxs/{co}/{site}/jobs"
-    status, data = _post(api, {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
-                         {"User-Agent": UA, "Content-Type": "application/json",
-                          "Accept": "application/json"})
-    return _verdict(status, int(data.get("total", 0)) if status == 200 and data else None)
+    status, data = _post(
+        api,
+        {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
+        {
+            "User-Agent": UA,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    return _verdict(
+        status, int(data.get("total", 0)) if status == 200 and data else None
+    )
 
 
 def p_ripplehire(t, u):
     headers = {"User-Agent": UA}
     try:
-        r = http.fetch("GET", f"https://{t}.ripplehire.com/candidate/careers",
-                       headers=headers, timeout=TIMEOUT, verify=False)
+        r = http.fetch(
+            "GET",
+            f"https://{t}.ripplehire.com/candidate/careers",
+            headers=headers,
+            timeout=TIMEOUT,
+            verify=False,
+        )
     except http.RequestsError as e:
         return (DEAD, None) if _is_dns(e) else (UNKNOWN, None)
     m = _TOKEN.search(r.url)
     if not m:
         return UNKNOWN, None
-    params = json.dumps({"page": 0, "search": "*:*", "token": m.group(1),
-                         "source": "CAREERSITE", "pagesize": 1})
+    params = json.dumps(
+        {
+            "page": 0,
+            "search": "*:*",
+            "token": m.group(1),
+            "source": "CAREERSITE",
+            "pagesize": 1,
+        }
+    )
     data = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
     try:
-        r2 = http.fetch("POST", f"https://{t}.ripplehire.com/candidate/candidatejobsearch", data=data,
-                        headers={"User-Agent": UA, "Accept": "application/json",
-                                 "X-Requested-With": "XMLHttpRequest",
-                                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
-                        timeout=TIMEOUT, verify=False)
+        r2 = http.fetch(
+            "POST",
+            f"https://{t}.ripplehire.com/candidate/candidatejobsearch",
+            data=data,
+            headers={
+                "User-Agent": UA,
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            },
+            timeout=TIMEOUT,
+            verify=False,
+        )
     except http.RequestsError:
         return UNKNOWN, None
     if r2.status_code != 200:
@@ -225,10 +266,19 @@ def p_darwinbox(t, u):
     for tld in (host_tld, *[x for x in ("in", "com") if x != host_tld]):
         api = f"https://{t}.darwinbox.{tld}/ms/candidateapi/job/alljobs?companyId=main"
         try:
-            r = http.fetch("POST", api, json={"companyId": "main", "page": 1,
-                                              "sort_option": "new", "limit": 100},
-                           headers={"Accept": "application/json", "User-Agent": UA},
-                           timeout=TIMEOUT, verify=False)
+            r = http.fetch(
+                "POST",
+                api,
+                json={
+                    "companyId": "main",
+                    "page": 1,
+                    "sort_option": "new",
+                    "limit": 100,
+                },
+                headers={"Accept": "application/json", "User-Agent": UA},
+                timeout=TIMEOUT,
+                verify=False,
+            )
         except http.RequestsError as e:
             if _is_dns(e):
                 dns_fails += 1
@@ -250,16 +300,23 @@ def p_smartrecruiters(t, u):
             return None
         tf = d.get("totalFound")
         return tf if isinstance(tf, int) else len(d.get("content") or [])
-    return _classify(f"https://api.smartrecruiters.com/v1/companies/{t}/postings?limit=10", count)
+
+    return _classify(
+        f"https://api.smartrecruiters.com/v1/companies/{t}/postings?limit=10", count
+    )
 
 
 def p_teamtailor(t, u):
-    return _classify(f"https://{t}.teamtailor.com/jobs.json", lambda b: _len_of(b, "items"))
+    return _classify(
+        f"https://{t}.teamtailor.com/jobs.json", lambda b: _len_of(b, "items")
+    )
 
 
 def p_rippling(t, u):
-    return _classify(f"https://api.rippling.com/platform/api/ats/v1/board/{t}/jobs",
-                     lambda b: _len_of(b, "items", "jobs"))
+    return _classify(
+        f"https://api.rippling.com/platform/api/ats/v1/board/{t}/jobs",
+        lambda b: _len_of(b, "items", "jobs"),
+    )
 
 
 def p_trakstar(t, u):
@@ -300,15 +357,29 @@ def p_join(t, u):
         return UNKNOWN, None
     return _classify(
         f"https://join.com/api/public/companies/{cid}/jobs?locale=en&page=1&pageSize=1",
-        lambda b: (lambda d: (d.get("pagination") or {}).get("rowCount"))(json.loads(b)))
+        lambda b: (lambda d: (d.get("pagination") or {}).get("rowCount"))(
+            json.loads(b)
+        ),
+    )
 
 
 PROBES = {
-    "greenhouse": p_greenhouse, "lever": p_lever, "ashby": p_ashby, "recruitee": p_recruitee,
-    "workable": p_workable, "zoho": p_zoho, "workday": p_workday, "keka": p_keka,
-    "ripplehire": p_ripplehire, "darwinbox": p_darwinbox,
-    "smartrecruiters": p_smartrecruiters, "teamtailor": p_teamtailor, "rippling": p_rippling,
-    "trakstar": p_trakstar, "personio": p_personio, "join": p_join,
+    "greenhouse": p_greenhouse,
+    "lever": p_lever,
+    "ashby": p_ashby,
+    "recruitee": p_recruitee,
+    "workable": p_workable,
+    "zoho": p_zoho,
+    "workday": p_workday,
+    "keka": p_keka,
+    "ripplehire": p_ripplehire,
+    "darwinbox": p_darwinbox,
+    "smartrecruiters": p_smartrecruiters,
+    "teamtailor": p_teamtailor,
+    "rippling": p_rippling,
+    "trakstar": p_trakstar,
+    "personio": p_personio,
+    "join": p_join,
 }
 
 
@@ -320,19 +391,22 @@ def main():
     i = 0
     while i < len(args):
         if args[i] == "--dir":
-            indir = Path(args[i + 1]); i += 2
+            indir = Path(args[i + 1])
+            i += 2
         elif args[i] == "--limit":
-            limit = int(args[i + 1]); i += 2
+            limit = int(args[i + 1])
+            i += 2
         else:
-            rest.append(args[i]); i += 1
+            rest.append(args[i])
+            i += 1
     filt = set(rest)
     outdir = indir / "active"
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Load each ATS, skip already-settled tenants (live in active.csv OR confirmed dead), and
     # open append handles. Build one interleaved work list across all ATSes.
-    buckets = {}                    # ats -> [(ats, tenant, url), ...]
-    files = {}                      # ats -> (active_writer, active_fh, dead_fh)
+    buckets = {}  # ats -> [(ats, tenant, url), ...]
+    files = {}  # ats -> (active_writer, active_fh, dead_fh)
     for csvf in sorted(indir.glob("*.csv")):
         ats = csvf.stem
         if ats not in PROBES or (filt and ats not in filt):
@@ -340,10 +414,16 @@ def main():
         rows = list(csv.DictReader(csvf.open(encoding="utf-8")))
         active_csv = outdir / f"{ats}.csv"
         dead_file = outdir / f".{ats}_dead"
-        live_set = ({r["tenant"] for r in csv.DictReader(active_csv.open(encoding="utf-8"))}
-                    if active_csv.exists() else set())
-        dead_set = (set(dead_file.read_text(encoding="utf-8").split("\n")) - {""}
-                    if dead_file.exists() else set())
+        live_set = (
+            {r["tenant"] for r in csv.DictReader(active_csv.open(encoding="utf-8"))}
+            if active_csv.exists()
+            else set()
+        )
+        dead_set = (
+            set(dead_file.read_text(encoding="utf-8").split("\n")) - {""}
+            if dead_file.exists()
+            else set()
+        )
         settled = live_set | dead_set
         todo = [r for r in rows if r["tenant"] not in settled]
         if limit:
@@ -354,7 +434,8 @@ def main():
         afh = active_csv.open("a", newline="", encoding="utf-8")
         aw = csv.writer(afh)
         if fresh:
-            aw.writerow(["ats", "tenant", "url", "jobs"]); afh.flush()
+            aw.writerow(["ats", "tenant", "url", "jobs"])
+            afh.flush()
         files[ats] = (aw, afh, dead_file.open("a", encoding="utf-8"))
         buckets[ats] = [(ats, r["tenant"], r["url"]) for r in todo]
 
@@ -382,9 +463,13 @@ def main():
             with lock:
                 aw, afh, dfh = files[ats]
                 if verdict == LIVE:
-                    aw.writerow([ats, tenant, url, jobs]); afh.flush(); live_n[ats] += 1
+                    aw.writerow([ats, tenant, url, jobs])
+                    afh.flush()
+                    live_n[ats] += 1
                 else:
-                    dfh.write(tenant + "\n"); dfh.flush(); dead_n[ats] += 1
+                    dfh.write(tenant + "\n")
+                    dfh.flush()
+                    dead_n[ats] += 1
 
         with ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(do, work))
@@ -393,9 +478,13 @@ def main():
     for n, (timeout, workers) in enumerate(PASSES, 1):
         if not items:
             break
-        print(f"pass {n}: {len(items)} to probe (timeout={timeout}s, workers={workers})", flush=True)
+        print(
+            f"pass {n}: {len(items)} to probe (timeout={timeout}s, workers={workers})",
+            flush=True,
+        )
         items = run_pass(items, timeout, workers)
-        live = sum(live_n.values()); dead = sum(dead_n.values())
+        live = sum(live_n.values())
+        dead = sum(dead_n.values())
         print(f"  -> live {live}, dead {dead}, still unknown {len(items)}", flush=True)
 
     if items:  # never silently dropped — surfaced for a human to decide
@@ -403,10 +492,14 @@ def main():
             w = csv.writer(f)
             w.writerow(["ats", "tenant", "url"])
             w.writerows(items)
-        print(f"UNRESOLVED after {len(PASSES)} passes: {len(items)} -> active/unresolved.csv", flush=True)
+        print(
+            f"UNRESOLVED after {len(PASSES)} passes: {len(items)} -> active/unresolved.csv",
+            flush=True,
+        )
 
     for _, afh, dfh in files.values():
-        afh.close(); dfh.close()
+        afh.close()
+        dfh.close()
     for ats in sorted(files):
         print(f"{ats}: live {live_n[ats]}, dead {dead_n[ats]}", flush=True)
 

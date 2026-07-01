@@ -24,7 +24,9 @@ def load_companies(path: str | Path) -> list[CompanyRef]:
     ]
 
 
-def load_active_companies(active_dir: str | Path, min_jobs: int = 1) -> list[CompanyRef]:
+def load_active_companies(
+    active_dir: str | Path, min_jobs: int = 1
+) -> list[CompanyRef]:
     """Build the scrape list from the liveness-validated active lists.
 
     Reads every ``{active_dir}/{ats}.csv`` (ats,tenant,url,jobs) and keeps boards with
@@ -49,9 +51,11 @@ def load_active_companies(active_dir: str | Path, min_jobs: int = 1) -> list[Com
                     jobs = 0
                 if jobs < min_jobs:
                     continue
-                companies.append(CompanyRef(
-                    ats=scraper.ats,
-                    slug=scraper.slug_from(row["tenant"], row["url"]),
-                    name=row["tenant"],
-                ))
+                companies.append(
+                    CompanyRef(
+                        ats=scraper.ats,
+                        slug=scraper.slug_from(row["tenant"], row["url"]),
+                        name=row["tenant"],
+                    )
+                )
     return companies

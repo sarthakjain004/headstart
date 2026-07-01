@@ -32,7 +32,9 @@ def _location(item: dict) -> str | None:
 def _description(detail: dict) -> str | None:
     d = detail.get("description")
     if isinstance(d, dict):
-        return d.get("role") or d.get("company")  # `role` is the posting; `company` is the blurb
+        return d.get("role") or d.get(
+            "company"
+        )  # `role` is the posting; `company` is the blurb
     return d if isinstance(d, str) else None
 
 
@@ -44,15 +46,25 @@ class RipplingScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         resp = http.fetch(
-            "GET", self.url(), headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=30
+            "GET",
+            self.url(),
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+            timeout=30,
         )
         if resp.status_code != 200:
             return []
         data = resp.json()
-        items = data if isinstance(data, list) else (data.get("items") or data.get("jobs") or [])
+        items = (
+            data
+            if isinstance(data, list)
+            else (data.get("items") or data.get("jobs") or [])
+        )
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
         details = self.fan_out(
-            items, lambda it: self._detail(it.get("uuid")), workers=_DETAIL_WORKERS, default={}
+            items,
+            lambda it: self._detail(it.get("uuid")),
+            workers=_DETAIL_WORKERS,
+            default={},
         )
         for item, detail in zip(items, details):
             item["_detail"] = detail
@@ -63,8 +75,10 @@ class RipplingScraper(BaseScraper):
             return {}
         try:
             resp = http.fetch(
-                "GET", f"{_API}/{self.slug}/jobs/{uuid}",
-                headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=30,
+                "GET",
+                f"{_API}/{self.slug}/jobs/{uuid}",
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
             )
         except http.RequestsError:
             return {}
@@ -87,7 +101,8 @@ class RipplingScraper(BaseScraper):
                     location=location,
                     remote=is_remote(location),
                     department=dept,
-                    url=it.get("url") or f"https://ats.rippling.com/{self.slug}/jobs/{it['uuid']}",
+                    url=it.get("url")
+                    or f"https://ats.rippling.com/{self.slug}/jobs/{it['uuid']}",
                     posted_at=detail.get("createdOn"),
                     scraped_at=scraped_at,
                     description=html_to_text(_description(detail)),

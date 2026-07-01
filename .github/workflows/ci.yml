@@ -1,0 +1,37 @@
+name: ci
+
+# PR quality gate: lint, format-check, and tests. Cheap checks first so a
+# failure surfaces fast. Mark the `quality` job as a required status check in a
+# branch ruleset on `main` to actually block merges on red.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read              # least-privilege default token
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true    # drop superseded runs on rapid pushes
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10        # default is 360; cap it
+    steps:
+      # Actions pinned to full commit SHAs (tags are mutable — cf. tj-actions
+      # CVE-2025-30066). Dependabot keeps the SHAs current via the comments.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Format check (ruff)
+        run: ruff format --check .
+      - name: Tests (pytest)
+        run: pytest

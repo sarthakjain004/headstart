@@ -74,7 +74,8 @@ class PersonioScraper(BaseScraper):
                     posted_at=_text(pos, "createdAt"),
                     scraped_at=scraped_at,
                     description=_description(pos),
-                    experience=_text(pos, "seniority") or _text(pos, "yearsOfExperience"),
+                    experience=_text(pos, "seniority")
+                    or _text(pos, "yearsOfExperience"),
                     employment_type=" / ".join(x for x in (etype, sched) if x) or None,
                     salary=_text(pos, "salaryInformation"),
                 )

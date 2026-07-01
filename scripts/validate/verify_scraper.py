@@ -10,6 +10,7 @@ scraper on each concurrently, streams per-company results, and reports: reachabl
 The pool is candidate-grade (NOT liveness-validated), so many tenants will be dead — that's
 expected. What we check: every *live* board parses cleanly and descriptions are populated.
 """
+
 from __future__ import annotations
 
 import csv
@@ -52,7 +53,10 @@ def main() -> int:
     ats = sys.argv[1]
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 100
     pool = load_pool(ats, n)
-    print(f"verifying {ats} on {len(pool)} pool companies (workers={WORKERS}) ...\n", flush=True)
+    print(
+        f"verifying {ats} on {len(pool)} pool companies (workers={WORKERS}) ...\n",
+        flush=True,
+    )
 
     reachable = with_jobs = total_jobs = total_desc = errors = 0
     samples = []
@@ -65,7 +69,10 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001 - dead board / timeout / parse fail
                 errors += 1
                 if errors <= 8:
-                    print(f"  x {company:<26} {type(exc).__name__}: {str(exc)[:55]}", flush=True)
+                    print(
+                        f"  x {company:<26} {type(exc).__name__}: {str(exc)[:55]}",
+                        flush=True,
+                    )
                 continue
             reachable += 1
             total_jobs += njobs
@@ -74,13 +81,19 @@ def main() -> int:
                 with_jobs += 1
                 if len(samples) < 2 and sample and sample[0].description:
                     samples.append(sample[0])
-                print(f"  + {company:<26} {njobs:>4} jobs  {ndesc:>4} w/desc", flush=True)
+                print(
+                    f"  + {company:<26} {njobs:>4} jobs  {ndesc:>4} w/desc", flush=True
+                )
 
     pct = 100 * total_desc // max(total_jobs, 1)
-    print(f"\n=== {ats}: {len(pool)} tried | {reachable} reachable | {with_jobs} returned jobs "
-          f"| {total_jobs} jobs | {total_desc} w/desc ({pct}%) | {errors} dead/error ===")
+    print(
+        f"\n=== {ats}: {len(pool)} tried | {reachable} reachable | {with_jobs} returned jobs "
+        f"| {total_jobs} jobs | {total_desc} w/desc ({pct}%) | {errors} dead/error ==="
+    )
     for s in samples:
-        print(f"\n  sample: {s.title}  @ {s.company}  [{s.location}]  remote={s.remote}")
+        print(
+            f"\n  sample: {s.title}  @ {s.company}  [{s.location}]  remote={s.remote}"
+        )
         print(f"    url:  {s.url}")
         print(f"    dept: {s.department}   type: {s.employment_type}")
         print(f"    desc: {(s.description or '')[:170]}...")

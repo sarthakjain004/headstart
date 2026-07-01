@@ -45,10 +45,18 @@ class KekaScraper(BaseScraper):
         jobs: list[Job] = []
         for j in raw:
             loc = (j.get("jobLocations") or [{}])[0]
-            location = ", ".join(
-                x for x in (loc.get("city") or loc.get("name"),
-                            loc.get("state"), loc.get("countryName")) if x
-            ) or None
+            location = (
+                ", ".join(
+                    x
+                    for x in (
+                        loc.get("city") or loc.get("name"),
+                        loc.get("state"),
+                        loc.get("countryName"),
+                    )
+                    if x
+                )
+                or None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{j['id']}",
