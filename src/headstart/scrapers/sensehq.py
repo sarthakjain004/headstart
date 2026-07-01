@@ -30,7 +30,7 @@ class SenseHQScraper(BaseScraper):
         rows: list[dict] = []
         self._page = 0
         while True:
-            data = (json.loads(self._get()).get("data") or {})
+            data = json.loads(self._get()).get("data") or {}
             batch = data.get("rows", [])
             rows.extend(batch)
             self._page += 1
@@ -47,9 +47,11 @@ class SenseHQScraper(BaseScraper):
                     r["created_on"] / 1000, tz=timezone.utc
                 ).isoformat()
             location = r.get("location")
-            workplace = (r.get("workplace_type") or "")
+            workplace = r.get("workplace_type") or ""
             start, end = r.get("experience_start"), r.get("experience_end")
-            experience = f"{start}-{end}" if start is not None and end is not None else None
+            experience = (
+                f"{start}-{end}" if start is not None and end is not None else None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{r['id']}",

@@ -91,7 +91,9 @@ class WorkdayScraper(BaseScraper):
             )
         return match.group("company"), match.group("instance"), match.group("site")
 
-    def _post(self, applied_facets: dict[str, list[str]], offset: int) -> dict[str, Any] | None:
+    def _post(
+        self, applied_facets: dict[str, list[str]], offset: int
+    ) -> dict[str, Any] | None:
         """POST one page of the jobs query (retry lives in fetch). Returns the JSON dict, or
         None on 404 (site gone)."""
         body = {
@@ -100,9 +102,14 @@ class WorkdayScraper(BaseScraper):
             "offset": offset,
             "searchText": "",
         }
-        headers = {"User-Agent": _USER_AGENT, "Content-Type": "application/json",
-                   "Accept": "application/json"}
-        response = http.fetch("POST", self.url(), json=body, headers=headers, timeout=30)
+        headers = {
+            "User-Agent": _USER_AGENT,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        response = http.fetch(
+            "POST", self.url(), json=body, headers=headers, timeout=30
+        )
         if response.status_code == 404:
             return None  # site not found — treat as no jobs
         response.raise_for_status()
@@ -126,7 +133,8 @@ class WorkdayScraper(BaseScraper):
         # Second pass: fill each posting's description concurrently (bounded); a failed detail
         # fetch leaves ``_jobDescription`` None so the job is still kept.
         descriptions = self.fan_out(
-            postings, lambda item: self._job_description(item.get("externalPath")),
+            postings,
+            lambda item: self._job_description(item.get("externalPath")),
             workers=_DETAIL_WORKERS,
         )
         for item, description in zip(postings, descriptions):
@@ -138,11 +146,17 @@ class WorkdayScraper(BaseScraper):
         if not external_path:
             return None
         company, instance, site = self._parts()
-        url = (f"https://{company}.{instance}.myworkdayjobs.com"
-               f"/wday/cxs/{company}/{site}{external_path}")
+        url = (
+            f"https://{company}.{instance}.myworkdayjobs.com"
+            f"/wday/cxs/{company}/{site}{external_path}"
+        )
         try:
-            response = http.fetch("GET", url, timeout=30,
-                                  headers={"User-Agent": _USER_AGENT, "Accept": "application/json"})
+            response = http.fetch(
+                "GET",
+                url,
+                timeout=30,
+                headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            )
         except http.RequestsError:
             return None  # a missing description must not drop the job
         if response.status_code != 200:
@@ -167,7 +181,9 @@ class WorkdayScraper(BaseScraper):
             else None
         )
         if not capped or facet is None:
-            self._paginate(applied, total, absorb)  # not capped, or nothing left to split
+            self._paginate(
+                applied, total, absorb
+            )  # not capped, or nothing left to split
             return
 
         param, values = facet
@@ -182,7 +198,9 @@ class WorkdayScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, site = self._parts()
-        display = self.company if self.company and self.company != self.slug else company
+        display = (
+            self.company if self.company and self.company != self.slug else company
+        )
         base = self.slug.rstrip("/")
 
         jobs: list[Job] = []

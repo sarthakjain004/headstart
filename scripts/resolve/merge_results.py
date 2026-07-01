@@ -12,6 +12,7 @@ flags low-confidence hits for an eyeball: an enterprise name on an SMB-only Indi
   name,domain,ats,slug,source,flag
 Run:  python scripts/resolve/merge_results.py
 """
+
 import csv
 from pathlib import Path
 
@@ -21,11 +22,17 @@ VERIFY = ROOT / "data" / "resolve" / "verify_results.csv"
 OUT = ROOT / "data" / "resolve" / "coverage.csv"
 
 PROVIDER_DOMAINS = {
-    "greenhouse": {"greenhouse.io"}, "lever": {"lever.co"}, "ashby": {"ashbyhq.com"},
+    "greenhouse": {"greenhouse.io"},
+    "lever": {"lever.co"},
+    "ashby": {"ashbyhq.com"},
     "zoho": {"zohorecruit.com", "zohorecruit.eu", "zohorecruit.in", "zohorecruit.ca"},
-    "recruitee": {"recruitee.com"}, "workable": {"workable.com"},
-    "darwinbox": {"darwinbox.in", "darwinbox.com"}, "keka": {"keka.com"},
-    "qandle": {"qandle.com"}, "ripplehire": {"ripplehire.com"}, "turbohire": {"turbohire.co"},
+    "recruitee": {"recruitee.com"},
+    "workable": {"workable.com"},
+    "darwinbox": {"darwinbox.in", "darwinbox.com"},
+    "keka": {"keka.com"},
+    "qandle": {"qandle.com"},
+    "ripplehire": {"ripplehire.com"},
+    "turbohire": {"turbohire.co"},
 }
 # India SMB-only ATSes: a giant employer here is almost certainly a namesake, not the real firm.
 SMB_ONLY = {"zoho", "turbohire", "ripplehire", "qandle"}
@@ -36,8 +43,10 @@ SMB_ONLY = {"zoho", "turbohire", "ripplehire", "qandle"}
 #   ltimindtree ripplehire    -> empty login page, no public feed; 90k-employee firm
 #   fi.money lever:fi         -> "fi" board is a US firm (NYC roles), not the Indian Fi Money
 FALSE_POSITIVES = {
-    ("infosys.com", "zoho", "infosys"), ("gromo.in", "zoho", "gromo"),
-    ("upgrad.com", "zoho", "upgrad"), ("ltimindtree.com", "ripplehire", "ltimindtree"),
+    ("infosys.com", "zoho", "infosys"),
+    ("gromo.in", "zoho", "gromo"),
+    ("upgrad.com", "zoho", "upgrad"),
+    ("ltimindtree.com", "ripplehire", "ltimindtree"),
     ("fi.money", "lever", "fi"),
 }
 
@@ -89,8 +98,12 @@ def main():
         w.writerows(rows)
 
     companies_with_ats = len({r[1] for r in rows})
-    print(f"{companies_with_ats} companies with >=1 ATS board; {len(rows)} (ats,slug) rows")
-    print(f"  dropped {dropped_selfref} self-refs, {dropped_fp} known FPs; flagged {flagged}")
+    print(
+        f"{companies_with_ats} companies with >=1 ATS board; {len(rows)} (ats,slug) rows"
+    )
+    print(
+        f"  dropped {dropped_selfref} self-refs, {dropped_fp} known FPs; flagged {flagged}"
+    )
     print(f"-> {OUT.relative_to(ROOT)}")
 
 

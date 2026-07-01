@@ -12,6 +12,7 @@ numbers are recorded in data/wayback-ats/.{ats}_pages_done, so re-running skips 
 Usage:  python scripts/discover/wayback_pages.py [ats] [domain] [style] [workers]
         python scripts/discover/wayback_pages.py zoho zohorecruit.com sub
 """
+
 import csv
 import re
 import socket
@@ -30,9 +31,38 @@ UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
 CTX = ssl._create_unverified_context()
 socket.setdefaulttimeout(TIMEOUT)
 
-INFRA = {"www", "app", "apps", "blog", "support", "help", "api", "status", "smtp", "mail",
-         "email", "cdn", "assets", "static", "go", "info", "docs", "careers", "jobs", "admin",
-         "portal", "test", "staging", "dev", "demo", "about", "home", "login", "secure", "my"}
+INFRA = {
+    "www",
+    "app",
+    "apps",
+    "blog",
+    "support",
+    "help",
+    "api",
+    "status",
+    "smtp",
+    "mail",
+    "email",
+    "cdn",
+    "assets",
+    "static",
+    "go",
+    "info",
+    "docs",
+    "careers",
+    "jobs",
+    "admin",
+    "portal",
+    "test",
+    "staging",
+    "dev",
+    "demo",
+    "about",
+    "home",
+    "login",
+    "secure",
+    "my",
+}
 
 
 def valid(label):
@@ -76,7 +106,9 @@ def main():
     style = sys.argv[3] if len(sys.argv) > 3 else "sub"
     workers = int(sys.argv[4]) if len(sys.argv) > 4 else 10
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
-    base = cdx + "&fl=original&collapse=urlkey"   # page fetches; showNumPages needs the clean url
+    base = (
+        cdx + "&fl=original&collapse=urlkey"
+    )  # page fetches; showNumPages needs the clean url
 
     WB.mkdir(parents=True, exist_ok=True)
     out = WB / f"{ats}.csv"
@@ -99,8 +131,11 @@ def main():
     if state.exists():
         done = {int(x) for x in state.read_text().split() if x.strip().isdigit()}
     todo = [p for p in range(npages) if p not in done]
-    print(f"{ats}: {npages} pages, {len(done)} done, {len(todo)} to fetch, "
-          f"{len(seen)} tenants so far", flush=True)
+    print(
+        f"{ats}: {npages} pages, {len(done)} done, {len(todo)} to fetch, "
+        f"{len(seen)} tenants so far",
+        flush=True,
+    )
 
     lock = threading.Lock()
     f = out.open("a", newline="", encoding="utf-8")
@@ -119,7 +154,11 @@ def main():
                 t = extract(u, domain, style)
                 if t and t not in seen:
                     seen.add(t)
-                    url = f"https://{t}.{domain}" if style != "path" else f"https://{domain}/{t}"
+                    url = (
+                        f"https://{t}.{domain}"
+                        if style != "path"
+                        else f"https://{domain}/{t}"
+                    )
                     w.writerow([ats, t, url])
                     new += 1
             f.flush()
@@ -127,7 +166,10 @@ def main():
             sf.flush()
             counter["n"] += 1
             if counter["n"] % 25 == 0:
-                print(f"  {counter['n']}/{len(todo)} pages, {len(seen)} tenants", flush=True)
+                print(
+                    f"  {counter['n']}/{len(todo)} pages, {len(seen)} tenants",
+                    flush=True,
+                )
             return new
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -135,7 +177,10 @@ def main():
             fut.result()
     f.close()
     sf.close()
-    print(f"DONE: {len(seen)} unique {ats} tenants in data/wayback-ats/{ats}.csv", flush=True)
+    print(
+        f"DONE: {len(seen)} unique {ats} tenants in data/wayback-ats/{ats}.csv",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -32,9 +32,11 @@ class RecruiteeScraper(BaseScraper):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for o in raw.get("offers", []):
-            location = o.get("location") or ", ".join(
-                x for x in (o.get("city"), o.get("country")) if x
-            ) or None
+            location = (
+                o.get("location")
+                or ", ".join(x for x in (o.get("city"), o.get("country")) if x)
+                or None
+            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{o['id']}",

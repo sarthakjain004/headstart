@@ -19,7 +19,9 @@ from headstart.experience import extract
 _ROOT = Path(__file__).resolve().parents[2]
 _INPUT = _ROOT / "data" / "jobs" / "wellfound.csv"
 _OUT = _ROOT / "data" / "enrich" / "wellfound_experience.jsonl"
-_SNIPPET = re.compile(r".{0,18}\d{1,2}\s*\+?\s*years?.{0,28}", re.I)  # for eyeballing matches only
+_SNIPPET = re.compile(
+    r".{0,18}\d{1,2}\s*\+?\s*years?.{0,28}", re.I
+)  # for eyeballing matches only
 
 
 def main() -> None:
@@ -48,18 +50,37 @@ def main() -> None:
                     field_empty_recovered += 1
                 if len(samples) < 12:
                     snip = _SNIPPET.search(description)
-                    samples.append(f"{span.min_years}-{span.max_years}  «{(snip.group() if snip else '').strip()}»")
-            out.write(json.dumps({"id": row["id"], "min_years": span.min_years,
-                                  "max_years": span.max_years, "source": span.source}) + "\n")
+                    samples.append(
+                        f"{span.min_years}-{span.max_years}  «{(snip.group() if snip else '').strip()}»"
+                    )
+            out.write(
+                json.dumps(
+                    {
+                        "id": row["id"],
+                        "min_years": span.min_years,
+                        "max_years": span.max_years,
+                        "source": span.source,
+                    }
+                )
+                + "\n"
+            )
 
     n = len(rows)
     covered = sum(by_source.values())
     print(f"jobs: {n}")
-    print(f"got a number: {covered} ({100 * covered / n:.1f}%)  |  none: {n - covered} ({100 * (n - covered) / n:.1f}%)")
-    print(f"  field (Tier 1): {by_source['field']} ({100 * by_source['field'] / n:.1f}%)")
-    print(f"  regex (Tier 2): {by_source['regex']} ({100 * by_source['regex'] / n:.1f}%)")
-    print(f"  of {field_empty} field-empty jobs, regex recovered {field_empty_recovered} "
-          f"({100 * field_empty_recovered / max(field_empty, 1):.0f}%)")
+    print(
+        f"got a number: {covered} ({100 * covered / n:.1f}%)  |  none: {n - covered} ({100 * (n - covered) / n:.1f}%)"
+    )
+    print(
+        f"  field (Tier 1): {by_source['field']} ({100 * by_source['field'] / n:.1f}%)"
+    )
+    print(
+        f"  regex (Tier 2): {by_source['regex']} ({100 * by_source['regex'] / n:.1f}%)"
+    )
+    print(
+        f"  of {field_empty} field-empty jobs, regex recovered {field_empty_recovered} "
+        f"({100 * field_empty_recovered / max(field_empty, 1):.0f}%)"
+    )
     print(f"min_years distribution: {sorted(collections.Counter(mins).items())}")
     print("\nregex match samples (eyeball for false positives):")
     for s in samples:

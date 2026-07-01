@@ -35,24 +35,36 @@ class RippleHireScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         # step 1: the careers URL redirects to /candidate/?token=… — grab the token (the pooled
         # session follows the redirect and keeps the session cookie for the search call)
-        response = http.fetch("GET", self.url(), headers={"User-Agent": _UA}, timeout=30)
+        response = http.fetch(
+            "GET", self.url(), headers={"User-Agent": _UA}, timeout=30
+        )
         m = _TOKEN.search(response.url)
         if not m:
             return []
         token = m.group(1)
         api = f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
         headers = {
-            "User-Agent": _UA, "Accept": "application/json",
+            "User-Agent": _UA,
+            "Accept": "application/json",
             "X-Requested-With": "XMLHttpRequest",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         }
         jobs: list[dict] = []
         page = 0
         while page < 200:  # hard cap; loops break on the count below
-            params = json.dumps({"page": page, "search": "*:*", "token": token,
-                                 "source": "CAREERSITE", "pagesize": _PAGE_SIZE})
+            params = json.dumps(
+                {
+                    "page": page,
+                    "search": "*:*",
+                    "token": token,
+                    "source": "CAREERSITE",
+                    "pagesize": _PAGE_SIZE,
+                }
+            )
             body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
-            data = http.fetch("POST", api, data=body, headers=headers, timeout=30).json()
+            data = http.fetch(
+                "POST", api, data=body, headers=headers, timeout=30
+            ).json()
             batch = data.get("jobVoList") or []
             jobs.extend(batch)
             page += 1

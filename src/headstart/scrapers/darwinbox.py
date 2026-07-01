@@ -42,9 +42,19 @@ class DarwinboxScraper(BaseScraper):
     def _alljobs(self, host: str, page: int) -> list[dict]:
         """POST one page of the board (retry — incl. the Cloudflare 403 blip — lives in fetch)."""
         api = f"{host}/ms/candidateapi/job/alljobs?companyId=main"
-        body = {"companyId": "main", "page": page, "sort_option": "new", "limit": _PAGE_SIZE}
-        response = http.fetch("POST", api, json=body, timeout=30,
-                              headers={"User-Agent": _UA, "Accept": "application/json"})
+        body = {
+            "companyId": "main",
+            "page": page,
+            "sort_option": "new",
+            "limit": _PAGE_SIZE,
+        }
+        response = http.fetch(
+            "POST",
+            api,
+            json=body,
+            timeout=30,
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+        )
         response.raise_for_status()
         return response.json().get("data") or []
 

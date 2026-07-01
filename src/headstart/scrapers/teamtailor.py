@@ -21,7 +21,11 @@ def _location(jobposting: dict) -> str | None:
     if not isinstance(locs, list) or not locs:
         return None
     addr = (locs[0] or {}).get("address") or {}
-    parts = (addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry"))
+    parts = (
+        addr.get("addressLocality"),
+        addr.get("addressRegion"),
+        addr.get("addressCountry"),
+    )
     return ", ".join(p for p in parts if p) or None
 
 
@@ -41,7 +45,8 @@ class TeamtailorScraper(BaseScraper):
                 Job(
                     id=f"{self.ats}:{self.slug}:{it['id']}",
                     ats=self.ats,
-                    company=(jp.get("hiringOrganization") or {}).get("name") or feed_company,
+                    company=(jp.get("hiringOrganization") or {}).get("name")
+                    or feed_company,
                     title=(it.get("title") or "").strip(),
                     location=location,
                     remote=is_remote(location),

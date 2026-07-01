@@ -25,8 +25,10 @@ class OracleScraper(BaseScraper):
 
     def url(self) -> str:
         finder = f"findReqs;siteNumber={self.site}%2Climit=200%2Coffset=0"
-        return (f"https://{self.slug}/hcmRestApi/resources/latest/"
-                f"recruitingCEJobRequisitions?onlyData=true&expand=requisitionList&finder={finder}")
+        return (
+            f"https://{self.slug}/hcmRestApi/resources/latest/"
+            f"recruitingCEJobRequisitions?onlyData=true&expand=requisitionList&finder={finder}"
+        )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         items = raw.get("items") or []
@@ -34,7 +36,7 @@ class OracleScraper(BaseScraper):
         jobs: list[Job] = []
         for r in reqs:
             location = r.get("PrimaryLocation") or r.get("PrimaryLocationCountry")
-            workplace = (r.get("WorkplaceType") or r.get("WorkplaceTypeCode") or "")
+            workplace = r.get("WorkplaceType") or r.get("WorkplaceTypeCode") or ""
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{r['Id']}",
@@ -44,8 +46,10 @@ class OracleScraper(BaseScraper):
                     location=location,
                     remote="remote" in workplace.lower() or is_remote(location),
                     department=r.get("Department") or r.get("JobFunction"),
-                    url=(f"https://{self.slug}/hcmUI/CandidateExperience/en/sites/"
-                         f"{self.site}/job/{r['Id']}"),
+                    url=(
+                        f"https://{self.slug}/hcmUI/CandidateExperience/en/sites/"
+                        f"{self.site}/job/{r['Id']}"
+                    ),
                     posted_at=r.get("PostedDate"),
                     scraped_at=scraped_at,
                     description=html_to_text(r.get("ShortDescriptionStr")),

@@ -11,6 +11,7 @@ where source is cc | wayback | both.
 
 Run:  python scripts/merge/merge_tenants.py
 """
+
 import csv
 from collections import defaultdict
 from pathlib import Path
@@ -27,9 +28,21 @@ GLOBAL = {"greenhouse", "lever", "ashby", "workday"}
 # portals, not public job boards), jobsoid (active but non-tech SMB tenants; tech cos migrated
 # off), and peoplestrong (candidate portals are login-walled .jsf; can't read public jobs) —
 # all useless for tech-role coverage.
-ATSES = ["zoho", "darwinbox", "keka",
-         "ripplehire", "turbohire", "qandle", "beehive", "workable", "recruitee",
-         "greenhouse", "lever", "ashby", "workday"]
+ATSES = [
+    "zoho",
+    "darwinbox",
+    "keka",
+    "ripplehire",
+    "turbohire",
+    "qandle",
+    "beehive",
+    "workable",
+    "recruitee",
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+]
 
 
 def load_cc():

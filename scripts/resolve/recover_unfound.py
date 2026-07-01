@@ -10,6 +10,7 @@ run() (slug-probe + careers scan) on just the unfound, separating real in-house 
 Writes data/resolve/recovered_unfound.csv (name,domain,hits). Incremental + budgeted like the main run.
 Run:  python scripts/resolve/recover_unfound.py
 """
+
 import asyncio
 import csv
 import sys
@@ -29,7 +30,10 @@ async def main():
     covered = {r["domain"] for r in csv.DictReader(COVERAGE.open(encoding="utf-8"))}
     seed = list(csv.DictReader(SEED.open(encoding="utf-8")))
     unfound = [r for r in seed if r["domain"] not in covered]
-    print(f"{len(seed)} seed, {len(covered)} covered, {len(unfound)} to recover", flush=True)
+    print(
+        f"{len(seed)} seed, {len(covered)} covered, {len(unfound)} to recover",
+        flush=True,
+    )
 
     cf = OUT.open("w", newline="", encoding="utf-8")
     cw = csv.writer(cf)
@@ -53,10 +57,15 @@ async def main():
             cf.flush()
             if hits:
                 found += 1
-                print(f"  [{done}/{len(unfound)}] RECOVERED {name} ({domain}): {label}", flush=True)
+                print(
+                    f"  [{done}/{len(unfound)}] RECOVERED {name} ({domain}): {label}",
+                    flush=True,
+                )
     cf.close()
-    print(f"\n{found}/{len(unfound)} unfound companies recovered -> {OUT.relative_to(ROOT)}",
-          flush=True)
+    print(
+        f"\n{found}/{len(unfound)} unfound companies recovered -> {OUT.relative_to(ROOT)}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

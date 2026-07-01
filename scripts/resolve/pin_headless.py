@@ -9,9 +9,9 @@ DOM) for any known ATS host — the board call is caught the instant the SPA mak
 
 Usage:  python scripts/resolve/pin_headless.py   # edit TARGETS below
 """
+
 import asyncio
 import re
-import sys
 
 from pydoll.browser import Chrome
 from pydoll.browser.options import ChromiumOptions
@@ -27,12 +27,18 @@ ATS = re.compile(
     r"|apply\.workable\.com/[\w-]+|[a-z0-9-]+\.recruitee\.com|[a-z0-9-]+\.sensehq\.com"
     r"|[a-z0-9-]+\.hire\.trakstar\.com|[a-z0-9-]+\.skillate\.com"
     r"|smartrecruiters\.com/[\w-]+|[a-z0-9-]+\.eightfold\.ai"
-    r"|careers-[a-z0-9-]+\.icims\.com|[a-z0-9-]+\.zwayam\.com|[a-z0-9-]+\.turbohire\.co", re.I)
+    r"|careers-[a-z0-9-]+\.icims\.com|[a-z0-9-]+\.zwayam\.com|[a-z0-9-]+\.turbohire\.co",
+    re.I,
+)
 
 TARGETS = [
     ("Hasura", "hasura.io", ["/careers", "/about/careers", "/jobs"]),
     ("Exotel", "exotel.com", ["/careers", "/about/careers", "/company/careers"]),
-    ("Icertis", "icertis.com", ["/company/careers", "/careers", "/company/life-at-icertis"]),
+    (
+        "Icertis",
+        "icertis.com",
+        ["/company/careers", "/careers", "/company/life-at-icertis"],
+    ),
     ("SirionLabs", "sirion.ai", ["/careers", "/company/careers", "/about/careers"]),
     ("Vymo", "vymo.com", ["/careers", "/company/careers", "/about/careers"]),
     ("Facilio", "facilio.com", ["/careers", "/company/careers", "/about/careers"]),
@@ -43,8 +49,13 @@ def opts():
     o = ChromiumOptions()
     o.binary_location = CHROME
     o.headless = True
-    for a in ("--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-              "--disable-blink-features=AutomationControlled", "--window-size=1280,900"):
+    for a in (
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1280,900",
+    ):
         o.add_argument(a)
     return o
 
@@ -104,8 +115,10 @@ async def main():
             n, d, hits = name, domain, []
             print(f"  {name:12} ({domain}): ERR {type(e).__name__}", flush=True)
             continue
-        print(f"  {n:12} ({d}): " + (", ".join(hits) if hits else "- (no ATS host)"),
-              flush=True)
+        print(
+            f"  {n:12} ({d}): " + (", ".join(hits) if hits else "- (no ATS host)"),
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

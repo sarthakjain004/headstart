@@ -11,12 +11,19 @@ requires-python = ">=3.12"
 dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerprinting
 
 [project.optional-dependencies]
-dev = ["pytest"]
+# ruff is version-pinned: its formatter output can shift between releases, so an
+# unpinned CI would reformat differently than local and fail `ruff format --check`.
+# Dependabot bumps this; bump commits carry any reformat with them.
+dev = ["pytest", "ruff==0.15.20"]
 # Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
 embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb"]
 # Local dev UI for the semantic search (scripts/ui/serve.py)
 ui = ["flask"]
+# Retrieval-eval harness (scripts/eval/). anthropic = the LLM-judge that grades the
+# pool; ranx = graded ranking metrics (nDCG@10) for the defensible score; scikit-learn
+# = Cohen's kappa validating the judge (arrives transitively via embed, named for clarity).
+eval = ["anthropic", "ranx", "scikit-learn"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/headstart"]
@@ -24,3 +31,6 @@ packages = ["src/headstart"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"

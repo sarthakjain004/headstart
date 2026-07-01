@@ -11,8 +11,8 @@ For each company runs two reliable checks:
 Writes data/resolve/investigated.csv (name,domain,found,method) incrementally.
 Run:  python scripts/resolve/investigate.py [N] [offset]
 """
+
 import csv
-import json
 import re
 import sys
 from concurrent.futures import as_completed, ThreadPoolExecutor
@@ -26,18 +26,30 @@ OUT = ROOT / "data" / "resolve" / "investigated.csv"
 IMP = "chrome"
 
 CLEAN = {
-    "greenhouse": ("https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
-                   lambda d: len(d.get("jobs", []))),
-    "lever": ("https://api.lever.co/v0/postings/{s}?mode=json",
-              lambda d: len(d) if isinstance(d, list) else 0),
-    "ashby": ("https://api.ashbyhq.com/posting-api/job-board/{s}",
-              lambda d: len(d.get("jobs", []))),
-    "smartrecruiters": ("https://api.smartrecruiters.com/v1/companies/{s}/postings",
-                        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0),
-    "workable": ("https://apply.workable.com/api/v1/widget/accounts/{s}?details=true",
-                 lambda d: len(d.get("jobs", [])) if isinstance(d, dict) else 0),
-    "recruitee": ("https://{s}.recruitee.com/api/offers/",
-                  lambda d: len(d.get("offers", [])) if isinstance(d, dict) else 0),
+    "greenhouse": (
+        "https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
+        lambda d: len(d.get("jobs", [])),
+    ),
+    "lever": (
+        "https://api.lever.co/v0/postings/{s}?mode=json",
+        lambda d: len(d) if isinstance(d, list) else 0,
+    ),
+    "ashby": (
+        "https://api.ashbyhq.com/posting-api/job-board/{s}",
+        lambda d: len(d.get("jobs", [])),
+    ),
+    "smartrecruiters": (
+        "https://api.smartrecruiters.com/v1/companies/{s}/postings",
+        lambda d: d.get("totalFound", 0) if isinstance(d, dict) else 0,
+    ),
+    "workable": (
+        "https://apply.workable.com/api/v1/widget/accounts/{s}?details=true",
+        lambda d: len(d.get("jobs", [])) if isinstance(d, dict) else 0,
+    ),
+    "recruitee": (
+        "https://{s}.recruitee.com/api/offers/",
+        lambda d: len(d.get("offers", [])) if isinstance(d, dict) else 0,
+    ),
 }
 
 # ATS host fingerprints for the careers-page scan (capture group = tenant/slug where useful)
@@ -48,7 +60,9 @@ HOST = re.compile(
     r"|([a-z0-9-]+)\.zohorecruit\.(?:com|in)|([a-z0-9-]+)\.sensehq\.com|([a-z0-9-]+)\.hire\.trakstar\.com"
     r"|([a-z0-9-]+)\.skillate\.com"
     r"|([a-z0-9-]+)\.turbohire\.co|([a-z0-9-]+)\.fa\.ocs\.oraclecloud\.com"
-    r"|smartrecruiters\.com/([a-z0-9-]+)", re.I)
+    r"|smartrecruiters\.com/([a-z0-9-]+)",
+    re.I,
+)
 JUNK = {"www", "careers", "jobs", "for", "en", "job", "embed", "apply", "go", "app"}
 
 
@@ -89,7 +103,11 @@ def probe_clean(name, domain):
 
 def scan_careers(domain):
     blob = ""
-    for u in (f"https://{domain}/", f"https://{domain}/careers", f"https://{domain}/company/careers"):
+    for u in (
+        f"https://{domain}/",
+        f"https://{domain}/careers",
+        f"https://{domain}/company/careers",
+    ):
         h = get(u)
         if h:
             blob += "\n" + h
@@ -115,8 +133,11 @@ def investigate(row):
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 50
     offset = int(sys.argv[2]) if len(sys.argv) > 2 else 0
-    rows = [r for r in csv.DictReader(UNFOUND.open(encoding="utf-8"))
-            if r["status"] == "un-investigated"][offset:offset + n]
+    rows = [
+        r
+        for r in csv.DictReader(UNFOUND.open(encoding="utf-8"))
+        if r["status"] == "un-investigated"
+    ][offset : offset + n]
     print(f"investigating {len(rows)} un-investigated companies", flush=True)
     cf = OUT.open("w", newline="", encoding="utf-8")
     cw = csv.writer(cf)
@@ -130,8 +151,11 @@ def main():
             cf.flush()
             if found:
                 hit += 1
-            print(f"  [{done}/{len(rows)}] {name} ({domain}): "
-                  + (", ".join(found) if found else "-"), flush=True)
+            print(
+                f"  [{done}/{len(rows)}] {name} ({domain}): "
+                + (", ".join(found) if found else "-"),
+                flush=True,
+            )
     cf.close()
     print(f"\n{hit}/{len(rows)} got an ATS -> {OUT.relative_to(ROOT)}", flush=True)
 

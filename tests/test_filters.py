@@ -1,9 +1,14 @@
 from headstart.filters import Filter, matches
 
 JOB = {
-    "id": "greenhouse:stripe:1", "ats": "greenhouse", "company": "Stripe",
-    "title": "Backend Engineer", "department": "Eng", "location": "Remote - India",
-    "remote": True, "url": "u",
+    "id": "greenhouse:stripe:1",
+    "ats": "greenhouse",
+    "company": "Stripe",
+    "title": "Backend Engineer",
+    "department": "Eng",
+    "location": "Remote - India",
+    "remote": True,
+    "url": "u",
 }
 
 

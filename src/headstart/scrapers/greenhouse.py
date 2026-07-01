@@ -17,7 +17,9 @@ class GreenhouseScraper(BaseScraper):
     ats = "greenhouse"
 
     def url(self) -> str:
-        return f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs?content=true"
+        return (
+            f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs?content=true"
+        )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

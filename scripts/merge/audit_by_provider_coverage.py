@@ -6,6 +6,7 @@ reflects exactly what the consolidation did. Flags data files that yielded zero
 slugs (candidates for missed data) and providers named in source filenames that
 have no by-provider output. Read-only; prints a report.
 """
+
 from __future__ import annotations
 
 import sys
@@ -47,8 +48,11 @@ def contribution(p: Path) -> tuple[int, int, int]:
         if fk == 0 and p.suffix.lower() == ".csv":  # phenom-style url+name fallback
             for row in C.csv.DictReader(C.io.StringIO(text)):
                 low = {(k or "").strip().lower(): (v or "") for k, v in row.items()}
-                nm = low.get("company_code") or low.get("code") or C._slugify(
-                    next((low[c] for c in C.NAME_COLS if low.get(c)), ""))
+                nm = (
+                    low.get("company_code")
+                    or low.get("code")
+                    or C._slugify(next((low[c] for c in C.NAME_COLS if low.get(c)), ""))
+                )
                 fk += 1 if C.valid_slug(nm) else 0
     return url, col, fk
 
@@ -84,12 +88,16 @@ def main() -> int:
         else:
             zero.append((p, f"url={url} col={col} fk={fk}"))
 
-    print(f"source files: {len(files)}  |  data {len(buckets['data'])}  "
-          f"doc {len(buckets['doc'])}  meta {len(buckets['meta'])}  skip {len(buckets['skip'])}")
+    print(
+        f"source files: {len(files)}  |  data {len(buckets['data'])}  "
+        f"doc {len(buckets['doc'])}  meta {len(buckets['meta'])}  skip {len(buckets['skip'])}"
+    )
     print(f"data files contributing >=1 slug: {contributing}")
     print(f"data files with ZERO slugs: {len(zero)}")
 
-    print("\n=== ZERO-yield data files (biggest first — inspect for missed slug data) ===")
+    print(
+        "\n=== ZERO-yield data files (biggest first — inspect for missed slug data) ==="
+    )
     for p, why in sorted(zero, key=lambda t: -t[0].stat().st_size):
         print(f"  {p.stat().st_size:>8}  {p.relative_to(SRC)}  [{why}]")
         print(f"            first: {first_line(p)}")
@@ -97,7 +105,9 @@ def main() -> int:
     print("\n=== provider coverage ===")
     print(f"by-provider files: {len(byp)}")
     missing = sorted(p for p in seen_known if C.norm_ats(p) not in byp_norm)
-    print(f"KNOWN providers named in source files but ABSENT from by-provider: {missing or 'none'}")
+    print(
+        f"KNOWN providers named in source files but ABSENT from by-provider: {missing or 'none'}"
+    )
     return 0
 
 

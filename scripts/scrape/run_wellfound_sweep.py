@@ -14,6 +14,7 @@ so it can't leak the residential IP.
 Run:  python scripts/scrape/run_wellfound_sweep.py
           [--headless] [--max-pages N] [--delay S] [--no-warmup]
 """
+
 import asyncio
 import csv
 import sys
@@ -50,7 +51,9 @@ def targets(roles=None) -> list[tuple[str, str]]:
 
 def warp_on() -> bool:
     try:
-        with urllib.request.urlopen("https://www.cloudflare.com/cdn-cgi/trace", timeout=10) as r:
+        with urllib.request.urlopen(
+            "https://www.cloudflare.com/cdn-cgi/trace", timeout=10
+        ) as r:
             return "warp=on" in r.read().decode("utf-8", "replace")
     except Exception:
         return False
@@ -58,19 +61,26 @@ def warp_on() -> bool:
 
 async def main() -> int:
     if not warp_on():
-        print("ABORT: WARP is not on. Standing rule: never scrape Wellfound on the "
-              "residential IP. Connect WARP and retry.", flush=True)
+        print(
+            "ABORT: WARP is not on. Standing rule: never scrape Wellfound on the "
+            "residential IP. Connect WARP and retry.",
+            flush=True,
+        )
         return 2
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
     append = "--append" in sys.argv
-    max_pages = _flag("--max-pages", 0)       # 0 = all pages per board
+    max_pages = _flag("--max-pages", 0)  # 0 = all pages per board
     delay = _flag("--delay", 4.0)
-    start_board = _flag("--start-board", 0)   # 0-based index into the (filtered) board list
-    start_page = _flag("--start-page", 1)     # resume the start board from this page
-    roles_arg = _flag("--roles", "")          # comma-sep role slugs; empty = all ROLES
+    start_board = _flag(
+        "--start-board", 0
+    )  # 0-based index into the (filtered) board list
+    start_page = _flag("--start-page", 1)  # resume the start board from this page
+    roles_arg = _flag("--roles", "")  # comma-sep role slugs; empty = all ROLES
     scraped_at = datetime.now(timezone.utc).isoformat()
-    selected = [s.strip() for s in roles_arg.split(",") if s.strip()] if roles_arg else ROLES
+    selected = (
+        [s.strip() for s in roles_arg.split(",") if s.strip()] if roles_arg else ROLES
+    )
     boards = targets(selected)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -90,8 +100,11 @@ async def main() -> int:
     if write_header:
         writer.writeheader()
 
-    print(f"WARP on. Sweeping boards {start_board}..{len(boards) - 1} "
-          f"(start page {start_page}) -> {OUT}", flush=True)
+    print(
+        f"WARP on. Sweeping boards {start_board}..{len(boards) - 1} "
+        f"(start page {start_page}) -> {OUT}",
+        flush=True,
+    )
     async with Chrome(options=_options(headless, None)) as browser:
         tab = await browser.start()
         try:
@@ -101,11 +114,24 @@ async def main() -> int:
         for i in range(start_board, len(boards)):
             label, url = boards[i]
             sp = start_page if i == start_board else 1
-            print(f"\n=== [{i + 1}/{len(boards)}] {label}  ({url})  page>={sp} ===", flush=True)
+            print(
+                f"\n=== [{i + 1}/{len(boards)}] {label}  ({url})  page>={sp} ===",
+                flush=True,
+            )
             # Warm-up only before the first board scraped; later boards are already in-session.
-            added, ok = await scrape_url(tab, browser, url, scraped_at, writer, f, seen,
-                                         max_pages, delay, warmup and i == start_board,
-                                         start_page=sp)
+            added, ok = await scrape_url(
+                tab,
+                browser,
+                url,
+                scraped_at,
+                writer,
+                f,
+                seen,
+                max_pages,
+                delay,
+                warmup and i == start_board,
+                start_page=sp,
+            )
             per[label] = added if ok else "BLOCKED"
     f.close()
 

@@ -12,6 +12,7 @@ re-challenge or mint a low-trust cookie. Treat success as best-effort.
 
 See experiment/wellfound-datadome/LOG.md.
 """
+
 import asyncio
 import random
 import re
@@ -25,8 +26,18 @@ try:  # audio fallback dep — offline STT; optional so the module loads without
 except Exception:
     WhisperModel = None
 
-_NUMWORDS = {"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
-             "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9"}
+_NUMWORDS = {
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+}
 
 
 def _clean_transcript(text: str) -> str:
@@ -46,6 +57,7 @@ def _transcribe(mp3_path: str) -> str:
         _WHISPER = WhisperModel("tiny", device="cpu", compute_type="int8")
     segments, _ = _WHISPER.transcribe(mp3_path)
     return _clean_transcript("".join(s.text for s in segments))
+
 
 # The DataDome slider widget is injected dynamically (often into a nested, same-origin iframe),
 # so static selectors miss it (the old code fell through to the wrong button). This JS runs in
@@ -114,8 +126,9 @@ async def _attach_captcha_frame(tab, browser):
     """Attach a Tab to the DataDome OOPIF target so we can read its DOM."""
     for t in await browser.get_targets():
         if "captcha-delivery" in str(t.get("url", "")):
-            return Tab(browser, target_id=t["targetId"],
-                       connection_port=tab._connection_port)
+            return Tab(
+                browser, target_id=t["targetId"], connection_port=tab._connection_port
+            )
     return None
 
 
@@ -132,7 +145,7 @@ async def _slider_geometry(tab, oopif):
     ox = oy = 0.0
     try:
         frames = await tab.find(tag_name="iframe", find_all=True, raise_exc=False) or []
-        for el in (frames if isinstance(frames, list) else [frames]):
+        for el in frames if isinstance(frames, list) else [frames]:
             if "captcha-delivery" in (el.get_attribute("src") or ""):
                 b = await el.get_bounds_using_js()
                 ox, oy = b.get("x", 0) or 0, b.get("y", 0) or 0
@@ -141,7 +154,9 @@ async def _slider_geometry(tab, oopif):
         pass
     sx = ox + geo["hx"] + geo["hw"] / 2
     sy = oy + geo["hy"] + geo["hh"] / 2
-    ex = ox + geo["trackRight"] - geo["hw"] / 2 - 2  # drag handle centre to the track's end
+    ex = (
+        ox + geo["trackRight"] - geo["hw"] / 2 - 2
+    )  # drag handle centre to the track's end
     return sx, sy, ex
 
 
@@ -166,16 +181,25 @@ async def _humanized_drag(tab, sx, sy, ex, ey):
 
 async def _wait_for_manual(tab, secs: float) -> bool:
     """Pause for a human to solve the challenge in the visible browser; poll until cleared."""
-    print(f"    >>> auto-solve failed — please solve the challenge in the browser window. "
-          f"Waiting up to {int(secs)}s...", flush=True)
+    print(
+        f"    >>> auto-solve failed — please solve the challenge in the browser window. "
+        f"Waiting up to {int(secs)}s...",
+        flush=True,
+    )
     waited = 0.0
     while waited < secs:
         await asyncio.sleep(3)
         waited += 3
         if not challenged(await _safe_source(tab)):
-            print(f"    manual solve detected after {int(waited)}s — continuing", flush=True)
+            print(
+                f"    manual solve detected after {int(waited)}s — continuing",
+                flush=True,
+            )
             return True
-    print("    no manual solve within the window — giving up on this challenge", flush=True)
+    print(
+        "    no manual solve within the window — giving up on this challenge",
+        flush=True,
+    )
     return False
 
 
@@ -189,7 +213,8 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
     if artifacts_dir:
         try:
             (Path(artifacts_dir) / "captcha-iframe-dom.html").write_text(
-                await oopif.page_source, encoding="utf-8")
+                await oopif.page_source, encoding="utf-8"
+            )
         except Exception:
             pass
     try:  # audio-first may have left the audio tab active; switch back to the slider
@@ -207,13 +232,19 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
                 break
             await asyncio.sleep(1.0)
         if not coords:
-            print(f"    slider attempt {attempt + 1}: handle not locatable (dynamic widget)",
-                  flush=True)
+            print(
+                f"    slider attempt {attempt + 1}: handle not locatable (dynamic widget)",
+                flush=True,
+            )
             return False
         sx, sy, ex = coords
-        print(f"    slider attempt {attempt + 1}: drag ({sx:.0f},{sy:.0f})->({ex:.0f}) [dynamic]",
-              flush=True)
-        await _humanized_drag(tab, sx, sy, ex + random.uniform(-2, 2), sy + random.uniform(-2, 2))
+        print(
+            f"    slider attempt {attempt + 1}: drag ({sx:.0f},{sy:.0f})->({ex:.0f}) [dynamic]",
+            flush=True,
+        )
+        await _humanized_drag(
+            tab, sx, sy, ex + random.uniform(-2, 2), sy + random.uniform(-2, 2)
+        )
         await asyncio.sleep(2.5)
         if not challenged(await _safe_source(tab)):
             print(f"    slider cleared on attempt {attempt + 1}", flush=True)
@@ -221,8 +252,14 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
     return not challenged(await _safe_source(tab))
 
 
-async def solve_slider(tab, browser, artifacts_dir=None, try_audio: bool = True,
-                       drag_attempts: int = 2, manual_wait_secs: float = 300) -> bool:
+async def solve_slider(
+    tab,
+    browser,
+    artifacts_dir=None,
+    try_audio: bool = True,
+    drag_attempts: int = 2,
+    manual_wait_secs: float = 300,
+) -> bool:
     """Clear a DataDome challenge. Escalation, audio-first (the audio markup is in the DOM;
     the slider widget is dynamic): audio + Whisper -> dynamic slider drag (frame-walking,
     real page coords) -> wait for a manual solve in the browser. Name kept for callers' imports.
@@ -259,7 +296,9 @@ if(t) t.click();
 async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     """Switch to the audio challenge, transcribe with Whisper, submit the answer."""
     if WhisperModel is None:
-        print("    audio fallback unavailable — `pip install faster-whisper`", flush=True)
+        print(
+            "    audio fallback unavailable — `pip install faster-whisper`", flush=True
+        )
         return False
     frame = await _attach_captcha_frame(tab, browser)
     if frame is None:
@@ -269,10 +308,13 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     except Exception:
         pass
     await asyncio.sleep(2)
-    if artifacts_dir:  # dump audio-challenge DOM so selectors can be refined from real markup
+    if (
+        artifacts_dir
+    ):  # dump audio-challenge DOM so selectors can be refined from real markup
         try:
             (Path(artifacts_dir) / "captcha-audio-dom.html").write_text(
-                await frame.page_source, encoding="utf-8")
+                await frame.page_source, encoding="utf-8"
+            )
         except Exception:
             pass
     src = None
@@ -285,15 +327,22 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
         return False
     mp3 = Path(artifacts_dir or ".") / "captcha-audio.mp3"
     try:
-        req = urllib.request.Request(src, headers={
-            "User-Agent": "Mozilla/5.0", "Referer": "https://geo.captcha-delivery.com/"})
+        req = urllib.request.Request(
+            src,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://geo.captcha-delivery.com/",
+            },
+        )
         with urllib.request.urlopen(req, timeout=20) as r:
             mp3.write_bytes(r.read())
     except Exception as e:
         print(f"    audio download failed: {type(e).__name__}", flush=True)
         return False
     try:  # run blocking Whisper off the loop, bounded so a slow/hung model load can't freeze us
-        answer = await asyncio.wait_for(asyncio.to_thread(_transcribe, str(mp3)), timeout=90)
+        answer = await asyncio.wait_for(
+            asyncio.to_thread(_transcribe, str(mp3)), timeout=90
+        )
     except Exception as e:
         print(f"    whisper failed/timed out: {type(e).__name__}", flush=True)
         return False
@@ -309,7 +358,10 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     buttons = await frame.find(tag_name="button", raise_exc=False, find_all=True)
     buttons = buttons if isinstance(buttons, list) else ([buttons] if buttons else [])
     for b in buttons:
-        if any(k in (b.text or "").lower() for k in ("submit", "verify", "check", "confirm")):
+        if any(
+            k in (b.text or "").lower()
+            for k in ("submit", "verify", "check", "confirm")
+        ):
             await b.click()
             break
     await asyncio.sleep(3)
