@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,37 +24,34 @@ def load_companies(path: str | Path) -> list[CompanyRef]:
 
 
 def load_active_companies(
-    active_dir: str | Path, min_jobs: int = 1
+    ledger_dir: str | Path, min_jobs: int = 1
 ) -> list[CompanyRef]:
-    """Build the scrape list from the liveness-validated active lists.
+    """Build the scrape list from the liveness ledger (ADR-0012).
 
-    Reads every ``{active_dir}/{ats}.csv`` (ats,tenant,url,jobs) and keeps boards with
-    ``jobs >= min_jobs`` (default: drop boards with no open postings). Each scraper knows how
-    to turn a discovered (tenant, url) into its own slug via ``slug_from``, so no per-ATS
-    logic lives here. Rows for an ATS with no scraper are skipped. This is the production
-    source for a full scrape; ``config/companies.toml`` remains the small curated seed.
+    Reads every ``{ledger_dir}/{ats}.csv`` (the per-ATS liveness ledger) and keeps the boards
+    whose last verdict is ``live`` with ``jobs >= min_jobs`` (default: drop boards with no open
+    postings — the "currently hiring" subset). Each scraper turns a ``(tenant, url)`` into its
+    own slug via ``slug_from``, so no per-ATS logic lives here. Rows for an ATS with no scraper
+    are skipped. This is the production source for a full scrape; ``config/companies.toml``
+    remains the small curated seed.
     """
+    from headstart import liveness
     from headstart.scrapers.registry import SCRAPERS
 
-    active_dir = Path(active_dir)
+    ledger_dir = Path(ledger_dir)
     companies: list[CompanyRef] = []
-    for csv_path in sorted(active_dir.glob("*.csv")):
+    for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
         if scraper is None:
             continue
-        with csv_path.open(encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    jobs = int(row.get("jobs") or 0)
-                except ValueError:
-                    jobs = 0
-                if jobs < min_jobs:
-                    continue
-                companies.append(
-                    CompanyRef(
-                        ats=scraper.ats,
-                        slug=scraper.slug_from(row["tenant"], row["url"]),
-                        name=row["tenant"],
-                    )
+        for v in liveness.load(csv_path).values():
+            if v.status != liveness.LIVE or (v.jobs or 0) < min_jobs:
+                continue
+            companies.append(
+                CompanyRef(
+                    ats=scraper.ats,
+                    slug=scraper.slug_from(v.tenant, v.url),
+                    name=v.tenant,
                 )
+            )
     return companies
