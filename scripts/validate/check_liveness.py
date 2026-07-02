@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
-"""Liveness checker for ATS tenant lists — loss-free three-state, multi-pass.
+"""Liveness checker for ATS tenant lists — loss-free three-state, multi-pass, ledger-backed.
 
-Reads a dir of {ats}.csv (ats,tenant,url,...) and classifies each board into one of three
-states, so a transient blip never gets mistaken for a dead board:
+Reads the candidate pool (a dir of {ats}.csv) and classifies each board into one of three states,
+so a transient blip never gets mistaken for a dead board:
 
-  LIVE     -> 200 with a parseable job list      -> active/{ats}.csv  (ats,tenant,url,jobs)
-  DEAD     -> definitive: 404/410, or DNS doesn't resolve (curl code 6)  -> active/.{ats}_dead
-  UNKNOWN  -> couldn't tell: timeout, reset, 5xx, 429, parse-fail        -> re-probed next pass
+  LIVE     -> 200 with a parseable job list
+  DEAD     -> definitive: 404/410, or DNS doesn't resolve (curl code 6)
+  UNKNOWN  -> couldn't tell: timeout, reset, 5xx, 429, parse-fail  -> re-probed next pass
 
-Only DEAD is a final negative. Everything UNKNOWN is collected and re-probed in additional
-passes, each one more patient (longer timeout, lower concurrency to shed self-induced
-congestion), until nothing is left unknown — or, after the last pass, the few that still won't
-resolve are written to active/unresolved.csv and reported, never silently dropped. So a live
-board can't be lost to a transient failure: the verdict is always LIVE, DEAD, or explicitly
-unresolved.
+Verdicts land in the liveness ledger (ADR-0012), one CSV per ATS at
+data/validate/liveness/{ats}.csv (ats,tenant,url,status,jobs,checked_at) — the single source of
+truth. The Active list is just its status==live rows (config.load_active_companies); dead is
+status==dead; still-unknown is status==unknown.
 
-Resume: a tenant is "settled" once it's in active/{ats}.csv (live) or active/.{ats}_dead. A
-re-run re-probes only the unsettled remainder.
+Incremental + fresh: a board is re-probed only when it's new, unknown, or past its per-status TTL
+(live 7d / dead 90d, env-tunable via HEADSTART_LIVE_TTL_DAYS / HEADSTART_DEAD_TTL_DAYS or the
+flags below) — so adding companies to the pool never re-checks the whole thing, yet settled boards
+still refresh on a cadence (catching a live-but-empty board that opens roles, or a live board that
+has since died). UNKNOWN is re-probed across increasingly patient passes; whatever is still unknown
+after the last pass is recorded as status=unknown (re-probed next run), never silently dropped. The
+ledger is rewritten after each pass, so a crash keeps the verdicts already settled.
 
-Run:   python scripts/validate/check_liveness.py --dir data/ats-tenants-merged
-       python scripts/validate/check_liveness.py --dir data/ats-tenants-merged zoho workday
-       python scripts/validate/check_liveness.py --dir data/ats-tenants-merged --limit 20  # smoke
+Run:   python scripts/validate/check_liveness.py                       # all ATSes, respect TTLs
+       python scripts/validate/check_liveness.py zoho workday          # only these ATSes
+       python scripts/validate/check_liveness.py --force               # re-probe everything
+       python scripts/validate/check_liveness.py --live-ttl 3 --limit 20  # smoke
 """
 
 import csv
@@ -30,14 +34,14 @@ import re
 import sys
 import threading
 import urllib.parse
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from itertools import zip_longest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http  # noqa: E402 - needs src on sys.path first
+from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
@@ -383,66 +387,83 @@ PROBES = {
 }
 
 
-def main():
-    args = sys.argv[1:]
+def _parse_args(args):
     indir = ROOT / "data" / "ats-tenants-merged"
+    ledger_dir = liveness.dir_for(ROOT)
     limit = 0
+    live_ttl, dead_ttl = liveness.LIVE_TTL_DAYS, liveness.DEAD_TTL_DAYS
+    force = False
     rest = []
     i = 0
     while i < len(args):
-        if args[i] == "--dir":
+        a = args[i]
+        if a == "--dir":
             indir = Path(args[i + 1])
             i += 2
-        elif args[i] == "--limit":
+        elif a == "--ledger-dir":
+            ledger_dir = Path(args[i + 1])
+            i += 2
+        elif a == "--limit":
             limit = int(args[i + 1])
             i += 2
-        else:
-            rest.append(args[i])
+        elif a == "--live-ttl":
+            live_ttl = int(args[i + 1])
+            i += 2
+        elif a == "--dead-ttl":
+            dead_ttl = int(args[i + 1])
+            i += 2
+        elif a == "--force":
+            force = True
             i += 1
-    filt = set(rest)
-    outdir = indir / "active"
-    outdir.mkdir(parents=True, exist_ok=True)
+        else:
+            rest.append(a)
+            i += 1
+    return indir, ledger_dir, limit, live_ttl, dead_ttl, force, set(rest)
 
-    # Load each ATS, skip already-settled tenants (live in active.csv OR confirmed dead), and
-    # open append handles. Build one interleaved work list across all ATSes.
-    buckets = {}  # ats -> [(ats, tenant, url), ...]
-    files = {}  # ats -> (active_writer, active_fh, dead_fh)
+
+def main():
+    indir, ledger_dir, limit, live_ttl, dead_ttl, force, filt = _parse_args(
+        sys.argv[1:]
+    )
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    today = date.today()
+    today_iso = today.isoformat()
+
+    # Per ATS: carry the whole ledger forward (verdicts[ats]: tenant -> Verdict), and re-probe only
+    # the pool rows that are new, unknown, or past their TTL (ADR-0012). The rest stay untouched.
+    verdicts: dict[str, dict[str, liveness.Verdict]] = {}
+    buckets = {}  # ats -> [(ats, tenant, url), ...] to probe this run
     for csvf in sorted(indir.glob("*.csv")):
         ats = csvf.stem
         if ats not in PROBES or (filt and ats not in filt):
             continue
+        ledger = liveness.load(ledger_dir / f"{ats}.csv")
+        verdicts[ats] = ledger
         rows = list(csv.DictReader(csvf.open(encoding="utf-8")))
-        active_csv = outdir / f"{ats}.csv"
-        dead_file = outdir / f".{ats}_dead"
-        live_set = (
-            {r["tenant"] for r in csv.DictReader(active_csv.open(encoding="utf-8"))}
-            if active_csv.exists()
-            else set()
-        )
-        dead_set = (
-            set(dead_file.read_text(encoding="utf-8").split("\n")) - {""}
-            if dead_file.exists()
-            else set()
-        )
-        settled = live_set | dead_set
-        todo = [r for r in rows if r["tenant"] not in settled]
+        todo = [
+            r
+            for r in rows
+            if force
+            or liveness.needs_probe(
+                ledger.get(r["tenant"]), today, live_ttl=live_ttl, dead_ttl=dead_ttl
+            )
+        ]
         if limit:
             todo = todo[:limit]
-        if not todo:
-            continue
-        fresh = not active_csv.exists()
-        afh = active_csv.open("a", newline="", encoding="utf-8")
-        aw = csv.writer(afh)
-        if fresh:
-            aw.writerow(["ats", "tenant", "url", "jobs"])
-            afh.flush()
-        files[ats] = (aw, afh, dead_file.open("a", encoding="utf-8"))
-        buckets[ats] = [(ats, r["tenant"], r["url"]) for r in todo]
+        if todo:
+            buckets[ats] = [(ats, r["tenant"], r["url"]) for r in todo]
 
     items = [x for row in zip_longest(*buckets.values()) for x in row if x is not None]
-    live_n = defaultdict(int)
-    dead_n = defaultdict(int)
+    print(
+        f"to probe: {len(items)} of {sum(len(v) for v in verdicts.values())} known "
+        f"(live_ttl={live_ttl}d, dead_ttl={dead_ttl}d{', force' if force else ''})",
+        flush=True,
+    )
     lock = threading.Lock()
+
+    def flush_ledger():
+        for ats, rows in verdicts.items():
+            liveness.write(ledger_dir / f"{ats}.csv", rows.values())
 
     def run_pass(work, timeout, workers):
         global TIMEOUT
@@ -460,16 +481,10 @@ def main():
                 with ulock:
                     unknowns.append(item)
                 return
-            with lock:
-                aw, afh, dfh = files[ats]
-                if verdict == LIVE:
-                    aw.writerow([ats, tenant, url, jobs])
-                    afh.flush()
-                    live_n[ats] += 1
-                else:
-                    dfh.write(tenant + "\n")
-                    dfh.flush()
-                    dead_n[ats] += 1
+            with lock:  # settle it in the ledger (url refreshed from the pool)
+                verdicts[ats][tenant] = liveness.Verdict(
+                    ats, tenant, url, verdict, jobs, today_iso
+                )
 
         with ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(do, work))
@@ -483,25 +498,31 @@ def main():
             flush=True,
         )
         items = run_pass(items, timeout, workers)
-        live = sum(live_n.values())
-        dead = sum(dead_n.values())
-        print(f"  -> live {live}, dead {dead}, still unknown {len(items)}", flush=True)
-
-    if items:  # never silently dropped — surfaced for a human to decide
-        with (outdir / "unresolved.csv").open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["ats", "tenant", "url"])
-            w.writerows(items)
+        flush_ledger()  # checkpoint per pass so a crash keeps settled verdicts
+        settled = sum(
+            1
+            for rows in verdicts.values()
+            for v in rows.values()
+            if v.checked_at == today_iso
+        )
         print(
-            f"UNRESOLVED after {len(PASSES)} passes: {len(items)} -> active/unresolved.csv",
-            flush=True,
+            f"  -> {settled} settled this run, still unknown {len(items)}", flush=True
         )
 
-    for _, afh, dfh in files.values():
-        afh.close()
-        dfh.close()
-    for ats in sorted(files):
-        print(f"{ats}: live {live_n[ats]}, dead {dead_n[ats]}", flush=True)
+    # Whatever is still unknown after the last pass is recorded as such (re-probed next run),
+    # never silently dropped.
+    for ats, tenant, url in items:
+        verdicts[ats][tenant] = liveness.Verdict(
+            ats, tenant, url, UNKNOWN, None, today_iso
+        )
+    flush_ledger()
+
+    for ats in sorted(verdicts):
+        rows = verdicts[ats].values()
+        live = sum(1 for v in rows if v.status == LIVE)
+        dead = sum(1 for v in rows if v.status == DEAD)
+        unknown = sum(1 for v in rows if v.status == UNKNOWN)
+        print(f"{ats}: live {live}, dead {dead}, unknown {unknown}", flush=True)
 
 
 if __name__ == "__main__":
