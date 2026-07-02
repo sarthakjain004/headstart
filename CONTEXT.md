@@ -58,7 +58,7 @@ _Avoid_: up/down, valid/invalid.
 A Board still **Unknown** after every Liveness pass — surfaced for review, never silently dropped.
 
 **Active list**:
-The Liveness-validated Boards (`active/{ats}.csv`) — the Companies whose Board answered **Live**. "Currently hiring" is the further subset whose job count is above zero.
+The Live Boards — the Companies whose Board answered **Live**, read as the `status == live` rows of the Liveness ledger (`data/validate/liveness/{ats}.csv`, ADR-0012; supersedes the old `active/{ats}.csv`). "Currently hiring" is the further subset whose job count is above zero.
 
 **Feed**:
 The assembled `docs/jobs.json` the dashboard (and alert bot) consume. It is *derived* — built by reading the per-board `{ats}.jsonl` (the source of truth) back and deduping by Slug-aware id — and is the small **served curated subset**: the millions-scale harvest produces only the `.jsonl`, never a single feed.
