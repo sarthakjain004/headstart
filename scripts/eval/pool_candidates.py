@@ -22,17 +22,14 @@ import sys
 from pathlib import Path
 
 import lancedb
-import torch
-from sentence_transformers import SentenceTransformer
+
+from headstart.search import TABLE, encode_query, load_encoder
 
 _ROOT = Path(__file__).resolve().parents[2]
 _QRELS = _ROOT / "data" / "eval" / "qrels.jsonl"
 _JOBS_CSV = _ROOT / "data" / "jobs" / "wellfound.csv"
 _OUT = _ROOT / "data" / "eval" / "pool.jsonl"
 _DB = _ROOT / "data" / "lancedb"
-_TABLE = "wellfound"
-_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_QUERY_PREFIX = "search_query: "
 _POOL_DEPTH = 15  # judge the top-15 of each query: deep enough to hold the relevant docs, small enough to grade
 
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))  # descriptions can be long
@@ -68,19 +65,14 @@ def _render(row: dict) -> str:
 def main() -> None:
     queries = [json.loads(line) for line in _QRELS.open(encoding="utf-8")]
     rows = _load_rows()
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = SentenceTransformer(_MODEL, trust_remote_code=True, device=device)
-    if device == "mps":
-        model = model.half()
-    table = lancedb.connect(_DB).open_table(_TABLE)
+    model = load_encoder()
+    table = lancedb.connect(_DB).open_table(TABLE)
 
     n_pairs = 0
     with _OUT.open("w", encoding="utf-8") as out:
         for q in queries:
             query = q["query"]
-            vec = model.encode([_QUERY_PREFIX + query], normalize_embeddings=True)[
-                0
-            ].astype("float32")
+            vec = encode_query(model, query)
             hits = table.search(vec).metric("cosine").limit(_POOL_DEPTH).to_list()
 
             seen = set()

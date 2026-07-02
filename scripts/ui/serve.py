@@ -13,42 +13,26 @@ from __future__ import annotations
 from pathlib import Path
 
 import lancedb
-import torch
 from flask import Flask, jsonify, request
-from sentence_transformers import SentenceTransformer
+
+from headstart.search import TABLE, build_filter, encode_query, load_encoder
 
 _DB = Path(__file__).resolve().parents[2] / "data" / "lancedb"
-_TABLE = "wellfound"
-_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_QUERY_PREFIX = "search_query: "
+_MAX_K = 100  # cap the page size so a crafted k can't dump the whole table
 
 print("loading model + index ...", flush=True)
-_device = "mps" if torch.backends.mps.is_available() else "cpu"
-_model = SentenceTransformer(_MODEL, trust_remote_code=True, device=_device)
-if _device == "mps":
-    _model = _model.half()
-_table = lancedb.connect(_DB).open_table(_TABLE)
-print(f"ready: {_table.count_rows()} jobs on {_device}", flush=True)
+_model = load_encoder()
+_table = lancedb.connect(_DB).open_table(TABLE)
+print(f"ready: {_table.count_rows()} jobs", flush=True)
 
 app = Flask(__name__)
 
 
-def _search(
-    query: str, remote: bool, emp_type: str | None, max_years: int | None, k: int
-) -> list[dict]:
-    qv = _model.encode([_QUERY_PREFIX + query], normalize_embeddings=True)[0].astype(
-        "float32"
-    )
+def _search(query: str, where: str | None, k: int) -> list[dict]:
+    qv = encode_query(_model, query)
     search = _table.search(qv).metric("cosine")
-    filters = []
-    if remote:
-        filters.append("remote = true")
-    if emp_type:
-        filters.append(f"employment_type = '{emp_type}'")
-    if max_years is not None:
-        filters.append(f"(min_years <= {max_years} OR min_years IS NULL)")
-    if filters:
-        search = search.where(" AND ".join(filters), prefilter=True)
+    if where:
+        search = search.where(where, prefilter=True)
     rows = search.limit(k).to_list()
     return [
         {
@@ -71,16 +55,17 @@ def search():
     q = (request.args.get("q") or "").strip()
     if not q:
         return jsonify([])
-    max_years = request.args.get("max_years")
-    return jsonify(
-        _search(
-            q,
+    try:
+        max_years = request.args.get("max_years")
+        k = int(request.args.get("k") or 20)
+        where = build_filter(
             remote=request.args.get("remote") == "true",
-            emp_type=request.args.get("type") or None,
+            employment_type=request.args.get("type") or None,
             max_years=int(max_years) if max_years else None,
-            k=int(request.args.get("k") or 20),
         )
-    )
+    except ValueError:
+        return jsonify({"error": "invalid filter"}), 400
+    return jsonify(_search(q, where, max(1, min(k, _MAX_K))))
 
 
 @app.route("/")
@@ -135,6 +120,10 @@ _PAGE = """<!doctype html>
 </div>
 <script>
 const el = s => document.getElementById(s);
+// Job text is scraped third-party content — escape before it reaches innerHTML, and only
+// allow http(s) hrefs (no javascript: URLs).
+const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 async function go(){
   const q = el('q').value.trim(); if(!q) return;
@@ -147,14 +136,14 @@ async function go(){
   if(!rows.length){ el('results').innerHTML = '<div class="empty">no matches</div>'; return; }
   el('results').innerHTML = rows.map(r => `
     <div class="card">
-      <a href="${r.url||'#'}" target="_blank">${r.title||''}</a>
-      <div class="co">${r.company||''}${r.location? ' · '+r.location : ''}</div>
+      <a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
+      <div class="co">${esc(r.company)}${r.location? ' · '+esc(r.location) : ''}</div>
       <div class="tags">
-        <span class="tag score">${r.score}</span>
+        <span class="tag score">${Number(r.score)||0}</span>
         ${r.remote? '<span class="tag rem">remote</span>':''}
-        ${r.employment_type? '<span class="tag">'+r.employment_type+'</span>':''}
-        ${r.min_years!=null? '<span class="tag">'+r.min_years+'+ yrs</span>':''}
-        ${r.salary? '<span class="tag">'+r.salary+'</span>':''}
+        ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
+        ${r.min_years!=null? '<span class="tag">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
+        ${r.salary? '<span class="tag">'+esc(r.salary)+'</span>':''}
       </div>
     </div>`).join('');
 }

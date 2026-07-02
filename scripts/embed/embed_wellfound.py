@@ -31,14 +31,14 @@ import torch
 from langdetect import DetectorFactory, LangDetectException, detect
 from sentence_transformers import SentenceTransformer
 
+from headstart.search import DOC_PREFIX, MODEL
+
 DetectorFactory.seed = 0  # make langdetect deterministic
 csv.field_size_limit(10**8)  # wellfound descriptions are large multi-line markdown
 
 _ROOT = Path(__file__).resolve().parents[2]
 _INPUT = _ROOT / "data" / "jobs" / "wellfound.csv"
 _OUTDIR = _ROOT / "data" / "embeddings" / "wellfound"
-_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_DOC_PREFIX = "search_document: "  # ADR-0005: documents get this prefix at index time
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 _MD_SYNTAX = re.compile(
@@ -67,7 +67,7 @@ def is_english(title: str, description: str) -> bool:
 def build_doc(row: dict) -> str:
     title = (row.get("title") or "").strip()
     body = clean_markdown(row.get("description") or "")
-    return f"{_DOC_PREFIX}{title}\n\n{body}"
+    return f"{DOC_PREFIX}{title}\n\n{body}"
 
 
 def to_meta(row: dict) -> dict:
@@ -197,8 +197,8 @@ def main() -> None:
     args = ap.parse_args()
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"loading {_MODEL} on {device} ...", file=sys.stderr, flush=True)
-    model = SentenceTransformer(_MODEL, trust_remote_code=True, device=device)
+    print(f"loading {MODEL} on {device} ...", file=sys.stderr, flush=True)
+    model = SentenceTransformer(MODEL, trust_remote_code=True, device=device)
     if device == "mps":
         model = model.half()  # fp16 on the GPU: ~2x faster + half the memory; vectors upcast to f32 on store
     dim = model.get_sentence_embedding_dimension()
@@ -235,9 +235,9 @@ def main() -> None:
     )
 
     manifest = {
-        "model": _MODEL,
+        "model": MODEL,
         "dim": int(dim),
-        "doc_prefix": _DOC_PREFIX,
+        "doc_prefix": DOC_PREFIX,
         "normalized": True,
         "device": device,
         "compute_dtype": "float16" if device == "mps" else "float32",

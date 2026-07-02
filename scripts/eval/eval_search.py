@@ -16,33 +16,25 @@ import math
 from pathlib import Path
 
 import lancedb
-import torch
-from sentence_transformers import SentenceTransformer
+
+from headstart.search import TABLE, encode_query, load_encoder
 
 _ROOT = Path(__file__).resolve().parents[2]
 _QRELS = _ROOT / "data" / "eval" / "qrels.jsonl"
 _DB = _ROOT / "data" / "lancedb"
-_TABLE = "wellfound"
-_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_QUERY_PREFIX = "search_query: "
 _K = 10
 _DEPTH = 50  # search this deep so we can report a rank even when it falls outside k
 
 
 def main() -> None:
     qrels = [json.loads(line) for line in _QRELS.open(encoding="utf-8")]
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = SentenceTransformer(_MODEL, trust_remote_code=True, device=device)
-    if device == "mps":
-        model = model.half()
-    table = lancedb.connect(_DB).open_table(_TABLE)
+    model = load_encoder()
+    table = lancedb.connect(_DB).open_table(TABLE)
 
     rr, recall, ndcg = [], [], []
     print(f"scoring {len(qrels)} queries against the {table.count_rows()}-job index\n")
     for q in qrels:
-        vec = model.encode([_QUERY_PREFIX + q["query"]], normalize_embeddings=True)[
-            0
-        ].astype("float32")
+        vec = encode_query(model, q["query"])
         hits = [
             r["id"] for r in table.search(vec).metric("cosine").limit(_DEPTH).to_list()
         ]

@@ -16,13 +16,10 @@ import argparse
 from pathlib import Path
 
 import lancedb
-import torch
-from sentence_transformers import SentenceTransformer
+
+from headstart.search import TABLE, build_filter, encode_query, load_encoder
 
 _DB = Path(__file__).resolve().parents[2] / "data" / "lancedb"
-_TABLE = "wellfound"
-_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_QUERY_PREFIX = "search_query: "  # ADR-0005: queries get this prefix at search time
 
 
 def main() -> None:
@@ -41,31 +38,27 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = SentenceTransformer(_MODEL, trust_remote_code=True, device=device)
-    if device == "mps":
-        model = model.half()
-    query_vec = model.encode([_QUERY_PREFIX + args.query], normalize_embeddings=True)[
-        0
-    ].astype("float32")
+    try:
+        where = build_filter(
+            remote=args.remote,
+            employment_type=args.employment_type,
+            max_years=args.max_years,
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
 
-    table = lancedb.connect(_DB).open_table(_TABLE)
+    model = load_encoder()
+    query_vec = encode_query(model, args.query)
+
+    table = lancedb.connect(_DB).open_table(TABLE)
     search = table.search(query_vec).metric("cosine")
-    filters = []
-    if args.remote:
-        filters.append("remote = true")
-    if args.employment_type:
-        filters.append(f"employment_type = '{args.employment_type}'")
-    if args.max_years is not None:
-        # unknown experience (min_years IS NULL) is kept — "unknown" isn't "too senior"
-        filters.append(f"(min_years <= {args.max_years} OR min_years IS NULL)")
-    if filters:
+    if where:
         search = search.where(
-            " AND ".join(filters), prefilter=True
+            where, prefilter=True
         )  # filter first, then rank survivors
     rows = search.limit(args.k).to_list()
 
-    label = f"  [filter: {' AND '.join(filters)}]" if filters else ""
+    label = f"  [filter: {where}]" if where else ""
     print(f'\nquery: "{args.query}"{label}  ({len(rows)} hits)\n')
     for rank, r in enumerate(rows, 1):
         sim = 1 - r["_distance"]  # cosine distance -> similarity

@@ -23,17 +23,14 @@ import json
 from pathlib import Path
 
 import lancedb
-import torch
 from ranx import Qrels, Run, evaluate
-from sentence_transformers import SentenceTransformer
+
+from headstart.search import TABLE, encode_query, load_encoder
 
 _ROOT = Path(__file__).resolve().parents[2]
 _JUDGE = _ROOT / "data" / "eval" / "judge_labels.jsonl"
 _HUMAN = _ROOT / "data" / "eval" / "human_labels.jsonl"
 _DB = _ROOT / "data" / "lancedb"
-_TABLE = "wellfound"
-_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_QUERY_PREFIX = "search_query: "
 _DEPTH = 10  # nDCG@10 scores the top 10 the user would actually see
 _METRICS = ["ndcg@10", "ndcg@5", "mrr"]
 
@@ -65,17 +62,12 @@ def main() -> None:
             queries.append(query)
     qid = {q: f"q{i}" for i, q in enumerate(queries)}
 
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = SentenceTransformer(_MODEL, trust_remote_code=True, device=device)
-    if device == "mps":
-        model = model.half()
-    table = lancedb.connect(_DB).open_table(_TABLE)
+    model = load_encoder()
+    table = lancedb.connect(_DB).open_table(TABLE)
 
     run: dict[str, dict[str, float]] = {}
     for q in queries:
-        vec = model.encode([_QUERY_PREFIX + q], normalize_embeddings=True)[0].astype(
-            "float32"
-        )
+        vec = encode_query(model, q)
         hits = table.search(vec).metric("cosine").limit(_DEPTH).to_list()
         run[qid[q]] = {
             h["id"]: float(_DEPTH - i) for i, h in enumerate(hits)
