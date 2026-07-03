@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from headstart.index_sync import apply_sync, plan_sync
 
 
@@ -53,8 +55,9 @@ def _ids(table) -> set[str]:
 
 
 def test_apply_sync_round_trip(tmp_path):
-    import lancedb
-    import pyarrow as pa
+    # lancedb/pyarrow are in the [embed] optional group, not installed in CI — skip there
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
 
     schema = pa.schema(
         [pa.field("id", pa.string()), pa.field("vector", pa.list_(pa.float32(), 2))]
