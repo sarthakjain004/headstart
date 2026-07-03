@@ -65,20 +65,27 @@ def _load_rows(csv_path: Path) -> list[tuple[CompanyRef, int]]:
     """
     scraper = SCRAPERS[csv_path.stem]  # caller guarantees the ATS has a scraper
     out: list[tuple[CompanyRef, int]] = []
-    with csv_path.open(newline="", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            tenant, url = r.get("tenant", ""), r.get("url", "")
-            try:
-                slug = scraper.slug_from(tenant, url)
-            except Exception:  # noqa: BLE001 - a malformed row shouldn't crash the batch
-                continue
-            jobs = (r.get("jobs") or "").strip()
-            out.append(
-                (
-                    CompanyRef(scraper.ats, slug, tenant),
-                    int(jobs) if jobs.isdigit() else 0,
+    try:
+        with csv_path.open(newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                tenant, url = r.get("tenant", ""), r.get("url", "")
+                try:
+                    slug = scraper.slug_from(tenant, url)
+                except Exception:  # noqa: BLE001 - a malformed row shouldn't crash the batch
+                    continue
+                jobs = (r.get("jobs") or "").strip()
+                out.append(
+                    (
+                        CompanyRef(scraper.ats, slug, tenant),
+                        int(jobs) if jobs.isdigit() else 0,
+                    )
                 )
-            )
+    except (
+        OSError,
+        UnicodeDecodeError,
+        csv.Error,
+    ) as exc:  # one bad file shouldn't sink the run
+        print(f"warning: skipping {csv_path.name}: {exc}", file=sys.stderr)
     return out
 
 
@@ -100,17 +107,32 @@ def select_companies(
 
 
 def _load_limits(path: Path | None) -> dict:
+    """Load + validate the caps TOML: values must be non-negative ints; unknown-ATS keys warn."""
     if path is None:
         return {}
     if not path.exists():
         raise SystemExit(f"no limits file at {path}")
-    with path.open("rb") as f:
-        return tomllib.load(f)
+    try:
+        with path.open("rb") as f:
+            raw = tomllib.load(f)
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"invalid TOML in {path}: {exc}") from None
+    for key, value in raw.items():
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise SystemExit(
+                f"limit for {key!r} in {path} must be a non-negative integer, got {value!r}"
+            )
+        if key != "default" and key not in SCRAPERS:
+            print(
+                f"warning: limits key {key!r} is not a known ATS — ignored",
+                file=sys.stderr,
+            )
+    return raw
 
 
 def _limit_for(limits: dict, ats: str) -> int | None:
-    value = limits.get(ats, limits.get("default"))
-    return int(value) if value is not None else None
+    """Cap for one ATS: its entry, else ``default``, else None (uncapped). Values are pre-validated."""
+    return limits.get(ats, limits.get("default"))
 
 
 def _error_kind(message: str) -> str:
@@ -158,7 +180,15 @@ def main() -> int:
     if not src.is_dir():
         raise SystemExit(f"no source dir at {src}")
     limits = _load_limits(args.limits)
-    only = {a.strip() for a in args.ats.split(",")} if args.ats else None
+    only = None
+    if args.ats:
+        only = {a.strip() for a in args.ats.split(",") if a.strip()}
+        unknown = only - set(SCRAPERS)
+        if unknown:
+            raise SystemExit(
+                f"unknown ATS(es): {', '.join(sorted(unknown))}; "
+                f"known: {', '.join(sorted(SCRAPERS))}"
+            )
     rng = random.Random(args.seed)
 
     companies: list[CompanyRef] = []
@@ -222,4 +252,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        # scrape_all flushes each board as it finishes, so partial output is already on disk
+        print(
+            "\ninterrupted — partial output is in data/jobs/{ats}.jsonl",
+            file=sys.stderr,
+        )
+        raise SystemExit(130) from None
