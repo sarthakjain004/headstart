@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -15,6 +17,10 @@ from headstart.models import Job
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 _T = TypeVar("_T")
 _R = TypeVar("_R")
+
+# Concurrent streams per host for fan_out_async — the HTTP/2 multiplexing width. Env-tunable so an
+# experiment can sweep it (8, 20, 50, ...) without a code edit.
+_H2_STREAMS = int(os.environ.get("HEADSTART_H2_STREAMS") or 8)
 
 
 class BaseScraper(ABC):
@@ -99,4 +105,48 @@ class BaseScraper(ABC):
                     results[index] = future.result()
                 except Exception:  # noqa: BLE001 - one item's failure must not sink the batch
                     results[index] = default
+        return results
+
+    @staticmethod
+    def fan_out_async(
+        items: Sequence[_T],
+        fn: Callable[[Any, _T], Awaitable[_R]],
+        *,
+        concurrency: int = _H2_STREAMS,
+        default: _R | None = None,
+    ) -> list[_R | None]:
+        """HTTP/2-multiplexed counterpart to :meth:`fan_out` (the ADR-0002-deferred async path, trialed).
+
+        ``fn(session, item)`` returns an awaitable. One ``curl_cffi`` ``AsyncSession`` is shared across
+        every item, so same-host requests ride as concurrent **streams over one HTTP/2 connection**
+        instead of one connection per thread; ``concurrency`` bounds the in-flight streams (the
+        multiplexing width). Results are input-aligned and a raising item becomes ``default`` — same
+        contract as :meth:`fan_out`. Runs its own event loop, so a sync thread-pool caller (one board
+        per company thread) can invoke it directly.
+        """
+        if not items:
+            return [default] * len(items)
+        return asyncio.run(BaseScraper._gather_async(items, fn, concurrency, default))
+
+    @staticmethod
+    async def _gather_async(
+        items: Sequence[_T],
+        fn: Callable[[Any, _T], Awaitable[_R]],
+        concurrency: int,
+        default: _R | None,
+    ) -> list[_R | None]:
+        from curl_cffi.requests import AsyncSession
+
+        sem = asyncio.Semaphore(concurrency)
+        results: list[_R | None] = [default] * len(items)
+        async with AsyncSession(impersonate="chrome") as session:
+
+            async def one(index: int, item: _T) -> None:
+                async with sem:
+                    try:
+                        results[index] = await fn(session, item)
+                    except Exception:  # noqa: BLE001 - one item's failure must not sink the batch
+                        results[index] = default
+
+            await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results
