@@ -7,12 +7,14 @@ from pathlib import Path
 
 from headstart.config import load_active_companies, load_companies
 from headstart.pipeline import build_feed, scrape_all, write_feed
+from headstart.tech_filter import filter_jobs
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CONFIG = _ROOT / "config" / "companies.toml"
 _LEDGER = _ROOT / "data" / "validate" / "liveness"
 _OUTPUT = _ROOT / "docs" / "jobs.json"
 _JOBS_DIR = _ROOT / "data" / "jobs"
+_TECH_DIR = _JOBS_DIR / "tech"
 
 
 def main() -> None:
@@ -37,16 +39,26 @@ def main() -> None:
         companies, jobs_dir=_JOBS_DIR, progress_every=200, resume=resume
     )
 
-    if build_dashboard_feed:
-        feed = build_feed(_JOBS_DIR, result.errors)
-        write_feed(feed, _OUTPUT)
+    # Tech filter (ADR-0017): keep only software/tech roles in data/jobs/tech/. Everything downstream
+    # — the feed, and the embedding/index/UI — reads the tech subset, not the full scrape, so the
+    # embedding model only ever works on the jobs the product actually serves.
+    tech = filter_jobs(_JOBS_DIR, _TECH_DIR)
+    kept = sum(k for k, _ in tech.values())
+    total = sum(t for _, t in tech.values())
+    if total:
         print(
-            f"wrote {feed['count']} jobs to {_OUTPUT} (+ per-ATS JSONL under {_JOBS_DIR})"
+            f"tech filter: kept {kept}/{total} ({100 * kept / total:.0f}% tech) "
+            f"-> per-ATS JSONL under {_TECH_DIR}"
         )
+
+    if build_dashboard_feed:
+        feed = build_feed(_TECH_DIR, result.errors)
+        write_feed(feed, _OUTPUT)
+        print(f"wrote {feed['count']} tech jobs to {_OUTPUT}")
     else:
         print(
             f"scraped {result.unique} unique jobs from {result.boards} boards "
-            f"-> per-ATS JSONL under {_JOBS_DIR}"
+            f"-> full set under {_JOBS_DIR}, tech subset under {_TECH_DIR}"
         )
 
     if result.errors:

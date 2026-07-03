@@ -6,11 +6,16 @@ HeadStart surfaces job openings read directly from company ATS boards.
 - **Companies: global, not India-only.** India is a strong sub-segment and where coverage
   started, but the target is companies worldwide — don't scope discovery, scrapers, or data
   to India.
-- **Roles: software-engineering / tech openings.** Filter for engineering/tech roles, not all
-  job categories. The tech focus must *reduce work*, not just trim output — apply it at
-  **company selection** (skip companies that don't hire engineers) and at the **source query**
-  where the ATS allows it (Lever `?department=`, Workday `jobFamilyGroup` facet). A post-hoc
-  filter over already-scraped jobs saves no scraping and is the wrong layer.
+- **Roles: software-engineering / tech openings.** Only tech roles are embedded, indexed, and shown.
+  Two layers optimise two different costs (ADR-0017). The **source query**, where an ATS cheaply
+  supports it (Lever `?department=`, Workday `jobFamilyGroup` facet), trims *scraping* volume — a
+  best-effort reducer, never authoritative (taxonomies are inconsistent and it would drop tech jobs
+  mis-filed under odd departments). The **authoritative tech gate is a recall-biased post-hoc filter**
+  (`headstart.tech_filter`): the scrape writes the full set to `data/jobs/{ats}.jsonl`, the filter
+  keeps the tech subset in `data/jobs/tech/{ats}.jsonl`, and everything downstream (feed, embedding,
+  index, UI) reads that. Post-hoc saves no scraping, but it is the only layer that is uniform across
+  ATSes and recall-safe — no tech job dropped, some non-tech creep tolerated — which is exactly what
+  the embedding-cost/recall goal needs. Company selection barely helps: boards are mixed.
 - **Search corpus: English-only for now.** The AI semantic-search layer pre-filters non-English
   descriptions out *before* embedding — an explicit language-detection gate at ingestion
   (e.g. `langdetect` / fastText LID over `title + description`), not something the embedding

@@ -38,11 +38,20 @@ Pipeline (per CONTEXT.md):
     → validate  liveness-probe each board (Live / Dead / Unknown), write the Active lists
     → resolve  map a known company → its (ATS, slug)
     → scrape  18 ATS scrapers read the Active boards, normalize to one Job, stream to JSONL
+    → filter  keep only software/tech roles -> data/jobs/tech/ (recall-biased, ADR-0017)
 
-Serving:
+Serving (all from the tech subset):
   curated feed  → docs/jobs.json  → GitHub Pages static dashboard (client-side filter)
-  full corpus   → embed → LanceDB → semantic search (filter-then-rank) + Telegram alert bot
+  tech corpus   → embed → LanceDB → semantic search (filter-then-rank) + Telegram alert bot
 ```
+
+Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
+full set to `data/jobs/{ats}.jsonl`; a recall-biased regex filter (`headstart.tech_filter`) derives
+the tech subset in `data/jobs/tech/{ats}.jsonl` — ~17% of the raw jobs, so the embedding model does
+~83% less work. A non-tech job creeping in is fine; dropping a tech job is not, so a two-part
+verification gate guards recall: a deterministic self-consistency check plus an independent LLM
+reasoning gate (`scripts/filter/verify_tech.py`) that judges a sample of the *dropped* pile and flags
+any real tech job the regex missed (ADR-0017).
 
 No always-on server: scheduled GitHub Actions plus a static Pages site. The millions-scale
 harvest produces only per-ATS JSONL; the dashboard serves a small curated subset, and true
@@ -91,10 +100,11 @@ recall (pooling a second system, e.g. BM25, is the named next step).
 
 - `src/headstart/` — the package: `models.py` (Job + normalization), `scrapers/` (18 per-ATS +
   `base`/`registry`), `http.py` (the pooled reliable-fetch seam), `config.py`, `pipeline.py`,
-  `search.py` (shared embed/search constants + filter builder), `experience.py`; plus the v2
-  bot: `filters.py`, `bot.py`, `telegram.py`, `state.py`.
-- `scripts/` — the pipeline stages (`discover/`, `merge/`, `validate/`, `resolve/`, `scrape/`)
-  and the AI layer (`embed/`, `enrich/`, `eval/`, `ui/`).
+  `search.py` (shared embed/search constants + filter builder), `experience.py`,
+  `tech_filter.py` (the tech-role gate, ADR-0017); plus the v2 bot: `filters.py`, `bot.py`,
+  `telegram.py`, `state.py`.
+- `scripts/` — the pipeline stages (`discover/`, `merge/`, `validate/`, `resolve/`, `scrape/`,
+  `filter/`) and the AI layer (`embed/`, `enrich/`, `eval/`, `ui/`).
 - `docs/` — `index.html` dashboard + generated `jobs.json` (served by Pages), `adr/`,
   `AI_Integration/`.
 - `.github/workflows/` — `ci.yml` (lint + format + tests), `bot.yml` (Telegram alerts).
