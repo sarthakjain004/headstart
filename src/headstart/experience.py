@@ -32,7 +32,9 @@ class ExperienceSpan:
 
 
 # --- Tier 1: parse a structured field like "5+", "3 to 5", "3-5" -------------------------------
-_FIELD = re.compile(r"^\s*(\d{1,2})\s*(?:\+|(?:to|-|–|—)\s*(\d{1,2}))?", re.IGNORECASE)
+# \d{1,3} (not {1,2}) so a 3-digit value is captured whole and the plausibility guard can reject it
+# ("100" must not truncate to a plausible-looking "10"); anything real is < 100 anyway.
+_FIELD = re.compile(r"^\s*(\d{1,3})\s*(?:\+|(?:to|-|–|—)\s*(\d{1,3}))?", re.IGNORECASE)
 
 
 def from_field(value: str | None) -> ExperienceSpan | None:
@@ -46,7 +48,9 @@ def from_field(value: str | None) -> ExperienceSpan | None:
     hi = int(match.group(2)) if match.group(2) else None
     if lo > _MAX_PLAUSIBLE_YEARS:
         return None
-    if hi is not None and hi < lo:  # guard malformed ranges like "3-1"
+    if hi is not None and (
+        hi < lo or hi > _MAX_PLAUSIBLE_YEARS
+    ):  # malformed ("3-1") or implausible ("3 to 99"); Tier 2 already guards this
         hi = None
     return ExperienceSpan(lo, hi, "field")
 

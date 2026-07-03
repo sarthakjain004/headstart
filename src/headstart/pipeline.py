@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -123,6 +124,7 @@ def scrape_all(
     max_workers: int | None = None,
     progress_every: int = 0,
     resume: bool = False,
+    on_board: Callable[[str, int, str | None], None] | None = None,
 ) -> RunResult:
     """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
 
@@ -137,6 +139,9 @@ def scrape_all(
     progress line to stderr every that-many boards. ``resume`` appends to the existing output and
     skips boards already recorded in its ``.done`` journal, so an interrupted harvest continues
     instead of restarting.
+
+    ``on_board(key, n_new_jobs, error)``, if given, is called on the main thread as each board
+    completes (``error`` is None on success) — the hook for live per-board logging.
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
@@ -158,6 +163,7 @@ def scrape_all(
                 company = futures[future]
                 done += 1
                 key = f"{company.ats}:{company.slug}"
+                n_fresh = 0
                 try:
                     jobs = future.result()
                 except Exception as exc:  # noqa: BLE001 - isolate per-company failures
@@ -166,9 +172,12 @@ def scrape_all(
                     fresh = [j for j in jobs if j.id not in seen_ids]
                     seen_ids.update(j.id for j in fresh)
                     writer.write(fresh)
+                    n_fresh = len(fresh)
                 writer.mark_done(
                     key
                 )  # mark on completion (success or error): resume moves on
+                if on_board is not None:
+                    on_board(key, n_fresh, errors.get(key))
                 if progress_every and done % progress_every == 0:
                     _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:

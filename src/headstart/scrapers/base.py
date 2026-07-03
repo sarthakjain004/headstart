@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -15,6 +17,11 @@ from headstart.models import Job
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 _T = TypeVar("_T")
 _R = TypeVar("_R")
+
+# Default HTTP/2 multiplexing width (concurrent streams per host) for fan_out_async — 100 is around
+# the common server MAX_CONCURRENT_STREAMS. Override per-call, via HEADSTART_H2_STREAMS, or
+# run_scrapers --streams N. Read at call time (below) so a CLI flag can set the env before the scrape.
+_DEFAULT_H2_STREAMS = 100
 
 
 class BaseScraper(ABC):
@@ -100,3 +107,61 @@ class BaseScraper(ABC):
                 except Exception:  # noqa: BLE001 - one item's failure must not sink the batch
                     results[index] = default
         return results
+
+    @staticmethod
+    def fan_out_async(
+        items: Sequence[_T],
+        fn: Callable[[Any, _T], Awaitable[_R]],
+        *,
+        concurrency: int | None = None,
+        default: _R | None = None,
+    ) -> list[_R | None]:
+        """HTTP/2-multiplexed counterpart to :meth:`fan_out` (ADR-0015).
+
+        ``fn(session, item)`` returns an awaitable. One ``curl_cffi`` ``AsyncSession`` is shared across
+        every item, so same-host requests ride as concurrent **streams over one HTTP/2 connection**
+        instead of one connection per thread. ``concurrency`` bounds the in-flight streams (the
+        multiplexing width); when None it resolves to ``HEADSTART_H2_STREAMS`` or
+        :data:`_DEFAULT_H2_STREAMS` (100) at call time. Results are input-aligned and a raising item
+        becomes ``default`` — same contract as :meth:`fan_out`. Runs its own event loop, so a sync
+        thread-pool caller (one board per company thread) can invoke it directly.
+        """
+        if not items:
+            return [default] * len(items)
+        if concurrency is None:
+            concurrency = int(
+                os.environ.get("HEADSTART_H2_STREAMS") or _DEFAULT_H2_STREAMS
+            )
+        return asyncio.run(BaseScraper._gather_async(items, fn, concurrency, default))
+
+    @staticmethod
+    async def _gather_async(
+        items: Sequence[_T],
+        fn: Callable[[Any, _T], Awaitable[_R]],
+        concurrency: int,
+        default: _R | None,
+    ) -> list[_R | None]:
+        from curl_cffi.requests import AsyncSession
+
+        sem = asyncio.Semaphore(concurrency)
+        results: list[_R | None] = [default] * len(items)
+        async with AsyncSession(impersonate="chrome") as session:
+
+            async def one(index: int, item: _T) -> None:
+                async with sem:
+                    try:
+                        results[index] = await fn(session, item)
+                    except Exception:  # noqa: BLE001 - one item's failure must not sink the batch
+                        results[index] = default
+
+            await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
+        return results
+
+    @staticmethod
+    def async_fanout_enabled() -> bool:
+        """Whether the detail pass uses the multiplexed async path (ADR-0015, default per ADR-0016).
+
+        On by default; set ``HEADSTART_ASYNC_FANOUT=0`` to fall back to the sync thread-pool path.
+        Centralised here so every detail-fetch scraper shares one policy.
+        """
+        return os.environ.get("HEADSTART_ASYNC_FANOUT", "1") != "0"

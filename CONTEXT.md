@@ -35,6 +35,10 @@ _Avoid_: adapter, parser, client.
 **Company**:
 The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
 
+**Required experience**:
+The years of prior experience a Job asks for, as a whole-year range — a floor with an optional ceiling, open-ended when only a minimum is stated. Extracted to a number so it can be filtered on ("at most N years"); the raw phrasing the ATS gave is kept separately. A Job whose requirement can't be read is **unknown**, and unknown is deliberately not treated as too senior — it passes the "at most N years" filter rather than being hidden.
+_Avoid_: seniority — a title-level notion ("Senior engineer"), not a year count.
+
 ### Discovery and validation
 
 **Discovery**:
@@ -73,6 +77,15 @@ A Subscriber's match criteria (e.g. location) deciding which Jobs to send.
 
 **Notification**:
 A message sent to a Subscriber for a Job that matches its Filter and hasn't been seen before.
+
+### Search
+
+**Search index**:
+The embedded, deduped set of Jobs the semantic query runs against — the corpus the AI search actually serves. Built from the scraped `{ats}.jsonl` (the same source of truth as the Feed) and kept current by **Eviction**. Distinct from the **Feed** (the dashboard's assembled JSON) and from the **eval benchmark** — a frozen, labelled slice of Jobs used to *measure* search quality, deliberately held stable and *not* the live served corpus.
+_Avoid_: database, vector store — those name the storage, not the served set.
+
+**Eviction**:
+Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone. The freshness counterpart to embedding newly-seen Jobs.
 
 ## Relationships
 

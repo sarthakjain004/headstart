@@ -20,6 +20,7 @@ settles, or immediately on DNS. Retry lives here once; classification stays with
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import Any
@@ -27,7 +28,7 @@ from typing import Any
 from curl_cffi import requests as _requests
 from curl_cffi.requests import RequestsError  # re-exported for callers' except blocks
 
-__all__ = ["fetch", "session", "RequestsError"]
+__all__ = ["fetch", "fetch_async", "session", "RequestsError"]
 
 _local = threading.local()
 _TRANSIENT = {
@@ -74,3 +75,26 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
     raise AssertionError(
         "unreachable: the final attempt returns or raises"
     )  # pragma: no cover
+
+
+async def fetch_async(
+    session: Any, method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any
+):
+    """Async counterpart to :func:`fetch`: the same retry policy over a caller-supplied
+    ``AsyncSession``, so concurrent same-host requests ride as multiplexed HTTP/2 streams on one
+    connection. Returns the settled response for the caller to classify; retries 403/429/5xx and
+    transient network errors with backoff; raises ``RequestsError`` on DNS or if it never settles.
+    """
+    for attempt in range(attempts):
+        try:
+            response = await session.request(method, url, **kwargs)
+        except RequestsError as exc:
+            if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
+                raise
+            await asyncio.sleep(1.5 * (attempt + 1))
+            continue
+        if response.status_code in _TRANSIENT and attempt < attempts - 1:
+            await asyncio.sleep(1.5 * (attempt + 1))
+            continue
+        return response
+    raise AssertionError("unreachable")  # pragma: no cover
