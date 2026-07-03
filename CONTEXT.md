@@ -80,8 +80,12 @@ A message sent to a Subscriber for a Job that matches its Filter and hasn't been
 
 ### Search
 
+**Tech filter**:
+The recall-biased gate that keeps only software/tech Jobs (ADR-0017). The scrape writes every Job to `data/jobs/{ats}.jsonl`; the filter derives the **Tech subset** in `data/jobs/tech/{ats}.jsonl`, which is what the Feed, the embedding, the **Search index**, and the UI read. Recall-first: a non-tech Job creeping in is tolerated, dropping a tech Job is not — a hard rule the verification gate guards.
+_Avoid_: category filter, keyword filter — it is a role classifier, not a taxonomy lookup.
+
 **Search index**:
-The embedded, deduped set of Jobs the semantic query runs against — the corpus the AI search actually serves. Built from the scraped `{ats}.jsonl` (the same source of truth as the Feed) and kept current by **Eviction**. Distinct from the **Feed** (the dashboard's assembled JSON) and from the **eval benchmark** — a frozen, labelled slice of Jobs used to *measure* search quality, deliberately held stable and *not* the live served corpus.
+The embedded, deduped set of Jobs the semantic query runs against — the corpus the AI search actually serves. Built from the **Tech subset** (`data/jobs/tech/{ats}.jsonl`) and kept current by **Eviction**. Distinct from the **Feed** (the dashboard's assembled JSON) and from the **eval benchmark** — a frozen, labelled slice of Jobs used to *measure* search quality, deliberately held stable and *not* the live served corpus.
 _Avoid_: database, vector store — those name the storage, not the served set.
 
 **Eviction**:

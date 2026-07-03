@@ -49,10 +49,10 @@ onto the existing `Filter` seam in `src/headstart/filters.py`.
 Embed each Job's `title + description` once, keyed by `Job.id`, and store the vectors in an
 **embedded vector database** — LanceDB, FAISS, or sqlite-vec (no server to run).
 
-The streaming work already in place is the substrate: `data/jobs/{ats}.jsonl`, deduped by `id`,
-written incrementally. So you **embed only new ids each scrape and evict ids that go dead** — the
-index stays fresh for cents, and the freshness story is already wired to the scrape/liveness
-pipeline.
+The streaming work already in place is the substrate: `data/jobs/tech/{ats}.jsonl` — the tech subset
+(ADR-0017), deduped by `id`, written incrementally. So you **embed only new ids each scrape and evict
+ids that go dead** — the index stays fresh for cents, and the freshness story is already wired to the
+scrape/liveness pipeline. Only tech roles are embedded; the full scrape stays in `data/jobs/`.
 
 ### 3. Retrieval
 

@@ -25,3 +25,4 @@ supersedes it and note the supersession in both.
 | [0014](0014-search-index-ingestion-and-freshness.md) | Search-index ingestion: real corpus, scrape-diff eviction, incremental LanceDB | 2026-07-03 |
 | [0015](0015-async-multiplexed-fan-out.md) | Async HTTP/2-multiplexed detail fan-out, opt-in per scraper | 2026-07-03 |
 | [0016](0016-async-fan-out-default.md) | Async multiplexed fan-out on by default, width 100 | 2026-07-03 |
+| [0017](0017-tech-role-filter.md) | Post-hoc recall-biased tech-role filter as the authoritative tech gate | 2026-07-03 |
