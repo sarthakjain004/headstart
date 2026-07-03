@@ -144,3 +144,15 @@ def test_workday_transient_everywhere_is_unknown(monkeypatch):
         cl.UNKNOWN,
         None,
     )
+
+
+def test_workday_dns_is_unknown_not_dead(monkeypatch):
+    # a dns failure is OUR network (the *.wdN wildcard always resolves), never a dead board — so a
+    # network outage during a run can't produce false-deads
+    monkeypatch.setattr(
+        cl, "_post", _workday_post_stub(live_instance=None, dead_status="dns")
+    )
+    assert cl.p_workday("x", "https://x.wd3.myworkdayjobs.com/careers") == (
+        cl.UNKNOWN,
+        None,
+    )

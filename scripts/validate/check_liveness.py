@@ -242,9 +242,10 @@ def _keka_uuid(t, info):
     return None
 
 
-# A data center says a Workday tenant/site is definitively "not here" via dns-fail or 404/410/422;
-# a timeout / 5xx / 429 is transient. Used to decide DEAD (gone from every DC) vs UNKNOWN (re-probe).
-_WD_GONE = {"dns", 404, 410, 422}
+# The hinted DC's own answer decides dead/unknown: a 404/410/422 from the board's advertised wdN means
+# Workday affirmatively doesn't serve this tenant/site there -> gone. NOT dns: the *.wdN wildcard
+# resolves for every active DC, so a dns/timeout is OUR network (transient), not a dead board.
+_WD_GONE = {404, 410, 422}
 
 
 def p_workday(t, u):
@@ -266,21 +267,20 @@ def p_workday(t, u):
         total = int(data.get("total", 0)) if status == 200 and data else None
         return total, status
 
-    total, status = probe(hinted)
+    total, hinted_status = probe(hinted)
     if total is not None:
         return LIVE, total
     # The tenant may have migrated data centers (its wdN goes stale, the CXS 422s) — sweep the known
-    # DCs (same list the scraper uses). First 200 wins; a live board recovers on its new instance.
-    statuses = [status]
+    # DCs (same list the scraper uses) for a live instance. First 200 wins; the board recovers there.
     for inst in _WD_INSTANCES:
         if inst == hinted:
             continue
-        total, status = probe(inst)
+        total, _ = probe(inst)
         if total is not None:
             return LIVE, total
-        statuses.append(status)
-    # Served by no data center: DEAD only if every probe was a definitive "not here", else transient.
-    return (DEAD, None) if all(s in _WD_GONE for s in statuses) else (UNKNOWN, None)
+    # No DC serves it live. The advertised DC's own answer decides: a definitive 404/410/422 there
+    # means gone -> DEAD; a dns/timeout (couldn't even reach it) -> UNKNOWN, re-probe.
+    return (DEAD, None) if hinted_status in _WD_GONE else (UNKNOWN, None)
 
 
 def p_ripplehire(t, u):
