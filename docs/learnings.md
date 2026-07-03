@@ -2,6 +2,33 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## Zoho liveness unknowns are two things: 200 soft-404s + bandwidth-timeouts on its 1.7MB page (2026-07-03)
+
+A `--force` liveness pass left Zoho at **6,375 unknown** (of ~7,900) — alarming until decomposed.
+Zoho Recruit's careers page is a single ~**1.7MB** HTML blob (the whole job list is an
+HTML-entity-encoded JSON array in an `<input value="[…]" id="jobs">` at the *end* of the page), and
+the unknowns split ~evenly into two unrelated causes:
+
+- **~56% are soft-404s.** A gone tenant or an unpublished careers site is served as **HTTP 200** with
+  a 2.5KB error page (`cl-error-block`, "Page does not exist"). `_zoho_count` finds no jobs `<input>`
+  → `None` → UNKNOWN, but these are definitively **DEAD**. Fix: detect `cl-error-block` on a 200 →
+  DEAD (same shape as Keka's "Invalid Tenant" 200 soft-404). This mirrors a recurring ATS pattern:
+  **treat a 200 that renders the vendor's own error page as DEAD, not unknown.**
+
+- **~44% are live boards that timed out — from bandwidth saturation, not rate-limiting.** Controlled
+  test (same boards, low vs high concurrency): verdict mix is *identical* at 8 vs 250 workers (no
+  board is rejected), but live-page latency rises p50 2.9s→6.2s and **max 4.5s→11.8s** — right at the
+  pass-1 12s timeout. 85 concurrent × 1.7MB ≈ 145MB in flight share the pipe and slow each other
+  down; in the real 432-worker run (all ATSes competing) latency tips past 12s → timeout → UNKNOWN.
+  It is *not* Zoho throttling us — rate-limiting would change the verdict mix at high concurrency; it
+  didn't. Probed patiently (or at moderate concurrency) they all resolve in ~3s → LIVE.
+
+**Takeaways:** (1) a large "unknown" pile on one ATS is usually a *mix* — decompose before reacting.
+(2) Payload size × concurrency is a real liveness failure mode: Zoho's 1.7MB page is ~500× a
+Greenhouse JSON response, so it needs **lower concurrency / a longer timeout than the default**, not
+the same knob as everyone else. Re-probing the unknowns at moderate concurrency recovers the live
+half; the soft-404 fix settles the dead half.
+
 ## Dropped freshteam / greythr / jobsoid / peoplestrong — dead weight for tech coverage (2026-06-21)
 
 Removed these four from the active pipeline (merged CSVs + every provider list in

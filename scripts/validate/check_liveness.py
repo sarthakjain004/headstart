@@ -180,12 +180,12 @@ def p_workable(t, u):
     )
 
 
-def _zoho_count(body):
+def _zoho_count(text):
     import html as _html
 
-    m = _ZOHO_JOBS.search(body.decode("utf-8", "replace"))
+    m = _ZOHO_JOBS.search(text)
     if not m:
-        return None  # 200 but no jobs <input> -> odd/transient, re-probe
+        return None
     try:
         return len(json.loads(_html.unescape(m.group(1))))
     except Exception:
@@ -193,7 +193,19 @@ def _zoho_count(body):
 
 
 def p_zoho(t, u):
-    return _classify(f"{u.rstrip('/')}/jobs/Careers", _zoho_count)
+    status, body = _get(f"{u.rstrip('/')}/jobs/Careers")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    text = body.decode("utf-8", "replace")
+    # Zoho serves a 200 "Page does not exist" error page (marked by cl-error-block) for a gone tenant
+    # or an unpublished careers site — a soft-404, so definitively DEAD (not the transient UNKNOWN a
+    # missing jobs <input> would otherwise imply).
+    if "cl-error-block" in text:
+        return DEAD, None
+    count = _zoho_count(text)
+    return (LIVE, count) if count is not None else (UNKNOWN, None)
 
 
 def p_keka(t, u):
