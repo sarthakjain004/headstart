@@ -149,6 +149,14 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
 
+### Verifying experience-extraction coverage
+Whenever you change `experience.py`'s patterns, gauge the effect with
+`scripts/enrich/experience_coverage.py`: it runs `extract(field, description, title)` over
+`data/jobs/tech/{ats}.jsonl` and prints per-ATS coverage by tier (field / regex / seniority / none).
+Then `--misses <ats>` dumps a sample of the still-missed descriptions to **read manually** and reason
+about what phrasing to add (that read-then-widen loop is how ADR-0018's patterns were found — don't
+just eyeball the number). Calibrate any seniority→years mapping against real numbers in the data.
+
 ## Agent skills
 
 ### Issue tracker
