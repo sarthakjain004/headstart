@@ -132,36 +132,69 @@ class WorkdayScraper(BaseScraper):
         self._exhaust({}, absorb, depth=0)
         # Second pass: fill each posting's description concurrently (bounded); a failed detail
         # fetch leaves ``_jobDescription`` None so the job is still kept.
-        descriptions = self.fan_out(
-            postings,
-            lambda item: self._job_description(item.get("externalPath")),
-            workers=_DETAIL_WORKERS,
-        )
+        if self.async_fanout_enabled():
+            descriptions = self.fan_out_async(
+                postings,
+                lambda session, item: self._job_description_async(
+                    session, item.get("externalPath")
+                ),
+            )
+        else:
+            descriptions = self.fan_out(
+                postings,
+                lambda item: self._job_description(item.get("externalPath")),
+                workers=_DETAIL_WORKERS,
+            )
         for item, description in zip(postings, descriptions):
             item["_jobDescription"] = description
         return postings
 
-    def _job_description(self, external_path: str | None) -> str | None:
-        """GET one posting's detail and return its raw-HTML jobDescription (None on failure)."""
-        if not external_path:
-            return None
+    def _detail_url(self, external_path: str) -> str:
         company, instance, site = self._parts()
-        url = (
+        return (
             f"https://{company}.{instance}.myworkdayjobs.com"
             f"/wday/cxs/{company}/{site}{external_path}"
         )
+
+    @staticmethod
+    def _extract_description(response: Any) -> str | None:
+        """Pull the raw-HTML jobDescription out of a posting-detail response (None on non-200)."""
+        if response.status_code != 200:
+            return None
+        return (response.json().get("jobPostingInfo") or {}).get("jobDescription")
+
+    def _job_description(self, external_path: str | None) -> str | None:
+        """GET one posting's detail and return its jobDescription (None on failure). Sync path."""
+        if not external_path:
+            return None
         try:
             response = http.fetch(
                 "GET",
-                url,
+                self._detail_url(external_path),
                 timeout=30,
                 headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError:
             return None  # a missing description must not drop the job
-        if response.status_code != 200:
+        return self._extract_description(response)
+
+    async def _job_description_async(
+        self, session: Any, external_path: str | None
+    ) -> str | None:
+        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+        if not external_path:
             return None
-        return (response.json().get("jobPostingInfo") or {}).get("jobDescription")
+        try:
+            response = await http.fetch_async(
+                session,
+                "GET",
+                self._detail_url(external_path),
+                timeout=30,
+                headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            )
+        except http.RequestsError:
+            return None
+        return self._extract_description(response)
 
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:
         """Exhaust one filter combination: paginate normally, or subdivide when the

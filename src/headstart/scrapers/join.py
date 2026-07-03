@@ -72,31 +72,30 @@ class JoinScraper(BaseScraper):
                 break
             page += 1
         # Fill each posting's description concurrently (bounded); a failed fetch leaves it None.
-        descriptions = self.fan_out(
-            items,
-            lambda it: self._job_description(it.get("id")),
-            workers=_DETAIL_WORKERS,
-        )
+        if self.async_fanout_enabled():
+            descriptions = self.fan_out_async(
+                items,
+                lambda session, it: self._job_description_async(session, it.get("id")),
+            )
+        else:
+            descriptions = self.fan_out(
+                items,
+                lambda it: self._job_description(it.get("id")),
+                workers=_DETAIL_WORKERS,
+            )
         for item, description in zip(items, descriptions):
             item["_description"] = description
         return {"company": company, "items": items}
 
-    def _job_description(self, jid) -> str | None:
-        """GET one posting's detail and return its raw description body (None on failure)."""
-        if not jid:
+    def _detail_url(self, jid: str) -> str:
+        return f"https://join.com/api/public/jobs/{jid}?locale=en"
+
+    @staticmethod
+    def _extract_description(response: Any) -> str | None:
+        """Description, or intro/tasks/requirements joined, from a detail response (None on non-200)."""
+        if response.status_code != 200:
             return None
-        try:
-            resp = http.fetch(
-                "GET",
-                f"https://join.com/api/public/jobs/{jid}?locale=en",
-                headers={"User-Agent": _UA, "Accept": "application/json"},
-                timeout=30,
-            )
-        except http.RequestsError:
-            return None
-        if resp.status_code != 200:
-            return None
-        d = resp.json()
+        d = response.json()
         return (
             d.get("description")
             or "\n\n".join(
@@ -104,6 +103,37 @@ class JoinScraper(BaseScraper):
             )
             or None
         )
+
+    def _job_description(self, jid) -> str | None:
+        """GET one posting's detail and return its description body (None on failure). Sync path."""
+        if not jid:
+            return None
+        try:
+            resp = http.fetch(
+                "GET",
+                self._detail_url(jid),
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
+            )
+        except http.RequestsError:
+            return None
+        return self._extract_description(resp)
+
+    async def _job_description_async(self, session: Any, jid) -> str | None:
+        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+        if not jid:
+            return None
+        try:
+            resp = await http.fetch_async(
+                session,
+                "GET",
+                self._detail_url(jid),
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
+            )
+        except http.RequestsError:
+            return None
+        return self._extract_description(resp)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company_name = (raw.get("company") or {}).get("name") or self.company

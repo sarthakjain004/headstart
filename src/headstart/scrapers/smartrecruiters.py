@@ -29,37 +29,68 @@ class SmartRecruitersScraper(BaseScraper):
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit=100"
 
     def fetch_raw(self) -> Any:
-        # Second pass: fill each posting's description concurrently (bounded); a failed detail
-        # fetch leaves ``_description`` None so the job is still kept.
+        # Second pass: fill each posting's description concurrently. The detail pass multiplexes over
+        # one HTTP/2 connection by default (ADR-0016); a failed fetch leaves ``_description`` None.
         data = json.loads(self._get())
         postings = data.get("content") or []
-        descriptions = self.fan_out(
-            postings,
-            lambda p: self._job_description(p.get("id")),
-            workers=_DETAIL_WORKERS,
-        )
+        if self.async_fanout_enabled():
+            descriptions = self.fan_out_async(
+                postings,
+                lambda session, p: self._job_description_async(session, p.get("id")),
+            )
+        else:
+            descriptions = self.fan_out(
+                postings,
+                lambda p: self._job_description(p.get("id")),
+                workers=_DETAIL_WORKERS,
+            )
         for posting, description in zip(postings, descriptions):
             posting["_description"] = description
         return data
 
+    def _detail_url(self, posting_id: str) -> str:
+        return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
+
+    @staticmethod
+    def _extract_description(response: Any) -> str | None:
+        """Pull the raw-HTML jobDescription out of a posting-detail response (None on non-200)."""
+        if response.status_code != 200:
+            return None
+        sections = (response.json().get("jobAd") or {}).get("sections") or {}
+        return (sections.get("jobDescription") or {}).get("text")
+
     def _job_description(self, posting_id: str | None) -> str | None:
-        """GET one posting's detail and return its raw-HTML jobDescription (None on failure)."""
+        """GET one posting's detail and return its jobDescription (None on failure). Sync path."""
         if not posting_id:
             return None
-        url = f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
         try:
             response = http.fetch(
                 "GET",
-                url,
+                self._detail_url(posting_id),
                 timeout=30,
                 headers={"User-Agent": _UA, "Accept": "application/json"},
             )
         except http.RequestsError:
             return None  # a missing description must not drop the job
-        if response.status_code != 200:
+        return self._extract_description(response)
+
+    async def _job_description_async(
+        self, session: Any, posting_id: str | None
+    ) -> str | None:
+        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+        if not posting_id:
             return None
-        sections = (response.json().get("jobAd") or {}).get("sections") or {}
-        return (sections.get("jobDescription") or {}).get("text")
+        try:
+            response = await http.fetch_async(
+                session,
+                "GET",
+                self._detail_url(posting_id),
+                timeout=30,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+            )
+        except http.RequestsError:
+            return None
+        return self._extract_description(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
