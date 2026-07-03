@@ -40,6 +40,34 @@ _URL_PATTERN = re.compile(
     r"^https://(?P<company>[^.]+)\.(?P<instance>wd\d+)\.myworkdayjobs\.com/(?P<site>[^/?#]+)"
 )
 
+# The active Workday data centers, found by probing which ``*.wdN.myworkdayjobs.com`` wildcards
+# resolve across wd1-wd1000 (19 as of 2026-07). Tenants migrate between data centers; when one does,
+# its old ``wdN`` host 500s and the CXS API 422s, so a board built from the stale URL reads as empty.
+# ``_resolve_instance`` sweeps these to recover a migrated board. Ordered by prevalence in our pool
+# so the sweep hits likely instances first (the last three carry no boards yet). Re-run the DNS sweep
+# to extend this as Workday adds data centers.
+_INSTANCES = (
+    "wd1",
+    "wd5",
+    "wd3",
+    "wd12",
+    "wd103",
+    "wd501",
+    "wd503",
+    "wd108",
+    "wd10",
+    "wd105",
+    "wd502",
+    "wd102",
+    "wd115",
+    "wd107",
+    "wd504",
+    "wd116",
+    "wd104",
+    "wd109",
+    "wd117",
+)
+
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 _PAGE_LIMIT = 20  # Workday hard-caps `limit` at 20 (higher returns 400).
 _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide.
@@ -71,6 +99,12 @@ class WorkdayScraper(BaseScraper):
 
     ats = "workday"
 
+    def __init__(self, slug: str, company: str | None = None) -> None:
+        super().__init__(slug, company)
+        # The data center actually serving the tenant. None until resolved; overrides the URL's
+        # ``wdN`` when the tenant has migrated (see :meth:`_resolve_instance`).
+        self._instance: str | None = None
+
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
         return url.rstrip("/")  # the full https://{co}.{inst}.myworkdayjobs.com/{site}
@@ -89,7 +123,53 @@ class WorkdayScraper(BaseScraper):
                 "Workday slug must be a careers URL like "
                 f"https://{{co}}.wdN.myworkdayjobs.com/{{site}} — got {self.slug!r}"
             )
-        return match.group("company"), match.group("instance"), match.group("site")
+        instance = self._instance or match.group("instance")
+        return match.group("company"), instance, match.group("site")
+
+    def _resolve_instance(self) -> None:
+        """Point this scrape at the data center currently serving the tenant.
+
+        Workday tenants migrate between data centers; when one does, the URL's ``wdN`` goes stale
+        (its host 500s, the CXS API 422s) and the board would read as empty. Probe the URL's instance
+        first, then sweep the known data centers, caching the first that answers so :meth:`url` and
+        :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none serves the board —
+        the crawl then yields no jobs, as before."""
+        company, hinted, site = (
+            self._parts()
+        )  # self._instance is None here -> the URL's instance
+
+        def serves(instance: str) -> bool:
+            probe_url = (
+                f"https://{company}.{instance}.myworkdayjobs.com"
+                f"/wday/cxs/{company}/{site}/jobs"
+            )
+            try:
+                response = http.fetch(
+                    "POST",
+                    probe_url,
+                    json={
+                        "appliedFacets": {},
+                        "limit": 1,
+                        "offset": 0,
+                        "searchText": "",
+                    },
+                    headers={
+                        "User-Agent": _USER_AGENT,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    timeout=30,
+                )
+            except http.RequestsError:
+                return False
+            return response.status_code == 200
+
+        if serves(hinted):
+            return  # fast path: the URL's data center is current
+        for instance in _INSTANCES:
+            if instance != hinted and serves(instance):
+                self._instance = instance
+                return
 
     def _post(
         self, applied_facets: dict[str, list[str]], offset: int
@@ -118,6 +198,7 @@ class WorkdayScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         """Crawl the tenant (paginate + recursively subdivide capped queries) and
         return a flat, de-duplicated list of raw posting dicts."""
+        self._resolve_instance()  # follow data-center migrations before crawling
         seen: set[str] = set()
         postings: list[dict[str, Any]] = []
 

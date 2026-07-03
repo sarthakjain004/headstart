@@ -104,6 +104,70 @@ def test_keka_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def _keka_stub_get(portal, page="", jobs="[]"):
+    """Stub BaseScraper._get, dispatching on the requested URL (careerportalinfo / careers page /
+    embedjobs) so KekaScraper.fetch_raw can be exercised without network."""
+
+    def _get(self, url=None):
+        target = url or self.url()
+        if "careerportalinfo" in target:
+            return portal
+        if "embedjobs" in target:
+            return jobs
+        if target.endswith("/careers"):
+            return page
+        raise AssertionError(f"unexpected GET {target}")
+
+    return _get
+
+
+def test_keka_uuid_from_portal_background(monkeypatch):
+    # the common case: the UUID rides in careersBackgroundPath
+    portal = '{"careersBackgroundPath":"/ats/documents/7e2f830e-7500-440f-992f-5013e438f8b4/bg.png"}'
+    s = get_scraper("keka", "acme", "Acme")
+    monkeypatch.setattr(
+        type(s), "_get", _keka_stub_get(portal, jobs='[{"id":1,"title":"Eng"}]')
+    )
+    raw = s.fetch_raw()
+    assert [j["id"] for j in raw] == [1]
+    assert s._tenant == "7e2f830e-7500-440f-992f-5013e438f8b4"
+
+
+def test_keka_uuid_falls_back_to_careers_page(monkeypatch):
+    # background-less portal: no UUID in careerportalinfo, but the /careers page carries it
+    portal = '{"careersBackgroundPath":"","name":"Aggne"}'
+    page = "<html>...96d9c896-b9c8-40c0-bdf3-1b764db423a4...</html>"
+    s = get_scraper("keka", "aggne", "Aggne")
+    monkeypatch.setattr(
+        type(s),
+        "_get",
+        _keka_stub_get(portal, page=page, jobs='[{"id":2,"title":"Dev"}]'),
+    )
+    raw = s.fetch_raw()
+    assert [j["id"] for j in raw] == [2]
+    assert s._tenant == "96d9c896-b9c8-40c0-bdf3-1b764db423a4"
+
+
+def test_keka_invalid_tenant_yields_no_jobs(monkeypatch):
+    # soft-404: an unknown slug renders "Invalid Tenant" HTML at HTTP 200
+    s = get_scraper("keka", "nope", "Nope")
+    monkeypatch.setattr(
+        type(s), "_get", _keka_stub_get("<html><title>Invalid Tenant</title></html>")
+    )
+    assert s.fetch_raw() == []
+
+
+def test_keka_no_uuid_anywhere_yields_no_jobs(monkeypatch):
+    # background-less portal whose /careers page also omits the UUID (JS-loaded) -> unreadable
+    s = get_scraper("keka", "anblicks", "Anblicks")
+    monkeypatch.setattr(
+        type(s),
+        "_get",
+        _keka_stub_get('{"careersBackgroundPath":""}', page="<html>no id</html>"),
+    )
+    assert s.fetch_raw() == []
+
+
 def test_recruitee_parse():
     jobs = get_scraper("recruitee", "weekday", "Weekday").parse(
         _load("recruitee_weekday.json"), SCRAPED_AT
@@ -224,6 +288,49 @@ def test_workday_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
     assert j.experience is None  # list/detail give no clean experience field
     assert j.employment_type is None
+
+
+class _FakeResp:
+    def __init__(self, status):
+        self.status_code = status
+
+    def json(self):
+        return {"total": 1, "jobPostings": []}
+
+
+def _workday_fetch_stub(live_instance):
+    """Stub headstart.http.fetch: 200 only for the CXS URL on `live_instance`, else 422."""
+
+    def fetch(method, url, **kwargs):
+        return _FakeResp(200 if f".{live_instance}." in url else 422)
+
+    return fetch
+
+
+def test_workday_keeps_instance_when_hinted_serves(monkeypatch):
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd3"))
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
+    s._resolve_instance()
+    assert s._instance is None  # hinted instance served it -> no sweep, URL unchanged
+    assert ".wd3." in s.url()
+
+
+def test_workday_follows_migrated_instance(monkeypatch):
+    # tenant migrated wd3 -> wd103; hinted 422s, sweep finds wd103
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd103"))
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
+    s._resolve_instance()
+    assert s._instance == "wd103"
+    assert ".wd103." in s.url() and "/wday/cxs/acme/careers/jobs" in s.url()
+
+
+def test_workday_leaves_instance_when_none_serves(monkeypatch):
+    # gone everywhere (422 on all DCs) -> keep hinted; crawl yields nothing
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("nowhere"))
+    s = get_scraper("workday", "https://gone.wd3.myworkdayjobs.com/careers", "Gone")
+    s._resolve_instance()
+    assert s._instance is None
+    assert ".wd3." in s.url()
 
 
 def test_trakstar_parse():
