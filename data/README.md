@@ -1,15 +1,28 @@
 # data/
 
-Pipeline data, organized by the stage that produces it (mirrors `scripts/`).
+Pipeline data, organized by the stage that produces it (mirrors `scripts/`). Most of it is large and
+regenerable, so it's git-ignored; only a few small, hard-won artifacts are committed (marked below).
 
-| folder | stage | what's in it |
-|---|---|---|
-| `discover/` | discover | raw tenant discovery — the Common Crawl miner's output (`india_ats_tenants.csv`), its index cache (`cc_index_cache.txt`) and resume checkpoint (`cc_miner_checkpoint.txt`). |
-| `wayback-ats/` | discover | tenant lists harvested from the Wayback CDX API (one CSV per ATS); `active/` is the liveness-filtered subset. See its README. |
-| `ats-companies/` | discover (source pool) | the global "company board" universe (greenhouse, lever, ashby, workday), copied from jobhive. Input to the merge step. See its README. |
-| `ats-tenants-merged/` | merge | Common Crawl ∪ Wayback, deduped, one CSV per ATS; `active/` is the live subset. Built by `scripts/merge/merge_tenants.py`. See its README. |
-| `resolve/` | resolve | company → `ats:slug` resolution — `fingerprint_results.csv`, `verify_results.csv`, `investigated.csv`, `unfound_companies.csv`, `recovered_unfound.csv`, and the final `coverage.csv`. |
-| `jobs/` | scrape | the scraped job feeds. `wellfound.csv` is the main active jobs output. |
-| `scratch/` | — | regenerable run logs and superseded intermediates. Git-ignored; safe to delete. |
+| folder | stage | what's in it | in git? |
+|---|---|---|---|
+| `discover/` | discover | raw tenant discovery — the Common Crawl miner's harvest per ATS (`cc_ats_tenants.csv`) plus its index/resume caches. | ignored |
+| `ats-tenants-merged/` | merge | the merged candidate pool: Common Crawl ∪ Wayback ∪ harvests, deduped, one `{ats}.csv` per ATS (`ats,tenant,url,source`). See its README. | `*.csv` ignored; **`active/` committed** |
+| `resolve/` | resolve | company → `ats:slug` resolution artifacts (`fingerprint_results.csv`, `verify_results.csv`, `coverage.csv`, …). | ignored |
+| `validate/` | validate | the **liveness ledger** (ADR-0012): `liveness/{ats}.csv` = `ats,tenant,url,status,jobs,checked_at`, the source of truth for Live/Dead/Unknown. The Active list is just its `status==live` rows; written by `scripts/validate/check_liveness.py`. | **committed** |
+| `jobs/` | scrape → filter | scraped jobs. `{ats}.jsonl` is the full per-ATS scrape (the source of truth); **`tech/{ats}.jsonl`** is the software/tech subset (ADR-0017) that the feed, embedding, and UI actually read. `wellfound.csv` is the one-off Wellfound corpus (the frozen eval benchmark); `logs/` holds run logs. | ignored |
+| `enrich/` | enrich | years-of-experience extraction output, `wellfound_experience.jsonl` (ADR-0009). | ignored |
+| `embeddings/` | embed | the vector store: `{source}/embeddings.f32` + `meta.jsonl` + `manifest.json` (ADR-0005). | ignored |
+| `lancedb/` | embed | the local LanceDB table for query-time vector search (ADR-0008). | ignored |
+| `eval/` | eval | the retrieval-eval harness data — `qrels.jsonl`, `pool.jsonl`, `judge_labels.jsonl`, `human_labels.jsonl` (ADR-0011). See its README. | committed (except `pool.jsonl`) |
+| `scratch/` | — | regenerable run logs, recon captures, and superseded intermediates. Safe to delete. | ignored |
 
-The live product reads the curated subset in `config/companies.toml`, not these files directly — these are the discovery/resolution pool used to grow that subset.
+## Flow
+
+`discover` finds tenants → `merge` unions them into the pool → `validate` probes each board and
+records a verdict in the liveness ledger → `scrape` reads the live boards into `jobs/{ats}.jsonl` →
+`filter` keeps the tech subset in `jobs/tech/` → `embed` turns that into vectors in `embeddings/`
+and `lancedb/` for semantic search.
+
+Only `data/validate/liveness/` and `data/ats-tenants-merged/active/` (and the eval labels) are
+committed — everything else regenerates from the scripts. The served product reads the liveness
+ledger's live view and the **tech subset**, not the full scrape.
