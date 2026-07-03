@@ -6,10 +6,10 @@ System) career boards — earlier and more completely than relying on LinkedIn.
 HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
 them through **18 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
 two ways: a static dashboard over a curated feed, and an **AI semantic-search layer** (local
-embeddings → vector search with structured filters) measured by a validated retrieval-eval
-harness at **nDCG@10 = 0.90**.
+embeddings → vector search with structured filters) built and measured on a benchmark corpus at
+**nDCG@10 = 0.90** — wiring it to the full scraped corpus is the documented next step (ADR-0019).
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 11 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 19 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed…).
@@ -40,9 +40,10 @@ Pipeline (per CONTEXT.md):
     → scrape  18 ATS scrapers read the Active boards, normalize to one Job, stream to JSONL
     → filter  keep only software/tech roles -> data/jobs/tech/ (recall-biased, ADR-0017)
 
-Serving (all from the tech subset):
-  curated feed  → docs/jobs.json  → GitHub Pages static dashboard (client-side filter)
-  tech corpus   → embed → LanceDB → semantic search (filter-then-rank) + Telegram alert bot
+Serving:
+  curated feed (tech subset) → docs/jobs.json → GitHub Pages static dashboard (client-side filter)
+  semantic search → embed → LanceDB → filter-then-rank + Telegram alert bot
+    (built + evaluated on the Wellfound benchmark corpus; embedding the tech subset is next, ADR-0019)
 ```
 
 Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
@@ -65,7 +66,7 @@ scale (search over the full corpus) is the AI backend, not the static page (ADR-
 normalizes its raw postings into `Job` records; all HTTP routes through one pooled, thread-local
 `curl_cffi` client that impersonates Chrome, so the same stack serves plain JSON APIs and the
 TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The liveness pipeline has validated
-tens of thousands of live boards across these ATSes.
+**~74,600 live boards (of ~122k probed)** across these ATSes.
 
 ## AI semantic search
 
@@ -92,9 +93,10 @@ query drives the embedding.
 Ranking quality is measured, not asserted (ADR-0011). A five-stage harness in `scripts/eval/`:
 pool the search's top hits per query, grade each `(query, job)` pair `0–3` with an LLM judge,
 validate that judge against hand labels (quadratic-weighted Cohen's **κ ≈ 0.64**, "substantial"),
-then score with `ranx` → **nDCG@10 = 0.90**. Honest limit, printed with the score: it is a
-single-system pool, so nDCG measures how well the search orders its own picks, not corpus-wide
-recall (pooling a second system, e.g. BM25, is the named next step).
+then score with `ranx` → **nDCG@10 = 0.90** on the Wellfound benchmark corpus. Two honest limits,
+printed with the score: it is a single-system pool, so nDCG measures how well the search orders its
+own picks, not corpus-wide recall (pooling a second system, e.g. BM25, is the named next step); and
+the benchmark is kept deliberately distinct from the production tech corpus (ADR-0014, ADR-0019).
 
 ## Layout
 
