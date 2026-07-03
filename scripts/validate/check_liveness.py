@@ -203,10 +203,28 @@ def p_keka(t, u):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
-    m = _UUID.search(body.decode("utf-8", "replace"))
-    if not m:
+    text = body.decode("utf-8", "replace")
+    # Keka soft-errors at 200 with an HTML page: "Invalid Tenant" (unknown slug) or "Forbidden
+    # Access" (disabled portal) — both mean no public board, so definitively DEAD.
+    if "Invalid Tenant" in text or "Forbidden Access" in text:
+        return DEAD, None
+    uuid = _keka_uuid(t, text)
+    if not uuid:
         return UNKNOWN, None
-    return _classify(f"{base}/embedjobs/default/active/{m.group(0)}", _len_of)
+    return _classify(f"{base}/embedjobs/default/active/{uuid}", _len_of)
+
+
+def _keka_uuid(t, info):
+    """The org UUID: from careerportalinfo when a background image carries it (in
+    careersBackgroundPath), else from the /careers page (background-less portals omit it there)."""
+    m = _UUID.search(info)
+    if m:
+        return m.group(0)
+    status, body = _get(f"https://{t}.keka.com/careers")
+    if status == 200:
+        m = _UUID.search(body.decode("utf-8", "replace"))
+        return m.group(0) if m else None
+    return None
 
 
 def p_workday(t, u):

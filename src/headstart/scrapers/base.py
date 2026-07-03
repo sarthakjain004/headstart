@@ -57,12 +57,14 @@ class BaseScraper(ABC):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         """Turn a raw API/page response into normalized Jobs."""
 
-    def _get(self) -> str:
-        """GET the board URL as text via the reliable-fetch seam (retry lives there). Raises
-        on a definitive HTTP error so a dead board surfaces as a per-company failure."""
+    def _get(self, url: str | None = None) -> str:
+        """GET a board URL as text via the reliable-fetch seam (retry lives there). Defaults to
+        ``self.url()``; pass an explicit ``url`` to fetch a secondary endpoint (e.g. Keka's careers
+        page for the tenant id). Raises on a definitive HTTP error so a dead board surfaces as a
+        per-company failure."""
         response = http.fetch(
             "GET",
-            self.url(),
+            url or self.url(),
             headers={
                 "User-Agent": _USER_AGENT,
                 "Accept": "application/json, text/html",

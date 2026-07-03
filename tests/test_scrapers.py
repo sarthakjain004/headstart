@@ -104,6 +104,70 @@ def test_keka_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def _keka_stub_get(portal, page="", jobs="[]"):
+    """Stub BaseScraper._get, dispatching on the requested URL (careerportalinfo / careers page /
+    embedjobs) so KekaScraper.fetch_raw can be exercised without network."""
+
+    def _get(self, url=None):
+        target = url or self.url()
+        if "careerportalinfo" in target:
+            return portal
+        if "embedjobs" in target:
+            return jobs
+        if target.endswith("/careers"):
+            return page
+        raise AssertionError(f"unexpected GET {target}")
+
+    return _get
+
+
+def test_keka_uuid_from_portal_background(monkeypatch):
+    # the common case: the UUID rides in careersBackgroundPath
+    portal = '{"careersBackgroundPath":"/ats/documents/7e2f830e-7500-440f-992f-5013e438f8b4/bg.png"}'
+    s = get_scraper("keka", "acme", "Acme")
+    monkeypatch.setattr(
+        type(s), "_get", _keka_stub_get(portal, jobs='[{"id":1,"title":"Eng"}]')
+    )
+    raw = s.fetch_raw()
+    assert [j["id"] for j in raw] == [1]
+    assert s._tenant == "7e2f830e-7500-440f-992f-5013e438f8b4"
+
+
+def test_keka_uuid_falls_back_to_careers_page(monkeypatch):
+    # background-less portal: no UUID in careerportalinfo, but the /careers page carries it
+    portal = '{"careersBackgroundPath":"","name":"Aggne"}'
+    page = "<html>...96d9c896-b9c8-40c0-bdf3-1b764db423a4...</html>"
+    s = get_scraper("keka", "aggne", "Aggne")
+    monkeypatch.setattr(
+        type(s),
+        "_get",
+        _keka_stub_get(portal, page=page, jobs='[{"id":2,"title":"Dev"}]'),
+    )
+    raw = s.fetch_raw()
+    assert [j["id"] for j in raw] == [2]
+    assert s._tenant == "96d9c896-b9c8-40c0-bdf3-1b764db423a4"
+
+
+def test_keka_invalid_tenant_yields_no_jobs(monkeypatch):
+    # soft-404: an unknown slug renders "Invalid Tenant" HTML at HTTP 200
+    s = get_scraper("keka", "nope", "Nope")
+    monkeypatch.setattr(
+        type(s), "_get", _keka_stub_get("<html><title>Invalid Tenant</title></html>")
+    )
+    assert s.fetch_raw() == []
+
+
+def test_keka_no_uuid_anywhere_yields_no_jobs(monkeypatch):
+    # background-less portal whose /careers page also omits the UUID (JS-loaded) -> unreadable
+    s = get_scraper("keka", "anblicks", "Anblicks")
+    monkeypatch.setattr(
+        type(s),
+        "_get",
+        _keka_stub_get('{"careersBackgroundPath":""}', page="<html>no id</html>"),
+    )
+    assert s.fetch_raw() == []
+
+
 def test_recruitee_parse():
     jobs = get_scraper("recruitee", "weekday", "Weekday").parse(
         _load("recruitee_weekday.json"), SCRAPED_AT
