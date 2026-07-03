@@ -36,8 +36,8 @@ _Avoid_: adapter, parser, client.
 The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
 
 **Required experience**:
-The years of prior experience a Job asks for, as a whole-year range — a floor with an optional ceiling, open-ended when only a minimum is stated. Extracted to a number so it can be filtered on ("at most N years"); the raw phrasing the ATS gave is kept separately. A Job whose requirement can't be read is **unknown**, and unknown is deliberately not treated as too senior — it passes the "at most N years" filter rather than being hidden.
-_Avoid_: seniority — a title-level notion ("Senior engineer"), not a year count.
+The years of prior experience a Job asks for, as a whole-year range — a floor with an optional ceiling, open-ended when only a minimum is stated. Extracted to a number so it can be filtered on ("at most N years"); the raw phrasing the ATS gave is kept separately. The number is either **stated** (read from a field or the description) or, when none is stated, a lower-confidence **floor estimated from the Job's seniority level** (its title/level suffix, e.g. "Senior" → 5; ADR-0018) — the `source` records which. Only a Job with **neither** a stated number **nor** a seniority signal is **unknown**, and unknown is deliberately not treated as too senior — it passes the "at most N years" filter rather than being hidden; a seniority-estimated floor, by contrast, can place a Job above the filter.
+_Avoid_: conflating **seniority** (a title level) with required experience — seniority only *estimates* a year count as a fallback, it is not itself the requirement.
 
 ### Discovery and validation
 
