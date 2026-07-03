@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html as _html
 import json
+import os
 import re
 from typing import Any
 
@@ -50,28 +51,58 @@ class TrakstarScraper(BaseScraper):
         codes = [
             m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))
         ]
-        # Each job page's JSON-LD description, fetched concurrently (bounded); failures -> None.
-        descriptions = dict(
-            zip(
+        # Each job page's JSON-LD description, fetched concurrently (bounded); failures -> None. The
+        # detail pages sit behind DataDome, so the async path pins the multiplexing width to the
+        # gentle _DETAIL_WORKERS rather than the global HEADSTART_H2_STREAMS.
+        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+            results = self.fan_out_async(
                 codes,
-                self.fan_out(codes, self._job_description, workers=_DETAIL_WORKERS),
+                lambda session, code: self._job_description_async(session, code),
+                concurrency=_DETAIL_WORKERS,
             )
-        )
+        else:
+            results = self.fan_out(
+                codes, self._job_description, workers=_DETAIL_WORKERS
+            )
+        descriptions = dict(zip(codes, results))
         return {"html": html, "descriptions": descriptions}
 
+    def _detail_url(self, code: str) -> str:
+        return f"https://{self.slug}.hire.trakstar.com/jobs/{code}/"
+
+    @staticmethod
+    def _extract_description(response: Any) -> str | None:
+        """Pull JobPosting.description from a detail page's JSON-LD (None on non-200)."""
+        if response.status_code != 200:
+            return None
+        return _jsonld_description(response.text)
+
     def _job_description(self, code: str) -> str | None:
+        """GET one job page and return its JSON-LD description (None on failure). Sync path."""
         try:
             response = http.fetch(
                 "GET",
-                f"https://{self.slug}.hire.trakstar.com/jobs/{code}/",
+                self._detail_url(code),
                 timeout=30,
                 headers={"User-Agent": _UA},
             )
         except http.RequestsError:
             return None  # a missing description must not drop the job
-        if response.status_code != 200:
+        return self._extract_description(response)
+
+    async def _job_description_async(self, session: Any, code: str) -> str | None:
+        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+        try:
+            response = await http.fetch_async(
+                session,
+                "GET",
+                self._detail_url(code),
+                timeout=30,
+                headers={"User-Agent": _UA},
+            )
+        except http.RequestsError:
             return None
-        return _jsonld_description(response.text)
+        return self._extract_description(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         html = raw["html"] if isinstance(raw, dict) else raw

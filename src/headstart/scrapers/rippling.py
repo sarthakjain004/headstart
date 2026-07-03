@@ -10,6 +10,7 @@ fetched in a bounded thread pool. A failed detail fetch leaves description None 
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from headstart import http
@@ -60,29 +61,60 @@ class RipplingScraper(BaseScraper):
             else (data.get("items") or data.get("jobs") or [])
         )
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
-        details = self.fan_out(
-            items,
-            lambda it: self._detail(it.get("uuid")),
-            workers=_DETAIL_WORKERS,
-            default={},
-        )
+        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+            details = self.fan_out_async(
+                items,
+                lambda session, it: self._detail_async(session, it.get("uuid")),
+                default={},
+            )
+        else:
+            details = self.fan_out(
+                items,
+                lambda it: self._detail(it.get("uuid")),
+                workers=_DETAIL_WORKERS,
+                default={},
+            )
         for item, detail in zip(items, details):
             item["_detail"] = detail
         return items
 
+    def _detail_url(self, uuid: str) -> str:
+        return f"{_API}/{self.slug}/jobs/{uuid}"
+
+    @staticmethod
+    def _extract_detail(response: Any) -> dict:
+        return response.json() if response.status_code == 200 else {}
+
     def _detail(self, uuid: str | None) -> dict:
+        """GET one posting's full record (``{}`` on failure). Sync path."""
         if not uuid:
             return {}
         try:
             resp = http.fetch(
                 "GET",
-                f"{_API}/{self.slug}/jobs/{uuid}",
+                self._detail_url(uuid),
                 headers={"User-Agent": _UA, "Accept": "application/json"},
                 timeout=30,
             )
         except http.RequestsError:
             return {}
-        return resp.json() if resp.status_code == 200 else {}
+        return self._extract_detail(resp)
+
+    async def _detail_async(self, session: Any, uuid: str | None) -> dict:
+        """Same as :meth:`_detail` but over the shared multiplexed ``AsyncSession``."""
+        if not uuid:
+            return {}
+        try:
+            resp = await http.fetch_async(
+                session,
+                "GET",
+                self._detail_url(uuid),
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
+            )
+        except http.RequestsError:
+            return {}
+        return self._extract_detail(resp)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
