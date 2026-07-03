@@ -290,6 +290,49 @@ def test_workday_parse():
     assert j.employment_type is None
 
 
+class _FakeResp:
+    def __init__(self, status):
+        self.status_code = status
+
+    def json(self):
+        return {"total": 1, "jobPostings": []}
+
+
+def _workday_fetch_stub(live_instance):
+    """Stub headstart.http.fetch: 200 only for the CXS URL on `live_instance`, else 422."""
+
+    def fetch(method, url, **kwargs):
+        return _FakeResp(200 if f".{live_instance}." in url else 422)
+
+    return fetch
+
+
+def test_workday_keeps_instance_when_hinted_serves(monkeypatch):
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd3"))
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
+    s._resolve_instance()
+    assert s._instance is None  # hinted instance served it -> no sweep, URL unchanged
+    assert ".wd3." in s.url()
+
+
+def test_workday_follows_migrated_instance(monkeypatch):
+    # tenant migrated wd3 -> wd103; hinted 422s, sweep finds wd103
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd103"))
+    s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
+    s._resolve_instance()
+    assert s._instance == "wd103"
+    assert ".wd103." in s.url() and "/wday/cxs/acme/careers/jobs" in s.url()
+
+
+def test_workday_leaves_instance_when_none_serves(monkeypatch):
+    # gone everywhere (422 on all DCs) -> keep hinted; crawl yields nothing
+    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("nowhere"))
+    s = get_scraper("workday", "https://gone.wd3.myworkdayjobs.com/careers", "Gone")
+    s._resolve_instance()
+    assert s._instance is None
+    assert ".wd3." in s.url()
+
+
 def test_trakstar_parse():
     # raw is {html: listing, descriptions: {code: detail-page JSON-LD description}}
     jobs = get_scraper("trakstar", "exotel", "Exotel").parse(
