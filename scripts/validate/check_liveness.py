@@ -401,9 +401,13 @@ def p_join(t, u):
         return UNKNOWN, None
     try:
         state = (json.loads(m.group(1)).get("props") or {}).get("pageProps") or {}
-        cid = ((state.get("initialState") or {}).get("company") or {}).get("id")
     except Exception:
         return UNKNOWN, None
+    # join.com serves a 200 Next.js error page (pageProps.statusCode 404 "Entity not found" / 410
+    # "Resource deleted") for a company that's gone — a soft-404, so DEAD.
+    if state.get("statusCode") in (404, 410):
+        return DEAD, None
+    cid = ((state.get("initialState") or {}).get("company") or {}).get("id")
     if not cid:
         return UNKNOWN, None
     return _classify(

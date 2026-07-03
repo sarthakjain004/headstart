@@ -2,6 +2,26 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## Two recurring liveness failure modes across ATSes: 200 soft-404s and shared-host latency (2026-07-03)
+
+Diagnosing the big "unknown" piles (workable, workday, zoho, keka, join, lever, teamtailor) surfaced
+two failure modes that recur across unrelated ATSes — worth checking first for any new one.
+
+**1. Soft-404 served as HTTP 200.** Several ATSes return 200 with their own error page instead of a
+404 for a gone/unpublished board, so a count-based prober reads "no jobs → UNKNOWN" when the truth is
+DEAD. Confirmed: keka ("Invalid Tenant" / "Forbidden Access" HTML), zoho (`cl-error-block` "Page does
+not exist"), join (Next.js `pageProps.statusCode` 404 "Entity not found" / 410 "Resource deleted").
+Fix per ATS: detect the vendor's error marker on a 200 → DEAD. **When adding an ATS prober, assume a
+nonexistent tenant may 200 with an error page — test it explicitly.**
+
+**2. Shared-host latency under our own concurrency.** ATSes whose tenants all sit behind one host
+degrade when we probe them at high concurrency: workable's `apply.workable.com` hard-429s (Cloudflare,
+~20h ban), lever's `api.lever.co` and join's `join.com` just get *slower* (lever p50 1.6s→9.2s at
+8→120 workers, all timeouts, **no** 429s), and zoho's 1.7MB pages saturate bandwidth. Per-tenant-host
+ATSes (teamtailor `{t}.teamtailor.com`) barely move under the same load. This isn't the ATS blocking
+us — it's contention we create. Mitigation used here: re-probe the unknowns at **moderate concurrency
++ a longer timeout**; the real fix is a systemic per-shared-host concurrency cap (deferred).
+
 ## Zoho liveness unknowns are two things: 200 soft-404s + bandwidth-timeouts on its 1.7MB page (2026-07-03)
 
 A `--force` liveness pass left Zoho at **6,375 unknown** (of ~7,900) — alarming until decomposed.

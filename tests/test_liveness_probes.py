@@ -48,3 +48,47 @@ def test_zoho_200_without_jobs_or_error_is_unknown(monkeypatch):
 def test_zoho_404_is_dead(monkeypatch):
     monkeypatch.setattr(cl, "_get", _stub_get(404, b""))
     assert cl.p_zoho("acme", "https://acme.zohorecruit.com") == (cl.DEAD, None)
+
+
+def _join_stub(page_props, jobs_rowcount=None):
+    """Stub _get for p_join: the company page carries __NEXT_DATA__.pageProps; the jobs API returns
+    a pagination.rowCount."""
+    import json
+
+    page = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps({"props": {"pageProps": page_props}})
+        + "</script>"
+    ).encode()
+
+    def _get(url, headers=None):
+        if "/api/public/companies/" in url:
+            return 200, json.dumps({"pagination": {"rowCount": jobs_rowcount}}).encode()
+        return 200, page
+
+    return _get
+
+
+def test_join_soft404_is_dead(monkeypatch):
+    # join.com serves a 200 Next.js error page (statusCode 404/410) for a gone company
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _join_stub({"statusCode": 404, "error": {"msg": "Entity not found"}}),
+    )
+    assert cl.p_join("gone", "https://join.com/companies/gone") == (cl.DEAD, None)
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _join_stub({"statusCode": 410, "error": {"msg": "Resource deleted"}}),
+    )
+    assert cl.p_join("gone", "https://join.com/companies/gone") == (cl.DEAD, None)
+
+
+def test_join_live_company_counts_jobs(monkeypatch):
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _join_stub({"initialState": {"company": {"id": 123}}}, jobs_rowcount=5),
+    )
+    assert cl.p_join("acme", "https://join.com/companies/acme") == (cl.LIVE, 5)
