@@ -156,3 +156,18 @@ def test_workday_dns_is_unknown_not_dead(monkeypatch):
         cl.UNKNOWN,
         None,
     )
+
+
+def test_workday_one_transient_blocks_dead(monkeypatch):
+    # the no-false-dead guarantee: even with 18 DCs saying 422, a single timeout means we couldn't
+    # rule out a live instance there (it might be the migrated one) -> UNKNOWN, never DEAD
+    def _post(url, body, headers):
+        return (
+            (None, None) if ".wd103." in url else (422, None)
+        )  # wd103 times out; rest say gone
+
+    monkeypatch.setattr(cl, "_post", _post)
+    assert cl.p_workday("x", "https://x.wd3.myworkdayjobs.com/careers") == (
+        cl.UNKNOWN,
+        None,
+    )

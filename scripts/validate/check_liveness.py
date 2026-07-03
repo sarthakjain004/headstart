@@ -242,9 +242,9 @@ def _keka_uuid(t, info):
     return None
 
 
-# The hinted DC's own answer decides dead/unknown: a 404/410/422 from the board's advertised wdN means
-# Workday affirmatively doesn't serve this tenant/site there -> gone. NOT dns: the *.wdN wildcard
-# resolves for every active DC, so a dns/timeout is OUR network (transient), not a dead board.
+# A data center conclusively says a Workday tenant/site is "not here" via 404/410/422. Everything
+# else — dns, timeout, 5xx, 429 — is inconclusive (dns included: the *.wdN wildcard resolves for
+# every active DC, so a dns failure is OUR network, not a dead board).
 _WD_GONE = {404, 410, 422}
 
 
@@ -267,20 +267,18 @@ def p_workday(t, u):
         total = int(data.get("total", 0)) if status == 200 and data else None
         return total, status
 
-    total, hinted_status = probe(hinted)
-    if total is not None:
-        return LIVE, total
-    # The tenant may have migrated data centers (its wdN goes stale, the CXS 422s) — sweep the known
-    # DCs (same list the scraper uses) for a live instance. First 200 wins; the board recovers there.
-    for inst in _WD_INSTANCES:
-        if inst == hinted:
-            continue
-        total, _ = probe(inst)
+    # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.
+    statuses = []
+    for inst in (hinted, *(i for i in _WD_INSTANCES if i != hinted)):
+        total, status = probe(inst)
         if total is not None:
             return LIVE, total
-    # No DC serves it live. The advertised DC's own answer decides: a definitive 404/410/422 there
-    # means gone -> DEAD; a dns/timeout (couldn't even reach it) -> UNKNOWN, re-probe.
-    return (DEAD, None) if hinted_status in _WD_GONE else (UNKNOWN, None)
+        statuses.append(status)
+    # No DC served it live. DEAD only if *every* probe conclusively said "not here"; a single
+    # inconclusive probe (timeout/dns/5xx) leaves a live instance unruled-out -> UNKNOWN. This makes
+    # a false-dead impossible: a migrated board whose live DC merely timed out stays UNKNOWN, never
+    # DEAD (and an outage, which fails every probe, yields UNKNOWN, not a wave of false-deads).
+    return (DEAD, None) if all(s in _WD_GONE for s in statuses) else (UNKNOWN, None)
 
 
 def p_ripplehire(t, u):
