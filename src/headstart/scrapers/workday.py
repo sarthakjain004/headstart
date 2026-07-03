@@ -29,7 +29,6 @@ pooled ``http`` client, no asyncio), mapped onto our leaner Job.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
@@ -133,7 +132,7 @@ class WorkdayScraper(BaseScraper):
         self._exhaust({}, absorb, depth=0)
         # Second pass: fill each posting's description concurrently (bounded); a failed detail
         # fetch leaves ``_jobDescription`` None so the job is still kept.
-        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+        if self.async_fanout_enabled():
             descriptions = self.fan_out_async(
                 postings,
                 lambda session, item: self._job_description_async(

@@ -12,7 +12,6 @@ in a bounded thread pool. A failed detail fetch leaves description None — the 
 from __future__ import annotations
 
 import json
-import os
 import re
 from typing import Any
 
@@ -73,7 +72,7 @@ class JoinScraper(BaseScraper):
                 break
             page += 1
         # Fill each posting's description concurrently (bounded); a failed fetch leaves it None.
-        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+        if self.async_fanout_enabled():
             descriptions = self.fan_out_async(
                 items,
                 lambda session, it: self._job_description_async(session, it.get("id")),

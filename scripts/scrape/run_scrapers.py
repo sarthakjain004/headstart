@@ -38,6 +38,7 @@ import argparse
 import collections
 import csv
 import logging
+import os
 import random
 import sys
 import time
@@ -194,7 +195,21 @@ def main() -> int:
         action="store_true",
         help="print the selection and exit; don't scrape",
     )
+    ap.add_argument(
+        "--streams",
+        type=int,
+        help="HTTP/2 multiplexing width per host for the async detail pass (default 100)",
+    )
+    ap.add_argument(
+        "--sync",
+        action="store_true",
+        help="disable the async multiplexed detail pass (use the sync thread pool)",
+    )
     args = ap.parse_args()
+    if args.streams is not None:
+        os.environ["HEADSTART_H2_STREAMS"] = str(args.streams)
+    if args.sync:
+        os.environ["HEADSTART_ASYNC_FANOUT"] = "0"
 
     src = _source_dir(args.source)
     if not src.is_dir():

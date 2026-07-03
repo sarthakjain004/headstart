@@ -10,7 +10,6 @@ fetched in a bounded thread pool. A failed detail fetch leaves description None 
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from headstart import http
@@ -61,7 +60,7 @@ class RipplingScraper(BaseScraper):
             else (data.get("items") or data.get("jobs") or [])
         )
         # Fill each posting's detail concurrently (bounded); a failed fetch leaves ``_detail`` {}.
-        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+        if self.async_fanout_enabled():
             details = self.fan_out_async(
                 items,
                 lambda session, it: self._detail_async(session, it.get("uuid")),

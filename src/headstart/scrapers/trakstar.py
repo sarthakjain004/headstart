@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import html as _html
 import json
-import os
 import re
 from typing import Any
 
@@ -54,7 +53,7 @@ class TrakstarScraper(BaseScraper):
         # Each job page's JSON-LD description, fetched concurrently (bounded); failures -> None. The
         # detail pages sit behind DataDome, so the async path pins the multiplexing width to the
         # gentle _DETAIL_WORKERS rather than the global HEADSTART_H2_STREAMS.
-        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+        if self.async_fanout_enabled():
             results = self.fan_out_async(
                 codes,
                 lambda session, code: self._job_description_async(session, code),

@@ -12,7 +12,6 @@ fill it in. A failed detail fetch leaves description None — the job is still k
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from headstart import http
@@ -30,12 +29,11 @@ class SmartRecruitersScraper(BaseScraper):
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit=100"
 
     def fetch_raw(self) -> Any:
-        # Second pass: fill each posting's description concurrently (bounded); a failed detail fetch
-        # leaves ``_description`` None so the job is still kept. HEADSTART_ASYNC_FANOUT=1 runs the
-        # detail pass over one multiplexed HTTP/2 connection instead of the thread pool (A/B).
+        # Second pass: fill each posting's description concurrently. The detail pass multiplexes over
+        # one HTTP/2 connection by default (ADR-0016); a failed fetch leaves ``_description`` None.
         data = json.loads(self._get())
         postings = data.get("content") or []
-        if os.environ.get("HEADSTART_ASYNC_FANOUT") == "1":
+        if self.async_fanout_enabled():
             descriptions = self.fan_out_async(
                 postings,
                 lambda session, p: self._job_description_async(session, p.get("id")),

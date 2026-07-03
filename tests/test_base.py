@@ -42,3 +42,13 @@ def test_fan_out_async_empty_returns_empty():
         return x
 
     assert BaseScraper.fan_out_async([], fn) == []
+
+
+def test_async_fanout_enabled_on_by_default(monkeypatch):
+    # ADR-0016: async is the default; HEADSTART_ASYNC_FANOUT=0 is the escape hatch to sync
+    monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
+    assert BaseScraper.async_fanout_enabled() is True
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    assert BaseScraper.async_fanout_enabled() is False
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "1")
+    assert BaseScraper.async_fanout_enabled() is True

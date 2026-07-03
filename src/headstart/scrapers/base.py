@@ -18,9 +18,10 @@ _USER_AGENT = "headstart/0.1 (job-board reader)"
 _T = TypeVar("_T")
 _R = TypeVar("_R")
 
-# Concurrent streams per host for fan_out_async — the HTTP/2 multiplexing width. Env-tunable so an
-# experiment can sweep it (8, 20, 50, ...) without a code edit.
-_H2_STREAMS = int(os.environ.get("HEADSTART_H2_STREAMS") or 8)
+# Default HTTP/2 multiplexing width (concurrent streams per host) for fan_out_async — 100 is around
+# the common server MAX_CONCURRENT_STREAMS. Override per-call, via HEADSTART_H2_STREAMS, or
+# run_scrapers --streams N. Read at call time (below) so a CLI flag can set the env before the scrape.
+_DEFAULT_H2_STREAMS = 100
 
 
 class BaseScraper(ABC):
@@ -112,20 +113,25 @@ class BaseScraper(ABC):
         items: Sequence[_T],
         fn: Callable[[Any, _T], Awaitable[_R]],
         *,
-        concurrency: int = _H2_STREAMS,
+        concurrency: int | None = None,
         default: _R | None = None,
     ) -> list[_R | None]:
-        """HTTP/2-multiplexed counterpart to :meth:`fan_out` (the ADR-0002-deferred async path, trialed).
+        """HTTP/2-multiplexed counterpart to :meth:`fan_out` (ADR-0015).
 
         ``fn(session, item)`` returns an awaitable. One ``curl_cffi`` ``AsyncSession`` is shared across
         every item, so same-host requests ride as concurrent **streams over one HTTP/2 connection**
-        instead of one connection per thread; ``concurrency`` bounds the in-flight streams (the
-        multiplexing width). Results are input-aligned and a raising item becomes ``default`` — same
-        contract as :meth:`fan_out`. Runs its own event loop, so a sync thread-pool caller (one board
-        per company thread) can invoke it directly.
+        instead of one connection per thread. ``concurrency`` bounds the in-flight streams (the
+        multiplexing width); when None it resolves to ``HEADSTART_H2_STREAMS`` or
+        :data:`_DEFAULT_H2_STREAMS` (100) at call time. Results are input-aligned and a raising item
+        becomes ``default`` — same contract as :meth:`fan_out`. Runs its own event loop, so a sync
+        thread-pool caller (one board per company thread) can invoke it directly.
         """
         if not items:
             return [default] * len(items)
+        if concurrency is None:
+            concurrency = int(
+                os.environ.get("HEADSTART_H2_STREAMS") or _DEFAULT_H2_STREAMS
+            )
         return asyncio.run(BaseScraper._gather_async(items, fn, concurrency, default))
 
     @staticmethod
@@ -150,3 +156,12 @@ class BaseScraper(ABC):
 
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results
+
+    @staticmethod
+    def async_fanout_enabled() -> bool:
+        """Whether the detail pass uses the multiplexed async path (ADR-0015, default per ADR-0016).
+
+        On by default; set ``HEADSTART_ASYNC_FANOUT=0`` to fall back to the sync thread-pool path.
+        Centralised here so every detail-fetch scraper shares one policy.
+        """
+        return os.environ.get("HEADSTART_ASYNC_FANOUT", "1") != "0"
