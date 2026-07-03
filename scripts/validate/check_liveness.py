@@ -33,6 +33,7 @@ import os
 import re
 import sys
 import threading
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -46,6 +47,10 @@ from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
 _DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
+# One attempt per probe: the multi-pass retry below IS the retry mechanism, so http.fetch's own
+# 3-attempt backoff would just tie a worker up in sleep() instead of probing the next board. A
+# transient failure becomes UNKNOWN here and gets a more patient re-probe on the next pass.
+_ATTEMPTS = 1
 # each pass: (timeout_seconds, workers). Later passes are slower but more patient so a board
 # that was merely congested gets a fair chance before we give up on it. Pass-1 workers scale
 # with the machine: the work is I/O-bound and curl_cffi releases the GIL on each request, so we
@@ -58,6 +63,7 @@ _CORES = os.cpu_count() or 8
 # not the machine — over-cranking just turns into UNKNOWNs that the patient retry passes mop up).
 _W = int(os.environ.get("LIVENESS_WORKERS") or _CORES * 24)
 PASSES = [(12, _W), (25, max(_W // 4, 16)), (45, max(_W // 12, 8)), (70, 4)]
+
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
@@ -77,7 +83,9 @@ def _get(url, headers=None):
     (Zoho parks its jobs <input> at the end of a ~1.7MB page)."""
     h = {"User-Agent": UA, **(headers or {})}
     try:
-        r = http.fetch("GET", url, headers=h, timeout=TIMEOUT, verify=False)
+        r = http.fetch(
+            "GET", url, headers=h, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS
+        )
     except http.RequestsError as e:
         return ("dns", b"") if _is_dns(e) else (None, b"")
     return r.status_code, r.content
@@ -88,7 +96,13 @@ def _post(url, json_body, headers):
     code, "dns", or None."""
     try:
         r = http.fetch(
-            "POST", url, json=json_body, headers=headers, timeout=TIMEOUT, verify=False
+            "POST",
+            url,
+            json=json_body,
+            headers=headers,
+            timeout=TIMEOUT,
+            verify=False,
+            attempts=_ATTEMPTS,
         )
     except http.RequestsError as e:
         return ("dns", None) if _is_dns(e) else (None, None)
@@ -224,6 +238,7 @@ def p_ripplehire(t, u):
             headers=headers,
             timeout=TIMEOUT,
             verify=False,
+            attempts=_ATTEMPTS,
         )
     except http.RequestsError as e:
         return (DEAD, None) if _is_dns(e) else (UNKNOWN, None)
@@ -253,6 +268,7 @@ def p_ripplehire(t, u):
             },
             timeout=TIMEOUT,
             verify=False,
+            attempts=_ATTEMPTS,
         )
     except http.RequestsError:
         return UNKNOWN, None
@@ -282,6 +298,7 @@ def p_darwinbox(t, u):
                 headers={"Accept": "application/json", "User-Agent": UA},
                 timeout=TIMEOUT,
                 verify=False,
+                attempts=_ATTEMPTS,
             )
         except http.RequestsError as e:
             if _is_dns(e):
@@ -486,8 +503,14 @@ def main():
                     ats, tenant, url, verdict, jobs, today_iso
                 )
 
+        start = time.monotonic()
         with ThreadPoolExecutor(max_workers=workers) as ex:
             list(ex.map(do, work))
+        elapsed = time.monotonic() - start
+        print(
+            f"  pass done in {elapsed:.1f}s ({len(work) / elapsed:.0f} boards/s)",
+            flush=True,
+        )
         return unknowns
 
     for n, (timeout, workers) in enumerate(PASSES, 1):
