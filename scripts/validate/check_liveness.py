@@ -51,18 +51,18 @@ _DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
 # 3-attempt backoff would just tie a worker up in sleep() instead of probing the next board. A
 # transient failure becomes UNKNOWN here and gets a more patient re-probe on the next pass.
 _ATTEMPTS = 1
-# each pass: (timeout_seconds, workers). Later passes are slower but more patient so a board
-# that was merely congested gets a fair chance before we give up on it. Pass-1 workers scale
-# with the machine: the work is I/O-bound and curl_cffi releases the GIL on each request, so we
-# run far more threads than cores; interleaving across ATSes keeps per-host concurrency gentle.
+# Concurrency. The work is network-bound and curl_cffi drops the GIL on every request, so hundreds of
+# threads run truly concurrently across all cores; processes wouldn't help (the only GIL-bound bit is
+# the small parse) and can't share the ledger write. Default to cores*24; override with
+# LIVENESS_WORKERS=N (the ceiling is host rate-limiting, not the machine — over-cranking just turns
+# into UNKNOWNs the patient retry passes mop up).
 _CORES = os.cpu_count() or 8
-# Pass-1 concurrency. The work is network-bound and curl_cffi drops the GIL on every request,
-# so hundreds of threads run truly concurrently across all cores; processes wouldn't help (the
-# only GIL-bound bit is the small parse) and can't share the active/ write handles. Default to
-# cores*24; override with LIVENESS_WORKERS=N to push it (the ceiling becomes host rate-limiting,
-# not the machine — over-cranking just turns into UNKNOWNs that the patient retry passes mop up).
 _W = int(os.environ.get("LIVENESS_WORKERS") or _CORES * 24)
-PASSES = [(12, _W), (25, max(_W // 4, 16)), (45, max(_W // 12, 8)), (70, 4)]
+# (timeout, worker cap) per pass. Only the TIMEOUT escalates — a board that was merely congested gets
+# a more patient retry each round. Every pass may use the full pool; workers are sized to the actual
+# tail in the loop (min(cap, remaining)). The earlier //4 / //12 / 4 fractions throttled a big
+# --force tail (a 51k-board pass 2 crawling on 108 workers) — so cap, don't cut.
+PASSES = [(12, _W), (25, _W), (45, _W), (70, _W)]
 
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
@@ -513,9 +513,12 @@ def main():
         )
         return unknowns
 
-    for n, (timeout, workers) in enumerate(PASSES, 1):
+    for n, (timeout, cap) in enumerate(PASSES, 1):
         if not items:
             break
+        workers = min(
+            cap, len(items)
+        )  # never more workers than boards left in the tail
         print(
             f"pass {n}: {len(items)} to probe (timeout={timeout}s, workers={workers})",
             flush=True,
