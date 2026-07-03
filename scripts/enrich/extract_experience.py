@@ -1,6 +1,6 @@
 """Run years-of-experience extraction over the Wellfound jobs and report coverage (Tiers 1+2).
 
-Reads ``data/jobs/wellfound.csv``, runs ``headstart.experience.extract(field, description)`` per Job,
+Reads ``data/jobs/wellfound.csv``, runs ``headstart.experience.extract(field, description, title)`` per Job,
 writes the results to ``data/enrich/wellfound_experience.jsonl`` (``id`` -> min/max/source), and
 prints coverage: how many Jobs got a number, split by source (structured field vs description regex),
 plus sample snippets to eyeball regex quality.
@@ -40,7 +40,7 @@ def main() -> None:
             description = row.get("description") or ""
             if field is None:
                 field_empty += 1
-            span = extract(field, description)
+            span = extract(field, description, row.get("title"))
             if not span:
                 continue
             by_source[span.source] += 1
