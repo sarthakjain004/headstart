@@ -26,3 +26,4 @@ supersedes it and note the supersession in both.
 | [0015](0015-async-multiplexed-fan-out.md) | Async HTTP/2-multiplexed detail fan-out, opt-in per scraper | 2026-07-03 |
 | [0016](0016-async-fan-out-default.md) | Async multiplexed fan-out on by default, width 100 | 2026-07-03 |
 | [0017](0017-tech-role-filter.md) | Post-hoc recall-biased tech-role filter as the authoritative tech gate | 2026-07-03 |
+| [0018](0018-experience-seniority-fallback.md) | Experience: widened description patterns + a data-calibrated seniority fallback | 2026-07-03 |

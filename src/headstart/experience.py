@@ -1,12 +1,15 @@
 """Extract a Job's required years of experience to a numeric range (enrichment).
 
-A tiered cascade, cheapest-first. Each tier is a pure function returning an :class:`ExperienceSpan`
-or ``None``; :func:`extract` runs them in order and returns the first hit, recording which tier
-produced it. Source-agnostic by design — it takes a structured ``field`` (when a source provides
-one, e.g. Wellfound's ``years_experience``) and the free-text ``description``.
+A tiered cascade returning the first hit and which tier produced it (ADR-0009, ADR-0018). A concrete
+number always wins; the seniority label is only a fallback when no number is stated:
 
-Extending it is the point: widen recall by appending to ``_DESC_PATTERNS``; add a tier (an LLM pass,
-seniority inference) by writing another ``from_*`` function and adding it to the cascade in
+  1. ``from_field``       — a structured field ("5+", "3 - 5 Years"), when a source provides one.
+  2. ``from_description`` — experience-anchored regex over the free-text description.
+  3. ``from_seniority``   — map a seniority label (the field, e.g. recruitee "entry_level", else the
+                            title, e.g. "Senior Engineer") to a floor-years estimate. Fallback only.
+
+Each tier is a pure function returning an :class:`ExperienceSpan` or ``None``. Widen recall by
+appending to ``_DESC_PATTERNS`` or ``_SENIORITY``; a future LLM tier is another ``from_*`` chained in
 :func:`extract`. Keeping each tier pure keeps the whole thing unit-testable without I/O.
 """
 
@@ -27,7 +30,7 @@ class ExperienceSpan:
     min_years: int
     max_years: int | None
     source: (
-        str  # which tier produced it: "field" | "regex" (future: "llm" | "inferred")
+        str  # which tier produced it: "field" | "regex" | "seniority" (future: "llm")
     )
 
 
@@ -55,19 +58,36 @@ def from_field(value: str | None) -> ExperienceSpan | None:
     return ExperienceSpan(lo, hi, "field")
 
 
-# --- Tier 2: context-anchored regex over the description -----------------------------------------
-# Anchored to "experience" so "40-year old C++ code" is NOT matched. The {0,25}? lets adjectives sit
-# between the number and "experience" ("7+ years of proven experience"). Tried in order; range first.
+# --- Tier 2: regex over the description ----------------------------------------------------------
+# Mostly anchored to "experience" so "40-year old C++ code" is NOT matched; the last pattern relaxes
+# that to "N years of/in/as <work word>" (the common "5+ years in software testing" phrasing) while
+# still excluding "per year" / "10 years ago". The gap class allows . : · • so "Min. 10 Years" and
+# "Experience · 7 years" match. Tried in order; ranges before single values.
+_GAP = r"[\w\s.'’:/()&,·•+-]{0,30}?"  # what may sit between the number and "experience"
 _DESC_PATTERNS = [
-    # "7 to 12 years of experience", "3-5 years' experience" — captures (lo, hi)
+    # number-first range then "experience": "7 to 12 years of experience", "3-5 years' experience"
     re.compile(
-        r"(\d{1,2})\s*(?:to|-|–|—|or)\s*(\d{1,2})\s*\+?\s*years?[\w\s'’/&,-]{0,25}?experience",
+        r"(\d{1,2})\s*(?:to|-|–|—|or)\s*(\d{1,2})\s*\+?\s*years?" + _GAP + "experience",
         re.I,
     ),
-    # "7+ years of proven experience", "9+ years' experience", "minimum 3 years of experience"
-    re.compile(r"(\d{1,2})\s*\+?\s*years?[\w\s'’/&,-]{0,25}?experience", re.I),
-    # reversed: "experience of 5+ years", "Experience: 5 years"
-    re.compile(r"experience[\w\s'’:/()&,-]{0,25}?(\d{1,2})\s*\+?\s*years?", re.I),
+    # "experience" then a range (reversed): "Experience: 8 – 12 Years"
+    re.compile(
+        r"experience" + _GAP + r"(\d{1,2})\s*(?:to|-|–|—)\s*(\d{1,2})\s*\+?\s*years?",
+        re.I,
+    ),
+    # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
+    re.compile(r"(\d{1,2})\s*(?:\+|plus)?\s*years?" + _GAP + "experience", re.I),
+    # reversed single: "experience of 5+ years", "Experience: 5 years"
+    re.compile(r"experience" + _GAP + r"(\d{1,2})\s*(?:\+|plus)?\s*years?", re.I),
+    # "5+ years in software testing", "7 years of professional engineering" — years + a work-context
+    # word, no "experience" required (anchored to of/in/as so "per year" / "10 years ago" don't match)
+    re.compile(
+        r"(\d{1,2})\s*(?:\+|plus)?\s*years?\s+(?:of|in|as)\s+(?:[\w'’/&.-]+\s+){0,4}?"
+        r"(?:experience|work\w*|hands[\s-]?on|professional|industry|relevant|engineer\w*|"
+        r"software|develop\w*|design\w*|programming|coding|build\w*|lead\w*|manag\w*|technical|"
+        r"\bdev\b|\bqa\b|test\w*|data|cloud|security|devops|full[\s-]?stack|back[\s-]?end|front[\s-]?end)",
+        re.I,
+    ),
 ]
 
 
@@ -93,9 +113,81 @@ def from_description(text: str | None) -> ExperienceSpan | None:
     return None
 
 
-def extract(field: str | None, description: str | None) -> ExperienceSpan | None:
-    """Run the cascade cheapest-first: structured field, then the description. None if nothing found.
+# --- Tier 3 (fallback): map a seniority label to a floor-years estimate --------------------------
+# Used only when no concrete number was found (ADR-0018): a source's seniority field (recruitee
+# "entry_level", workable "Mid-Senior level", personio "experienced") or, absent a field, the title
+# ("Senior Engineer"). The number is a rough floor for the "<= N years" filter — a signal beats none.
+# Years per tier are calibrated to the DATA (ADR-0018): for jobs that carry both a seniority label and
+# a concrete number in the description, the median description-min_years per tier is ~1 (entry), 3
+# (associate/mid), 5 (senior / "experienced" / smartrecruiters' "executive" level), 10 (director).
+_SENIORITY = [
+    (
+        re.compile(
+            r"\b(director|vice[\s-]?president|\bvp\b|chief|\bcto\b|\bceo\b|head of|principal|distinguished|fellow)\b",
+            re.I,
+        ),
+        10,
+    ),
+    (re.compile(r"\b(lead|staff|architect|expert)\b", re.I), 7),
+    (re.compile(r"\b(senior|mid[\s-]?senior|\bsr\b|experienced|executive)\b", re.I), 5),
+    (re.compile(r"\b(associate|mid[\s_-]?level|intermediate)\b", re.I), 3),
+    (
+        re.compile(
+            r"\b(intern|internship|trainee|graduate|\bgrad\b|student|entry[\s_-]?level|junior|\bjr\b|apprentice|fresher|early[\s-]?career)\b",
+            re.I,
+        ),
+        0,
+    ),
+]
 
-    Add later tiers (LLM, seniority inference) by chaining more ``from_*`` calls here.
+
+# Numeric / roman level suffixes on the title ("Software Engineer 1", "Data Scientist III", "SDE II")
+# also encode seniority: I/1 = entry, II/2 = mid, III/3 = senior, IV/V = staff.
+_LEVEL = re.compile(
+    r"\b(?:engineer|developer|programmer|analyst|scientist|architect|sde|swe)\s*"
+    r"(iii|ii|iv|i|v|[1-5])\b",
+    re.I,
+)
+_LEVEL_YEARS = {
+    "i": 0,
+    "1": 0,
+    "ii": 3,
+    "2": 3,
+    "iii": 5,
+    "3": 5,
+    "iv": 7,
+    "4": 7,
+    "v": 7,
+    "5": 7,
+}
+
+
+def from_seniority(
+    field: str | None, title: str | None = None
+) -> ExperienceSpan | None:
+    """Tier 3 (fallback) — map a seniority label to a floor-years estimate, from the source's field
+    (else the title). Word labels first ("Senior"), then a numeric/roman level suffix ("Engineer II")."""
+    text = f"{field or ''} {title or ''}"
+    if not text.strip():
+        return None
+    for pattern, years in _SENIORITY:
+        if pattern.search(text):
+            return ExperienceSpan(years, None, "seniority")
+    match = _LEVEL.search(title or "")
+    if match:
+        return ExperienceSpan(_LEVEL_YEARS[match.group(1).lower()], None, "seniority")
+    return None
+
+
+def extract(
+    field: str | None, description: str | None, title: str | None = None
+) -> ExperienceSpan | None:
+    """Run the cascade: a concrete number from the structured field, then from the description, and
+    only if neither yields one, a floor estimate from the seniority label (field or title). Concrete
+    numbers always win over the seniority fallback (per ADR-0018). None if nothing matches.
     """
-    return from_field(field) or from_description(description)
+    return (
+        from_field(field)
+        or from_description(description)
+        or from_seniority(field, title)
+    )

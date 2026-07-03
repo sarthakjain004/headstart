@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.experience import ExperienceSpan, extract, from_description, from_field
+from headstart.experience import (
+    ExperienceSpan,
+    extract,
+    from_description,
+    from_field,
+    from_seniority,
+)
 
 # --- Tier 1: from_field ---------------------------------------------------------------------------
 
@@ -114,3 +120,84 @@ def test_extract_falls_through_to_description():
 def test_extract_none_when_nothing_matches():
     assert extract(None, None) is None
     assert extract("", "no signal here") is None
+
+
+# --- Tier 2 additions (ADR-0018): phrasings the earlier patterns missed --------------------------
+
+
+def test_description_years_of_in_without_the_word_experience():
+    # the big gap: "N years of/in/as <work word>" with no "experience" nearby
+    assert from_description("5+ years in software testing") == ExperienceSpan(
+        5, None, "regex"
+    )
+    assert from_description(
+        "7 years of professional software engineering"
+    ) == ExperienceSpan(7, None, "regex")
+    assert from_description("10+ years in software development") == ExperienceSpan(
+        10, None, "regex"
+    )
+
+
+def test_description_reversed_range_plus_and_period():
+    assert from_description("Experience: 8 – 12 Years") == ExperienceSpan(
+        8, 12, "regex"
+    )
+    assert from_description("5 plus years of proven experience") == ExperienceSpan(
+        5, None, "regex"
+    )
+    assert from_description("Experience Required: Min. 10 Years") == ExperienceSpan(
+        10, None, "regex"
+    )
+
+
+def test_description_ignores_non_experience_year_mentions():
+    # "per year" / salary / not-experience must stay misses
+    assert from_description("16 hours of paid volunteer time per year") is None
+    assert from_description("2 Extra Salaries Per Year") is None
+    assert from_description("$60,000-70,000/year") is None
+
+
+# --- Tier 3: seniority fallback, calibrated to data (ADR-0018) ------------------------------------
+
+
+def test_seniority_maps_labels_to_calibrated_floors():
+    assert from_seniority("entry_level") == ExperienceSpan(0, None, "seniority")
+    assert from_seniority("Associate") == ExperienceSpan(3, None, "seniority")
+    assert from_seniority("Mid-Senior Level") == ExperienceSpan(5, None, "seniority")
+    assert from_seniority("experienced") == ExperienceSpan(
+        5, None, "seniority"
+    )  # data median 5
+    assert from_seniority("Executive") == ExperienceSpan(
+        5, None, "seniority"
+    )  # a level, not C-suite
+    assert from_seniority("Director") == ExperienceSpan(10, None, "seniority")
+    assert from_seniority("Not Applicable") is None
+
+
+def test_seniority_from_title_and_level_suffix():
+    assert from_seniority(None, "Senior Software Engineer") == ExperienceSpan(
+        5, None, "seniority"
+    )
+    assert from_seniority(None, "Staff Engineer") == ExperienceSpan(
+        7, None, "seniority"
+    )
+    assert from_seniority(None, "Software Engineer 1") == ExperienceSpan(
+        0, None, "seniority"
+    )
+    assert from_seniority(None, "Data Scientist III") == ExperienceSpan(
+        5, None, "seniority"
+    )
+    assert from_seniority(None, "Backend Developer") is None  # no seniority signal
+
+
+def test_number_always_beats_seniority():
+    # seniority field, but the description states a number -> use the number
+    assert extract(
+        "Mid-Senior level", "we want 3+ years of experience"
+    ) == ExperienceSpan(3, None, "regex")
+    # seniority field, no number anywhere -> fall back to seniority
+    assert extract("entry_level", "join our team") == ExperienceSpan(
+        0, None, "seniority"
+    )
+    # a field number beats a senior title
+    assert extract("2+", None, "Senior Engineer") == ExperienceSpan(2, None, "field")
