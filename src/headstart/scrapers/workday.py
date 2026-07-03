@@ -43,10 +43,10 @@ _URL_PATTERN = re.compile(
 # The active Workday data centers, found by probing which ``*.wdN.myworkdayjobs.com`` wildcards
 # resolve across wd1-wd1000 (19 as of 2026-07). Tenants migrate between data centers; when one does,
 # its old ``wdN`` host 500s and the CXS API 422s, so a board built from the stale URL reads as empty.
-# ``_resolve_instance`` sweeps these to recover a migrated board. Ordered by prevalence in our pool
-# so the sweep hits likely instances first (the last three carry no boards yet). Re-run the DNS sweep
-# to extend this as Workday adds data centers.
-_INSTANCES = (
+# ``_resolve_instance`` sweeps these to recover a migrated board (the liveness prober imports this list
+# for the same sweep). Ordered by prevalence in our pool so the sweep hits likely instances first (the
+# last three carry no boards yet). Re-run the DNS sweep to extend this as Workday adds data centers.
+INSTANCES = (
     "wd1",
     "wd5",
     "wd3",
@@ -166,7 +166,7 @@ class WorkdayScraper(BaseScraper):
 
         if serves(hinted):
             return  # fast path: the URL's data center is current
-        for instance in _INSTANCES:
+        for instance in INSTANCES:
             if instance != hinted and serves(instance):
                 self._instance = instance
                 return

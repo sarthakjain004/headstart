@@ -43,6 +43,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
+from headstart.scrapers.workday import (  # noqa: E402 - the DC list, single source of truth
+    INSTANCES as _WD_INSTANCES,
+)
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
@@ -239,24 +242,45 @@ def _keka_uuid(t, info):
     return None
 
 
+# A data center says a Workday tenant/site is definitively "not here" via dns-fail or 404/410/422;
+# a timeout / 5xx / 429 is transient. Used to decide DEAD (gone from every DC) vs UNKNOWN (re-probe).
+_WD_GONE = {"dns", 404, 410, 422}
+
+
 def p_workday(t, u):
     m = _WD_URL.match(u.rstrip("/"))
     if not m:
         return DEAD, None  # not a Workday URL -> can't be a board
-    co, inst, site = m.groups()
-    api = f"https://{co}.{inst}.myworkdayjobs.com/wday/cxs/{co}/{site}/jobs"
-    status, data = _post(
-        api,
-        {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
-        {
-            "User-Agent": UA,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    return _verdict(
-        status, int(data.get("total", 0)) if status == 200 and data else None
-    )
+    co, hinted, site = m.groups()
+
+    def probe(inst):
+        status, data = _post(
+            f"https://{co}.{inst}.myworkdayjobs.com/wday/cxs/{co}/{site}/jobs",
+            {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
+            {
+                "User-Agent": UA,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        total = int(data.get("total", 0)) if status == 200 and data else None
+        return total, status
+
+    total, status = probe(hinted)
+    if total is not None:
+        return LIVE, total
+    # The tenant may have migrated data centers (its wdN goes stale, the CXS 422s) — sweep the known
+    # DCs (same list the scraper uses). First 200 wins; a live board recovers on its new instance.
+    statuses = [status]
+    for inst in _WD_INSTANCES:
+        if inst == hinted:
+            continue
+        total, status = probe(inst)
+        if total is not None:
+            return LIVE, total
+        statuses.append(status)
+    # Served by no data center: DEAD only if every probe was a definitive "not here", else transient.
+    return (DEAD, None) if all(s in _WD_GONE for s in statuses) else (UNKNOWN, None)
 
 
 def p_ripplehire(t, u):

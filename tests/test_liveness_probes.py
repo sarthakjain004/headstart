@@ -92,3 +92,55 @@ def test_join_live_company_counts_jobs(monkeypatch):
         _join_stub({"initialState": {"company": {"id": 123}}}, jobs_rowcount=5),
     )
     assert cl.p_join("acme", "https://join.com/companies/acme") == (cl.LIVE, 5)
+
+
+def _workday_post_stub(live_instance=None, total=3, dead_status=422):
+    """Stub _post for p_workday: 200+{total} on the CXS URL for `live_instance`, else dead_status."""
+
+    def _post(url, body, headers):
+        if live_instance and f".{live_instance}." in url:
+            return 200, {"total": total}
+        return dead_status, None
+
+    return _post
+
+
+def test_workday_hinted_instance_live(monkeypatch):
+    monkeypatch.setattr(cl, "_post", _workday_post_stub(live_instance="wd3", total=7))
+    assert cl.p_workday("acme", "https://acme.wd3.myworkdayjobs.com/careers") == (
+        cl.LIVE,
+        7,
+    )
+
+
+def test_workday_migrated_recovered_on_sweep(monkeypatch):
+    # hinted wd3 422s; the DC sweep finds the tenant live on wd103
+    monkeypatch.setattr(
+        cl, "_post", _workday_post_stub(live_instance="wd103", total=2000)
+    )
+    assert cl.p_workday("acme", "https://acme.wd3.myworkdayjobs.com/careers") == (
+        cl.LIVE,
+        2000,
+    )
+
+
+def test_workday_gone_everywhere_is_dead(monkeypatch):
+    # 422 on every data center -> definitive "not here" -> DEAD
+    monkeypatch.setattr(
+        cl, "_post", _workday_post_stub(live_instance=None, dead_status=422)
+    )
+    assert cl.p_workday("gone", "https://gone.wd3.myworkdayjobs.com/careers") == (
+        cl.DEAD,
+        None,
+    )
+
+
+def test_workday_transient_everywhere_is_unknown(monkeypatch):
+    # a timeout (None status) is not definitive -> UNKNOWN (re-probe), never DEAD
+    monkeypatch.setattr(
+        cl, "_post", _workday_post_stub(live_instance=None, dead_status=None)
+    )
+    assert cl.p_workday("slow", "https://slow.wd3.myworkdayjobs.com/careers") == (
+        cl.UNKNOWN,
+        None,
+    )
