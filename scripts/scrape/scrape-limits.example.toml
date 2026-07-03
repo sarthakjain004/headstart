@@ -1,0 +1,10 @@
+# Per-ATS board caps for scripts/scrape/run_scrapers.py (--limits).
+# `default` applies to any ATS without its own entry; an ATS with neither is uncapped.
+# Copy this to your own file and edit (e.g. config/scrape-limits.toml — config/ is gitignored).
+
+default = 20
+
+greenhouse = 100
+lever = 50
+ashby = 50
+workday = 10
