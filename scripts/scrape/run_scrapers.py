@@ -37,10 +37,12 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
+import logging
 import random
 import sys
 import time
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from headstart.config import CompanyRef
@@ -50,6 +52,7 @@ from headstart.scrapers.registry import SCRAPERS
 ROOT = Path(__file__).resolve().parents[2]
 MERGED = ROOT / "data" / "ats-tenants-merged"
 JOBS_DIR = ROOT / "data" / "jobs"
+LOG_DIR = JOBS_DIR / "logs"
 
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))  # tenant lists can be large
 
@@ -144,6 +147,23 @@ def _error_kind(message: str) -> str:
     return message.split(":", 1)[0].strip() or "unknown"
 
 
+def _setup_logging(source: str) -> Path:
+    """Log to the console *and* a timestamped file under data/jobs/logs/; return the file path."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    logfile = LOG_DIR / f"scrape-{source}-{stamp}.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stderr),
+            logging.FileHandler(logfile, encoding="utf-8"),
+        ],
+        force=True,
+    )
+    return logfile
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -212,42 +232,71 @@ def main() -> int:
     if not companies:
         raise SystemExit("nothing selected")
 
+    logfile = _setup_logging(args.source)
+    log = logging.getLogger("run_scrapers")
+    total = len(companies)
+    log.info(
+        "scraping %d boards (source=%s order=%s workers=%s)",
+        total,
+        args.source,
+        args.order,
+        args.workers or "auto",
+    )
+    print(f"\nlive log -> tail -f {logfile}\n", flush=True)
+
     start = time.monotonic()
+    counter = {"done": 0, "jobs": 0, "errors": 0}
+
+    def on_board(key: str, n_jobs: int, error: str | None) -> None:
+        # called on scrape_all's main thread as each board finishes — safe to mutate/log here
+        counter["done"] += 1
+        if error:
+            counter["errors"] += 1
+            log.warning("[%d/%d] %s FAILED: %s", counter["done"], total, key, error)
+        else:
+            counter["jobs"] += n_jobs
+            log.info("[%d/%d] %s -> %d jobs", counter["done"], total, key, n_jobs)
+        if counter["done"] % 25 == 0:
+            el = time.monotonic() - start
+            log.info(
+                "progress: %d/%d boards | %d jobs | %d failed | %.0fs | %.1f boards/s",
+                counter["done"],
+                total,
+                counter["jobs"],
+                counter["errors"],
+                el,
+                counter["done"] / el if el else 0,
+            )
+
     result = scrape_all(
         companies,
         jobs_dir=JOBS_DIR,
-        progress_every=200,
         resume=args.resume,
         max_workers=args.workers,
+        on_board=on_board,
     )
     elapsed = time.monotonic() - start
 
-    # --- performance: what did we get, how fast (the numbers to compare across experiments) ---
+    # --- run summary: throughput (compare across experiments) + misses bucketed by kind ---
     ok = result.boards - len(result.errors)
-    print("\n=== run summary ===", flush=True)
-    print(
-        f"selection : source={args.source} order={args.order} workers={args.workers or 'auto'}"
+    log.info("=== run summary ===")
+    log.info(
+        "boards : %d attempted, %d ok, %d failed", result.boards, ok, len(result.errors)
     )
-    print(
-        f"boards    : {result.boards} attempted, {ok} ok, {len(result.errors)} failed"
-    )
-    print(f"jobs      : {result.unique} unique -> {JOBS_DIR}/{{ats}}.jsonl")
-    print(
-        f"time      : {elapsed:.1f}s  |  {result.boards / elapsed:.1f} boards/s"
-        f"  |  {result.unique / elapsed:.0f} jobs/s"
-        if elapsed
-        else "time      : 0s"
-    )
-
-    # --- misses: why boards failed, bucketed by kind (DNS vs bot-wall vs parse ...) ---
+    log.info("jobs   : %d unique -> %s/{ats}.jsonl", result.unique, JOBS_DIR)
+    if elapsed:
+        log.info(
+            "time   : %.1fs | %.1f boards/s | %.0f jobs/s",
+            elapsed,
+            result.boards / elapsed,
+            result.unique / elapsed,
+        )
     if result.errors:
         kinds = collections.Counter(_error_kind(m) for m in result.errors.values())
-        print("misses    : failed boards by kind")
-        for kind, n in kinds.most_common():
-            print(f"    {kind:<22}{n}")
-        print("    examples:")
+        log.info("misses : failed boards by kind -> %s", dict(kinds.most_common()))
         for key, msg in list(result.errors.items())[:5]:
-            print(f"      {key}: {msg[:80]}")
+            log.info("  e.g. %s: %s", key, msg[:80])
+    log.info("full log saved to %s", logfile)
     return 0
 
 
