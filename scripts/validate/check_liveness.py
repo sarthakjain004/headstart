@@ -180,12 +180,12 @@ def p_workable(t, u):
     )
 
 
-def _zoho_count(body):
+def _zoho_count(text):
     import html as _html
 
-    m = _ZOHO_JOBS.search(body.decode("utf-8", "replace"))
+    m = _ZOHO_JOBS.search(text)
     if not m:
-        return None  # 200 but no jobs <input> -> odd/transient, re-probe
+        return None
     try:
         return len(json.loads(_html.unescape(m.group(1))))
     except Exception:
@@ -193,7 +193,19 @@ def _zoho_count(body):
 
 
 def p_zoho(t, u):
-    return _classify(f"{u.rstrip('/')}/jobs/Careers", _zoho_count)
+    status, body = _get(f"{u.rstrip('/')}/jobs/Careers")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    text = body.decode("utf-8", "replace")
+    # Zoho serves a 200 "Page does not exist" error page (marked by cl-error-block) for a gone tenant
+    # or an unpublished careers site — a soft-404, so definitively DEAD (not the transient UNKNOWN a
+    # missing jobs <input> would otherwise imply).
+    if "cl-error-block" in text:
+        return DEAD, None
+    count = _zoho_count(text)
+    return (LIVE, count) if count is not None else (UNKNOWN, None)
 
 
 def p_keka(t, u):
@@ -203,10 +215,28 @@ def p_keka(t, u):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
-    m = _UUID.search(body.decode("utf-8", "replace"))
-    if not m:
+    text = body.decode("utf-8", "replace")
+    # Keka soft-errors at 200 with an HTML page: "Invalid Tenant" (unknown slug) or "Forbidden
+    # Access" (disabled portal) — both mean no public board, so definitively DEAD.
+    if "Invalid Tenant" in text or "Forbidden Access" in text:
+        return DEAD, None
+    uuid = _keka_uuid(t, text)
+    if not uuid:
         return UNKNOWN, None
-    return _classify(f"{base}/embedjobs/default/active/{m.group(0)}", _len_of)
+    return _classify(f"{base}/embedjobs/default/active/{uuid}", _len_of)
+
+
+def _keka_uuid(t, info):
+    """The org UUID: from careerportalinfo when a background image carries it (in
+    careersBackgroundPath), else from the /careers page (background-less portals omit it there)."""
+    m = _UUID.search(info)
+    if m:
+        return m.group(0)
+    status, body = _get(f"https://{t}.keka.com/careers")
+    if status == 200:
+        m = _UUID.search(body.decode("utf-8", "replace"))
+        return m.group(0) if m else None
+    return None
 
 
 def p_workday(t, u):
@@ -371,9 +401,13 @@ def p_join(t, u):
         return UNKNOWN, None
     try:
         state = (json.loads(m.group(1)).get("props") or {}).get("pageProps") or {}
-        cid = ((state.get("initialState") or {}).get("company") or {}).get("id")
     except Exception:
         return UNKNOWN, None
+    # join.com serves a 200 Next.js error page (pageProps.statusCode 404 "Entity not found" / 410
+    # "Resource deleted") for a company that's gone — a soft-404, so DEAD.
+    if state.get("statusCode") in (404, 410):
+        return DEAD, None
+    cid = ((state.get("initialState") or {}).get("company") or {}).get("id")
     if not cid:
         return UNKNOWN, None
     return _classify(
