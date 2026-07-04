@@ -43,7 +43,7 @@ Pipeline (per CONTEXT.md):
 Serving:
   curated feed (tech subset) → docs/jobs.json → GitHub Pages static dashboard (client-side filter)
   semantic search → embed → LanceDB → filter-then-rank + Telegram alert bot
-    (built + evaluated on the Wellfound benchmark corpus; embedding the tech subset is next, ADR-0019)
+    (production index = the tech subset; ranking evaluated on the frozen Wellfound benchmark, ADR-0019)
 ```
 
 Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
@@ -131,8 +131,7 @@ locally and gitignored for size):
 
 ```bash
 pip install -e ".[embed,ui]"
-python scripts/embed/embed_wellfound.py   # embed the English corpus → data/embeddings/
-python scripts/enrich/extract_experience.py
-python scripts/embed/build_index.py       # load LanceDB
+python scripts/embed/embed_jobs.py        # embed the English tech corpus → data/embeddings/jobs/
+python scripts/embed/sync_index.py        # incremental add/evict into the LanceDB `jobs` table
 python scripts/ui/serve.py                # search UI at http://localhost:8000
 ```

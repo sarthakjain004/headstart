@@ -17,7 +17,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.search import TABLE, encode_query, load_encoder
+from headstart.search import EVAL_TABLE, encode_query, load_encoder
 
 _ROOT = Path(__file__).resolve().parents[2]
 _QRELS = _ROOT / "data" / "eval" / "qrels.jsonl"
@@ -29,7 +29,7 @@ _DEPTH = 50  # search this deep so we can report a rank even when it falls outsi
 def main() -> None:
     qrels = [json.loads(line) for line in _QRELS.open(encoding="utf-8")]
     model = load_encoder()
-    table = lancedb.connect(_DB).open_table(TABLE)
+    table = lancedb.connect(_DB).open_table(EVAL_TABLE)
 
     rr, recall, ndcg = [], [], []
     print(f"scoring {len(qrels)} queries against the {table.count_rows()}-job index\n")

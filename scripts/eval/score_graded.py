@@ -25,7 +25,7 @@ from pathlib import Path
 import lancedb
 from ranx import Qrels, Run, evaluate
 
-from headstart.search import TABLE, encode_query, load_encoder
+from headstart.search import EVAL_TABLE, encode_query, load_encoder
 
 _ROOT = Path(__file__).resolve().parents[2]
 _JUDGE = _ROOT / "data" / "eval" / "judge_labels.jsonl"
@@ -63,7 +63,7 @@ def main() -> None:
     qid = {q: f"q{i}" for i, q in enumerate(queries)}
 
     model = load_encoder()
-    table = lancedb.connect(_DB).open_table(TABLE)
+    table = lancedb.connect(_DB).open_table(EVAL_TABLE)
 
     run: dict[str, dict[str, float]] = {}
     for q in queries:
