@@ -84,9 +84,9 @@ def bucket_for(n_tokens: int) -> int:
     return _BUCKETS[-1]
 
 
-def batch_size_for(bucket: int) -> int:
+def batch_size_for(bucket: int, budget: int = _ATTN_BUDGET) -> int:
     """Fixed docs-per-batch for a bucket, so every batch in it presents one identical shape."""
-    return max(1, min(_BATCH_CAP, _ATTN_BUDGET // (bucket * bucket)))
+    return max(1, min(_BATCH_CAP, budget // (bucket * bucket)))
 
 
 def make_pin_doc(tokenizer, bucket: int) -> str:
@@ -262,6 +262,9 @@ def main() -> None:
         model.max_seq_length, _MAX_SEQ_TOKENS
     )  # see _MAX_SEQ_TOKENS
     dim = model.get_sentence_embedding_dimension()
+    # CPU runs fp32 (double the attention memory of MPS fp16) on small CI runners — shrink the
+    # batch budget; CPU throughput is compute-bound, so the smaller batches cost little.
+    budget = _ATTN_BUDGET if device == "mps" else _ATTN_BUDGET // 4
 
     store = EmbeddingStore(_OUTDIR, dim, resume=args.resume)
     if store.done:
@@ -340,7 +343,7 @@ def main() -> None:
         idxs = groups[bucket]
         if not idxs or wedged:
             continue
-        n = batch_size_for(bucket)
+        n = batch_size_for(bucket, budget)
         pin = make_pin_doc(model.tokenizer, bucket)
         print(
             f"[embed] bucket ≤{bucket} tokens: {len(idxs)} docs in batches of {n}",
