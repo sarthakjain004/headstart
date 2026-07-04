@@ -285,6 +285,48 @@ def test_ripplehire_parse():
     assert j.employment_type is None
 
 
+def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
+    # the search list always carries jobDesc: null — the detail JSON must fill it
+    class _Resp:
+        def __init__(self, url="", payload=None):
+            self.url = url
+            self._payload = payload
+            self.status_code = 200
+
+        def json(self):
+            return self._payload
+
+    calls = []
+
+    def _fetch(method, url, **kwargs):
+        calls.append(url)
+        if url.endswith("/candidate/careers"):
+            return _Resp(url="https://x.ripplehire.com/candidate/?token=TOK123")
+        if "candidatejobsearch" in url:
+            return _Resp(
+                payload={
+                    "jobVoList": [
+                        {"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None},
+                        {"jobSeq": 2, "jobTitle": "Filled", "jobDesc": "<p>have</p>"},
+                    ],
+                    "totalJobCount": 2,
+                }
+            )
+        assert "candidatejobdetail" in url and "token=TOK123" in url
+        return _Resp(payload={"jobVO": {"jobDesc": "<p>3+ years of Kubernetes</p>"}})
+
+    import headstart.scrapers.ripplehire as rh
+
+    monkeypatch.setattr(rh.http, "fetch", _fetch)
+    raw = get_scraper("ripplehire", "x", "X").fetch_raw()
+    assert [j["jobDesc"] for j in raw] == [
+        "<p>3+ years of Kubernetes</p>",
+        "<p>have</p>",
+    ]
+    # only the description-less job triggered a detail call
+    assert sum("candidatejobdetail" in u for u in calls) == 1
+
+
 def test_oracle_parse():
     slug = "fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/CX_2"
     jobs = get_scraper("oracle", slug, "Oracle CE Tenant").parse(
