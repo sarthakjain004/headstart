@@ -172,3 +172,9 @@ The five canonical triage roles use their default label names (`needs-triage`, `
 ### Domain docs
 
 Single-context: one `CONTEXT.md` at the root + ADRs in `docs/adr/`. See `docs/agents/domain.md`.
+
+### Deployment
+
+The live free-tier deployment (private HF dataset `imPoseidon/headstart-index`, Space
+`imPoseidon/headstart-search`, nightly Actions pipeline) — access commands, auth/token model,
+and failure modes: see `docs/agents/deployment.md` before touching any of it.
