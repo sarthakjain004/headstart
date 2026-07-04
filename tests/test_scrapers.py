@@ -49,6 +49,11 @@ def test_lever_parse():
     assert j.url.startswith("https://jobs.lever.co/palantir/")
     assert j.employment_type == "Full-time"  # categories.commitment
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+    # the lists sections (Requirements etc.) and additional must ride along —
+    # descriptionPlain alone is just the intro
+    assert "Core Responsibilities" in j.description
+    assert "Salary" in j.description  # from `additional`
+    assert j.salary == "80000-110000 USD per-year-salary"
 
 
 def test_ashby_parse_skips_unlisted():
@@ -63,6 +68,9 @@ def test_ashby_parse_skips_unlisted():
     assert j.remote is True
     assert j.employment_type == "FullTime"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+    assert j.salary == "$150K – $200K • Offers Equity"  # compensationTierSummary
+    # the board URL must request compensation or the block is absent
+    assert "includeCompensation=true" in get_scraper("ashby", "ramp", "Ramp").url()
 
 
 def test_darwinbox_parse():
@@ -181,6 +189,9 @@ def test_recruitee_parse():
     assert j.experience == "mid_level"
     assert j.employment_type == "fulltime_permanent"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+    assert (
+        "Requirements" in j.description
+    )  # the separate requirements field rides along
 
 
 def test_workable_parse():
@@ -214,6 +225,31 @@ def test_smartrecruiters_parse():
     assert (
         j.description and "</" not in j.description
     )  # detail fetch; populated, HTML-stripped
+
+
+def test_smartrecruiters_description_joins_requirement_sections():
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobAd": {
+                    "sections": {
+                        "companyDescription": {"text": "<p>About us boilerplate</p>"},
+                        "jobDescription": {"text": "<p>Build things</p>"},
+                        "qualifications": {"text": "<p>5+ years of experience</p>"},
+                        "additionalInformation": {"text": "<p>Perks</p>"},
+                    }
+                }
+            }
+
+    scraper = get_scraper("smartrecruiters", "acme", "Acme")
+    text = scraper._extract_description(_Resp())
+    assert "Build things" in text
+    assert "5+ years of experience" in text  # qualifications must ride along
+    assert "Perks" in text
+    assert "boilerplate" not in text  # companyDescription deliberately skipped
 
 
 def test_sensehq_parse():

@@ -49,7 +49,15 @@ class RecruiteeScraper(BaseScraper):
                     url=o.get("careers_url") or o.get("careers_apply_url", ""),
                     posted_at=o.get("published_at") or o.get("created_at"),
                     scraped_at=scraped_at,
-                    description=html_to_text(o.get("description")),
+                    # requirements is a separate field — dropping it starves experience
+                    # extraction and the embedding of the qualifications text
+                    description=html_to_text(
+                        "\n".join(
+                            s
+                            for s in (o.get("description"), o.get("requirements"))
+                            if s
+                        )
+                    ),
                     experience=o.get("experience_code"),
                     employment_type=o.get("employment_type_code"),
                     salary=_salary(o.get("salary")),

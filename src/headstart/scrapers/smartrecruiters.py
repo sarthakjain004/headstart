@@ -53,11 +53,20 @@ class SmartRecruitersScraper(BaseScraper):
 
     @staticmethod
     def _extract_description(response: Any) -> str | None:
-        """Pull the raw-HTML jobDescription out of a posting-detail response (None on non-200)."""
+        """Concatenate the posting-detail jobAd sections into raw HTML (None on non-200).
+
+        qualifications and additionalInformation carry the requirements (years of
+        experience etc.); companyDescription is deliberately skipped — it's the same
+        boilerplate on every posting and would dilute the embedding.
+        """
         if response.status_code != 200:
             return None
         sections = (response.json().get("jobAd") or {}).get("sections") or {}
-        return (sections.get("jobDescription") or {}).get("text")
+        parts = [
+            (sections.get(k) or {}).get("text")
+            for k in ("jobDescription", "qualifications", "additionalInformation")
+        ]
+        return "\n".join(p for p in parts if p) or None
 
     def _job_description(self, posting_id: str | None) -> str | None:
         """GET one posting's detail and return its jobDescription (None on failure). Sync path."""

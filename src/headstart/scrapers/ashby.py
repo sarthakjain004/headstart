@@ -12,7 +12,8 @@ class AshbyScraper(BaseScraper):
     ats = "ashby"
 
     def url(self) -> str:
-        return f"https://api.ashbyhq.com/posting-api/job-board/{self.slug}"
+        # includeCompensation adds the structured compensation block to each posting
+        return f"https://api.ashbyhq.com/posting-api/job-board/{self.slug}?includeCompensation=true"
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
@@ -35,6 +36,7 @@ class AshbyScraper(BaseScraper):
                         j.get("descriptionPlain") or j.get("descriptionHtml")
                     ),
                     employment_type=j.get("employmentType"),
+                    salary=(j.get("compensation") or {}).get("compensationTierSummary"),
                 )
             )
         return jobs
