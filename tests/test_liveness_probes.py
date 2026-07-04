@@ -171,3 +171,94 @@ def test_workday_one_transient_blocks_dead(monkeypatch):
         cl.UNKNOWN,
         None,
     )
+
+
+# --- shared-host gate + circuit breaker (workable's Cloudflare per-IP ban) ----------------------
+
+
+class _Resp:
+    def __init__(self, status, headers=None, content=b""):
+        self.status_code = status
+        self.headers = headers or {}
+        self.content = content
+
+
+def _fresh_workable_gate():
+    gate = cl._HostGate(8, 0.0)
+    cl._GATES["apply.workable.com"] = gate
+    return gate
+
+
+def test_long_retry_after_trips_breaker_and_short_circuits(monkeypatch):
+    _fresh_workable_gate()
+    calls = {"n": 0}
+
+    def fetch(method, url, **kw):
+        calls["n"] += 1
+        return _Resp(429, {"Retry-After": "72000"})
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    # the banning 429 itself is UNKNOWN (never DEAD), and it opens the breaker
+    assert cl.p_workable("acme", "") == (cl.UNKNOWN, None)
+    # further probes short-circuit: still UNKNOWN, and no network request is made
+    assert cl.p_workable("other", "") == (cl.UNKNOWN, None)
+    assert calls["n"] == 1
+
+
+def test_short_retry_after_does_not_trip(monkeypatch):
+    gate = _fresh_workable_gate()
+    monkeypatch.setattr(
+        cl.http, "fetch", lambda m, u, **kw: _Resp(429, {"Retry-After": "2"})
+    )
+    assert cl.p_workable("acme", "") == (cl.UNKNOWN, None)
+    assert gate.banned_until == 0.0  # per-request throttling, not a ban
+
+
+def test_ungated_host_bypasses_open_breaker(monkeypatch):
+    gate = _fresh_workable_gate()
+    gate.banned_until = float("inf")  # workable is banned...
+    monkeypatch.setattr(cl.http, "fetch", lambda m, u, **kw: _Resp(200, {}, b"[]"))
+    # ...but greenhouse (ungated) still probes normally
+    assert cl.p_greenhouse("acme", "") == (cl.LIVE, 0)
+
+
+def test_retry_after_parsing():
+    assert cl._retry_after_s("72000") == 72000
+    assert cl._retry_after_s(None) is None
+    assert cl._retry_after_s("garbage") is None
+    # HTTP-date form parses to a non-negative delta (a past date clamps to 0)
+    assert cl._retry_after_s("Wed, 21 Oct 2015 07:28:00 GMT") == 0
+
+
+def test_cf_challenge_trips_breaker_without_retry_after(monkeypatch):
+    _fresh_workable_gate()
+    calls = {"n": 0}
+
+    def fetch(method, url, **kw):
+        calls["n"] += 1
+        return _Resp(429, {"cf-mitigated": "challenge"})
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_workable("acme", "") == (cl.UNKNOWN, None)
+    assert cl.p_workable("other", "") == (cl.UNKNOWN, None)  # breaker open, no request
+    assert calls["n"] == 1
+
+
+def test_plain_429_streak_trips_breaker(monkeypatch):
+    gate = _fresh_workable_gate()
+    monkeypatch.setattr(cl.http, "fetch", lambda m, u, **kw: _Resp(429, {}))
+    for _ in range(cl._STRIKES_TO_TRIP):
+        assert cl.p_workable("acme", "") == (cl.UNKNOWN, None)
+    assert gate.banned_until > 0  # streak tripped it even with no headers at all
+
+
+def test_success_resets_the_429_streak(monkeypatch):
+    gate = _fresh_workable_gate()
+    responses = [_Resp(429, {})] * (cl._STRIKES_TO_TRIP - 1) + [
+        _Resp(200, {}, b'{"jobs": []}')
+    ]
+    monkeypatch.setattr(cl.http, "fetch", lambda m, u, **kw: responses.pop(0))
+    for _ in range(cl._STRIKES_TO_TRIP - 1):
+        cl.p_workable("acme", "")
+    assert cl.p_workable("acme", "") == (cl.LIVE, 0)
+    assert gate.strikes == 0 and gate.banned_until == 0.0
