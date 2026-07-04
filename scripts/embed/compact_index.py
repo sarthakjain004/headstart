@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Compact the ``jobs`` LanceDB table and drop old versions (ADR-0020).
+
+Lance keeps every prior version's fragments after ``sync_index.py``'s incremental add/evict
+cycles, so on a nightly cadence the on-disk size creeps well past the live rows. ``optimize``
+merges small fragments and reclaims the superseded versions — run this after each sync, before
+the state is uploaded. (``compact_files``/``cleanup_old_versions`` need the pylance package,
+which the ``[embed]`` extra deliberately doesn't carry; ``optimize`` is native.)
+
+Run:  python scripts/embed/compact_index.py
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from pathlib import Path
+
+import lancedb
+
+from headstart.search import PROD_TABLE
+
+_DB = Path(__file__).resolve().parents[2] / "data" / "lancedb"
+
+
+def main() -> None:
+    table = lancedb.connect(_DB).open_table(PROD_TABLE)
+    table.optimize(cleanup_older_than=timedelta(0))
+    print(f"compacted '{PROD_TABLE}': {table.count_rows()} rows", flush=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,34 @@
+name: deploy-space
+
+# Pushes deploy/hf-space/ to the HF Space whenever it changes on main (ADR-0020) — the repo is
+# the single source of truth for the Space app. Inert until the HF_TOKEN secret is set.
+on:
+  push:
+    branches: [main]
+    paths: ["deploy/hf-space/**"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  push-space:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned to full commit SHAs (tags are mutable — cf. tj-actions
+      # CVE-2025-30066). Dependabot keeps the SHAs current via the comments.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Push deploy/hf-space to the Space (skips cleanly until HF_TOKEN is set)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN secret not set - skipping. See docs/adr/0020-free-tier-deployment.md."
+            exit 0
+          fi
+          pip install "huggingface_hub[cli]"
+          hf upload imPoseidon/headstart-search deploy/hf-space . --repo-type space \
+            --commit-message "deploy: sync Space from repo ${GITHUB_SHA::7}"
