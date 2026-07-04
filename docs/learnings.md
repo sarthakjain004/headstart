@@ -2,6 +2,22 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## Workable's Cloudflare is burst-tolerant but challenges sustained probing (2026-07-04)
+
+Re-probing workable's 16.6k unknowns through the new per-host gate (8 in-flight, 4 req/s): a
+**200-board burst validated clean** (50s, zero 429s), but the full run flipped Cloudflare into
+**`cf-mitigated: challenge`** after ~2 minutes (~500 requests) — every response a 429 JS-challenge
+page with **no Retry-After header**, so the original retry-after-only breaker never tripped and the
+run burned 2k more requests scoring UNKNOWN. So its mitigation is quota-ish over a short window,
+not a simple rate cap: staying under 4 req/s does not make sustained scraping safe.
+
+No endpoint dodge exists: `{slug}.workable.com` and `www.workable.com/api/accounts/{slug}` are
+wildcard 301/302s into the same `apply.workable.com` bucket (both redirect for garbage slugs too, so
+they carry no liveness signal of their own). The breaker now also trips on `cf-mitigated: challenge`
+and on plain-429 streaks (no headers needed). The run still recovered **~700 settled verdicts**
+before the trip thanks to the 60s mid-pass ledger checkpoints. The remaining ~14k unknowns need a
+challenge solve (clearance cookie) or a multi-day sub-quota trickle — both deferred.
+
 ## MPS embedding leaks driver memory per unique batch *shape* — pin the shapes (2026-07-04)
 
 Embedding the tech corpus (nomic, fp16, MPS) kept wedging: `MPS backend out of memory … other

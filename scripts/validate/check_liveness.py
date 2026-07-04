@@ -68,6 +68,112 @@ _W = int(os.environ.get("LIVENESS_WORKERS") or _CORES * 24)
 PASSES = [(12, _W), (25, _W), (45, _W), (70, _W)]
 
 
+# --- shared-host gating -------------------------------------------------------------------------
+# Some ATSes route every tenant through one host, so probing them at pool concurrency is
+# self-inflicted contention (docs/learnings.md 2026-07-03): api.lever.co and join.com just get
+# slower (timeouts -> UNKNOWN), and apply.workable.com hard-429s (Cloudflare per-IP, ~20h
+# retry-after) — one careless --force run blanked all 16k workable boards to UNKNOWN for a day.
+# Two per-netloc mechanisms at the _get/_post seam:
+#   gate     cap in-flight requests and space request starts (excess workers queue on the gate);
+#   breaker  a 429 with a long Retry-After marks the host banned, and its remaining probes
+#            short-circuit to a transient failure (-> UNKNOWN, re-probed a later run) instead of
+#            re-extending the ban with thousands more requests. Never DEAD, by construction.
+class _HostGate:
+    def __init__(self, cap, spacing):
+        self.sem = threading.BoundedSemaphore(cap)
+        self.spacing = spacing  # min seconds between request *starts*
+        self._lock = threading.Lock()
+        self._next = 0.0
+        self.banned_until = (
+            0.0  # time.monotonic(); breaker open while now < banned_until
+        )
+        self.strikes = 0  # consecutive 429s — a headerless mitigation still trips
+
+    def wait_turn(self):
+        with self._lock:
+            start = max(time.monotonic(), self._next)
+            self._next = start + self.spacing
+        delay = start - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+
+    def trip(self, seconds, netloc, why):
+        if time.monotonic() < self.banned_until:
+            return
+        self.banned_until = time.monotonic() + seconds
+        print(
+            f"  [gate] {netloc} banned us ({why}) — its remaining probes "
+            f"short-circuit to UNKNOWN for {seconds}s",
+            flush=True,
+        )
+
+
+_GATES = {
+    # netloc: (max in-flight, seconds between request starts)
+    "apply.workable.com": _HostGate(
+        8, 0.25
+    ),  # Cloudflare per-IP ban at run concurrency
+    "api.lever.co": _HostGate(16, 0.0),  # p50 1.6s->9.2s at 8->120 workers; no 429s
+    "api.eu.lever.co": _HostGate(16, 0.0),
+    "join.com": _HostGate(16, 0.0),
+}
+_BAN_RETRY_AFTER_S = (
+    60  # a Retry-After beyond this is a ban, not per-request throttling
+)
+# Cloudflare's rate mitigation can also answer 429 with NO Retry-After — either tagged
+# cf-mitigated: challenge (a JS challenge our client can't solve; observed on workable after a
+# few sustained minutes at 4 req/s) or as a plain 429 streak. Both mean "stop now": trip for a
+# fixed cooldown rather than burn the rest of the run's requests re-signalling the mitigation.
+_STRIKES_TO_TRIP = 20
+_CHALLENGE_COOLDOWN_S = 1800
+
+
+def _retry_after_s(value):
+    """Retry-After header -> seconds (int form or HTTP-date form), None if absent/garbled."""
+    if not value:
+        return None
+    try:
+        return int(value.strip())
+    except ValueError:
+        pass
+    try:
+        from email.utils import parsedate_to_datetime
+
+        return max(0, int(parsedate_to_datetime(value).timestamp() - time.time()))
+    except Exception:
+        return None
+
+
+def _fetch(method, url, **kw):
+    """One request through the shared-host gate. Returns the response, or None when the host's
+    circuit breaker is open (callers treat None as a transient failure -> UNKNOWN)."""
+    gate = _GATES.get(urllib.parse.urlsplit(url).netloc)
+    if gate is None:
+        return http.fetch(
+            method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
+        )
+    if time.monotonic() < gate.banned_until:
+        return None
+    with gate.sem:
+        gate.wait_turn()
+        r = http.fetch(
+            method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
+        )
+    netloc = urllib.parse.urlsplit(url).netloc
+    if r.status_code == 429:
+        gate.strikes += 1
+        retry = _retry_after_s(r.headers.get("Retry-After"))
+        if retry and retry > _BAN_RETRY_AFTER_S:
+            gate.trip(retry, netloc, f"429, retry-after {retry}s")
+        elif r.headers.get("cf-mitigated") == "challenge":
+            gate.trip(_CHALLENGE_COOLDOWN_S, netloc, "429, Cloudflare challenge")
+        elif gate.strikes >= _STRIKES_TO_TRIP:
+            gate.trip(_CHALLENGE_COOLDOWN_S, netloc, f"{gate.strikes} consecutive 429s")
+    else:
+        gate.strikes = 0
+    return r
+
+
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
@@ -81,34 +187,28 @@ def _is_dns(exc):
 
 
 def _get(url, headers=None):
-    """GET via the reliable-fetch seam. Returns (status, body): the HTTP code, "dns" if the host
-    can't resolve (definitive), or None for an exhausted transient failure. Reads the full body
-    (Zoho parks its jobs <input> at the end of a ~1.7MB page)."""
+    """GET via the reliable-fetch seam (shared-host gated). Returns (status, body): the HTTP code,
+    "dns" if the host can't resolve (definitive), or None for an exhausted transient failure.
+    Reads the full body (Zoho parks its jobs <input> at the end of a ~1.7MB page)."""
     h = {"User-Agent": UA, **(headers or {})}
     try:
-        r = http.fetch(
-            "GET", url, headers=h, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS
-        )
+        r = _fetch("GET", url, headers=h)
     except http.RequestsError as e:
         return ("dns", b"") if _is_dns(e) else (None, b"")
+    if r is None:  # circuit breaker open -> transient
+        return None, b""
     return r.status_code, r.content
 
 
 def _post(url, json_body, headers):
-    """POST JSON via the reliable-fetch seam. Returns (status, parsed_json|None); status is the
-    code, "dns", or None."""
+    """POST JSON via the reliable-fetch seam (shared-host gated). Returns (status,
+    parsed_json|None); status is the code, "dns", or None."""
     try:
-        r = http.fetch(
-            "POST",
-            url,
-            json=json_body,
-            headers=headers,
-            timeout=TIMEOUT,
-            verify=False,
-            attempts=_ATTEMPTS,
-        )
+        r = _fetch("POST", url, json=json_body, headers=headers)
     except http.RequestsError as e:
         return ("dns", None) if _is_dns(e) else (None, None)
+    if r is None:  # circuit breaker open -> transient
+        return None, None
     if r.status_code == 200:
         try:
             return 200, r.json()
@@ -543,8 +643,10 @@ def main():
         TIMEOUT = timeout
         unknowns = []
         ulock = threading.Lock()
+        probed = 0
 
         def do(item):
+            nonlocal probed
             ats, tenant, url = item
             try:
                 verdict, jobs = PROBES[ats](tenant, url)
@@ -553,15 +655,37 @@ def main():
             if verdict == UNKNOWN:
                 with ulock:
                     unknowns.append(item)
+                    probed += 1
                 return
             with lock:  # settle it in the ledger (url refreshed from the pool)
                 verdicts[ats][tenant] = liveness.Verdict(
                     ats, tenant, url, verdict, jobs, today_iso
                 )
+            with ulock:
+                probed += 1
 
+        # Checkpoint the ledger every 60s so a crash or network drop mid-pass keeps everything
+        # settled so far (a gated single-host pass can run for an hour) — and heartbeat progress.
+        stop = threading.Event()
+
+        def checkpoint():
+            while not stop.wait(60):
+                with lock:
+                    flush_ledger()
+                print(
+                    f"  [checkpoint] {probed}/{len(work)} probed, {len(unknowns)} unknown so far",
+                    flush=True,
+                )
+
+        ticker = threading.Thread(target=checkpoint, daemon=True)
+        ticker.start()
         start = time.monotonic()
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            list(ex.map(do, work))
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                list(ex.map(do, work))
+        finally:
+            stop.set()
+            ticker.join()
         elapsed = time.monotonic() - start
         print(
             f"  pass done in {elapsed:.1f}s ({len(work) / elapsed:.0f} boards/s)",
