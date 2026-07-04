@@ -362,10 +362,13 @@ def test_workday_parse():
         "https://3m.wd1.myworkdayjobs.com/search/job/IN-BANGALORE/"
         "Procurement-Operations-Manager---India_R01165862-1"
     )
-    # description now comes from a per-job detail fetch (injected into the fixture as _jobDescription)
+    # description/date/type come from the per-job detail fetch (fixture's _detail block)
     assert j.description and "</" not in j.description  # populated, HTML-stripped
     assert j.experience is None  # list/detail give no clean experience field
-    assert j.employment_type is None
+    assert (
+        j.posted_at == "2026-01-10"
+    )  # detail startDate, not the list's "30+ Days Ago"
+    assert j.employment_type == "Full time"  # timeType
 
 
 class _FakeResp:
@@ -412,7 +415,7 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
 
 
 def test_trakstar_parse():
-    # raw is {html: listing, descriptions: {code: detail-page JSON-LD description}}
+    # raw is {html: listing, postings: {code: detail-page JSON-LD JobPosting}}
     jobs = get_scraper("trakstar", "exotel", "Exotel").parse(
         _load("trakstar_exotel.json"), SCRAPED_AT
     )
@@ -425,6 +428,7 @@ def test_trakstar_parse():
     assert j.employment_type == "Full-time"  # from the opening-meta span
     assert j.url == "https://exotel.hire.trakstar.com/jobs/fk0zvv1/"
     assert j.description and "</" not in j.description  # from the detail page JSON-LD
+    assert j.posted_at == "2026-02-01"  # JSON-LD datePosted; the listing card has none
 
 
 def test_recruitee_salary_formatting():
