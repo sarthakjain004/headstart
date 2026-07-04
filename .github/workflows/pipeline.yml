@@ -1,0 +1,105 @@
+name: nightly-pipeline
+
+# Nightly ingest for the free-tier deployment (ADR-0020): scrape a rotating slice of the live
+# boards, filter to tech, embed only the new ids, incrementally sync the LanceDB `jobs` table,
+# and push the updated state to the private HF dataset the Space serves from.
+# Inert (green no-op) until the HF_TOKEN secret is set.
+on:
+  schedule:
+    - cron: "30 21 * * *" # nightly; GitHub may delay scheduled runs
+  workflow_dispatch:
+    inputs:
+      max_boards:
+        description: boards to scrape this run (0 = all live boards)
+        default: "8000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-pipeline # never let two runs race on the dataset state
+  cancel-in-progress: false
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+  HF_SPACE: imPoseidon/headstart-search
+
+jobs:
+  harvest-embed-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      # Actions pinned to full commit SHAs (tags are mutable — cf. tj-actions
+      # CVE-2025-30066). Dependabot keeps the SHAs current via the comments.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Check HF_TOKEN (skips cleanly until set)
+        id: gate
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN secret not set - skipping. See docs/adr/0020-free-tier-deployment.md."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.run == 'true'
+        run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - name: Cache the embedding model
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a # v4.1.2
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-nomic-embed-text-v1.5
+      - name: Download index state (empty on first run)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf download "$HF_DATASET" --repo-type dataset --local-dir . \
+            --include "data/embeddings/jobs/*" "data/lancedb/*" || true
+      - name: Scrape a rotating slice of the live boards
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python scripts/scrape/nightly_harvest.py \
+            --max-boards "${{ github.event.inputs.max_boards || '8000' }}"
+        timeout-minutes: 150
+      - name: Tech filter
+        if: steps.gate.outputs.run == 'true'
+        run: python scripts/filter/tech.py
+      - name: Embed the new ids
+        if: steps.gate.outputs.run == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/embed/embed_jobs.py --resume
+        timeout-minutes: 120
+      - name: Sync the jobs table
+        if: steps.gate.outputs.run == 'true'
+        run: python scripts/embed/sync_index.py
+      - name: Compact the table
+        if: steps.gate.outputs.run == 'true'
+        run: python scripts/embed/compact_index.py
+      - name: Upload index state
+        if: steps.gate.outputs.run == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
+            --repo-type dataset --commit-message "nightly: embedding store"
+          hf upload "$HF_DATASET" data/lancedb data/lancedb \
+            --repo-type dataset --commit-message "nightly: lancedb index"
+      - name: Restart the Space to pick up the new index
+        if: steps.gate.outputs.run == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -c "
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ['HF_TOKEN']).restart_space(os.environ['HF_SPACE'])
+          print('space restarted')
+          "
