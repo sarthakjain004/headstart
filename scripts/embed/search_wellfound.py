@@ -17,7 +17,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.search import TABLE, build_filter, encode_query, load_encoder
+from headstart.search import EVAL_TABLE, build_filter, encode_query, load_encoder
 
 _DB = Path(__file__).resolve().parents[2] / "data" / "lancedb"
 
@@ -50,7 +50,7 @@ def main() -> None:
     model = load_encoder()
     query_vec = encode_query(model, args.query)
 
-    table = lancedb.connect(_DB).open_table(TABLE)
+    table = lancedb.connect(_DB).open_table(EVAL_TABLE)
     search = table.search(query_vec).metric("cosine")
     if where:
         search = search.where(

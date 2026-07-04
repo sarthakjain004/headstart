@@ -1,9 +1,10 @@
-"""Minimal localhost UI for the Wellfound semantic search (dev demo).
+"""Minimal localhost UI for the tech-corpus semantic search (dev demo).
 
-Loads nomic + the LanceDB ``wellfound`` table once at startup, serves a search page at ``/`` and a
-JSON endpoint at ``/search`` that runs filter-then-rank (ADR-0008): encode the query with the
-``search_query:`` prefix (ADR-0005), pre-filter on the typed metadata (remote / employment_type /
-min_years), rank the survivors by cosine. Wellfound-only — that's the only table in the index.
+Loads nomic + the LanceDB ``jobs`` table once at startup (the product's tech corpus, ADR-0019),
+serves a search page at ``/`` and a JSON endpoint at ``/search`` that runs filter-then-rank
+(ADR-0008): encode the query with the ``search_query:`` prefix (ADR-0005), pre-filter on the
+typed metadata (remote / min_years), rank the survivors by cosine. ``employment_type`` and
+``salary`` are display-only — their raw values aren't normalized yet (ADR-0019).
 
 Run:  python scripts/ui/serve.py    then open  http://localhost:8000
 """
@@ -15,14 +16,14 @@ from pathlib import Path
 import lancedb
 from flask import Flask, jsonify, request
 
-from headstart.search import TABLE, build_filter, encode_query, load_encoder
+from headstart.search import PROD_TABLE, build_filter, encode_query, load_encoder
 
 _DB = Path(__file__).resolve().parents[2] / "data" / "lancedb"
 _MAX_K = 100  # cap the page size so a crafted k can't dump the whole table
 
 print("loading model + index ...", flush=True)
 _model = load_encoder()
-_table = lancedb.connect(_DB).open_table(TABLE)
+_table = lancedb.connect(_DB).open_table(PROD_TABLE)
 print(f"ready: {_table.count_rows()} jobs", flush=True)
 
 app = Flask(__name__)
@@ -60,7 +61,6 @@ def search():
         k = int(request.args.get("k") or 20)
         where = build_filter(
             remote=request.args.get("remote") == "true",
-            employment_type=request.args.get("type") or None,
             max_years=int(max_years) if max_years else None,
         )
     except ValueError:
@@ -103,17 +103,13 @@ _PAGE = """<!doctype html>
   .empty{ color:var(--mut); text-align:center; padding:40px; }
 </style></head><body><div class="wrap">
   <h1>HeadStart — Semantic Job Search</h1>
-  <p class="sub">nomic embeddings → LanceDB filter-then-rank · Wellfound corpus (English)</p>
+  <p class="sub">nomic embeddings → LanceDB filter-then-rank · tech corpus (English)</p>
   <div class="bar">
     <input id="q" type="text" placeholder="e.g. backend engineer at a climate startup" autofocus>
     <button onclick="go()">Search</button>
   </div>
   <div class="filters">
     <label><input type="checkbox" id="remote"> remote only</label>
-    <label>type
-      <select id="type"><option value="">any</option><option>full-time</option>
-        <option>contract</option><option>internship</option><option>cofounder</option></select>
-    </label>
     <label>max years <input id="maxyears" type="number" min="0" style="width:60px"></label>
   </div>
   <div id="results"></div>
@@ -129,7 +125,6 @@ async function go(){
   const q = el('q').value.trim(); if(!q) return;
   const p = new URLSearchParams({ q, k: 20 });
   if (el('remote').checked) p.set('remote','true');
-  if (el('type').value) p.set('type', el('type').value);
   if (el('maxyears').value) p.set('max_years', el('maxyears').value);
   el('results').innerHTML = '<div class="empty">searching…</div>';
   const rows = await (await fetch('/search?'+p)).json();

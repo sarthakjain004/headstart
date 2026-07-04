@@ -18,7 +18,8 @@ from typing import Any
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
 DOC_PREFIX = "search_document: "  # index time (ADR-0005)
 QUERY_PREFIX = "search_query: "  # query time (ADR-0005)
-TABLE = "wellfound"
+PROD_TABLE = "jobs"  # the product's tech corpus (ADR-0019)
+EVAL_TABLE = "wellfound"  # frozen retrieval benchmark (ADR-0019)
 
 # employment_type is a fixed vocabulary (the UI <select>); an unrecognized value is
 # rejected rather than interpolated into the LanceDB where-clause.

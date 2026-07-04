@@ -23,7 +23,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.search import TABLE, encode_query, load_encoder
+from headstart.search import EVAL_TABLE, encode_query, load_encoder
 
 _ROOT = Path(__file__).resolve().parents[2]
 _QRELS = _ROOT / "data" / "eval" / "qrels.jsonl"
@@ -66,7 +66,7 @@ def main() -> None:
     queries = [json.loads(line) for line in _QRELS.open(encoding="utf-8")]
     rows = _load_rows()
     model = load_encoder()
-    table = lancedb.connect(_DB).open_table(TABLE)
+    table = lancedb.connect(_DB).open_table(EVAL_TABLE)
 
     n_pairs = 0
     with _OUT.open("w", encoding="utf-8") as out:
