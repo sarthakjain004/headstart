@@ -2,6 +2,31 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## MPS embedding leaks driver memory per unique batch *shape* — pin the shapes (2026-07-04)
+
+Embedding the tech corpus (nomic, fp16, MPS) kept wedging: `MPS backend out of memory … other
+allocations: 50.17 GiB … Tried to allocate 19.00 KiB`. Once "other allocations" crossed the
+watermark, **every** allocation was refused for the rest of the process — even 19 KiB — so the run
+marched on marking all remaining docs failed. A controlled experiment isolated the mechanism:
+encoding the **same (batch, seq) shape** repeatedly holds driver memory flat (7.8 GiB across 6
+batches), while **each new shape adds ~2–3 GiB that is never freed** (per-shape compiled-graph
+workspace, immune to `torch.mps.empty_cache()`). Sentence-transformers pads every batch to its own
+longest doc, so naturally-batched corpora make almost every batch a fresh shape → guaranteed wedge.
+
+Fix in `embed_jobs.py`: group docs into **token-length buckets** (512/1024/2048/4096, measured with
+the real tokenizer), fixed batch size per bucket from the attention budget (n × seq² ≤ ~128M), pad
+each batch's count with repeats of its first doc, and ride a **pin doc of exactly the bucket's token
+length** in every batch so the tokenizer always pads to the bucket. Shapes per run: 4. Verified
+numerically faithful (cosine 0.9995 vs plain encode; fp16 noise).
+
+Related traps hit on the way: (1) a single full-context 8,192-token forward transiently demands
+~50 GB on this stack — cap sequences (4,096 is the proven envelope; only ~0.01% of docs are longer);
+(2) `PYTORCH_MPS_HIGH_WATERMARK_RATIO` must be ≥ the LOW ratio (default 1.4) or torch dies with
+"invalid low watermark ratio"; (3) chars÷4 token estimates undershoot badly on bilingual docs whose
+CJK tails tokenize at ~1 token/char — measure with the tokenizer, don't estimate; (4) the ~9 GB of
+stale swap observed at session start was this same leak from earlier embed runs, hidden by the
+default 1.7 watermark letting the driver grow into compressed memory/swap.
+
 ## Two recurring liveness failure modes across ATSes: 200 soft-404s and shared-host latency (2026-07-03)
 
 Diagnosing the big "unknown" piles (workable, workday, zoho, keka, join, lever, teamtailor) surfaced
