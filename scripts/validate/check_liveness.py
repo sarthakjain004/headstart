@@ -43,6 +43,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
+from headstart.scrapers.workday import (  # noqa: E402 - the DC list, single source of truth
+    INSTANCES as _WD_INSTANCES,
+)
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
@@ -239,24 +242,43 @@ def _keka_uuid(t, info):
     return None
 
 
+# A data center conclusively says a Workday tenant/site is "not here" via 404/410/422. Everything
+# else — dns, timeout, 5xx, 429 — is inconclusive (dns included: the *.wdN wildcard resolves for
+# every active DC, so a dns failure is OUR network, not a dead board).
+_WD_GONE = {404, 410, 422}
+
+
 def p_workday(t, u):
     m = _WD_URL.match(u.rstrip("/"))
     if not m:
         return DEAD, None  # not a Workday URL -> can't be a board
-    co, inst, site = m.groups()
-    api = f"https://{co}.{inst}.myworkdayjobs.com/wday/cxs/{co}/{site}/jobs"
-    status, data = _post(
-        api,
-        {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
-        {
-            "User-Agent": UA,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    return _verdict(
-        status, int(data.get("total", 0)) if status == 200 and data else None
-    )
+    co, hinted, site = m.groups()
+
+    def probe(inst):
+        status, data = _post(
+            f"https://{co}.{inst}.myworkdayjobs.com/wday/cxs/{co}/{site}/jobs",
+            {"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""},
+            {
+                "User-Agent": UA,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        total = int(data.get("total", 0)) if status == 200 and data else None
+        return total, status
+
+    # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.
+    statuses = []
+    for inst in (hinted, *(i for i in _WD_INSTANCES if i != hinted)):
+        total, status = probe(inst)
+        if total is not None:
+            return LIVE, total
+        statuses.append(status)
+    # No DC served it live. DEAD only if *every* probe conclusively said "not here"; a single
+    # inconclusive probe (timeout/dns/5xx) leaves a live instance unruled-out -> UNKNOWN. This makes
+    # a false-dead impossible: a migrated board whose live DC merely timed out stays UNKNOWN, never
+    # DEAD (and an outage, which fails every probe, yields UNKNOWN, not a wave of false-deads).
+    return (DEAD, None) if all(s in _WD_GONE for s in statuses) else (UNKNOWN, None)
 
 
 def p_ripplehire(t, u):
