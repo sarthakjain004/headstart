@@ -86,12 +86,19 @@ jobs:
       - name: Tech filter
         if: steps.gate.outputs.run == 'true'
         run: python scripts/filter/tech.py
-      - name: Embed the new ids
+      - name: Embed the new ids (time-budgeted — partial progress still uploads)
         if: steps.gate.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/embed/embed_jobs.py --resume
-        timeout-minutes: 120
+        # CPU embedding runs ~0.5 docs/s; a backlog-heavy slice can't always finish. The
+        # store streams to disk and reconciles on --resume (ADR-0004), so when the budget
+        # expires we bank what's embedded and let sync/upload proceed — the next run
+        # continues from there. A step-timeout here would instead fail the run and lose
+        # the whole slice.
+        run: |
+          timeout 100m python scripts/embed/embed_jobs.py --resume \
+            || echo "embed time budget reached — banking partial store"
+        timeout-minutes: 115
       - name: Sync the jobs table
         if: steps.gate.outputs.run == 'true'
         run: python scripts/embed/sync_index.py
