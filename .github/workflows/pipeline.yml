@@ -6,7 +6,14 @@ name: nightly-pipeline
 # Inert (green no-op) until the HF_TOKEN secret is set.
 on:
   schedule:
-    - cron: "30 21 * * *" # nightly; GitHub may delay scheduled runs
+    # four cycles a day, 6h apart: the 21:30 nightly plus day runs that give the CPU
+    # embed budget more slots (heals eviction backlogs, keeps boards ~2-3 days fresh
+    # instead of ~9-10). Runs serialize via the concurrency group; once a backlog is
+    # gone, day runs shrink to ~30-45 min (few new ids per slice).
+    - cron: "30 21 * * *" # the compulsory nightly
+    - cron: "30 3 * * *"
+    - cron: "30 9 * * *"
+    - cron: "30 15 * * *"
   workflow_dispatch:
     inputs:
       max_boards:
