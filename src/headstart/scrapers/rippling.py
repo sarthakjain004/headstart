@@ -38,6 +38,16 @@ def _description(detail: dict) -> str | None:
     return d if isinstance(d, str) else None
 
 
+def _pay_range(ranges: list | None) -> str | None:
+    """Format the first payRangeDetails entry, e.g. '150000-250000 USD YEAR'."""
+    r = (ranges or [{}])[0] or {}
+    lo, hi = r.get("rangeStart"), r.get("rangeEnd")
+    if not lo and not hi:
+        return None
+    span = f"{lo:g}-{hi:g}" if lo and hi else f"{(lo or hi):g}"
+    return " ".join(str(x) for x in (span, r.get("currency"), r.get("frequency")) if x)
+
+
 class RipplingScraper(BaseScraper):
     ats = "rippling"
 
@@ -138,6 +148,7 @@ class RipplingScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(_description(detail)),
                     employment_type=(detail.get("employmentType") or {}).get("id"),
+                    salary=_pay_range(detail.get("payRangeDetails")),
                 )
             )
         return jobs

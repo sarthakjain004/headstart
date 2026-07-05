@@ -212,23 +212,23 @@ class WorkdayScraper(BaseScraper):
                 postings.append(item)
 
         self._exhaust({}, absorb, depth=0)
-        # Second pass: fill each posting's description concurrently (bounded); a failed detail
-        # fetch leaves ``_jobDescription`` None so the job is still kept.
+        # Second pass: fill each posting's detail fields concurrently (bounded); a failed
+        # fetch leaves ``_detail`` empty so the job is still kept.
         if self.async_fanout_enabled():
-            descriptions = self.fan_out_async(
+            details = self.fan_out_async(
                 postings,
-                lambda session, item: self._job_description_async(
+                lambda session, item: self._job_detail_async(
                     session, item.get("externalPath")
                 ),
             )
         else:
-            descriptions = self.fan_out(
+            details = self.fan_out(
                 postings,
-                lambda item: self._job_description(item.get("externalPath")),
+                lambda item: self._job_detail(item.get("externalPath")),
                 workers=_DETAIL_WORKERS,
             )
-        for item, description in zip(postings, descriptions):
-            item["_jobDescription"] = description
+        for item, detail in zip(postings, details):
+            item["_detail"] = detail or {}
         return postings
 
     def _detail_url(self, external_path: str) -> str:
@@ -239,14 +239,21 @@ class WorkdayScraper(BaseScraper):
         )
 
     @staticmethod
-    def _extract_description(response: Any) -> str | None:
-        """Pull the raw-HTML jobDescription out of a posting-detail response (None on non-200)."""
+    def _extract_detail(response: Any) -> dict[str, Any] | None:
+        """The useful jobPostingInfo fields from a posting-detail response (None on non-200):
+        the raw-HTML description, plus startDate/timeType — the list payload only carries a
+        relative posted date ("30+ Days Ago") and no employment type."""
         if response.status_code != 200:
             return None
-        return (response.json().get("jobPostingInfo") or {}).get("jobDescription")
+        info = response.json().get("jobPostingInfo") or {}
+        return {
+            "description": info.get("jobDescription"),
+            "startDate": info.get("startDate"),
+            "timeType": info.get("timeType"),
+        }
 
-    def _job_description(self, external_path: str | None) -> str | None:
-        """GET one posting's detail and return its jobDescription (None on failure). Sync path."""
+    def _job_detail(self, external_path: str | None) -> dict[str, Any] | None:
+        """GET one posting's detail fields (None on failure). Sync path."""
         if not external_path:
             return None
         try:
@@ -257,13 +264,13 @@ class WorkdayScraper(BaseScraper):
                 headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError:
-            return None  # a missing description must not drop the job
-        return self._extract_description(response)
+            return None  # a missing detail must not drop the job
+        return self._extract_detail(response)
 
-    async def _job_description_async(
+    async def _job_detail_async(
         self, session: Any, external_path: str | None
-    ) -> str | None:
-        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+    ) -> dict[str, Any] | None:
+        """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
         if not external_path:
             return None
         try:
@@ -276,7 +283,7 @@ class WorkdayScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return self._extract_description(response)
+        return self._extract_detail(response)
 
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:
         """Exhaust one filter combination: paginate normally, or subdivide when the
@@ -322,6 +329,7 @@ class WorkdayScraper(BaseScraper):
         for item in raw:
             external_path = item.get("externalPath") or ""
             ats_id = _posting_key(item)
+            detail = item.get("_detail") or {}
             jobs.append(
                 Job(
                     id=f"{self.ats}:{company}/{site}:{ats_id}",
@@ -332,9 +340,12 @@ class WorkdayScraper(BaseScraper):
                     remote=_remote_from(item.get("remoteType")),
                     department=(item.get("jobFamilyGroup") or "").strip() or None,
                     url=f"{base}{external_path}" if external_path else base,
-                    posted_at=None,  # Workday only gives relative strings ("30+ Days Ago")
+                    # the list only gives relative strings ("30+ Days Ago"); the detail
+                    # JSON carries the absolute date
+                    posted_at=detail.get("startDate"),
                     scraped_at=scraped_at,
-                    description=html_to_text(item.get("_jobDescription")),
+                    description=html_to_text(detail.get("description")),
+                    employment_type=item.get("timeType") or detail.get("timeType"),
                 )
             )
         return jobs

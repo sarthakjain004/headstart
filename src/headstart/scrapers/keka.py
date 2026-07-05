@@ -27,6 +27,19 @@ _UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 _DEAD_MARKERS = ("Invalid Tenant", "Forbidden Access")
 
 
+def _salary(rng: dict | None) -> str | None:
+    """Format keka's salaryRange, e.g. '25000-30000 INR'. None when no amounts published.
+
+    The salaryPeriod enum's labels aren't in the payload, so the period is omitted.
+    """
+    rng = rng or {}
+    lo, hi = rng.get("minimum") or None, rng.get("maximum") or None
+    if not lo and not hi:
+        return None
+    span = f"{lo:g}-{hi:g}" if lo and hi else f"{(lo or hi):g}"
+    return " ".join(str(x) for x in (span, rng.get("currency")) if x)
+
+
 class KekaScraper(BaseScraper):
     ats = "keka"
 
@@ -92,6 +105,9 @@ class KekaScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description") or j.get("excerpt")),
                     experience=j.get("experience"),
+                    # jobType is a bare numeric enum (0/1/2) whose labels aren't in the
+                    # payload or reachable frontend code — left unmapped rather than guessed
+                    salary=_salary(j.get("salaryRange")),
                 )
             )
         return jobs

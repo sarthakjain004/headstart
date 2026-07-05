@@ -50,34 +50,33 @@ class TrakstarScraper(BaseScraper):
         codes = [
             m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))
         ]
-        # Each job page's JSON-LD description, fetched concurrently (bounded); failures -> None. The
-        # detail pages sit behind DataDome, so the async path pins the multiplexing width to the
-        # gentle _DETAIL_WORKERS rather than the global HEADSTART_H2_STREAMS.
+        # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
+        # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
+        # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global
+        # HEADSTART_H2_STREAMS.
         if self.async_fanout_enabled():
             results = self.fan_out_async(
                 codes,
-                lambda session, code: self._job_description_async(session, code),
+                lambda session, code: self._job_posting_async(session, code),
                 concurrency=_DETAIL_WORKERS,
             )
         else:
-            results = self.fan_out(
-                codes, self._job_description, workers=_DETAIL_WORKERS
-            )
-        descriptions = dict(zip(codes, results))
-        return {"html": html, "descriptions": descriptions}
+            results = self.fan_out(codes, self._job_posting, workers=_DETAIL_WORKERS)
+        postings = dict(zip(codes, results))
+        return {"html": html, "postings": postings}
 
     def _detail_url(self, code: str) -> str:
         return f"https://{self.slug}.hire.trakstar.com/jobs/{code}/"
 
     @staticmethod
-    def _extract_description(response: Any) -> str | None:
-        """Pull JobPosting.description from a detail page's JSON-LD (None on non-200)."""
+    def _extract_posting(response: Any) -> dict | None:
+        """Pull the JobPosting JSON-LD block from a detail page (None on non-200)."""
         if response.status_code != 200:
             return None
-        return _jsonld_description(response.text)
+        return _jsonld_posting(response.text)
 
-    def _job_description(self, code: str) -> str | None:
-        """GET one job page and return its JSON-LD description (None on failure). Sync path."""
+    def _job_posting(self, code: str) -> dict | None:
+        """GET one job page and return its JSON-LD JobPosting (None on failure). Sync path."""
         try:
             response = http.fetch(
                 "GET",
@@ -86,11 +85,11 @@ class TrakstarScraper(BaseScraper):
                 headers={"User-Agent": _UA},
             )
         except http.RequestsError:
-            return None  # a missing description must not drop the job
-        return self._extract_description(response)
+            return None  # a missing posting must not drop the job
+        return self._extract_posting(response)
 
-    async def _job_description_async(self, session: Any, code: str) -> str | None:
-        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+    async def _job_posting_async(self, session: Any, code: str) -> dict | None:
+        """Same as :meth:`_job_posting` but over the shared multiplexed ``AsyncSession``."""
         try:
             response = await http.fetch_async(
                 session,
@@ -101,11 +100,11 @@ class TrakstarScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return self._extract_description(response)
+        return self._extract_posting(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         html = raw["html"] if isinstance(raw, dict) else raw
-        descriptions = raw.get("descriptions", {}) if isinstance(raw, dict) else {}
+        postings = raw.get("postings", {}) if isinstance(raw, dict) else {}
         jobs: list[Job] = []
         for block in html.split(_ITEM)[1:]:
             code = _CODE.search(block)
@@ -116,6 +115,7 @@ class TrakstarScraper(BaseScraper):
             dept = _DEPT.search(block)
             emp = _EMPTYPE.search(block)
             location = _html.unescape(loc.group(1)).strip() if loc else None
+            posting = postings.get(code.group(1)) or {}
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{code.group(1)}",
@@ -126,19 +126,20 @@ class TrakstarScraper(BaseScraper):
                     remote=is_remote(location),
                     department=_html.unescape(dept.group(1)).strip() if dept else None,
                     url=f"https://{self.slug}.hire.trakstar.com/jobs/{code.group(1)}/",
-                    posted_at=None,  # listing card has no date
+                    # the listing card has no date; the detail JSON-LD does
+                    posted_at=posting.get("datePosted"),
                     scraped_at=scraped_at,
                     employment_type=_html.unescape(emp.group(1)).strip()
                     if emp
                     else None,
-                    description=html_to_text(descriptions.get(code.group(1))),
+                    description=html_to_text(posting.get("description")),
                 )
             )
         return jobs
 
 
-def _jsonld_description(html: str) -> str | None:
-    """Pull JobPosting.description out of a detail page's schema.org JSON-LD block."""
+def _jsonld_posting(html: str) -> dict | None:
+    """Pull the JobPosting object out of a detail page's schema.org JSON-LD block."""
     for match in _JSONLD.finditer(html):
         try:
             # strict=False: the JSON-LD embeds literal newlines inside string values
@@ -147,7 +148,5 @@ def _jsonld_description(html: str) -> str | None:
             continue
         for item in data if isinstance(data, list) else [data]:
             if isinstance(item, dict) and item.get("@type") == "JobPosting":
-                desc = item.get("description")
-                if desc:
-                    return desc
+                return item
     return None

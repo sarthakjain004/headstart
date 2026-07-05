@@ -29,3 +29,4 @@ supersedes it and note the supersession in both.
 | [0018](0018-experience-seniority-fallback.md) | Experience: widened description patterns + a data-calibrated seniority fallback | 2026-07-03 |
 | [0019](0019-tech-corpus-search-index.md) | Tech-corpus search index (thin slice): embed `data/jobs/tech`, seniority-estimated experience filterable | 2026-07-03 |
 | [0020](0020-free-tier-deployment.md) | Free-tier deployment: GitHub Actions ingest, private HF dataset state, HF Space serving | 2026-07-04 |
+| [0021](0021-re-embed-on-content-change.md) | Re-embedding changed content: targeted eviction now, content-hash later | 2026-07-04 |

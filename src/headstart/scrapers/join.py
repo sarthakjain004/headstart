@@ -21,8 +21,8 @@ from headstart.scrapers.base import BaseScraper
 
 _UA = "headstart/0.1 (job-board reader)"
 _NEXT = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
-_PAGE_SIZE = 50
-_MAX_PAGES = 200  # 200 * 50 = 10k jobs ceiling per company
+_PAGE_SIZE = 5  # 2026-07: the API rejects larger values ("pageSize: Invalid value")
+_MAX_PAGES = 2000  # 2000 * 5 = 10k jobs ceiling per company
 _DETAIL_WORKERS = 8
 _REMOTE = {
     "REMOTE": True,
@@ -67,6 +67,8 @@ class JoinScraper(BaseScraper):
                 headers={"User-Agent": _UA, "Accept": "application/json"},
                 timeout=30,
             ).json()
+            if isinstance(data, list):
+                break  # a bare list is the API's validation-error shape, not items
             items.extend(data.get("items") or [])
             if page >= (data.get("pagination") or {}).get("pageCount", 1):
                 break
