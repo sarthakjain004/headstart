@@ -140,6 +140,12 @@ this machine — the watermark env vars and bucketed batching are load-bearing):
 
 ## Invariants and known failure modes
 
+**Never upload state while a pipeline run is in flight.** A run downloads state at its start and
+uploads at its end — a local upload in between gets silently overwritten by the run's (stale-based)
+upload (this clobbered the 2026-07-05 surgery state). Check
+`gh run list --workflow nightly-pipeline` and wait for / cancel in-flight runs before any local
+`hf upload` of the state dirs; dispatch new runs only after the upload lands.
+
 **Compact before every upload.** Lance keeps every prior version's fragments after incremental
 sync; skipping `compact_index.py` balloons the dataset and every Space cold start.
 

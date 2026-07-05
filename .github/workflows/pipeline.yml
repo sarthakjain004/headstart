@@ -6,7 +6,14 @@ name: nightly-pipeline
 # Inert (green no-op) until the HF_TOKEN secret is set.
 on:
   schedule:
-    - cron: "30 21 * * *" # nightly; GitHub may delay scheduled runs
+    # four cycles a day, 6h apart: the 21:30 nightly plus day runs that give the CPU
+    # embed budget more slots (heals eviction backlogs, keeps boards ~2-3 days fresh
+    # instead of ~9-10). Runs serialize via the concurrency group; once a backlog is
+    # gone, day runs shrink to ~30-45 min (few new ids per slice).
+    - cron: "30 21 * * *" # the compulsory nightly
+    - cron: "30 3 * * *"
+    - cron: "30 9 * * *"
+    - cron: "30 15 * * *"
   workflow_dispatch:
     inputs:
       max_boards:
@@ -86,12 +93,19 @@ jobs:
       - name: Tech filter
         if: steps.gate.outputs.run == 'true'
         run: python scripts/filter/tech.py
-      - name: Embed the new ids
+      - name: Embed the new ids (time-budgeted — partial progress still uploads)
         if: steps.gate.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/embed/embed_jobs.py --resume
-        timeout-minutes: 120
+        # CPU embedding runs ~0.5 docs/s; a backlog-heavy slice can't always finish. The
+        # store streams to disk and reconciles on --resume (ADR-0004), so when the budget
+        # expires we bank what's embedded and let sync/upload proceed — the next run
+        # continues from there. A step-timeout here would instead fail the run and lose
+        # the whole slice.
+        run: |
+          timeout 100m python scripts/embed/embed_jobs.py --resume \
+            || echo "embed time budget reached — banking partial store"
+        timeout-minutes: 115
       - name: Sync the jobs table
         if: steps.gate.outputs.run == 'true'
         run: python scripts/embed/sync_index.py
