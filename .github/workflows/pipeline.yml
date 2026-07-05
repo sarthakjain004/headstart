@@ -59,9 +59,24 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        # snapshot_download, not the hf CLI: `hf download repo --include A B` parses B as a
+        # positional filename and silently ignores --include, and the former `|| true` then
+        # swallowed the failure — an empty state got rebuilt from one slice and uploaded over
+        # the real index (2026-07-05). Zero matches (true first run) succeeds; every real
+        # error fails the run before the upload step can do damage.
         run: |
-          hf download "$HF_DATASET" --repo-type dataset --local-dir . \
-            --include "data/embeddings/jobs/*" "data/lancedb/*" || true
+          python -c "
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              os.environ['HF_DATASET'],
+              repo_type='dataset',
+              local_dir='.',
+              allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*'],
+              token=os.environ['HF_TOKEN'],
+          )
+          print('state downloaded')
+          "
       - name: Scrape a rotating slice of the live boards
         if: steps.gate.outputs.run == 'true'
         run: |
