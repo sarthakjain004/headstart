@@ -81,9 +81,13 @@ from huggingface_hub import HfApi
 for c in HfApi().list_repo_commits('imPoseidon/headstart-index', repo_type='dataset')[:10]:
     print(c.created_at, c.title)"
 
-# pull the full state locally (same command the pipeline uses; ~330 MB)
-.venv/bin/hf download imPoseidon/headstart-index --repo-type dataset --local-dir . \
-    --include "data/embeddings/jobs/*" "data/lancedb/*"
+# pull the full state locally (same call the pipeline uses; ~330 MB)
+# NOT `hf download ... --include A B`: the CLI parses the second pattern as a positional
+# filename and silently ignores --include (caused the 2026-07-05 state clobber)
+.venv/bin/python -c "
+from huggingface_hub import snapshot_download
+snapshot_download('imPoseidon/headstart-index', repo_type='dataset', local_dir='.',
+                  allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*'])"
 
 # push local state up (ONLY after sync + compact — see invariants)
 .venv/bin/hf upload imPoseidon/headstart-index data/embeddings/jobs data/embeddings/jobs \
