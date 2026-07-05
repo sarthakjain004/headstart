@@ -125,6 +125,21 @@ _PAGE = """<!doctype html>
   .tag{ font-size:11px; padding:3px 8px; border-radius:999px; background:#222634; color:var(--mut); }
   .tag.score{ background:#1d2b1d; color:#7bd88f; } .tag.rem{ background:#1c2636; color:var(--acc); }
   .empty{ color:var(--mut); text-align:center; padding:40px; }
+  /* Travelers-style glyph board shown while a search is in flight */
+  .glyphboard{ display:grid; grid-template-columns:repeat(auto-fill,minmax(24px,1fr)); gap:2px 6px;
+    background:#0a0903; border:1px solid #241f08; border-radius:12px; padding:18px 16px;
+    min-height:280px; align-content:center; overflow:hidden;
+    opacity:0; transition:opacity .25s ease; }
+  .glyphboard.on{ opacity:1; }
+  .glyphboard .g{ font:700 19px/1.35 ui-monospace,Menlo,Consolas,monospace; color:#d9a406;
+    text-align:center; opacity:.72; text-shadow:0 0 6px rgba(233,180,10,.35);
+    transition:opacity .18s linear; }
+  .glyphboard .g.dim{ opacity:.26; }
+  .glyphboard .g.bright{ opacity:1; color:#ffd21f; text-shadow:0 0 10px rgba(255,210,30,.8); }
+  .glyphboard .g.ghost{ opacity:.85;
+    text-shadow:2px 0 0 rgba(255,40,60,.55), -1px 0 6px rgba(233,180,10,.4); }
+  .fadein{ animation:fadein .25s ease; }
+  @keyframes fadein{ from{ opacity:0; } to{ opacity:1; } }
 </style></head><body><div class="wrap">
   <h1>HeadStart — Semantic Job Search</h1>
   <p class="sub">nomic embeddings → LanceDB filter-then-rank · tech corpus (English) · refreshed nightly</p>
@@ -145,13 +160,55 @@ const el = s => document.getElementById(s);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+
+// Travelers-style loading board: a field of amber glyphs, each cell flickering to a new
+// symbol on its own beat, a few flaring bright or ghosting red — until results resolve.
+const GLYPHS = 'ᐃᐄᐅᐆᐊᐋᒉᒋᒌᒎᒐᒑᔐᔑᔒᔓᔔᕂᕃᕆᕇᕈᕋᘂᘃᘄᘇᘈᘉᘊᘔᗄᗅᗆᗇᗈᗉᗊᗋᗌᗎᗏᑌᑎᑐᑕᑫᑭᑯᑲᒡᒥᒧᒪᒫƎƆΞΠΣШЖИЧЯ0123456789';
+const rg = () => GLYPHS[Math.random()*GLYPHS.length|0];
+const rcls = () => { const r = Math.random();
+  return r<.10 ? 'g bright' : r<.32 ? 'g dim' : r<.38 ? 'g ghost' : 'g'; };
+let glyphTimer = null;
+function glyphBoard(){
+  clearInterval(glyphTimer);
+  let cells = '';
+  for (let i=0;i<260;i++) cells += `<span class="${rcls()}">${rg()}</span>`;
+  el('results').innerHTML = `<div class="glyphboard" id="gb">${cells}</div>`;
+  requestAnimationFrame(()=>{ const gb = el('gb'); if(gb) gb.classList.add('on'); });
+  const spans = el('gb').querySelectorAll('span');
+  glyphTimer = setInterval(()=>{
+    for (let i=0;i<22;i++){
+      const s = spans[Math.random()*spans.length|0];
+      s.textContent = rg();
+      s.className = rcls();
+    }
+  }, 90);
+}
+function resolveGlyphs(render){
+  clearInterval(glyphTimer); glyphTimer = null;
+  const gb = el('gb');
+  if(!gb){ render(); return; }
+  gb.classList.remove('on');           // fade the board out…
+  setTimeout(()=>{                     // …then fade the results in
+    render();
+    const first = el('results').firstElementChild;
+    if(first) first.classList.add('fadein');
+  }, 260);
+}
 async function go(){
   const q = el('q').value.trim(); if(!q) return;
   const p = new URLSearchParams({ q, k: 20 });
   if (el('remote').checked) p.set('remote','true');
   if (el('maxyears').value) p.set('max_years', el('maxyears').value);
-  el('results').innerHTML = '<div class="empty">searching…</div>';
-  const rows = await (await fetch('/search?'+p)).json();
+  const t0 = Date.now();
+  glyphBoard();
+  let rows;
+  try { rows = await (await fetch('/search?'+p)).json(); }
+  catch(e){ resolveGlyphs(()=>{ el('results').innerHTML = '<div class="empty">search failed — try again</div>'; }); return; }
+  // hold the board briefly so a fast response doesn't strobe
+  const hold = Math.max(0, 600 - (Date.now() - t0));
+  setTimeout(()=> resolveGlyphs(()=> renderRows(rows)), hold);
+}
+function renderRows(rows){
   if(!rows.length){ el('results').innerHTML = '<div class="empty">no matches</div>'; return; }
   el('results').innerHTML = rows.map(r => `
     <div class="card">
