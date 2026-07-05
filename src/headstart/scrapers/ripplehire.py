@@ -1,10 +1,14 @@
 """RippleHire job-board scraper ({slug}.ripplehire.com candidate career site).
 
 Reverse-engineered by rendering the public /candidate/ portal (no login) and capturing its
-job-search XHR. Two steps, no auth beyond a per-site token that the careers URL hands out:
+job-search XHR. Three steps, no auth beyond a per-site token that the careers URL hands out:
   1. GET /candidate/careers            -> redirects to /candidate/?token={token}
   2. POST /candidate/candidatejobsearch  (form-encoded `careerSiteUrlParams` JSON, paginated)
      with `Accept: application/json` (the endpoint returns XML otherwise).
+  3. GET /candidate/candidatejobdetail?token=…&jobSeq=…&source=CAREERSITE&lang=en per job —
+     the search list always carries `jobDesc: null`; only this detail JSON (~5KB,
+     `jobVO.jobDesc`) has the description. Param shape traced through the portal's
+     RequireJS modules (entities/job.js `getJobEntityById`).
 
 RippleHire is enterprise/IT-heavy (LTIMindtree ~937 jobs, Mphasis, UST, Tata Steel), which is
 why this one was kept while the other India-tier login-walled ATSes were dropped.
@@ -70,7 +74,31 @@ class RippleHireScraper(BaseScraper):
             page += 1
             if len(batch) < _PAGE_SIZE or len(jobs) >= data.get("totalJobCount", 0):
                 break
+        # detail pass: the list never carries jobDesc — fill it from the per-job detail JSON
+        need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
+        descriptions = self.fan_out(
+            need, lambda j: self._job_description(token, j["jobSeq"])
+        )
+        for j, desc in zip(need, descriptions):
+            j["jobDesc"] = desc
         return jobs
+
+    def _job_description(self, token: str, job_seq: Any) -> str | None:
+        """GET one job's detail JSON and return jobVO.jobDesc (None on failure)."""
+        url = (
+            f"https://{self.slug}.ripplehire.com/candidate/candidatejobdetail"
+            f"?token={token}&jobSeq={job_seq}&source=CAREERSITE&lang=en"
+        )
+        try:
+            data = http.fetch(
+                "GET",
+                url,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
+            ).json()
+        except (http.RequestsError, json.JSONDecodeError):
+            return None  # a missing description must not drop the job
+        return (data.get("jobVO") or {}).get("jobDesc") or None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

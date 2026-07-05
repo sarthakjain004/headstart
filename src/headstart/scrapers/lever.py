@@ -14,6 +14,34 @@ from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 
+def _salary(rng: dict | None) -> str | None:
+    """Format Lever's structured salaryRange, e.g. '50000-70000 USD per-year-salary'."""
+    rng = rng or {}
+    lo, hi = rng.get("min"), rng.get("max")
+    if not lo and not hi:
+        return None
+    span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
+    return " ".join(
+        str(x) for x in (span, rng.get("currency"), rng.get("interval")) if x
+    )
+
+
+def _description(j: dict) -> str | None:
+    """The full posting text: intro + the lists sections (Requirements etc.) + closing.
+
+    ``descriptionPlain`` alone is just the intro — the years-of-experience requirements
+    almost always live in ``lists``, so dropping them starves experience extraction and
+    the embedding.
+    """
+    parts = [j.get("descriptionPlain") or j.get("description")]
+    for lst in j.get("lists") or []:
+        section = "\n".join(s for s in (lst.get("text"), lst.get("content")) if s)
+        if section:
+            parts.append(section)
+    parts.append(j.get("additionalPlain") or j.get("additional"))
+    return html_to_text("\n".join(p for p in parts if p))
+
+
 class LeverScraper(BaseScraper):
     ats = "lever"
 
@@ -51,10 +79,9 @@ class LeverScraper(BaseScraper):
                     url=j.get("hostedUrl", ""),
                     posted_at=epoch_ms_to_iso(j.get("createdAt")),
                     scraped_at=scraped_at,
-                    description=html_to_text(
-                        j.get("descriptionPlain") or j.get("description")
-                    ),
+                    description=_description(j),
                     employment_type=categories.get("commitment"),
+                    salary=_salary(j.get("salaryRange")),
                 )
             )
         return jobs

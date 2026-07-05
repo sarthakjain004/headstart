@@ -49,6 +49,11 @@ def test_lever_parse():
     assert j.url.startswith("https://jobs.lever.co/palantir/")
     assert j.employment_type == "Full-time"  # categories.commitment
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+    # the lists sections (Requirements etc.) and additional must ride along —
+    # descriptionPlain alone is just the intro
+    assert "Core Responsibilities" in j.description
+    assert "Salary" in j.description  # from `additional`
+    assert j.salary == "80000-110000 USD per-year-salary"
 
 
 def test_ashby_parse_skips_unlisted():
@@ -63,6 +68,9 @@ def test_ashby_parse_skips_unlisted():
     assert j.remote is True
     assert j.employment_type == "FullTime"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+    assert j.salary == "$150K – $200K • Offers Equity"  # compensationTierSummary
+    # the board URL must request compensation or the block is absent
+    assert "includeCompensation=true" in get_scraper("ashby", "ramp", "Ramp").url()
 
 
 def test_darwinbox_parse():
@@ -181,6 +189,9 @@ def test_recruitee_parse():
     assert j.experience == "mid_level"
     assert j.employment_type == "fulltime_permanent"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+    assert (
+        "Requirements" in j.description
+    )  # the separate requirements field rides along
 
 
 def test_workable_parse():
@@ -216,6 +227,31 @@ def test_smartrecruiters_parse():
     )  # detail fetch; populated, HTML-stripped
 
 
+def test_smartrecruiters_description_joins_requirement_sections():
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobAd": {
+                    "sections": {
+                        "companyDescription": {"text": "<p>About us boilerplate</p>"},
+                        "jobDescription": {"text": "<p>Build things</p>"},
+                        "qualifications": {"text": "<p>5+ years of experience</p>"},
+                        "additionalInformation": {"text": "<p>Perks</p>"},
+                    }
+                }
+            }
+
+    scraper = get_scraper("smartrecruiters", "acme", "Acme")
+    text = scraper._extract_description(_Resp())
+    assert "Build things" in text
+    assert "5+ years of experience" in text  # qualifications must ride along
+    assert "Perks" in text
+    assert "boilerplate" not in text  # companyDescription deliberately skipped
+
+
 def test_sensehq_parse():
     jobs = get_scraper("sensehq", "zetwerk", "Zetwerk").parse(
         _load("sensehq_zetwerk.json"), SCRAPED_AT
@@ -247,6 +283,48 @@ def test_ripplehire_parse():
     # this tenant leaves jobDesc/jobType empty — fields stay None, job still emitted
     assert j.description is None
     assert j.employment_type is None
+
+
+def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
+    # the search list always carries jobDesc: null — the detail JSON must fill it
+    class _Resp:
+        def __init__(self, url="", payload=None):
+            self.url = url
+            self._payload = payload
+            self.status_code = 200
+
+        def json(self):
+            return self._payload
+
+    calls = []
+
+    def _fetch(method, url, **kwargs):
+        calls.append(url)
+        if url.endswith("/candidate/careers"):
+            return _Resp(url="https://x.ripplehire.com/candidate/?token=TOK123")
+        if "candidatejobsearch" in url:
+            return _Resp(
+                payload={
+                    "jobVoList": [
+                        {"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None},
+                        {"jobSeq": 2, "jobTitle": "Filled", "jobDesc": "<p>have</p>"},
+                    ],
+                    "totalJobCount": 2,
+                }
+            )
+        assert "candidatejobdetail" in url and "token=TOK123" in url
+        return _Resp(payload={"jobVO": {"jobDesc": "<p>3+ years of Kubernetes</p>"}})
+
+    import headstart.scrapers.ripplehire as rh
+
+    monkeypatch.setattr(rh.http, "fetch", _fetch)
+    raw = get_scraper("ripplehire", "x", "X").fetch_raw()
+    assert [j["jobDesc"] for j in raw] == [
+        "<p>3+ years of Kubernetes</p>",
+        "<p>have</p>",
+    ]
+    # only the description-less job triggered a detail call
+    assert sum("candidatejobdetail" in u for u in calls) == 1
 
 
 def test_oracle_parse():
@@ -284,10 +362,13 @@ def test_workday_parse():
         "https://3m.wd1.myworkdayjobs.com/search/job/IN-BANGALORE/"
         "Procurement-Operations-Manager---India_R01165862-1"
     )
-    # description now comes from a per-job detail fetch (injected into the fixture as _jobDescription)
+    # description/date/type come from the per-job detail fetch (fixture's _detail block)
     assert j.description and "</" not in j.description  # populated, HTML-stripped
     assert j.experience is None  # list/detail give no clean experience field
-    assert j.employment_type is None
+    assert (
+        j.posted_at == "2026-01-10"
+    )  # detail startDate, not the list's "30+ Days Ago"
+    assert j.employment_type == "Full time"  # timeType
 
 
 class _FakeResp:
@@ -334,7 +415,7 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
 
 
 def test_trakstar_parse():
-    # raw is {html: listing, descriptions: {code: detail-page JSON-LD description}}
+    # raw is {html: listing, postings: {code: detail-page JSON-LD JobPosting}}
     jobs = get_scraper("trakstar", "exotel", "Exotel").parse(
         _load("trakstar_exotel.json"), SCRAPED_AT
     )
@@ -347,6 +428,7 @@ def test_trakstar_parse():
     assert j.employment_type == "Full-time"  # from the opening-meta span
     assert j.url == "https://exotel.hire.trakstar.com/jobs/fk0zvv1/"
     assert j.description and "</" not in j.description  # from the detail page JSON-LD
+    assert j.posted_at == "2026-02-01"  # JSON-LD datePosted; the listing card has none
 
 
 def test_recruitee_salary_formatting():

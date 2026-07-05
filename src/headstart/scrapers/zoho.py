@@ -22,6 +22,20 @@ from headstart.scrapers.base import BaseScraper
 _JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _CONFIG_AFTER_JOBS = re.compile(r'id="jobs">\s*<input[^>]*\bvalue="([^"]*)"')
 _SLUG = re.compile(r"[^A-Za-z0-9]+")
+# a job's detail page embeds its full record as `var jobs = JSON.parse('…')` — a JS
+# single-quoted string (\xNN hex escapes) wrapping JSON
+_DETAIL_JOBS = re.compile(r"jobs\s*=\s*JSON\.parse\('((?:[^'\\]|\\.)*)'\)")
+_JS_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\(.)")
+_DETAIL_WORKERS = (
+    6  # detail pages are ~1.7MB each — bandwidth, not rate limits, is the constraint
+)
+
+
+def _js_unescape(s: str) -> str:
+    """Decode the JS single-quoted-string layer: \\xNN hex escapes, \\<char> pass-through."""
+    return _JS_ESCAPE.sub(
+        lambda m: chr(int(m.group(1), 16)) if m.group(1) else m.group(2), s
+    )
 
 
 class ZohoScraper(BaseScraper):
@@ -37,18 +51,60 @@ class ZohoScraper(BaseScraper):
         return f"https://{self.slug}/jobs/Careers"
 
     def fetch_raw(self) -> Any:
-        return self._get()  # the careers page HTML, not JSON
+        # The careers page carries the whole list, but some tenants configure the careers
+        # site without the Job_Description column (28 of 71 in the corpus) — for those,
+        # each job's detail page does carry it, so fill the gap with a low-concurrency
+        # detail pass.
+        page = self._get()
+        empty = [
+            r["id"]
+            for r in self._records(page)
+            if r.get("id")
+            and not r.get("Job_Description")
+            and not r.get("Is_Locked")
+            and r.get("Publish", True)
+        ]
+        details = {}
+        if empty:
+            fetched = self.fan_out(
+                empty, self._detail_description, workers=_DETAIL_WORKERS
+            )
+            details = {jid: d for jid, d in zip(empty, fetched) if d}
+        return {"page": page, "details": details}
 
-    def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        match = _JOBS_INPUT.search(raw)
+    @staticmethod
+    def _records(page: str) -> list[dict]:
+        """The job records embedded in a careers/detail page's jobs `<input>`."""
+        match = _JOBS_INPUT.search(page)
         if not match:
             return []
         try:
-            records = json.loads(html.unescape(match.group(1)))
+            return json.loads(html.unescape(match.group(1)))
         except json.JSONDecodeError:
             return []
 
-        company = self._company_name(raw) or self.company
+    def _detail_description(self, jid: str) -> str | None:
+        """GET one job's detail page and pull Job_Description from its embedded record."""
+        page = self._get(f"https://{self.slug}/jobs/Careers/{jid}")
+        m = _DETAIL_JOBS.search(page)
+        if not m:
+            return None
+        try:
+            records = json.loads(_js_unescape(m.group(1)))
+        except json.JSONDecodeError:
+            return None
+        return (records[0].get("Job_Description") or None) if records else None
+
+    def parse(self, raw: Any, scraped_at: str) -> list[Job]:
+        # raw is fetch_raw's {page, details}; a bare page string means no detail pass
+        page, details = (
+            (raw, {}) if isinstance(raw, str) else (raw["page"], raw["details"])
+        )
+        records = self._records(page)
+        if not records:
+            return []
+
+        company = self._company_name(page) or self.company
         jobs: list[Job] = []
         for r in records:
             if r.get("Is_Locked") or not r.get("Publish", True):
@@ -74,7 +130,9 @@ class ZohoScraper(BaseScraper):
                     url=f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite",
                     posted_at=r.get("Date_Opened") or None,
                     scraped_at=scraped_at,
-                    description=html_to_text(r.get("Job_Description")),
+                    description=html_to_text(
+                        r.get("Job_Description") or details.get(jid)
+                    ),
                     experience=r.get("Work_Experience"),
                     employment_type=r.get("Job_Type"),
                 )
