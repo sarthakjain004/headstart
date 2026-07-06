@@ -9,6 +9,7 @@ task prefixes, filter clause) mirror ``headstart.search`` — keep them in locks
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import lancedb
@@ -36,18 +37,65 @@ from sentence_transformers import SentenceTransformer  # noqa: E402 - after the 
 
 _model = SentenceTransformer(MODEL, trust_remote_code=True, device="cpu")
 _table = lancedb.connect(_STATE / "data" / "lancedb").open_table(TABLE)
-print(f"ready: {_table.count_rows()} jobs", flush=True)
+# the ATSes actually present in the index — feeds the filter dropdown, grows as ingestion does
+_ATSES = sorted(
+    {r["ats"] for r in _table.search().select(["ats"]).limit(1_000_000).to_list()}
+)
+print(f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes", flush=True)
 
 app = Flask(__name__)
 
+# Canonical employment-type filters mapped onto the messy per-ATS raw values
+# ("fulltime", "Full-time", "fulltime_permanent", "Permanent / Full-Time", …).
+_ETYPE_CLAUSES = {
+    "full-time": "(lower(employment_type) LIKE '%full%'"
+    " OR lower(employment_type) LIKE '%permanent%')",
+    "part-time": "lower(employment_type) LIKE '%part%'",
+    "contract": "(lower(employment_type) LIKE '%contract%'"
+    " OR lower(employment_type) LIKE '%freelance%')",
+    "internship": "lower(employment_type) LIKE '%intern%'",
+}
 
-def _build_filter(*, remote: bool, max_years: int | None) -> str | None:
+
+def _like(term: str) -> str:
+    """A user term made safe for a quoted LIKE pattern: quotes doubled, length-capped."""
+    return term[:60].replace("'", "''").lower()
+
+
+def _build_filter(
+    *,
+    remote: bool,
+    max_years: int | None,
+    ats: str | None,
+    etype: str | None,
+    location: str | None,
+    company: str | None,
+    has_salary: bool,
+    posted_within: int | None,
+) -> str | None:
     """The prod-table where-clause (mirrors headstart.search.build_filter's live filters)."""
     filters: list[str] = []
     if remote:
         filters.append("remote = true")
     if max_years is not None:
         filters.append(f"(min_years <= {int(max_years)} OR min_years IS NULL)")
+    if ats in _ATSES:  # whitelist — never interpolated from free text
+        filters.append(f"ats = '{ats}'")
+    if etype in _ETYPE_CLAUSES:
+        filters.append(_ETYPE_CLAUSES[etype])
+    if location:
+        filters.append(f"lower(location) LIKE '%{_like(location)}%'")
+    if company:
+        filters.append(f"lower(company) LIKE '%{_like(company)}%'")
+    if has_salary:
+        filters.append("salary IS NOT NULL")
+    if posted_within is not None:
+        # posted_at is a raw string but 97% of values are ISO-prefixed, so a lexicographic
+        # date cutoff works; the non-ISO tail is excluded while this opt-in filter is active
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=int(posted_within))
+        ).strftime("%Y-%m-%d")
+        filters.append(f"posted_at >= '{cutoff}'")
     return " AND ".join(filters) if filters else None
 
 
@@ -69,6 +117,8 @@ def _search(query: str, where: str | None, k: int) -> list[dict]:
             "employment_type": r.get("employment_type"),
             "min_years": r.get("min_years"),
             "salary": r.get("salary"),
+            "ats": r.get("ats"),
+            "posted_at": r.get("posted_at"),
             "url": r.get("url"),
         }
         for r in rows
@@ -86,6 +136,14 @@ def search():
         where = _build_filter(
             remote=request.args.get("remote") == "true",
             max_years=int(max_years) if max_years else None,
+            ats=(request.args.get("ats") or "").strip() or None,
+            etype=(request.args.get("etype") or "").strip() or None,
+            location=(request.args.get("location") or "").strip() or None,
+            company=(request.args.get("company") or "").strip() or None,
+            has_salary=request.args.get("has_salary") == "true",
+            posted_within=int(request.args.get("posted_within"))
+            if request.args.get("posted_within")
+            else None,
         )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
@@ -97,46 +155,132 @@ def index():
     return _PAGE
 
 
-_PAGE = """<!doctype html>
+_TEMPLATE = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — Semantic Job Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0f1117; --card:#1a1d27; --line:#2a2e3c; --fg:#e6e8ee; --mut:#9aa0b4; --acc:#6ea8fe; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
-  .wrap { max-width:820px; margin:0 auto; padding:32px 20px 60px; }
-  h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--mut); margin:0 0 24px; font-size:13px; }
-  .bar { display:flex; gap:8px; margin-bottom:12px; }
-  input[type=text]{ flex:1; padding:12px 14px; border-radius:10px; border:1px solid var(--line);
-    background:var(--card); color:var(--fg); font-size:15px; }
-  button{ padding:12px 20px; border:0; border-radius:10px; background:var(--acc); color:#0b1020;
-    font-weight:600; cursor:pointer; }
-  .filters{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin-bottom:22px;
-    color:var(--mut); font-size:13px; }
-  .filters select,.filters input{ background:var(--card); color:var(--fg); border:1px solid var(--line);
-    border-radius:8px; padding:6px 8px; font-size:13px; }
-  .card{ border:1px solid var(--line); background:var(--card); border-radius:12px; padding:14px 16px;
-    margin-bottom:10px; }
-  .card a{ color:var(--fg); text-decoration:none; font-weight:600; font-size:16px; }
-  .card a:hover{ color:var(--acc); }
-  .co{ color:var(--mut); font-size:13px; margin:2px 0 8px; }
-  .tags{ display:flex; gap:6px; flex-wrap:wrap; }
-  .tag{ font-size:11px; padding:3px 8px; border-radius:999px; background:#222634; color:var(--mut); }
-  .tag.score{ background:#1d2b1d; color:#7bd88f; } .tag.rem{ background:#1c2636; color:var(--acc); }
-  .empty{ color:var(--mut); text-align:center; padding:40px; }
+  :root{
+    --bg:#0a0a0b; --panel:#141416; --panel2:#1a1a1d; --line:#232327; --line2:#2e2e34;
+    --fg:#f3f3f5; --mut:#96969f; --red:#e50914; --red-hi:#ff2c38; --red-tint:rgba(229,9,20,.12);
+    --r-lg:18px; --r-md:14px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{ background:var(--bg); color:var(--fg);
+    font:15px/1.55 Inter,-apple-system,Segoe UI,Roboto,sans-serif;
+    background-image:radial-gradient(900px 380px at 50% -140px, rgba(229,9,20,.08), transparent 70%); }
+  .wrap{ max-width:880px; margin:0 auto; padding:44px 22px 72px; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .mark{ width:14px; height:14px; background:var(--red); border-radius:4px;
+    box-shadow:0 0 18px rgba(229,9,20,.55); }
+  h1{ font-size:24px; font-weight:800; letter-spacing:-.02em; margin:0; }
+  h1 .red{ color:var(--red); }
+  .sub{ color:var(--mut); margin:6px 0 30px; font-size:13.5px; }
+  .sub b{ color:var(--fg); font-weight:600; }
+
+  .bar{ display:flex; gap:10px; margin-bottom:14px; }
+  input,select,button{ font:inherit; }
+  .bar input{ flex:1; padding:15px 18px; border-radius:var(--r-lg); border:1px solid var(--line2);
+    background:var(--panel); color:var(--fg); font-size:15.5px; outline:none;
+    transition:border-color .18s, box-shadow .18s; }
+  .bar input::placeholder{ color:#6c6c76; }
+  .bar input:focus{ border-color:var(--red); box-shadow:0 0 0 3px rgba(229,9,20,.18); }
+  .bar button{ padding:15px 28px; border:0; border-radius:var(--r-lg); background:var(--red);
+    color:#fff; font-weight:700; font-size:15px; cursor:pointer; letter-spacing:.01em;
+    transition:background .15s, transform .12s, box-shadow .15s; }
+  .bar button:hover{ background:var(--red-hi); transform:translateY(-1px);
+    box-shadow:0 6px 22px rgba(229,9,20,.32); }
+  .bar button:active{ transform:translateY(0); }
+
+  .filters{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-lg);
+    padding:16px 18px 18px; margin-bottom:28px; }
+  .f{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .f label{ font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--mut); }
+  .f select,.f input[type=text],.f input[type=number]{ width:100%; padding:9px 11px;
+    border-radius:var(--r-md); border:1px solid var(--line2); background:var(--panel2);
+    color:var(--fg); font-size:13.5px; outline:none; transition:border-color .15s; }
+  .f select:focus,.f input:focus{ border-color:var(--red); }
+  .f.toggles{ flex-direction:row; align-items:flex-end; gap:16px; grid-column:span 2; }
+  .tg{ display:flex; align-items:center; gap:8px; color:var(--mut); font-size:13.5px;
+    cursor:pointer; user-select:none; padding-bottom:9px; }
+  .tg input{ appearance:none; width:34px; height:20px; border-radius:999px; background:var(--line2);
+    position:relative; cursor:pointer; transition:background .18s; margin:0; }
+  .tg input::after{ content:''; position:absolute; top:3px; left:3px; width:14px; height:14px;
+    border-radius:50%; background:#fff; transition:transform .18s; }
+  .tg input:checked{ background:var(--red); }
+  .tg input:checked::after{ transform:translateX(14px); }
+
+  .card{ border:1px solid var(--line); background:var(--panel); border-radius:var(--r-lg);
+    padding:18px 20px; margin-bottom:12px; transition:border-color .18s, transform .15s,
+    box-shadow .18s; }
+  .card:hover{ border-color:rgba(229,9,20,.45); transform:translateY(-1px);
+    box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  .card a{ color:var(--fg); text-decoration:none; font-weight:600; font-size:16.5px;
+    letter-spacing:-.01em; }
+  .card a:hover{ color:var(--red-hi); }
+  .co{ color:var(--mut); font-size:13.5px; margin:4px 0 12px; }
+  .tags{ display:flex; gap:7px; flex-wrap:wrap; }
+  .tag{ font-size:11.5px; font-weight:500; padding:4px 11px; border-radius:999px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--mut); }
+  .tag.score{ background:var(--red-tint); border-color:rgba(229,9,20,.25); color:#ff8189;
+    font-weight:600; }
+  .tag.sal{ color:#e8e8ec; border-color:var(--line2); }
+  .empty{ color:var(--mut); text-align:center; padding:56px 20px; font-size:14.5px; }
+  .foot{ color:#5c5c66; text-align:center; font-size:12px; margin-top:44px; }
+
+  .skel{ border:1px solid var(--line); background:var(--panel); border-radius:var(--r-lg);
+    padding:18px 20px; margin-bottom:12px; }
+  .shim{ height:14px; border-radius:8px;
+    background:linear-gradient(90deg, var(--panel2) 25%, #232329 45%, var(--panel2) 65%);
+    background-size:200% 100%; animation:shim 1.15s linear infinite; }
+  @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+  .fadein{ animation:fadein .3s ease; }
+  @keyframes fadein{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:none;} }
 </style></head><body><div class="wrap">
-  <h1>HeadStart — Semantic Job Search</h1>
-  <p class="sub">nomic embeddings → LanceDB filter-then-rank · tech corpus (English) · refreshed nightly</p>
+  <div class="brand"><div class="mark"></div>
+    <h1>Head<span class="red">Start</span></h1></div>
+  <p class="sub">semantic search over <b>__NJOBS__</b> tech jobs, read straight from company ATS boards · refreshed 4× daily</p>
   <div class="bar">
-    <input id="q" type="text" placeholder="e.g. backend engineer at a climate startup" autofocus>
+    <input id="q" type="text" placeholder="describe the role — e.g. backend engineer at a climate startup" autofocus>
     <button onclick="go()">Search</button>
   </div>
   <div class="filters">
-    <label><input type="checkbox" id="remote"> remote only</label>
-    <label>max years <input id="maxyears" type="number" min="0" style="width:60px"></label>
+    <div class="f"><label>ATS</label>
+      <select id="ats"><option value="">any</option>__ATS_OPTIONS__</select></div>
+    <div class="f"><label>Type</label>
+      <select id="etype"><option value="">any</option>
+        <option value="full-time">full-time</option><option value="part-time">part-time</option>
+        <option value="contract">contract</option><option value="internship">internship</option>
+      </select></div>
+    <div class="f"><label>Max years</label>
+      <input id="maxyears" type="number" min="0" placeholder="any"></div>
+    <div class="f"><label>Location contains</label>
+      <input id="location" type="text" placeholder="e.g. berlin"></div>
+    <div class="f"><label>Company contains</label>
+      <input id="company" type="text" placeholder="e.g. binance"></div>
+    <div class="f"><label>Posted</label>
+      <select id="posted"><option value="">any time</option>
+        <option value="1">last 24h</option><option value="7">last 7 days</option>
+        <option value="30">last 30 days</option><option value="90">last 90 days</option>
+      </select></div>
+    <div class="f"><label>Sort</label>
+      <select id="sort"><option value="rel">relevance</option>
+        <option value="new">newest first</option></select></div>
+    <div class="f"><label>Results</label>
+      <select id="k"><option>10</option><option selected>20</option><option>50</option></select></div>
+    <div class="f toggles">
+      <label class="tg"><input type="checkbox" id="remote"> remote only</label>
+      <label class="tg"><input type="checkbox" id="hassalary"> has salary</label>
+    </div>
   </div>
   <div id="results"></div>
+  <div class="foot">nomic embeddings · LanceDB filter-then-rank · English tech corpus</div>
 </div>
 <script>
 const el = s => document.getElementById(s);
@@ -145,28 +289,62 @@ const el = s => document.getElementById(s);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+const age = d => {
+  const t = Date.parse(d || ''); if (isNaN(t)) return '';
+  const days = Math.floor((Date.now() - t) / 86400000);
+  if (days < 0) return '';
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return days + 'd ago';
+  if (days < 365) return Math.floor(days/30) + 'mo ago';
+  return Math.floor(days/365) + 'y ago';
+};
+const skeleton = () =>
+  '<div class="skel"><div class="shim" style="width:55%"></div>' +
+  '<div class="shim" style="width:32%; margin-top:10px"></div>' +
+  '<div class="shim" style="width:70%; margin-top:14px"></div></div>';
 async function go(){
   const q = el('q').value.trim(); if(!q) return;
-  const p = new URLSearchParams({ q, k: 20 });
+  const p = new URLSearchParams({ q, k: el('k').value });
   if (el('remote').checked) p.set('remote','true');
+  if (el('hassalary').checked) p.set('has_salary','true');
   if (el('maxyears').value) p.set('max_years', el('maxyears').value);
-  el('results').innerHTML = '<div class="empty">searching…</div>';
-  const rows = await (await fetch('/search?'+p)).json();
-  if(!rows.length){ el('results').innerHTML = '<div class="empty">no matches</div>'; return; }
-  el('results').innerHTML = rows.map(r => `
+  if (el('ats').value) p.set('ats', el('ats').value);
+  if (el('etype').value) p.set('etype', el('etype').value);
+  if (el('location').value.trim()) p.set('location', el('location').value.trim());
+  if (el('company').value.trim()) p.set('company', el('company').value.trim());
+  if (el('posted').value) p.set('posted_within', el('posted').value);
+  el('results').innerHTML = skeleton() + skeleton() + skeleton();
+  let rows;
+  try { rows = await (await fetch('/search?'+p)).json(); }
+  catch(e){ el('results').innerHTML = '<div class="empty">search failed — try again</div>'; return; }
+  if(!Array.isArray(rows)){ el('results').innerHTML = '<div class="empty">invalid filter</div>'; return; }
+  if(!rows.length){ el('results').innerHTML = '<div class="empty">no matches — try loosening a filter</div>'; return; }
+  if (el('sort').value === 'new'){
+    const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
+    rows.sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
+  }
+  el('results').innerHTML = '<div class="fadein">' + rows.map(r => `
     <div class="card">
       <a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
       <div class="co">${esc(r.company)}${r.location? ' · '+esc(r.location) : ''}</div>
       <div class="tags">
         <span class="tag score">${Number(r.score)||0}</span>
-        ${r.remote? '<span class="tag rem">remote</span>':''}
+        ${r.remote? '<span class="tag">remote</span>':''}
         ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
         ${r.min_years!=null? '<span class="tag">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
-        ${r.salary? '<span class="tag">'+esc(r.salary)+'</span>':''}
+        ${r.salary? '<span class="tag sal">'+esc(r.salary)+'</span>':''}
+        ${age(r.posted_at)? '<span class="tag">'+age(r.posted_at)+'</span>':''}
+        ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
       </div>
-    </div>`).join('');
+    </div>`).join('') + '</div>';
 }
 </script></body></html>"""
+
+_PAGE = _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}").replace(
+    "__ATS_OPTIONS__",
+    "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),
+)
 
 
 if __name__ == "__main__":
