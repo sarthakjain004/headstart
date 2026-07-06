@@ -21,6 +21,7 @@ recruitment_enabled:false) return an empty list.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from headstart import http
@@ -30,6 +31,18 @@ from headstart.scrapers.base import BaseScraper
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
 _TLDS = ("in", "com")
 _UA = "headstart/0.1 (job-board reader)"
+
+
+def _iso_date(raw: str | None) -> str | None:
+    """Darwinbox posts dates as '21-Apr-2026' — normalize to ISO. Non-ISO strings sort
+    lexicographically ABOVE ISO date cutoffs, so left raw they leak through every
+    posted-within filter; unparseable values pass through unchanged."""
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%d-%b-%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return raw
 
 
 class DarwinboxScraper(BaseScraper):
@@ -111,8 +124,10 @@ class DarwinboxScraper(BaseScraper):
                     location=location,
                     remote=bool(j.get("is_remote")) or is_remote(location),
                     department=j.get("department_name"),
-                    url=f"{host}/ms/candidate/careers/jobs/{j['id']}",
-                    posted_at=j.get("posted_on"),
+                    # the SPA's detail route is careers/:id — an extra path segment falls
+                    # through to its wildcard route and lands on the dashboard instead
+                    url=f"{host}/ms/candidate/careers/{j['id']}",
+                    posted_at=_iso_date(j.get("posted_on")),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("jd")),
                     experience=j.get("experience"),

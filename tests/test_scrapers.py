@@ -87,10 +87,11 @@ def test_darwinbox_parse():
     assert j.location == "Bengaluru, Gurgaon, Mumbai"
     assert j.remote is False
     assert j.department == "Dispatch"
-    assert j.posted_at == "3-Feb-2025"
     assert (
-        j.url == "https://licious.darwinbox.in/ms/candidate/careers/jobs/5ebea18409d3e"
-    )
+        j.posted_at == "2025-02-03"
+    )  # '3-Feb-2025' normalized to ISO for recency filters
+    # the SPA's detail route is careers/:id — the old jobs/ segment 404'd into the dashboard
+    assert j.url == "https://licious.darwinbox.in/ms/candidate/careers/5ebea18409d3e"
     assert j.scraped_at == SCRAPED_AT
     assert j.experience == "2 - 4 Years"
     assert j.employment_type == "Onroll"
@@ -517,3 +518,12 @@ def test_rippling_parse():
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
+
+
+def test_darwinbox_iso_date():
+    from headstart.scrapers.darwinbox import _iso_date
+
+    assert _iso_date("3-Feb-2025") == "2025-02-03"
+    assert _iso_date("21-Apr-2026") == "2026-04-21"
+    assert _iso_date(None) is None
+    assert _iso_date("sometime soon") == "sometime soon"  # unparseable passes through
