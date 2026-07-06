@@ -90,12 +90,14 @@ def _build_filter(
     if has_salary:
         filters.append("salary IS NOT NULL")
     if posted_within is not None:
-        # posted_at is a raw string but 97% of values are ISO-prefixed, so a lexicographic
-        # date cutoff works; the non-ISO tail is excluded while this opt-in filter is active
+        # posted_at is a raw string; ISO-prefixed values (97%) compare correctly. The LIKE
+        # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
+        # '21-Apr-2026' sort lexicographically ABOVE any ISO cutoff and would otherwise
+        # leak into every window.
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=int(posted_within))
         ).strftime("%Y-%m-%d")
-        filters.append(f"posted_at >= '{cutoff}'")
+        filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
     return " AND ".join(filters) if filters else None
 
 
