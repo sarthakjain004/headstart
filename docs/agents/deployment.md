@@ -14,6 +14,7 @@ data/embeddings/jobs/embeddings.f32   # id-keyed vector store, f32, dim 768
 data/embeddings/jobs/meta.jsonl       # one row per vector: id + typed Job metadata
 data/embeddings/jobs/manifest.json    # dtype/dim/count
 data/lancedb/jobs.lance/…             # the production `jobs` table LanceDB reads
+data/state/board_priority.csv         # sticky per-board tech-priority EWMA (ADR-0022)
 ```
 
 The dataset is private because the public GitHub repo deliberately ships only a ~2,000-job subset —
