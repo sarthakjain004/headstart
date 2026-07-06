@@ -1,8 +1,9 @@
 name: nightly-pipeline
 
-# Nightly ingest for the free-tier deployment (ADR-0020): scrape a rotating slice of the live
-# boards, filter to tech, embed only the new ids, incrementally sync the LanceDB `jobs` table,
-# and push the updated state to the private HF dataset the Space serves from.
+# Nightly ingest for the free-tier deployment (ADR-0020): scrape a priority-first slice of the
+# live boards (tech-yielding boards first, random exploration tail — ADR-0022), filter to tech,
+# embed only the new ids (highest-priority boards first), incrementally sync the LanceDB `jobs`
+# table, and push the updated state to the private HF dataset the Space serves from.
 # Inert (green no-op) until the HF_TOKEN secret is set.
 on:
   schedule:
@@ -79,7 +80,7 @@ jobs:
               os.environ['HF_DATASET'],
               repo_type='dataset',
               local_dir='.',
-              allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*'],
+              allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*', 'data/state/*'],
               token=os.environ['HF_TOKEN'],
           )
           print('state downloaded')
@@ -98,6 +99,9 @@ jobs:
       - name: Tech filter
         if: steps.gate.outputs.run == 'true'
         run: python scripts/filter/tech.py
+      - name: Update board priority ledger
+        if: steps.gate.outputs.run == 'true'
+        run: python scripts/rank/update_board_priority.py
       - name: Embed the new ids (time-budgeted — partial progress still uploads)
         if: steps.gate.outputs.run == 'true'
         env:
@@ -126,6 +130,8 @@ jobs:
             --repo-type dataset --commit-message "nightly: embedding store"
           hf upload "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --commit-message "nightly: lancedb index"
+          hf upload "$HF_DATASET" data/state data/state \
+            --repo-type dataset --commit-message "nightly: board priority"
       - name: Restart the Space to pick up the new index
         if: steps.gate.outputs.run == 'true'
         env:
