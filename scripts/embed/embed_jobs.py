@@ -332,14 +332,16 @@ def main() -> None:
         groups[bucket_for(n_tok)].append(idx)
 
     # Step 5: encode bucket-by-bucket with pinned shapes (see the _BUCKETS comment), isolating
-    # per-batch failures (A3) and persisting per batch (A1). Heaviest bucket first as a
-    # fail-fast canary; order is irrelevant downstream — meta carries the id and stays
-    # row-aligned with the vectors.
+    # per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the
+    # CI time budget (pipeline.yml wraps this in `timeout`), short docs embed at docs/sec while
+    # 4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
+    # budget expires (heaviest-first once burned a 98-min budget on ~325 docs). Order is
+    # irrelevant downstream — meta carries the id and stays row-aligned with the vectors.
     total = len(docs)
     done = failed = consec_failed = 0
     start = time.monotonic()
     wedged = False
-    for bucket in reversed(_BUCKETS):
+    for bucket in _BUCKETS:
         idxs = groups[bucket]
         if not idxs or wedged:
             continue

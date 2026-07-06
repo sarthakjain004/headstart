@@ -84,11 +84,16 @@ jobs:
           )
           print('state downloaded')
           "
-      - name: Scrape a rotating slice of the live boards
+      - name: Scrape a rotating slice of the live boards (time-budgeted)
         if: steps.gate.outputs.run == 'true'
+        # Same pattern as the embed budget: a slice heavy in join/workday boards (per-job
+        # detail fetches) can outrun 150 minutes, and a step timeout would fail the run and
+        # waste everything. The snapshot streams per-board and partial harvests are safe by
+        # design (eviction only touches scraped boards, ADR-0014) — bank what we got.
         run: |
-          python scripts/scrape/nightly_harvest.py \
-            --max-boards "${{ github.event.inputs.max_boards || '8000' }}"
+          timeout 140m python scripts/scrape/nightly_harvest.py \
+            --max-boards "${{ github.event.inputs.max_boards || '8000' }}" \
+            || echo "scrape time budget reached — banking partial snapshot"
         timeout-minutes: 150
       - name: Tech filter
         if: steps.gate.outputs.run == 'true'
