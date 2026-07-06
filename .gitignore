@@ -21,6 +21,10 @@ venv/
 
 # Not part of this project (local Claude config / unrelated Fable-5 experiment)
 .claude/
+# …except project skills, which future sessions need
+!.claude/
+.claude/*
+!.claude/skills/
 CLAUDE-FABLE-5.md
 
 # HAR captures — large and contain browser session data; keep local only
@@ -58,3 +62,5 @@ data/ats-company-lists/
 data/ats-tenants-merged/active/.*
 # eval harness candidate pool — large (full job descriptions), regenerable from scripts/eval/pool_candidates.py
 data/eval/pool.jsonl
+# point-in-time filter-verification reports (scripts/eval/verify_filters.py)
+data/eval/filter_checks/
