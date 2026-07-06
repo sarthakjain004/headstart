@@ -90,8 +90,10 @@ def test_darwinbox_parse():
     assert (
         j.posted_at == "2025-02-03"
     )  # '3-Feb-2025' normalized to ISO for recency filters
-    # the SPA's detail route is careers/:id — the old jobs/ segment 404'd into the dashboard
-    assert j.url == "https://licious.darwinbox.in/ms/candidate/careers/5ebea18409d3e"
+    # v2-portal jobDetails route (browser-verified); parse defaults to new_careers=True
+    assert j.url == (
+        "https://licious.darwinbox.in/ms/candidatev2/main/careers/jobDetails/5ebea18409d3e"
+    )
     assert j.scraped_at == SCRAPED_AT
     assert j.experience == "2 - 4 Years"
     assert j.employment_type == "Onroll"
@@ -518,6 +520,16 @@ def test_rippling_parse():
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")
+
+
+def test_darwinbox_legacy_portal_url():
+    # a tenant with companyinfo.new_careers=false keeps the old app's careers/:id route
+    s = get_scraper("darwinbox", "licious", "Licious")
+    s._new_careers = False
+    jobs = s.parse(_load("darwinbox_licious.json"), SCRAPED_AT)
+    assert jobs[0].url == (
+        "https://licious.darwinbox.in/ms/candidate/careers/5ebea18409d3e"
+    )
 
 
 def test_darwinbox_iso_date():

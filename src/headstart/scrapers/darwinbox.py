@@ -71,6 +71,23 @@ class DarwinboxScraper(BaseScraper):
         response.raise_for_status()
         return response.json().get("data") or []
 
+    def _portal_is_v2(self, host: str) -> bool:
+        """Whether the tenant runs the candidatev2 careers portal (companyinfo.new_careers).
+
+        Every tenant surveyed (60/60 across the corpus, 2026-07-06) is on v2, so failures
+        default to True; the flag exists so a legacy tenant still gets working links."""
+        try:
+            response = http.fetch(
+                "GET",
+                f"{host}/ms/candidateapi/companyinfo?companyId=main",
+                timeout=20,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+            )
+            company = (response.json().get("message") or {}).get("company") or {}
+            return bool(company.get("new_careers", True))
+        except Exception:  # noqa: BLE001 - portal detection must never sink the board
+            return True
+
     def fetch_raw(self) -> Any:
         # data-center TLD varies per tenant; resolve it on the first page, then paginate.
         last_error: Exception | None = None
@@ -86,6 +103,7 @@ class DarwinboxScraper(BaseScraper):
         if host is None:
             raise last_error
         self._host = host
+        self._new_careers = self._portal_is_v2(host)
         jobs = list(batch)
         page = 1
         while len(batch) == _PAGE_SIZE and page < 99:
@@ -96,6 +114,7 @@ class DarwinboxScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         host = getattr(self, "_host", None) or f"https://{self.slug}.darwinbox.in"
+        new_careers = getattr(self, "_new_careers", True)
         jobs: list[Job] = []
         for j in raw:
             # `locations` is the board's display string, but it collapses to a generic
@@ -124,9 +143,15 @@ class DarwinboxScraper(BaseScraper):
                     location=location,
                     remote=bool(j.get("is_remote")) or is_remote(location),
                     department=j.get("department_name"),
-                    # the SPA's detail route is careers/:id — an extra path segment falls
-                    # through to its wildcard route and lands on the dashboard instead
-                    url=f"{host}/ms/candidate/careers/{j['id']}",
+                    # v2 portal (the norm): browser-verified jobDetails route. On v2
+                    # tenants the old /ms/candidate/ app is a 2.4KB stub that redirects
+                    # to the v2 careers HOME, dropping the job — hence the branch. The
+                    # legacy fallback is the old app's careers/:id router entry.
+                    url=(
+                        f"{host}/ms/candidatev2/main/careers/jobDetails/{j['id']}"
+                        if new_careers
+                        else f"{host}/ms/candidate/careers/{j['id']}"
+                    ),
                     posted_at=_iso_date(j.get("posted_on")),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("jd")),
