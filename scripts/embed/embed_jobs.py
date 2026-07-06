@@ -33,7 +33,8 @@ import torch
 from langdetect import DetectorFactory, LangDetectException, detect
 from sentence_transformers import SentenceTransformer
 
-from headstart.corpus import iter_jobs
+from headstart.board_priority import load_scores
+from headstart.corpus import board_of, iter_jobs
 from headstart.experience import extract
 from headstart.search import DOC_PREFIX, MODEL
 
@@ -42,6 +43,7 @@ DetectorFactory.seed = 0  # make langdetect deterministic
 _ROOT = Path(__file__).resolve().parents[2]
 _SOURCE = _ROOT / "data" / "jobs" / "tech"
 _OUTDIR = _ROOT / "data" / "embeddings" / "jobs"
+_PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 _MD_SYNTAX = re.compile(
@@ -87,6 +89,15 @@ def bucket_for(n_tokens: int) -> int:
 def batch_size_for(bucket: int, budget: int = _ATTN_BUDGET) -> int:
     """Fixed docs-per-batch for a bucket, so every batch in it presents one identical shape."""
     return max(1, min(_BATCH_CAP, budget // (bucket * bucket)))
+
+
+def order_by_priority(idxs: list[int], metas: list[dict], scores: dict) -> list[int]:
+    """A bucket's doc indices reordered board-score-desc (ADR-0022): under the CI time
+    budget, the highest-value boards' docs bank first. Stable, so corpus order breaks
+    ties; boards without a score sink to the tail."""
+    return sorted(
+        idxs, key=lambda i: scores.get(board_of(metas[i]["id"]), 0.0), reverse=True
+    )
 
 
 def make_pin_doc(tokenizer, bucket: int) -> str:
@@ -330,13 +341,23 @@ def main() -> None:
     groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
     for idx, n_tok in enumerate(tok_lens):
         groups[bucket_for(n_tok)].append(idx)
+    scores = load_scores(_PRIORITY)
+    if scores:
+        for b in _BUCKETS:
+            groups[b] = order_by_priority(groups[b], metas, scores)
+        print(
+            "[embed] priority ordering applied within buckets",
+            file=sys.stderr,
+            flush=True,
+        )
 
     # Step 5: encode bucket-by-bucket with pinned shapes (see the _BUCKETS comment), isolating
     # per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the
     # CI time budget (pipeline.yml wraps this in `timeout`), short docs embed at docs/sec while
     # 4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
-    # budget expires (heaviest-first once burned a 98-min budget on ~325 docs). Order is
-    # irrelevant downstream — meta carries the id and stays row-aligned with the vectors.
+    # budget expires (heaviest-first once burned a 98-min budget on ~325 docs). Within each
+    # bucket the indices are board-priority-ordered (ADR-0022); ordering stays irrelevant
+    # downstream — meta carries the id and stays row-aligned with the vectors.
     total = len(docs)
     done = failed = consec_failed = 0
     start = time.monotonic()

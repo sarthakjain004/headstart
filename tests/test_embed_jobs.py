@@ -124,3 +124,15 @@ def test_batch_size_shrinks_with_bucket():
     sizes = [ej.batch_size_for(b) for b in ej._BUCKETS]
     assert sizes == sorted(sizes, reverse=True)
     assert sizes[-1] < sizes[0]  # long-doc buckets really do get smaller batches
+
+
+def test_order_by_priority_score_desc_stable_unknown_last():
+    metas = [
+        {"id": "lever:low:1"},
+        {"id": "ashby:top:1"},
+        {"id": "keka:unknown:1"},
+        {"id": "ashby:top:2"},  # same board as index 1 — tie, corpus order holds
+    ]
+    scores = {"ashby:top": 50.0, "lever:low": 2.0}
+    ordered = ej.order_by_priority([0, 1, 2, 3], metas, scores)
+    assert ordered == [1, 3, 0, 2]  # top board first (stable tie), unknown board last
