@@ -62,6 +62,25 @@ def _like(term: str) -> str:
     return term[:60].replace("'", "''").lower()
 
 
+# TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
+# candidatev2 URL fix carry the old `/ms/candidate/careers/jobs/{id}` link, which on v2
+# tenants redirects to the careers home instead of the job. The stored data self-heals only
+# as those postings turn over (sync leaves re-seen ids untouched — index_sync.py), so this
+# rewrites the derivable URL at serve time as a stopgap. Remove once the darwinbox rows have
+# healed (or once sync refreshes changed metadata for re-seen ids — the proper fix).
+# Caveat: a legacy `new_careers=false` tenant's old-format URL would be wrongly rewritten,
+# but none exist today (60/60 surveyed are v2).
+_DARWINBOX_OLD = "/ms/candidate/careers/jobs/"
+_DARWINBOX_NEW = "/ms/candidatev2/main/careers/jobDetails/"
+
+
+def _canonical_url(ats: str | None, url: str | None) -> str | None:
+    """Serve-time URL normalization; only darwinbox's stale links are rewritten (see above)."""
+    if ats == "darwinbox" and url and _DARWINBOX_OLD in url:
+        return url.replace(_DARWINBOX_OLD, _DARWINBOX_NEW, 1)
+    return url
+
+
 def _build_filter(
     *,
     remote: bool,
@@ -121,7 +140,9 @@ def _search(query: str, where: str | None, k: int) -> list[dict]:
             "salary": r.get("salary"),
             "ats": r.get("ats"),
             "posted_at": r.get("posted_at"),
-            "url": r.get("url"),
+            "url": _canonical_url(
+                r.get("ats"), r.get("url")
+            ),  # temporary; see _canonical_url
         }
         for r in rows
     ]
