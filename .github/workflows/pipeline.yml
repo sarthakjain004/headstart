@@ -128,8 +128,12 @@ jobs:
         run: |
           hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
+          # --delete prunes remote fragments no longer present locally. compact_index.py rewrites
+          # the table into fresh fragment files each run; without --delete the superseded ones pile
+          # up in the dataset forever (they hit ~2GB / 51 files, and the free-tier Space could no
+          # longer cold-start the download). Keep the served index at its compacted size.
           hf upload "$HF_DATASET" data/lancedb data/lancedb \
-            --repo-type dataset --commit-message "nightly: lancedb index"
+            --repo-type dataset --delete "*" --commit-message "nightly: lancedb index"
           hf upload "$HF_DATASET" data/state data/state \
             --repo-type dataset --commit-message "nightly: board priority"
       - name: Restart the Space to pick up the new index
