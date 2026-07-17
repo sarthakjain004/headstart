@@ -54,4 +54,28 @@ def load_active_companies(
                     name=v.tenant,
                 )
             )
-    return companies
+    return _dedupe_boards(companies)
+
+
+def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
+    """Collapse Boards that map to the same canonical key to one entry (ADR-0023).
+
+    The ledger holds duplicate rows for one Board — differing only by slug casing (Workday sites
+    ``.../External`` vs ``.../external``) or by an equivalent tenant/url form that resolves to the
+    same ``board_key``. Left in, each variant is scraped and indexed separately, so one job lands in
+    the index two or three times. Keep the lexicographically-smallest ``board_key`` per canonical
+    (lowercased) key — the same representative the index prune keeps, so scrape and index agree and a
+    future scrape re-sees the kept rows rather than re-embedding them."""
+    from headstart.scrapers.registry import SCRAPERS
+
+    best: dict[str, tuple[str, CompanyRef]] = {}
+    for company in companies:
+        try:
+            key = SCRAPERS[company.ats](company.slug).board_key()
+        except Exception:  # noqa: BLE001 - a malformed slug falls back to the plain key, never drops the Board
+            key = f"{company.ats}:{company.slug}"
+        canon = key.lower()
+        current = best.get(canon)
+        if current is None or key < current[0]:
+            best[canon] = (key, company)
+    return [company for _, company in best.values()]

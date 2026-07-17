@@ -110,6 +110,12 @@ class WorkdayScraper(BaseScraper):
     def slug_from(tenant: str, url: str) -> str:
         return url.rstrip("/")  # the full https://{co}.{inst}.myworkdayjobs.com/{site}
 
+    def board_key(self) -> str:
+        # ids are ``workday:{company}/{site}:{ats_id}`` (see parse), not ``workday:{full-url}`` —
+        # so the Board key derives {company}/{site} from the URL slug, matching ``board_of``.
+        company, _instance, site = self._parts()
+        return f"{self.ats}:{company}/{site}"
+
     def url(self) -> str:
         company, instance, site = self._parts()
         return (

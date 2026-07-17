@@ -1,0 +1,65 @@
+name: cleanup-index
+
+# One-shot manual index cleanup (ADR-0023): download the served LanceDB index, prune stale and
+# duplicate rows, rebuild it fresh to reclaim orphan fragments, re-upload the compacted index, and
+# restart the Space. Use to reset a bloated/dirty index without a full scrape+embed cycle. Runs on
+# Actions (roomy disk, the HF_TOKEN secret, fast network) — never locally.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-pipeline # share the pipeline's group so cleanup and a nightly never race on state
+  cancel-in-progress: false
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+  HF_SPACE: imPoseidon/headstart-search
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - name: Download the current lancedb
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          df -h / | tail -1
+          python -c "
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(os.environ['HF_DATASET'], repo_type='dataset', local_dir='.',
+                            allow_patterns=['data/lancedb/*'], token=os.environ['HF_TOKEN'])
+          print('downloaded')
+          "
+          du -sh data/lancedb
+      - name: Prune stale + duplicate rows
+        run: python scripts/embed/prune_index.py --apply
+      - name: Rebuild fresh (reclaim orphan fragments)
+        run: python scripts/embed/compact_index.py
+      - name: Upload the cleaned index
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          du -sh data/lancedb
+          hf upload "$HF_DATASET" data/lancedb data/lancedb \
+            --repo-type dataset --delete "*" --commit-message "cleanup: prune + rebuild fresh (ADR-0023)"
+      - name: Restart the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -c "
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ['HF_TOKEN']).restart_space(os.environ['HF_SPACE'])
+          print('space restarted')
+          "
