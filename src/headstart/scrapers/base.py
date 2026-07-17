@@ -49,6 +49,14 @@ class BaseScraper(ABC):
         """
         return tenant
 
+    def board_key(self) -> str:
+        """This board's ``{ats}:{slug}`` key — the ``board_of`` prefix its job ids carry.
+
+        Override where the id's Board segment isn't the bare slug (Workday derives ``{company}/{site}``
+        from its careers-URL slug). Lets index maintenance (eviction / dead-Board prune, ADR-0023)
+        map a ledger entry to the exact key its rows use."""
+        return f"{self.ats}:{self.slug}"
+
     @abstractmethod
     def url(self) -> str:
         """The public endpoint for this company's board."""

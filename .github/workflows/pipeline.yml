@@ -118,6 +118,12 @@ jobs:
       - name: Sync the jobs table
         if: steps.gate.outputs.run == 'true'
         run: python scripts/embed/sync_index.py
+      - name: Prune dead-Board and duplicate rows
+        if: steps.gate.outputs.run == 'true'
+        # Reclaims what the board-scoped sync can't: rows on Boards no longer live (left the scrape
+        # list) and case-variant duplicates of the same job (ADR-0023). Aborts itself if the ledger
+        # looks broken, so it can't evict a healthy index.
+        run: python scripts/embed/prune_index.py --apply
       - name: Compact the table
         if: steps.gate.outputs.run == 'true'
         run: python scripts/embed/compact_index.py
@@ -126,15 +132,25 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
+          # Retry each upload — the HF API 504s intermittently on create/commit and a bare failure
+          # sinks the whole run (e.g. 2026-07-16). Backs off 30s/60s before giving up.
+          up() {
+            for attempt in 1 2 3; do
+              hf upload "$@" && return 0
+              echo "::warning::hf upload attempt $attempt failed; retrying in $((attempt * 30))s"
+              sleep $((attempt * 30))
+            done
+            return 1
+          }
+          up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
           # --delete prunes remote fragments no longer present locally. compact_index.py rewrites
           # the table into fresh fragment files each run; without --delete the superseded ones pile
           # up in the dataset forever (they hit ~2GB / 51 files, and the free-tier Space could no
           # longer cold-start the download). Keep the served index at its compacted size.
-          hf upload "$HF_DATASET" data/lancedb data/lancedb \
+          up "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --delete "*" --commit-message "nightly: lancedb index"
-          hf upload "$HF_DATASET" data/state data/state \
+          up "$HF_DATASET" data/state data/state \
             --repo-type dataset --commit-message "nightly: board priority"
       - name: Restart the Space to pick up the new index
         if: steps.gate.outputs.run == 'true'

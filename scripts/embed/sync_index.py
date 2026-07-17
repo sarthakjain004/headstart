@@ -2,11 +2,13 @@
 
 Reads the committed store under ``data/embeddings/jobs/`` (``embeddings.f32`` + ``meta.jsonl`` +
 ``manifest.json``) and the current corpus snapshot (default ``data/jobs/tech/``), then reconciles
-the index incrementally via ``index_sync``: fresh ids are the corpus ids that have a vector, every
-Board present in the snapshot counts as scraped, so a posting that vanished from a still-present
-Board is evicted while Boards absent from the snapshot are never touched (partial-harvest safety).
-On the first run the table is created empty and the plan is all-add; the identical path does true
-incremental add/evict on every later run — no overwrite-rebuild (ADR-0019).
+the index incrementally via ``index_sync``: fresh ids are the corpus ids that have a vector, and the
+scraped-Board set is taken from the *full* scrape (``data/jobs/``), not the tech subset — so a Board
+that was scraped but dropped to zero *tech* jobs still has its closed postings evicted (a Board only
+in the tech snapshot would leave those rows stranded). A posting that vanished from a scraped Board
+is evicted; Boards absent from the scrape are never touched (partial-harvest safety). On the first
+run the table is created empty and the plan is all-add; the identical path does true incremental
+add/evict on every later run — no overwrite-rebuild (ADR-0019).
 
 Corpus ids without a vector (non-English, or not yet embedded) are reported and skipped — run
 ``embed_jobs.py --resume`` first to close that gap.
@@ -32,6 +34,9 @@ from headstart.search import PROD_TABLE
 _ROOT = Path(__file__).resolve().parents[2]
 _STORE = _ROOT / "data" / "embeddings" / "jobs"
 _SOURCE = _ROOT / "data" / "jobs" / "tech"
+_SCRAPED = (
+    _ROOT / "data" / "jobs"
+)  # full (pre-tech-filter) scrape — the true scraped-Board set
 _DB = _ROOT / "data" / "lancedb"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
@@ -86,12 +91,33 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     return metas, vectors.reshape(-1, dim)
 
 
+def _scraped_boards(scraped: str | Path, corpus_ids: set[str]) -> set[str]:
+    """The Boards this run actually scraped, in ``board_of`` key space, read from the *full* scrape
+    (``data/jobs/{ats}.jsonl`` — a non-recursive glob, so the ``tech/`` subdir is not double-counted).
+
+    This is the eviction scope: a Board here but absent from the tech corpus was scraped and simply
+    has no tech jobs now, so its stale tech rows are correctly evicted. Falls back to the corpus ids'
+    Boards when the scrape dir has no ``.jsonl`` (a Wellfound-CSV or unit-test sync), keeping those
+    paths working. (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't
+    covered here — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)"""
+    path = Path(scraped)
+    if path.is_dir() and any(path.glob("*.jsonl")):
+        return {board_of(job["id"]) for job in iter_jobs(path)}
+    return {board_of(job_id) for job_id in corpus_ids}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--source",
         default=str(_SOURCE),
         help="corpus snapshot: a {ats}.jsonl directory or a Wellfound CSV (default: data/jobs/tech)",
+    )
+    ap.add_argument(
+        "--scraped",
+        default=str(_SCRAPED),
+        help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
+        "(default: data/jobs); falls back to --source's Boards when it has no .jsonl files",
     )
     args = ap.parse_args()
 
@@ -101,7 +127,7 @@ def main() -> None:
     print(f"store: {len(metas)} embedded Jobs (dim {dim})", flush=True)
 
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
-    boards = {board_of(job_id) for job_id in corpus_ids}
+    boards = _scraped_boards(args.scraped, corpus_ids)
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
     print(
