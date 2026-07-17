@@ -36,13 +36,13 @@ def load_active_companies(
     remains the small curated seed.
     """
     from headstart import liveness
-    from headstart.scrapers.registry import SCRAPERS
+    from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 
     ledger_dir = Path(ledger_dir)
     companies: list[CompanyRef] = []
     for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
-        if scraper is None:
+        if scraper is None or scraper.ats in DISABLED_ATS:
             continue
         for v in liveness.load(csv_path).values():
             if v.status != liveness.LIVE or (v.jobs or 0) < min_jobs:
