@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from headstart.index_prune import plan_prune
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.workday import WorkdayScraper
-from scripts.embed.prune_index import plan_prune
 
 
 def test_off_board_evicted_survivors_kept():

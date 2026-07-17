@@ -11,15 +11,10 @@ it can't reach two classes of dead weight — which this sweep removes:
      sites like ``.../External`` vs ``.../external`` produce ``company/External`` and ``company/external``
      Board keys, hence two ids for one job. Same lowercased Board + native id → keep one, drop the rest.
 
-The keep-set is the live liveness ledger (enabled ATSes only), mapped into the index's ``board_of``
-key space via each scraper's ``board_key()`` (Workday's id Board is ``{company}/{site}``, not its
-URL slug). Canonicalisation is ``board.lower()``; the representative kept per duplicate job is the
-lexicographically-smallest Board casing — the same rule ``dedupe_ledger.py`` uses, so a future scrape
-re-sees the kept row instead of re-embedding it.
-
-Dry-run by default (reports what it would delete); pass ``--apply`` to execute. Run after
-``sync_index.py``. Refuses to apply if the keep-set looks too small to trust (a broken ledger must
-not evict the whole index).
+Planning lives in :mod:`headstart.index_prune`; this is the CLI that runs it against the table. The
+keep-set is the live ledger (enabled ATSes) mapped into the index's ``board_of`` key space via each
+scraper's ``board_key()``. Dry-run by default; ``--apply`` deletes. Run after ``sync_index.py``.
+Refuses to apply if the keep-set looks too small to trust (a broken ledger must not evict the index).
 
 Run:  python scripts/embed/prune_index.py            # dry-run
       python scripts/embed/prune_index.py --apply    # delete
@@ -30,15 +25,12 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 import lancedb
 
-from headstart.config import load_active_companies
-from headstart.corpus import board_of
+from headstart.index_prune import live_keep_set, plan_prune
 from headstart.index_sync import apply_sync
-from headstart.scrapers.registry import get_scraper
 from headstart.search import PROD_TABLE
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -47,45 +39,6 @@ _DB = _ROOT / "data" / "lancedb"
 _MIN_KEEP_BOARDS = (
     1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
 )
-
-
-def live_keep_set(ledger_dir: str | Path) -> set[str]:
-    """Canonical (lowercased) Board keys that should survive: every live ledger Board on an enabled
-    ATS, in the index's ``board_of`` key space (via ``board_key()``). ``load_active_companies``
-    already drops dead Boards and ``DISABLED_ATS``; ``min_jobs=0`` keeps currently-empty live Boards."""
-    keep: set[str] = set()
-    for company in load_active_companies(ledger_dir, min_jobs=0):
-        try:
-            keep.add(
-                get_scraper(company.ats, company.slug, company.name).board_key().lower()
-            )
-        except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
-            continue
-    return keep
-
-
-def plan_prune(index_ids: list[str], keep: set[str]) -> tuple[list[str], list[str]]:
-    """Split index ids into (evict_off_board, evict_duplicate).
-
-    ``evict_off_board``: Board not in ``keep``. ``evict_duplicate``: among the survivors, every id
-    but the lexicographically-smallest per (lowercased Board, native id) group — the case-variant
-    dupes of one job."""
-    off_board: list[str] = []
-    groups: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for jid in index_ids:
-        canon = board_of(jid).lower()
-        if canon not in keep:
-            off_board.append(jid)
-            continue
-        native = jid.rsplit(":", 1)[1]
-        groups[(canon, native)].append(jid)
-    duplicate: list[str] = []
-    for ids in groups.values():
-        if len(ids) > 1:
-            duplicate.extend(
-                sorted(ids)[1:]
-            )  # keep the lex-min Board casing, drop the rest
-    return off_board, duplicate
 
 
 def main() -> int:
@@ -130,7 +83,6 @@ def main() -> int:
     )
 
     if not args.apply:
-        # a readable sample so the operator can eyeball before committing
         for label, ids in (("off-Board", off_board), ("duplicate", duplicate)):
             for jid in ids[:8]:
                 print(f"  [{label}] {jid}", flush=True)
