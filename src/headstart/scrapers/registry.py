@@ -47,6 +47,13 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 }
 
 
+# ATSes that are wired up but excluded from the active scrape list. join is ~99.99% non-tech
+# (German-SMB boards; ~1 tech job in ~10k), so scraping it is pure noise for a tech-only index —
+# disabled 2026-07-07 pending non-English/non-tech expansion. The scraper class and its tests stay
+# intact (get_scraper("join", ...) still works); re-enable by removing it from this set.
+DISABLED_ATS: frozenset[str] = frozenset({"join"})
+
+
 def get_scraper(ats: str, slug: str, company: str | None = None) -> BaseScraper:
     try:
         cls = SCRAPERS[ats]
