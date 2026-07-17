@@ -44,7 +44,9 @@ from headstart.search import PROD_TABLE
 _ROOT = Path(__file__).resolve().parents[2]
 _LEDGER = _ROOT / "data" / "validate" / "liveness"
 _DB = _ROOT / "data" / "lancedb"
-_MIN_KEEP_BOARDS = 1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
+_MIN_KEEP_BOARDS = (
+    1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
+)
 
 
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
@@ -54,7 +56,9 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     keep: set[str] = set()
     for company in load_active_companies(ledger_dir, min_jobs=0):
         try:
-            keep.add(get_scraper(company.ats, company.slug, company.name).board_key().lower())
+            keep.add(
+                get_scraper(company.ats, company.slug, company.name).board_key().lower()
+            )
         except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
             continue
     return keep
@@ -78,15 +82,27 @@ def plan_prune(index_ids: list[str], keep: set[str]) -> tuple[list[str], list[st
     duplicate: list[str] = []
     for ids in groups.values():
         if len(ids) > 1:
-            duplicate.extend(sorted(ids)[1:])  # keep the lex-min Board casing, drop the rest
+            duplicate.extend(
+                sorted(ids)[1:]
+            )  # keep the lex-min Board casing, drop the rest
     return off_board, duplicate
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--apply", action="store_true", help="delete (default: dry-run report only)")
-    ap.add_argument("--ledger", default=str(_LEDGER), help="liveness ledger dir (default: data/validate/liveness)")
-    ap.add_argument("--db", default=str(_DB), help="lancedb dir (default: data/lancedb)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--apply", action="store_true", help="delete (default: dry-run report only)"
+    )
+    ap.add_argument(
+        "--ledger",
+        default=str(_LEDGER),
+        help="liveness ledger dir (default: data/validate/liveness)",
+    )
+    ap.add_argument(
+        "--db", default=str(_DB), help="lancedb dir (default: data/lancedb)"
+    )
     args = ap.parse_args()
 
     keep = live_keep_set(args.ledger)
@@ -102,7 +118,9 @@ def main() -> int:
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     n = table.count_rows()
-    index_ids = [r["id"] for r in table.search().select(["id"]).limit(max(n, 1)).to_list()]
+    index_ids = [
+        r["id"] for r in table.search().select(["id"]).limit(max(n, 1)).to_list()
+    ]
     off_board, duplicate = plan_prune(index_ids, keep)
     evict = off_board + duplicate
     print(
@@ -120,7 +138,10 @@ def main() -> int:
         return 0
 
     apply_sync(table, [], evict)
-    print(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {table.count_rows()}", flush=True)
+    print(
+        f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {table.count_rows()}",
+        flush=True,
+    )
     return 0
 
 

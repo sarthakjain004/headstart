@@ -34,7 +34,9 @@ from headstart.search import PROD_TABLE
 _ROOT = Path(__file__).resolve().parents[2]
 _STORE = _ROOT / "data" / "embeddings" / "jobs"
 _SOURCE = _ROOT / "data" / "jobs" / "tech"
-_SCRAPED = _ROOT / "data" / "jobs"  # full (pre-tech-filter) scrape — the true scraped-Board set
+_SCRAPED = (
+    _ROOT / "data" / "jobs"
+)  # full (pre-tech-filter) scrape — the true scraped-Board set
 _DB = _ROOT / "data" / "lancedb"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
