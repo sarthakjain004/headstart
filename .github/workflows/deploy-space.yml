@@ -5,7 +5,8 @@ name: deploy-space
 on:
   push:
     branches: [main]
-    paths: ["deploy/hf-space/**"]
+    # src/headstart/geo.py is deployed into the Space too (copied in below)
+    paths: ["deploy/hf-space/**", "src/headstart/geo.py"]
   workflow_dispatch: {}
 
 permissions:
@@ -30,5 +31,8 @@ jobs:
             exit 0
           fi
           pip install "huggingface_hub[cli]"
+          # the India gazetteer lives in src/headstart (single source of truth, unit-tested
+          # there); the standalone Space app imports it as a sibling module
+          cp src/headstart/geo.py deploy/hf-space/geo.py
           hf upload imPoseidon/headstart-search deploy/hf-space . --repo-type space \
             --commit-message "deploy: sync Space from repo ${GITHUB_SHA::7}"

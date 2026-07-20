@@ -12,6 +12,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
 from flask import Flask, jsonify, request
 from huggingface_hub import snapshot_download
@@ -87,6 +88,7 @@ def _build_filter(
     max_years: int | None,
     ats: str | None,
     etype: str | None,
+    india: str | None,
     location: str | None,
     company: str | None,
     has_salary: bool,
@@ -102,6 +104,10 @@ def _build_filter(
         filters.append(f"ats = '{ats}'")
     if etype in _ETYPE_CLAUSES:
         filters.append(_ETYPE_CLAUSES[etype])
+    if india:
+        clause = geo.where(india)  # canonical-place lookup — unknown values are ignored
+        if clause:
+            filters.append(clause)
     if location:
         filters.append(f"lower(location) LIKE '%{_like(location)}%'")
     if company:
@@ -161,6 +167,7 @@ def search():
             max_years=int(max_years) if max_years else None,
             ats=(request.args.get("ats") or "").strip() or None,
             etype=(request.args.get("etype") or "").strip() or None,
+            india=(request.args.get("india") or "").strip().lower() or None,
             location=(request.args.get("location") or "").strip() or None,
             company=(request.args.get("company") or "").strip() or None,
             has_salary=request.args.get("has_salary") == "true",
@@ -283,6 +290,9 @@ _TEMPLATE = """<!doctype html>
       </select></div>
     <div class="f"><label>Max years</label>
       <input id="maxyears" type="number" min="0" placeholder="any"></div>
+    <div class="f"><label>India</label>
+      <select id="india"><option value="">anywhere</option>
+        <option value="india">all India</option>__INDIA_OPTIONS__</select></div>
     <div class="f"><label>Location contains</label>
       <input id="location" type="text" placeholder="e.g. berlin"></div>
     <div class="f"><label>Company contains</label>
@@ -334,6 +344,7 @@ async function go(){
   if (el('maxyears').value) p.set('max_years', el('maxyears').value);
   if (el('ats').value) p.set('ats', el('ats').value);
   if (el('etype').value) p.set('etype', el('etype').value);
+  if (el('india').value) p.set('india', el('india').value);
   if (el('location').value.trim()) p.set('location', el('location').value.trim());
   if (el('company').value.trim()) p.set('company', el('company').value.trim());
   if (el('posted').value) p.set('posted_within', el('posted').value);
@@ -364,9 +375,19 @@ async function go(){
 }
 </script></body></html>"""
 
-_PAGE = _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}").replace(
-    "__ATS_OPTIONS__",
-    "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),
+_PAGE = (
+    _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}")
+    .replace(
+        "__ATS_OPTIONS__",
+        "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),
+    )
+    .replace(
+        "__INDIA_OPTIONS__",
+        "".join(
+            f'<option value="{c}">{c.title().replace("Ncr", "NCR")}</option>'
+            for c in geo.DROPDOWN
+        ),
+    )
 )
 
 
