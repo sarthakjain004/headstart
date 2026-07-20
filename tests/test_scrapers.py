@@ -374,6 +374,25 @@ def test_workday_parse():
     assert j.employment_type == "Full time"  # timeType
 
 
+def test_workday_remote_falls_back_to_location():
+    # remoteType is absent on ~99% of Workday listings (remote-audit LOG); the location
+    # string then decides. A decisive remoteType still wins over the location string.
+    raw = [
+        {"title": "A", "locationsText": "Remote - Colombia", "bulletFields": ["R1"]},
+        {"title": "B", "locationsText": "Austin, TX", "bulletFields": ["R2"]},
+        {
+            "title": "C",
+            "locationsText": "Remote-MO",
+            "remoteType": "On-site",
+            "bulletFields": ["R3"],
+        },
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert [j.remote for j in jobs] == [True, False, False]
+
+
 class _FakeResp:
     def __init__(self, status):
         self.status_code = status
