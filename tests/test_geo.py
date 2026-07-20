@@ -3,8 +3,6 @@ LIKE semantics, including every substring trap the inventory vetting caught."""
 
 from __future__ import annotations
 
-import lancedb
-import pyarrow as pa
 import pytest
 
 from headstart.geo import CITIES, DROPDOWN, REGIONS, _STATES, where
@@ -41,6 +39,10 @@ _ROWS = [
 
 @pytest.fixture(scope="module")
 def table(tmp_path_factory):
+    # lancedb is in the `embed` extra, which the quality CI job doesn't install — the
+    # behavioral tests skip there; the pure-python hygiene tests below still run.
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
     db = lancedb.connect(tmp_path_factory.mktemp("db"))
     return db.create_table("locs", pa.table({"location": [loc for loc, _, _ in _ROWS]}))
 
