@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)"
 
-COPY app.py .
+# geo.py is not in the repo's deploy/hf-space/ — deploy-space.yml copies it in from
+# src/headstart/geo.py (single source of truth) before pushing to the Space.
+COPY app.py geo.py .
 EXPOSE 7860
 CMD ["python", "app.py"]
