@@ -33,7 +33,7 @@ import re
 from typing import Any
 
 from headstart import http
-from headstart.models import Job, html_to_text
+from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 _URL_PATTERN = re.compile(
@@ -336,14 +336,20 @@ class WorkdayScraper(BaseScraper):
             external_path = item.get("externalPath") or ""
             ats_id = _posting_key(item)
             detail = item.get("_detail") or {}
+            location = item.get("locationsText")
+            # ``remoteType`` is absent on ~99% of listings; when it's silent, the location
+            # string decides ("Remote - Colombia", "US, Remote"). A decisive remoteType wins.
+            remote = _remote_from(item.get("remoteType"))
+            if remote is None:
+                remote = is_remote(location)
             jobs.append(
                 Job(
                     id=f"{self.ats}:{company}/{site}:{ats_id}",
                     ats=self.ats,
                     company=display,
                     title=(item.get("title") or "Untitled").strip(),
-                    location=item.get("locationsText"),
-                    remote=_remote_from(item.get("remoteType")),
+                    location=location,
+                    remote=remote,
                     department=(item.get("jobFamilyGroup") or "").strip() or None,
                     url=f"{base}{external_path}" if external_path else base,
                     # the list only gives relative strings ("30+ Days Ago"); the detail
