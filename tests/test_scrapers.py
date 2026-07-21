@@ -589,3 +589,7 @@ def test_darwinbox_iso_date():
     assert _iso_date("21-Apr-2026") == "2026-04-21"
     assert _iso_date(None) is None
     assert _iso_date("sometime soon") == "sometime soon"  # unparseable passes through
+    # some tenants (orangehealth) send an epoch int, not the string — must not crash the board
+    assert _iso_date(1706918400000) == "2024-02-03"  # epoch ms
+    assert _iso_date(1706918400) == "2024-02-03"  # epoch seconds
+    assert _iso_date(0) is None  # falsy -> unknown, not 1970
