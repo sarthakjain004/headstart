@@ -5,6 +5,7 @@ from __future__ import annotations
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
+from headstart.scrapers.freshteam import FreshteamScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
@@ -43,6 +44,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         PersonioScraper,
         JoinScraper,
         RipplingScraper,
+        FreshteamScraper,
     )
 }
 
