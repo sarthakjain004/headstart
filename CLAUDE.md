@@ -38,23 +38,27 @@ HeadStart surfaces job openings read directly from company ATS boards.
 Common-Crawl + Wayback feeders in `data/scratch/india_ats_hosts.txt` — much stronger signal than
 per-company web research). Full research, endpoint probes, and provenance:
 `experiment/ats-provider-expansion/PLAN.md`.
-- **Freshteam** ✅ DONE (2026-07-21) — `src/headstart/scrapers/freshteam.py`, 1,726 hosts, native
-  `remote` boolean + branch/role joins, one JSON call. Not yet in the discovery slug-probe / active
-  ledger — needs its host list (`experiment/ats-provider-expansion/artifacts/freshteam_tenants.txt`)
-  run through `validate` (liveness) to enter the pipeline. Widget caps at 1000 jobs/tenant.
-- **Zwayam / Naukri Talent Cloud** (`{slug}.zwayam.com`, `{slug}.openings.co`) — Info Edge-owned;
-  named clients Flipkart, Persistent, Coforge, CRISIL, ITC Infotech (tech-heavy). Boards live; the
-  jobs JSON XHR still needs capturing (M effort). Highest strategic value after Freshteam.
-- **PeopleStrong** (`{slug}.peoplestrong.com`, `{slug}-careers.peoplestrong.com`) — **201 hosts**;
-  fingerprinter recognises it but there is **no scraper** — build one (Angular SPA → XHR discovery).
-- **TurboHire** (`{slug}.turbohire.co`, 72 hosts; `api.turbohire.co` exists), **Jobsoid**
-  (`{slug}.jobsoid.com/api/v1/jobs` — verified trivial JSON, 383 hosts but SMB/low-yield),
-  **PyjamaHR** (careers pages live; JSON API not yet captured) — Tier-2, opportunistic.
-- **Enterprise tier (research incomplete, likely biggest India-GCC mass)**: SAP SuccessFactors,
-  Eightfold, Phenom, iCIMS/Taleo — endpoints unverified; probably explain the 316/396 (80%)
-  fingerprint-miss rate. See PLAN.md §4.
-- Verified **dead-ends** (no public boards — do not build): greythr, qandle, beehive (login-only
-  HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal (agency CRMs).
+- **Freshteam** ✅ DONE (2026-07-21, #45) — `scrapers/freshteam.py`, wired through liveness (818
+  live / 579 hiring boards in `data/validate/liveness/freshteam.csv`). Widget caps at 1000/tenant.
+
+**Highest ROI first — fingerprinter gaps, ZERO new scraper** (already-supported ATSes whose board
+sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` mining — 79% of the
+316 were opaque to no-JS curl, so these are a lower bound):
+- **Darwinbox — 11 curated companies** (CarDekho, Licious, Emeritus, Pixxel, FarEye, Happiest Minds
+  `smileshrms`, Vymo `vymopeopleconnect`, LEAD `myleadschool`, …). **Top ROI** — the scraper exists;
+  only a careers-page/redirect tenant scan is missing. Same fix lifts **Keka** (6: VWO, Open,
+  Eka.care, AccioJob, Inito), **Workday** (3: BrowserStack, Fractal, Sprinklr — non-derivable pod),
+  **Greenhouse** (2: Groww on the EU pod `job-boards.eu.greenhouse.io`, HighRadius embed-only).
+
+**New providers — endpoints VERIFIED live 2026-07-21** (full protocols: PLAN.md §4b + `artifacts/research_*.md`):
+- **PyjamaHR** — S, easiest. Open REST no auth: `GET api.pyjamahr.com/api/career/jobs/?company_uuid={UUID}` (+ `/jobs/{id}/?company_uuid=` for description). Native workplace_type + experience + salary.
+- **SuccessFactors** — M. Scrape the legacy **RMK** surface (`{host}/sitemap.xml` RSS + per-job JSON-LD); modern **CSB is DWR-RPC → skip**. India GCCs: Wipro, HCLTech, LTTS, SAP, Volvo, Schaeffler.
+- **Eightfold** — M, best discoverability (`{slug}.eightfold.ai` sweep → `/careers/sitemap.xml` → JSON-LD; the `/api/apply/v2/jobs` XHR is 403-hardened). Qualcomm/NVIDIA/Micron/Vodafone GCCs, ~75-89% tech.
+- **TurboHire** — M, token flow: `/api/token/noauth` (needs Referer) → `POST /api/careerpagev2/filteredjobs?orgId={GUID}`. 72 hosts; unlocks Cleartrip/Flipkart, Ola.
+- **Zwayam / Naukri Talent Cloud** — M. Two-call flow to `public.zwayam.com` (config→base64 companyId→ES `/jobs/search`); native experience years, description needs a detail pass. **The mined `.zwayam.com` hosts are DEAD** — real boards are on custom domains (`careers.persistent.com`, `careers.coforge.com`, `jobs.itcinfotech.com`); discovery is the cost.
+- **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
+- **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
+- Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal. **iCIMS** = opportunistic-only (alive but HTML/JSP-only, non-enumerable, India tenants are GCC boards not IT majors).
 
 Single-company unlocks (web research; a manual slug, not worth a scraper each):
 - **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).
