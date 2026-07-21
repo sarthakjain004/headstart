@@ -33,8 +33,30 @@ HeadStart surfaces job openings read directly from company ATS boards.
   understanding while the constraints come from explicit controls.
 
 ## TODO: ATS providers to add support for
-Discovered via web research / headless rendering on missed companies — the fingerprinter has no
-pattern for these yet, so companies on them are missed (counts = companies seen on each so far):
+
+**Evidence-ranked from host-mining** (2026-07-21; counts = deduped India tenant *hosts* from the
+Common-Crawl + Wayback feeders in `data/scratch/india_ats_hosts.txt` — much stronger signal than
+per-company web research). Full research, endpoint probes, and provenance:
+`experiment/ats-provider-expansion/PLAN.md`.
+- **Freshteam** ✅ DONE (2026-07-21) — `src/headstart/scrapers/freshteam.py`, 1,726 hosts, native
+  `remote` boolean + branch/role joins, one JSON call. Not yet in the discovery slug-probe / active
+  ledger — needs its host list (`experiment/ats-provider-expansion/artifacts/freshteam_tenants.txt`)
+  run through `validate` (liveness) to enter the pipeline. Widget caps at 1000 jobs/tenant.
+- **Zwayam / Naukri Talent Cloud** (`{slug}.zwayam.com`, `{slug}.openings.co`) — Info Edge-owned;
+  named clients Flipkart, Persistent, Coforge, CRISIL, ITC Infotech (tech-heavy). Boards live; the
+  jobs JSON XHR still needs capturing (M effort). Highest strategic value after Freshteam.
+- **PeopleStrong** (`{slug}.peoplestrong.com`, `{slug}-careers.peoplestrong.com`) — **201 hosts**;
+  fingerprinter recognises it but there is **no scraper** — build one (Angular SPA → XHR discovery).
+- **TurboHire** (`{slug}.turbohire.co`, 72 hosts; `api.turbohire.co` exists), **Jobsoid**
+  (`{slug}.jobsoid.com/api/v1/jobs` — verified trivial JSON, 383 hosts but SMB/low-yield),
+  **PyjamaHR** (careers pages live; JSON API not yet captured) — Tier-2, opportunistic.
+- **Enterprise tier (research incomplete, likely biggest India-GCC mass)**: SAP SuccessFactors,
+  Eightfold, Phenom, iCIMS/Taleo — endpoints unverified; probably explain the 316/396 (80%)
+  fingerprint-miss rate. See PLAN.md §4.
+- Verified **dead-ends** (no public boards — do not build): greythr, qandle, beehive (login-only
+  HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal (agency CRMs).
+
+Single-company unlocks (web research; a manual slug, not worth a scraper each):
 - **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).
 - **Skillate** (`{slug}.skillate.com`) — Zetwerk, Ola, Pristyn Care (3).
 - **SenseHQ** (`{slug}.sensehq.com/careers`) — Zetwerk, Capillary (2).
@@ -44,15 +66,7 @@ pattern for these yet, so companies on them are missed (counts = companies seen 
 - **CareerSiteManager** (`{slug}.careersitemanager.com`) — Ecom Express.
 - **ainterviews.com / recruiteecdn** (Recruitee white-label) — Lenskart (`hiring.lenskart.com`).
 
-NB: **PeopleStrong** is already a supported pattern but uses a `{slug}-careers.peoplestrong.com`
-host (Shadowfax) the careers-scan didn't catch — widen that pattern. **Workable** and
-**Recruitee** are now in the slug-probe (`ATS_PROBES`).
-
-Also a known miss *class* (not an ATS gap): **non-derivable slugs** — the board is on a clean ATS
-but the slug is a parent/legal/brand variant the name→slug derivation can't guess: Dream11 →
-`lever:dreamsports`, Zomato → `smartrecruiters:Zomato1`, Razorpay →
-`greenhouse:razorpaysoftwareprivatelimited`. These need the careers-page embed scan (or a manual
-slug), not slug derivation.
+NB: **Workable** and **Recruitee** are now in the slug-probe (`ATS_PROBES`).
 
 Also a known miss *class* (not an ATS gap): **non-derivable slugs** — the board is on a clean ATS
 but the slug is a parent/legal/brand variant the name→slug derivation can't guess: Dream11 →

@@ -1,0 +1,66 @@
+{
+  "jobs": [
+    {
+      "id": 1000070208,
+      "title": "Email Marketing & Lifecycle Automation Specialist (Remote)  ",
+      "description": "<div>📍 <strong>Remote – Work from Anywhere</strong></div><h3>About 12min</h3>",
+      "job_type": 1,
+      "status": 2,
+      "position_level": null,
+      "ctc_details": null,
+      "deleted": false,
+      "created_at": "2025-02-06T19:22:55.000Z",
+      "url": "https://12min.freshteam.com/jobs/OIRN2-kMOAIx/email-marketing-lifecycle-automation-specialist-remote",
+      "unique_id": "OIRN2-kMOAIx",
+      "remote": true,
+      "branch_id": 1000017320,
+      "preferred_remote_job_locations": "Remote, United States of America",
+      "job_role_id": 1000133618
+    },
+    {
+      "id": 1000070300,
+      "title": "Backend Engineer",
+      "description": "<p>Build APIs. 3+ years experience required.</p>",
+      "deleted": false,
+      "created_at": "2026-01-05T10:00:00.000Z",
+      "url": "https://12min.freshteam.com/jobs/AB12-cd/backend-engineer",
+      "unique_id": "AB12-cd",
+      "remote": false,
+      "branch_id": 1000019999,
+      "job_role_id": 1000140000
+    },
+    {
+      "id": 1000070301,
+      "title": "Site Reliability Engineer",
+      "description": "<p>Keep it up.</p>",
+      "deleted": false,
+      "created_at": "2026-01-06T10:00:00.000Z",
+      "url": "https://12min.freshteam.com/jobs/EF34-gh/sre",
+      "unique_id": "EF34-gh",
+      "remote": false,
+      "branch_id": 1000018888,
+      "job_role_id": 1000140000
+    },
+    {
+      "id": 1000070302,
+      "title": "Closed Role",
+      "description": "<p>gone</p>",
+      "deleted": true,
+      "created_at": "2025-01-01T10:00:00.000Z",
+      "url": "https://12min.freshteam.com/jobs/ZZ99-xx/closed",
+      "unique_id": "ZZ99-xx",
+      "remote": false,
+      "branch_id": 1000017320,
+      "job_role_id": 1000133618
+    }
+  ],
+  "branches": [
+    {"id": 1000017320, "city": "Belo Horizonte", "state": null, "country_code": "BR", "currency": "USD", "location": "Belo Horizonte, Brazil"},
+    {"id": 1000019999, "city": "Bengaluru", "state": "Karnataka", "country_code": "IN", "currency": "INR", "location": "Bengaluru, India"},
+    {"id": 1000018888, "city": "Remote", "state": null, "country_code": "IN", "currency": "INR", "location": "Remote - India"}
+  ],
+  "job_roles": [
+    {"id": 1000133618, "name": "Marketing", "deleted": false},
+    {"id": 1000140000, "name": "Engineering", "deleted": false}
+  ]
+}
