@@ -38,8 +38,12 @@ default 8,000 — a rotating slice, whole live set covered ~weekly) → `filter/
 add/evict) → `compact_index.py` → upload both state dirs → `restart_space`. A `concurrency` group
 serializes runs so two never race on the dataset.
 
-`.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` to the Space on
-any main push touching that dir (plus manual dispatch).
+`.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
+`src/headstart/geo.py`, copied in — ADR-0024) to the Space on any main push touching those paths
+(plus manual dispatch). **Never let tooling call `create_repo` on the Space** — HF now answers
+Docker-Space create attempts with a `402 Payment Required` (new free Docker Spaces are PRO-only;
+ours predates the policy and keeps running). The `hf upload` CLI pre-creates and so 402s; use
+`HfApi().upload_folder(...)` against the existing repo, as the workflow does (2026-07-20, PR #44).
 
 ## Auth: who holds which token
 

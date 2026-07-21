@@ -34,5 +34,17 @@ jobs:
           # the India gazetteer lives in src/headstart (single source of truth, unit-tested
           # there); the standalone Space app imports it as a sibling module
           cp src/headstart/geo.py deploy/hf-space/geo.py
-          hf upload imPoseidon/headstart-search deploy/hf-space . --repo-type space \
-            --commit-message "deploy: sync Space from repo ${GITHUB_SHA::7}"
+          # upload_folder, not `hf upload`: the CLI pre-creates the repo, and HF now answers
+          # Docker-Space creates with a 402 paywall (new free Docker Spaces are PRO-only).
+          # Ours exists and keeps running — targeting it directly needs no create call.
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          HfApi().upload_folder(
+              folder_path="deploy/hf-space",
+              repo_id="imPoseidon/headstart-search",
+              repo_type="space",
+              commit_message=f"deploy: sync Space from repo {os.environ['GITHUB_SHA'][:7]}",
+          )
+          PY
