@@ -74,12 +74,6 @@ but the slug is a parent/legal/brand variant the name→slug derivation can't gu
 `greenhouse:razorpaysoftwareprivatelimited`. These need the careers-page embed scan (or a manual
 slug), not slug derivation.
 
-Also a known miss *class* (not an ATS gap): **non-derivable slugs** — the board is on a clean ATS
-but the slug is a parent/legal/brand variant the name→slug derivation can't guess: Dream11 →
-`lever:dreamsports`, Zomato → `smartrecruiters:Zomato1`, Razorpay →
-`greenhouse:razorpaysoftwareprivatelimited`. These need the careers-page embed scan (or a manual
-slug), not slug derivation.
-
 ## Tactical Rules
 
 ### 1. Think Before Coding

@@ -485,6 +485,19 @@ def p_teamtailor(t, u):
     )
 
 
+def p_freshteam(t, u):
+    # The public careers widget: a real board always returns JSON with a "jobs" key (0 == live but
+    # empty). An unknown/parked slug soft-errors at HTTP 200 with an HTML 404 page off the
+    # *.freshteam.com wildcard (so it never 404s / DNS-fails) — non-JSON at 200 is definitively DEAD.
+    status, body = _get(f"https://{t}.freshteam.com/hire/widgets/jobs.json")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    n = _len_of(body, "jobs")
+    return (LIVE, n) if n is not None else (DEAD, None)
+
+
 def p_rippling(t, u):
     return _classify(
         f"https://api.rippling.com/platform/api/ats/v1/board/{t}/jobs",
@@ -557,6 +570,7 @@ PROBES = {
     "trakstar": p_trakstar,
     "personio": p_personio,
     "join": p_join,
+    "freshteam": p_freshteam,
 }
 
 
