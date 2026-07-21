@@ -40,6 +40,15 @@ per-company web research). Full research, endpoint probes, and provenance:
 `experiment/ats-provider-expansion/PLAN.md`.
 - **Freshteam** ✅ DONE (2026-07-21, #45) — `scrapers/freshteam.py`, wired through liveness (818
   live / 579 hiring boards in `data/validate/liveness/freshteam.csv`). Widget caps at 1000/tenant.
+- **SuccessFactors** ✅ DONE (2026-07-21) — `scrapers/successfactors.py` (RMK only), wired through
+  liveness (26 live boards, `data/validate/liveness/successfactors.csv`). Slug = the vanity host.
+  Three listing surfaces, cheapest-first: `/sitemap.xml` urlset of `/job/{id}/` (most tenants) →
+  `/search/?startrow=N` HTML pages (RSS-sitemap tenants whose search works, e.g. SAP) → the patient
+  full RSS stream (Voith/Tetra Pak, whose `/search/` is CSB-rendered). Fields come from a per-job
+  detail pass — JSON-LD `JobPosting` on classic pages, schema.org `<meta itemprop>` microdata +
+  `joblayouttoken` label spans on CSB-rendered ones (Wipro/LTIMindtree/Cipla). **CSB-only tenants
+  (Ericsson-class, DWR-RPC) remain the known gap** — their sitemap isn't RMK-shaped, so liveness
+  marks them `dead` and they're skipped, never mis-scraped.
 
 **Highest ROI first — fingerprinter gaps, ZERO new scraper** (already-supported ATSes whose board
 sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` mining — 79% of the
@@ -52,7 +61,6 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
 
 **New providers — endpoints VERIFIED live 2026-07-21** (full protocols: PLAN.md §4b + `artifacts/research_*.md`):
 - **PyjamaHR** — S, easiest. Open REST no auth: `GET api.pyjamahr.com/api/career/jobs/?company_uuid={UUID}` (+ `/jobs/{id}/?company_uuid=` for description). Native workplace_type + experience + salary.
-- **SuccessFactors** — M. Scrape the legacy **RMK** surface (`{host}/sitemap.xml` RSS + per-job JSON-LD); modern **CSB is DWR-RPC → skip**. India GCCs: Wipro, HCLTech, LTTS, SAP, Volvo, Schaeffler.
 - **Eightfold** — M, best discoverability (`{slug}.eightfold.ai` sweep → `/careers/sitemap.xml` → JSON-LD; the `/api/apply/v2/jobs` XHR is 403-hardened). Qualcomm/NVIDIA/Micron/Vodafone GCCs, ~75-89% tech.
 - **TurboHire** — M, token flow: `/api/token/noauth` (needs Referer) → `POST /api/careerpagev2/filteredjobs?orgId={GUID}`. 72 hosts; unlocks Cleartrip/Flipkart, Ola.
 - **Zwayam / Naukri Talent Cloud** — M. Two-call flow to `public.zwayam.com` (config→base64 companyId→ES `/jobs/search`); native experience years, description needs a detail pass. **The mined `.zwayam.com` hosts are DEAD** — real boards are on custom domains (`careers.persistent.com`, `careers.coforge.com`, `jobs.itcinfotech.com`); discovery is the cost.
