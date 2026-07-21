@@ -402,7 +402,9 @@ def test_freshteam_parse():
     marketing, backend, sre = jobs
     assert marketing.id == "freshteam:12min:1000070208"  # numeric id, not unique_id
     assert marketing.company == "12min"
-    assert marketing.title == "Email Marketing & Lifecycle Automation Specialist (Remote)"
+    assert (
+        marketing.title == "Email Marketing & Lifecycle Automation Specialist (Remote)"
+    )
     assert marketing.location == "Belo Horizonte, Brazil"  # branch_id join
     assert marketing.remote is True  # native remote flag
     assert marketing.department == "Marketing"  # job_role_id join
