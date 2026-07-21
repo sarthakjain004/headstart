@@ -393,6 +393,35 @@ def test_workday_remote_falls_back_to_location():
     assert [j.remote for j in jobs] == [True, False, False]
 
 
+def test_freshteam_parse():
+    jobs = get_scraper("freshteam", "12min", "12min").parse(
+        _load("freshteam_12min.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 3  # the deleted=true job is dropped
+
+    marketing, backend, sre = jobs
+    assert marketing.id == "freshteam:12min:1000070208"  # numeric id, not unique_id
+    assert marketing.company == "12min"
+    assert marketing.title == "Email Marketing & Lifecycle Automation Specialist (Remote)"
+    assert marketing.location == "Belo Horizonte, Brazil"  # branch_id join
+    assert marketing.remote is True  # native remote flag
+    assert marketing.department == "Marketing"  # job_role_id join
+    assert marketing.url.startswith("https://12min.freshteam.com/jobs/")
+    assert marketing.posted_at == "2025-02-06T19:22:55.000Z"
+    assert marketing.description and "</" not in marketing.description  # HTML stripped
+    assert marketing.employment_type is None  # job_type enum left unmapped
+
+    # native remote=false, physical branch -> not remote
+    assert backend.location == "Bengaluru, India" and backend.remote is False
+    # native remote=false but the branch location literally says "Remote" -> both-family recovers it
+    assert sre.location == "Remote - India" and sre.remote is True
+
+
+def test_freshteam_dead_tenant_is_empty():
+    # an unknown slug soft-errors at HTTP 200 with an HTML 404 page (not JSON)
+    assert get_scraper("freshteam", "nope").parse({}, SCRAPED_AT) == []
+
+
 class _FakeResp:
     def __init__(self, status):
         self.status_code = status
