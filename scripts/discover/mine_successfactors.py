@@ -20,9 +20,9 @@ Opaque numeric ids (C0000031808P) can't be resolved by derivation and are report
 CSB-only tenants (their vanity host has no RMK sitemap) simply don't confirm — correct, since the
 CSB DWR surface is out of scope (experiment/successfactors-csb/LOG.md).
 
-Outputs (feeder contract, streamed as work completes):
+Outputs:
   data/discover/sf_csb_companies.csv        ats,company,career_host,captures   (stage 1 universe)
-  data/discover/sf_rmk_candidates.csv       ats,tenant,url,company,source      (stage 2 confirmed)
+  data/discover/sf_rmk_candidates.csv       ats,tenant,url,company,source      (stage 2 confirmed, streamed row-by-row as each board confirms)
 
 Run:  python -u scripts/discover/mine_successfactors.py [--limit N]
 """
@@ -128,14 +128,14 @@ def is_rmk(host: str) -> str | None:
     return None
 
 
-def resolve_rmk(pairs: dict[tuple[str, str], int]) -> list[tuple[str, str]]:
-    """Stage 2: derive + fingerprint. Returns confirmed [(vanity_host, company_id)], first host
-    per company wins. Streams confirmations as they land."""
+def resolve_rmk(pairs: dict[tuple[str, str], int], out_path: Path) -> int:
+    """Stage 2: derive + fingerprint. Writes each confirmed (vanity_host, company_id) to
+    out_path as it lands — header first, then one flushed row per board — so an interrupted
+    run keeps every board found so far. First host per company wins. Returns the count."""
     by_company: dict[str, list[str]] = {}
     for _career_host, cid in pairs:
         by_company.setdefault(cid, []).extend(candidate_hosts(cid))
     # one probe per (company, candidate); stop at the first confirmed host for a company
-    confirmed: dict[str, str] = {}
     tasks = [
         (cid, host)
         for cid, hosts in by_company.items()
@@ -145,16 +145,22 @@ def resolve_rmk(pairs: dict[tuple[str, str], int]) -> list[tuple[str, str]]:
         f"  [stage2] {len(by_company)} name-like companies -> {len(tasks)} host probes",
         flush=True,
     )
-    with ThreadPoolExecutor(max_workers=24) as ex:
-        futs = {ex.submit(is_rmk, host): (cid, host) for cid, host in tasks}
-        for fut in as_completed(futs):
-            cid, host = futs[fut]
-            if cid in confirmed:
-                continue
-            if fut.result():
-                confirmed[cid] = host
+    confirmed: set[str] = set()
+    with out_path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["ats", "tenant", "url", "company", "source"])
+        f.flush()
+        with ThreadPoolExecutor(max_workers=24) as ex:
+            futs = {ex.submit(is_rmk, host): (cid, host) for cid, host in tasks}
+            for fut in as_completed(futs):
+                cid, host = futs[fut]
+                if cid in confirmed or not fut.result():
+                    continue
+                confirmed.add(cid)
+                w.writerow(["successfactors", host, host, cid, "wayback-csb-resolve"])
+                f.flush()
                 print(f"    ✓ {cid:<20} -> {host}", flush=True)
-    return sorted(confirmed.items(), key=lambda kv: kv[1])
+    return len(confirmed)
 
 
 def main() -> None:
@@ -178,15 +184,10 @@ def main() -> None:
     )
 
     print("\nstage 2: resolving name-like ids to RMK vanity hosts", flush=True)
-    confirmed = resolve_rmk(pairs)
     cand = OUT / "sf_rmk_candidates.csv"
-    with cand.open("w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["ats", "tenant", "url", "company", "source"])
-        for cid, host in confirmed:
-            w.writerow(["successfactors", host, host, cid, "wayback-csb-resolve"])
+    n_confirmed = resolve_rmk(pairs, cand)
     print(
-        f"\nDONE. {len(confirmed)} RMK boards confirmed from the mined universe -> {cand}",
+        f"\nDONE. {n_confirmed} RMK boards confirmed from the mined universe -> {cand}",
         flush=True,
     )
 
