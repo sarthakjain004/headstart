@@ -715,3 +715,16 @@ def test_successfactors_page_fields_csb_meta_microdata():
         "<span>25 Jun 2026 </span>"
     )
     assert _csb_posted_at(label_page) == "2026-06-25"
+
+
+def test_successfactors_location_from_careersite_property():
+    from headstart.scrapers.successfactors import _csb_location
+
+    # the location value wrapped in a nested <p> (Novo Nordisk / SKF shape): the label-value
+    # regex captures only whitespace, so the data-careersite-propertyid="location" text wins
+    page = (
+        '<span class="joblayouttoken-label">Location: </span>'
+        '<span data-careersite-propertyid="location" class="rtltextaligneligible">'
+        '<p id="job-location" class="jobLocation">Durham, NC, US</p></span>'
+    )
+    assert _csb_location(page) == "Durham, NC, US"

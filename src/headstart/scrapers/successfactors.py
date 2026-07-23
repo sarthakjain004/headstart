@@ -371,9 +371,28 @@ def _meta_itemprop(page: str, prop: str) -> str | None:
     return value or None
 
 
+def _careersite_prop(page: str, prop: str) -> str | None:
+    """The tags-stripped text of a ``data-careersite-propertyid="{prop}"`` element — RMK's
+    canonical single-field value. It wins over the label spans because many boards wrap the value
+    in a nested element (``<span ...><p id="job-location">Durham, NC, US</p></span>``), where a
+    plain label-value regex captures only the whitespace before the nested tag."""
+    match = re.search(
+        rf'data-careersite-propertyid="{prop}"[^>]*>(.*?)</span>', page, re.S
+    )
+    if not match:
+        return None
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", match.group(1))).strip()
+    return unescape(text) or None
+
+
 def _csb_location(page: str) -> str | None:
-    # Label spans first — they carry full names ("Sikkim, India") where the microdata metas
-    # hold truncated ones ("Sikk", "In") — falling back to the metas field by field.
+    # The single ``location`` property (tags stripped) is the most reliable when present — it
+    # holds the whole "City, Region, Country" even when wrapped in nested markup.
+    prop = _careersite_prop(page, "location")
+    if prop:
+        return prop
+    # else assemble from the city/state/country label spans (full names like "Sikkim, India"),
+    # falling back field-by-field to the microdata metas (which hold truncated "Sikk"/"In").
     parts = [
         _label_value(page, "City:", "Location:")
         or _meta_itemprop(page, "addressLocality"),
