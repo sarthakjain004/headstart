@@ -1,0 +1,33 @@
+[
+  {
+    "id": "893395145771",
+    "url": "https://jobs.nvidia.com/careers/job/893395145771",
+    "fields": {
+      "title": "Senior Memory Mask Design Engineer",
+      "description": "<p>Design memory masks for next-gen GPUs.</p>",
+      "location": "Bengaluru, Karnataka, India",
+      "posted_at": "2026-05-15",
+      "employment_type": null,
+      "department": "Silicon Engineering",
+      "remote": false
+    }
+  },
+  {
+    "id": "111111",
+    "url": "https://jobs.nvidia.com/careers/job/111111",
+    "fields": {
+      "title": "Remote ML Engineer",
+      "description": null,
+      "location": null,
+      "posted_at": null,
+      "employment_type": null,
+      "department": null,
+      "remote": true
+    }
+  },
+  {
+    "id": "222222",
+    "url": "https://jobs.nvidia.com/careers/job/222222",
+    "fields": null
+  }
+]

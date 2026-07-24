@@ -728,3 +728,93 @@ def test_successfactors_location_from_careersite_property():
         '<p id="job-location" class="jobLocation">Durham, NC, US</p></span>'
     )
     assert _csb_location(page) == "Durham, NC, US"
+
+
+def test_eightfold_parse():
+    # the normalized record shape both the PCSX-API and sitemap paths feed into parse()
+    jobs = get_scraper("eightfold", "jobs.nvidia.com", "NVIDIA").parse(
+        _load("eightfold_pages.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2  # the fields=None item (unreadable) is dropped
+    j = jobs[0]
+    assert j.id == "eightfold:jobs.nvidia.com:893395145771"
+    assert j.ats == "eightfold"
+    assert j.company == "NVIDIA"
+    assert j.title == "Senior Memory Mask Design Engineer"
+    assert j.location == "Bengaluru, Karnataka, India"
+    assert j.remote is False
+    assert j.department == "Silicon Engineering"  # the PCSX API supplies department
+    assert j.url == "https://jobs.nvidia.com/careers/job/893395145771"
+    assert j.posted_at == "2026-05-15"
+    assert j.description == "Design memory masks for next-gen GPUs."
+    assert (
+        jobs[1].remote is True
+    )  # remote flag survives a null location + missing description
+
+
+def test_eightfold_api_field_helpers():
+    from headstart.scrapers.eightfold import (
+        _first_location,
+        _remote_from,
+        _ts_to_iso,
+    )
+
+    assert _ts_to_iso("1784592000") == "2026-07-21"  # unix seconds (string) -> ISO date
+    assert _ts_to_iso(1784592000) == "2026-07-21"  # or int
+    assert (
+        _ts_to_iso(0) is None and _ts_to_iso(None) is None and _ts_to_iso("x") is None
+    )
+    assert _remote_from("onsite") is False
+    assert _remote_from("Remote") is True
+    assert _remote_from("hybrid") is None  # neither -> defer to the location signal
+    assert _first_location(["Bangalore, India", "Pune, India"]) == "Bangalore, India"
+    assert _first_location([]) is None and _first_location(None) is None
+
+
+def test_eightfold_jobposting_fallback():
+    # the sitemap-fallback path parses the job page's JSON-LD
+    from headstart.scrapers.eightfold import _jobposting, _sitemap_position_id
+
+    page = """<html><head><script type="application/ld+json">
+    {"@context": "http://schema.org", "@type": "JobPosting",
+     "title": "Senior ASIC Design Verification Engineer",
+     "datePosted": "2026-06-02T00:00:00", "employmentType": "FULL_TIME",
+     "description": "<p>Verify ASICs.</p>",
+     "jobLocation": [{"@type": "Place", "address": {"@type": "PostalAddress",
+       "addressLocality": "Hyderabad", "addressRegion": "Telangana,IN",
+       "addressCountry": {"@type": "Country", "name": "IN"}}}]}
+    </script></head></html>"""
+    f = _jobposting(page)
+    assert f["title"] == "Senior ASIC Design Verification Engineer"
+    # region already carries the country ("Telangana,IN"); duplicate country part deduped
+    assert f["location"] == "Hyderabad, Telangana,IN"
+    assert f["posted_at"] == "2026-06-02T00:00:00"
+    assert f["employment_type"] == "FULL_TIME"
+    assert f["department"] is None  # not in the JSON-LD (only the API path has it)
+    assert (
+        _sitemap_position_id(
+            "https://x/careers/job/41979677-senior-asic-verification-hyderabad?domain=micron.com"
+        )
+        == "41979677"
+    )
+    assert _jobposting("<html>no ld</html>") is None
+
+
+def test_eightfold_sitemap_index_and_job_urls():
+    from headstart.scrapers.eightfold import _JOB_LOC, _CHILD_SITEMAP, _dedupe
+
+    index = """<sitemapindex><sitemap><loc>https://h/careers/sitemap1.xml</loc></sitemap>
+    <sitemap><loc>https://h/careers/sitemap_cat.xml</loc></sitemap></sitemapindex>"""
+    children = [c for c in _CHILD_SITEMAP.findall(index) if "index" not in c.lower()]
+    assert children == [
+        "https://h/careers/sitemap1.xml",
+        "https://h/careers/sitemap_cat.xml",
+    ]
+    body = """<urlset>
+    <url><loc>https://h/careers/job/1-a-pune-india?domain=x.com</loc></url>
+    <url><loc>https://h/careers/job/2-b-remote?domain=x.com</loc></url>
+    <url><loc>https://h/careers/job/1-a-pune-india?domain=x.com</loc></url></urlset>"""
+    assert _dedupe(_JOB_LOC.findall(body)) == [
+        "https://h/careers/job/1-a-pune-india?domain=x.com",
+        "https://h/careers/job/2-b-remote?domain=x.com",
+    ]
