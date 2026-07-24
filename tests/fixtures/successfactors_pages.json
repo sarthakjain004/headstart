@@ -1,0 +1,31 @@
+[
+  {
+    "url": "https://jobs.sap.com/job/Bangalore-Machine-Learning-Engineer-Expert-KA-562149/1392118733/",
+    "id": "1392118733",
+    "fields": {
+      "title": "Machine Learning Engineer Expert",
+      "description": "<p>Build and ship ML systems for SAP Labs India.</p>",
+      "location": "Bangalore, KA, IN",
+      "posted_at": "2026-07-01",
+      "employment_type": "FULL_TIME",
+      "remote": null
+    }
+  },
+  {
+    "url": "https://jobs.sap.com/job/Remote-Cloud-Platform-Engineer/1392118800/",
+    "id": "1392118800",
+    "fields": {
+      "title": "Cloud Platform Engineer",
+      "description": "<p>Work from anywhere.</p>",
+      "location": null,
+      "posted_at": null,
+      "employment_type": null,
+      "remote": true
+    }
+  },
+  {
+    "url": "https://jobs.sap.com/job/Gone-Job/1392118900/",
+    "id": "1392118900",
+    "fields": null
+  }
+]
