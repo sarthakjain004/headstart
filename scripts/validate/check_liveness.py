@@ -498,6 +498,53 @@ def p_freshteam(t, u):
     return (LIVE, n) if n is not None else (DEAD, None)
 
 
+_SF_PROBE_CAP = 256 * 1024  # capped stream: RMK RSS feeds trickle at ~30 KB/s
+
+
+def p_successfactors(t, u):
+    # RMK vanity-domain board: /sitemap.xml is either a compact urlset of /job/ URLs or the
+    # Google-jobs RSS feed. The read is a capped stream (the RSS generator trickles, and big
+    # urlsets don't need reading whole), so the jobs count is a lower bound on big boards —
+    # enough for the jobs>=1 "hiring" cut. A 200 that is neither sitemap shape (parked host,
+    # bot-wall, replatformed careers site) means no public RMK board -> DEAD, the
+    # freshteam/zoho soft-404 precedent.
+    try:
+        r = http.session().request(
+            "GET",
+            f"https://{t}/sitemap.xml",
+            headers={"User-Agent": UA},
+            timeout=TIMEOUT,
+            verify=False,
+            stream=True,
+        )
+    except http.RequestsError as e:
+        return (DEAD, None) if _is_dns(e) else (UNKNOWN, None)
+    chunks, size = [], 0
+    try:
+        for chunk in r.iter_content():
+            chunks.append(chunk)
+            size += len(chunk)
+            if size >= _SF_PROBE_CAP:
+                break
+    except http.RequestsError:
+        return (
+            UNKNOWN,
+            None,
+        )  # torn mid-stream (timeout on a trickling feed) -> retry later
+    finally:
+        r.close()
+    if r.status_code in (404, 410):
+        return DEAD, None
+    if r.status_code != 200:
+        return UNKNOWN, None
+    text = b"".join(chunks).decode("utf-8", "replace")
+    if "base.google.com/ns/1.0" in text or "<rss" in text:
+        return LIVE, text.count("<item>")
+    if "<urlset" in text:
+        return LIVE, text.count("/job/")
+    return DEAD, None
+
+
 def p_rippling(t, u):
     return _classify(
         f"https://api.rippling.com/platform/api/ats/v1/board/{t}/jobs",
@@ -571,6 +618,7 @@ PROBES = {
     "personio": p_personio,
     "join": p_join,
     "freshteam": p_freshteam,
+    "successfactors": p_successfactors,
 }
 
 

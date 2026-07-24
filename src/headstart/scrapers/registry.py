@@ -17,6 +17,7 @@ from headstart.scrapers.ripplehire import RippleHireScraper
 from headstart.scrapers.rippling import RipplingScraper
 from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.teamtailor import TeamtailorScraper
 from headstart.scrapers.trakstar import TrakstarScraper
 from headstart.scrapers.workable import WorkableScraper
@@ -45,6 +46,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         JoinScraper,
         RipplingScraper,
         FreshteamScraper,
+        SuccessFactorsScraper,
     )
 }
 

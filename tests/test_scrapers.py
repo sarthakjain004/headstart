@@ -593,3 +593,138 @@ def test_darwinbox_iso_date():
     assert _iso_date(1706918400000) == "2024-02-03"  # epoch ms
     assert _iso_date(1706918400) == "2024-02-03"  # epoch seconds
     assert _iso_date(0) is None  # falsy -> unknown, not 1970
+
+
+def test_successfactors_parse():
+    jobs = get_scraper("successfactors", "jobs.sap.com", "SAP").parse(
+        _load("successfactors_pages.json"), SCRAPED_AT
+    )
+    assert len(jobs) == 2  # the fields=None item (failed detail fetch) is dropped
+    ml = jobs[0]
+    assert ml.id == "successfactors:jobs.sap.com:1392118733"
+    assert ml.ats == "successfactors"
+    assert ml.company == "SAP"
+    assert ml.title == "Machine Learning Engineer Expert"
+    assert ml.location == "Bangalore, KA, IN"
+    assert ml.remote is False  # no TELECOMMUTE, location not remote
+    assert ml.url.startswith("https://jobs.sap.com/job/")
+    assert ml.posted_at == "2026-07-01"
+    assert ml.employment_type == "FULL_TIME"
+    assert ml.description == "Build and ship ML systems for SAP Labs India."
+    assert jobs[1].remote is True  # JSON-LD TELECOMMUTE wins over the null location
+
+
+def test_successfactors_company_derived_from_host():
+    # the ledger only knows the vanity host; the display name derives from it
+    assert get_scraper("successfactors", "jobs.sap.com").company == "sap"
+    assert get_scraper("successfactors", "jobsearch.alstom.com").company == "alstom"
+    assert get_scraper("successfactors", "jobdetails.nestle.com").company == "nestle"
+    assert get_scraper("successfactors", "careers.payu.in").company == "payu"
+    # an explicit name always wins
+    assert get_scraper("successfactors", "jobs.sap.com", "SAP").company == "SAP"
+
+
+def test_successfactors_job_urls_from():
+    from headstart.scrapers.successfactors import _job_urls_from
+
+    text = """
+    <loc>https://jobs.birlasoft.com/job/Pune-Data-Architect-%28Snowflake-&amp;-Databricks%29-INDI/57210344/</loc>
+    <a class="jobTitle-link" href="/job/Pune-OTM-Consultant-INDI/57254244/">OTM Consultant</a>
+    <a href="/job/Pune-OTM-Consultant-INDI/57254244/">dupe of the same posting</a>
+    """
+    pairs = _job_urls_from(text, "jobs.birlasoft.com")
+    assert pairs == [
+        (
+            "https://jobs.birlasoft.com/job/Pune-Data-Architect-%28Snowflake-&-Databricks%29-INDI/57210344/",
+            "57210344",
+        ),
+        (
+            "https://jobs.birlasoft.com/job/Pune-OTM-Consultant-INDI/57254244/",
+            "57254244",
+        ),
+    ]
+
+
+def test_successfactors_page_fields_jsonld():
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = """<html><head><script type="application/ld+json">
+    {"@context": "http://schema.org", "@type": "JobPosting",
+     "title": "Senior Software Engineer",
+     "datePosted": "2026-07-10",
+     "employmentType": "FULL_TIME",
+     "description": "<p>Ship backend services.</p>",
+     "jobLocation": {"@type": "Place", "address": {"@type": "PostalAddress",
+       "addressLocality": "Pune", "addressRegion": "MH", "addressCountry": "IN"}}}
+    </script></head><body></body></html>"""
+    fields = _page_fields(page)
+    assert fields["title"] == "Senior Software Engineer"
+    assert fields["location"] == "Pune, MH, IN"
+    assert fields["posted_at"] == "2026-07-10"
+    assert fields["employment_type"] == "FULL_TIME"
+    assert fields["description"] == "<p>Ship backend services.</p>"
+
+
+def test_successfactors_page_fields_csb():
+    from headstart.scrapers.successfactors import _page_fields
+
+    # the CSB-rendered shape (Wipro/Voith): no JSON-LD; microdata + joblayouttoken labels
+    page = """<html><head><title>Lead Data Scientist Job Details | Wipro Limited</title>
+    <meta property="og:title" content="Lead Data Scientist" /></head><body>
+    <span class="joblayouttoken-label" role="heading">City: </span>
+    <span xml:lang="en-US" class="rtltextaligneligible">Mississauga </span>
+    <span class="joblayouttoken-label" role="heading">State/Province: </span>
+    <span xml:lang="en-US" class="rtltextaligneligible">Ontario </span>
+    <span class="joblayouttoken-label" role="heading">Posting Start Date: </span>
+    <span xml:lang="en-US" class="rtltextaligneligible">6/29/26 </span>
+    <span xml:lang="en-US" lang="en-US" itemprop="title" class="rtltextaligneligible">Lead Data Scientist </span>
+    <span itemprop="description" class="rtltextaligneligible">short teaser</span>
+    <span itemprop="description" class="rtltextaligneligible"><div><p><strong>Role:</strong>
+    ML with <span>Python</span> and SQL.</p></div></span>
+    </body></html>"""
+    fields = _page_fields(page)
+    assert fields["title"] == "Lead Data Scientist"
+    assert fields["location"] == "Mississauga, Ontario"
+    assert fields["posted_at"] == "2026-06-29"
+    # the longest itemprop=description block wins (teaser vs full description), and the
+    # tag-matching walk keeps the nested span inside it
+    assert "Python" in fields["description"] and "teaser" not in fields["description"]
+
+
+def test_successfactors_page_fields_csb_meta_microdata():
+    from headstart.scrapers.successfactors import _page_fields
+
+    # the LTIMindtree-style shape: no JSON-LD, no location/date labels — the JobPosting
+    # schema lives in <meta itemprop> microdata (Java Date.toString for datePosted)
+    page = """<html><head><title>Senior Software Engineer Job Details | LTM</title></head>
+    <body><span itemprop="jobLocation" itemscope><span itemprop="address" itemscope>
+    <meta itemprop="addressLocality" content="Brazil"><meta itemprop="addressRegion" content="SP">
+    <meta itemprop="addressCountry" content="BR"></span></span>
+    <meta itemprop="datePosted" content="Tue Jul 21 02:00:00 UTC 2026">
+    <span itemprop="title">Senior Software Engineer</span>
+    <span itemprop="description"><p>Build things.</p></span></body></html>"""
+    fields = _page_fields(page)
+    assert fields["title"] == "Senior Software Engineer"
+    assert fields["location"] == "Brazil, SP, BR"
+    assert fields["posted_at"] == "2026-07-21"
+    # "25 Jun 2026"-style label dates parse too
+    from headstart.scrapers.successfactors import _csb_posted_at
+
+    label_page = (
+        '<span class="joblayouttoken-label">Posting Date: </span>'
+        "<span>25 Jun 2026 </span>"
+    )
+    assert _csb_posted_at(label_page) == "2026-06-25"
+
+
+def test_successfactors_location_from_careersite_property():
+    from headstart.scrapers.successfactors import _csb_location
+
+    # the location value wrapped in a nested <p> (Novo Nordisk / SKF shape): the label-value
+    # regex captures only whitespace, so the data-careersite-propertyid="location" text wins
+    page = (
+        '<span class="joblayouttoken-label">Location: </span>'
+        '<span data-careersite-propertyid="location" class="rtltextaligneligible">'
+        '<p id="job-location" class="jobLocation">Durham, NC, US</p></span>'
+    )
+    assert _csb_location(page) == "Durham, NC, US"
