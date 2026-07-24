@@ -25,11 +25,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
-from heapq import heapify, heapreplace
 from pathlib import Path
 
+from headstart.binpack import lpt_pack, shard_count  # noqa: F401 (lpt_pack re-exported for tests)
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
 from headstart.embed_prep import (
@@ -89,37 +88,6 @@ def _token_lengths(tok, docs: list[str]) -> list[int]:
             f"[plan] tokenized {len(lengths)}/{len(docs)}", file=sys.stderr, flush=True
         )
     return lengths
-
-
-def shard_count(
-    total_cost: float, n_docs: int, max_shards: int, target_seconds: float
-) -> int:
-    """How many shards to spin: enough that each is ~``target_seconds``, clamped to [1, max_shards]
-    when there's work (0 when there isn't). A big backlog saturates the lanes; a small day-run
-    collapses to one shard — no spinning 15 VMs to embed a handful of Docs apiece."""
-    if n_docs == 0:
-        return 0
-    return max(1, min(max_shards, math.ceil(total_cost / target_seconds)))
-
-
-def lpt_pack(costs: list[float], m: int) -> tuple[list[int], list[float]]:
-    """Longest-Processing-Time bin-pack: return (shard-index per item, per-shard load).
-
-    Sort items by cost descending, then hand each to the currently least-loaded shard (a min-heap
-    of ``(load, shard)``). Heavy-first is what keeps the makespan (the slowest shard) tight on a
-    heavy-tailed cost distribution — a 4/3-approximation of the optimal, versus round-robin's
-    reliable straggler."""
-    order = sorted(range(len(costs)), key=lambda i: costs[i], reverse=True)
-    heap = [(0.0, k) for k in range(m)]
-    heapify(heap)
-    assign = [0] * len(costs)
-    loads = [0.0] * m
-    for i in order:
-        load, k = heap[0]
-        assign[i] = k
-        loads[k] = load + costs[i]
-        heapreplace(heap, (loads[k], k))
-    return assign, loads
 
 
 def _write_plan(

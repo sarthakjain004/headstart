@@ -19,18 +19,34 @@ Run:  python scripts/scrape/nightly_harvest.py --max-boards 8000
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
 
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import load_active_companies
+from headstart.config import CompanyRef, load_active_companies
 from headstart.pipeline import scrape_all
 
 ROOT = Path(__file__).resolve().parents[2]
 _LEDGER = ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = ROOT / "data" / "jobs"
 _PRIORITY = ROOT / "data" / "state" / "board_priority.csv"
+
+
+def _read_assignment(path: Path) -> list[CompanyRef]:
+    """A planner-built board list (JSONL of ``{ats, slug, name}``) — the shard's exact scope."""
+    companies: list[CompanyRef] = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            companies.append(
+                CompanyRef(ats=r["ats"], slug=r["slug"], name=r.get("name"))
+            )
+    return companies
 
 
 def main() -> int:
@@ -41,21 +57,43 @@ def main() -> int:
         default=8000,
         help="boards to scrape this run (0 = all live boards)",
     )
+    ap.add_argument(
+        "--assignment",
+        help="scrape a planner-built board list (JSONL of {ats,slug,name}) instead of "
+        "selecting a slice — the scrape-shard mode (ADR-0026)",
+    )
+    ap.add_argument(
+        "--outdir",
+        default=str(_JOBS_DIR),
+        help="output dir (default: data/jobs; a scrape shard writes its own fragment)",
+    )
     args = ap.parse_args()
 
-    companies = load_active_companies(_LEDGER, min_jobs=0)
-    scores = load_scores(_PRIORITY)
-    companies = pick_boards(companies, scores, args.max_boards)
-    priority = sum(1 for c in companies if scores.get(f"{c.ats}:{c.slug}", 0.0) > 0.0)
-    print(
-        f"harvest: {len(companies)} boards this run "
-        f"({priority} priority + {len(companies) - priority} exploration)",
-        file=sys.stderr,
-        flush=True,
-    )
+    if (
+        args.assignment
+    ):  # ADR-0026 scrape-shard mode — the planner already selected these boards
+        companies = _read_assignment(Path(args.assignment))
+        print(
+            f"harvest: {len(companies)} boards from {args.assignment} (shard)",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        companies = load_active_companies(_LEDGER, min_jobs=0)
+        scores = load_scores(_PRIORITY)
+        companies = pick_boards(companies, scores, args.max_boards)
+        priority = sum(
+            1 for c in companies if scores.get(f"{c.ats}:{c.slug}", 0.0) > 0.0
+        )
+        print(
+            f"harvest: {len(companies)} boards this run "
+            f"({priority} priority + {len(companies) - priority} exploration)",
+            file=sys.stderr,
+            flush=True,
+        )
 
     start = time.monotonic()
-    result = scrape_all(companies, jobs_dir=_JOBS_DIR, progress_every=200)
+    result = scrape_all(companies, jobs_dir=Path(args.outdir), progress_every=200)
     elapsed = time.monotonic() - start
     print(
         f"done: {result.unique} jobs from {result.boards} boards in {elapsed:0.0f}s "
