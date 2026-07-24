@@ -1,0 +1,103 @@
+name: pipeline-smoke
+
+# End-to-end smoke for the sharded embed path (ADR-0025 Phase 1), on a tiny synthetic corpus with
+# the real encoder — no HF_TOKEN, no production state. It proves the two things unit tests can't:
+#   1. the sharded path (plan → embed --assignment → merge) yields the SAME vectors as the monolith;
+#   2. the merged store syncs into a real LanceDB index.
+# Runs on demand and when the sharded path changes.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/embed/embed_jobs.py"
+      - "scripts/pipeline/**"
+      - "src/headstart/embed_prep.py"
+      - ".github/workflows/pipeline-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[embed]"
+      - name: Cache the embedding model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-nomic-embed-text-v1.5
+      - name: Build a tiny synthetic tech corpus (varied lengths → several buckets)
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          base = "We build and operate large scale distributed backend systems in Python and Go. "
+          jobs = []
+          for i in range(10):
+              reps = 1 if i < 6 else (40 if i < 8 else 120)  # short / medium / long descriptions
+              jobs.append({
+                  "id": f"lever:acme:{i}", "ats": "lever", "company": "Acme",
+                  "title": f"Senior Software Engineer {i}", "location": "Remote", "remote": True,
+                  "employment_type": "full-time", "experience": None, "salary": None,
+                  "department": "Engineering", "url": f"https://jobs.lever.co/acme/{i}",
+                  "posted_at": "2026-07-01", "description": base * reps,
+              })
+          body = "\n".join(json.dumps(j) for j in jobs) + "\n"
+          for p in ("data/jobs/tech/lever.jsonl", "data/jobs/lever.jsonl"):
+              path = pathlib.Path(p); path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(body, encoding="utf-8")
+          print("wrote 10 synthetic jobs")
+          PY
+      - name: Monolith embed (the baseline to match)
+        run: python scripts/embed/embed_jobs.py --source data/jobs/tech --outdir data/embeddings/mono
+      - name: Plan the fan-out (no prior store → all new; forced multi-shard)
+        run: python scripts/pipeline/plan_embed.py --max-shards 3 --target-seconds 20
+      - name: Embed each shard (real encoder, --assignment mode)
+        run: |
+          for f in data/embeddings/assignments/shard-*.jsonl; do
+            k=$(basename "$f" .jsonl | sed 's/shard-//')
+            echo "::group::shard $k"
+            python scripts/embed/embed_jobs.py --assignment "$f" --outdir "data/embeddings/fragments/shard-$k"
+            echo "::endgroup::"
+          done
+      - name: Merge the fragments into the store
+        run: python scripts/pipeline/merge_shards.py
+      - name: Assert sharded == monolith (same ids, same vectors)
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          import numpy as np
+
+          def load(d):
+              d = pathlib.Path(d)
+              dim = json.loads((d / "manifest.json").read_text())["dim"]
+              metas = [json.loads(x) for x in (d / "meta.jsonl").read_text().splitlines() if x.strip()]
+              vecs = np.fromfile(d / "embeddings.f32", dtype="float32").reshape(-1, dim)
+              return {m["id"]: vecs[i] for i, m in enumerate(metas)}
+
+          mono = load("data/embeddings/mono")
+          shard = load("data/embeddings/jobs")
+          assert len(mono) == 10, f"monolith embedded {len(mono)}, expected 10"
+          assert set(mono) == set(shard), f"id set differs: {set(mono) ^ set(shard)}"
+          for k in mono:
+              assert np.allclose(mono[k], shard[k], atol=1e-4), f"vector differs for {k}"
+          print(f"OK: {len(shard)} ids, sharded vectors match the monolith")
+          PY
+      - name: Sync the merged store into a real index
+        run: python scripts/embed/sync_index.py
+      - name: Assert the index holds every job
+        run: |
+          python - <<'PY'
+          import lancedb
+          from headstart.search import PROD_TABLE
+          t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
+          n = t.count_rows()
+          assert n == 10, f"index has {n} rows, expected 10"
+          print(f"OK: index synced with {n} rows")
+          PY

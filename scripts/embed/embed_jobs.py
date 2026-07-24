@@ -8,7 +8,15 @@ L2-normalized vectors. Structured fields ride alongside as metadata, never embed
 the required-experience numbers (``min_years`` / ``max_years`` / ``experience_source``) are
 computed inline into the metadata via ``experience.extract`` (ADR-0019 — no separate enrich join).
 
-Output under ``data/embeddings/jobs/``:
+Two run modes:
+- Default / ``--resume`` — self-select the delta from the corpus (skip ids already in
+  ``meta.jsonl``), English-gate, tokenize, bucket, and embed into ``data/embeddings/jobs/``.
+- ``--assignment <file>`` — embed a planner-built shard (a JSONL of ``{doc, bucket, meta}``)
+  into a fresh ``--outdir`` fragment (ADR-0025). The planner already did the dedup, English gate,
+  doc build, metadata, and tokenization, so a shard is stateless: no corpus, no prior store. The
+  doc-prep those two modes must agree on lives in ``headstart.embed_prep`` (re-exported below).
+
+Output under ``data/embeddings/jobs/`` (or ``--outdir``):
 - ``embeddings.f32`` — raw float32 vectors, row-major, appended as each batch finishes.
   Load with ``np.fromfile("embeddings.f32", dtype="float32").reshape(-1, dim)`` (``dim`` in manifest).
 - ``meta.jsonl`` — one metadata record per vector, row-aligned with the vectors; the authority for resume.
@@ -23,33 +31,30 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
-from langdetect import DetectorFactory, LangDetectException, detect
 from sentence_transformers import SentenceTransformer
 
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.experience import extract
+from headstart.embed_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
+    _BUCKETS,
+    _MAX_SEQ_TOKENS,
+    bucket_for,
+    build_doc,
+    is_english,
+    to_meta,
+)
 from headstart.search import DOC_PREFIX, MODEL
-
-DetectorFactory.seed = 0  # make langdetect deterministic
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SOURCE = _ROOT / "data" / "jobs" / "tech"
 _OUTDIR = _ROOT / "data" / "embeddings" / "jobs"
 _PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
-
-_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
-_MD_SYNTAX = re.compile(
-    r"[*`#>]+"
-)  # emphasis / heading / quote markers (keep `_`: tech terms)
-_WS = re.compile(r"\s+")
 
 _FLOAT_BYTES = 4  # float32
 
@@ -72,18 +77,10 @@ _FLOAT_BYTES = 4  # float32
 # doc transiently demands ~50 GB on this stack. 4,096 is inside the envelope the Wellfound run
 # proved safe, and only ~0.01% of tech-corpus docs are longer (their boilerplate tails get
 # truncated). This consciously narrows ADR-0005's "no truncation" to "up to 4k tokens".
+# _BUCKETS / _MAX_SEQ_TOKENS moved to headstart.embed_prep (shared with the planner); the
+# batch-sizing budget below is encode-side and stays here.
 _ATTN_BUDGET = 128_000_000  # tokens²; ~2/3 of the observed 8 × 4800² ≈ 9 GB anchor
-_BUCKETS = (512, 1024, 2048, 4096)
-_MAX_SEQ_TOKENS = _BUCKETS[-1]
 _BATCH_CAP = 32
-
-
-def bucket_for(n_tokens: int) -> int:
-    """The smallest bucket that holds a doc of ``n_tokens`` (over-cap docs go to the top one)."""
-    for bucket in _BUCKETS:
-        if n_tokens <= bucket:
-            return bucket
-    return _BUCKETS[-1]
 
 
 def batch_size_for(bucket: int, budget: int = _ATTN_BUDGET) -> int:
@@ -118,61 +115,6 @@ def make_pin_doc(tokenizer, bucket: int) -> str:
         doc += "a " * (bucket - n)
         n = measure(doc)
     return doc
-
-
-# The canonical typed metadata that rides next to each vector (ADR-0007); the corpus reader
-# already yields canonical Job dicts, so this is pure selection — no per-source adapting.
-_META_FIELDS = (
-    "id",
-    "ats",
-    "company",
-    "title",
-    "location",
-    "remote",
-    "employment_type",
-    "experience",
-    "salary",
-    "department",
-    "url",
-    "posted_at",
-)
-
-
-def clean_markdown(text: str) -> str:
-    """Strip markdown syntax to plain text and collapse whitespace."""
-    text = _MD_LINK.sub(r"\1", text)
-    text = _MD_SYNTAX.sub(" ", text)
-    return _WS.sub(" ", text).strip()
-
-
-def is_english(title: str, description: str) -> bool:
-    """English gate. Detect on title + a description sample (full text is needless and slow)."""
-    try:
-        return detect(f"{title} {description[:500]}") == "en"
-    except LangDetectException:
-        return False  # undetectable -> held out of the English index
-
-
-def build_doc(job: dict) -> str:
-    title = (job.get("title") or "").strip()
-    body = clean_markdown(job.get("description") or "")
-    return f"{DOC_PREFIX}{title}\n\n{body}"
-
-
-def to_meta(job: dict) -> dict:
-    """Canonical typed metadata (ADR-0007) + the inline experience numbers (ADR-0019).
-
-    ``min_years`` / ``max_years`` come from the extraction cascade (field, then description,
-    then seniority floor — ADR-0018) with the ``experience_source`` tier tag carried alongside;
-    all three are None when nothing matched. ``employment_type`` / ``salary`` stay raw strings —
-    display-only until normalized (ADR-0019).
-    """
-    meta = {field: job.get(field) for field in _META_FIELDS}
-    span = extract(job.get("experience"), job.get("description"), job.get("title"))
-    meta["min_years"] = span.min_years if span else None
-    meta["max_years"] = span.max_years if span else None
-    meta["experience_source"] = span.source if span else None
-    return meta
 
 
 class EmbeddingStore:
@@ -244,26 +186,11 @@ class EmbeddingStore:
         return count
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "--source",
-        default=str(_SOURCE),
-        help="corpus source: a {ats}.jsonl directory or a Wellfound CSV (default: data/jobs/tech)",
-    )
-    ap.add_argument(
-        "--limit",
-        type=int,
-        default=0,
-        help="embed only the first N new English rows (0 = all)",
-    )
-    ap.add_argument(
-        "--resume",
-        action="store_true",
-        help="skip Jobs already in meta.jsonl and append new ones (default: rebuild from scratch)",
-    )
-    args = ap.parse_args()
+def _load_model() -> tuple[SentenceTransformer, str, int, int]:
+    """Load the encoder (MPS/fp16 when available, else CPU/fp32) and cap its sequence length.
 
+    Returns ``(model, device, dim, attention_budget)``; CPU quarters the budget (fp32 doubles
+    the attention memory of the MPS/fp16 path, and CI runners are small)."""
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"loading {MODEL} on {device} ...", file=sys.stderr, flush=True)
     model = SentenceTransformer(MODEL, trust_remote_code=True, device=device)
@@ -273,92 +200,43 @@ def main() -> None:
         model.max_seq_length, _MAX_SEQ_TOKENS
     )  # see _MAX_SEQ_TOKENS
     dim = model.get_sentence_embedding_dimension()
-    # CPU runs fp32 (double the attention memory of MPS fp16) on small CI runners — shrink the
-    # batch budget; CPU throughput is compute-bound, so the smaller batches cost little.
     budget = _ATTN_BUDGET if device == "mps" else _ATTN_BUDGET // 4
+    return model, device, dim, budget
 
-    store = EmbeddingStore(_OUTDIR, dim, resume=args.resume)
-    if store.done:
-        print(
-            f"resume: {len(store.done)} Jobs already embedded — will skip those",
-            file=sys.stderr,
-            flush=True,
-        )
 
-    # Steps 1-4: select rows, skip already-done ids (A2), English-gate, build doc text + metadata.
-    docs: list[str] = []
-    metas: list[dict] = []
-    scanned = already = dropped = 0
-    for job in iter_jobs(args.source):
-        scanned += 1
-        if (job.get("id") or "") in store.done:
-            already += 1
-            continue
-        if not is_english(job.get("title") or "", job.get("description") or ""):
-            dropped += 1
-            continue
-        docs.append(build_doc(job))
-        metas.append(to_meta(job))
-        if args.limit and len(docs) >= args.limit:
-            break
-    print(
-        f"to embed: {len(docs)} (scanned {scanned}, already-done {already}, non-English {dropped})",
-        file=sys.stderr,
-        flush=True,
-    )
-
-    manifest = {
+def _manifest(device: str, source: str, dim: int) -> dict:
+    """Provenance for the store (``store.close`` appends the final ``count``)."""
+    return {
         "model": MODEL,
         "dim": int(dim),
         "doc_prefix": DOC_PREFIX,
         "normalized": True,
         "device": device,
         "compute_dtype": "float16" if device == "mps" else "float32",
-        "source": str(args.source),
+        "source": str(source),
         "vectors_file": "embeddings.f32",
         "dtype": "float32",
     }
-    if not docs:
-        count = store.close(manifest)
-        print(
-            f"nothing new to embed — store holds {count} vectors.",
-            file=sys.stderr,
-            flush=True,
-        )
-        return
 
-    # Group docs into token-length buckets, measured with the real tokenizer — a char-based
-    # estimate undershoots on tokenizer-dense docs (a bilingual description whose English head
-    # passes the language gate but whose CJK tail tokenizes at ~1 token/char).
-    print("measuring token lengths ...", file=sys.stderr, flush=True)
-    tok_lens: list[int] = []
-    for s in range(0, len(docs), 1024):
-        enc = model.tokenizer(
-            docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS
-        )
-        tok_lens.extend(len(ids) for ids in enc["input_ids"])
-        print(f"[tokenize] {len(tok_lens)}/{len(docs)}", file=sys.stderr, flush=True)
-    groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
-    for idx, n_tok in enumerate(tok_lens):
-        groups[bucket_for(n_tok)].append(idx)
-    scores = load_scores(_PRIORITY)
-    if scores:
-        for b in _BUCKETS:
-            groups[b] = order_by_priority(groups[b], metas, scores)
-        print(
-            "[embed] priority ordering applied within buckets",
-            file=sys.stderr,
-            flush=True,
-        )
 
-    # Step 5: encode bucket-by-bucket with pinned shapes (see the _BUCKETS comment), isolating
-    # per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the
-    # CI time budget (pipeline.yml wraps this in `timeout`), short docs embed at docs/sec while
-    # 4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
-    # budget expires (heaviest-first once burned a 98-min budget on ~325 docs). Within each
-    # bucket the indices are board-priority-ordered (ADR-0022); ordering stays irrelevant
-    # downstream — meta carries the id and stays row-aligned with the vectors.
-    total = len(docs)
+def _encode_groups(
+    model,
+    device: str,
+    docs: list[str],
+    metas: list[dict],
+    groups: dict,
+    store,
+    budget: int,
+) -> tuple[int, int]:
+    """Encode bucket-by-bucket with pinned shapes (see the _BUCKETS comment), isolating
+    per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the CI
+    time budget (pipeline.yml wraps this in ``timeout``), short docs embed at docs/sec while
+    4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
+    budget expires (heaviest-first once burned a 98-min budget on ~325 docs). Within each bucket
+    the indices keep their given order (board-priority — ADR-0022); ordering stays irrelevant
+    downstream — meta carries the id and stays row-aligned with the vectors. Returns
+    ``(embedded, failed)``."""
+    total = sum(len(idxs) for idxs in groups.values())
     done = failed = consec_failed = 0
     start = time.monotonic()
     wedged = False
@@ -429,11 +307,166 @@ def main() -> None:
                 )
                 wedged = True
                 break
+    return done, failed
+
+
+def _run_assignment(
+    model, device: str, dim: int, budget: int, path: Path, outdir: Path
+) -> None:
+    """Embed a planner-built shard assignment (ADR-0025): a JSONL of ``{doc, bucket, meta}``.
+
+    The planner already did the dedup, English gate, doc build, metadata, and tokenization, so a
+    shard is stateless — it reads neither the corpus nor the prior store, and writes a fresh
+    fragment the merge job concatenates. Grouping preserves the file's order within each bucket
+    (the planner ordered it priority-first, ADR-0022), so a time-boxed shard still banks the
+    highest-value Docs first."""
+    docs: list[str] = []
+    metas: list[dict] = []
+    groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            bucket = int(rec["bucket"])
+            if (
+                bucket not in groups
+            ):  # a stray/out-of-range bucket -> top one, never dropped
+                bucket = _BUCKETS[-1]
+            groups[bucket].append(len(docs))
+            docs.append(rec["doc"])
+            metas.append(rec["meta"])
+    print(
+        f"assignment: {len(docs)} docs from {path} | "
+        + ", ".join(f"≤{b}:{len(groups[b])}" for b in _BUCKETS),
+        file=sys.stderr,
+        flush=True,
+    )
+
+    store = EmbeddingStore(
+        outdir, dim, resume=False
+    )  # a shard is always a fresh fragment
+    done = failed = 0
+    if docs:
+        done, failed = _encode_groups(model, device, docs, metas, groups, store, budget)
+    count = store.close(_manifest(device, str(path), dim))
+    print(
+        f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--source",
+        default=str(_SOURCE),
+        help="corpus source: a {ats}.jsonl directory or a Wellfound CSV (default: data/jobs/tech)",
+    )
+    ap.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="embed only the first N new English rows (0 = all)",
+    )
+    ap.add_argument(
+        "--resume",
+        action="store_true",
+        help="skip Jobs already in meta.jsonl and append new ones (default: rebuild from scratch)",
+    )
+    ap.add_argument(
+        "--assignment",
+        help="embed a planner-built shard (JSONL of {doc,bucket,meta}); skips corpus read, "
+        "English gate, and tokenize — the planner did them (ADR-0025)",
+    )
+    ap.add_argument(
+        "--outdir",
+        default=str(_OUTDIR),
+        help="store output dir (default: data/embeddings/jobs; an embed shard writes its own fragment)",
+    )
+    args = ap.parse_args()
+
+    model, device, dim, budget = _load_model()
+    outdir = Path(args.outdir)
+
+    if (
+        args.assignment
+    ):  # ADR-0025 shard mode — the planner already selected/prepped these docs
+        _run_assignment(model, device, dim, budget, Path(args.assignment), outdir)
+        return
+
+    store = EmbeddingStore(outdir, dim, resume=args.resume)
+    if store.done:
+        print(
+            f"resume: {len(store.done)} Jobs already embedded — will skip those",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    # Steps 1-4: select rows, skip already-done ids (A2), English-gate, build doc text + metadata.
+    docs: list[str] = []
+    metas: list[dict] = []
+    scanned = already = dropped = 0
+    for job in iter_jobs(args.source):
+        scanned += 1
+        if (job.get("id") or "") in store.done:
+            already += 1
+            continue
+        if not is_english(job.get("title") or "", job.get("description") or ""):
+            dropped += 1
+            continue
+        docs.append(build_doc(job))
+        metas.append(to_meta(job))
+        if args.limit and len(docs) >= args.limit:
+            break
+    print(
+        f"to embed: {len(docs)} (scanned {scanned}, already-done {already}, non-English {dropped})",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    manifest = _manifest(device, args.source, dim)
+    if not docs:
+        count = store.close(manifest)
+        print(
+            f"nothing new to embed — store holds {count} vectors.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+
+    # Group docs into token-length buckets, measured with the real tokenizer — a char-based
+    # estimate undershoots on tokenizer-dense docs (a bilingual description whose English head
+    # passes the language gate but whose CJK tail tokenizes at ~1 token/char).
+    print("measuring token lengths ...", file=sys.stderr, flush=True)
+    tok_lens: list[int] = []
+    for s in range(0, len(docs), 1024):
+        enc = model.tokenizer(
+            docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS
+        )
+        tok_lens.extend(len(ids) for ids in enc["input_ids"])
+        print(f"[tokenize] {len(tok_lens)}/{len(docs)}", file=sys.stderr, flush=True)
+    groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
+    for idx, n_tok in enumerate(tok_lens):
+        groups[bucket_for(n_tok)].append(idx)
+    scores = load_scores(_PRIORITY)
+    if scores:
+        for b in _BUCKETS:
+            groups[b] = order_by_priority(groups[b], metas, scores)
+        print(
+            "[embed] priority ordering applied within buckets",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    done, failed = _encode_groups(model, device, docs, metas, groups, store, budget)
 
     count = store.close(manifest)
     print(
         f"done: embedded {done} this run ({failed} failed) — store now holds {count} vectors "
-        f"of dim {dim} -> {_OUTDIR}",
+        f"of dim {dim} -> {outdir}",
         file=sys.stderr,
         flush=True,
     )

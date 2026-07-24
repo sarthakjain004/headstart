@@ -104,6 +104,19 @@ How many Docs are encoded together in one pass, fixed per **Bucket** so batch si
 **Throughput (jobs/s, s/doc)**:
 The measured embedding rate — not a fixed constant. The embed step logs a running `jobs/s` average per batch straight to the CI log; its reciprocal, seconds-per-Doc, is the more useful number for predicting run length. Throughput differs sharply by **Bucket** (short Docs batch efficiently; the ≤4096 Bucket, Batch size 1, costs roughly 20x longer per Doc) and by which runner executes the run — so there is no single "embedding speed," only a per-Bucket rate read off real logs.
 
+### Pipeline scheduling and sharding
+
+**Board-priority ledger (EWMA)**:
+The per-Board tech-yield score in `data/state/board_priority.csv`, kept as an **EWMA** — an Exponentially-Weighted Moving Average. Each run blends a Board's fresh tech-Job count into its prior score (`0.7·now + 0.3·history`), so recent nights dominate while older counts decay rather than being forgotten or weighted equally (ADR-0022). Boards the run didn't scrape keep their score unchanged — a partial harvest must not decay what it never looked at — and a score decayed below a floor drops out. The ledger orders both the scrape slice (high-yield Boards first) and the within-**Bucket** embed order, and is the **cost estimate** the pipeline planners bin-pack on.
+_Avoid_: reading it as an exact count — it is a decaying average, an estimate of a Board's tech yield.
+
+**Bin-packing**:
+Splitting work items of uneven cost across a fixed number of parallel shards so each shard's total cost — its *makespan* — is as even as possible, since a fan-out run is only as fast as its slowest shard. The nightly-pipeline planners bin-pack Boards (weighted by the EWMA ledger) across scrape shards and **Docs** (weighted by per-**Bucket** embed cost) across embed shards (ADR-0025).
+_Avoid_: conflating with **Bucket** — a Bucket is a token-length class for one Doc; bin-packing distributes many items across shards, and one shard mixes Docs from several Buckets.
+
+**LPT (Longest Processing Time first)**:
+The greedy heuristic the planners bin-pack with: sort the items by descending cost, then hand each next item to whichever shard is currently least-loaded. Chosen over hashing or round-robin because per-item cost is heavy-tailed — embed cost spans ~20× from the ≤512 to the ≤4096 **Bucket** — so a cost-blind split reliably saddles one shard with the heavy items and it straggles while the rest idle (ADR-0025).
+
 ## Relationships
 
 - A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**.

@@ -1,16 +1,16 @@
 name: nightly-pipeline
 
-# Nightly ingest for the free-tier deployment (ADR-0020): scrape a priority-first slice of the
-# live boards (tech-yielding boards first, random exploration tail — ADR-0022), filter to tech,
-# embed only the new ids (highest-priority boards first), incrementally sync the LanceDB `jobs`
-# table, and push the updated state to the private HF dataset the Space serves from.
-# Inert (green no-op) until the HF_TOKEN secret is set.
+# Nightly ingest for the free-tier deployment (ADR-0020), parallelized across runners (ADR-0025):
+#   harvest-plan (scrape → tech-filter → priority → plan the embed fan-out)
+#     → embed (matrix, ≤15 concurrent shards, each embeds its assigned Docs into a fragment)
+#       → merge (single writer: concatenate fragments → sync → prune → compact → upload → restart).
+# Inert (green no-op) until the repo's HF_TOKEN secret is set: the gate in harvest-plan drives
+# `run`, and every downstream step is gated on it, so nothing runs and no job fails.
 on:
   schedule:
     # four cycles a day, 6h apart: the 21:30 nightly plus day runs that give the CPU
     # embed budget more slots (heals eviction backlogs, keeps boards ~2-3 days fresh
-    # instead of ~9-10). Runs serialize via the concurrency group; once a backlog is
-    # gone, day runs shrink to ~30-45 min (few new ids per slice).
+    # instead of ~9-10). Runs serialize via the concurrency group.
     - cron: "30 21 * * *" # the compulsory nightly
     - cron: "30 3 * * *"
     - cron: "30 9 * * *"
@@ -33,9 +33,16 @@ env:
   HF_SPACE: imPoseidon/headstart-search
 
 jobs:
-  harvest-embed-sync:
+  # ── Stage 1: scrape the slice, filter to tech, refresh the priority ledger, and plan the
+  # embed fan-out. Downloads only meta.jsonl (to diff new ids) + the priority state — not the
+  # heavy vectors/LanceDB, which only the merge job needs.
+  harvest-plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 200
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      count: ${{ steps.plan.outputs.count || '0' }}
+      shards: ${{ steps.plan.outputs.shards || '[]' }}
     steps:
       # Actions pinned to full commit SHAs (tags are mutable — cf. tj-actions
       # CVE-2025-30066). Dependabot keeps the SHAs current via the comments.
@@ -63,15 +70,13 @@ jobs:
         with:
           path: ~/.cache/huggingface/hub
           key: hf-model-nomic-embed-text-v1.5
-      - name: Download index state (empty on first run)
+      - name: Download meta + priority state (light — only what the planner diffs)
         if: steps.gate.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # snapshot_download, not the hf CLI: `hf download repo --include A B` parses B as a
-        # positional filename and silently ignores --include, and the former `|| true` then
-        # swallowed the failure — an empty state got rebuilt from one slice and uploaded over
-        # the real index (2026-07-05). Zero matches (true first run) succeeds; every real
-        # error fails the run before the upload step can do damage.
+        # Only meta.jsonl (to diff new ids) + data/state (the priority ledger to blend and re-upload).
+        # The ~460 MB vector store + LanceDB stay off this runner — they belong to the merge job.
+        # Zero matches (true first run) succeeds; every real error fails before anything is uploaded.
         run: |
           python -c "
           import os
@@ -80,17 +85,17 @@ jobs:
               os.environ['HF_DATASET'],
               repo_type='dataset',
               local_dir='.',
-              allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*', 'data/state/*'],
+              allow_patterns=['data/embeddings/jobs/meta.jsonl', 'data/state/*'],
               token=os.environ['HF_TOKEN'],
           )
-          print('state downloaded')
+          print('meta + state downloaded')
           "
       - name: Scrape a rotating slice of the live boards (time-budgeted)
         if: steps.gate.outputs.run == 'true'
-        # Same pattern as the embed budget: a slice heavy in join/workday boards (per-job
-        # detail fetches) can outrun 150 minutes, and a step timeout would fail the run and
-        # waste everything. The snapshot streams per-board and partial harvests are safe by
-        # design (eviction only touches scraped boards, ADR-0014) — bank what we got.
+        # A slice heavy in join/workday boards (per-job detail fetches) can outrun 140 minutes; a
+        # step timeout would fail the run and waste everything. Partial harvests are safe by design
+        # (eviction only touches scraped boards, ADR-0014) — bank what we got. Scrape stays
+        # monolithic in Phase 1 (ADR-0025); it is sharded only if it becomes the binding constraint.
         run: |
           timeout 140m python scripts/scrape/nightly_harvest.py \
             --max-boards "${{ github.event.inputs.max_boards || '8000' }}" \
@@ -102,33 +107,159 @@ jobs:
       - name: Update board priority ledger
         if: steps.gate.outputs.run == 'true'
         run: python scripts/rank/update_board_priority.py
-      - name: Embed the new ids (time-budgeted — partial progress still uploads)
+      - name: Plan the embed fan-out
+        id: plan
         if: steps.gate.outputs.run == 'true'
+        # Diffs new ids vs the downloaded meta.jsonl, LPT-bin-packs them into ≤15 cost-balanced
+        # shards, writes data/embeddings/assignments/{shard-*.jsonl,plan.json}. The `count`/`shards`
+        # outputs drive whether the embed matrix runs and how wide (ADR-0025).
+        run: |
+          python scripts/pipeline/plan_embed.py
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          plan = json.load(open("data/embeddings/assignments/plan.json"))
+          print("count=%d" % plan["count"])
+          print("shards=%s" % json.dumps(plan["shards"]))
+          PY
+      - name: Upload embed assignments (one file per shard)
+        if: steps.gate.outputs.run == 'true' && steps.plan.outputs.count != '0'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: embed-assignments
+          path: data/embeddings/assignments
+          retention-days: 1
+      - name: Upload corpus + state for the merge job
+        if: steps.gate.outputs.run == 'true'
+        # The full scrape (data/jobs, the eviction scope) + the tech corpus (data/jobs/tech) +
+        # the refreshed ledger (data/state) — ephemeral this run, so they ride to merge as an
+        # artifact rather than through HF. Common prefix `data/` is stripped; merge downloads to
+        # `data/` to restore the paths sync_index/upload expect.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: corpus-state
+          path: |
+            data/jobs
+            data/state
+          retention-days: 1
+
+  # ── Stage 2: the embed fan-out. Each shard is stateless — it downloads only its assignment
+  # (Doc text + bucket + metadata the planner already built), embeds it into a fragment, and
+  # uploads that. `max-parallel: 15` leaves 5 of the free tier's 20 concurrent jobs for other
+  # workflows; `fail-fast: false` so one straggler/OOM shard doesn't abort the rest.
+  embed:
+    needs: harvest-plan
+    if: needs.harvest-plan.outputs.run == 'true' && needs.harvest-plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    strategy:
+      fail-fast: false
+      max-parallel: 15
+      matrix:
+        shard: ${{ fromJson(needs.harvest-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[embed]"
+      - name: Cache the embedding model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-nomic-embed-text-v1.5
+      - name: Download this shard's assignment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: embed-assignments
+          path: data/embeddings/assignments
+      - name: Embed the shard (time-budgeted — a banked partial is safe, its ids re-plan next run)
+        # Same budget as the old monolith, now per shard. On timeout the store has streamed
+        # whatever finished (ADR-0004); `|| echo` banks it and lets the fragment upload. The
+        # un-embedded ids simply reappear as "new" in the next run's plan.
+        run: |
+          timeout 100m python scripts/embed/embed_jobs.py \
+            --assignment "data/embeddings/assignments/shard-${{ matrix.shard }}.jsonl" \
+            --outdir "data/embeddings/fragments/shard-${{ matrix.shard }}" \
+            || echo "embed time budget reached — banking partial fragment"
+        timeout-minutes: 115
+      - name: Upload the shard fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: embed-fragment-${{ matrix.shard }}
+          path: data/embeddings/fragments/shard-${{ matrix.shard }}
+          retention-days: 1
+
+  # ── Stage 3: the single writer. Pulls the prior store + LanceDB from HF, concatenates all shard
+  # fragments onto it, then runs the unchanged sync → prune → compact → upload → restart. Runs even
+  # when embed was skipped (nothing new to embed still needs eviction/prune); `if: always()`, with
+  # every step gated on the HF_TOKEN `run` flag so it stays a green no-op until the secret is set.
+  merge:
+    needs: [harvest-plan, embed]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: needs.harvest-plan.outputs.run == 'true'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        if: needs.harvest-plan.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+      - if: needs.harvest-plan.outputs.run == 'true'
+        run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - name: Download the prior store + LanceDB (empty on first run)
+        if: needs.harvest-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # CPU embedding runs ~0.5 docs/s; a backlog-heavy slice can't always finish. The
-        # store streams to disk and reconciles on --resume (ADR-0004), so when the budget
-        # expires we bank what's embedded and let sync/upload proceed — the next run
-        # continues from there. A step-timeout here would instead fail the run and lose
-        # the whole slice.
+        # The heavy download lives here, in the one writer. data/state is NOT pulled — the merge
+        # uploads the refreshed ledger that arrives via the corpus-state artifact instead.
         run: |
-          timeout 100m python scripts/embed/embed_jobs.py --resume \
-            || echo "embed time budget reached — banking partial store"
-        timeout-minutes: 115
+          python -c "
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              os.environ['HF_DATASET'],
+              repo_type='dataset',
+              local_dir='.',
+              allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*'],
+              token=os.environ['HF_TOKEN'],
+          )
+          print('store + lancedb downloaded')
+          "
+      - name: Download corpus + refreshed state
+        if: needs.harvest-plan.outputs.run == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: corpus-state
+          path: data
+      - name: Download all shard fragments
+        if: needs.harvest-plan.outputs.run == 'true' && needs.harvest-plan.outputs.count != '0'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: embed-fragment-*
+          path: data/embeddings/fragments
+      - name: Merge shard fragments into the store
+        if: needs.harvest-plan.outputs.run == 'true'
+        # Reconciles each fragment (drops any partial tail from a timed-out shard) and appends it
+        # onto the prior store, with a whole-store consistency check (ADR-0025). No-op when there
+        # were no new Docs — the sync/prune below still run for eviction.
+        run: python scripts/pipeline/merge_shards.py
       - name: Sync the jobs table
-        if: steps.gate.outputs.run == 'true'
+        if: needs.harvest-plan.outputs.run == 'true'
         run: python scripts/embed/sync_index.py
       - name: Prune dead-Board and duplicate rows
-        if: steps.gate.outputs.run == 'true'
+        if: needs.harvest-plan.outputs.run == 'true'
         # Reclaims what the board-scoped sync can't: rows on Boards no longer live (left the scrape
         # list) and case-variant duplicates of the same job (ADR-0023). Aborts itself if the ledger
         # looks broken, so it can't evict a healthy index.
         run: python scripts/embed/prune_index.py --apply
       - name: Compact the table
-        if: steps.gate.outputs.run == 'true'
+        if: needs.harvest-plan.outputs.run == 'true'
         run: python scripts/embed/compact_index.py
       - name: Upload index state
-        if: steps.gate.outputs.run == 'true'
+        if: needs.harvest-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -153,7 +284,7 @@ jobs:
           up "$HF_DATASET" data/state data/state \
             --repo-type dataset --commit-message "nightly: board priority"
       - name: Restart the Space to pick up the new index
-        if: steps.gate.outputs.run == 'true'
+        if: needs.harvest-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
