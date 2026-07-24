@@ -31,12 +31,41 @@ idle, and the first visitor after a quiet stretch waits ~a minute.
 **Ingest — two GitHub Actions workflows**, both inert (green no-op) until the repo's `HF_TOKEN`
 secret is set:
 
-`.github/workflows/pipeline.yml` (`nightly-pipeline`, cron 21:30 UTC + manual dispatch): download
-state from the dataset → `nightly_harvest.py` (shuffled `--max-boards` slice of the live ledger,
-default 8,000 — a rotating slice, whole live set covered ~weekly) → `filter/tech.py` →
-`embed_jobs.py --resume` (only ids missing from the store; CPU) → `sync_index.py` (incremental
-add/evict) → `compact_index.py` → upload both state dirs → `restart_space`. A `concurrency` group
-serializes runs so two never race on the dataset.
+`.github/workflows/pipeline.yml` (`nightly-pipeline`, **four crons/day** — 21:30 UTC compulsory
+nightly + 3:30/9:30/15:30 day-runs that give the CPU embed budget more slots — plus manual
+dispatch). One `harvest-embed-sync` job (`ubuntu-latest`, `timeout-minutes: 350`) runs these steps
+**in order**, each gated on the `HF_TOKEN` secret so the whole run is a green no-op until it is set.
+The run is a **download → mutate → upload cycle** over the dataset:
+
+1. **Download state** — `snapshot_download` the *prior* state from the dataset: `data/embeddings/jobs/*`
+   (vector store + `meta.jsonl`), `data/lancedb/*` (served table), `data/state/*` (priority ledger).
+   Everything below reads this downloaded state.
+2. **Scrape** — `nightly_harvest.py` (`timeout 140m`, `--max-boards 8000`): build the scrape list from
+   the committed liveness ledger (`load_active_companies`, `min_jobs=0`), order it by the board-priority
+   ledger (tech-history boards first + a randomly-rotated exploration tail), scrape the top slice, stream
+   jobs to `data/jobs/{ats}.jsonl`. Each run **truncates** the jsonl — the output is *this run's snapshot*.
+   Time-budgeted; a partial harvest is banked (eviction is scoped to boards actually in the snapshot).
+3. **Tech filter** — `filter/tech.py`: `data/jobs/{ats}.jsonl` → `data/jobs/tech/{ats}.jsonl`, keeping only
+   the software/tech subset. Everything downstream reads the tech subset.
+4. **Update board-priority ledger** — `rank/update_board_priority.py`: EWMA-blend each scraped board's
+   tech-job count into `data/state/board_priority.csv`. Drives the *next* run's scrape order and *this*
+   run's within-bucket embed order (ADR-0022).
+5. **Embed** — `embed_jobs.py --resume` (`timeout 100m`, CPU): read `data/jobs/tech/`, **skip ids already
+   in the downloaded `meta.jsonl`** — this `--resume` skip *is* the "only new jobs" step; there is no
+   separate DB-diff stage — English-gate, bucket by token length, encode, stream new vectors to
+   `embeddings.f32` + `meta.jsonl`. Highest-priority boards first; time-budgeted, banks partial, resumes.
+6. **Sync the table** — `sync_index.py`: reconcile the LanceDB `jobs` table from the store + corpus
+   snapshot (add ids that now have a vector, evict postings gone from scraped boards). Incremental, no rebuild.
+7. **Prune** — `prune_index.py --apply`: remove what the board-scoped sync can't reach — rows on boards no
+   longer live (keep-set = the live ledger) and case-variant duplicate rows. Safety-aborts on a too-small keep-set.
+8. **Compact** — `compact_index.py`: rewrite the table fresh to reclaim orphan fragments (keeps the served
+   index small enough for the free-tier Space to cold-start).
+9. **Upload state** — `hf upload` all three dirs back (`data/embeddings/jobs`, `data/lancedb` with `--delete`,
+   `data/state`), each with retry/backoff.
+10. **Restart the Space** so it picks up the new table.
+
+A workflow-level `concurrency: group: nightly-pipeline` (`cancel-in-progress: false`) serializes whole
+runs so two never race on the dataset.
 
 `.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
 `src/headstart/geo.py`, copied in — ADR-0024) to the Space on any main push touching those paths
@@ -139,8 +168,9 @@ this machine — the watermark env vars and bucketed batching are load-bearing):
 ```bash
 .venv/bin/python scripts/embed/embed_jobs.py --resume
 .venv/bin/python scripts/embed/sync_index.py
+.venv/bin/python scripts/embed/prune_index.py --apply
 .venv/bin/python scripts/embed/compact_index.py
-# then the two hf upload commands above, then restart the Space
+# then the three hf upload commands above, then restart the Space
 ```
 
 ## Invariants and known failure modes
@@ -167,6 +197,7 @@ user-visible until a sync produces a new table.
 **Mixed vector provenance is fine.** Local embeds are MPS fp16, CI embeds are CPU fp32 — same
 model, both L2-normalized; ranking effect is negligible (ADR-0020).
 
-**A dead board's rows linger.** Eviction is scoped to boards present in the latest scrape, so a
-board that drops off the live ledger keeps its stale rows until ledger-driven eviction is added to
-`sync_index.py` (known v1 gap).
+**A dead board's rows are pruned, not stranded.** The incremental sync only evicts within boards
+scraped this run, so it can't reach a board that dropped off the live ledger — but `prune_index.py`
+(flow step 7, ADR-0023) sweeps exactly those rows every run, keyed on the live ledger. (An earlier
+version of this note called it a known v1 gap; prune closes it.)
