@@ -552,6 +552,32 @@ def p_rippling(t, u):
     )
 
 
+def p_eightfold(t, u):
+    # The public PCSX board: /careers/sitemap.xml lists every job as a /careers/job/ URL (or a
+    # sitemap_index of child sitemaps — for the count we just probe the first child). A 200 that
+    # is neither shape (internal-mobility-only tenant behind SSO, or a non-EF host) means no public
+    # board -> DEAD. Jobs count is a lower bound on index-split tenants; enough for the hiring cut.
+    status, body = _get(f"https://{t}/careers/sitemap.xml")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    text = body.decode("utf-8", "replace")
+    n = text.count("/careers/job/")
+    if n:
+        return LIVE, n
+    child = re.search(
+        r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", text, re.I
+    )
+    if child and "index" not in child.group(1).lower():
+        cs, cbody = _get(child.group(1))
+        if cs == 200:
+            return LIVE, cbody.decode("utf-8", "replace").count("/careers/job/")
+    if "<urlset" in text or "<sitemapindex" in text:
+        return LIVE, 0  # valid but empty board
+    return DEAD, None
+
+
 def p_trakstar(t, u):
     status, body = _get(f"https://{t}.hire.trakstar.com/")
     if status == "dns" or status in (404, 410):
@@ -618,6 +644,7 @@ PROBES = {
     "personio": p_personio,
     "join": p_join,
     "freshteam": p_freshteam,
+    "eightfold": p_eightfold,
     "successfactors": p_successfactors,
 }
 
