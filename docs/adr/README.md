@@ -33,3 +33,4 @@ supersedes it and note the supersession in both.
 | [0022](0022-tech-priority-board-ordering.md) | Tech-priority board ordering: EWMA ledger, priority-first scrape + embed slices | 2026-07-06 |
 | [0023](0023-prune-stale-and-duplicate-index-rows.md) | Prune stale/duplicate index rows: dead-Board sweep + case-variant dedup | 2026-07-17 |
 | [0024](0024-india-location-gazetteer-filter.md) | India location filter: query-time gazetteer expansion (vetted alias substrings) | 2026-07-20 |
+| [0025](0025-parallelize-nightly-pipeline.md) | Parallelize the nightly pipeline across GitHub Actions runners: plan → fan-out → merge | 2026-07-24 |
