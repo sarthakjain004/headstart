@@ -11,9 +11,11 @@ stop (Ctrl+C) any time and re-run to continue. Dedups against tenants already in
 Usage:  python scripts/discover/wayback_paginate.py [ats] [domain] [style] [max_pages]
         python scripts/discover/wayback_paginate.py zoho zohorecruit.com sub
         python scripts/discover/wayback_paginate.py zoho zohorecruit.com sub 5   # just 5 pages (test)
+        WB_FILTER='urlkey:ai,eightfold,.*' python scripts/discover/wayback_paginate.py eightfold eightfold.ai sub  # skip a dense apex
 """
 
 import csv
+import os
 import re
 import socket
 import ssl
@@ -32,6 +34,9 @@ TIMEOUT = 120
 UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
 CTX = ssl._create_unverified_context()
 socket.setdefaulttimeout(TIMEOUT)
+# Optional server-side CDX filter, applied to every page. Use it to skip a dense apex whose captures
+# sort before the subdomains (e.g. WB_FILTER='urlkey:ai,eightfold,.*' keeps only {slug}.eightfold.ai).
+FILTER = os.environ.get("WB_FILTER")
 
 INFRA = {
     "www",
@@ -101,6 +106,8 @@ def fetch_page(domain, resume):
         f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}"
         f"&matchType=domain&fl=original&collapse=urlkey&limit={PAGE}&showResumeKey=true"
     )
+    if FILTER:
+        url += "&filter=" + urllib.parse.quote(FILTER, safe="")
     if resume:
         url += "&resumeKey=" + urllib.parse.quote(resume, safe="")
     for attempt in range(1, 5):
@@ -142,6 +149,7 @@ def main():
     resume = state.read_text(encoding="utf-8").strip() if state.exists() else ""
     print(
         f"start: {ats} ({domain}, {style}) | already have {len(seen)} tenants"
+        + (f" | filter={FILTER}" if FILTER else "")
         + (" | resuming" if resume else ""),
         flush=True,
     )

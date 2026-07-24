@@ -18,11 +18,21 @@ Robust to CC's aggressive rate-limiting, same discipline as before:
   * Resumable + incremental: each ``(crawl, target, page)`` is checkpointed only when it fully
     succeeds, and the CSV is rewritten after every completed page — a throttled page is retried
     next run, never silently recorded as empty.
+  * IP rotation via Cloudflare WARP: if CC hard-blocks the egress IP itself (sustained 403/429 or
+    connection-refused across retries — not a transient throttle a wait fixes), rotate to a fresh
+    egress IP with WARP and relaunch. The checkpoint resumes mid-sweep with zero re-fetch of
+    completed pages, so no data is re-pulled:
+        warp-cli connect                 # (or: warp-cli disconnect && warp-cli connect) -> new IP
+        curl -s https://www.cloudflare.com/cdn-cgi/trace | grep -E '^ip=|^warp='   # confirm rotate
+    then re-run (optionally per crawl: ``CC_ONLY_ATS=... python cc_miner.py <crawl-id>``). Verified
+    2026-07-23, when a multi-crawl eightfold sweep tripped CC's per-IP block.
 
 Output: ``data/discover/cc_ats_tenants.csv`` with ``ats,tenant,url`` (the feeder contract in
 CONTEXT.md; ``url`` is a representative capture the resolve/scrape steps can read the slug back from).
 
 Usage: python -u scripts/discover/cc_miner.py [crawl-id]   (run from repo root)
+       CC_ONLY_ATS=eightfold python -u scripts/discover/cc_miner.py   (restrict to one ATS)
+       CC_PACE=2.5 python -u scripts/discover/cc_miner.py   (slower request pacing to dodge blocks)
 """
 
 import collections
@@ -41,6 +51,9 @@ CC_COLLINFO = "https://index.commoncrawl.org/collinfo.json"
 # Safety backstop on pages per target; the clean throttle-exit + resume is the real bound, so this
 # is only here to stop a pathological crawl. Override with CC_MAX_PAGES.
 MAX_PAGES = int(os.environ.get("CC_MAX_PAGES") or 400)
+# Seconds to pace between successful CDX requests. Raise it (CC_PACE=2.5) to stay under CC's
+# per-IP rate limit on a long multi-crawl sweep; lower it for a quick single-crawl run.
+PACE = float(os.environ.get("CC_PACE") or 1.0)
 
 # Per ATS: the CDX hosts/domains to query (matchType=domain), the regexes that capture the tenant
 # from a matched URL (group 1, except workday which uses host+site groups), and how to read that
@@ -121,6 +134,17 @@ ATS_PATTERNS = {
         "targets": ["darwinbox.in", "darwinbox.com"],
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.darwinbox\.(?:in|com)"],
+    },
+    "eightfold": {
+        # Every Eightfold-hosted tenant is {slug}.eightfold.ai (the board host the scraper reads).
+        # Custom-domain tenants (careers.qualcomm.com, jobs.nvidia.com) can't be found by host-mining
+        # eightfold.ai — they need a content fingerprint, out of scope for a CDX host-miner.
+        # Anchor the label to a host boundary (`//` or an encoded `%2f`): Eightfold share/redirect
+        # URLs embed a second, percent-encoded eightfold host in the query (`...%2f%2fbcg.eightfold.ai`),
+        # and a bare pattern would capture `2fbcg` instead of `bcg`.
+        "targets": ["eightfold.ai"],
+        "kind": "label",
+        "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.eightfold\.ai"],
     },
     "keka": {
         "targets": ["keka.com"],
@@ -306,10 +330,10 @@ def curl(url, attempts=6):
             code = out[nl + 1 :].strip() if nl >= 0 else out.strip()
             body = out[:nl] if nl >= 0 else ""
             if code == "200":
-                time.sleep(0.3)  # gentle pacing
+                time.sleep(PACE)  # gentle pacing
                 return body, True
             if code == "404":
-                time.sleep(0.3)
+                time.sleep(PACE)
                 return "", True  # legitimate no-match for this target in this crawl
             # 403/429/5xx => real block; fall through to retry
         time.sleep(3)
@@ -430,15 +454,20 @@ def load_existing():
 
 def main():
     os.makedirs("data/discover", exist_ok=True)
+    only = os.environ.get("CC_ONLY_ATS")
+    specs = {a: s for a, s in ATS_PATTERNS.items() if not only or a == only}
+    if only and not specs:
+        sys.exit(f"[miner] CC_ONLY_ATS={only!r} not in ATS_PATTERNS")
     crawl, cdx = resolve_crawl(CRAWL_ARG)
     tenants, done = load_existing()
     print(
-        f"mining {crawl} ({cdx.split('/')[-1]}) | {len(ATS_PATTERNS)} ATSes | "
-        f"{sum(len(v) for v in tenants.values())} tenants known | {len(done)} pages done",
+        f"mining {crawl} ({cdx.split('/')[-1]}) | {len(specs)} ATS(es)"
+        + (f" [CC_ONLY_ATS={only}]" if only else "")
+        + f" | {sum(len(v) for v in tenants.values())} tenants known | {len(done)} pages done",
         flush=True,
     )
 
-    for ats, spec in ATS_PATTERNS.items():
+    for ats, spec in specs.items():
         for target in spec["targets"]:
             ok = query_target(cdx, ats, spec, target, done, tenants, crawl)
             if not ok:
@@ -451,7 +480,7 @@ def main():
 
     total = write_csv(tenants)
     print(f"DONE. {total} (ats,tenant) rows across {crawl} -> {CSV}", flush=True)
-    for ats in ATS_PATTERNS:
+    for ats in specs:
         if tenants[ats]:
             print(f"  {ats}: {len(tenants[ats])}", flush=True)
 
