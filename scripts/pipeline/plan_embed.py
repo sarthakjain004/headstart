@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Plan the embed fan-out — the embed-planner half of ADR-0025 Phase 1.
+
+Runs once, after the tech filter, before the embed matrix. It:
+
+1. diffs the tech corpus (``data/jobs/tech``) against the prior store's ``meta.jsonl`` to find
+   the **new** ids (the ones an embed run would encode this time);
+2. applies the *same* prep as ``embed_jobs.py`` — English gate, doc build, typed metadata — via
+   the shared ``headstart.embed_prep`` (so a sharded Doc is byte-identical to the monolith's);
+3. tokenizes each Doc with the model's tokenizer and sorts it into a token-length **Bucket**;
+4. **LPT bin-packs** the Docs across a dynamic number of shards (≤ ``--max-shards``) by their
+   measured per-Bucket cost, so each shard's makespan is balanced (cost is heavy-tailed — a
+   cost-blind split straggles on the 4096-token Docs);
+5. writes one ``shard-{k}.jsonl`` assignment per shard (``{doc, bucket, meta}`` lines, ordered
+   cheap-first then board-priority-desc so a time-boxed shard banks the best Docs first — ADR-0022)
+   and a ``plan.json`` (``shards`` matrix + ``count`` + predicted makespan) the workflow reads.
+
+The planner touches only ``meta.jsonl`` (ids, to diff) — never the vectors or the LanceDB — so it
+stays a light, single job. The embed shards are stateless: everything they need is in their file.
+
+Run: python scripts/pipeline/plan_embed.py [--max-shards 15] [--limit N]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from heapq import heapify, heapreplace
+from pathlib import Path
+
+from headstart.board_priority import load_scores
+from headstart.corpus import board_of, iter_jobs
+from headstart.embed_prep import (
+    _MAX_SEQ_TOKENS,
+    bucket_for,
+    build_doc,
+    is_english,
+    to_meta,
+)
+from headstart.search import MODEL
+
+_ROOT = Path(__file__).resolve().parents[2]
+_SOURCE = _ROOT / "data" / "jobs" / "tech"
+_PRIOR_META = _ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
+_PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
+_OUT = _ROOT / "data" / "embeddings" / "assignments"
+
+# Measured CPU seconds-per-Doc per Bucket, from the 2026-07-24 ubuntu-latest run recorded in
+# docs/AI_Integration/embedding-throughput.md. Hardcoded (not derived from live CI logs) for
+# Phase 1 (ADR-0025): deterministic, one dict to edit. Refresh with the recipe in that doc
+# (`gh run view <id> --log | grep '[embed]'`) when runner performance drifts.
+_S_PER_DOC = {512: 0.8, 1024: 1.7, 2048: 4.4, 4096: 18.0}
+_MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per lane
+_TARGET_SECONDS = (
+    20 * 60
+)  # per-shard makespan target; sized so a big backlog saturates the lanes
+
+
+def _prior_ids(path: Path) -> set[str]:
+    """Ids already in the store (skip these) — empty on the first run (no meta.jsonl yet)."""
+    if not path.exists():
+        return set()
+    ids: set[str] = set()
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                ids.add(json.loads(line)["id"])
+    return ids
+
+
+def _load_tokenizer():
+    """The model's tokenizer — the same one ``SentenceTransformer(MODEL)`` wraps, loaded standalone
+    so the planner never pulls the encoder weights (it only needs token counts)."""
+    from transformers import AutoTokenizer
+
+    return AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
+
+
+def _token_lengths(tok, docs: list[str]) -> list[int]:
+    """Exact token counts (same truncation as embed_jobs), batched with a progress stream."""
+    lengths: list[int] = []
+    for s in range(0, len(docs), 1024):
+        enc = tok(docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS)
+        lengths.extend(len(ids) for ids in enc["input_ids"])
+        print(
+            f"[plan] tokenized {len(lengths)}/{len(docs)}", file=sys.stderr, flush=True
+        )
+    return lengths
+
+
+def shard_count(
+    total_cost: float, n_docs: int, max_shards: int, target_seconds: float
+) -> int:
+    """How many shards to spin: enough that each is ~``target_seconds``, clamped to [1, max_shards]
+    when there's work (0 when there isn't). A big backlog saturates the lanes; a small day-run
+    collapses to one shard — no spinning 15 VMs to embed a handful of Docs apiece."""
+    if n_docs == 0:
+        return 0
+    return max(1, min(max_shards, math.ceil(total_cost / target_seconds)))
+
+
+def lpt_pack(costs: list[float], m: int) -> tuple[list[int], list[float]]:
+    """Longest-Processing-Time bin-pack: return (shard-index per item, per-shard load).
+
+    Sort items by cost descending, then hand each to the currently least-loaded shard (a min-heap
+    of ``(load, shard)``). Heavy-first is what keeps the makespan (the slowest shard) tight on a
+    heavy-tailed cost distribution — a 4/3-approximation of the optimal, versus round-robin's
+    reliable straggler."""
+    order = sorted(range(len(costs)), key=lambda i: costs[i], reverse=True)
+    heap = [(0.0, k) for k in range(m)]
+    heapify(heap)
+    assign = [0] * len(costs)
+    loads = [0.0] * m
+    for i in order:
+        load, k = heap[0]
+        assign[i] = k
+        loads[k] = load + costs[i]
+        heapreplace(heap, (loads[k], k))
+    return assign, loads
+
+
+def _write_plan(
+    out_dir: Path, *, shards: list[int], count: int, makespan: float, loads: list[float]
+) -> None:
+    """Persist plan.json (the workflow reads ``shards`` + ``count``) and echo the matrix to stdout."""
+    plan = {
+        "shards": shards,
+        "count": count,
+        "makespan_s": round(makespan, 1),
+        "per_shard_s": [round(x, 1) for x in loads],
+    }
+    (out_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+    print(json.dumps({"shards": shards, "count": count}), flush=True)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--source",
+        default=str(_SOURCE),
+        help="tech corpus dir (default: data/jobs/tech)",
+    )
+    ap.add_argument(
+        "--prior-meta",
+        default=str(_PRIOR_META),
+        help="prior store meta.jsonl to diff against",
+    )
+    ap.add_argument(
+        "--priority",
+        default=str(_PRIORITY),
+        help="board_priority.csv for within-shard ordering",
+    )
+    ap.add_argument(
+        "--out-dir", default=str(_OUT), help="where to write shard-*.jsonl + plan.json"
+    )
+    ap.add_argument(
+        "--max-shards",
+        type=int,
+        default=_MAX_SHARDS,
+        help="fan-out cap (== workflow max-parallel)",
+    )
+    ap.add_argument(
+        "--target-seconds",
+        type=float,
+        default=_TARGET_SECONDS,
+        help="per-shard makespan target",
+    )
+    ap.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="admission control: keep only the top-priority N new Docs (0 = all)",
+    )
+    args = ap.parse_args()
+
+    prior = _prior_ids(Path(args.prior_meta))
+    scores = load_scores(Path(args.priority))
+    print(f"[plan] prior store: {len(prior)} embedded ids", file=sys.stderr, flush=True)
+
+    # Collect the new English Docs — same gate/build/meta as embed_jobs, via the shared module.
+    ids: list[str] = []
+    docs: list[str] = []
+    metas: list[dict] = []
+    boards: list[str] = []
+    scanned = already = dropped = 0
+    for job in iter_jobs(args.source):
+        scanned += 1
+        jid = job.get("id") or ""
+        if jid in prior:
+            already += 1
+            continue
+        if not is_english(job.get("title") or "", job.get("description") or ""):
+            dropped += 1
+            continue
+        ids.append(jid)
+        docs.append(build_doc(job))
+        metas.append(to_meta(job))
+        boards.append(board_of(jid))
+    print(
+        f"[plan] new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped})",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob("shard-*.jsonl"):
+        stale.unlink()  # a shorter plan must not leave a prior run's extra shards behind
+
+    if not docs:
+        _write_plan(out_dir, shards=[], count=0, makespan=0.0, loads=[])
+        print(
+            "[plan] nothing new to embed — emitted empty plan",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 0
+
+    tok = _load_tokenizer()
+    buckets = [bucket_for(n) for n in _token_lengths(tok, docs)]
+    costs = [_S_PER_DOC[b] for b in buckets]
+
+    # Admission control (optional): keep the top-priority N that fit, bank the rest to next run's diff.
+    keep = list(range(len(docs)))
+    if args.limit and len(keep) > args.limit:
+        keep.sort(key=lambda i: (scores.get(boards[i], 0.0), -costs[i]), reverse=True)
+        keep = sorted(keep[: args.limit])
+        print(
+            f"[plan] admission: capped {len(docs)} -> {len(keep)} top-priority Docs",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    sel_costs = [costs[i] for i in keep]
+    total_cost = sum(sel_costs)
+    m = shard_count(total_cost, len(keep), args.max_shards, args.target_seconds)
+    assign, loads = lpt_pack(sel_costs, m)
+
+    # Group each shard's Docs, ordered cheap-first then priority-desc (ADR-0022).
+    shard_items: list[list[int]] = [[] for _ in range(m)]
+    for local, i in enumerate(keep):
+        shard_items[assign[local]].append(i)
+    for k in range(m):
+        shard_items[k].sort(key=lambda i: (buckets[i], -scores.get(boards[i], 0.0)))
+        path = out_dir / f"shard-{k}.jsonl"
+        with path.open("w", encoding="utf-8") as fh:
+            for i in shard_items[k]:
+                fh.write(
+                    json.dumps(
+                        {"doc": docs[i], "bucket": buckets[i], "meta": metas[i]},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        print(
+            f"[plan] shard {k}: {len(shard_items[k])} docs, ~{loads[k] / 60:.1f} min -> {path}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    makespan = max(loads) if loads else 0.0
+    _write_plan(
+        out_dir, shards=list(range(m)), count=len(keep), makespan=makespan, loads=loads
+    )
+    print(
+        f"[plan] {len(keep)} Docs across {m} shards; predicted makespan ~{makespan / 60:.1f} min "
+        f"(total work Σ {total_cost / 60:.1f} min)",
+        file=sys.stderr,
+        flush=True,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
