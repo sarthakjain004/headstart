@@ -14,7 +14,7 @@ dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerpr
 # ruff is version-pinned: its formatter output can shift between releases, so an
 # unpinned CI would reformat differently than local and fail `ruff format --check`.
 # Dependabot bumps this; bump commits carry any reformat with them.
-dev = ["pytest", "ruff==0.15.20"]
+dev = ["pytest", "ruff==0.15.22"]
 # Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
 embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb"]
