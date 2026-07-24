@@ -35,6 +35,8 @@ the thing to avoid.
 - **[portfolio-strategy.md](portfolio-strategy.md)** — how to shape this into a standout AI/ML
   engineer portfolio project: what differentiates it from a commodity "RAG chatbot," what to
   avoid, and the metrics that make it credible.
+- **[embedding-throughput.md](embedding-throughput.md)** — measured (not designed) embedding
+  speed on CI, by token-length **Bucket**, and how to predict a future embedding run's duration.
 
 ## Recommended first slice
 

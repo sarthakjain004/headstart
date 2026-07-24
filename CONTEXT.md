@@ -91,6 +91,19 @@ _Avoid_: database, vector store — those name the storage, not the served set.
 **Eviction**:
 Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone. The freshness counterpart to embedding newly-seen Jobs.
 
+**Doc**:
+The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006).
+_Avoid_: document — reads as a file; the embedding code's own vocabulary (`build_doc`, `docs`) already settled on "doc".
+
+**Bucket**:
+A fixed token-length ceiling (512 / 1024 / 2048 / 4096) that Docs are sorted into before encoding, measured with the real tokenizer rather than estimated by character count. Buckets exist because attention cost scales with sequence length squared: without a shared ceiling, one long Doc batched alongside short ones would balloon memory for the whole batch. Every batch within a Bucket is padded to that Bucket's exact length, so a run only ever presents a small, fixed set of compute shapes instead of one per Doc.
+
+**Batch size**:
+How many Docs are encoded together in one pass, fixed per **Bucket** so batch size × bucket² stays roughly constant (a fixed attention-memory budget) — the larger the Bucket, the smaller its Batch. On the CI CPU runner the ≤4096-token Bucket's Batch size is 1: no batching efficiency survives at the top Bucket.
+
+**Throughput (jobs/s, s/doc)**:
+The measured embedding rate — not a fixed constant. The embed step logs a running `jobs/s` average per batch straight to the CI log; its reciprocal, seconds-per-Doc, is the more useful number for predicting run length. Throughput differs sharply by **Bucket** (short Docs batch efficiently; the ≤4096 Bucket, Batch size 1, costs roughly 20x longer per Doc) and by which runner executes the run — so there is no single "embedding speed," only a per-Bucket rate read off real logs.
+
 ## Relationships
 
 - A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**.
