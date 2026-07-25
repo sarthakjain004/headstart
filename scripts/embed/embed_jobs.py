@@ -73,6 +73,15 @@ _FLOAT_BYTES = 4  # float32
 #    of its first doc, and one pin doc of exactly the bucket's token length rides along so the
 #    tokenizer pads every batch to the bucket length. Shapes per run: len(_BUCKETS).
 #
+# Finding 2 is a property of the *Metal driver*, so the shape pinning it motivates is applied
+# only on MPS. A CPU run — the CI pipeline, whose shards land on GPU-less GitHub VMs
+# (ADR-0025/ADR-0026) — has no such cache, so there the pin doc and the count-padding buy nothing
+# and cost full extra forward passes. Worst exactly where it hurts most: CPU quarters the budget,
+# so batch_size_for(4096) == 1 and each 4,096-token Doc was encoded alongside a 4,096-token pin —
+# 2x the work in the bucket that owns ~38% of a shard's wall time. Measured on run 30131376268
+# (2026-07-24, 646 Docs/shard): pinning cost 728s of 2,669s, ~27%. On CPU a batch is therefore
+# the real Docs alone, padded only to the longest Doc in it.
+#
 # Sequences are hard-capped at 4,096 tokens (the top bucket): a single full-context 8,192-token
 # doc transiently demands ~50 GB on this stack. 4,096 is inside the envelope the Wellfound run
 # proved safe, and only ~0.01% of tech-corpus docs are longer (their boilerplate tails get
@@ -97,9 +106,22 @@ def order_by_priority(idxs: list[int], metas: list[dict], scores: dict) -> list[
     )
 
 
+def encode_batch(batch_docs: list[str], n: int, pin: str | None) -> list[str]:
+    """The doc list handed to ``model.encode`` for one batch.
+
+    ``pin`` set (MPS): pin the shape to ``(n + 1, bucket)`` — repeats of the first doc fill a
+    short final chunk, and the pin doc makes the tokenizer pad every sequence to the bucket
+    length. ``pin`` None (CPU): the real docs alone, since only the Metal driver needs a finite
+    shape set and the padding is otherwise just extra forward passes (see the _BUCKETS comment).
+    Either way the caller keeps the first ``len(batch_docs)`` vectors."""
+    if pin is None:
+        return batch_docs
+    return batch_docs + [batch_docs[0]] * (n - len(batch_docs)) + [pin]
+
+
 def make_pin_doc(tokenizer, bucket: int) -> str:
     """A doc of exactly ``bucket`` tokens — riding in every batch, it makes the tokenizer pad
-    the whole batch to the bucket length, pinning the batch shape."""
+    the whole batch to the bucket length, pinning the batch shape. MPS only."""
 
     def measure(text: str) -> int:
         return len(
@@ -228,7 +250,7 @@ def _encode_groups(
     store,
     budget: int,
 ) -> tuple[int, int]:
-    """Encode bucket-by-bucket with pinned shapes (see the _BUCKETS comment), isolating
+    """Encode bucket-by-bucket, shapes pinned on MPS only (see the _BUCKETS comment), isolating
     per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the CI
     time budget (pipeline.yml wraps this in ``timeout``), short docs embed at docs/sec while
     4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
@@ -240,12 +262,13 @@ def _encode_groups(
     done = failed = consec_failed = 0
     start = time.monotonic()
     wedged = False
+    pin_shapes = device == "mps"  # only the Metal driver needs a finite shape set
     for bucket in _BUCKETS:
         idxs = groups[bucket]
         if not idxs or wedged:
             continue
         n = batch_size_for(bucket, budget)
-        pin = make_pin_doc(model.tokenizer, bucket)
+        pin = make_pin_doc(model.tokenizer, bucket) if pin_shapes else None
         print(
             f"[embed] bucket ≤{bucket} tokens: {len(idxs)} docs in batches of {n}",
             file=sys.stderr,
@@ -255,17 +278,15 @@ def _encode_groups(
             chunk = idxs[s : s + n]
             batch_metas = [metas[j] for j in chunk]
             batch_docs = [docs[j] for j in chunk]
-            # pad the count with repeats of the first doc, and add the pin doc so the batch
-            # pads to the bucket length — every batch in the bucket is one identical shape
-            padded = batch_docs + [batch_docs[0]] * (n - len(chunk)) + [pin]
+            batch = encode_batch(batch_docs, n, pin)
             for attempt in (0, 1):
                 try:
                     vectors = model.encode(
-                        padded,
+                        batch,
                         normalize_embeddings=True,
-                        batch_size=len(padded),
+                        batch_size=len(batch),
                         show_progress_bar=False,
-                    )[: len(chunk)]  # drop the count-padding and the pin
+                    )[: len(chunk)]  # drop the count-padding and the pin (no-op on CPU)
                 except Exception as exc:  # noqa: BLE001 - isolate the batch; its ids retry on the next --resume
                     if (
                         attempt == 0

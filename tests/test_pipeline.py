@@ -1,6 +1,7 @@
 import json
 
 import headstart.pipeline as pipeline
+from headstart.board_cost import read_shard_rows
 from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.pipeline import build_feed, scrape_all, write_feed
@@ -191,3 +192,29 @@ def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
     assert calls == ["c"]
     assert r3.boards == 1
     assert len((tmp_path / "greenhouse.jsonl").read_text("utf-8").splitlines()) == 3
+
+
+def test_records_measured_seconds_for_every_board_including_failures(
+    monkeypatch, tmp_path
+):
+    """ADR-0027: the packer needs a cost for every board it dispatched.
+
+    A board that raises still burned wall time, so its row must land too — timing lives in a
+    `finally`, not on the success path. The file is undotted so upload-artifact includes it
+    (hidden files are skipped by default, which is why the `.done` journal never reaches the join).
+    """
+
+    def fake_get(ats, slug, name=None):
+        if slug == "bad":
+            return FakeScraper(error=RuntimeError("boom"))
+        return FakeScraper([make_job(f"x:{slug}:1")])
+
+    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    scrape_all([CompanyRef("x", "good"), CompanyRef("x", "bad")], jobs_dir=tmp_path)
+
+    rows = read_shard_rows(tmp_path / pipeline.COST_FILENAME)
+    assert set(rows) == {"x:good", "x:bad"}
+    assert all(seconds >= 0.0 for seconds, _ in rows.values())
+    assert rows["x:good"][1] == 1  # jobs written
+    assert rows["x:bad"][1] == 0  # errored board wrote none, but is still costed
+    assert not pipeline.COST_FILENAME.startswith(".")

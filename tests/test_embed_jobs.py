@@ -126,6 +126,27 @@ def test_batch_size_shrinks_with_bucket():
     assert sizes[-1] < sizes[0]  # long-doc buckets really do get smaller batches
 
 
+def test_encode_batch_pins_shape_when_pin_given():
+    # MPS: every batch in a bucket presents one identical (n + 1, bucket) shape.
+    batch = ej.encode_batch(["a", "b"], n=4, pin="PIN")
+    assert batch == ["a", "b", "a", "a", "PIN"]
+    full = ej.encode_batch(["a", "b", "c", "d"], n=4, pin="PIN")
+    assert full == ["a", "b", "c", "d", "PIN"]
+
+
+def test_encode_batch_is_docs_only_without_pin():
+    # CPU: no Metal shape cache, so no pin and no count-padding — the padding would be pure
+    # extra forward passes (2x in the ≤4096 bucket, where batch_size_for == 1).
+    assert ej.encode_batch(["a", "b"], n=4, pin=None) == ["a", "b"]
+
+
+def test_encode_batch_keeps_real_docs_first_so_the_slice_is_correct():
+    # _encode_groups keeps vectors[: len(chunk)] — that must be the real docs in both modes.
+    chunk = ["a", "b"]
+    for pin in ("PIN", None):
+        assert ej.encode_batch(chunk, n=4, pin=pin)[: len(chunk)] == chunk
+
+
 def test_order_by_priority_score_desc_stable_unknown_last():
     metas = [
         {"id": "lever:low:1"},
