@@ -219,6 +219,12 @@ jobs:
         run: python scripts/filter/tech.py
       - name: Update board priority ledger
         run: python scripts/rank/update_board_priority.py
+      - name: Update board cost ledger (measured scrape seconds — ADR-0027)
+        # Blends the per-shard board_cost.csv timings into data/state/, which merge uploads and
+        # the next run's scrape-plan packs on. Never fatal: a missing ledger only costs one run
+        # of balance, so it must not sink a run that already scraped and embedded successfully.
+        continue-on-error: true
+        run: python scripts/rank/update_board_cost.py
       - name: Plan the embed fan-out
         id: plan
         run: |

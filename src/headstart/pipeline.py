@@ -17,6 +17,10 @@ from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
 
+# Per-board scrape timings a shard hands to the join (ADR-0027). Undotted on purpose — see
+# JobWriter.record_cost.
+COST_FILENAME = "board_cost.csv"
+
 
 def _default_workers() -> int:
     """Company-level thread count. The work is network-bound (``curl_cffi`` drops the GIL per
@@ -77,6 +81,13 @@ class JobWriter:
             for ats in atses
         }
         self._done_handle = self._done_path.open(mode, encoding="utf-8")
+        # Per-board scrape seconds (ADR-0027). Header only on a fresh run, so a resume appends.
+        cost_path = self._dir / COST_FILENAME
+        fresh_cost = mode == "w" or not cost_path.exists()
+        self._cost_handle = cost_path.open(mode, encoding="utf-8")
+        if fresh_cost:
+            self._cost_handle.write("board,seconds,jobs\n")
+            self._cost_handle.flush()
 
     def write(self, jobs: list[Job]) -> None:
         touched = set()
@@ -98,10 +109,21 @@ class JobWriter:
         self._done_handle.write(board_key + "\n")
         self._done_handle.flush()
 
+    def record_cost(self, board_key: str, seconds: float, jobs: int) -> None:
+        """Append this board's measured scrape seconds, flushed per board (ADR-0027).
+
+        Same contract as :meth:`mark_done`: written as each board lands, never buffered, so a
+        shard killed by its time budget still hands the join every timing it did measure. The
+        filename is deliberately *not* dotted — ``actions/upload-artifact`` skips hidden files by
+        default, which is why the ``.done`` journal never reaches the join and this must."""
+        self._cost_handle.write(f"{board_key},{seconds:.3f},{jobs}\n")
+        self._cost_handle.flush()
+
     def close(self) -> None:
         for handle in self._handles.values():
             handle.close()
         self._done_handle.close()
+        self._cost_handle.close()
 
 
 def _emit_progress(
@@ -145,8 +167,17 @@ def scrape_all(
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
+    # Measured wall time per board, filled by the worker threads and read on the merge thread
+    # (ADR-0027). Timed in `finally` so an errored board still records the seconds it burned — a
+    # board that hangs 30s before raising costs 30s, and the packer must know that.
+    elapsed: dict[str, float] = {}
+
     def run_one(company: CompanyRef) -> list[Job]:
-        return get_scraper(company.ats, company.slug, company.name).fetch()
+        start = time.monotonic()
+        try:
+            return get_scraper(company.ats, company.slug, company.name).fetch()
+        finally:
+            elapsed[f"{company.ats}:{company.slug}"] = time.monotonic() - start
 
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
@@ -176,6 +207,7 @@ def scrape_all(
                 writer.mark_done(
                     key
                 )  # mark on completion (success or error): resume moves on
+                writer.record_cost(key, elapsed.pop(key, 0.0), n_fresh)
                 if on_board is not None:
                     on_board(key, n_fresh, errors.get(key))
                 if progress_every and done % progress_every == 0:

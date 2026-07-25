@@ -5,12 +5,16 @@ Runs once, before the scrape matrix. It selects this run's board slice exactly a
 ``nightly_harvest`` does (``pick_boards``: priority-first + a random exploration tail, capped at
 ``--max-boards``), then splits the *selected* boards across a dynamic number of shards:
 
-- **Shard count** is sized by board *count* (transparent: ~``--target-boards`` per shard, clamped to
-  ``--max-shards``) — a full slice saturates the lanes, a small one collapses to a single shard.
-- **Which board goes where** is an LPT bin-pack by a per-Board cost estimate, so the shards' wall
-  times balance. Cost ≈ the board's EWMA tech-job count (``board_priority`` score) × a per-ATS
-  weight: detail-fetching ATSes (a per-job request each) cost far more per job than list-only ones,
-  and the 140-min budget is blown by exactly those.
+- **Which board goes where** is an LPT bin-pack by each Board's **measured scrape seconds**
+  (``board_cost.csv``, ADR-0027), so the shards' wall times balance. A Board with no measurement
+  yet is estimated from its ATS's median. Until the ledger exists at all, this falls back to the
+  ADR-0026 heuristic (tech-job EWMA × a detail-ATS weight) — which measurement showed carries no
+  signal: it rated 14 shards identical and they ran 60 s to 1,222 s.
+- **Shard count** follows the same unit: ~``--target-seconds`` of measured work per shard, clamped
+  to ``--max-shards``. A full slice saturates the lanes, a small one collapses to a single shard.
+  (Cold start has no seconds, so it sizes by ``--target-boards`` instead.)
+- With real seconds the planner can also **predict the makespan**, which is what sizes
+  ``pipeline.yml``'s ``timeout 60m`` scrape budget rather than a guess.
 
 Each shard runs on its own runner/IP, so keeping per-shard workers at the monolith default (this
 planner does not touch ``HEADSTART_WORKERS``) makes every ATS host see a shard as one ordinary
@@ -19,7 +23,7 @@ monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanc
 Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board, priority-desc so a time-boxed shard
 scrapes its best boards first) + a ``plan.json`` (``shards`` matrix + board ``count``) the workflow reads.
 
-Run: python scripts/pipeline/plan_scrape.py [--max-boards 8000] [--max-shards 15]
+Run: python scripts/pipeline/plan_scrape.py [--max-boards 20000] [--max-shards 15]
 """
 
 from __future__ import annotations
@@ -30,17 +34,21 @@ import sys
 from pathlib import Path
 
 from headstart.binpack import lpt_pack, shard_count
+from headstart.board_cost import costs_for
+from headstart.board_cost import load as load_costs
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
 
 _ROOT = Path(__file__).resolve().parents[2]
 _LEDGER = _ROOT / "data" / "validate" / "liveness"
 _PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
+_COST = _ROOT / "data" / "state" / "board_cost.csv"
 _OUT = _ROOT / "data" / "scrape" / "assignments"
 
-# ATSes whose scraper fetches each posting's detail in a per-board pool (grep: _DETAIL_WORKERS /
-# fan_out). A detail board of N jobs costs ~N per-job requests vs one list fetch — so its per-job
-# cost is far higher. The weight is coarse (LPT tolerates cost noise); tune if a shard straggles.
+# Legacy heuristic, kept only as the cold-start path: before the cost ledger has any rows (a fresh
+# repo, or the first run after ADR-0027), fall back to the ADR-0026 estimate — the board's tech
+# EWMA times a per-ATS weight for the detail-fetching scrapers (grep: _DETAIL_WORKERS / fan_out).
+# It is a poor proxy (see ADR-0027) but it beats packing blind, and it self-replaces after one run.
 _DETAIL_ATS = frozenset(
     {
         "join",
@@ -54,15 +62,16 @@ _DETAIL_ATS = frozenset(
     }
 )
 _DETAIL_WEIGHT = 6.0
-_EXPLORE_BASELINE = (
-    5.0  # unscored exploration boards: assume a small board (no history to size by)
-)
+_EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to size by
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`
-_TARGET_BOARDS = 600  # ~boards per shard; a full 8k slice → ~13-15 shards
+_TARGET_SECONDS = 600.0  # ~10 min of measured work per shard; a 20k slice → ~14 shards
+_TARGET_BOARDS = (
+    600  # cold-start only: ~boards per shard when there are no measurements
+)
 
 
 def board_cost(ats: str, score: float) -> float:
-    """Relative scrape cost of one board (arbitrary units — LPT only needs the ordering)."""
+    """Cold-start cost of one board (arbitrary units — LPT only needs the ordering)."""
     return max(score, _EXPLORE_BASELINE) * (
         _DETAIL_WEIGHT if ats in _DETAIL_ATS else 1.0
     )
@@ -98,7 +107,7 @@ def main() -> int:
     ap.add_argument(
         "--max-boards",
         type=int,
-        default=8000,
+        default=20000,  # == pipeline.yml's max_boards default
         help="boards to scrape this run (0 = all live)",
     )
     ap.add_argument(
@@ -108,10 +117,22 @@ def main() -> int:
         help="fan-out cap (== workflow max-parallel)",
     )
     ap.add_argument(
+        "--cost",
+        default=str(_COST),
+        help="board_cost.csv of measured scrape seconds (ADR-0027); "
+        "absent/empty falls back to the ADR-0026 heuristic",
+    )
+    ap.add_argument(
+        "--target-seconds",
+        type=float,
+        default=_TARGET_SECONDS,
+        help="~measured seconds per shard (sizes the fan-out once costs exist)",
+    )
+    ap.add_argument(
         "--target-boards",
         type=int,
         default=_TARGET_BOARDS,
-        help="~boards per shard (sizes the fan-out)",
+        help="cold-start only: ~boards per shard before any measurements exist",
     )
     args = ap.parse_args()
 
@@ -140,8 +161,38 @@ def main() -> int:
         )
         return 0
 
-    costs = [board_cost(c.ats, scores.get(f"{c.ats}:{c.slug}", 0.0)) for c in companies]
-    m = shard_count(n, n, args.max_shards, args.target_boards)
+    # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
+    # heuristic only until the first run has populated it.
+    cost_rows = load_costs(Path(args.cost))
+    if cost_rows:
+        costs = costs_for(((c.ats, f"{c.ats}:{c.slug}") for c in companies), cost_rows)
+        measured = sum(1 for c in companies if f"{c.ats}:{c.slug}" in cost_rows)
+        unit, per_shard_target = "s", args.target_seconds
+        print(
+            f"[plan-scrape] cost: measured seconds for {measured}/{n} boards "
+            f"({len(cost_rows)} in ledger); rest estimated from their ATS median",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        costs = [
+            board_cost(c.ats, scores.get(f"{c.ats}:{c.slug}", 0.0)) for c in companies
+        ]
+        unit, per_shard_target = "cost", float(args.target_boards)
+        print(
+            "[plan-scrape] cost: no measurements yet — cold-start heuristic (ADR-0026); "
+            "the join writes data/state/board_cost.csv and the next run packs on seconds",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    total_cost = sum(costs)
+    m = shard_count(
+        total_cost if cost_rows else n,
+        n,
+        args.max_shards,
+        per_shard_target if cost_rows else args.target_boards,
+    )
     assign, loads = lpt_pack(costs, m)
 
     shard_boards: list[list[int]] = [[] for _ in range(m)]
@@ -162,14 +213,24 @@ def main() -> int:
                     json.dumps({"ats": c.ats, "slug": c.slug, "name": c.name}) + "\n"
                 )
         per_shard.append(len(shard_boards[k]))
+        load = loads[k] / 60 if cost_rows else loads[k]
         print(
-            f"[plan-scrape] shard {k}: {len(shard_boards[k])} boards (cost ~{loads[k]:.0f})",
+            f"[plan-scrape] shard {k}: {len(shard_boards[k])} boards "
+            + (f"(~{load:.1f} min)" if cost_rows else f"(cost ~{load:.0f})"),
             file=sys.stderr,
             flush=True,
         )
 
     _write_plan(out_dir, shards=list(range(m)), count=n, per_shard=per_shard)
-    print(f"[plan-scrape] {n} boards across {m} shards", file=sys.stderr, flush=True)
+    tail = (
+        f"; predicted makespan ~{max(loads) / 60:.1f} min "
+        f"(total work Σ {total_cost / 60:.1f} min)"
+        if cost_rows
+        else f" (unit: {unit})"
+    )
+    print(
+        f"[plan-scrape] {n} boards across {m} shards{tail}", file=sys.stderr, flush=True
+    )
     return 0
 
 

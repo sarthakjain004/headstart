@@ -9,7 +9,7 @@ two ways: a static dashboard over a curated feed, and an **AI semantic-search la
 embeddings + vector search with structured filters) running live on a free-tier Hugging Face
 Space over a ~200k-row index of the tech corpus.
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 26 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 27 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

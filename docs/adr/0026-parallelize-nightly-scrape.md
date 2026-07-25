@@ -56,9 +56,11 @@ more per job than a list-only one, and those are exactly the boards that blow th
 design — LPT tolerates cost noise, and the shard *count* (the thing that must be right) is sized by
 board count, not this estimate.
 
-**This model did not survive first contact — see "Measured outcome".** The distinction that matters
-is between *noisy* and *uninformative*: LPT tolerates the first, not the second, and this estimate
-turned out to be the second.
+**This model did not survive first contact — see "Measured outcome", and it is replaced by
+[ADR-0027](0027-measured-scrape-cost-ledger.md), which packs on measured per-Board seconds.** The
+distinction that matters is between *noisy* and *uninformative*: LPT tolerates the first, not the
+second, and this estimate turned out to be the second. The plan → fan-out → join shape below is
+unchanged; only the cost estimate was wrong.
 
 ## How we implement it
 
