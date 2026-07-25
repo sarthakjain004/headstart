@@ -107,15 +107,23 @@ The measured embedding rate — not a fixed constant. The embed step logs a runn
 ### Pipeline scheduling and sharding
 
 **Board-priority ledger (EWMA)**:
-The per-Board tech-yield score in `data/state/board_priority.csv`, kept as an **EWMA** — an Exponentially-Weighted Moving Average. Each run blends a Board's fresh tech-Job count into its prior score (`0.7·now + 0.3·history`), so recent nights dominate while older counts decay rather than being forgotten or weighted equally (ADR-0022). Boards the run didn't scrape keep their score unchanged — a partial harvest must not decay what it never looked at — and a score decayed below a floor drops out. The ledger orders both the scrape slice (high-yield Boards first) and the within-**Bucket** embed order, and is the **cost estimate** the pipeline planners bin-pack on.
-_Avoid_: reading it as an exact count — it is a decaying average, an estimate of a Board's tech yield.
+The per-Board tech-yield score in `data/state/board_priority.csv`, kept as an **EWMA** — an Exponentially-Weighted Moving Average. Each run blends a Board's fresh tech-Job count into its prior score (`0.7·now + 0.3·history`), so recent nights dominate while older counts decay rather than being forgotten or weighted equally (ADR-0022). Boards the run didn't scrape keep their score unchanged — a partial harvest must not decay what it never looked at — and a score decayed below a floor drops out. The ledger orders both the scrape slice (high-yield Boards first) and the within-**Bucket** embed order.
+_Avoid_: reading it as an exact count — it is a decaying average, an estimate of a Board's tech yield. _Avoid_: using it as a **cost** estimate. It answers "is this Board worth scraping?", not "how long will it take" — ADR-0026 conflated the two and the resulting pack was measurably useless. Cost lives in the **Board-cost ledger**.
+
+**Board-cost ledger (measured seconds)**:
+The per-Board _measured_ scrape wall time in `data/state/board_cost.csv`, the cost estimate the scrape planner bin-packs on (ADR-0027). Every scrape shard times each Board it scrapes and streams the row to its fragment; the join EWMA-blends them (`0.5·now + 0.5·history` — wall time is noisier than a Job count, so it leans on history harder than the priority ledger does). A Board with no measurement yet is estimated from its ATS's median, never from one global constant.
+_Avoid_: confusing it with the **Board-priority ledger** — priority is a product question (which Boards deserve the slice), cost is an operational one (how to balance the shards). They decay differently and are read by different stages.
 
 **Bin-packing**:
-Splitting work items of uneven cost across a fixed number of parallel shards so each shard's total cost — its *makespan* — is as even as possible, since a fan-out run is only as fast as its slowest shard. The nightly-pipeline planners bin-pack Boards (weighted by the EWMA ledger) across scrape shards and **Docs** (weighted by per-**Bucket** embed cost) across embed shards (ADR-0025).
+Splitting work items of uneven cost across a fixed number of parallel shards so each shard's total cost — its *makespan* — is as even as possible, since a fan-out run is only as fast as its slowest shard. The nightly-pipeline planners bin-pack Boards (weighted by the **Board-cost ledger**'s measured seconds) across scrape shards and **Docs** (weighted by per-**Bucket** embed cost) across embed shards (ADR-0025, ADR-0027).
 _Avoid_: conflating with **Bucket** — a Bucket is a token-length class for one Doc; bin-packing distributes many items across shards, and one shard mixes Docs from several Buckets.
 
 **LPT (Longest Processing Time first)**:
 The greedy heuristic the planners bin-pack with: sort the items by descending cost, then hand each next item to whichever shard is currently least-loaded. Chosen over hashing or round-robin because per-item cost is heavy-tailed — embed cost spans ~20× from the ≤512 to the ≤4096 **Bucket** — so a cost-blind split reliably saddles one shard with the heavy items and it straggles while the rest idle (ADR-0025).
+
+**GitHub VM**:
+The term for the GitHub Actions jobs a matrix fan-out spreads across separate machines — the scrape and embed shards of ADR-0025/ADR-0026 each run on their own GitHub VM. Say "GitHub VM" whenever the point is the _machine_: its own IP (why per-host scrape politeness is unchanged), its own cold filesystem (why every shard re-runs checkout, `pip install`, and a model download), and its own memory and disk (why shard state moves as artifacts, never shared storage).
+_Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns — one shard runs on one GitHub VM, but the shard is the board list or Doc list, not the machine.
 
 ## Relationships
 

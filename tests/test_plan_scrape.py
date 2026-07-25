@@ -22,13 +22,13 @@ ps = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ps)
 
 
-def test_board_cost_weights_detail_fetchers():
+def test_coldstart_cost_weights_detail_fetchers():
     assert (
-        ps.board_cost("workday", 10.0) == 10.0 * ps._DETAIL_WEIGHT
+        ps._coldstart_cost("workday", 10.0) == 10.0 * ps._DETAIL_WEIGHT
     )  # detail-fetch ATS
-    assert ps.board_cost("lever", 10.0) == 10.0  # list-only ATS, weight 1
+    assert ps._coldstart_cost("lever", 10.0) == 10.0  # list-only ATS, weight 1
     assert (
-        ps.board_cost("greenhouse", 0.0) == ps._EXPLORE_BASELINE
+        ps._coldstart_cost("greenhouse", 0.0) == ps._EXPLORE_BASELINE
     )  # unscored -> baseline floor
 
 

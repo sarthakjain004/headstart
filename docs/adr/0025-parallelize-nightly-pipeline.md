@@ -1,7 +1,7 @@
 # ADR-0025: Parallelize the nightly pipeline across GitHub Actions runners — plan → fan-out → merge
 
-- Status: Proposed
-- Date: 2026-07-24
+- Status: Accepted — Phase 1 shipped; Phase 2 followed as [ADR-0026](0026-parallelize-nightly-scrape.md)
+- Date: 2026-07-24 (measured outcome appended 2026-07-25)
 - Builds on [ADR-0020](0020-free-tier-deployment.md) (the single-job nightly + the HF-state
   download→mutate→upload round-trip), [ADR-0022](0022-tech-priority-board-ordering.md) (the
   board-priority EWMA the planners bin-pack on), [ADR-0014](0014-search-index-ingestion-and-freshness.md)
@@ -86,8 +86,13 @@ embed is parallel.
 - **Matrix sized by a prior job:** the plan job sets an output (`shards: '[0,1,2,...]'`); the fan-out
   job declares `strategy: { max-parallel: 15, fail-fast: false, matrix: { shard: ${{ fromJson(needs.plan.outputs.shards) }} } }`.
 - **State passing:** `actions/upload-artifact` per shard, `actions/download-artifact` in the join/merge
-  jobs. Small inputs (assignment JSON, doc texts); the heavy ~460 MB store + LanceDB download and the
-  upload are confined to the **merge job** and the planner (which pulls only `meta.jsonl` to diff).
+  jobs. The heavy ~460 MB store + LanceDB download and the upload are confined to the **merge job**;
+  the planner pulls only `meta.jsonl` to diff. One artifact is *not* small and this ADR originally
+  missed it: the join→merge `corpus-state` carries the whole scrape snapshot (`data/jobs`), because
+  `sync_index` derives the corpus-id set and the eviction Board set from it. It grows linearly with
+  `--max-boards` (46 s up / 14 s down at an 8,000-Board slice). Only the *id* and *Board-key* sets are
+  actually consumed — the indexed rows come from the store's `meta.jsonl` — so this artifact is a
+  standing simplification target, not a fixed cost.
 - **`embed_jobs.py` gains an assignment mode** — a `--assignment <file>` (id list + texts) that embeds
   exactly the given docs instead of self-selecting via `--resume` + corpus glob. The planner owns the
   dedup and the token-bucket balancing, so each shard is deterministic and its runtime predictable.
@@ -143,7 +148,8 @@ sharding makes that merge cheap (a concatenation, not a conflict resolution).
 - **Realistic speedup is 3–6× end-to-end, not 15×.** Amdahl: the serial tail — download + join + sync +
   prune + compact + upload + restart, ~20–40 min — cannot parallelize, and each shard carries fixed
   setup + artifact I/O. The real win is the nightly backlog **clearing in one run** and freshness moving
-  from ~9–10 days toward ~1–2, not raw wall-clock.
+  from ~9–10 days toward ~1–2, not raw wall-clock. (Measured: the serial tail came in far *under* this
+  estimate — see "Measured outcome" — but so did the speedup, and for a different reason.)
 - **A large complexity step:** one linear job becomes ~32 jobs across two fan-out/fan-in stages, two
   planners, artifact passing, a cost model, dynamic sizing, and cross-shard failure handling. This is the
   main cost weighed against the freshness benefit; it is only worth it while board-staleness is a real
@@ -152,11 +158,48 @@ sharding makes that merge cheap (a concatenation, not a conflict resolution).
   minutes, but a real cost if the repo ever goes private.
 - **A reusable admission-control signal:** the embed-planner prints a predicted makespan and can cap a
   run to the top-priority docs that fit, banking the rest to the next run's `--resume` — turning "will it
-  fit the budget?" from a gamble into arithmetic. Observability the monolith never had.
+  fit the budget?" from a gamble into arithmetic. Observability the monolith never had. **Half-delivered:**
+  `plan_embed --limit` implements the cap, but `pipeline.yml` never passes it, so only the printed
+  makespan is live in production; the cap itself is unexercised.
 - **Invariants preserved:** single-writer merge, board-scoped eviction (the join unions before sync), the
   crash-safe/resumable store (ADR-0004), and run-level serialization (the `concurrency` group).
 - **`embed_jobs.py` gains an assignment mode** — additive; the existing `--resume` path stays for local
   and single-job runs.
-- **Lifecycle:** Status flips **Proposed → Accepted** when Phase 1 ships. Phase 2 (scrape sharding) is
-  taken up only if scrape is still the binding constraint once embed is parallel; if it never is, this
-  ADR records why scrape was deliberately left monolithic.
+- **Lifecycle:** Phase 1 shipped and this ADR is **Accepted**. Phase 2 (scrape sharding) was taken up
+  as [ADR-0026](0026-parallelize-nightly-scrape.md) — deliberately *ahead* of the measurement gate this
+  ADR set, which that ADR records as a known deviation.
+
+## Measured outcome
+
+Run `30131376268` (2026-07-24 22:35 UTC), the first full five-stage run: **85 min end-to-end** —
+scrape-plan <1 min, scrape 20 min (14 jobs), join 4 min, embed 55 min (15 jobs), merge 2 min.
+Corpus that run: 390,167 scraped lines, 124,248 tech (31.8% keep), 9,708 new Docs against a prior
+store of 254,061 ids.
+
+- **The premise holds — embed is the bottleneck.** 55 of 85 min, 65% of wall-clock, with the fan-out
+  already saturated at all 15 lanes. Every further wall-clock gain has to come from per-Doc cost or
+  more lanes, not from better balancing.
+- **The embed cost model is accurate**, and this is the load-bearing result: measured s/Doc vs
+  `_S_PER_DOC` was 0.88 / 1.98 / 4.36 / 19.4 against 0.8 / 1.7 / 4.4 / 18.0 for the
+  512 / 1024 / 2048 / 4096 Buckets; predicted makespan 42.7 min vs 44.5 min actual. LPT held the
+  shards to 25–55 min. The bin-packing machinery this ADR argued for does what it claimed.
+- **End-to-end speedup was 1.4×, not 3–6×** — 121 min monolith (run `30111428538`) → 85 min sharded.
+  Not like-for-like (the monolith was time-boxed and banked partials, so it did less work), but the
+  3–6× range remains unvalidated and should not be quoted as measured.
+- **The serial tail is far smaller than the 20–40 min estimated** — join 4 min + merge 2 min. The HF
+  round-trip in particular is cheap: 11 s to download the store + LanceDB, 19 s to upload.
+- **Runs are slice-limited, not corpus-limited.** `--max-boards 8000` against 51,314 live Boards on
+  enabled ATSes supplies only ~640 lane-min of embed work, which 15 lanes absorb in ~43 min, so the
+  350-min budget in the Context goes unused. That is a cap we chose, not a shortage of work: the
+  store spans only **16,608 of 51,314 live Boards** (32%), and full coverage carries a backlog on
+  the order of **100,000-210,000 Docs** — 2-4 runs at a 200-minute embed budget. See
+  [`embedding-throughput.md`](../AI_Integration/embedding-throughput.md) for the derivation, the
+  per-ATS coverage table, and the three easily-confused corpus numbers (projected live tech ~514k,
+  store 263,769, served index ~200k). Raising `--max-boards` is what fills the budget; the binding
+  technical cap is then `timeout 100m` inside the embed step, and `plan_embed --limit` is the
+  control that should govern it.
+- **Two defects this shape introduced.** (1) The `actions/cache` entry for the embedding model is
+  created by the **join** job, which loads only the tokenizer, so all 15 embed shards get a cache
+  *hit* on an entry with no model weights, re-download them, and — being a hit — never re-save it.
+  The cache is permanently ineffective. (2) Fixed per-shard overhead is small but paid 32 times:
+  `pip install` runs 83–89 s per job, ~4 min of the 85 on the critical path.

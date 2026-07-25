@@ -32,40 +32,44 @@ idle, and the first visitor after a quiet stretch waits ~a minute.
 secret is set:
 
 `.github/workflows/pipeline.yml` (`nightly-pipeline`, **four crons/day** — 21:30 UTC compulsory
-nightly + 3:30/9:30/15:30 day-runs that give the CPU embed budget more slots — plus manual
-dispatch). One `harvest-embed-sync` job (`ubuntu-latest`, `timeout-minutes: 350`) runs these steps
-**in order**, each gated on the `HF_TOKEN` secret so the whole run is a green no-op until it is set.
-The run is a **download → mutate → upload cycle** over the dataset:
+nightly + 3:30/9:30/15:30 day-runs that give the CPU embed budget more slots — plus manual dispatch).
+The run is a **download → mutate → upload cycle** over the dataset, parallelized across runners as
+**five stages** (ADR-0025 sharded the embed, ADR-0026 the scrape); every job/step is gated on the
+`HF_TOKEN` secret so the whole run is a green no-op until it is set:
 
-1. **Download state** — `snapshot_download` the *prior* state from the dataset: `data/embeddings/jobs/*`
-   (vector store + `meta.jsonl`), `data/lancedb/*` (served table), `data/state/*` (priority ledger).
-   Everything below reads this downloaded state.
-2. **Scrape** — `nightly_harvest.py` (`timeout 140m`, `--max-boards 8000`): build the scrape list from
-   the committed liveness ledger (`load_active_companies`, `min_jobs=0`), order it by the board-priority
-   ledger (tech-history boards first + a randomly-rotated exploration tail), scrape the top slice, stream
-   jobs to `data/jobs/{ats}.jsonl`. Each run **truncates** the jsonl — the output is *this run's snapshot*.
-   Time-budgeted; a partial harvest is banked (eviction is scoped to boards actually in the snapshot).
-3. **Tech filter** — `filter/tech.py`: `data/jobs/{ats}.jsonl` → `data/jobs/tech/{ats}.jsonl`, keeping only
-   the software/tech subset. Everything downstream reads the tech subset.
-4. **Update board-priority ledger** — `rank/update_board_priority.py`: EWMA-blend each scraped board's
-   tech-job count into `data/state/board_priority.csv`. Drives the *next* run's scrape order and *this*
-   run's within-bucket embed order (ADR-0022).
-5. **Embed** — `embed_jobs.py --resume` (`timeout 100m`, CPU): read `data/jobs/tech/`, **skip ids already
-   in the downloaded `meta.jsonl`** — this `--resume` skip *is* the "only new jobs" step; there is no
-   separate DB-diff stage — English-gate, bucket by token length, encode, stream new vectors to
-   `embeddings.f32` + `meta.jsonl`. Highest-priority boards first; time-budgeted, banks partial, resumes.
-6. **Sync the table** — `sync_index.py`: reconcile the LanceDB `jobs` table from the store + corpus
-   snapshot (add ids that now have a vector, evict postings gone from scraped boards). Incremental, no rebuild.
-7. **Prune** — `prune_index.py --apply`: remove what the board-scoped sync can't reach — rows on boards no
-   longer live (keep-set = the live ledger) and case-variant duplicate rows. Safety-aborts on a too-small keep-set.
-8. **Compact** — `compact_index.py`: rewrite the table fresh to reclaim orphan fragments (keeps the served
-   index small enough for the free-tier Space to cold-start).
-9. **Upload state** — `hf upload` all three dirs back (`data/embeddings/jobs`, `data/lancedb` with `--delete`,
-   `data/state`), each with retry/backoff.
-10. **Restart the Space** so it picks up the new table.
+1. **`scrape-plan`** (1 job) — download the priority ledger (`data/state/*`), select this run's slice from
+   the committed liveness ledger ordered by board priority (tech-history boards first + a randomly-rotated
+   exploration tail, capped at `--max-boards` 20000 — 70% priority head / 30% exploration; ADR-0022), then **LPT-bin-pack the selected boards**
+   into ≤15 cost-balanced shards (`plan_scrape.py`). Emits a per-shard board list + a matrix.
+2. **`scrape`** (matrix, ≤15 shards) — each shard runs `nightly_harvest.py --assignment` (`timeout 60m`)
+   over *only its boards*, streaming to a shard-scoped `data/jobs/shard-{k}/{ats}.jsonl` fragment. One
+   runner per shard = one IP at the monolith's worker count, so per-host load is unchanged (ADR-0026).
+   `fail-fast: false`; a timed-out shard banks its partial fragment.
+3. **`join`** (1 job) — download all scrape fragments and **union them per ATS** into `data/jobs/`
+   (`join_shards.py`) so eviction sees the full scraped-Board set (ADR-0014); then **tech-filter**
+   (`filter/tech.py` → `data/jobs/tech/`), **update the board-priority ledger** (`rank/update_board_priority.py`
+   — EWMA-blend each scraped board's tech count into `data/state/board_priority.csv`), and **plan the embed
+   fan-out** (`plan_embed.py`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
+   jobs" step, no separate DB-diff — tokenize, LPT-bin-pack by measured per-bucket cost into ≤15 shards).
+4. **`embed`** (matrix, ≤15 shards) — each shard runs `embed_jobs.py --assignment` (`timeout 180m`, CPU) over
+   *only its assigned Docs* (the planner already English-gated, bucketed, and deduped them), encoding new
+   vectors into a shard-scoped `embeddings.f32` + `meta.jsonl` fragment. Stateless — no prior store, no
+   LanceDB. `fail-fast: false`; a timed-out shard banks its partial fragment.
+5. **`merge`** (1 job — the single writer, `if: always()`) — `snapshot_download` the *prior* store + served
+   table (`data/embeddings/jobs/*`, `data/lancedb/*`), **concatenate** the embed fragments onto the store
+   (`merge_shards.py`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
+   table (`sync_index.py`: add ids that now have a vector, evict postings gone from scraped boards —
+   incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`prune_index.py --apply` —
+   dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
+   keep-set), **compact** the table fresh to reclaim orphan fragments (`compact_index.py` — keeps the
+   served index small enough for the free-tier Space to cold-start), **upload** all three dirs back
+   (`data/embeddings/jobs`, `data/lancedb` with `--delete`, `data/state`) with retry/backoff, and
+   **restart the Space** to pick up the new table.
 
-A workflow-level `concurrency: group: nightly-pipeline` (`cancel-in-progress: false`) serializes whole
-runs so two never race on the dataset.
+The two `scrape`/`embed` fan-outs run `max-parallel: 15` (leaving 5 of the free tier's 20 concurrent jobs
+for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group: nightly-pipeline`
+(`cancel-in-progress: false`) serializes whole runs so two never race on the dataset. The monolith
+`nightly_harvest`/`embed_jobs --resume` paths are retained for local/single-job runs (see below).
 
 `.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
 `src/headstart/geo.py`, copied in — ADR-0024) to the Space on any main push touching those paths
