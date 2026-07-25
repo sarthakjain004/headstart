@@ -12,15 +12,23 @@ name: nightly-pipeline
 #
 # Time budget (sized 2026-07-25 against measured run 30131376268 — see
 # docs/AI_Integration/embedding-throughput.md for the arithmetic):
-#   expected ~171 min, worst case 347 min (sum of job timeouts), against a 360-min cron interval.
+#   expected ~171 min, worst case 358 min (sum of job timeouts), against a 360-min cron interval.
 # Every stage timeout is one of two kinds, and they are set on opposite principles:
 #   - scrape / embed BANK PARTIAL WORK, so their inner `timeout Nm ... || echo` is a *work budget*
 #     sized at ~3x the balanced makespan. Truncation is cheap and deliberate: the fragment uploads
 #     anyway and the unfinished Boards/Docs re-plan next run.
 #   - scrape-plan / join / merge are ALL-OR-NOTHING (no partial output), so their timeouts are pure
-#     hang detectors at ~4-8x the estimate. Cutting them early buys nothing and risks a false kill.
-# The inner `timeout` must always fire before the step's `timeout-minutes`, which must fire before
-# the job's — only that ordering reaches the upload step. Keep the margins when re-tuning.
+#     hang detectors at ~3-4x the estimate. Cutting them early buys nothing and risks a false kill.
+#     `join` is the one that matters: it is un-bankable AND every scrape fragment flows through it,
+#     so a join timeout discards the whole run's scrape. Keep it generous.
+# Three nested clocks, and they measure different spans — mis-sizing the outer two silently defeats
+# the banking design:
+#   inner `timeout Nm`  -> the work itself; fires first, `|| echo` absorbs it, the upload still runs
+#   step `timeout-minutes` -> that one step; must exceed inner + the step's own slack
+#   job `timeout-minutes`  -> setup + checkout + `pip install` + EVERY step + upload
+# The job margin must therefore cover pre-step setup (~100 s: checkout, setup-python, pip) *plus*
+# the upload, not merely exceed the step timeout. A job kill happens mid-step and skips even
+# `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 on:
   schedule:
     # four cycles a day, 6h apart: the 21:30 nightly plus day runs that give the CPU embed budget
@@ -124,7 +132,7 @@ jobs:
     needs: scrape-plan
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 72 # > the step's 68, which is > the inner 60m budget
+    timeout-minutes: 72 # inner 60m -> step 66m -> job 72m; 6 min covers setup + fragment upload
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -154,7 +162,7 @@ jobs:
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
             || echo "scrape time budget reached — banking partial fragment"
-        timeout-minutes: 68
+        timeout-minutes: 66
       - name: Upload the shard fragment
         # always(): the `|| echo` above already absorbs the inner timeout, so this is the belt to
         # that braces — if the *step* timeout ever fires instead, the Boards that did finish are
@@ -173,7 +181,10 @@ jobs:
     needs: [scrape-plan, scrape]
     if: always() && needs.scrape-plan.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # hang detector: ~90s fixed + ~3.9e-4 s/scraped line, so ~9 min at 20k Boards
+    # ~13 min at 20k Boards: ~90s fixed + ~3.9e-4 s/scraped line, plus plan_embed's tokenize +
+    # English gate, which scale with *new Docs* (9,708 -> ~39,000) not lines. 3x that estimate,
+    # because join banks nothing and every scrape fragment flows through it.
+    timeout-minutes: 40
     outputs:
       count: ${{ steps.plan.outputs.count || '0' }}
       shards: ${{ steps.plan.outputs.shards || '[]' }}
@@ -188,7 +199,10 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/huggingface/hub
-          key: hf-model-nomic-embed-text-v1.5
+          # Distinct key from embed's: plan_embed loads only the TOKENIZER, so a shared
+          # key let this job win the race and publish a weightless cache that all 15
+          # embed shards then hit, re-downloading ~550 MB each and never re-saving it.
+          key: hf-tokenizer-nomic-embed-text-v1.5
       - name: Download meta + priority state (light — the embed diff + ledger blend)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -257,7 +271,7 @@ jobs:
     needs: [scrape-plan, join]
     if: needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 195 # > the step's 190, which is > the inner 180m budget
+    timeout-minutes: 198 # inner 180m -> step 188m -> job 198m; 10 min covers a cold pip cache
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -274,7 +288,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/huggingface/hub
-          key: hf-model-nomic-embed-text-v1.5
+          key: hf-model-nomic-embed-text-v1.5 # full weights; see the join job's note
       - name: Download this shard's assignment
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -291,7 +305,7 @@ jobs:
             --assignment "data/embeddings/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/embeddings/fragments/shard-${{ matrix.shard }}" \
             || echo "embed time budget reached — banking partial fragment"
-        timeout-minutes: 190
+        timeout-minutes: 188
       - name: Upload the shard fragment
         # always(): same reasoning as the scrape upload — vectors already flushed to disk must
         # reach the merge even if the step timeout fires ahead of the inner budget.
@@ -311,7 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     # hang detector: ~5 min of work at this scale, plus up to ~4.5 min of `up()` retry backoff
     # across the three HF uploads. All-or-nothing and the single writer, so it stays generous.
-    timeout-minutes: 40
+    timeout-minutes: 38
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.scrape-plan.outputs.run == 'true'
@@ -338,7 +352,14 @@ jobs:
           print('store + lancedb downloaded')
           "
       - name: Download corpus + refreshed state
+        # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
+        # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no
+        # corpus, `plan_sync` sees an empty fresh-id set *and* an empty scraped-Board set, so it
+        # adds and evicts nothing (verified), while prune/compact still run and the store is
+        # re-uploaded unchanged. The scrape work is lost either way; failing here would lose the
+        # dead-Board sweep too.
         if: needs.scrape-plan.outputs.run == 'true'
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: corpus-state

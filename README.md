@@ -46,10 +46,10 @@ flowchart TB
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, every 6h &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>21 scrapers → fragments"]
-        P3["<b>join</b><br/>1 VM · 30m<br/>union · tech-filter<br/>priority · plan embed"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>20 enabled scrapers → fragments"]
+        P3["<b>join</b><br/>1 VM · 40m<br/>union · tech-filter<br/>priority · cost · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
-        P5["<b>merge</b><br/>1 VM · 40m · single writer<br/>concat · sync · prune · compact"]
+        P5["<b>merge</b><br/>1 VM · 38m · single writer<br/>concat · sync · prune · compact"]
         P1 --> P2 --> P3 --> P4 --> P5
     end
 
@@ -70,6 +70,8 @@ flowchart TB
     end
 
     D4 ==> P1
+    S1 -. "state + prior meta" .-> P1
+    S1 -. "prior store + lancedb" .-> P5
     D4 -.-> F1
     P5 ==>|"upload + restart"| S1
     F2 --> S3
@@ -88,8 +90,9 @@ flowchart TB
 ```
 
 Green stages are matrix fan-outs across many **GitHub VMs**; blue are single-VM serial stages;
-purple are stored state. The `==>` edges are the main path; the dotted edges into `join` and
-`merge` are the partial-work guarantee described below.
+purple are stored state. Thick `==>` edges are the main path. Dotted edges are the two things
+that are easy to miss: state each stage *reads* back from the HF dataset, and the partial-work
+guarantee — a shard that hits its budget still forwards what it finished.
 
 **Discovery** runs occasionally and by hand; its output, the liveness ledger under
 `data/validate/liveness/`, is committed to git and is what the ingest pipeline reads.
@@ -195,6 +198,7 @@ correctness against the live Space.
   `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`, `geo.py`,
   `search.py` (shared embed/search constants + filter builder), `embed_prep.py` (doc prep shared
   by embedder and planner), `index_sync.py` / `index_prune.py`, `board_priority.py` (ADR-0022),
+  `board_cost.py` (measured scrape seconds, ADR-0027),
   `binpack.py` (LPT packing shared by both planners); plus the bot: `filters.py`, `bot.py`,
   `telegram.py`, `state.py`.
 - `scripts/` — one folder per pipeline stage: `discover/`, `merge/`, `validate/`, `resolve/`,

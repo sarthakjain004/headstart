@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from headstart.board_cost import SHARD_HEADER, shard_row
 from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
@@ -86,7 +87,7 @@ class JobWriter:
         fresh_cost = mode == "w" or not cost_path.exists()
         self._cost_handle = cost_path.open(mode, encoding="utf-8")
         if fresh_cost:
-            self._cost_handle.write("board,seconds,jobs\n")
+            self._cost_handle.write(SHARD_HEADER)
             self._cost_handle.flush()
 
     def write(self, jobs: list[Job]) -> None:
@@ -116,7 +117,7 @@ class JobWriter:
         shard killed by its time budget still hands the join every timing it did measure. The
         filename is deliberately *not* dotted — ``actions/upload-artifact`` skips hidden files by
         default, which is why the ``.done`` journal never reaches the join and this must."""
-        self._cost_handle.write(f"{board_key},{seconds:.3f},{jobs}\n")
+        self._cost_handle.write(shard_row(board_key, seconds, jobs))
         self._cost_handle.flush()
 
     def close(self) -> None:

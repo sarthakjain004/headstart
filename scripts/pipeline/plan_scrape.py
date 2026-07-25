@@ -35,7 +35,7 @@ from pathlib import Path
 
 from headstart.binpack import lpt_pack, shard_count
 from headstart.board_cost import costs_for
-from headstart.board_cost import load as load_costs
+from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
 
@@ -70,7 +70,7 @@ _TARGET_BOARDS = (
 )
 
 
-def board_cost(ats: str, score: float) -> float:
+def _coldstart_cost(ats: str, score: float) -> float:
     """Cold-start cost of one board (arbitrary units — LPT only needs the ordering)."""
     return max(score, _EXPLORE_BASELINE) * (
         _DETAIL_WEIGHT if ats in _DETAIL_ATS else 1.0
@@ -163,22 +163,25 @@ def main() -> int:
 
     # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
     # heuristic only until the first run has populated it.
-    cost_rows = load_costs(Path(args.cost))
-    if cost_rows:
-        costs = costs_for(((c.ats, f"{c.ats}:{c.slug}") for c in companies), cost_rows)
-        measured = sum(1 for c in companies if f"{c.ats}:{c.slug}" in cost_rows)
-        unit, per_shard_target = "s", args.target_seconds
+    keys = [f"{c.ats}:{c.slug}" for c in companies]
+    cost_rows = load_cost_ledger(Path(args.cost))
+    measured = bool(cost_rows)  # branch once; every later format choice reads this
+    if measured:
+        costs = costs_for(keys, cost_rows)
+        # shard count follows the same unit as the packing: seconds of work, not board count
+        sizing_total, sizing_target = sum(costs), args.target_seconds
+        have = sum(1 for k in keys if k in cost_rows)
         print(
-            f"[plan-scrape] cost: measured seconds for {measured}/{n} boards "
+            f"[plan-scrape] cost: measured seconds for {have}/{n} boards "
             f"({len(cost_rows)} in ledger); rest estimated from their ATS median",
             file=sys.stderr,
             flush=True,
         )
     else:
         costs = [
-            board_cost(c.ats, scores.get(f"{c.ats}:{c.slug}", 0.0)) for c in companies
+            _coldstart_cost(c.ats, scores.get(k, 0.0)) for c, k in zip(companies, keys)
         ]
-        unit, per_shard_target = "cost", float(args.target_boards)
+        sizing_total, sizing_target = float(n), float(args.target_boards)
         print(
             "[plan-scrape] cost: no measurements yet — cold-start heuristic (ADR-0026); "
             "the join writes data/state/board_cost.csv and the next run packs on seconds",
@@ -187,12 +190,7 @@ def main() -> int:
         )
 
     total_cost = sum(costs)
-    m = shard_count(
-        total_cost if cost_rows else n,
-        n,
-        args.max_shards,
-        per_shard_target if cost_rows else args.target_boards,
-    )
+    m = shard_count(sizing_total, n, args.max_shards, sizing_target)
     assign, loads = lpt_pack(costs, m)
 
     shard_boards: list[list[int]] = [[] for _ in range(m)]
@@ -213,10 +211,10 @@ def main() -> int:
                     json.dumps({"ats": c.ats, "slug": c.slug, "name": c.name}) + "\n"
                 )
         per_shard.append(len(shard_boards[k]))
-        load = loads[k] / 60 if cost_rows else loads[k]
+        load = loads[k] / 60 if measured else loads[k]
         print(
             f"[plan-scrape] shard {k}: {len(shard_boards[k])} boards "
-            + (f"(~{load:.1f} min)" if cost_rows else f"(cost ~{load:.0f})"),
+            + (f"(~{load:.1f} min)" if measured else f"(cost ~{load:.0f})"),
             file=sys.stderr,
             flush=True,
         )
@@ -225,8 +223,8 @@ def main() -> int:
     tail = (
         f"; predicted makespan ~{max(loads) / 60:.1f} min "
         f"(total work Σ {total_cost / 60:.1f} min)"
-        if cost_rows
-        else f" (unit: {unit})"
+        if measured
+        else " (cold-start cost units)"
     )
     print(
         f"[plan-scrape] {n} boards across {m} shards{tail}", file=sys.stderr, flush=True

@@ -149,10 +149,13 @@ postings and 40 tech Jobs is costed at 40, or 240 on a detail ATS. Unscored expl
 worse still — they take a flat `_EXPLORE_BASELINE = 5.0` regardless of true size, and 1,839 of the
 8,000 selected Boards were unscored.
 
-The fix is to cost on a measurement rather than a proxy. `scrape_all` already exposes an unused
-`on_board(key, n_new_jobs, error)` hook; timing each Board there and persisting per-Board seconds to
-a `data/state/` ledger that rides the existing HF state round-trip would make the estimate an
-observation — the same move [ADR-0022](0022-tech-priority-board-ordering.md) made for tech yield.
+The fix is to cost on a measurement rather than a proxy: time each Board inside `scrape_all` and
+persist per-Board seconds to a `data/state/` ledger that rides the existing HF state round-trip,
+making the estimate an observation — the same move [ADR-0022](0022-tech-priority-board-ordering.md)
+made for tech yield. (An earlier revision of this section proposed hanging that off the
+`on_board(key, n_new_jobs, error)` callback and described it as unused. It is not unused —
+`scripts/scrape/run_scrapers.py` passes one — so [ADR-0027](0027-measured-scrape-cost-ledger.md)
+put the timing in `JobWriter` instead and left the callback alone.)
 Carrying `last_total_jobs` in the priority ledger is a cheaper interim and strictly better than the
 tech count, but it is **not** sufficient on its own: shard 0 pulled 37,449 Jobs in 304 s while shard
 10 pulled 41,262 in 1,221 s. Similar volume, 4× the time — the difference is per-posting detail

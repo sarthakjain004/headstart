@@ -59,9 +59,9 @@ def test_costs_for_prefers_measurement_then_ats_median_then_global():
     rows = _rows(**{"workday:a": 100.0, "workday:b": 300.0, "lever:c": 10.0})
     got = costs_for(
         [
-            ("workday", "workday:a"),  # measured
-            ("workday", "workday:unseen"),  # ATS median
-            ("personio", "personio:unseen"),  # no ATS history -> global median
+            "workday:a",  # measured
+            "workday:unseen",  # ATS median, derived from the key
+            "personio:unseen",  # no ATS history -> global median
         ],
         rows,
     )
@@ -69,7 +69,7 @@ def test_costs_for_prefers_measurement_then_ats_median_then_global():
 
 
 def test_costs_for_falls_back_when_ledger_is_empty():
-    assert costs_for([("workday", "workday:a")], {}, fallback=7.0) == [7.0]
+    assert costs_for(["workday:a"], {}, fallback=7.0) == [7.0]
 
 
 def test_read_shard_rows_skips_a_torn_final_line(tmp_path):

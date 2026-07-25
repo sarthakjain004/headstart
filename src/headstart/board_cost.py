@@ -27,10 +27,20 @@ from statistics import median
 from typing import Iterable, Mapping
 
 FIELDS = ("board", "seconds", "jobs", "updated_at")
-CURRENT_WEIGHT = (
-    0.5  # EWMA weight on this run's seconds; lower than board_priority's 0.7
-)
-# because wall time carries runner and network noise a tech-job count doesn't.
+# The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
+# Schema lives here, next to its reader, so adding a column is one edit rather than two files.
+SHARD_FIELDS = ("board", "seconds", "jobs")
+SHARD_HEADER = ",".join(SHARD_FIELDS) + "\n"
+
+
+def shard_row(board_key: str, seconds: float, jobs: int) -> str:
+    """One ``board_cost.csv`` line, newline included."""
+    return f"{board_key},{seconds:.3f},{jobs}\n"
+
+
+# EWMA weight on this run's seconds. Lower than board_priority's 0.7 because wall time carries
+# runner and network noise a tech-job count doesn't; this is the knob if shards still straggle.
+CURRENT_WEIGHT = 0.5
 FALLBACK_SECONDS = 5.0  # last resort: no measurement anywhere, not even for the ATS
 
 
@@ -117,21 +127,26 @@ def update(
     return rows
 
 
+def _ats_of(board_key: str) -> str:
+    """The ATS half of an ``{ats}:{slug}`` Board key (``corpus.board_of``'s key space)."""
+    return board_key.split(":", 1)[0]
+
+
 def ats_medians(rows: Mapping[str, BoardCost]) -> dict[str, float]:
     """Median measured seconds per ATS — the fallback for a Board with no history of its own."""
     by_ats: dict[str, list[float]] = {}
     for board, c in rows.items():
-        by_ats.setdefault(board.split(":", 1)[0], []).append(c.seconds)
+        by_ats.setdefault(_ats_of(board), []).append(c.seconds)
     return {ats: median(vals) for ats, vals in by_ats.items() if vals}
 
 
 def costs_for(
-    boards: Iterable[tuple[str, str]],
+    board_keys: Iterable[str],
     rows: Mapping[str, BoardCost],
     *,
     fallback: float = FALLBACK_SECONDS,
 ) -> list[float]:
-    """Expected seconds for each ``(ats, board_key)``, best available estimate per Board.
+    """Expected seconds for each ``{ats}:{slug}`` key, best available estimate per Board.
 
     Measured EWMA if we have one, else the ATS's median, else the global median, else
     ``fallback``. The cascade matters: an unmeasured Workday board and an unmeasured Personio
@@ -141,9 +156,10 @@ def costs_for(
     medians = ats_medians(rows)
     overall = median(medians.values()) if medians else fallback
     out: list[float] = []
-    for ats, key in boards:
+    for key in board_keys:
         row = rows.get(key)
-        out.append(
-            row.seconds if row is not None else medians.get(ats, overall) or fallback
-        )
+        if row is not None:
+            out.append(row.seconds)
+        else:
+            out.append(medians.get(_ats_of(key), overall) or fallback)
     return out
