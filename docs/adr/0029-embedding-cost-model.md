@@ -94,9 +94,16 @@ architecture and needs `trust_remote_code=True` — which is why the first `embe
 two-major-version transformers downgrade in production. The benchmark now prints its resolved
 versions so that trade is visible in the result rather than inferred afterwards.
 
-Runner facts worth recording, from that first dispatch: `ubuntu-latest` is an **AMD EPYC 9V74**
+Runner facts worth recording, from that first dispatch: `ubuntu-latest` was an **AMD EPYC 9V74**
 (Zen 5 — AVX-512 with VNNI, so int8 is well supported by the hardware), and torch reports
 **2 threads**, not 4 — the 4 vCPUs are 2 physical cores with SMT.
+
+**That CPU model is not stable across runs.** The later thread sweep (`30160339492`) landed on an
+**EPYC 7763** — Zen 3, AVX2, *no* AVX-512. The `ubuntu-latest` fleet is heterogeneous, so two
+things follow: absolute tok/s from different runs are not comparable unless both report the same
+part, and the int8-support argument above holds only on the Zen 5 draw. Compare runs by **ratio
+within a single job**, never by rate across jobs. The core topology (2 physical + SMT) was the same
+on both, which is why the threading result below transfers even though the rates do not.
 
 ## Alternatives considered
 
@@ -108,6 +115,23 @@ Runner facts worth recording, from that first dispatch: `ubuntu-latest` is an **
 - **Raise the CPU attention budget / batch size.** The intuitive fix for `batch_size_for(4096) == 1`.
   Rejected on the roofline evidence: throughput is already flat per token, so the GEMMs are large
   enough, and the Bucket in question is 3.2% of Docs.
+- **Force 4 intra-op threads (use the SMT siblings).** Left untested when this ADR was written, and
+  arguable both ways: SMT fills memory stalls, and at ~1/3 of peak the core is clearly stalling
+  somewhere. **Measured and rejected** — run `30160339492`, 9 interleaved passes (threads 1,2,4 ×
+  3 repeats × 80 Docs, fixed seed, one process per thread count with `OMP_NUM_THREADS` set before
+  start, all on one machine):
+
+  | threads | median tok/s | spread | vs default |
+  |---|---:|---:|---:|
+  | 1 | 287 | 0.7% | 0.51× |
+  | 2 (default) | 558 | 0.5% | 1.00× |
+  | 4 | 535 | 0.4% | **0.96×** |
+
+  1→2 scales 1.94×, so the harness resolves a real threading effect; 2→4 then costs **4.1%**, about
+  six times the within-variant spread. Wall-clock per pass agrees independently (5m35s / 2m57s /
+  3m04s, stable to ±1 s across repeats). Contention for the shared arithmetic units beats the
+  stall-filling argument, as the textbook case for large GEMMs predicts. **Torch's default of 2 is
+  already optimal — leave `OMP_NUM_THREADS` unset.**
 - **A smaller or static model** (bge-small class at 33M; model2vec `potion-retrieval-32M`, orders of
   magnitude faster). The largest available win, since FLOPs/token is the dominant term. But
   `potion-retrieval-32M` reaches 86.65% of *all-MiniLM-L6-v2*, itself well below nomic on retrieval,
