@@ -105,7 +105,12 @@ def _load(label: str):
     kwargs: dict = {}
     if file_name:
         kwargs["file_name"] = file_name
-    model = SentenceTransformer(MODEL, backend=backend, model_kwargs=kwargs or None)
+    # trust_remote_code is required whenever transformers < 5: nomic_bert only became a native
+    # architecture in 5.x, and the benchmark's optimum/openvino extras pin transformers to 4.5x
+    # (optimum-intel caps it at <4.58). Production passes it too, so this matches either way.
+    model = SentenceTransformer(
+        MODEL, backend=backend, trust_remote_code=True, model_kwargs=kwargs or None
+    )
     if dtype == "bfloat16":
         model = model.bfloat16()
     model.max_seq_length = min(model.max_seq_length, _MAX_SEQ_TOKENS)
@@ -165,12 +170,20 @@ def main() -> int:
     import torch
 
     budget = 128_000_000 // 4  # the CPU attention budget embed_run uses
+    # Version provenance is load-bearing: the backend extras drag transformers down to 4.5x
+    # (optimum-intel caps <4.58) while production runs 5.x, so a result measured here may not
+    # be a result production can adopt. Record what actually resolved.
+    import transformers
+    import sentence_transformers
+
     print(
-        f"threads={torch.get_num_threads()} torch={torch.__version__} "
-        f"docs={args.docs} model={MODEL}",
+        f"threads={torch.get_num_threads()} (nproc may differ — torch counts physical cores) "
+        f"torch={torch.__version__} transformers={transformers.__version__} "
+        f"sentence-transformers={sentence_transformers.__version__}",
         file=sys.stderr,
         flush=True,
     )
+    print(f"docs={args.docs} model={MODEL}", file=sys.stderr, flush=True)
 
     from transformers import AutoTokenizer
 

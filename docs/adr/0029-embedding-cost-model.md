@@ -29,10 +29,12 @@ in mind shows the assumed cost model is wrong:
 to ≤4096; it falls 2.7×, and almost all of that was the MPS-only pin doc doubling work at batch 1.
 So **cost is linear in total tokens**, not quadratic in sequence length.
 
-At 470 tok/s for a 137M-parameter model that is ~129 GFLOP/s, which is roughly what a 4-vCPU
-AVX-512 machine sustains in fp32. **The encoder is compute-bound near roofline.** Three things can
-therefore make it faster, and nothing else can: fewer tokens, fewer FLOPs per token, or more
-FLOP/s. Batch-size tuning is not among them — which matters, because `batch_size_for(4096) == 1`
+At 470 tok/s for a 137M-parameter model that is ~129 GFLOP/s sustained. **The encoder is
+compute-bound** — the work is in the FFN/linear GEMMs, not attention. (Later measurement put the
+runner at 2 physical Zen 5 cores, peaking near 350–410 GFLOP/s, so this is ~1/3 of peak rather
+than at it; see `embedding-throughput.md`. Ordinary for transformer inference, but it means
+kernel/threading efficiency isn't fully excluded as a lever.) Three things can therefore make it
+faster: fewer tokens, fewer FLOPs per token, or more FLOP/s. Batch-size tuning is not among them — which matters, because `batch_size_for(4096) == 1`
 looks like the obvious bug and is not one. Only **3.2%** of Docs are in that Bucket.
 
 Measured over 4,000 real English Docs with the real tokenizer: median **1,040** tokens, p90 1,549,
@@ -82,6 +84,19 @@ torch-bf16, ONNX fp32/int8/quantized, and OpenVINO on **`ubuntu-latest`, at our 
 distribution**, reporting tok/s and mean cosine agreement against fp32. A backend is adopted only
 if it wins there, and a *quantized* backend additionally requires a retrieval check on the
 ADR-0011 eval harness — cosine agreement on synthetic text is a drift signal, not a quality gate.
+
+**A dependency constraint may decide this before throughput does.** The backend extras do not
+coexist with the transformers 5.x production runs: `optimum-intel` (the OpenVINO path) requires
+`transformers<4.58`, so installing them resolves transformers down to **4.57.6**; pinning
+`transformers>=5` instead backtracks `optimum` to 1.17.1. On 4.x, `nomic_bert` is not yet a native
+architecture and needs `trust_remote_code=True` — which is why the first `embed-bench` dispatch
+(run `30154750453`) skipped all six variants. So even a backend that wins on tok/s would cost a
+two-major-version transformers downgrade in production. The benchmark now prints its resolved
+versions so that trade is visible in the result rather than inferred afterwards.
+
+Runner facts worth recording, from that first dispatch: `ubuntu-latest` is an **AMD EPYC 9V74**
+(Zen 5 — AVX-512 with VNNI, so int8 is well supported by the hardware), and torch reports
+**2 threads**, not 4 — the 4 vCPUs are 2 physical cores with SMT.
 
 ## Alternatives considered
 

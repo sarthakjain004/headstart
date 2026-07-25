@@ -91,8 +91,22 @@ Read the two tables again by **tokens per second** rather than seconds per Doc:
 Throughput per token is **flat**. If attention's O(seq²) dominated, tok/s would fall ~8× from ≤512
 to ≤4096; it falls 2.7×, and essentially all of that was the MPS-only pin doc doubling work at
 batch 1. **Embedding cost is linear in total tokens.** At 470 tok/s for a 137M-parameter model that
-is ~129 GFLOP/s — about what a 4-vCPU AVX-512 runner sustains in fp32, so the encoder is
-**compute-bound near roofline**.
+is ~129 GFLOP/s sustained, so the encoder is **compute-bound** — the work is in the FFN/linear
+GEMMs, not in attention.
+
+### What the runner actually is (measured 2026-07-25, run `30154750453`)
+
+`ubuntu-latest` is an **AMD EPYC 9V74** (Zen 5: AVX-512 with VNNI, so int8 is well supported by the
+hardware), and **torch reports 2 threads, not 4** — the 4 vCPUs are 2 physical cores plus SMT, and
+torch sizes its intra-op pool by physical cores. Nothing in the workflow sets `OMP_NUM_THREADS`.
+
+That revises the roofline claim rather than confirming it. Two Zen 5 cores with AVX-512 peak near
+**350–410 GFLOP/s** fp32, so the measured 129 is **~31–37% of peak**, not at it. About a third of
+peak is ordinary for real transformer inference — non-GEMM ops, memory-bound layernorm/softmax,
+imperfect blocking — so "compute-bound" stands, but **"at roofline" was too strong, and kernel or
+threading efficiency is not fully ruled out as a lever.** Raising thread count to 4 to use the SMT
+siblings is the cheap experiment; it usually gains little on FMA-saturated GEMM code and can lose
+to contention, which is presumably why torch defaults to physical cores — but it is untested here.
 
 Two things follow, and both are counter-intuitive:
 
