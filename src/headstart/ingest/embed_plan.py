@@ -11,8 +11,9 @@ Runs once, after the tech filter, before the embed matrix. It:
 4. **LPT bin-packs** the Docs across a dynamic number of shards (≤ ``--max-shards``) by their
    measured per-Bucket cost, so each shard's makespan is balanced (cost is heavy-tailed — a
    cost-blind split straggles on the 4096-token Docs);
-5. writes one ``shard-{k}.jsonl`` assignment per shard (``{doc, bucket, meta}`` lines, ordered
-   cheap-first then board-priority-desc so a time-boxed shard banks the best Docs first — ADR-0022)
+5. writes one ``shard-{k}.jsonl`` assignment per shard (``{doc, bucket, tokens, meta}`` lines,
+   ordered cheap-first then board-priority-desc so a time-boxed shard banks the best Docs first —
+   ADR-0022; ``tokens`` is the exact count the shard length-sorts batches on, ADR-0029)
    and a ``plan.json`` (``shards`` matrix + ``count`` + predicted makespan) the workflow reads.
 
 The planner touches only ``meta.jsonl`` (ids, to diff) — never the vectors or the LanceDB — so it
@@ -191,7 +192,10 @@ def main() -> int:
         return 0
 
     tok = _load_tokenizer()
-    buckets = [bucket_for(n) for n in _token_lengths(tok, docs)]
+    lengths = _token_lengths(
+        tok, docs
+    )  # kept: the shard length-sorts on these (ADR-0029)
+    buckets = [bucket_for(n) for n in lengths]
     costs = [_S_PER_DOC[b] for b in buckets]
 
     # Admission control (optional): keep the top-priority N that fit, bank the rest to next run's diff.
@@ -221,7 +225,14 @@ def main() -> int:
             for i in shard_items[k]:
                 fh.write(
                     json.dumps(
-                        {"doc": docs[i], "bucket": buckets[i], "meta": metas[i]},
+                        {
+                            "doc": docs[i],
+                            "bucket": buckets[i],
+                            # exact count, so the shard can length-sort batches without
+                            # re-tokenizing or guessing from characters (ADR-0029)
+                            "tokens": lengths[i],
+                            "meta": metas[i],
+                        },
                         ensure_ascii=False,
                     )
                     + "\n"

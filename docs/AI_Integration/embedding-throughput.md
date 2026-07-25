@@ -77,6 +77,57 @@ doc plus count-padding — an MPS-only shape workaround that no longer runs on C
 Re-measure with the recipe below after the next run and update `_S_PER_DOC`; until then the
 planner's makespan prediction reads high.
 
+## The rates above are one rate, not four (ADR-0029)
+
+Read the two tables again by **tokens per second** rather than seconds per Doc:
+
+| Bucket | s/doc | tok/s |
+|---|---:|---:|
+| ≤512 | 0.88 | 579 |
+| ≤1024 | 1.98 | 517 |
+| ≤2048 | 4.36 | 470 |
+| ≤4096 | 19.44 | 211 — but ~421 once the pin doc is discounted |
+
+Throughput per token is **flat**. If attention's O(seq²) dominated, tok/s would fall ~8× from ≤512
+to ≤4096; it falls 2.7×, and essentially all of that was the MPS-only pin doc doubling work at
+batch 1. **Embedding cost is linear in total tokens.** At 470 tok/s for a 137M-parameter model that
+is ~129 GFLOP/s — about what a 4-vCPU AVX-512 runner sustains in fp32, so the encoder is
+**compute-bound near roofline**.
+
+Two things follow, and both are counter-intuitive:
+
+1. Only *fewer tokens*, *fewer FLOPs per token*, or *more FLOP/s* can speed this up. Batch tuning
+   cannot — the GEMMs already saturate. `batch_size_for(4096) == 1` looks like a bug and is not one.
+2. The ≤4096 Bucket is loud but cheap. It is **3.2%** of Docs; truncating every Doc at 2,048 tokens
+   would save **1.2%** of total compute.
+
+### Measured Doc-length distribution (4,000 real English Docs, real tokenizer, 2026-07-25)
+
+| p10 | p25 | p50 | p75 | p90 | p95 | p99 | mean |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 641 | 850 | 1,040 | 1,267 | 1,549 | 1,804 | 2,550 | 1,089 |
+
+Bucket mix 5.9 / 41.9 / 48.9 / 3.2%. Compute retained by truncation cap: 2048 → 98.8%,
+1536 → 96.0%, 1024 → 83.4%, 768 → 67.3%, 512 → 46.3%.
+
+### Padding was a quarter of the bill
+
+A batch pads to its longest member, and batches were ordered by board priority (ADR-0022), which is
+uncorrelated with length:
+
+| ordering | padded tokens | overhead vs true |
+|---|---:|---:|
+| priority (pre-ADR-0029) | 5,359,358 | **+23.0%** |
+| length-sorted, window 8 batches (now) | 4,522,190 | +3.8% |
+| fully length-sorted | 4,373,370 | +0.4% |
+
+`_encode_groups` now length-sorts within windows of `batch × 8`, worth ~15.6% less compute at
+byte-identical output. Saving by window size: 2 → 8.0%, 4 → 12.8%, 8 → 15.6%, 16 → 17.0%, full
+sort → 18.4%; eight keeps priority order to within eight batches.
+
+**When re-measuring after ADR-0029, expect the per-Bucket s/doc figures to drop by roughly this
+much on top of the pin-doc fix** — and recalibrate `_S_PER_DOC` from the new numbers.
+
 ## Corpus scale (the other half of the arithmetic)
 
 Rates alone don't predict a run — you also need how many Docs the run will see. Read that from

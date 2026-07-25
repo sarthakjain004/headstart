@@ -1,0 +1,57 @@
+name: embed-bench
+
+# Measures embedding-backend throughput on the SAME hardware the embed shards run on
+# (`ubuntu-latest`, 4 vCPU / 16 GiB) — the only place the answer is meaningful, since the
+# question is whether ONNX/OpenVINO/int8 beats torch-fp32 at HeadStart's ~1,040-token median
+# Doc length, and published backend benchmarks are all on short text (ADR-0029).
+#
+# Manual only: this is a measurement tool, not part of the 6-hourly ingest. Results belong in
+# experiment/embedding-speed/LOG.md.
+on:
+  workflow_dispatch:
+    inputs:
+      docs:
+        description: synthetic Docs to encode (150 is ~2-3 min per backend)
+        default: "150"
+      backends:
+        description: comma-separated subset (torch-fp32 must come first — it is the baseline)
+        default: "torch-fp32,torch-bf16,onnx-fp32,onnx-int8,onnx-quantized,openvino-fp32"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90 # hang detector; six backends at 150 Docs is well under this
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      # The backend extras are deliberately NOT in pyproject's [embed]: production still runs
+      # torch. They are installed here only so the benchmark can compare against them; adopting
+      # a winner is a separate change that moves the dependency into [embed].
+      - run: pip install -e ".[embed]" "optimum[onnxruntime]" openvino optimum-intel
+      - name: Cache the embedding model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-nomic-embed-text-v1.5 # same key as the embed shards
+      - name: Runner CPU (records which ISA the numbers were measured on)
+        run: |
+          nproc
+          lscpu | grep -iE "model name|flags" | head -2 | cut -c1-400
+      - name: Benchmark
+        run: |
+          python scripts/bench/embed_backends.py \
+            --docs "${{ github.event.inputs.docs || '150' }}" \
+            --backends "${{ github.event.inputs.backends || 'torch-fp32' }}" \
+            2>&1 | tee bench.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: embed-bench-results
+          path: bench.txt
+          retention-days: 30
