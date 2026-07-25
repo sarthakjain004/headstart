@@ -45,19 +45,34 @@ COLS = ["ats", "tenant", "url", "company", "jobs_on_ats", "source"]
 
 
 def variants(company: str, wf_slug: str) -> list[str]:
-    """Plausible tenant spellings for one company, most-likely first, deduped."""
+    """Plausible tenant spellings for one company, most-likely first, deduped.
+
+    Includes domain-shaped slugs. Ashby in particular lets a tenant be its bare hostname
+    (Northflank's board is literally `northflank.com`), and a lot of these companies are named
+    for their domain in the first place — RWA.xyz, Vibe.co, Constructor.io — where Wellfound
+    renders the dot as `_` or `-` in its own slug. Stripping punctuation loses both cases.
+    """
     wf = re.sub(r"-\d+$", "", wf_slug or "")  # strip Wellfound's -N disambiguator
     words = re.sub(r"[^a-z0-9]+", " ", (company or "").lower()).split()
     joined = "".join(words)
     hyphen = "-".join(words)
+    # The company's own dotted form: "RWA.xyz" -> rwa.xyz, "Constructor.io" -> constructor.io.
+    dotted = re.sub(r"[^a-z0-9.]+", "", (company or "").lower()).strip(".")
+    stem = _SUFFIX.sub("", joined)
     out = [
         joined,
         hyphen,
         wf,
         wf.replace("-", ""),
         wf.replace("_", "-"),
-        _SUFFIX.sub("", joined),
+        stem,
         words[0] if words else "",
+        dotted if "." in dotted else "",
+        wf.replace("_", "."),  # rwa_xyz -> rwa.xyz
+        f"{joined}.com",
+        f"{stem}.com",
+        f"{stem}.io",
+        f"{stem}.ai",
     ]
     seen, keep = set(), []
     for v in out:
@@ -71,9 +86,7 @@ def main() -> int:
     rows = [r for r in csv.DictReader(GAP.open(encoding="utf-8")) if r["ats"] in URL]
 
     # Never re-add something already tracked: load the ledger per ATS up front.
-    known = {
-        a: set(liveness.load(liveness.dir_for(ROOT) / f"{a}.csv")) for a in URL
-    }
+    known = {a: set(liveness.load(liveness.dir_for(ROOT) / f"{a}.csv")) for a in URL}
 
     jobs = []  # (ats, company, tenant) to probe
     for r in rows:
@@ -82,13 +95,19 @@ def main() -> int:
                 jobs.append((r["ats"], r["company"], v))
 
     print(
-        f"{len(rows)} gap companies -> {len(jobs)} candidate slugs to probe\n", flush=True
+        f"{len(rows)} gap companies -> {len(jobs)} candidate slugs to probe\n",
+        flush=True,
     )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    f = OUT.open("w", newline="", encoding="utf-8")
+    # Append, never clobber: a re-run with wider variants only *adds* spellings, and companies
+    # settled by an earlier run are already in the ledger (so excluded from probing above) —
+    # rewriting the file from scratch would silently drop them.
+    prior = list(csv.DictReader(OUT.open(encoding="utf-8"))) if OUT.exists() else []
+    f = OUT.open("a" if prior else "w", newline="", encoding="utf-8")
     writer = csv.DictWriter(f, fieldnames=COLS, lineterminator="\n")
-    writer.writeheader()
+    if not prior:
+        writer.writeheader()
 
     def probe(job):
         ats, company, tenant = job
@@ -99,7 +118,8 @@ def main() -> int:
             verdict, n = "unknown", None
         return ats, company, tenant, url, verdict, n
 
-    hits, done, resolved = 0, 0, set()
+    hits, done = 0, 0
+    resolved = {(r["ats"], r["company"]) for r in prior}
     # as_completed, not map: one slow board must not hold up the rest (repo convention).
     with ThreadPoolExecutor(max_workers=16) as ex:
         futures = [ex.submit(probe, j) for j in jobs]

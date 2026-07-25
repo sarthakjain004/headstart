@@ -66,9 +66,7 @@ def main() -> int:
         probes = {k for k in keys if len(k) >= MIN_KEY_LEN}
         scored = []
         for key, (tenant, status) in board.items():
-            if len(key) < MIN_KEY_LEN or not any(
-                p in key or key in p for p in probes
-            ):
+            if len(key) < MIN_KEY_LEN or not any(p in key or key in p for p in probes):
                 continue
             best = max(SequenceMatcher(None, p, key).ratio() for p in probes)
             scored.append((best, tenant, status))
@@ -76,9 +74,7 @@ def main() -> int:
         top = scored[:MAX_CANDIDATES]
 
         # No ledger at all for this ATS (e.g. dover) is a provider gap, not a slug gap.
-        verdict = (
-            "no-ledger" if not board else ("slug-variant?" if top else "absent")
-        )
+        verdict = "no-ledger" if not board else ("slug-variant?" if top else "absent")
         n_lead += bool(top)
         n_absent += not top
         row = {
