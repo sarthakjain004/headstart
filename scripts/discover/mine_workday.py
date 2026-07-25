@@ -19,7 +19,7 @@ import sys
 import threading
 import urllib.parse
 import urllib.request
-from concurrent.futures import as_completed, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent

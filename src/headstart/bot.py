@@ -126,9 +126,10 @@ def _load_feed_jobs() -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    import os
+
     from headstart.state import load_state, save_state
     from headstart.telegram import TelegramClient
-    import os
 
     client = TelegramClient(os.environ["TELEGRAM_BOT_TOKEN"])
     state = load_state()

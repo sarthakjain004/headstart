@@ -801,7 +801,7 @@ def test_eightfold_jobposting_fallback():
 
 
 def test_eightfold_sitemap_index_and_job_urls():
-    from headstart.scrapers.eightfold import _JOB_LOC, _CHILD_SITEMAP, _dedupe
+    from headstart.scrapers.eightfold import _CHILD_SITEMAP, _JOB_LOC, _dedupe
 
     index = """<sitemapindex><sitemap><loc>https://h/careers/sitemap1.xml</loc></sitemap>
     <sitemap><loc>https://h/careers/sitemap_cat.xml</loc></sitemap></sitemapindex>"""

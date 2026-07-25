@@ -1,6 +1,6 @@
 # Embedding throughput on CI (predicting how long a run will take)
 
-Records how we measured how fast `scripts/embed/embed_jobs.py` actually runs on the
+Records how we measured how fast `src/headstart/ingest/embed_run.py` actually runs on the
 `ubuntu-latest` GitHub Actions runner, and how to predict the wall-clock time a future embedding
 task will take. For the vocabulary (**Doc**, **Bucket**, **Batch size**, **Throughput**) see
 [`CONTEXT.md`](../../CONTEXT.md#search); this doc is the numbers, not the concepts — operational
@@ -11,7 +11,7 @@ _Last updated: 2026-07-25._
 
 ## Why there's no single number
 
-`embed_jobs.py` groups Docs into four token-length **Buckets** (512 / 1024 / 2048 / 4096)
+`embed_run.py` groups Docs into four token-length **Buckets** (512 / 1024 / 2048 / 4096)
 because attention cost scales with sequence length squared. To keep peak memory roughly flat,
 **Batch size** shrinks per Bucket (`budget ÷ bucket²`), so throughput drops sharply — not
 gently — as Bucket size grows. There is no one "docs/sec"; there's a rate per Bucket.
@@ -49,7 +49,7 @@ two things support it:
    budget is `_ATTN_BUDGET // 4` = 32,000,000; `32,000,000 // 4096² = 1`). No batching
    efficiency survives at the top Bucket — every Doc is encoded fully alone.
 2. **A historical anchor already in the code.** The comment above the Bucket-processing loop
-   in `embed_jobs.py` records that an earlier heaviest-Bucket-first ordering once "burned a
+   in `embed_run.py` records that an earlier heaviest-Bucket-first ordering once "burned a
    98-min budget on ~325 docs" — 98 × 60 ÷ 325 ≈ **18.1 s/doc**, blended across the heavier
    Buckets that ordering hit first. That lines up closely with the ~17–18 s/doc the seq²
    scaling predicts from the ≤2048 rate, which is why the run switched to ascending-Bucket
@@ -67,12 +67,12 @@ so the extrapolated ≤4096 row above is now measured. Shard 2 of 15, 646 Docs, 
 | ≤2048 | 7 | 294 | 1,281 s | 4.36 | ~4.4 |
 | ≤4096 | 1 | 52 | 1,011 s | **19.4** | ~17–18, extrapolated |
 
-The extrapolation held: `plan_embed`'s `_S_PER_DOC` (0.8 / 1.7 / 4.4 / 18.0) predicted a
+The extrapolation held: `embed_plan`'s `_S_PER_DOC` (0.8 / 1.7 / 4.4 / 18.0) predicted a
 42.7-minute makespan against 44.5 minutes actual — 4% error.
 
 **These rates are now stale by design.** They were measured while every batch also encoded a pin
 doc plus count-padding — an MPS-only shape workaround that no longer runs on CPU (see the
-`_BUCKETS` comment in `embed_jobs.py`). Dropping it should cut ~27% overall and ~50% from the
+`_BUCKETS` comment in `embed_run.py`). Dropping it should cut ~27% overall and ~50% from the
 ≤4096 Bucket, whose batch size of 1 meant each Doc was encoded alongside a full-length pin.
 Re-measure with the recipe below after the next run and update `_S_PER_DOC`; until then the
 planner's makespan prediction reads high.
@@ -189,7 +189,7 @@ grows.
 ## Predicting a future embedding task
 
 1. Tokenize the target corpus with the real tokenizer — not a character-count estimate.
-   `embed_jobs.py` measures every Doc's exact token count via `model.tokenizer(...)` before
+   `embed_run.py` measures every Doc's exact token count via `model.tokenizer(...)` before
    bucketing; it never guesses from character length, because a char-based estimate undershoots
    on token-dense text (e.g. a bilingual description whose CJK tail tokenizes at ~1 token/char).
 2. Sort each Doc into a Bucket by its token count.
@@ -219,7 +219,7 @@ gh run view <run-id> --log | grep -E "\[embed\]"
 
 ## Files
 
-- [`scripts/embed/embed_jobs.py`](../../scripts/embed/embed_jobs.py) — the embed step; see the
+- [`src/headstart/ingest/embed_run.py`](../../src/headstart/ingest/embed_run.py) — the embed step; see the
   `_BUCKETS` / `_ATTN_BUDGET` / `batch_size_for` block for the bucketing logic itself.
 - [`.github/workflows/pipeline.yml`](../../.github/workflows/pipeline.yml) — the nightly job
   that runs it, its `timeout 100m` budget, and the `--resume` continuation.

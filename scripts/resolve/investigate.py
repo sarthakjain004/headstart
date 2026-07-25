@@ -15,7 +15,7 @@ Run:  python scripts/resolve/investigate.py [N] [offset]
 import csv
 import re
 import sys
-from concurrent.futures import as_completed, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from curl_cffi import requests as cr

@@ -2,7 +2,7 @@
 """Plan the scrape fan-out — the scrape-planner of ADR-0026 (ADR-0025 Phase 2).
 
 Runs once, before the scrape matrix. It selects this run's board slice exactly as the monolith
-``nightly_harvest`` does (``pick_boards``: priority-first + a random exploration tail, capped at
+``scrape`` does (``pick_boards``: priority-first + a random exploration tail, capped at
 ``--max-boards``), then splits the *selected* boards across a dynamic number of shards:
 
 - **Which board goes where** is an LPT bin-pack by each Board's **measured scrape seconds**
@@ -23,7 +23,7 @@ monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanc
 Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board, priority-desc so a time-boxed shard
 scrapes its best boards first) + a ``plan.json`` (``shards`` matrix + board ``count``) the workflow reads.
 
-Run: python scripts/pipeline/plan_scrape.py [--max-boards 20000] [--max-shards 15]
+Run: python -m headstart.ingest.scrape_plan [--max-boards 20000] [--max-shards 15]
 """
 
 from __future__ import annotations
@@ -33,17 +33,17 @@ import json
 import sys
 from pathlib import Path
 
-from headstart.binpack import lpt_pack, shard_count
 from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
+from headstart.ingest import REPO_ROOT
+from headstart.ingest.binpack import lpt_pack, shard_count
 
-_ROOT = Path(__file__).resolve().parents[2]
-_LEDGER = _ROOT / "data" / "validate" / "liveness"
-_PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
-_COST = _ROOT / "data" / "state" / "board_cost.csv"
-_OUT = _ROOT / "data" / "scrape" / "assignments"
+_LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
+_PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
+_COST = REPO_ROOT / "data" / "state" / "board_cost.csv"
+_OUT = REPO_ROOT / "data" / "scrape" / "assignments"
 
 # Legacy heuristic, kept only as the cold-start path: before the cost ledger has any rows (a fresh
 # repo, or the first run after ADR-0027), fall back to the ADR-0026 estimate — the board's tech

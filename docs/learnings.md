@@ -29,7 +29,7 @@ batches), while **each new shape adds ~2–3 GiB that is never freed** (per-shap
 workspace, immune to `torch.mps.empty_cache()`). Sentence-transformers pads every batch to its own
 longest doc, so naturally-batched corpora make almost every batch a fresh shape → guaranteed wedge.
 
-Fix in `embed_jobs.py`: group docs into **token-length buckets** (512/1024/2048/4096, measured with
+Fix in `embed_run.py`: group docs into **token-length buckets** (512/1024/2048/4096, measured with
 the real tokenizer), fixed batch size per bucket from the attention budget (n × seq² ≤ ~128M), pad
 each batch's count with repeats of its first doc, and ride a **pin doc of exactly the bucket's token
 length** in every batch so the tokenizer always pads to the bucket. Shapes per run: 4. Verified

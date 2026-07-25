@@ -107,7 +107,27 @@ Minimum code that solves the problem. Nothing speculative.
 - If you write 200 lines and it could be 50, rewrite it.
 - Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-### 3. Surgical Changes
+### 3. Name Modules Deliberately
+A module's name is the first thing anyone reads. Get it right when you create the file, and
+re-check it whenever you change what the file does.
+
+When adding a module:
+- The name must say what the module *is*, in the repo's own vocabulary (`CONTEXT.md`). If no honest
+  name comes, the design is murky — fix that first.
+- Check it against its neighbours before committing. Two failure modes to avoid: **near-synonyms
+  for different things** (`join_shards` vs `merge_shards` — one was scrape, one was embed, and
+  neither name said so) and **near-homographs** (`index_sync` vs `sync_index`, `embed_plan` vs
+  `embed_prep`) that are hard to grep and easy to misread in a traceback.
+- Where a set of modules share a shape, name them so the shape shows. `src/headstart/ingest/` is
+  `{half}_{role}` — `scrape_plan`/`scrape_run`/`scrape_join`, `embed_plan`/`embed_run`/`embed_merge`
+  — so the two symmetric halves group in a directory listing (ADR-0028).
+- Name the test file after the module it tests.
+
+When modifying a module, ask whether the name still fits what it now does. If the content has
+drifted from the name, rename it in that change — a stale name is a defect, not cosmetics. Say so
+in the PR, and update every reference (imports, workflows, docs, ADRs).
+
+### 4. Surgical Changes
 Touch only what you must. Clean up only your own mess.
 
 When editing existing code:
@@ -122,7 +142,7 @@ When your changes create orphans:
 
 The test: every changed line should trace directly to the user's request.
 
-### 4. Goal-Driven Execution
+### 5. Goal-Driven Execution
 Define success criteria. Loop until verified.
 
 Transform tasks into verifiable goals:
@@ -137,7 +157,7 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-### 5. Weigh Design Choices on Big Work
+### 6. Weigh Design Choices on Big Work
 For substantial or architectural work — a new abstraction, a schema change, a cross-cutting
 pattern, anything where the right structure isn't obvious — don't silently pick one approach and
 build it.
@@ -156,11 +176,21 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Keep commit messages to a maximum of 50 words.
 
 ## Repo Conventions
-- `scripts/` is organized by pipeline stage: `discover/` (find ATS tenants), `merge/`
-  (union/dedupe lists), `validate/` (liveness), `resolve/` (company → ats:slug), `scrape/`
-  (pull jobs). Whenever you add a script, put it in the folder that fits its stage — and if
-  none fits, create a new clearly-named stage subfolder rather than dropping it loose in
-  `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
+- **The 6-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
+  One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
+  `scrape`, `scrape_join`, `filter_tech`, `update_ledgers` (`priority`/`cost` subcommands),
+  `embed_plan`, `embed_run`, `embed_merge`, `index` (`sync`/`prune`/`compact` subcommands).
+  If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
+  to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
+  live there too (`binpack`, `doc_prep`, `index_plan`); logic the curated-feed path
+  (`python -m headstart` → `headstart.harvest`) also reaches stays in `headstart` proper
+  (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
+- `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
+  organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
+  (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `eval/`, `enrich/`,
+  `filter/` (verification), `embed/` (local index tools), `ui/`. Whenever you add a script, put it
+  in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
+  rather than dropping it loose in `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls

@@ -1,10 +1,10 @@
 import json
 
-import headstart.pipeline as pipeline
+import headstart.harvest as harvest
 from headstart.board_cost import read_shard_rows
 from headstart.config import CompanyRef
+from headstart.harvest import build_feed, scrape_all, write_feed
 from headstart.models import Job
-from headstart.pipeline import build_feed, scrape_all, write_feed
 
 
 def make_job(job_id: str, ats: str = "x", description: str | None = None) -> Job:
@@ -44,7 +44,7 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
             "bad": FakeScraper(error=RuntimeError("boom")),
         }[slug]
 
-    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
     companies = [
         CompanyRef("x", "good"),
         CompanyRef("x", "dup"),
@@ -71,7 +71,7 @@ def test_build_and_write_feed(monkeypatch, tmp_path):
             return FakeScraper(error=RuntimeError("oops"))
         return FakeScraper([make_job("x:a:1")])
 
-    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
     result = scrape_all(
         [CompanyRef("x", "a"), CompanyRef("x", "bad")], jobs_dir=tmp_path
     )
@@ -118,7 +118,7 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
             "bad": FakeScraper(error=RuntimeError("boom")),
         }[slug]
 
-    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
     companies = [
         CompanyRef("greenhouse", "acme"),
         CompanyRef("lever", "beta"),
@@ -146,7 +146,7 @@ def test_scrape_all_dedupes_duplicate_boards_in_jsonl(monkeypatch, tmp_path):
         make_job("workday:dollartree:1", ats="workday"),
         make_job("workday:dollartree:2", ats="workday"),
     ]
-    monkeypatch.setattr(pipeline, "get_scraper", lambda *a, **k: FakeScraper(shared))
+    monkeypatch.setattr(harvest, "get_scraper", lambda *a, **k: FakeScraper(shared))
     companies = [
         CompanyRef("workday", "dollartree"),
         CompanyRef("workday", "dollartree/dollartreeus"),
@@ -167,7 +167,7 @@ def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
         calls.append(slug)
         return FakeScraper([make_job(f"{ats}:{slug}:1", ats=ats)])
 
-    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
     companies = [CompanyRef("greenhouse", "a"), CompanyRef("greenhouse", "b")]
 
     r1 = scrape_all(companies, jobs_dir=tmp_path)
@@ -209,12 +209,12 @@ def test_records_measured_seconds_for_every_board_including_failures(
             return FakeScraper(error=RuntimeError("boom"))
         return FakeScraper([make_job(f"x:{slug}:1")])
 
-    monkeypatch.setattr(pipeline, "get_scraper", fake_get)
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
     scrape_all([CompanyRef("x", "good"), CompanyRef("x", "bad")], jobs_dir=tmp_path)
 
-    rows = read_shard_rows(tmp_path / pipeline.COST_FILENAME)
+    rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
     assert set(rows) == {"x:good", "x:bad"}
     assert all(seconds >= 0.0 for seconds, _ in rows.values())
     assert rows["x:good"][1] == 1  # jobs written
     assert rows["x:bad"][1] == 0  # errored board wrote none, but is still costed
-    assert not pipeline.COST_FILENAME.startswith(".")
+    assert not harvest.COST_FILENAME.startswith(".")

@@ -43,9 +43,9 @@ jobs:
           "
           du -sh data/lancedb
       - name: Prune stale + duplicate rows
-        run: python scripts/embed/prune_index.py --apply
+        run: python -m headstart.ingest.index prune --apply
       - name: Rebuild fresh (reclaim orphan fragments)
-        run: python scripts/embed/compact_index.py
+        run: python -m headstart.ingest.index compact
       - name: Upload the cleaned index
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

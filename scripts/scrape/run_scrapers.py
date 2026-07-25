@@ -47,7 +47,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from headstart.config import CompanyRef
-from headstart.pipeline import scrape_all
+from headstart.harvest import scrape_all
 from headstart.scrapers.registry import SCRAPERS
 
 ROOT = Path(__file__).resolve().parents[2]

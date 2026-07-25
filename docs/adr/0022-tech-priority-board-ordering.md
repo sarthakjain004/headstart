@@ -32,7 +32,7 @@ boards never starves. The head leads the list, and `scrape_all` starts boards in
 a time-budget-truncated scrape still covers the top boards. No ledger file → pure shuffle + cap
 (the previous behavior; also the bootstrap path).
 
-**Embed: same scores, within buckets.** `embed_jobs.py` keeps the token-length bucket batching
+**Embed: same scores, within buckets.** `embed_run.py` keeps the token-length bucket batching
 (shape pinning, smallest bucket first) and reorders each bucket's doc indices board-score-desc,
 so an expiring embed budget banks the highest-value boards' docs first.
 

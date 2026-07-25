@@ -2,11 +2,11 @@
 
 The nightly pipeline builds each **Doc** — the one string embedded per Job (title +
 markdown-stripped description, ``search_document:``-prefixed, ADR-0005) — and its typed
-metadata (ADR-0007/0019) in *two* places now: ``scripts/embed/embed_jobs.py`` (the monolithic
-``--resume`` path) and ``scripts/pipeline/plan_embed.py`` (the planner that assigns Docs to
+metadata (ADR-0007/0019) in *two* places now: ``headstart.ingest.embed_run`` (the monolithic
+``--resume`` path) and ``headstart.ingest.embed_plan`` (the planner that assigns Docs to
 embed shards). A sharded Doc's vector only matches the monolith's if the English gate, the
 doc-text builder, and the token-length **Bucket** are byte-identical across the two — so they
-live here once instead of being hand-copied. ``embed_jobs.py`` re-exports these for its own
+live here once instead of being hand-copied. ``embed_run.py`` re-exports these for its own
 callers and tests.
 
 Pure and ML-free: langdetect + regex only, no torch/sentence-transformers, so the planner and
@@ -34,7 +34,7 @@ _WS = re.compile(r"\s+")
 
 # Token-length Buckets (ADR-0005): a Doc is sorted into the smallest Bucket that holds it,
 # measured with the real tokenizer. Shared so the planner buckets a Doc exactly as the encoder
-# will pad it. The encode-side batch sizing (batch_size_for / _ATTN_BUDGET) stays in embed_jobs.
+# will pad it. The encode-side batch sizing (batch_size_for / _ATTN_BUDGET) stays in embed_run.
 _BUCKETS = (512, 1024, 2048, 4096)
 _MAX_SEQ_TOKENS = _BUCKETS[-1]
 

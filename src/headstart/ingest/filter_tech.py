@@ -9,7 +9,7 @@ is not) into ``data/jobs/tech/``, which is what the embedding / index / UI consu
 non-tech ~83% means the embedding model only ever works on the jobs the product actually serves.
 
 Run from repo root:
-    .venv/bin/python scripts/filter/tech.py
+    python -m headstart.ingest.filter_tech
 Verify recall afterwards with ``scripts/filter/verify_tech.py``.
 """
 
@@ -18,15 +18,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from headstart.ingest import REPO_ROOT
 from headstart.tech_filter import filter_jobs
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--src", type=Path, default=ROOT / "data" / "jobs")
-    ap.add_argument("--dst", type=Path, default=ROOT / "data" / "jobs" / "tech")
+    ap.add_argument("--src", type=Path, default=REPO_ROOT / "data" / "jobs")
+    ap.add_argument("--dst", type=Path, default=REPO_ROOT / "data" / "jobs" / "tech")
     args = ap.parse_args()
     if not args.src.is_dir():
         raise SystemExit(f"no source dir at {args.src}")

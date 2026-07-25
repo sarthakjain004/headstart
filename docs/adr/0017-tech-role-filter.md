@@ -34,7 +34,7 @@ layer.
 A **post-hoc, recall-biased regex filter** (`headstart.tech_filter`) is the authoritative tech gate.
 
 - The scrapers keep writing the full set to `data/jobs/{ats}.jsonl` (unchanged). A filter stage
-  (`scripts/filter/tech.py`, and `filter_jobs()` in the `python -m headstart` pipeline) writes the
+  (`src/headstart/ingest/filter_tech.py`, and `filter_jobs()` in the `python -m headstart` pipeline) writes the
   tech subset to **`data/jobs/tech/{ats}.jsonl`**, which is what the feed, embedding, index, and UI
   read from now on.
 - `classify(title, department)` decides via regex, recall-first (precedence: a strong software
