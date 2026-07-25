@@ -31,11 +31,11 @@ Three free parts, with all state in one place:
 
 2. **Ingest runs as a nightly GitHub Actions workflow** (`.github/workflows/pipeline.yml`), free
    on the public repo, inert until the `HF_TOKEN` secret is set (the `bot.yml` convention). Each
-   run: download state → `nightly_harvest.py` (a **shuffled, `--max-boards`-capped slice** of the
-   ledger's live boards, `min_jobs=0`) → `tech.py` filter → `embed_jobs.py --resume` (embeds only
-   ids missing from the store; CPU) → `sync_index.py` (incremental add/evict — eviction stays
+   run: download state → `ingest.scrape_run` (a **shuffled, `--max-boards`-capped slice** of the
+   ledger's live boards, `min_jobs=0`) → `tech.py` filter → `embed_run.py --resume` (embeds only
+   ids missing from the store; CPU) → `index sync` (incremental add/evict — eviction stays
    scoped to the Boards actually scraped, so a partial harvest is always safe, ADR-0014) →
-   `compact_index.py` (merge fragments + drop old Lance versions, or nightly re-uploads balloon)
+   `index compact` (merge fragments + drop old Lance versions, or nightly re-uploads balloon)
    → upload state → restart the Space. The shuffle makes the capped run a *rotating* slice: at
    8,000 boards/night the whole live set refreshes on a roughly weekly cycle.
 
@@ -73,7 +73,7 @@ waits ~a minute); each board's index rows are at most ~a week stale under the ro
 CPU-fp32-computed embeddings — same model, both L2-normalized, negligible ranking effect.
 
 Known gaps, accepted for v1: a board that **dies** (or drops off the live ledger) stops being
-scraped, so its indexed rows linger until a ledger-driven eviction is added to `sync_index.py`;
+scraped, so its indexed rows linger until a ledger-driven eviction is added to `index sync`;
 scheduled workflows only fire from the default branch, so the pipeline activates on merge; the
 `HF_TOKEN` repo/Space secret is a coarse write token — rotate to a fine-grained token scoped to
 the dataset + Space.

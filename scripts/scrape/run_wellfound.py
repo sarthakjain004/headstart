@@ -32,14 +32,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from datadome_slider import (
+    _safe_source,
+    solve_slider,
+)  # same dir; sys.path[0] as a script
 from pydoll.browser import Chrome
 from pydoll.browser.options import ChromiumOptions
 from pydoll.interactions.scroll import ScrollPosition
-
-from datadome_slider import (
-    solve_slider,
-    _safe_source,
-)  # same dir; sys.path[0] as a script
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 OUT = ROOT / "data" / "jobs" / "wellfound.csv"  # pipeline output stays under data/jobs/

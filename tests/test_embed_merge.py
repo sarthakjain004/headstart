@@ -1,23 +1,17 @@
-"""Tests for the shard merge (scripts/pipeline/merge_shards.py, ADR-0025 Phase 1).
+"""Tests for the shard merge (headstart.ingest.embed_merge, ADR-0025 Phase 1).
 
 The merge is a concatenation, but two integrity properties must hold: a fragment left partial by a
 timed-out shard is reconciled (its half-written meta tail and the extra vector row are dropped), and
-the final store is consistent (vector bytes == rows × dim × 4) so sync_index can trust it.
+the final store is consistent (vector bytes == rows × dim × 4) so `index sync` can trust it.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-_spec = importlib.util.spec_from_file_location(
-    "merge_shards", _ROOT / "scripts" / "pipeline" / "merge_shards.py"
-)
-ms = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(ms)
+import headstart.ingest.embed_merge as ms
 
 _DIM = 4
 
@@ -52,7 +46,7 @@ def _store_ids(d: Path) -> list[str]:
 
 def _run(store: Path, fragments: Path) -> None:
     old = sys.argv
-    sys.argv = ["merge_shards", "--store", str(store), "--fragments", str(fragments)]
+    sys.argv = ["embed_merge", "--store", str(store), "--fragments", str(fragments)]
     try:
         assert ms.main() == 0
     finally:

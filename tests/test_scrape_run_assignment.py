@@ -1,4 +1,4 @@
-"""Tests for nightly_harvest.py's scrape-shard (``--assignment``) mode (ADR-0026).
+"""Tests for headstart.ingest.scrape_run's scrape-shard (``--assignment``) mode (ADR-0026).
 
 The shard mode must read the planner's board list verbatim and scrape exactly those boards into its
 own fragment dir — no slice selection. ``scrape_all`` is faked, so no network / real scraping.
@@ -6,17 +6,11 @@ own fragment dir — no slice selection. ``scrape_all`` is faked, so no network 
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-_spec = importlib.util.spec_from_file_location(
-    "nightly_harvest", _ROOT / "scripts" / "scrape" / "nightly_harvest.py"
-)
-nh = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(nh)
+import headstart.ingest.scrape_run as nh
 
 
 class _Result:
@@ -48,7 +42,7 @@ def test_assignment_scrapes_exactly_the_listed_boards(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["nightly_harvest", "--assignment", str(assignment), "--outdir", str(outdir)],
+        ["scrape_run", "--assignment", str(assignment), "--outdir", str(outdir)],
     )
 
     assert nh.main() == 0

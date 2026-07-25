@@ -1,4 +1,4 @@
-"""Tests for the shared fan-out packing (src/headstart/binpack.py, ADR-0025/0026).
+"""Tests for the shared fan-out packing (headstart.ingest.binpack, ADR-0025/0026).
 
 LPT balance and dynamic shard sizing are used by both the embed and scrape planners; they live here
 so they're tested once, on their own, with no ML or scrape deps.
@@ -6,7 +6,7 @@ so they're tested once, on their own, with no ML or scrape deps.
 
 from __future__ import annotations
 
-from headstart.binpack import lpt_pack, shard_count
+from headstart.ingest.binpack import lpt_pack, shard_count
 
 
 def test_lpt_pack_balances_better_than_round_robin():

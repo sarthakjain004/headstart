@@ -66,7 +66,7 @@ def _like(term: str) -> str:
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
 # candidatev2 URL fix carry the old `/ms/candidate/careers/jobs/{id}` link, which on v2
 # tenants redirects to the careers home instead of the job. The stored data self-heals only
-# as those postings turn over (sync leaves re-seen ids untouched — index_sync.py), so this
+# as those postings turn over (sync leaves re-seen ids untouched — headstart.ingest.index_plan), so this
 # rewrites the derivable URL at serve time as a stopgap. Remove once the darwinbox rows have
 # healed (or once sync refreshes changed metadata for re-seen ids — the proper fix).
 # Caveat: a legacy `new_careers=false` tenant's old-format URL would be wrongly rewritten,

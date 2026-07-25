@@ -37,9 +37,9 @@ constant, which at `--max-boards 20000` is 6,000 Boards — 30% of the slice —
 2. **Stream it to disk per Board.** `JobWriter.record_cost()` appends to `board_cost.csv` in the
    shard's own fragment dir and flushes — the same contract as the `.done` journal, so a shard
    killed by its time budget still hands over every timing it did take.
-3. **Blend in the join.** `scripts/rank/update_board_cost.py` reads every shard's rows and
+3. **Blend in the join.** `src/headstart/ingest/update_ledgers.py` reads every shard's rows and
    EWMA-blends them into `data/state/board_cost.csv` (`board,seconds,jobs,updated_at`).
-4. **Pack on it next run.** `plan_scrape` costs each Board at its measured EWMA, sizes the shard
+4. **Pack on it next run.** `scrape_plan` costs each Board at its measured EWMA, sizes the shard
    count by `--target-seconds` of work rather than Board count, and prints a **predicted makespan**.
 
 **Estimate cascade for a Board with no measurement:** its ATS's median → the global median →
@@ -59,7 +59,7 @@ tech-job count does not. This is the first number to tune if shards still stragg
   which is why the `.done` journal never reaches the join — `board_cost.csv` must not repeat that.
 - **`on_board` is untouched.** It is *not* an unused hook (`scripts/scrape/run_scrapers.py` passes a
   3-arg callback), so widening its signature would break a caller. Timing lives in the writer.
-- **Cold start degrades to ADR-0026.** With no ledger, `plan_scrape` falls back to the old heuristic
+- **Cold start degrades to ADR-0026.** With no ledger, `scrape_plan` falls back to the old heuristic
   and sizes by Board count. One run populates ~20,000 rows, so it self-replaces immediately.
 - **Nothing is pruned from the ledger.** Unlike a tech-yield score, a Board being expensive is never
   a reason to forget it, and the row is tiny.

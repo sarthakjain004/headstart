@@ -21,7 +21,7 @@ bank partial progress and resume next run.
 Two facts make this slow and often incomplete:
 
 - **Embedding is the measured bottleneck and it is CPU-bound.** GitHub's free runners have no GPU, so
-  `embed_jobs.py` runs `device="cpu"`, fp32, at rates that fall off a cliff by token length —
+  `embed_run.py` runs `device="cpu"`, fp32, at rates that fall off a cliff by token length —
   measured ~0.8 / 1.7 / 4.4 / ~18 s/doc for the 512 / 1024 / 2048 / 4096-token buckets
   (`embedding-throughput.md`). The 100-minute budget regularly clears only part of a backlog-heavy
   slice (an examined run: 2,312 of 5,810 docs before the budget expired). Scrape hits its 140-minute
@@ -58,7 +58,7 @@ five stages, two of them GitHub Actions **matrix** fan-outs capped at 15 concurr
    artifact) into a shard fragment (`embeddings.f32` + `meta.jsonl`). Shards are **stateless**: they
    need neither the existing store nor the LanceDB — the planner already did the dedup and bucketing.
 5. **Merge + sync** (1 job) — download the prior store + all shard fragments, **concatenate** them into
-   the store, then run the existing `sync_index` → `prune_index` → `compact_index` → upload → restart,
+   the store, then run the existing `index sync` → `index prune` → `index compact` → upload → restart,
    unchanged. This is the **single writer**.
 
 Cross-cutting rules:
@@ -77,7 +77,7 @@ Cross-cutting rules:
   never race on the dataset; orthogonal to intra-run sharding and still required.
 
 **Phased rollout: embedding first.** Phase 1 shards only the embed stage (embed-planner + an
-`embed_jobs.py` assignment mode + the embed matrix + the merge job); scraping stays
+`embed_run.py` assignment mode + the embed matrix + the merge job); scraping stays
 monolithic-but-time-boxed. Phase 2 shards scraping **only if** it is still the binding constraint once
 embed is parallel.
 
@@ -89,18 +89,18 @@ embed is parallel.
   jobs. The heavy ~460 MB store + LanceDB download and the upload are confined to the **merge job**;
   the planner pulls only `meta.jsonl` to diff. One artifact is *not* small and this ADR originally
   missed it: the join→merge `corpus-state` carries the whole scrape snapshot (`data/jobs`), because
-  `sync_index` derives the corpus-id set and the eviction Board set from it. It grows linearly with
+  `index sync` derives the corpus-id set and the eviction Board set from it. It grows linearly with
   `--max-boards` (46 s up / 14 s down at an 8,000-Board slice). Only the *id* and *Board-key* sets are
   actually consumed — the indexed rows come from the store's `meta.jsonl` — so this artifact is a
   standing simplification target, not a fixed cost.
-- **`embed_jobs.py` gains an assignment mode** — a `--assignment <file>` (id list + texts) that embeds
+- **`embed_run.py` gains an assignment mode** — a `--assignment <file>` (id list + texts) that embeds
   exactly the given docs instead of self-selecting via `--resume` + corpus glob. The planner owns the
   dedup and the token-bucket balancing, so each shard is deterministic and its runtime predictable.
-- **Two small planner scripts** (`scripts/pipeline/plan_scrape.py`, `plan_embed.py`) that read the
+- **Two small planner scripts** (`src/headstart/ingest/scrape_plan.py`, `embed_plan.py`) that read the
   ledgers / `meta.jsonl`, LPT-bin-pack, print the predicted per-shard makespan, and emit the matrix JSON.
 - **The merge is a concatenation** — the store is append-only row-major with the id carried in each
-  meta row (ADR-0004), so combining shard fragments is `cat`, not reconciliation. `sync_index` /
-  `prune_index` / `compact_index` and the upload/restart run exactly as today.
+  meta row (ADR-0004), so combining shard fragments is `cat`, not reconciliation. `index sync` /
+  `index prune` / `index compact` and the upload/restart run exactly as today.
 
 ## Why this shape
 
@@ -159,11 +159,11 @@ sharding makes that merge cheap (a concatenation, not a conflict resolution).
 - **A reusable admission-control signal:** the embed-planner prints a predicted makespan and can cap a
   run to the top-priority docs that fit, banking the rest to the next run's `--resume` — turning "will it
   fit the budget?" from a gamble into arithmetic. Observability the monolith never had. **Half-delivered:**
-  `plan_embed --limit` implements the cap, but `pipeline.yml` never passes it, so only the printed
+  `embed_plan --limit` implements the cap, but `pipeline.yml` never passes it, so only the printed
   makespan is live in production; the cap itself is unexercised.
 - **Invariants preserved:** single-writer merge, board-scoped eviction (the join unions before sync), the
   crash-safe/resumable store (ADR-0004), and run-level serialization (the `concurrency` group).
-- **`embed_jobs.py` gains an assignment mode** — additive; the existing `--resume` path stays for local
+- **`embed_run.py` gains an assignment mode** — additive; the existing `--resume` path stays for local
   and single-job runs.
 - **Lifecycle:** Phase 1 shipped and this ADR is **Accepted**. Phase 2 (scrape sharding) was taken up
   as [ADR-0026](0026-parallelize-nightly-scrape.md) — deliberately *ahead* of the measurement gate this
@@ -196,7 +196,7 @@ store of 254,061 ids.
   [`embedding-throughput.md`](../AI_Integration/embedding-throughput.md) for the derivation, the
   per-ATS coverage table, and the three easily-confused corpus numbers (projected live tech ~514k,
   store 263,769, served index ~200k). Raising `--max-boards` is what fills the budget; the binding
-  technical cap is then `timeout 100m` inside the embed step, and `plan_embed --limit` is the
+  technical cap is then `timeout 100m` inside the embed step, and `embed_plan --limit` is the
   control that should govern it.
 - **Two defects this shape introduced.** (1) The `actions/cache` entry for the embedding model is
   created by the **join** job, which loads only the tokenizer, so all 15 embed shards get a cache

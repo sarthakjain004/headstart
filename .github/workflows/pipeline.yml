@@ -109,7 +109,7 @@ jobs:
         id: plan
         if: steps.gate.outputs.run == 'true'
         run: |
-          python scripts/pipeline/plan_scrape.py --max-boards "${{ github.event.inputs.max_boards || '20000' }}"
+          python -m headstart.ingest.scrape_plan --max-boards "${{ github.event.inputs.max_boards || '20000' }}"
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           plan = json.load(open("data/scrape/assignments/plan.json"))
@@ -158,7 +158,7 @@ jobs:
         # Boards present in the join (ADR-0014), and `|| echo` banks what finished so the step
         # still exits 0 and the upload below runs.
         run: |
-          timeout 60m python scripts/scrape/nightly_harvest.py \
+          timeout 60m python -m headstart.ingest.scrape_run \
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
             || echo "scrape time budget reached — banking partial fragment"
@@ -181,7 +181,7 @@ jobs:
     needs: [scrape-plan, scrape]
     if: always() && needs.scrape-plan.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # ~13 min at 20k Boards: ~90s fixed + ~3.9e-4 s/scraped line, plus plan_embed's tokenize +
+    # ~13 min at 20k Boards: ~90s fixed + ~3.9e-4 s/scraped line, plus embed_plan's tokenize +
     # English gate, which scale with *new Docs* (9,708 -> ~39,000) not lines. 3x that estimate,
     # because join banks nothing and every scrape fragment flows through it.
     timeout-minutes: 40
@@ -199,7 +199,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/huggingface/hub
-          # Distinct key from embed's: plan_embed loads only the TOKENIZER, so a shared
+          # Distinct key from embed's: embed_plan loads only the TOKENIZER, so a shared
           # key let this job win the race and publish a weightless cache that all 15
           # embed shards then hit, re-downloading ~550 MB each and never re-saving it.
           key: hf-tokenizer-nomic-embed-text-v1.5
@@ -220,7 +220,7 @@ jobs:
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
-        # means an empty scraped-Board set, so sync_index evicts nothing (ADR-0014).
+        # means an empty scraped-Board set, so `index sync` evicts nothing (ADR-0014).
         if: needs.scrape-plan.outputs.count != '0'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -228,21 +228,21 @@ jobs:
           pattern: scrape-fragment-*
           path: data/scrape/fragments
       - name: Union the scrape fragments into one snapshot
-        run: python scripts/pipeline/join_shards.py
+        run: python -m headstart.ingest.scrape_join
       - name: Tech filter
-        run: python scripts/filter/tech.py
+        run: python -m headstart.ingest.filter_tech
       - name: Update board priority ledger
-        run: python scripts/rank/update_board_priority.py
+        run: python -m headstart.ingest.update_ledgers priority
       - name: Update board cost ledger (measured scrape seconds — ADR-0027)
         # Blends the per-shard board_cost.csv timings into data/state/, which merge uploads and
         # the next run's scrape-plan packs on. Never fatal: a missing ledger only costs one run
         # of balance, so it must not sink a run that already scraped and embedded successfully.
         continue-on-error: true
-        run: python scripts/rank/update_board_cost.py
+        run: python -m headstart.ingest.update_ledgers cost
       - name: Plan the embed fan-out
         id: plan
         run: |
-          python scripts/pipeline/plan_embed.py
+          python -m headstart.ingest.embed_plan
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           plan = json.load(open("data/embeddings/assignments/plan.json"))
@@ -298,10 +298,10 @@ jobs:
         # 180m, up from 100m, to absorb the bigger --max-boards slice: ~39k new Docs across 15
         # shards is ~126 min at the post-pin-fix 2.89 s/Doc and ~172 min at the pre-fix 3.96, so
         # this covers the run even before `_S_PER_DOC` is recalibrated. Partials are safe:
-        # EmbeddingStore flushes vectors then metadata per batch, merge_shards truncates any
+        # EmbeddingStore flushes vectors then metadata per batch, embed_merge truncates any
         # half-written tail, and the dropped Docs simply reappear in the next run's plan.
         run: |
-          timeout 180m python scripts/embed/embed_jobs.py \
+          timeout 180m python -m headstart.ingest.embed_run \
             --assignment "data/embeddings/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/embeddings/fragments/shard-${{ matrix.shard }}" \
             || echo "embed time budget reached — banking partial fragment"
@@ -376,16 +376,16 @@ jobs:
           path: data/embeddings/fragments
       - name: Merge shard fragments into the store
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/pipeline/merge_shards.py
+        run: python -m headstart.ingest.embed_merge
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/embed/sync_index.py
+        run: python -m headstart.ingest.index sync
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/embed/prune_index.py --apply
+        run: python -m headstart.ingest.index prune --apply
       - name: Compact the table
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/embed/compact_index.py
+        run: python -m headstart.ingest.index compact
       - name: Upload index state
         if: needs.scrape-plan.outputs.run == 'true'
         env:
@@ -403,7 +403,7 @@ jobs:
           }
           up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
-          # --delete prunes remote fragments no longer present locally. compact_index.py rewrites
+          # --delete prunes remote fragments no longer present locally. `index compact` rewrites
           # the table into fresh fragment files each run; without --delete the superseded ones pile
           # up in the dataset forever. Keep the served index at its compacted size.
           up "$HF_DATASET" data/lancedb data/lancedb \

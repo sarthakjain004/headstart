@@ -19,7 +19,7 @@ from pathlib import Path
 from curl_cffi.requests import AsyncSession
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import run, SEED, CONCURRENCY, COMPANY_BUDGET  # noqa: E402
+from fingerprint import COMPANY_BUDGET, CONCURRENCY, SEED, run  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 COVERAGE = ROOT / "data" / "resolve" / "coverage.csv"

@@ -10,7 +10,7 @@ ADR-0014 decided the search index should serve the product's own corpus, but the
 got wired: `embed_wellfound.py` still embeds the one-off Wellfound CSV, `build_index.py` still
 `create_table(mode="overwrite")` on a `wellfound` table, and `TABLE = "wellfound"` is baked into the
 shared `search.py`. Only the *scaffolding* landed — `corpus.iter_jobs(source)` (a source-agnostic
-reader) and `index_sync.plan_sync`/`apply_sync` (the pure, board-scoped add/evict diff and its
+reader) and `index_plan.plan_sync`/`apply_sync` (the pure, board-scoped add/evict diff and its
 LanceDB executor), both unit-tested but unused.
 
 Two things changed the target since ADR-0014:
@@ -34,7 +34,7 @@ Ship a **thin slice**: serve the real tech corpus semantically with only the fil
 and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
 
 1. **Embed source = `data/jobs/tech/`** (reconciles ADR-0014's intent with ADR-0017). Generalise
-   `embed_wellfound.py` → `embed_jobs.py --source`, reading via `corpus.iter_jobs`, keeping the
+   `embed_wellfound.py` → `embed_run.py --source`, reading via `corpus.iter_jobs`, keeping the
    `langdetect` English gate (Project Scope) and the crash-safe streaming `EmbeddingStore`. The
    vector cache moves to `data/embeddings/jobs/`, keyed by id so re-runs embed only new ids.
 2. **A production `jobs` table; Wellfound becomes the frozen eval benchmark.** `search.py` gains
@@ -52,7 +52,7 @@ and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
    construction. This keeps ADR-0018's coverage for the filter, and the exclusion a floor produces
    (a no-number "Senior" Job placed above a "≤2 yrs" search) is usually semantically right. The
    `source` tag is stored so this is revisitable if inflated titles cause false-negatives.
-6. **Index maintained via `index_sync` from day one.** `sync_index.py` replaces the overwrite: read
+6. **Index maintained via `index_plan` from day one.** `index sync` replaces the overwrite: read
    the corpus, embed uncached ids, then `plan_sync`/`apply_sync` treating every Board present in the
    snapshot as "scraped" — so the first run is all-add and the identical path does true incremental
    eviction once a scrape cadence exists.
@@ -70,7 +70,7 @@ and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
 - **A separate `data/enrich/tech` experience artifact + join** (mirroring Wellfound) — needless
   indirection for a greenfield path; extraction is cheap and recomputed independently by
   `experience_coverage.py`.
-- **Overwrite-rebuild** (`create_table(overwrite)`) — the already-built `index_sync` makes
+- **Overwrite-rebuild** (`create_table(overwrite)`) — the already-built `index_plan` makes
   incremental free and keeps the durable table ADR-0014 wants for the ANN index; overwrite throws
   that away.
 

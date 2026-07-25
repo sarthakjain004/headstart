@@ -22,8 +22,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from pydoll.browser import Chrome
-
-from run_wellfound import scrape_url, _options, _flag, COLS, OUT, EXP
+from run_wellfound import COLS, EXP, OUT, _flag, _options, scrape_url
 
 # Keep in sync with docs/wellfound/target-roles.md
 ROLES = [

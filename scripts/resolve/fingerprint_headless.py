@@ -23,8 +23,7 @@ import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import detect, SEED  # noqa: E402
-
+from fingerprint import SEED, detect  # noqa: E402
 from pydoll.browser import Chrome  # noqa: E402
 from pydoll.browser.options import ChromiumOptions  # noqa: E402
 

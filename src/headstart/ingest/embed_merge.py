@@ -13,13 +13,13 @@ Two integrity guards, mirroring the crash-safe store (ADR-0004):
   fully-parseable meta line, and only that many vector rows are appended — the same truncation
   ``EmbeddingStore._reconcile`` does on ``--resume``. The dropped Docs simply reappear as "new" in
   the next run's plan.
-- **Whole-store consistency check** at the end (vector bytes == rows × dim × 4), so ``sync_index``
+- **Whole-store consistency check** at the end (vector bytes == rows × dim × 4), so ``index sync``
   never opens a torn store.
 
-After this the merge job runs the unchanged ``sync_index`` → ``prune_index`` → ``compact_index`` →
-upload → restart.
+After this the merge job runs ``index sync`` → ``index prune`` → ``index compact`` → upload →
+restart.
 
-Run: python scripts/pipeline/merge_shards.py [--store DIR] [--fragments DIR]
+Run: python -m headstart.ingest.embed_merge [--store DIR] [--fragments DIR]
 """
 
 from __future__ import annotations
@@ -29,11 +29,11 @@ import json
 import sys
 from pathlib import Path
 
+from headstart.ingest import REPO_ROOT
 from headstart.search import DOC_PREFIX, MODEL
 
-_ROOT = Path(__file__).resolve().parents[2]
-_STORE = _ROOT / "data" / "embeddings" / "jobs"
-_FRAGMENTS = _ROOT / "data" / "embeddings" / "fragments"
+_STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
+_FRAGMENTS = REPO_ROOT / "data" / "embeddings" / "fragments"
 _FLOAT_BYTES = 4  # float32
 
 

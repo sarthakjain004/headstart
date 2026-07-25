@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from headstart.config import load_active_companies, load_companies
-from headstart.pipeline import build_feed, scrape_all, write_feed
+from headstart.harvest import build_feed, scrape_all, write_feed
 from headstart.tech_filter import filter_jobs
 
 _ROOT = Path(__file__).resolve().parents[2]

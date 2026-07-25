@@ -41,7 +41,7 @@ A source-agnostic `iter_jobs(source)` reader yields canonical `Job`-shaped dicts
 `to_meta` collapses to near-nothing (the scrapers already produce the canonical shape). The production
 index is built from `{ats}.jsonl`; the Wellfound CSV is retained, behind its existing adapter, purely
 as the *labelled eval benchmark* — a fixed test set is meant to be stable, not the live corpus.
-`embed_wellfound.py` is generalised to `embed_jobs.py --source`.
+`embed_wellfound.py` is generalised to `embed_run.py --source`.
 
 **2. Eviction = scrape-diff scoped to the Boards actually scraped.**
 After a scrape, for each Board in the run's `.done` set, delete index rows for that Board whose id is
