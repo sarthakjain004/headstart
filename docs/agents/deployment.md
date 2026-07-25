@@ -39,9 +39,9 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
 
 1. **`scrape-plan`** (1 job) — download the priority ledger (`data/state/*`), select this run's slice from
    the committed liveness ledger ordered by board priority (tech-history boards first + a randomly-rotated
-   exploration tail, capped at `--max-boards` 8000; ADR-0022), then **LPT-bin-pack the selected boards**
+   exploration tail, capped at `--max-boards` 20000 — 70% priority head / 30% exploration; ADR-0022), then **LPT-bin-pack the selected boards**
    into ≤15 cost-balanced shards (`plan_scrape.py`). Emits a per-shard board list + a matrix.
-2. **`scrape`** (matrix, ≤15 shards) — each shard runs `nightly_harvest.py --assignment` (`timeout 140m`)
+2. **`scrape`** (matrix, ≤15 shards) — each shard runs `nightly_harvest.py --assignment` (`timeout 60m`)
    over *only its boards*, streaming to a shard-scoped `data/jobs/shard-{k}/{ats}.jsonl` fragment. One
    runner per shard = one IP at the monolith's worker count, so per-host load is unchanged (ADR-0026).
    `fail-fast: false`; a timed-out shard banks its partial fragment.
@@ -51,7 +51,7 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    — EWMA-blend each scraped board's tech count into `data/state/board_priority.csv`), and **plan the embed
    fan-out** (`plan_embed.py`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
    jobs" step, no separate DB-diff — tokenize, LPT-bin-pack by measured per-bucket cost into ≤15 shards).
-4. **`embed`** (matrix, ≤15 shards) — each shard runs `embed_jobs.py --assignment` (`timeout 100m`, CPU) over
+4. **`embed`** (matrix, ≤15 shards) — each shard runs `embed_jobs.py --assignment` (`timeout 180m`, CPU) over
    *only its assigned Docs* (the planner already English-gated, bucketed, and deduped them), encoding new
    vectors into a shard-scoped `embeddings.f32` + `meta.jsonl` fragment. Stateless — no prior store, no
    LanceDB. `fail-fast: false`; a timed-out shard banks its partial fragment.

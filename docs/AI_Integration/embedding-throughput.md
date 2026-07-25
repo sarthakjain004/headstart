@@ -7,7 +7,7 @@ task will take. For the vocabulary (**Doc**, **Bucket**, **Batch size**, **Throu
 data read off real CI logs, not a design decision (contrast the rest of this folder, which is
 design/reference for AI retrieval generally).
 
-_Last updated: 2026-07-24._
+_Last updated: 2026-07-25._
 
 ## Why there's no single number
 
@@ -54,6 +54,137 @@ two things support it:
    Buckets that ordering hit first. That lines up closely with the ~17–18 s/doc the seq²
    scaling predicts from the ≤2048 rate, which is why the run switched to ascending-Bucket
    order (cheap Docs bank first, so a time-budgeted run gets more Docs done overall).
+
+## Confirmed on the sharded pipeline (run 30131376268, 2026-07-24)
+
+The first five-stage run (ADR-0025 embed fan-out, ADR-0026 scrape fan-out) reached every Bucket,
+so the extrapolated ≤4096 row above is now measured. Shard 2 of 15, 646 Docs, 2,669 s total:
+
+| Bucket (tokens) | Batch size | Docs | Elapsed | s/doc | vs. table above |
+|---|---:|---:|---:|---:|---|
+| ≤512 | 32 | 198 | 175 s | 0.88 | ~0.79 |
+| ≤1024 | 30 | 102 | 202 s | 1.98 | ~1.73 |
+| ≤2048 | 7 | 294 | 1,281 s | 4.36 | ~4.4 |
+| ≤4096 | 1 | 52 | 1,011 s | **19.4** | ~17–18, extrapolated |
+
+The extrapolation held: `plan_embed`'s `_S_PER_DOC` (0.8 / 1.7 / 4.4 / 18.0) predicted a
+42.7-minute makespan against 44.5 minutes actual — 4% error.
+
+**These rates are now stale by design.** They were measured while every batch also encoded a pin
+doc plus count-padding — an MPS-only shape workaround that no longer runs on CPU (see the
+`_BUCKETS` comment in `embed_jobs.py`). Dropping it should cut ~27% overall and ~50% from the
+≤4096 Bucket, whose batch size of 1 meant each Doc was encoded alongside a full-length pin.
+Re-measure with the recipe below after the next run and update `_S_PER_DOC`; until then the
+planner's makespan prediction reads high.
+
+## Corpus scale (the other half of the arithmetic)
+
+Rates alone don't predict a run — you also need how many Docs the run will see. Read that from
+the liveness ledger and the store. **Do not scale a slice's line count by its Board count:** the
+priority-first slice under-samples postings per Board (run 30131376268 covered 15.6% of Boards
+but only 11.3% of ledger postings), and compounding that error once understated a full pass by
+about 10x.
+
+**Nor apply the blended tech keep rate to the ledger.** The run's headline 31.8% is a blend over
+the _slice_, which is priority-first and therefore rich in tech-dense ATSes. The _ledger_ is
+dominated by Workday — 71% of all live postings — and Workday keeps only **6.9%**. Weighting each
+ATS by its own rate gives a ledger-wide keep of **14.9%**, less than half the slice blend. Always
+project per ATS.
+
+Live Boards on enabled ATSes (`join` sits in `registry.DISABLED_ATS`), as of 2026-07-25. Keep
+rates are the per-ATS column of the tech filter in run 30131376268:
+
+| ATS | Live postings | Keep % | Projected tech |
+|---|---:|---:|---:|
+| workday | 2,454,364 | 6.9 | 169,351 |
+| greenhouse | 196,308 | 36.7 | 72,045 |
+| eightfold | 122,541 | 52.7 | 64,579 |
+| smartrecruiters | 247,344 | 25.8 | 63,815 |
+| zoho | 102,170 | 38.1 | 38,927 |
+| recruitee | 62,633 | 39.3 | 24,615 |
+| ashby | 53,222 | 42.0 | 22,353 |
+| lever | 48,884 | 36.0 | 17,598 |
+| successfactors | 38,554 | 20.9 | 8,058 |
+| rippling | 23,229 | 32.9 | 7,642 |
+| teamtailor | 25,549 | 21.5 | 5,493 |
+| ripplehire | 15,526 | 32.9 | 5,108 |
+| keka | 12,663 | 34.5 | 4,369 |
+| freshteam | 7,903 | 45.4 | 3,588 |
+| personio | 17,090 | 14.6 | 2,495 |
+| trakstar | 4,707 | 40.0 | 1,883 |
+| darwinbox | 7,617 | 18.8 | 1,432 |
+| workable | 3,506 | 20.1 | 705 |
+| **TOTAL** | **3,443,810** | **14.9** | **~514,000** |
+
+### Three different numbers, and which one you want
+
+The single biggest source of error here is conflating quantities that differ by 2-3x. Keep them
+apart:
+
+| Quantity | Value | What it is |
+|---|---:|---|
+| Live tech postings at full coverage | ~514,000 | **Projected.** Every live Board scraped. A snapshot ceiling, not an accumulation |
+| Vectors in the store (`manifest.json`) | 263,769 | **Measured.** Every English tech Doc _ever_ embedded, dead ones included — append-only, never GC'd |
+| Rows in the served `jobs` table | ~200,000 | **Measured.** Currently open, on a still-live Board, English, embedded, not pruned. This is the UI's number |
+
+The UI's ~200k is the only one describing what a user can search. It sits below 514,000 for two
+reasons that have nothing to do with each other: **coverage** (the rotating slice has only ever
+reached part of the live set) and the **English gate** (a fixed share of the tech corpus is never
+indexed by design — CLAUDE.md).
+
+And the store _exceeds_ the served table by ~64,000 because it is a historical accumulation: a
+Board that posted 100 Jobs in June and 100 different ones in July contributes 200 store rows and only
+100 live rows. It still holds 1,093 `join` rows even though `join` is in `registry.DISABLED_ATS`.
+
+### Measured coverage (store `meta.jsonl`, 2026-07-25)
+
+Counting the store by ATS and by Board key is the honest coverage measure, and it is one cheap
+download. The store spans **16,608 distinct Boards of 51,314 live** — 32%.
+
+| ATS | In store | Projected live tech | Store ÷ projection |
+|---|---:|---:|---:|
+| workday | 112,646 | 169,351 | 67% |
+| greenhouse | 50,892 | 72,045 | 71% |
+| ashby | 22,696 | 22,353 | 102% |
+| zoho | 21,850 | 38,927 | 56% |
+| lever | 12,070 | 17,598 | 69% |
+| smartrecruiters | 10,507 | 63,815 | 16% |
+| recruitee | 8,443 | 24,615 | 34% |
+| ripplehire | 4,549 | 5,108 | 89% |
+| eightfold | 3,787 | 64,579 | 6% |
+| workable | 3,533 | 705 | 501% |
+| keka | 3,025 | 4,369 | 69% |
+| rippling | 2,357 | 7,642 | 31% |
+| teamtailor | 1,592 | 5,493 | 29% |
+| darwinbox | 1,550 | 1,432 | 108% |
+| personio | 1,033 | 2,495 | 41% |
+| freshteam | 970 | 3,588 | 27% |
+| successfactors | 595 | 8,058 | 7% |
+| trakstar | 581 | 1,883 | 31% |
+| **TOTAL** | **263,769** | **514,056** | **51%** |
+
+Read that last column carefully — it is a ratio between an accumulation and a snapshot, so it can
+legitimately exceed 100%. Where it does (ashby, darwinbox, and workable at 501%), the ledger's
+posting counts are stale-low for a high-churn ATS, which means ~514,000 is if anything a _floor_.
+Where it is far below (eightfold 6%, successfactors 7%, smartrecruiters 16%), those ATSes are
+genuinely under-scraped and are where raising `--max-boards` pays.
+
+### Backlog
+
+The **English gate is the least-known term**. In run 30131376268, 6,757 of the 16,465
+not-already-embedded Docs (41%) were dropped as non-English — but the corpus-wide rate can't be
+read off one run, because already-embedded ids are skipped _before_ the gate and those are English
+by construction, so the fresh set is enriched in non-English. Bracketing at 20-41% puts the live
+embeddable corpus at 303,000-411,000 against ~200,000 currently served, so the **full-coverage
+backlog is roughly 100,000-210,000 Docs**.
+
+Capacity per run is `shards × budget_minutes × 60 ÷ s_per_doc`. At 15 shards, a 200-minute embed
+budget, and 2.89 s/Doc (projected post-pin-fix blended rate), that is ~62,000 Docs — so the
+catch-up is **2-4 runs**, after which each run carries only genuinely new postings.
+
+Measuring the corpus-wide English fraction directly is the highest-value number still missing
+here, and a store GC is the other gap: nothing prunes dead vectors, so the store-to-index gap only
+grows.
 
 ## Predicting a future embedding task
 
