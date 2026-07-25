@@ -11,7 +11,7 @@ computed inline into the metadata via ``experience.extract`` (ADR-0019 — no se
 Two run modes:
 - Default / ``--resume`` — self-select the delta from the corpus (skip ids already in
   ``meta.jsonl``), English-gate, tokenize, bucket, and embed into ``data/embeddings/jobs/``.
-- ``--assignment <file>`` — embed a planner-built shard (a JSONL of ``{doc, bucket, meta}``)
+- ``--assignment <file>`` — embed a planner-built shard (a JSONL of ``{doc, bucket, tokens, meta}``)
   into a fresh ``--outdir`` fragment (ADR-0025). The planner already did the dedup, English gate,
   doc build, metadata, and tokenization, so a shard is stateless: no corpus, no prior store. The
   doc-prep those two modes must agree on lives in ``headstart.ingest.doc_prep`` (re-exported below).
@@ -90,6 +90,10 @@ _FLOAT_BYTES = 4  # float32
 # batch-sizing budget below is encode-side and stays here.
 _ATTN_BUDGET = 128_000_000  # tokens²; ~2/3 of the observed 8 × 4800² ≈ 9 GB anchor
 _BATCH_CAP = 32
+
+# Batches to length-sort together before batching (ADR-0029). Trades priority slack for padding;
+# ADR-0029 records the measured overhead at each window size and why 8.
+_SORT_WINDOW = 8
 
 
 def batch_size_for(bucket: int, budget: int = _ATTN_BUDGET) -> int:
@@ -241,6 +245,25 @@ def _manifest(device: str, source: str, dim: int) -> dict:
     }
 
 
+def _length_sorted(idxs: list[int], tokens: list[int], batch: int) -> list[int]:
+    """Reorder a bucket's indices so each batch holds Docs of similar length (ADR-0029).
+
+    A batch is padded to its longest member, so mixing a 1,030-token Doc with a 2,040-token one
+    in the same batch pays for the longer twice. The indices arrive in board-priority order
+    (ADR-0022), which is uncorrelated with length, so that waste is the common case.
+
+    Fully sorting by length would erase the priority order that lets a time-boxed shard bank its
+    highest-value Docs first, so the sort is confined to *windows* of ``batch × _SORT_WINDOW``:
+    priority survives to within one window while nearly all the padding is recovered. ADR-0029
+    has the measured overhead at each window size and why 8 was chosen.
+    """
+    window = batch * _SORT_WINDOW
+    out: list[int] = []
+    for s in range(0, len(idxs), window):
+        out.extend(sorted(idxs[s : s + window], key=tokens.__getitem__))
+    return out
+
+
 def _encode_groups(
     model,
     device: str,
@@ -249,13 +272,15 @@ def _encode_groups(
     groups: dict,
     store,
     budget: int,
+    tokens: list[int],
 ) -> tuple[int, int]:
     """Encode bucket-by-bucket, shapes pinned on MPS only (see the _BUCKETS comment), isolating
     per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the CI
     time budget (pipeline.yml wraps this in ``timeout``), short docs embed at docs/sec while
     4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
     budget expires (heaviest-first once burned a 98-min budget on ~325 docs). Within each bucket
-    the indices keep their given order (board-priority — ADR-0022); ordering stays irrelevant
+    the indices arrive in board-priority order (ADR-0022) and are then length-sorted within
+    windows to cut padding waste (:func:`_length_sorted`, ADR-0029); ordering stays irrelevant
     downstream — meta carries the id and stays row-aligned with the vectors. Returns
     ``(embedded, failed)``."""
     total = sum(len(idxs) for idxs in groups.values())
@@ -268,6 +293,7 @@ def _encode_groups(
         if not idxs or wedged:
             continue
         n = batch_size_for(bucket, budget)
+        idxs = _length_sorted(idxs, tokens, n)
         pin = make_pin_doc(model.tokenizer, bucket) if pin_shapes else None
         print(
             f"[embed] bucket ≤{bucket} tokens: {len(idxs)} docs in batches of {n}",
@@ -334,15 +360,21 @@ def _encode_groups(
 def _run_assignment(
     model, device: str, dim: int, budget: int, path: Path, outdir: Path
 ) -> None:
-    """Embed a planner-built shard assignment (ADR-0025): a JSONL of ``{doc, bucket, meta}``.
+    """Embed a planner-built shard assignment (ADR-0025): a JSONL of ``{doc, bucket, tokens, meta}``.
 
     The planner already did the dedup, English gate, doc build, metadata, and tokenization, so a
     shard is stateless — it reads neither the corpus nor the prior store, and writes a fresh
     fragment the merge job concatenates. Grouping preserves the file's order within each bucket
-    (the planner ordered it priority-first, ADR-0022), so a time-boxed shard still banks the
-    highest-value Docs first."""
+    (the planner ordered it priority-first, ADR-0022); ``_encode_groups`` then length-sorts within
+    windows of that order so a time-boxed shard still banks the highest-value Docs first while
+    paying far less padding (ADR-0029).
+
+    ``tokens`` is the planner's exact count for the Doc — reused rather than re-derived, since a
+    character-length proxy misorders token-dense text (the same reason the planner tokenizes for
+    real). It falls back to the Bucket cap, which is a safe upper bound on the Doc's length."""
     docs: list[str] = []
     metas: list[dict] = []
+    tokens: list[int] = []
     groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
     with path.open(encoding="utf-8") as fh:
         for line in fh:
@@ -356,6 +388,7 @@ def _run_assignment(
             ):  # a stray/out-of-range bucket -> top one, never dropped
                 bucket = _BUCKETS[-1]
             groups[bucket].append(len(docs))
+            tokens.append(int(rec.get("tokens") or bucket))
             docs.append(rec["doc"])
             metas.append(rec["meta"])
     print(
@@ -370,7 +403,9 @@ def _run_assignment(
     )  # a shard is always a fresh fragment
     done = failed = 0
     if docs:
-        done, failed = _encode_groups(model, device, docs, metas, groups, store, budget)
+        done, failed = _encode_groups(
+            model, device, docs, metas, groups, store, budget, tokens
+        )
     count = store.close(_manifest(device, str(path), dim))
     print(
         f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)",
@@ -482,7 +517,9 @@ def main() -> None:
             flush=True,
         )
 
-    done, failed = _encode_groups(model, device, docs, metas, groups, store, budget)
+    done, failed = _encode_groups(
+        model, device, docs, metas, groups, store, budget, tok_lens
+    )
 
     count = store.close(manifest)
     print(

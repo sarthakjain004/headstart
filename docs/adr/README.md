@@ -36,3 +36,5 @@ supersedes it and note the supersession in both.
 | [0025](0025-parallelize-nightly-pipeline.md) | Parallelize the nightly pipeline across GitHub Actions runners: plan → fan-out → merge | 2026-07-24 |
 | [0026](0026-parallelize-nightly-scrape.md) | Parallelize the nightly scrape (ADR-0025 Phase 2): scrape-plan → scrape-fan → join | 2026-07-25 |
 | [0027](0027-measured-scrape-cost-ledger.md) | Bin-pack the scrape fan-out on measured per-board seconds | 2026-07-25 |
+| [0028](0028-ingest-package.md) | The 6-hourly ingest run lives in `src/headstart/ingest/` | 2026-07-25 |
+| [0029](0029-embedding-cost-model.md) | Embedding cost is linear in tokens — length-sort batches | 2026-07-25 |
