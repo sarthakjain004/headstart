@@ -26,6 +26,14 @@ on:
       repeats:
         description: interleaved passes over the whole sweep
         default: "3"
+  # This branch is experimental and will not be merged, so workflow_dispatch can never reach it
+  # (GitHub only registers dispatchable workflows from the default branch). A branch-scoped push
+  # trigger is the only way to run it. Delete this block if the workflow is ever merged.
+  push:
+    branches: [perf/embed-thread-sweep]
+    paths:
+      - ".github/workflows/embed-threads.yml"
+      - "scripts/bench/**"
 
 permissions:
   contents: read
@@ -54,16 +62,18 @@ jobs:
           lscpu | grep -iE "model name|^CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket" || true
       - name: Thread sweep
         run: |
+          # NB: on a push event `github.event.inputs.*` is empty, so the `||` defaults below are
+          # load-bearing here (unlike embed-bench.yml, where dispatch always supplies them).
           out="embed-threads_${{ github.run_id }}_ubuntu-latest.txt"
           echo "OUT=$out" >> "$GITHUB_ENV"
-          for pass in $(seq 1 "${{ github.event.inputs.repeats }}"); do
-            for t in $(echo "${{ github.event.inputs.threads }}" | tr ',' ' '); do
+          for pass in $(seq 1 "${{ github.event.inputs.repeats || '3' }}"); do
+            for t in $(echo "${{ github.event.inputs.threads || '1,2,4' }}" | tr ',' ' '); do
               echo "::group::pass $pass — threads=$t"
               if [ "$t" = "0" ]; then unset OMP_NUM_THREADS; extra=""; else
                 export OMP_NUM_THREADS="$t"; extra="--threads $t"; fi
               echo "=== pass=$pass threads=$t ==="
               python scripts/bench/embed_backends.py \
-                --docs "${{ github.event.inputs.docs }}" \
+                --docs "${{ github.event.inputs.docs || '80' }}" \
                 --backends torch-fp32 $extra
               echo "::endgroup::"
             done
