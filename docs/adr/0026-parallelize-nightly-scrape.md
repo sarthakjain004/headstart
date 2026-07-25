@@ -11,7 +11,7 @@
 
 ## Context
 
-ADR-0025 Phase 1 sharded embedding; scrape stayed one time-boxed `nightly_harvest` job under a
+ADR-0025 Phase 1 sharded embedding; scrape stayed one time-boxed `ingest.scrape` job under a
 140-minute budget. Scrape is the *other* stage that blows its budget — on join/Workday-heavy slices,
 whose scrapers fetch each posting's detail in a per-board pool. With embed parallel, scrape becomes
 the next wall-clock floor, and it is embarrassingly parallel: board scrapes are independent per-board
@@ -33,9 +33,9 @@ Adopt the same **plan → fan-out → join** shape as ADR-0025, one stage upstre
    priority-first + a random exploration tail, capped at `--max-boards`), then split the *selected*
    boards across shards: shard **count** sized by board count (~`--target-boards` per shard, clamped
    to `max-parallel`), and **which board goes where** by an LPT bin-pack (the shared
-   `headstart.binpack`) over a per-Board cost estimate. Emits `shard-{k}.jsonl` board lists + a
+   `headstart.ingest.binpack`) over a per-Board cost estimate. Emits `shard-{k}.jsonl` board lists + a
    `plan.json` matrix.
-2. **`scrape`** (≤15 jobs, matrix) — `nightly_harvest --assignment shard-{k}.jsonl --outdir
+2. **`scrape`** (≤15 jobs, matrix) — `ingest.scrape --assignment shard-{k}.jsonl --outdir
    data/jobs/shard-{k}` scrapes only its boards into a shard-scoped fragment. `fail-fast: false`.
 3. **`join`** (1 job) — download all fragments, **union them per ATS** into `data/jobs/` (eviction
    scope must be the full scraped-Board set — ADR-0014), then run the existing tech-filter →
@@ -64,14 +64,14 @@ unchanged; only the cost estimate was wrong.
 
 ## How we implement it
 
-- **`nightly_harvest.py` gains `--assignment <boards> --outdir <dir>`** — the exact mirror of
+- **`ingest.scrape` gains `--assignment <boards> --outdir <dir>`** — the exact mirror of
   `embed_jobs --assignment`: scrape a planner-built board list into a fragment, no slice selection.
   The default `pick_boards` path is untouched (local/single-job runs).
-- **`scripts/pipeline/plan_scrape.py`** — selects the slice, costs each board, sizes + LPT-packs.
-- **`scripts/pipeline/join_shards.py`** — streaming per-ATS concatenation of the fragments. Boards are
+- **`src/headstart/ingest/plan_scrape.py`** — selects the slice, costs each board, sizes + LPT-packs.
+- **`src/headstart/ingest/join_shards.py`** — streaming per-ATS concatenation of the fragments. Boards are
   shard-disjoint, so the union is a concat; an intra-board resume duplicate is deduped downstream by
   id (`corpus.iter_jobs`), exactly as with the monolith's single file.
-- **`headstart.binpack`** — the LPT packer and shard sizing, extracted from `plan_embed` so both
+- **`headstart.ingest.binpack`** — the LPT packer and shard sizing, extracted from `plan_embed` so both
   planners share one implementation.
 - **`pipeline.yml`** becomes five stages; `scrape` and `embed` are matrix fan-outs at
   `max-parallel: 15`, `fail-fast: false`; the run-level `concurrency` group and the inert-until-token
@@ -117,12 +117,12 @@ that matter.
 - **A real politeness risk remains for globally-limited hosts.** Watch the sharded scrape's error rates
   on Workday/DataDome-class ATSes; if a shard gets blocked, give that ATS affinity (alternative 1) or a
   worker cap. The per-board 8-worker pool and `http.py` backoff still apply per shard. **No mechanism
-  was built to do this watching:** `scrape_all` returns per-board `errors`, but `nightly_harvest` only
+  was built to do this watching:** `scrape_all` returns per-board `errors`, but `ingest.scrape` only
   prints a count and nothing aggregates them per ATS across shards, so "watch the error rates" is not
   actionable as written.
 - **Built ahead of the measurement gate.** ADR-0025 gated Phase 2 on scrape being the binding
   constraint *after* Phase 1 runs in production. This was built before that confirmation (a deliberate
-  call); the monolith `nightly_harvest` path is retained, so reverting to it is a workflow change only.
+  call); the monolith `ingest.scrape` path is retained, so reverting to it is a workflow change only.
   Now validated against run `30131376268` — see below. The gate's answer, in hindsight, was **no**:
   scrape was 20 min of an 85-min run against embed's 55.
 - **Complexity.** The pipeline is now five stages / two fan-outs; the added scrape planner, join, and

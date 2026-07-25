@@ -40,28 +40,28 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
 1. **`scrape-plan`** (1 job) — download the priority ledger (`data/state/*`), select this run's slice from
    the committed liveness ledger ordered by board priority (tech-history boards first + a randomly-rotated
    exploration tail, capped at `--max-boards` 20000 — 70% priority head / 30% exploration; ADR-0022), then **LPT-bin-pack the selected boards**
-   into ≤15 cost-balanced shards (`plan_scrape.py`). Emits a per-shard board list + a matrix.
-2. **`scrape`** (matrix, ≤15 shards) — each shard runs `nightly_harvest.py --assignment` (`timeout 60m`)
+   into ≤15 cost-balanced shards (`ingest.plan_scrape`). Emits a per-shard board list + a matrix.
+2. **`scrape`** (matrix, ≤15 shards) — each shard runs `ingest.scrape --assignment` (`timeout 60m`)
    over *only its boards*, streaming to a shard-scoped `data/jobs/shard-{k}/{ats}.jsonl` fragment. One
    runner per shard = one IP at the monolith's worker count, so per-host load is unchanged (ADR-0026).
    `fail-fast: false`; a timed-out shard banks its partial fragment.
 3. **`join`** (1 job) — download all scrape fragments and **union them per ATS** into `data/jobs/`
-   (`join_shards.py`) so eviction sees the full scraped-Board set (ADR-0014); then **tech-filter**
-   (`filter/tech.py` → `data/jobs/tech/`), **update the board-priority ledger** (`rank/update_board_priority.py`
+   (`ingest.join_shards`) so eviction sees the full scraped-Board set (ADR-0014); then **tech-filter**
+   (`ingest.filter_tech` → `data/jobs/tech/`), **update the board-priority ledger** (`ingest.update_ledgers priority`
    — EWMA-blend each scraped board's tech count into `data/state/board_priority.csv`), and **plan the embed
-   fan-out** (`plan_embed.py`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
+   fan-out** (`ingest.plan_embed`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
    jobs" step, no separate DB-diff — tokenize, LPT-bin-pack by measured per-bucket cost into ≤15 shards).
-4. **`embed`** (matrix, ≤15 shards) — each shard runs `embed_jobs.py --assignment` (`timeout 180m`, CPU) over
+4. **`embed`** (matrix, ≤15 shards) — each shard runs `ingest.embed_jobs --assignment` (`timeout 180m`, CPU) over
    *only its assigned Docs* (the planner already English-gated, bucketed, and deduped them), encoding new
    vectors into a shard-scoped `embeddings.f32` + `meta.jsonl` fragment. Stateless — no prior store, no
    LanceDB. `fail-fast: false`; a timed-out shard banks its partial fragment.
 5. **`merge`** (1 job — the single writer, `if: always()`) — `snapshot_download` the *prior* store + served
    table (`data/embeddings/jobs/*`, `data/lancedb/*`), **concatenate** the embed fragments onto the store
-   (`merge_shards.py`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
-   table (`sync_index.py`: add ids that now have a vector, evict postings gone from scraped boards —
-   incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`prune_index.py --apply` —
+   (`ingest.merge_shards`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
+   table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
+   incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
    dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
-   keep-set), **compact** the table fresh to reclaim orphan fragments (`compact_index.py` — keeps the
+   keep-set), **compact** the table fresh to reclaim orphan fragments (`index compact` — keeps the
    served index small enough for the free-tier Space to cold-start), **upload** all three dirs back
    (`data/embeddings/jobs`, `data/lancedb` with `--delete`, `data/state`) with retry/backoff, and
    **restart the Space** to pick up the new table.
@@ -69,7 +69,7 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
 The two `scrape`/`embed` fan-outs run `max-parallel: 15` (leaving 5 of the free tier's 20 concurrent jobs
 for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group: nightly-pipeline`
 (`cancel-in-progress: false`) serializes whole runs so two never race on the dataset. The monolith
-`nightly_harvest`/`embed_jobs --resume` paths are retained for local/single-job runs (see below).
+`ingest.scrape`/`embed_jobs --resume` paths are retained for local/single-job runs (see below).
 
 `.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
 `src/headstart/geo.py`, copied in — ADR-0024) to the Space on any main push touching those paths
@@ -170,10 +170,10 @@ The local equivalent of one pipeline cycle (see `docs/learnings.md` MPS entry be
 this machine — the watermark env vars and bucketed batching are load-bearing):
 
 ```bash
-.venv/bin/python scripts/embed/embed_jobs.py --resume
-.venv/bin/python scripts/embed/sync_index.py
-.venv/bin/python scripts/embed/prune_index.py --apply
-.venv/bin/python scripts/embed/compact_index.py
+.venv/bin/python -m headstart.ingest.embed_jobs --resume
+.venv/bin/python -m headstart.ingest.index sync
+.venv/bin/python -m headstart.ingest.index prune --apply
+.venv/bin/python -m headstart.ingest.index compact
 # then the three hf upload commands above, then restart the Space
 ```
 
@@ -186,7 +186,7 @@ upload (this clobbered the 2026-07-05 surgery state). Check
 `hf upload` of the state dirs; dispatch new runs only after the upload lands.
 
 **Compact before every upload.** Lance keeps every prior version's fragments after incremental
-sync; skipping `compact_index.py` balloons the dataset and every Space cold start.
+sync; skipping `index compact` balloons the dataset and every Space cold start.
 
 **401 on the dataset = token scope, not a missing repo.** Private-repo 401s are rendered as
 `RepositoryNotFoundError`. Check which token the failing context holds before touching anything
@@ -202,6 +202,6 @@ user-visible until a sync produces a new table.
 model, both L2-normalized; ranking effect is negligible (ADR-0020).
 
 **A dead board's rows are pruned, not stranded.** The incremental sync only evicts within boards
-scraped this run, so it can't reach a board that dropped off the live ledger — but `prune_index.py`
+scraped this run, so it can't reach a board that dropped off the live ledger — but `index prune`
 (flow step 7, ADR-0023) sweeps exactly those rows every run, keyed on the live ledger. (An earlier
 version of this note called it a known v1 gap; prune closes it.)

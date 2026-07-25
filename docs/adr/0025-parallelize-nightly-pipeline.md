@@ -58,7 +58,7 @@ five stages, two of them GitHub Actions **matrix** fan-outs capped at 15 concurr
    artifact) into a shard fragment (`embeddings.f32` + `meta.jsonl`). Shards are **stateless**: they
    need neither the existing store nor the LanceDB — the planner already did the dedup and bucketing.
 5. **Merge + sync** (1 job) — download the prior store + all shard fragments, **concatenate** them into
-   the store, then run the existing `sync_index` → `prune_index` → `compact_index` → upload → restart,
+   the store, then run the existing `index sync` → `index prune` → `index compact` → upload → restart,
    unchanged. This is the **single writer**.
 
 Cross-cutting rules:
@@ -89,18 +89,18 @@ embed is parallel.
   jobs. The heavy ~460 MB store + LanceDB download and the upload are confined to the **merge job**;
   the planner pulls only `meta.jsonl` to diff. One artifact is *not* small and this ADR originally
   missed it: the join→merge `corpus-state` carries the whole scrape snapshot (`data/jobs`), because
-  `sync_index` derives the corpus-id set and the eviction Board set from it. It grows linearly with
+  `index sync` derives the corpus-id set and the eviction Board set from it. It grows linearly with
   `--max-boards` (46 s up / 14 s down at an 8,000-Board slice). Only the *id* and *Board-key* sets are
   actually consumed — the indexed rows come from the store's `meta.jsonl` — so this artifact is a
   standing simplification target, not a fixed cost.
 - **`embed_jobs.py` gains an assignment mode** — a `--assignment <file>` (id list + texts) that embeds
   exactly the given docs instead of self-selecting via `--resume` + corpus glob. The planner owns the
   dedup and the token-bucket balancing, so each shard is deterministic and its runtime predictable.
-- **Two small planner scripts** (`scripts/pipeline/plan_scrape.py`, `plan_embed.py`) that read the
+- **Two small planner scripts** (`src/headstart/ingest/plan_scrape.py`, `plan_embed.py`) that read the
   ledgers / `meta.jsonl`, LPT-bin-pack, print the predicted per-shard makespan, and emit the matrix JSON.
 - **The merge is a concatenation** — the store is append-only row-major with the id carried in each
-  meta row (ADR-0004), so combining shard fragments is `cat`, not reconciliation. `sync_index` /
-  `prune_index` / `compact_index` and the upload/restart run exactly as today.
+  meta row (ADR-0004), so combining shard fragments is `cat`, not reconciliation. `index sync` /
+  `index prune` / `index compact` and the upload/restart run exactly as today.
 
 ## Why this shape
 

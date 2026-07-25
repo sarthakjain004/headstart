@@ -1,6 +1,6 @@
 # Embedding throughput on CI (predicting how long a run will take)
 
-Records how we measured how fast `scripts/embed/embed_jobs.py` actually runs on the
+Records how we measured how fast `src/headstart/ingest/embed_jobs.py` actually runs on the
 `ubuntu-latest` GitHub Actions runner, and how to predict the wall-clock time a future embedding
 task will take. For the vocabulary (**Doc**, **Bucket**, **Batch size**, **Throughput**) see
 [`CONTEXT.md`](../../CONTEXT.md#search); this doc is the numbers, not the concepts — operational
@@ -219,7 +219,7 @@ gh run view <run-id> --log | grep -E "\[embed\]"
 
 ## Files
 
-- [`scripts/embed/embed_jobs.py`](../../scripts/embed/embed_jobs.py) — the embed step; see the
+- [`src/headstart/ingest/embed_jobs.py`](../../src/headstart/ingest/embed_jobs.py) — the embed step; see the
   `_BUCKETS` / `_ATTN_BUDGET` / `batch_size_for` block for the bucketing logic itself.
 - [`.github/workflows/pipeline.yml`](../../.github/workflows/pipeline.yml) — the nightly job
   that runs it, its `timeout 100m` budget, and the `--resume` continuation.

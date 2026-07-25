@@ -1,15 +1,12 @@
-"""Tests for embed_jobs.py's pure row-shaping: doc building and the inline experience metadata.
+"""Tests for headstart.ingest.embed_jobs's pure row-shaping: doc building and the inline experience metadata.
 
 The inline ``min_years``/``max_years``/``experience_source`` (ADR-0019 — no separate enrich join)
 is the new logic worth locking down: each extraction tier must land in the metadata that rides
-next to the vector. embed_jobs.py is a script under scripts/embed, so we load it by path; its
-module import pulls the ML stack, which the quality CI job doesn't install — importorskip.
+next to the vector. The module import pulls the ML stack, which the quality CI job doesn't
+install — hence the importorskip gates before it.
 """
 
 from __future__ import annotations
-
-import importlib.util
-from pathlib import Path
 
 import pytest
 
@@ -17,12 +14,9 @@ pytest.importorskip("torch")
 pytest.importorskip("sentence_transformers")
 pytest.importorskip("langdetect")
 
-_ROOT = Path(__file__).resolve().parent.parent
-_spec = importlib.util.spec_from_file_location(
-    "embed_jobs", _ROOT / "scripts" / "embed" / "embed_jobs.py"
-)
-ej = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(ej)
+# Imported after the gates above, not at the top: the module pulls the ML stack, which
+# the quality CI job does not install — this must skip rather than error.
+import headstart.ingest.embed_jobs as ej  # noqa: E402
 
 
 def _job(**overrides) -> dict:

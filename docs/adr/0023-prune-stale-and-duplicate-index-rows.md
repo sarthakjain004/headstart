@@ -7,13 +7,13 @@
 
 ## Context
 
-The index accumulated dead weight the incremental sync can't reach. `index_sync` (ADR-0014) only
+The index accumulated dead weight the incremental sync can't reach. `index_plan` (ADR-0014) only
 evicts within the Boards a run scraped, which leaves two classes of stale rows:
 
 1. **Rows on Boards no longer scraped.** A Board that leaves the scrape list — dead in the liveness
    ledger, dropped from it, or on a disabled ATS ([ADR-0020] / `DISABLED_ATS`) — is never revisited,
    so its rows linger forever. Measured: ~5,490 rows (workable, the disabled `join`, personio, …).
-2. **Case-variant duplicates.** `sync_index` also fed the eviction scope from the *tech* corpus
+2. **Case-variant duplicates.** `index sync` also fed the eviction scope from the *tech* corpus
    (`data/jobs/tech/`), so a scraped Board that dropped to zero tech jobs kept its stale rows. And,
    larger: the liveness ledger holds duplicate rows for one Board differing only by slug casing —
    Workday sites like `.../External` vs `.../external` parse to `company/External` and
@@ -33,11 +33,11 @@ dry-run against real store metadata corrected this to the ~14% above and prevent
 id carries); `WorkdayScraper` overrides it to `{ats}:{company}/{site}`, matching how it builds ids.
 Index maintenance maps a ledger entry to the exact key its rows use through this.
 
-**Fix the sync scope.** `sync_index.py` derives the scraped-Board set from the *full* scrape
+**Fix the sync scope.** `index sync` derives the scraped-Board set from the *full* scrape
 (`data/jobs/`, non-recursive), not the tech subset — so a Board scraped with no tech jobs still has
 its closed postings evicted.
 
-**A prune sweep** (`scripts/embed/prune_index.py`, run after sync, before compact). The keep-set is
+**A prune sweep** (`src/headstart/ingest/index.py`, run after sync, before compact). The keep-set is
 the live ledger (enabled ATSes) mapped through `board_key()` and lowercased. It evicts (a) rows whose
 canonical Board isn't in the keep-set, and (b) per `(lowercased Board, native id)` group, every id but
 the lexicographically-smallest Board casing — the case-variant dupes. Dry-run by default; it refuses

@@ -14,7 +14,7 @@ Two run modes:
 - ``--assignment <file>`` — embed a planner-built shard (a JSONL of ``{doc, bucket, meta}``)
   into a fresh ``--outdir`` fragment (ADR-0025). The planner already did the dedup, English gate,
   doc build, metadata, and tokenization, so a shard is stateless: no corpus, no prior store. The
-  doc-prep those two modes must agree on lives in ``headstart.embed_prep`` (re-exported below).
+  doc-prep those two modes must agree on lives in ``headstart.ingest.embed_prep`` (re-exported below).
 
 Output under ``data/embeddings/jobs/`` (or ``--outdir``):
 - ``embeddings.f32`` — raw float32 vectors, row-major, appended as each batch finishes.
@@ -22,7 +22,7 @@ Output under ``data/embeddings/jobs/`` (or ``--outdir``):
 - ``meta.jsonl`` — one metadata record per vector, row-aligned with the vectors; the authority for resume.
 - ``manifest.json`` — provenance, written last as the "this run finished" marker.
 
-Crash-safe and resumable, mirroring the ``JobWriter`` pattern in ``src/headstart/pipeline.py``:
+Crash-safe and resumable, mirroring the ``JobWriter`` pattern in :mod:`headstart.harvest`:
 vectors and metadata stream to disk in lockstep (A1), a failed batch is isolated and retried on the
 next run (A3), and ``--resume`` skips Jobs already embedded so you only encode the delta (A2).
 """
@@ -41,7 +41,8 @@ from sentence_transformers import SentenceTransformer
 
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.embed_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
+from headstart.ingest import REPO_ROOT
+from headstart.ingest.embed_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
     _BUCKETS,
     _MAX_SEQ_TOKENS,
     bucket_for,
@@ -51,10 +52,9 @@ from headstart.embed_prep import (  # re-exported: doc-prep shared with the embe
 )
 from headstart.search import DOC_PREFIX, MODEL
 
-_ROOT = Path(__file__).resolve().parents[2]
-_SOURCE = _ROOT / "data" / "jobs" / "tech"
-_OUTDIR = _ROOT / "data" / "embeddings" / "jobs"
-_PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
+_SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
+_OUTDIR = REPO_ROOT / "data" / "embeddings" / "jobs"
+_PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 
 _FLOAT_BYTES = 4  # float32
 
@@ -86,7 +86,7 @@ _FLOAT_BYTES = 4  # float32
 # doc transiently demands ~50 GB on this stack. 4,096 is inside the envelope the Wellfound run
 # proved safe, and only ~0.01% of tech-corpus docs are longer (their boilerplate tails get
 # truncated). This consciously narrows ADR-0005's "no truncation" to "up to 4k tokens".
-# _BUCKETS / _MAX_SEQ_TOKENS moved to headstart.embed_prep (shared with the planner); the
+# _BUCKETS / _MAX_SEQ_TOKENS moved to headstart.ingest.embed_prep (shared with the planner); the
 # batch-sizing budget below is encode-side and stays here.
 _ATTN_BUDGET = 128_000_000  # tokens²; ~2/3 of the observed 8 × 4800² ≈ 9 GB anchor
 _BATCH_CAP = 32

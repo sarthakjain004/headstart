@@ -11,7 +11,7 @@ per-ATS concatenation; a duplicate line from an intra-board resume is deduped do
 Streams line-by-line (never buffering a whole ATS), and a shard that timed out mid-scrape simply
 contributes the boards it did finish — partial-harvest safety survives per shard.
 
-Run: python scripts/pipeline/join_shards.py [--shards DIR] [--out DIR]
+Run: python -m headstart.ingest.join_shards [--shards DIR] [--out DIR]
 """
 
 from __future__ import annotations
@@ -20,11 +20,12 @@ import argparse
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[2]
+from headstart.ingest import REPO_ROOT
+
 _SHARDS = (
-    _ROOT / "data" / "scrape" / "fragments"
+    REPO_ROOT / "data" / "scrape" / "fragments"
 )  # outside data/jobs, so the joined snapshot stays clean
-_OUT = _ROOT / "data" / "jobs"
+_OUT = REPO_ROOT / "data" / "jobs"
 
 
 def _fragment_dirs(root: Path) -> list[Path]:

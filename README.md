@@ -174,9 +174,9 @@ query drives the embedding.
   pre-filter on the typed metadata, rank the survivors by cosine (ADR-0007, ADR-0008). Required
   years-of-experience is extracted to a numeric range by a deterministic cascade so `min_years`
   is a real filter (ADR-0009, ADR-0018).
-- **Freshness:** the index is reconciled incrementally, never rebuilt — `sync_index` adds new
-  vectors and evicts postings that vanished from a scraped board, `prune_index` sweeps rows on
-  dead boards and case-variant duplicates, `compact_index` rewrites the table to reclaim orphan
+- **Freshness:** the index is reconciled incrementally, never rebuilt — `index sync` adds new
+  vectors and evicts postings that vanished from a scraped board, `index prune` sweeps rows on
+  dead boards and case-variant duplicates, `index compact` rewrites the table to reclaim orphan
   fragments (ADR-0014, ADR-0019, ADR-0023).
 
 ### Retrieval eval
@@ -193,17 +193,23 @@ correctness against the live Space.
 
 ## Layout
 
-- `src/headstart/` — the package: `models.py` (Job + normalization), `scrapers/` (21 per-ATS +
-  `base`/`registry`), `http.py` (the pooled reliable-fetch seam), `config.py`, `pipeline.py`,
-  `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`, `geo.py`,
-  `search.py` (shared embed/search constants + filter builder), `embed_prep.py` (doc prep shared
-  by embedder and planner), `index_sync.py` / `index_prune.py`, `board_priority.py` (ADR-0022),
-  `board_cost.py` (measured scrape seconds, ADR-0027),
-  `binpack.py` (LPT packing shared by both planners); plus the bot: `filters.py`, `bot.py`,
-  `telegram.py`, `state.py`.
-- `scripts/` — one folder per pipeline stage: `discover/`, `merge/`, `validate/`, `resolve/`,
-  `scrape/`, `filter/`, `rank/`, `pipeline/` (the shard planners, join, and merge), plus the AI
-  layer in `embed/`, `enrich/`, `eval/`, `ui/`.
+- `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
+  (Job + normalization), `scrapers/` (21 per-ATS + `base`/`registry`), `http.py` (the pooled
+  reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
+  feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
+  `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`
+  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus the bot: `filters.py`,
+  `bot.py`, `telegram.py`, `state.py`.
+- `src/headstart/ingest/` — **the 6-hourly pipeline run**, one module per stage step, invoked as
+  `python -m headstart.ingest.<module>` (ADR-0028): `plan_scrape`, `scrape`, `join_shards`,
+  `filter_tech`, `update_ledgers` (`priority`/`cost`), `plan_embed`, `embed_jobs`, `merge_shards`,
+  `index` (`sync`/`prune`/`compact`). `.github/workflows/pipeline.yml` runs exactly these. Its
+  pipeline-only helpers live here too: `binpack.py` (LPT packing shared by both planners),
+  `embed_prep.py` (doc prep shared by embedder and planner), `index_plan.py` (the pure add/evict
+  and prune planners).
+- `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
+  `scrape/` (one-off pulls), `filter/` (recall verification), plus the AI layer in `embed/`
+  (local index tools), `enrich/`, `eval/`, `ui/`.
 - `data/` — `validate/liveness/` is git-tracked and authoritative. **Everything else under `data/`
   is gitignored and lives in the HF dataset**, not in the repo: `state/`, `embeddings/`,
   `lancedb/`, `jobs/`. Pull them from HF before trusting any local copy.
@@ -244,6 +250,6 @@ To rebuild rather than download — note `embed_jobs.py` is CPU-bound and belong
 scale (ADR-0025):
 
 ```bash
-python scripts/embed/embed_jobs.py --resume   # embed the English tech corpus
-python scripts/embed/sync_index.py            # incremental add/evict into the LanceDB `jobs` table
+python -m headstart.ingest.embed_jobs --resume   # embed the English tech corpus
+python -m headstart.ingest.index sync            # incremental add/evict into the LanceDB `jobs` table
 ```

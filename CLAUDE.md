@@ -156,11 +156,21 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Keep commit messages to a maximum of 50 words.
 
 ## Repo Conventions
-- `scripts/` is organized by pipeline stage: `discover/` (find ATS tenants), `merge/`
-  (union/dedupe lists), `validate/` (liveness), `resolve/` (company → ats:slug), `scrape/`
-  (pull jobs). Whenever you add a script, put it in the folder that fits its stage — and if
-  none fits, create a new clearly-named stage subfolder rather than dropping it loose in
-  `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
+- **The 6-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
+  One module per stage step, run as `python -m headstart.ingest.<module>`: `plan_scrape`,
+  `scrape`, `join_shards`, `filter_tech`, `update_ledgers` (`priority`/`cost` subcommands),
+  `plan_embed`, `embed_jobs`, `merge_shards`, `index` (`sync`/`prune`/`compact` subcommands).
+  If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
+  to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
+  live there too (`binpack`, `embed_prep`, `index_plan`); logic the curated-feed path
+  (`python -m headstart` → `headstart.harvest`) also reaches stays in `headstart` proper
+  (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
+- `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
+  organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
+  (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `eval/`, `enrich/`,
+  `filter/` (verification), `embed/` (local index tools), `ui/`. Whenever you add a script, put it
+  in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
+  rather than dropping it loose in `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls

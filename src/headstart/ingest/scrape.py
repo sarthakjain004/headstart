@@ -10,10 +10,10 @@ behavior, a pure shuffle. Capped at ``--max-boards``; jobs stream to ``data/jobs
 ``pipeline.scrape_all``.
 
 Each run truncates the jsonl — the output is *this run's snapshot*, which is exactly what
-``sync_index.py`` wants: eviction is scoped to the Boards present in the snapshot, so a partial
+``index sync`` wants: eviction is scoped to the Boards present in the snapshot, so a partial
 harvest never touches the Boards it skipped (ADR-0014).
 
-Run:  python scripts/scrape/nightly_harvest.py --max-boards 8000
+Run:  python -m headstart.ingest.scrape --max-boards 8000
 """
 
 from __future__ import annotations
@@ -26,12 +26,12 @@ from pathlib import Path
 
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, load_active_companies
-from headstart.pipeline import scrape_all
+from headstart.harvest import scrape_all
+from headstart.ingest import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
-_LEDGER = ROOT / "data" / "validate" / "liveness"
-_JOBS_DIR = ROOT / "data" / "jobs"
-_PRIORITY = ROOT / "data" / "state" / "board_priority.csv"
+_LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
+_JOBS_DIR = REPO_ROOT / "data" / "jobs"
+_PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 
 
 def _read_assignment(path: Path) -> list[CompanyRef]:

@@ -109,7 +109,7 @@ jobs:
         id: plan
         if: steps.gate.outputs.run == 'true'
         run: |
-          python scripts/pipeline/plan_scrape.py --max-boards "${{ github.event.inputs.max_boards || '20000' }}"
+          python -m headstart.ingest.plan_scrape --max-boards "${{ github.event.inputs.max_boards || '20000' }}"
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           plan = json.load(open("data/scrape/assignments/plan.json"))
@@ -158,7 +158,7 @@ jobs:
         # Boards present in the join (ADR-0014), and `|| echo` banks what finished so the step
         # still exits 0 and the upload below runs.
         run: |
-          timeout 60m python scripts/scrape/nightly_harvest.py \
+          timeout 60m python -m headstart.ingest.scrape \
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
             || echo "scrape time budget reached — banking partial fragment"
@@ -220,7 +220,7 @@ jobs:
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
-        # means an empty scraped-Board set, so sync_index evicts nothing (ADR-0014).
+        # means an empty scraped-Board set, so `index sync` evicts nothing (ADR-0014).
         if: needs.scrape-plan.outputs.count != '0'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -228,21 +228,21 @@ jobs:
           pattern: scrape-fragment-*
           path: data/scrape/fragments
       - name: Union the scrape fragments into one snapshot
-        run: python scripts/pipeline/join_shards.py
+        run: python -m headstart.ingest.join_shards
       - name: Tech filter
-        run: python scripts/filter/tech.py
+        run: python -m headstart.ingest.filter_tech
       - name: Update board priority ledger
-        run: python scripts/rank/update_board_priority.py
+        run: python -m headstart.ingest.update_ledgers priority
       - name: Update board cost ledger (measured scrape seconds — ADR-0027)
         # Blends the per-shard board_cost.csv timings into data/state/, which merge uploads and
         # the next run's scrape-plan packs on. Never fatal: a missing ledger only costs one run
         # of balance, so it must not sink a run that already scraped and embedded successfully.
         continue-on-error: true
-        run: python scripts/rank/update_board_cost.py
+        run: python -m headstart.ingest.update_ledgers cost
       - name: Plan the embed fan-out
         id: plan
         run: |
-          python scripts/pipeline/plan_embed.py
+          python -m headstart.ingest.plan_embed
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           plan = json.load(open("data/embeddings/assignments/plan.json"))
@@ -301,7 +301,7 @@ jobs:
         # EmbeddingStore flushes vectors then metadata per batch, merge_shards truncates any
         # half-written tail, and the dropped Docs simply reappear in the next run's plan.
         run: |
-          timeout 180m python scripts/embed/embed_jobs.py \
+          timeout 180m python -m headstart.ingest.embed_jobs \
             --assignment "data/embeddings/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/embeddings/fragments/shard-${{ matrix.shard }}" \
             || echo "embed time budget reached — banking partial fragment"
@@ -376,16 +376,16 @@ jobs:
           path: data/embeddings/fragments
       - name: Merge shard fragments into the store
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/pipeline/merge_shards.py
+        run: python -m headstart.ingest.merge_shards
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/embed/sync_index.py
+        run: python -m headstart.ingest.index sync
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/embed/prune_index.py --apply
+        run: python -m headstart.ingest.index prune --apply
       - name: Compact the table
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python scripts/embed/compact_index.py
+        run: python -m headstart.ingest.index compact
       - name: Upload index state
         if: needs.scrape-plan.outputs.run == 'true'
         env:
@@ -403,7 +403,7 @@ jobs:
           }
           up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
-          # --delete prunes remote fragments no longer present locally. compact_index.py rewrites
+          # --delete prunes remote fragments no longer present locally. `index compact` rewrites
           # the table into fresh fragment files each run; without --delete the superseded ones pile
           # up in the dataset forever. Keep the served index at its compacted size.
           up "$HF_DATASET" data/lancedb data/lancedb \

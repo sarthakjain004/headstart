@@ -19,14 +19,14 @@ posted JD in place.
 
 **Now: per-incident targeted eviction.** `scripts/embed/evict_store.py --ats <list>` drops the
 affected ATSes' rows from the store (lockstep rewrite of `embeddings.f32` + `meta.jsonl`, manifest
-count last) and from the LanceDB `jobs` table; the next `embed_jobs.py --resume && sync_index.py`
+count last) and from the LanceDB `jobs` table; the next `embed_jobs --resume && index sync`
 re-embeds and re-adds them fresh. Running it is part of shipping any scraper change that alters
 captured text.
 
 **Later: content-hash change detection**, once the nightly pipeline has run long enough to measure
 organic churn. Design sketch, recorded so it isn't re-derived: hash the embedded text into each
 meta row; `--resume` re-embeds on hash mismatch (append-only store, last-row-wins per id, periodic
-store compaction drops superseded rows); `sync_index` gains an update branch (changed vector =
+store compaction drops superseded rows); `index sync` gains an update branch (changed vector =
 delete + re-add). The trigger to build it is knowing the nightly churn volume — the free-tier CPU
 embed budget is sized for *new* ids, and organic-edit churn lands on top of that.
 

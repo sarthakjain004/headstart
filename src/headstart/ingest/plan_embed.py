@@ -5,8 +5,8 @@ Runs once, after the tech filter, before the embed matrix. It:
 
 1. diffs the tech corpus (``data/jobs/tech``) against the prior store's ``meta.jsonl`` to find
    the **new** ids (the ones an embed run would encode this time);
-2. applies the *same* prep as ``embed_jobs.py`` — English gate, doc build, typed metadata — via
-   the shared ``headstart.embed_prep`` (so a sharded Doc is byte-identical to the monolith's);
+2. applies the *same* prep as ``embed_jobs`` — English gate, doc build, typed metadata — via
+   the shared ``headstart.ingest.embed_prep`` (so a sharded Doc is byte-identical to the monolith's);
 3. tokenizes each Doc with the model's tokenizer and sorts it into a token-length **Bucket**;
 4. **LPT bin-packs** the Docs across a dynamic number of shards (≤ ``--max-shards``) by their
    measured per-Bucket cost, so each shard's makespan is balanced (cost is heavy-tailed — a
@@ -18,7 +18,7 @@ Runs once, after the tech filter, before the embed matrix. It:
 The planner touches only ``meta.jsonl`` (ids, to diff) — never the vectors or the LanceDB — so it
 stays a light, single job. The embed shards are stateless: everything they need is in their file.
 
-Run: python scripts/pipeline/plan_embed.py [--max-shards 15] [--limit N]
+Run: python -m headstart.ingest.plan_embed [--max-shards 15] [--limit N]
 """
 
 from __future__ import annotations
@@ -28,10 +28,14 @@ import json
 import sys
 from pathlib import Path
 
-from headstart.binpack import lpt_pack, shard_count  # noqa: F401 (lpt_pack re-exported for tests)
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.embed_prep import (
+from headstart.ingest import REPO_ROOT
+from headstart.ingest.binpack import (  # noqa: F401 (lpt_pack re-exported for tests)
+    lpt_pack,
+    shard_count,
+)
+from headstart.ingest.embed_prep import (
     _MAX_SEQ_TOKENS,
     bucket_for,
     build_doc,
@@ -40,11 +44,10 @@ from headstart.embed_prep import (
 )
 from headstart.search import MODEL
 
-_ROOT = Path(__file__).resolve().parents[2]
-_SOURCE = _ROOT / "data" / "jobs" / "tech"
-_PRIOR_META = _ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
-_PRIORITY = _ROOT / "data" / "state" / "board_priority.csv"
-_OUT = _ROOT / "data" / "embeddings" / "assignments"
+_SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
+_PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
+_PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
+_OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 
 # Measured CPU seconds-per-Doc per Bucket, from the 2026-07-24 ubuntu-latest run recorded in
 # docs/AI_Integration/embedding-throughput.md. Hardcoded (not derived from live CI logs) for

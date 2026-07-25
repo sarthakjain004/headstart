@@ -37,7 +37,7 @@ constant, which at `--max-boards 20000` is 6,000 Boards — 30% of the slice —
 2. **Stream it to disk per Board.** `JobWriter.record_cost()` appends to `board_cost.csv` in the
    shard's own fragment dir and flushes — the same contract as the `.done` journal, so a shard
    killed by its time budget still hands over every timing it did take.
-3. **Blend in the join.** `scripts/rank/update_board_cost.py` reads every shard's rows and
+3. **Blend in the join.** `src/headstart/ingest/update_ledgers.py` reads every shard's rows and
    EWMA-blends them into `data/state/board_cost.csv` (`board,seconds,jobs,updated_at`).
 4. **Pack on it next run.** `plan_scrape` costs each Board at its measured EWMA, sizes the shard
    count by `--target-seconds` of work rather than Board count, and prints a **predicted makespan**.

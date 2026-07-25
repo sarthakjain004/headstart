@@ -2,8 +2,8 @@
 
 The nightly pipeline builds each **Doc** — the one string embedded per Job (title +
 markdown-stripped description, ``search_document:``-prefixed, ADR-0005) — and its typed
-metadata (ADR-0007/0019) in *two* places now: ``scripts/embed/embed_jobs.py`` (the monolithic
-``--resume`` path) and ``scripts/pipeline/plan_embed.py`` (the planner that assigns Docs to
+metadata (ADR-0007/0019) in *two* places now: ``headstart.ingest.embed_jobs`` (the monolithic
+``--resume`` path) and ``headstart.ingest.plan_embed`` (the planner that assigns Docs to
 embed shards). A sharded Doc's vector only matches the monolith's if the English gate, the
 doc-text builder, and the token-length **Bucket** are byte-identical across the two — so they
 live here once instead of being hand-copied. ``embed_jobs.py`` re-exports these for its own

@@ -1,4 +1,13 @@
-"""Run all configured scrapers and assemble the combined job feed."""
+"""Run all configured scrapers and assemble the combined job feed.
+
+The shared scrape engine — ``scrape_all`` (thread pool + per-Board timing + the crash-safe
+``JobWriter``) and the curated-feed builders. Two callers: ``headstart.ingest.scrape``, the
+pipeline's stage-2 shard runner, and ``python -m headstart``, the curated ``docs/jobs.json`` feed.
+
+Named ``harvest`` rather than ``pipeline`` (ADR-0028): "pipeline" means the 5-stage CI run
+everywhere else in this repo — ``.github/workflows/pipeline.yml``, ``headstart.ingest``,
+ADR-0025/0026/0027 — and this module is not that. It is one step *inside* it.
+"""
 
 from __future__ import annotations
 

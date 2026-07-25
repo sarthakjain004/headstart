@@ -1,4 +1,4 @@
-"""Tests for embed_jobs.py's shard (``--assignment``) mode (ADR-0025 Phase 1).
+"""Tests for headstart.ingest.embed_jobs's shard (``--assignment``) mode (ADR-0025 Phase 1).
 
 Exercises the shard plumbing with a fake encoder — no model download, no real embedding: an
 assignment of pre-built {doc, bucket, meta} records must produce a fresh fragment whose vectors are
@@ -7,7 +7,6 @@ row-aligned with the given metadata, grouped by the planner's bucket. Real encod
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
@@ -20,12 +19,9 @@ np = pytest.importorskip(
     "numpy"
 )  # rides with the ML stack; skip cleanly when it's absent
 
-_ROOT = Path(__file__).resolve().parent.parent
-_spec = importlib.util.spec_from_file_location(
-    "embed_jobs", _ROOT / "scripts" / "embed" / "embed_jobs.py"
-)
-ej = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(ej)
+# Imported after the gates above, not at the top: the module pulls the ML stack, which
+# the quality CI job does not install — this must skip rather than error.
+import headstart.ingest.embed_jobs as ej  # noqa: E402
 
 _DIM = 8
 
