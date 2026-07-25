@@ -20,6 +20,8 @@ import urllib.request
 from pathlib import Path
 
 from pydoll.browser.tab import Tab
+from pydoll.commands.input_commands import InputCommands
+from pydoll.protocol.input.types import MouseButton, MouseEventType, PointerType
 
 try:  # audio fallback dep — offline STT; optional so the module loads without it
     from faster_whisper import WhisperModel
@@ -41,9 +43,17 @@ _NUMWORDS = {
 
 
 def _clean_transcript(text: str) -> str:
-    """DataDome audio is a short digit/char string; normalise Whisper output to that."""
+    """Whisper output -> the digit string DataDome expects ("3 4 4 9 4 6" -> "344946").
+
+    The clip reads its own instruction aloud before the digits, so Whisper returns something
+    like "Please type the numbers you hear. 3 4 4 9 4 6". Mapping number-words to digits and
+    concatenating every token submitted `pleasetypethenumbersyouhear344946` and failed the
+    challenge. The answer is only ever digits, so drop everything else — which also discards
+    any stray filler Whisper hallucinates between them.
+    """
     words = re.findall(r"[a-z0-9]+", text.lower())
-    return "".join(_NUMWORDS.get(w, w) for w in words)
+    mapped = "".join(_NUMWORDS.get(w, w) for w in words)
+    return re.sub(r"\D", "", mapped)
 
 
 def audio_ready() -> tuple[bool, str]:
@@ -208,11 +218,55 @@ async def _slider_geometry(tab, oopif):
     return sx, sy, ex
 
 
+_PRESSED = (
+    0.5  # Pointer Events: a mouse with a button down reports pressure exactly 0.5
+)
+
+
+async def _mouse(tab, event, x, y, *, force=0.0, button=None, clicks=0):
+    """Raw CDP mouse dispatch, so we can set `force` — pydoll's Mouse never does.
+
+    DataDome hooks `pointerdown` capture-phase and stores the pressure as `m_pp` (see
+    artifacts/datadome-tags.beautified.js):
+
+        "mouse" === n.pointerType && 0 < n.buttons && t("m_pp", n.pressure)
+
+    CDP defaults `force` to 0, and pydoll's `_dispatch_button` doesn't pass it, so every drag we
+    made reported pressure 0 while claiming buttons=1. The Pointer Events spec reserves 0 for
+    "no buttons down" and requires 0.5 for a pressed mouse — a combination real hardware cannot
+    produce, so it identifies the input as synthetic no matter how good the trajectory is.
+    Measured both ways by experiment/wellfound-datadome/probe_cdp_mouse_artifacts.py.
+    """
+    await tab._execute_command(
+        InputCommands.dispatch_mouse_event(
+            type=event,
+            x=int(round(x)),
+            y=int(round(y)),
+            button=button,
+            click_count=clicks,
+            force=force,
+            pointer_type=PointerType.MOUSE,
+        )
+    )
+
+
 async def _humanized_drag(tab, sx, sy, ex, ey):
-    """Press at (sx,sy), slide to (ex,ey) with ease-in/out + jitter, release."""
-    await tab.mouse.move(sx, sy)
+    """Press at (sx,sy), slide to (ex,ey) with ease-in/out + jitter, release.
+
+    Every event goes through _mouse() rather than tab.mouse so the whole drag carries a
+    spec-correct pressure: 0.5 while the button is held (press + each move), 0 on release.
+    """
+    await _mouse(tab, MouseEventType.MOUSE_MOVED, sx, sy)
     await asyncio.sleep(0.10 + random.random() * 0.20)
-    await tab.mouse.down()
+    await _mouse(
+        tab,
+        MouseEventType.MOUSE_PRESSED,
+        sx,
+        sy,
+        force=_PRESSED,
+        button=MouseButton.LEFT,
+        clicks=1,
+    )
     await asyncio.sleep(0.05 + random.random() * 0.12)
     steps = 35 + int(random.random() * 18)
     for i in range(1, steps + 1):
@@ -220,11 +274,25 @@ async def _humanized_drag(tab, sx, sy, ex, ey):
         ease = t * t * (3 - 2 * t)  # smoothstep: accelerate then decelerate
         x = sx + (ex - sx) * ease + random.uniform(-1.5, 1.5)
         y = sy + (ey - sy) * ease + random.uniform(-2.0, 2.0)
-        await tab.mouse.move(x, y)
+        # buttons stays down through the slide, so pressure must stay 0.5 here too
+        await _mouse(
+            tab,
+            MouseEventType.MOUSE_MOVED,
+            x,
+            y,
+            force=_PRESSED,
+            button=MouseButton.LEFT,
+        )
         await asyncio.sleep(0.006 + random.random() * 0.020)
-    await tab.mouse.move(ex + random.uniform(-2, 2), ey + random.uniform(-1, 1))
+    fx, fy = ex + random.uniform(-2, 2), ey + random.uniform(-1, 1)
+    await _mouse(
+        tab, MouseEventType.MOUSE_MOVED, fx, fy, force=_PRESSED, button=MouseButton.LEFT
+    )
     await asyncio.sleep(0.05 + random.random() * 0.12)
-    await tab.mouse.up()
+    # release: buttons returns to 0, so pressure returns to 0 (spec)
+    await _mouse(
+        tab, MouseEventType.MOUSE_RELEASED, fx, fy, button=MouseButton.LEFT, clicks=1
+    )
 
 
 async def _wait_for_manual(tab, secs: float) -> bool:
