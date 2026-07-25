@@ -45,13 +45,17 @@ jobs:
           lscpu | grep -iE "model name|flags" | head -2 | cut -c1-400
       - name: Benchmark
         run: |
+          # workflow_dispatch always supplies the declared defaults above, so no `||` fallback
+          # (an inconsistent one would silently benchmark a different set than it claims).
+          out="embed-backends_${{ github.run_id }}_ubuntu-latest.txt"
+          echo "OUT=$out" >> "$GITHUB_ENV"
           python scripts/bench/embed_backends.py \
-            --docs "${{ github.event.inputs.docs || '150' }}" \
-            --backends "${{ github.event.inputs.backends || 'torch-fp32' }}" \
-            2>&1 | tee bench.txt
+            --docs "${{ github.event.inputs.docs }}" \
+            --backends "${{ github.event.inputs.backends }}" \
+            2>&1 | tee "$out"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: embed-bench-results
-          path: bench.txt
+          path: ${{ env.OUT }}
           retention-days: 30

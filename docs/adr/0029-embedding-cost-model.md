@@ -5,8 +5,7 @@
 - Corrects the cost model implied by [ADR-0005](0005-embedding-model.md)'s bucket/batch design for
   the CPU runners of [ADR-0025](0025-parallelize-nightly-pipeline.md). Trades against
   [ADR-0022](0022-tech-priority-board-ordering.md)'s within-Bucket priority order, deliberately and
-  boundedly. Changes no vector semantics: the same model, prefix, and dimensionality (ADR-0005),
-  so no re-embedding is implied.
+  boundedly. Same model, prefix, and dimensionality (ADR-0005), so no re-embedding is implied.
 
 ## Context
 
@@ -64,8 +63,12 @@ of what is available while keeping priority order to within eight batches (±56 
 Bucket, out of ~1,950). A time-boxed shard still banks its highest-value Docs first; it simply pays
 far less padding to do so.
 
-Vectors are unchanged — this reorders *which Docs share a batch*, and each Doc's own tokens are
-identical, so the store stays byte-comparable and nothing re-embeds.
+Each Doc's own tokens are identical and nothing re-embeds — this only reorders *which Docs share
+a batch*. Vectors are therefore **semantically** unchanged, not bit-identical: batch composition
+sets the padded sequence length, which changes GEMM shapes and hence float reduction order, so
+values drift by a few ulps. `pipeline-smoke` is the guard — it embeds one corpus through both the
+monolith and the sharded path and asserts agreement within `atol=1e-4`, several orders of magnitude
+above that drift. It passed on this change.
 
 **2. Do not adopt a quantized backend on published numbers.** ONNX-int8 (3.08×) and OpenVINO-int8
 (4×) are the standard CPU lever, and pre-built int8 artifacts already ship on the nomic repo
@@ -100,11 +103,11 @@ ADR-0011 eval harness — cosine agreement on synthetic text is a drift signal, 
 
 ## Consequences
 
-- Expected ~15.6% less embedding compute at identical output. The next run's `[embed]` rates are the
+- Expected ~15.6% less embedding compute for semantically identical vectors. The next run's `[embed]` rates are the
   check; `embed_plan`'s `_S_PER_DOC` should be recalibrated from them (it already reads ~27% high
   post-pin-fix, so this compounds with a correction that was already outstanding).
-- The assignment record gains `tokens`. A record without it (a pre-ADR-0029 assignment) skips the
-  sort rather than failing — assignments are same-run artifacts, so this is belt-and-braces.
+- The assignment record gains `tokens`. A record without it falls back to the Bucket cap — a safe
+  upper bound — so an older assignment still embeds, just with coarser sorting.
 - `docs/AI_Integration/embedding-throughput.md` inherits a new framing: its per-Bucket s/doc table
   is a *derived* view of one underlying rate (~470 tok/s), not four independent constants.
 - The benchmark's backend extras (`optimum[onnxruntime]`, `openvino`, `optimum-intel`) are installed

@@ -32,7 +32,7 @@ import time
 import numpy as np
 
 from headstart.ingest.doc_prep import _BUCKETS, _MAX_SEQ_TOKENS
-from headstart.ingest.embed_run import batch_size_for
+from headstart.ingest.embed_run import _length_sorted, batch_size_for
 from headstart.search import DOC_PREFIX, MODEL
 
 # Measured token-length distribution of the real tech corpus (4,000 English Docs, real
@@ -72,8 +72,6 @@ def _sample_lengths(n: int, seed: int = 0) -> list[int]:
                 out.append(int(prev_v + frac * (v - prev_v)))
                 break
             prev_p, prev_v = p, v
-        else:
-            out.append(_MAX_SEQ_TOKENS)
     return out
 
 
@@ -100,7 +98,7 @@ def _make_docs(lengths: list[int], tokenizer) -> list[str]:
 
 
 def _load(label: str):
-    """Load one variant, or return None with a reason when its dependency is absent."""
+    """Load one variant. Raises if its backend dependency is absent — ``main`` skips on that."""
     from sentence_transformers import SentenceTransformer
 
     backend, file_name, dtype = _VARIANTS[label]
@@ -108,8 +106,8 @@ def _load(label: str):
     if file_name:
         kwargs["file_name"] = file_name
     model = SentenceTransformer(MODEL, backend=backend, model_kwargs=kwargs or None)
-    if dtype:
-        model = model.bfloat16() if dtype == "bfloat16" else model.half()
+    if dtype == "bfloat16":
+        model = model.bfloat16()
     model.max_seq_length = min(model.max_seq_length, _MAX_SEQ_TOKENS)
     return model
 
@@ -130,10 +128,12 @@ def _encode_bucketed(model, docs: list[str], lengths: list[int], budget: int):
     out: list[np.ndarray] = []
     start = time.monotonic()
     for bucket in _BUCKETS:
-        idxs = sorted(groups[bucket], key=lambda i: lengths[i])
-        if not idxs:
+        if not groups[bucket]:
             continue
         n = batch_size_for(bucket, budget)
+        # the production windowed sort, not a full sort — a full sort would measure a
+        # cheaper ordering than the pipeline actually runs (ADR-0029)
+        idxs = _length_sorted(groups[bucket], lengths, n)
         for s in range(0, len(idxs), n):
             chunk = idxs[s : s + n]
             vecs = model.encode(
@@ -223,11 +223,11 @@ def main() -> int:
             baseline, agree = vecs, "baseline"
         else:
             agree = f"{float((baseline * vecs).sum(axis=1).mean()):.5f}"
-        tok_s = total_tokens / secs
-        rows.append((label, secs, total_tokens / secs, secs / len(docs), agree))
+        tok_s, s_doc = total_tokens / secs, secs / len(docs)
+        rows.append((label, secs, tok_s, s_doc, agree))
         print(
             f"[bench] {label:<16} {secs:8.1f}s  {tok_s:8.0f} tok/s  "
-            f"{secs / len(docs):6.3f} s/doc  agree={agree}",
+            f"{s_doc:6.3f} s/doc  agree={agree}",
             file=sys.stderr,
             flush=True,
         )
@@ -236,6 +236,12 @@ def main() -> int:
         print("no backend ran", file=sys.stderr, flush=True)
         return 1
 
+    if rows[0][0] != "torch-fp32":
+        print(
+            f"note: baseline is {rows[0][0]}, not torch-fp32 — speedups are relative to it",
+            file=sys.stderr,
+            flush=True,
+        )
     base_s = rows[0][1]
     print(f"\n{'backend':<16}{'secs':>9}{'tok/s':>10}{'s/doc':>9}{'speedup':>9}  agree")
     for label, secs, tok_s, s_doc, agree in rows:

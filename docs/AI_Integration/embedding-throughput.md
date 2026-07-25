@@ -121,9 +121,11 @@ uncorrelated with length:
 | length-sorted, window 8 batches (now) | 4,522,190 | +3.8% |
 | fully length-sorted | 4,373,370 | +0.4% |
 
-`_encode_groups` now length-sorts within windows of `batch × 8`, worth ~15.6% less compute at
-byte-identical output. Saving by window size: 2 → 8.0%, 4 → 12.8%, 8 → 15.6%, 16 → 17.0%, full
-sort → 18.4%; eight keeps priority order to within eight batches.
+`_encode_groups` now length-sorts within windows of `batch × 8`, worth ~15.6% less compute for
+semantically identical vectors (padding changes GEMM shapes, so values drift a few ulps — well
+inside `pipeline-smoke`'s `atol=1e-4` mono-vs-sharded check). Saving by window size: 2 → 8.0%,
+4 → 12.8%, 8 → 15.6%, 16 → 17.0%, full sort → 18.4%; eight keeps priority order to within eight
+batches.
 
 **When re-measuring after ADR-0029, expect the per-Bucket s/doc figures to drop by roughly this
 much on top of the pin-doc fix** — and recalibrate `_S_PER_DOC` from the new numbers.
