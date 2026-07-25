@@ -9,6 +9,18 @@ name: nightly-pipeline
 #           → merge (single writer: concatenate → sync → prune → compact → upload → restart).
 # Inert (green no-op) until the repo's HF_TOKEN secret is set: the gate in scrape-plan drives
 # `run`, and every downstream job/step is gated on it.
+#
+# Time budget (sized 2026-07-25 against measured run 30131376268 — see
+# docs/AI_Integration/embedding-throughput.md for the arithmetic):
+#   expected ~171 min, worst case 347 min (sum of job timeouts), against a 360-min cron interval.
+# Every stage timeout is one of two kinds, and they are set on opposite principles:
+#   - scrape / embed BANK PARTIAL WORK, so their inner `timeout Nm ... || echo` is a *work budget*
+#     sized at ~3x the balanced makespan. Truncation is cheap and deliberate: the fragment uploads
+#     anyway and the unfinished Boards/Docs re-plan next run.
+#   - scrape-plan / join / merge are ALL-OR-NOTHING (no partial output), so their timeouts are pure
+#     hang detectors at ~4-8x the estimate. Cutting them early buys nothing and risks a false kill.
+# The inner `timeout` must always fire before the step's `timeout-minutes`, which must fire before
+# the job's — only that ordering reaches the upload step. Keep the margins when re-tuning.
 on:
   schedule:
     # four cycles a day, 6h apart: the 21:30 nightly plus day runs that give the CPU embed budget
@@ -21,7 +33,13 @@ on:
     inputs:
       max_boards:
         description: boards to scrape this run (0 = all live boards)
-        default: "8000"
+        # 20000 of 51,314 live Boards on enabled ATSes. pick_boards splits this 70/30, so the run
+        # takes the top 14,000 scored Boards (the priority ledger holds 21,379, so the head is
+        # never short) plus 6,000 random unscored ones. Sized from the ledger: that slice carries
+        # ~59k more tech postings than the old 8,000, i.e. ~39k new Docs/run, ~126 min of embed
+        # across 15 shards at the post-pin-fix 2.89 s/Doc (~172 min at the pre-fix 3.96). Overshoot
+        # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
+        default: "20000"
 
 permissions:
   contents: read
@@ -39,7 +57,7 @@ jobs:
   # priority ledger (light); the liveness ledger is committed in the repo.
   scrape-plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10 # hang detector: measured ~40s (the packing itself is ~30ms)
     outputs:
       run: ${{ steps.gate.outputs.run }}
       count: ${{ steps.plan.outputs.count || '0' }}
@@ -83,7 +101,7 @@ jobs:
         id: plan
         if: steps.gate.outputs.run == 'true'
         run: |
-          python scripts/pipeline/plan_scrape.py --max-boards "${{ github.event.inputs.max_boards || '8000' }}"
+          python scripts/pipeline/plan_scrape.py --max-boards "${{ github.event.inputs.max_boards || '20000' }}"
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           plan = json.load(open("data/scrape/assignments/plan.json"))
@@ -106,7 +124,7 @@ jobs:
     needs: scrape-plan
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 160
+    timeout-minutes: 72 # > the step's 68, which is > the inner 60m budget
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -125,15 +143,23 @@ jobs:
           name: scrape-assignments
           path: data/scrape/assignments
       - name: Scrape the shard (time-budgeted — a banked partial is safe, its boards re-plan next run)
-        # Same 140-min budget as the old monolith, now per shard. Partial harvests are safe by design
-        # (eviction only touches boards present in the join, ADR-0014); `|| echo` banks what finished.
+        # 60m, down from the monolith's inherited 140m: at 20,000 Boards a balanced shard is ~13
+        # min, so this is ~4.5x headroom and still caps the straggler (run 30131376268 had one
+        # shard run 20 min against a 2 min median — 5.2x — while the cost model rated them equal).
+        # Partial harvests are safe by design: `JobWriter` flushes per Board, eviction only touches
+        # Boards present in the join (ADR-0014), and `|| echo` banks what finished so the step
+        # still exits 0 and the upload below runs.
         run: |
-          timeout 140m python scripts/scrape/nightly_harvest.py \
+          timeout 60m python scripts/scrape/nightly_harvest.py \
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
             || echo "scrape time budget reached — banking partial fragment"
-        timeout-minutes: 150
+        timeout-minutes: 68
       - name: Upload the shard fragment
+        # always(): the `|| echo` above already absorbs the inner timeout, so this is the belt to
+        # that braces — if the *step* timeout ever fires instead, the Boards that did finish are
+        # on disk and must still reach the join rather than being thrown away.
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scrape-fragment-${{ matrix.shard }}
@@ -147,7 +173,7 @@ jobs:
     needs: [scrape-plan, scrape]
     if: always() && needs.scrape-plan.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30 # hang detector: ~90s fixed + ~3.9e-4 s/scraped line, so ~9 min at 20k Boards
     outputs:
       count: ${{ steps.plan.outputs.count || '0' }}
       shards: ${{ steps.plan.outputs.shards || '[]' }}
@@ -178,7 +204,11 @@ jobs:
           print('meta + state downloaded')
           "
       - name: Download all scrape fragments
+        # continue-on-error: take whatever fragments exist. If every scrape shard died before
+        # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
+        # means an empty scraped-Board set, so sync_index evicts nothing (ADR-0014).
         if: needs.scrape-plan.outputs.count != '0'
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: scrape-fragment-*
@@ -221,7 +251,7 @@ jobs:
     needs: [scrape-plan, join]
     if: needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 130
+    timeout-minutes: 195 # > the step's 190, which is > the inner 180m budget
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -245,13 +275,21 @@ jobs:
           name: embed-assignments
           path: data/embeddings/assignments
       - name: Embed the shard (time-budgeted — a banked partial is safe, its ids re-plan next run)
+        # 180m, up from 100m, to absorb the bigger --max-boards slice: ~39k new Docs across 15
+        # shards is ~126 min at the post-pin-fix 2.89 s/Doc and ~172 min at the pre-fix 3.96, so
+        # this covers the run even before `_S_PER_DOC` is recalibrated. Partials are safe:
+        # EmbeddingStore flushes vectors then metadata per batch, merge_shards truncates any
+        # half-written tail, and the dropped Docs simply reappear in the next run's plan.
         run: |
-          timeout 100m python scripts/embed/embed_jobs.py \
+          timeout 180m python scripts/embed/embed_jobs.py \
             --assignment "data/embeddings/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/embeddings/fragments/shard-${{ matrix.shard }}" \
             || echo "embed time budget reached — banking partial fragment"
-        timeout-minutes: 115
+        timeout-minutes: 190
       - name: Upload the shard fragment
+        # always(): same reasoning as the scrape upload — vectors already flushed to disk must
+        # reach the merge even if the step timeout fires ahead of the inner budget.
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: embed-fragment-${{ matrix.shard }}
@@ -265,7 +303,9 @@ jobs:
     needs: [scrape-plan, join, embed]
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # hang detector: ~5 min of work at this scale, plus up to ~4.5 min of `up()` retry backoff
+    # across the three HF uploads. All-or-nothing and the single writer, so it stays generous.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.scrape-plan.outputs.run == 'true'
@@ -298,7 +338,11 @@ jobs:
           name: corpus-state
           path: data
       - name: Download all embed fragments
+        # continue-on-error: merge must still run if every embed shard failed. It then adds no new
+        # vectors but the scrape's evictions, the priority ledger, and prune/compact still land —
+        # losing a run's scrape work to a missing embed artifact would be the worst outcome.
         if: needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0'
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: embed-fragment-*
