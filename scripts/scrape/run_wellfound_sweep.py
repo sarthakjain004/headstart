@@ -22,6 +22,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from pydoll.browser import Chrome
+from datadome_slider import audio_ready
 from run_wellfound import COLS, EXP, OUT, _flag, _options, scrape_url
 
 # Keep in sync with docs/wellfound/target-roles.md
@@ -66,6 +67,8 @@ async def main() -> int:
             flush=True,
         )
         return 2
+    ok, status = audio_ready()
+    print(f"audio fallback: {'OK' if ok else 'MISSING'} — {status}", flush=True)
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
     append = "--append" in sys.argv

@@ -46,6 +46,25 @@ def _clean_transcript(text: str) -> str:
     return "".join(_NUMWORDS.get(w, w) for w in words)
 
 
+def audio_ready() -> tuple[bool, str]:
+    """(ready, human-readable status) for the audio-challenge fallback.
+
+    Reported at scrape startup rather than discovered mid-challenge: without it the escalation
+    drops straight to the slider drag, and when that misses the run stalls on a 300s wait for a
+    human. Also reports whether the Whisper weights are already cached — an uncached model
+    downloads on first use, i.e. exactly while a challenge is on screen and timing matters.
+    """
+    if WhisperModel is None:
+        return False, "NOT set up — run: pip install faster-whisper"
+    cache = Path.home() / ".cache" / "huggingface" / "hub"
+    cached = any(cache.glob("models--Systran--faster-whisper-tiny*")) or any(
+        cache.glob("models--guillaumekln--faster-whisper-tiny*")
+    )
+    if not cached:
+        return True, "ready (model not cached yet — first solve downloads ~75MB)"
+    return True, "ready (model cached)"
+
+
 _WHISPER = None  # cache the model so we load (and download) it at most once
 
 
@@ -64,15 +83,30 @@ def _transcribe(mp3_path: str) -> str:
 # the captcha OOPIF, descends into any same-origin nested iframe, finds the draggable handle and
 # its track, and returns their geometry in the OOPIF's top-viewport coordinates.
 _SLIDER_JS = r"""
+// Handle selectors in PRIORITY order, most-specific first. This must not collapse into one
+// querySelector(): that returns the first match in DOCUMENT order, and DataDome lays the
+// container out as sliderbg -> sliderMask -> sliderTarget -> slider, so the grouped selector
+// resolved to `.sliderMask` — which is `display:none` until the drag starts, measures 0x0, and
+// failed the size check while the real handle (`.slider`, 63x40, cursor:grab) sat right after it
+// and was never reached. Deterministic miss, every single time.
+const HANDLES=['.slider','.geetest_slider_button','.geetest_slice','[class*="handle"]','[class*="control"]','[class*="btn"]','.sliderMask'];
+function pickHandle(c){
+  for(const sel of HANDLES){
+    for(const h of c.querySelectorAll(sel)){
+      const hr=h.getBoundingClientRect();
+      if(hr.width>=10&&hr.height>=10) return hr;   // first VISIBLE candidate wins
+    }
+  }
+  return null;
+}
 function find(doc){
   const conts=doc.querySelectorAll('.sliderContainer,#ddv1-captcha-container,.geetest_slider,.geetest_slider_box,.slideTrack,.slider');
   for(const c of conts){
     const cr=c.getBoundingClientRect();
     if(cr.width<40||cr.height<10) continue;
-    const h=c.querySelector('.slider,.sliderMask,.geetest_slider_button,.geetest_slice,[class*="handle"],[class*="control"],[class*="btn"]');
-    if(h){const hr=h.getBoundingClientRect();
-      if(hr.width>=10&&hr.height>=10)
-        return {hx:hr.left,hy:hr.top,hw:hr.width,hh:hr.height,trackLeft:cr.left,trackRight:cr.right,tw:cr.width};}
+    const hr=pickHandle(c);
+    if(hr)
+      return {hx:hr.left,hy:hr.top,hw:hr.width,hh:hr.height,trackLeft:cr.left,trackRight:cr.right,tw:cr.width};
   }
   return null;
 }
@@ -99,11 +133,25 @@ if(img) img.click();
 
 
 async def _eval(frame, js):
-    """Run JS in a frame, return its value (or None). Mirrors pydoll's response nesting."""
+    """Run JS in a frame, return its value (or None). Mirrors pydoll's response nesting.
+
+    Failures are printed, not swallowed: a thrown JS error, a detached target and a genuine
+    "not found" all used to collapse into the same silent None, so the caller could only ever
+    report "handle not locatable" — which is what hid the selector bug above.
+    """
     try:
         r = await frame.execute_script(js, return_by_value=True)
+    except Exception as e:
+        print(f"    [eval] call failed: {type(e).__name__}: {e}", flush=True)
+        return None
+    details = r.get("result", {}).get("exceptionDetails")
+    if details:
+        print(f"    [eval] JS threw: {details.get('text')}", flush=True)
+        return None
+    try:
         return r["result"]["result"]["value"]
-    except Exception:
+    except (KeyError, TypeError):
+        print(f"    [eval] unexpected response shape: {str(r)[:160]}", flush=True)
         return None
 
 

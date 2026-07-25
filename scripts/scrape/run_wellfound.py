@@ -32,10 +32,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from datadome_slider import (
+from datadome_slider import (  # same dir; sys.path[0] as a script
     _safe_source,
+    audio_ready,
     solve_slider,
-)  # same dir; sys.path[0] as a script
+)
 from pydoll.browser import Chrome
 from pydoll.browser.options import ChromiumOptions
 from pydoll.interactions.scroll import ScrollPosition
@@ -448,6 +449,8 @@ def main() -> int:
         base_url = f"https://wellfound.com/role/r/{role}"
     else:
         base_url = f"https://wellfound.com/role/l/{role}/{location}"
+    ok, status = audio_ready()
+    print(f"audio fallback: {'OK' if ok else 'MISSING'} — {status}", flush=True)
     print(
         f"GET {base_url}  (headless={headless}, max_pages={max_pages or 'all'},"
         f" proxy={'yes' if proxy else 'no'}, warmup={warmup})",
