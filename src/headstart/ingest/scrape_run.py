@@ -13,7 +13,7 @@ Each run truncates the jsonl — the output is *this run's snapshot*, which is e
 ``index sync`` wants: eviction is scoped to the Boards present in the snapshot, so a partial
 harvest never touches the Boards it skipped (ADR-0014).
 
-Run:  python -m headstart.ingest.scrape --max-boards 8000
+Run:  python -m headstart.ingest.scrape_run --max-boards 8000
 """
 
 from __future__ import annotations

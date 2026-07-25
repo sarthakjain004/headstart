@@ -1,15 +1,16 @@
 """The 6-hourly ingest pipeline — every stage `.github/workflows/pipeline.yml` runs (ADR-0028).
 
-One module per stage step, in run order::
+The run is two symmetric halves — **plan → run → gather** — so each module is named
+``{half}_{role}`` and the two triples group together. In run order::
 
-    plan_scrape     stage 1  select this run's board slice, bin-pack it into scrape shards
-    scrape          stage 2  (matrix) scrape one shard's boards into a fragment
-    join_shards     stage 3  union the scrape fragments into one snapshot
+    scrape_plan     stage 1  select this run's board slice, bin-pack it into scrape shards
+    scrape_run      stage 2  (matrix) scrape one shard's boards into a fragment
+    scrape_join     stage 3  union the scrape fragments into one snapshot
     filter_tech     stage 3  keep the tech subset (ADR-0017)
     update_ledgers  stage 3  blend this run's measurements into the priority/cost ledgers
-    plan_embed      stage 3  diff, tokenize, bin-pack the new Docs into embed shards
-    embed_jobs      stage 4  (matrix) embed one shard's Docs into a fragment
-    merge_shards    stage 5  concatenate the embed fragments onto the store
+    embed_plan      stage 3  diff, tokenize, bin-pack the new Docs into embed shards
+    embed_run       stage 4  (matrix) embed one shard's Docs into a fragment
+    embed_merge     stage 5  concatenate the embed fragments onto the store
     index           stage 5  sync -> prune -> compact the LanceDB table
 
 Each is run as ``python -m headstart.ingest.<module>``. They live here rather than under
@@ -20,7 +21,7 @@ points from being scattered across five ``scripts/`` subdirs mixed in with R&D s
 Alongside them, the three helper modules with no consumer outside this package::
 
     binpack     LPT packing + shard sizing, shared by both planners
-    embed_prep  Doc build / English gate / typed metadata, shared by embedder and planner
+    doc_prep    Doc build / English gate / typed metadata, shared by embed_run and embed_plan
     index_plan  Pure add-evict and prune planners for the jobs table (no LanceDB import)
 
 Genuinely shared logic stays in ``headstart`` proper — ``harvest`` (the scrape engine),

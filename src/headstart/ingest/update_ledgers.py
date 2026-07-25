@@ -18,7 +18,7 @@ slice ordering and the embed's within-bucket ordering.
 **cost** runs right after the fragments land. Each scrape shard timed every Board it scraped and
 streamed the rows to ``board_cost.csv`` inside its own fragment dir; this reads all of them and
 EWMA-blends them into ``data/state/board_cost.csv``, which rides the HF state round-trip and is what
-the *next* run's ``plan_scrape`` bin-packs on. A shard that died mid-write contributes every row it
+the *next* run's ``scrape_plan`` bin-packs on. A shard that died mid-write contributes every row it
 did flush; only a torn final line is skipped.
 
 Seed the priority ledger from a full local corpus with::

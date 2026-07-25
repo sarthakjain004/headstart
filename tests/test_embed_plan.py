@@ -1,4 +1,4 @@
-"""Tests for the embed planner (headstart.ingest.plan_embed, ADR-0025 Phase 1).
+"""Tests for the embed planner (headstart.ingest.embed_plan, ADR-0025 Phase 1).
 
 The cost-model bin-packing (LPT) and the dynamic shard sizing are the new logic worth locking
 down; the end-to-end ``main`` is exercised with a fake tokenizer (no model download, no embedding)
@@ -16,11 +16,11 @@ import pytest
 
 pytest.importorskip(
     "langdetect"
-)  # plan_embed imports headstart.ingest.embed_prep (langdetect gate)
+)  # embed_plan imports headstart.ingest.doc_prep (langdetect gate)
 
 # Imported after the gate above, not at the top: on CI's base-deps-only install the module's
 # langdetect dependency is absent, and this must skip rather than error.
-import headstart.ingest.plan_embed as pe  # noqa: E402
+import headstart.ingest.embed_plan as pe  # noqa: E402
 
 
 class _FakeTok:
@@ -114,7 +114,7 @@ def test_main_partitions_new_english_docs(tmp_path, monkeypatch):
         sys,
         "argv",
         [
-            "plan_embed",
+            "embed_plan",
             "--source",
             str(tech),
             "--prior-meta",
@@ -157,7 +157,7 @@ def test_main_empty_plan_when_nothing_new(tmp_path, monkeypatch):
         sys,
         "argv",
         [
-            "plan_embed",
+            "embed_plan",
             "--source",
             str(tech),
             "--prior-meta",

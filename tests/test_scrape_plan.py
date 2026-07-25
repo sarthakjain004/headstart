@@ -1,4 +1,4 @@
-"""Tests for the scrape planner (headstart.ingest.plan_scrape, ADR-0026).
+"""Tests for the scrape planner (headstart.ingest.scrape_plan, ADR-0026).
 
 The per-Board cost weighting (detail-fetch ATSes cost more) and the partition invariant — every
 selected Board lands in exactly one shard — are the logic worth locking down. ``main`` is run with a
@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import sys
 
-import headstart.ingest.plan_scrape as ps
+import headstart.ingest.scrape_plan as ps
+
 from headstart.config import CompanyRef
 
 
@@ -40,7 +41,7 @@ def test_main_partitions_every_selected_board(tmp_path, monkeypatch):
         sys,
         "argv",
         [
-            "plan_scrape",
+            "scrape_plan",
             "--priority",
             str(tmp_path / "none.csv"),
             "--out-dir",
@@ -77,7 +78,7 @@ def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch):
         sys,
         "argv",
         [
-            "plan_scrape",
+            "scrape_plan",
             "--priority",
             str(tmp_path / "none.csv"),
             "--out-dir",

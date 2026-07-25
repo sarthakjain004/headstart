@@ -40,24 +40,24 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
 1. **`scrape-plan`** (1 job) — download the priority ledger (`data/state/*`), select this run's slice from
    the committed liveness ledger ordered by board priority (tech-history boards first + a randomly-rotated
    exploration tail, capped at `--max-boards` 20000 — 70% priority head / 30% exploration; ADR-0022), then **LPT-bin-pack the selected boards**
-   into ≤15 cost-balanced shards (`ingest.plan_scrape`). Emits a per-shard board list + a matrix.
-2. **`scrape`** (matrix, ≤15 shards) — each shard runs `ingest.scrape --assignment` (`timeout 60m`)
+   into ≤15 cost-balanced shards (`ingest.scrape_plan`). Emits a per-shard board list + a matrix.
+2. **`scrape`** (matrix, ≤15 shards) — each shard runs `ingest.scrape_run --assignment` (`timeout 60m`)
    over *only its boards*, streaming to a shard-scoped `data/jobs/shard-{k}/{ats}.jsonl` fragment. One
    runner per shard = one IP at the monolith's worker count, so per-host load is unchanged (ADR-0026).
    `fail-fast: false`; a timed-out shard banks its partial fragment.
 3. **`join`** (1 job) — download all scrape fragments and **union them per ATS** into `data/jobs/`
-   (`ingest.join_shards`) so eviction sees the full scraped-Board set (ADR-0014); then **tech-filter**
+   (`ingest.scrape_join`) so eviction sees the full scraped-Board set (ADR-0014); then **tech-filter**
    (`ingest.filter_tech` → `data/jobs/tech/`), **update the board-priority ledger** (`ingest.update_ledgers priority`
    — EWMA-blend each scraped board's tech count into `data/state/board_priority.csv`), and **plan the embed
-   fan-out** (`ingest.plan_embed`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
+   fan-out** (`ingest.embed_plan`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
    jobs" step, no separate DB-diff — tokenize, LPT-bin-pack by measured per-bucket cost into ≤15 shards).
-4. **`embed`** (matrix, ≤15 shards) — each shard runs `ingest.embed_jobs --assignment` (`timeout 180m`, CPU) over
+4. **`embed`** (matrix, ≤15 shards) — each shard runs `ingest.embed_run --assignment` (`timeout 180m`, CPU) over
    *only its assigned Docs* (the planner already English-gated, bucketed, and deduped them), encoding new
    vectors into a shard-scoped `embeddings.f32` + `meta.jsonl` fragment. Stateless — no prior store, no
    LanceDB. `fail-fast: false`; a timed-out shard banks its partial fragment.
 5. **`merge`** (1 job — the single writer, `if: always()`) — `snapshot_download` the *prior* store + served
    table (`data/embeddings/jobs/*`, `data/lancedb/*`), **concatenate** the embed fragments onto the store
-   (`ingest.merge_shards`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
+   (`ingest.embed_merge`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
    dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
@@ -69,7 +69,7 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
 The two `scrape`/`embed` fan-outs run `max-parallel: 15` (leaving 5 of the free tier's 20 concurrent jobs
 for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group: nightly-pipeline`
 (`cancel-in-progress: false`) serializes whole runs so two never race on the dataset. The monolith
-`ingest.scrape`/`embed_jobs --resume` paths are retained for local/single-job runs (see below).
+`ingest.scrape_run`/`embed_run --resume` paths are retained for local/single-job runs (see below).
 
 `.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
 `src/headstart/geo.py`, copied in — ADR-0024) to the Space on any main push touching those paths
@@ -170,7 +170,7 @@ The local equivalent of one pipeline cycle (see `docs/learnings.md` MPS entry be
 this machine — the watermark env vars and bucketed batching are load-bearing):
 
 ```bash
-.venv/bin/python -m headstart.ingest.embed_jobs --resume
+.venv/bin/python -m headstart.ingest.embed_run --resume
 .venv/bin/python -m headstart.ingest.index sync
 .venv/bin/python -m headstart.ingest.index prune --apply
 .venv/bin/python -m headstart.ingest.index compact

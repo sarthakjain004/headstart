@@ -1,4 +1,4 @@
-"""Tests for headstart.ingest.embed_jobs's pure row-shaping: doc building and the inline experience metadata.
+"""Tests for headstart.ingest.embed_run's pure row-shaping: doc building and the inline experience metadata.
 
 The inline ``min_years``/``max_years``/``experience_source`` (ADR-0019 — no separate enrich join)
 is the new logic worth locking down: each extraction tier must land in the metadata that rides
@@ -16,7 +16,7 @@ pytest.importorskip("langdetect")
 
 # Imported after the gates above, not at the top: the module pulls the ML stack, which
 # the quality CI job does not install — this must skip rather than error.
-import headstart.ingest.embed_jobs as ej  # noqa: E402
+import headstart.ingest.embed_run as ej  # noqa: E402
 
 
 def _job(**overrides) -> dict:

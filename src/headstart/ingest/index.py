@@ -15,7 +15,7 @@ posting that vanished from a scraped Board is evicted; Boards absent from the sc
 touched (partial-harvest safety). On the first run the table is created empty and the plan is
 all-add; the identical path does true incremental add/evict on every later run — no
 overwrite-rebuild (ADR-0019). Corpus ids without a vector (non-English, or not yet embedded) are
-reported and skipped — run ``embed_jobs --resume`` first to close that gap.
+reported and skipped — run ``embed_run --resume`` first to close that gap.
 
 **prune** sweeps what the board-scoped sync structurally cannot reach:
 
@@ -110,12 +110,12 @@ def _schema(dim: int) -> pa.Schema:
 
 def _load_store() -> tuple[list[dict], np.ndarray]:
     """The committed embedding store: row-aligned metadata + vectors, or a hard error telling
-    the user how to repair it (``embed_jobs --resume`` reconciles and re-commits)."""
+    the user how to repair it (``embed_run --resume`` reconciles and re-commits)."""
     manifest_path = _STORE / "manifest.json"
     if not manifest_path.exists():
         sys.exit(
             f"no committed store at {_STORE} (manifest.json missing) — "
-            "run python -m headstart.ingest.embed_jobs first (--resume finishes an interrupted run)"
+            "run python -m headstart.ingest.embed_run first (--resume finishes an interrupted run)"
         )
     dim = json.loads(manifest_path.read_text())["dim"]
     metas = [
@@ -125,7 +125,7 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     if vectors.size != len(metas) * dim:
         sys.exit(
             f"store is inconsistent ({vectors.size} floats for {len(metas)} metadata rows, dim {dim}) — "
-            "run python -m headstart.ingest.embed_jobs --resume to reconcile it"
+            "run python -m headstart.ingest.embed_run --resume to reconcile it"
         )
     return metas, vectors.reshape(-1, dim)
 
@@ -170,7 +170,7 @@ def sync(args: argparse.Namespace) -> int:
     print(
         f"corpus: {len(corpus_ids)} Jobs on {len(boards)} Boards; {len(fresh)} have vectors"
         + (
-            f" — {unembedded} without (non-English, or run embed_jobs --resume)"
+            f" — {unembedded} without (non-English, or run embed_run --resume)"
             if unembedded
             else ""
         ),

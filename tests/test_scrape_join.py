@@ -1,4 +1,4 @@
-"""Tests for the scrape-shard join (headstart.ingest.join_shards, ADR-0026).
+"""Tests for the scrape-shard join (headstart.ingest.scrape_join, ADR-0026).
 
 The union invariant: every shard's ``{ats}.jsonl`` is concatenated per ATS into one snapshot, so
 sync sees the full scraped-Board set. Streaming concat; downstream dedups by id.
@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import headstart.ingest.join_shards as js
+import headstart.ingest.scrape_join as js
 
 
 def _shard(frags: Path, k: int, files: dict[str, list[str]]) -> None:
@@ -21,7 +21,7 @@ def _shard(frags: Path, k: int, files: dict[str, list[str]]) -> None:
 
 def _run(shards: Path, out: Path) -> None:
     old = sys.argv
-    sys.argv = ["join_shards", "--shards", str(shards), "--out", str(out)]
+    sys.argv = ["scrape_join", "--shards", str(shards), "--out", str(out)]
     try:
         assert js.main() == 0
     finally:

@@ -11,7 +11,7 @@ per-ATS concatenation; a duplicate line from an intra-board resume is deduped do
 Streams line-by-line (never buffering a whole ATS), and a shard that timed out mid-scrape simply
 contributes the boards it did finish — partial-harvest safety survives per shard.
 
-Run: python -m headstart.ingest.join_shards [--shards DIR] [--out DIR]
+Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
 """
 
 from __future__ import annotations

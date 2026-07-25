@@ -48,7 +48,7 @@ data/ats-companies/
 data/discover/
 data/ats-tenants-merged/*.csv
 data/jobs/
-# embedding vectors — large binary, regenerable from headstart.ingest.embed_jobs
+# embedding vectors — large binary, regenerable from headstart.ingest.embed_run
 data/embeddings/
 # LanceDB vector store — regenerable from the embedding store via scripts/embed/build_index.py
 data/lancedb/

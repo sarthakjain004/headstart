@@ -34,7 +34,7 @@ Ship a **thin slice**: serve the real tech corpus semantically with only the fil
 and already built, reusing the ADR-0014 scaffolding rather than rewriting it.
 
 1. **Embed source = `data/jobs/tech/`** (reconciles ADR-0014's intent with ADR-0017). Generalise
-   `embed_wellfound.py` → `embed_jobs.py --source`, reading via `corpus.iter_jobs`, keeping the
+   `embed_wellfound.py` → `embed_run.py --source`, reading via `corpus.iter_jobs`, keeping the
    `langdetect` English gate (Project Scope) and the crash-safe streaming `EmbeddingStore`. The
    vector cache moves to `data/embeddings/jobs/`, keyed by id so re-runs embed only new ids.
 2. **A production `jobs` table; Wellfound becomes the frozen eval benchmark.** `search.py` gains

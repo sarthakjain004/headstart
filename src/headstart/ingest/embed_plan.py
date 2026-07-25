@@ -5,8 +5,8 @@ Runs once, after the tech filter, before the embed matrix. It:
 
 1. diffs the tech corpus (``data/jobs/tech``) against the prior store's ``meta.jsonl`` to find
    the **new** ids (the ones an embed run would encode this time);
-2. applies the *same* prep as ``embed_jobs`` — English gate, doc build, typed metadata — via
-   the shared ``headstart.ingest.embed_prep`` (so a sharded Doc is byte-identical to the monolith's);
+2. applies the *same* prep as ``embed_run`` — English gate, doc build, typed metadata — via
+   the shared ``headstart.ingest.doc_prep`` (so a sharded Doc is byte-identical to the monolith's);
 3. tokenizes each Doc with the model's tokenizer and sorts it into a token-length **Bucket**;
 4. **LPT bin-packs** the Docs across a dynamic number of shards (≤ ``--max-shards``) by their
    measured per-Bucket cost, so each shard's makespan is balanced (cost is heavy-tailed — a
@@ -18,7 +18,7 @@ Runs once, after the tech filter, before the embed matrix. It:
 The planner touches only ``meta.jsonl`` (ids, to diff) — never the vectors or the LanceDB — so it
 stays a light, single job. The embed shards are stateless: everything they need is in their file.
 
-Run: python -m headstart.ingest.plan_embed [--max-shards 15] [--limit N]
+Run: python -m headstart.ingest.embed_plan [--max-shards 15] [--limit N]
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from headstart.ingest.binpack import (  # noqa: F401 (lpt_pack re-exported for t
     lpt_pack,
     shard_count,
 )
-from headstart.ingest.embed_prep import (
+from headstart.ingest.doc_prep import (
     _MAX_SEQ_TOKENS,
     bucket_for,
     build_doc,
@@ -82,7 +82,7 @@ def _load_tokenizer():
 
 
 def _token_lengths(tok, docs: list[str]) -> list[int]:
-    """Exact token counts (same truncation as embed_jobs), batched with a progress stream."""
+    """Exact token counts (same truncation as embed_run), batched with a progress stream."""
     lengths: list[int] = []
     for s in range(0, len(docs), 1024):
         enc = tok(docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS)
@@ -151,7 +151,7 @@ def main() -> int:
     scores = load_scores(Path(args.priority))
     print(f"[plan] prior store: {len(prior)} embedded ids", file=sys.stderr, flush=True)
 
-    # Collect the new English Docs — same gate/build/meta as embed_jobs, via the shared module.
+    # Collect the new English Docs — same gate/build/meta as embed_run, via the shared module.
     ids: list[str] = []
     docs: list[str] = []
     metas: list[dict] = []

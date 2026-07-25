@@ -36,14 +36,14 @@ Three concrete costs, not just untidiness:
 
 | Stage | Module | Was |
 | --- | --- | --- |
-| 1 | `plan_scrape` | `scripts/pipeline/plan_scrape.py` |
-| 2 | `scrape` | `scripts/scrape/nightly_harvest.py` |
-| 3 | `join_shards` | `scripts/pipeline/join_shards.py` |
+| 1 | `scrape_plan` | `scripts/pipeline/plan_scrape.py` |
+| 2 | `scrape_run` | `scripts/scrape/nightly_harvest.py` |
+| 3 | `scrape_join` | `scripts/pipeline/join_shards.py` |
 | 3 | `filter_tech` | `scripts/filter/tech.py` |
 | 3 | `update_ledgers priority` / `cost` | `scripts/rank/update_board_priority.py` + `update_board_cost.py` |
-| 3 | `plan_embed` | `scripts/pipeline/plan_embed.py` |
-| 4 | `embed_jobs` | `scripts/embed/embed_jobs.py` |
-| 5 | `merge_shards` | `scripts/pipeline/merge_shards.py` |
+| 3 | `embed_plan` | `scripts/pipeline/plan_embed.py` |
+| 4 | `embed_run` | `scripts/embed/embed_jobs.py` |
+| 5 | `embed_merge` | `scripts/pipeline/merge_shards.py` |
 | 5 | `index sync` / `prune` / `compact` | `scripts/embed/sync_index.py` + `prune_index.py` + `compact_index.py` |
 
 Twelve modules become nine. Two collapses, both of steps that already run back-to-back on the same
@@ -65,6 +65,28 @@ data in the same job:
 
 `REPO_ROOT` is defined once in `ingest/__init__.py`, replacing the 12 hand-counted `parents[2]`.
 
+### The naming scheme: `{half}_{role}`
+
+The run is two symmetric halves, each **plan → run → gather**, but the old names hid that behind
+three different shapes: `plan_scrape` / `scrape` / `join_shards` against `plan_embed` /
+`embed_jobs` / `merge_shards`. Worst of all, `join_shards` and `merge_shards` were near-synonyms
+for different things — one gathered scrape fragments, the other embed fragments, and neither name
+said which.
+
+Naming them `{half}_{role}` makes the symmetry structural: `scrape_plan` / `scrape_run` /
+`scrape_join` beside `embed_plan` / `embed_run` / `embed_merge`. The two triples group in a
+directory listing, and `join` versus `merge` is unambiguous because the prefix carries the half.
+`scrape` and `embed` are already the glossary's words for the two fan-outs (CONTEXT.md), so this
+borrows the ubiquitous language rather than inventing terms.
+
+One knock-on: `embed_prep` would sit one letter from `embed_plan` — the same near-homograph trap as
+`index_sync`/`sync_index`. It becomes `doc_prep`; **Doc** is a defined term in CONTEXT.md and is
+exactly what it builds. Test files are renamed to mirror their modules.
+
+Rejected: `fan`/`gather` as the role verbs (perfectly parallel, but invents two terms the glossary
+would then have to define) and verb-first `plan_scrape` / `run_scrape` / `join_scrape_shards`
+(reads as a command, but scatters the two halves alphabetically and lengthens the gather names).
+
 ### Which library modules moved with them
 
 The entry points were only half the boundary. Sorting `src/headstart/*.py` by who actually imports
@@ -72,10 +94,10 @@ it splits cleanly, so the split is drawn on that evidence rather than on taste:
 
 | Module | Imported by | Verdict |
 | --- | --- | --- |
-| `binpack` | `plan_embed`, `plan_scrape` | ingest-only → moved |
-| `embed_prep` | `plan_embed`, `embed_jobs` | ingest-only → moved |
+| `binpack` | `embed_plan`, `scrape_plan` | ingest-only → moved |
+| `doc_prep` (was `embed_prep`) | `embed_plan`, `embed_run` | ingest-only → moved |
 | `index_sync` + `index_prune` | `index` | ingest-only → moved, merged as `index_plan` |
-| `board_cost` | `harvest`, `plan_scrape`, `update_ledgers` | shared → stays |
+| `board_cost` | `harvest`, `scrape_plan`, `update_ledgers` | shared → stays |
 | `board_priority` | `board_cost`, 5 ingest modules | shared → stays |
 | `corpus` | `board_priority`, `index_plan`, 4 ingest modules | shared → stays |
 

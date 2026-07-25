@@ -53,19 +53,19 @@ jobs:
           print("wrote 10 synthetic jobs")
           PY
       - name: Monolith embed (the baseline to match)
-        run: python -m headstart.ingest.embed_jobs --source data/jobs/tech --outdir data/embeddings/mono
+        run: python -m headstart.ingest.embed_run --source data/jobs/tech --outdir data/embeddings/mono
       - name: Plan the fan-out (no prior store → all new; forced multi-shard)
-        run: python -m headstart.ingest.plan_embed --max-shards 3 --target-seconds 20
+        run: python -m headstart.ingest.embed_plan --max-shards 3 --target-seconds 20
       - name: Embed each shard (real encoder, --assignment mode)
         run: |
           for f in data/embeddings/assignments/shard-*.jsonl; do
             k=$(basename "$f" .jsonl | sed 's/shard-//')
             echo "::group::shard $k"
-            python -m headstart.ingest.embed_jobs --assignment "$f" --outdir "data/embeddings/fragments/shard-$k"
+            python -m headstart.ingest.embed_run --assignment "$f" --outdir "data/embeddings/fragments/shard-$k"
             echo "::endgroup::"
           done
       - name: Merge the fragments into the store
-        run: python -m headstart.ingest.merge_shards
+        run: python -m headstart.ingest.embed_merge
       - name: Assert sharded == monolith (same ids, same vectors)
         run: |
           python - <<'PY'

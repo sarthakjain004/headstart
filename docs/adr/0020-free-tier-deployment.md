@@ -31,8 +31,8 @@ Three free parts, with all state in one place:
 
 2. **Ingest runs as a nightly GitHub Actions workflow** (`.github/workflows/pipeline.yml`), free
    on the public repo, inert until the `HF_TOKEN` secret is set (the `bot.yml` convention). Each
-   run: download state → `ingest.scrape` (a **shuffled, `--max-boards`-capped slice** of the
-   ledger's live boards, `min_jobs=0`) → `tech.py` filter → `embed_jobs.py --resume` (embeds only
+   run: download state → `ingest.scrape_run` (a **shuffled, `--max-boards`-capped slice** of the
+   ledger's live boards, `min_jobs=0`) → `tech.py` filter → `embed_run.py --resume` (embeds only
    ids missing from the store; CPU) → `index sync` (incremental add/evict — eviction stays
    scoped to the Boards actually scraped, so a partial harvest is always safe, ADR-0014) →
    `index compact` (merge fragments + drop old Lance versions, or nightly re-uploads balloon)

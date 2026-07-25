@@ -19,7 +19,7 @@ Two integrity guards, mirroring the crash-safe store (ADR-0004):
 After this the merge job runs ``index sync`` → ``index prune`` → ``index compact`` → upload →
 restart.
 
-Run: python -m headstart.ingest.merge_shards [--store DIR] [--fragments DIR]
+Run: python -m headstart.ingest.embed_merge [--store DIR] [--fragments DIR]
 """
 
 from __future__ import annotations

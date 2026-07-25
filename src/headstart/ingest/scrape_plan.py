@@ -23,7 +23,7 @@ monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanc
 Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board, priority-desc so a time-boxed shard
 scrapes its best boards first) + a ``plan.json`` (``shards`` matrix + board ``count``) the workflow reads.
 
-Run: python -m headstart.ingest.plan_scrape [--max-boards 20000] [--max-shards 15]
+Run: python -m headstart.ingest.scrape_plan [--max-boards 20000] [--max-shards 15]
 """
 
 from __future__ import annotations

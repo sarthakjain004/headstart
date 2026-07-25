@@ -1,4 +1,4 @@
-"""Tests for headstart.ingest.embed_jobs's shard (``--assignment``) mode (ADR-0025 Phase 1).
+"""Tests for headstart.ingest.embed_run's shard (``--assignment``) mode (ADR-0025 Phase 1).
 
 Exercises the shard plumbing with a fake encoder — no model download, no real embedding: an
 assignment of pre-built {doc, bucket, meta} records must produce a fresh fragment whose vectors are
@@ -21,7 +21,7 @@ np = pytest.importorskip(
 
 # Imported after the gates above, not at the top: the module pulls the ML stack, which
 # the quality CI job does not install — this must skip rather than error.
-import headstart.ingest.embed_jobs as ej  # noqa: E402
+import headstart.ingest.embed_run as ej  # noqa: E402
 
 _DIM = 8
 

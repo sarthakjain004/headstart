@@ -2,9 +2,9 @@
 """Evict ATSes' vectors from the embedding store and the ``jobs`` table.
 
 For when scraped *content* changes (e.g. a scraper starts capturing the requirements
-sections): the store is id-keyed, so ``ingest.embed_jobs --resume`` would keep the stale
+sections): the store is id-keyed, so ``ingest.embed_run --resume`` would keep the stale
 vectors forever. Dropping the affected ids from both the store and the table makes the
-next ``ingest.embed_jobs --resume && ingest.index sync`` re-embed and re-add them fresh.
+next ``ingest.embed_run --resume && ingest.index sync`` re-embed and re-add them fresh.
 
 The store's two files are row-aligned (``meta.jsonl`` line N describes ``embeddings.f32``
 row N), so eviction rewrites both in lockstep to temp files and swaps them in; the

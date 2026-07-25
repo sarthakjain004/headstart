@@ -1,7 +1,7 @@
 """Run all configured scrapers and assemble the combined job feed.
 
 The shared scrape engine — ``scrape_all`` (thread pool + per-Board timing + the crash-safe
-``JobWriter``) and the curated-feed builders. Two callers: ``headstart.ingest.scrape``, the
+``JobWriter``) and the curated-feed builders. Two callers: ``headstart.ingest.scrape_run``, the
 pipeline's stage-2 shard runner, and ``python -m headstart``, the curated ``docs/jobs.json`` feed.
 
 Named ``harvest`` rather than ``pipeline`` (ADR-0028): "pipeline" means the 5-stage CI run

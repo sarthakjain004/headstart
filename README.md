@@ -125,7 +125,7 @@ Both fan-out stages are time-budgeted, and both bank partial work by design. The
 `timeout 60m` (scrape) and `timeout 180m` (embed) fire well before the step and job timeouts, and
 `|| echo` absorbs the non-zero exit so the fragment still uploads. `JobWriter` flushes after every
 board and `EmbeddingStore` flushes vectors then metadata after every batch, so a killed shard loses
-at most the item in flight; `merge_shards` truncates any half-written tail. Whatever finished moves
+at most the item in flight; `embed_merge` truncates any half-written tail. Whatever finished moves
 to the next stage, and the unfinished boards and Docs simply reappear in the next run's plan.
 
 ### Tech-only, English-only
@@ -201,11 +201,11 @@ correctness against the live Space.
   (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus the bot: `filters.py`,
   `bot.py`, `telegram.py`, `state.py`.
 - `src/headstart/ingest/` — **the 6-hourly pipeline run**, one module per stage step, invoked as
-  `python -m headstart.ingest.<module>` (ADR-0028): `plan_scrape`, `scrape`, `join_shards`,
-  `filter_tech`, `update_ledgers` (`priority`/`cost`), `plan_embed`, `embed_jobs`, `merge_shards`,
+  `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape`, `scrape_join`,
+  `filter_tech`, `update_ledgers` (`priority`/`cost`), `embed_plan`, `embed_run`, `embed_merge`,
   `index` (`sync`/`prune`/`compact`). `.github/workflows/pipeline.yml` runs exactly these. Its
   pipeline-only helpers live here too: `binpack.py` (LPT packing shared by both planners),
-  `embed_prep.py` (doc prep shared by embedder and planner), `index_plan.py` (the pure add/evict
+  `doc_prep.py` (doc prep shared by embedder and planner), `index_plan.py` (the pure add/evict
   and prune planners).
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
   `scrape/` (one-off pulls), `filter/` (recall verification), plus the AI layer in `embed/`
@@ -246,10 +246,10 @@ python -c "from huggingface_hub import snapshot_download; snapshot_download(
 python scripts/ui/serve.py                # search UI at http://localhost:8000
 ```
 
-To rebuild rather than download — note `embed_jobs.py` is CPU-bound and belongs on CI at any real
+To rebuild rather than download — note `embed_run.py` is CPU-bound and belongs on CI at any real
 scale (ADR-0025):
 
 ```bash
-python -m headstart.ingest.embed_jobs --resume   # embed the English tech corpus
+python -m headstart.ingest.embed_run --resume   # embed the English tech corpus
 python -m headstart.ingest.index sync            # incremental add/evict into the LanceDB `jobs` table
 ```
