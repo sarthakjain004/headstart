@@ -83,6 +83,19 @@ distribution**, reporting tok/s and mean cosine agreement against fp32. A backen
 if it wins there, and a *quantized* backend additionally requires a retrieval check on the
 ADR-0011 eval harness — cosine agreement on synthetic text is a drift signal, not a quality gate.
 
+**A dependency constraint may decide this before throughput does.** The backend extras do not
+coexist with the transformers 5.x production runs: `optimum-intel` (the OpenVINO path) requires
+`transformers<4.58`, so installing them resolves transformers down to **4.57.6**; pinning
+`transformers>=5` instead backtracks `optimum` to 1.17.1. On 4.x, `nomic_bert` is not yet a native
+architecture and needs `trust_remote_code=True` — which is why the first `embed-bench` dispatch
+(run `30154750453`) skipped all six variants. So even a backend that wins on tok/s would cost a
+two-major-version transformers downgrade in production. The benchmark now prints its resolved
+versions so that trade is visible in the result rather than inferred afterwards.
+
+Runner facts worth recording, from that first dispatch: `ubuntu-latest` is an **AMD EPYC 9V74**
+(Zen 5 — AVX-512 with VNNI, so int8 is well supported by the hardware), and torch reports
+**2 threads**, not 4 — the 4 vCPUs are 2 physical cores with SMT.
+
 ## Alternatives considered
 
 - **Truncate Docs.** Directly attacks the dominant term (tokens), and cheap to try. But capping at
