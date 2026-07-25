@@ -140,7 +140,8 @@ def test_main_partitions_new_english_docs(tmp_path, monkeypatch):
     for k in plan["shards"]:
         for line in (out / f"shard-{k}.jsonl").read_text().splitlines():
             rec = json.loads(line)
-            assert set(rec) == {"doc", "bucket", "meta"}
+            assert set(rec) == {"doc", "bucket", "tokens", "meta"}
+            assert rec["tokens"] <= rec["bucket"]  # exact count, within its Bucket
             assert rec["doc"].startswith("search_document: ")
             seen.append(rec["meta"]["id"])
     assert sorted(seen) == ["lever:acme:1", "lever:acme:2"]  # each new Doc exactly once

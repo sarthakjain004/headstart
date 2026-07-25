@@ -188,7 +188,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
   organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
   (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `eval/`, `enrich/`,
-  `filter/` (verification), `embed/` (local index tools), `ui/`. Whenever you add a script, put it
+  `filter/` (verification), `embed/` (local index tools), `bench/` (performance
+  measurement), `ui/`. Whenever you add a script, put it
   in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
   rather than dropping it loose in `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
