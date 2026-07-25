@@ -174,6 +174,23 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   `docs/`. Name files so the date/source/meaning is obvious at a glance (e.g.
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
+- **The HF dataset is the source of truth for pipeline data — never trust the local copy.**
+  `data/state/`, `data/embeddings/`, `data/lancedb/`, and `data/jobs/` are all gitignored: they
+  live in the private HF dataset `imPoseidon/headstart-index`, and whatever sits in the working
+  tree is a stale snapshot from whenever it was last pulled. Before reading, reasoning about, or
+  quoting a number from any of them, refresh from HF first:
+
+  ```bash
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(
+      'imPoseidon/headstart-index', repo_type='dataset', local_dir='.',
+      allow_patterns=['data/state/*'])"          # widen the patterns as needed
+  ```
+
+  Cheap reads that answer most questions without pulling the ~1.5 GB of vectors: `HfApi()
+  .repo_info(..., files_metadata=True)` for file sizes, `data/embeddings/jobs/manifest.json`
+  for the store's `count`, `data/state/board_priority.csv` (~1 MB) for the board ledger.
+  **Exception:** `data/validate/liveness/` is committed to git, so the repo is authoritative for
+  it — do not look for it on HF. See `docs/agents/deployment.md`.
 
 ### Verifying experience-extraction coverage
 Whenever you change `experience.py`'s patterns, gauge the effect with

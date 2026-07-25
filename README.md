@@ -4,16 +4,17 @@ Find software-engineering openings straight from companies' ATS (Applicant Track
 System) career boards — earlier and more completely than relying on LinkedIn.
 
 HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
-them through **18 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
+them through **21 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
 two ways: a static dashboard over a curated feed, and an **AI semantic-search layer** (local
-embeddings → vector search with structured filters) built and measured on a benchmark corpus at
-**nDCG@10 = 0.90** — wiring it to the full scraped corpus is the documented next step (ADR-0019).
+embeddings + vector search with structured filters) running live on a free-tier Hugging Face
+Space over a ~200k-row index of the tech corpus.
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 19 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 26 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
-  Job, Discovery, Liveness, Feed…).
+  Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).
 - **AI layer design + results:** [`docs/AI_Integration/`](./docs/AI_Integration/).
+- **Deployment runbook:** [`docs/agents/deployment.md`](./docs/agents/deployment.md).
 - **Dashboard:** GitHub Pages serves [`docs/`](./docs/) → `https://sarthakjain004.github.io/headstart/`.
 
 ## Why
@@ -28,45 +29,129 @@ widest.
 
 ## How it works
 
-Two halves share the `Job` model. A discovery→scrape pipeline finds and reads boards; a search
-layer makes the result queryable.
+Two halves share the `Job` model. A discovery pipeline finds and validates boards; a scheduled
+ingest pipeline reads them and keeps the search index fresh.
 
-```
-Pipeline (per CONTEXT.md):
-  discover   find companies on ATSes (Common Crawl / Wayback feeders, careers-page fingerprint)
-    → merge  union + dedupe the discovered lists per ATS
-    → validate  liveness-probe each board (Live / Dead / Unknown), write the Active lists
-    → resolve  map a known company → its (ATS, slug)
-    → scrape  18 ATS scrapers read the Active boards, normalize to one Job, stream to JSONL
-    → filter  keep only software/tech roles -> data/jobs/tech/ (recall-biased, ADR-0017)
+```mermaid
+flowchart TB
+    subgraph D["① Discovery &nbsp;·&nbsp; occasional, by hand"]
+        direction LR
+        D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
+        D2["<b>merge</b><br/>union + dedupe per ATS"]
+        D3["<b>validate</b><br/>liveness-probe each board"]
+        D4[("<b>liveness ledger</b><br/>76,214 live of 123,510<br/>git-tracked, authoritative")]
+        D1 --> D2 --> D3 --> D4
+    end
 
-Serving:
-  curated feed (tech subset) → docs/jobs.json → GitHub Pages static dashboard (client-side filter)
-  semantic search → embed → LanceDB → filter-then-rank + Telegram alert bot
-    (production index = the tech subset; ranking evaluated on the frozen Wellfound benchmark, ADR-0019)
+    subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, every 6h &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
+        direction LR
+        P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>21 scrapers → fragments"]
+        P3["<b>join</b><br/>1 VM · 30m<br/>union · tech-filter<br/>priority · plan embed"]
+        P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
+        P5["<b>merge</b><br/>1 VM · 40m · single writer<br/>concat · sync · prune · compact"]
+        P1 --> P2 --> P3 --> P4 --> P5
+    end
+
+    subgraph F["③ Curated feed &nbsp;·&nbsp; python -m headstart"]
+        direction LR
+        F1["<b>scrape + tech-filter</b>"]
+        F2[("<b>docs/jobs.json</b>")]
+        F1 --> F2
+    end
+
+    subgraph S["④ Serving"]
+        direction LR
+        S1[("<b>HF dataset</b><br/>headstart-index<br/>vectors · LanceDB · ledger")]
+        S2["<b>HF Space</b><br/>headstart-search<br/>filter-then-rank"]
+        S3["<b>GitHub Pages</b><br/>static dashboard"]
+        S4["<b>Telegram bot</b><br/>every 15m · filter alerts"]
+        S1 --> S2
+    end
+
+    D4 ==> P1
+    D4 -.-> F1
+    P5 ==>|"upload + restart"| S1
+    F2 --> S3
+    F2 --> S4
+    P2 -. "partial fragments still flow" .-> P3
+    P4 -. "partial fragments still flow" .-> P5
+
+    classDef serial fill:#1b3a57,stroke:#5aa9e6,stroke-width:2px,color:#eaf4fc
+    classDef fan fill:#14453a,stroke:#3fbf8f,stroke-width:3px,color:#e4f7f0
+    classDef store fill:#42295e,stroke:#b184dd,stroke-width:2px,color:#f4ecfc
+    classDef serve fill:#5a3418,stroke:#e09a4f,stroke-width:2px,color:#fbf1e6
+    class D1,D2,D3,P1,P3,P5,F1 serial
+    class P2,P4 fan
+    class D4,F2,S1 store
+    class S2,S3,S4 serve
 ```
+
+Green stages are matrix fan-outs across many **GitHub VMs**; blue are single-VM serial stages;
+purple are stored state. The `==>` edges are the main path; the dotted edges into `join` and
+`merge` are the partial-work guarantee described below.
+
+**Discovery** runs occasionally and by hand; its output, the liveness ledger under
+`data/validate/liveness/`, is committed to git and is what the ingest pipeline reads.
+
+**Ingest** (`.github/workflows/pipeline.yml`) runs on a 6-hour cron as five stages, two of them
+matrix fan-outs capped at 15 concurrent **GitHub VMs** (ADR-0025 sharded embed, ADR-0026 sharded
+scrape). A run-level `concurrency` group serializes whole runs so two never race on the dataset.
+
+**Serving** has two independent paths. The search index is the single-writer end: `merge` uploads
+to the private HF dataset `imPoseidon/headstart-index` and restarts the Space
+`imPoseidon/headstart-search`. Separately, `python -m headstart` scrapes the same ledger and writes
+`docs/jobs.json`; the GitHub Pages dashboard and the Telegram bot (`bot.yml`, every 15 min) both
+read *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
+their own schedules.
+
+### Which boards a run picks
+
+A run does not scrape all 51,314 live boards on enabled ATSes. `pick_boards` takes a slice of
+`--max-boards` (default **20,000**) and splits it **70/30**: the top 70% by board-priority score —
+a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
+and a random 30% exploration tail drawn from everything else, so newly-productive boards can never
+starve. The ledger currently holds 21,379 scored boards, comfortably more than the 14,000-board
+head, so the split holds exactly; only past ~30,500 boards would unused head slots roll into
+exploration. Boards a run skips are simply left alone — eviction is scoped to boards actually
+present in the scrape (ADR-0014), so a partial harvest never damages what it didn't look at.
+
+### Nothing scraped is ever wasted
+
+Both fan-out stages are time-budgeted, and both bank partial work by design. The inner
+`timeout 60m` (scrape) and `timeout 180m` (embed) fire well before the step and job timeouts, and
+`|| echo` absorbs the non-zero exit so the fragment still uploads. `JobWriter` flushes after every
+board and `EmbeddingStore` flushes vectors then metadata after every batch, so a killed shard loses
+at most the item in flight; `merge_shards` truncates any half-written tail. Whatever finished moves
+to the next stage, and the unfinished boards and Docs simply reappear in the next run's plan.
+
+### Tech-only, English-only
 
 Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
 full set to `data/jobs/{ats}.jsonl`; a recall-biased regex filter (`headstart.tech_filter`) derives
-the tech subset in `data/jobs/tech/{ats}.jsonl` — ~17% of the raw jobs, so the embedding model does
-~83% less work. A non-tech job creeping in is fine; dropping a tech job is not, so a two-part
-verification gate guards recall: a deterministic self-consistency check plus an independent LLM
-reasoning gate (`scripts/filter/verify_tech.py`) that judges a sample of the *dropped* pile and flags
-any real tech job the regex missed (ADR-0017).
+the tech subset in `data/jobs/tech/{ats}.jsonl` — **31.8% of the scraped slice** in the last
+measured run, though the rate swings hard by ATS (Eightfold 52.7%, Workday 6.9%). A non-tech job
+creeping in is fine; dropping a tech job is not, so a two-part verification gate guards recall: a
+deterministic self-consistency check plus an independent LLM reasoning gate
+(`scripts/filter/verify_tech.py`) that judges a sample of the *dropped* pile and flags any real
+tech job the regex missed (ADR-0017). A `langdetect` gate then holds non-English descriptions out
+of the index before embedding — the scrape and the feed keep them, only retrieval is English-only.
 
-No always-on server: scheduled GitHub Actions plus a static Pages site. The millions-scale
-harvest produces only per-ATS JSONL; the dashboard serves a small curated subset, and true
-scale (search over the full corpus) is the AI backend, not the static page (ADR-0010).
+No always-on server: scheduled GitHub Actions, a static Pages site, and a free-tier Space.
 
 ## ATS coverage
 
-18 scrapers, selected from a registry by the `ats` key: `greenhouse`, `lever`, `ashby`, `zoho`,
-`workday`, `workable`, `smartrecruiters`, `recruitee`, `oracle`, `sensehq`, `keka`, `trakstar`,
-`ripplehire`, `darwinbox`, `teamtailor`, `personio`, `join`, `rippling`. Each reads a Board and
-normalizes its raw postings into `Job` records; all HTTP routes through one pooled, thread-local
-`curl_cffi` client that impersonates Chrome, so the same stack serves plain JSON APIs and the
-TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The liveness pipeline has validated
-**~74,600 live boards (of ~122k probed)** across these ATSes.
+21 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
+`freshteam`, `greenhouse`, `join`, `keka`, `lever`, `oracle`, `personio`, `recruitee`,
+`ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
+`trakstar`, `workable`, `workday`, `zoho`. `join` is in `registry.DISABLED_ATS` — German-SMB
+boards running ~1 tech job in ~10k, pure noise for a tech-only index — so it is skipped rather
+than scraped. Its scraper class and tests stay intact; re-enable by removing it from that set.
+
+Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
+through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
+serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
+liveness pipeline has probed **123,510 boards**: 76,214 live, 30,362 dead, 16,934 unknown.
 
 ## AI semantic search
 
@@ -75,18 +160,21 @@ filters themselves (remote, employment type, max years of experience) *and separ
 natural-language query describing only the role. Filters drive a deterministic where-clause; the
 query drives the embedding.
 
-- **Embeddings:** `nomic-embed-text-v1.5`, run locally on the GPU. Its 8192-token context embeds
-  each full job description without truncation; task prefixes (`search_document:` / `search_query:`)
-  are load-bearing (ADR-0005). Only `title + cleaned description` is embedded — structured fields
-  ride alongside as filterable metadata, never inside the vector (ADR-0006).
-- **Store + retrieval:** LanceDB, embedded and local, does the filter-then-rank in one query —
+- **Embeddings:** `nomic-embed-text-v1.5`, 768-dim, L2-normalized. Task prefixes
+  (`search_document:` / `search_query:`) are load-bearing (ADR-0005). Only `title + cleaned
+  description` is embedded — structured fields ride alongside as filterable metadata, never inside
+  the vector (ADR-0006). The model's context is 8192 tokens but Docs are **capped at 4096**: a
+  full-context Doc transiently needs ~50 GB on the MPS stack, and only ~0.01% of the corpus is
+  longer. Local runs use the Apple GPU (MPS, fp16); CI runs CPU/fp32, which is 10-40× slower and
+  is why the pipeline shards embedding across 15 VMs.
+- **Store + retrieval:** LanceDB, embedded and local, does filter-then-rank in one query —
   pre-filter on the typed metadata, rank the survivors by cosine (ADR-0007, ADR-0008). Required
   years-of-experience is extracted to a numeric range by a deterministic cascade so `min_years`
-  is a real filter (ADR-0009).
-- **Scope:** the search corpus is **English-only for now** — an explicit `langdetect` gate holds
-  non-English descriptions out of the index before embedding (multilingual retrieval deferred).
-  The LLM query-parser that would infer filters from free text is deliberately deferred; the
-  constraints come from explicit controls.
+  is a real filter (ADR-0009, ADR-0018).
+- **Freshness:** the index is reconciled incrementally, never rebuilt — `sync_index` adds new
+  vectors and evicts postings that vanished from a scraped board, `prune_index` sweeps rows on
+  dead boards and case-variant duplicates, `compact_index` rewrites the table to reclaim orphan
+  fragments (ADR-0014, ADR-0019, ADR-0023).
 
 ### Retrieval eval
 
@@ -97,19 +185,30 @@ then score with `ranx` → **nDCG@10 = 0.90** on the Wellfound benchmark corpus.
 printed with the score: it is a single-system pool, so nDCG measures how well the search orders its
 own picks, not corpus-wide recall (pooling a second system, e.g. BM25, is the named next step); and
 the benchmark is kept deliberately distinct from the production tech corpus (ADR-0014, ADR-0019).
+`scripts/eval/verify_filters.py` separately checks every filter's semantics and every ATS's job-link
+correctness against the live Space.
 
 ## Layout
 
-- `src/headstart/` — the package: `models.py` (Job + normalization), `scrapers/` (18 per-ATS +
+- `src/headstart/` — the package: `models.py` (Job + normalization), `scrapers/` (21 per-ATS +
   `base`/`registry`), `http.py` (the pooled reliable-fetch seam), `config.py`, `pipeline.py`,
-  `search.py` (shared embed/search constants + filter builder), `experience.py`,
-  `tech_filter.py` (the tech-role gate, ADR-0017); plus the v2 bot: `filters.py`, `bot.py`,
+  `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`, `geo.py`,
+  `search.py` (shared embed/search constants + filter builder), `embed_prep.py` (doc prep shared
+  by embedder and planner), `index_sync.py` / `index_prune.py`, `board_priority.py` (ADR-0022),
+  `binpack.py` (LPT packing shared by both planners); plus the bot: `filters.py`, `bot.py`,
   `telegram.py`, `state.py`.
-- `scripts/` — the pipeline stages (`discover/`, `merge/`, `validate/`, `resolve/`, `scrape/`,
-  `filter/`) and the AI layer (`embed/`, `enrich/`, `eval/`, `ui/`).
+- `scripts/` — one folder per pipeline stage: `discover/`, `merge/`, `validate/`, `resolve/`,
+  `scrape/`, `filter/`, `rank/`, `pipeline/` (the shard planners, join, and merge), plus the AI
+  layer in `embed/`, `enrich/`, `eval/`, `ui/`.
+- `data/` — `validate/liveness/` is git-tracked and authoritative. **Everything else under `data/`
+  is gitignored and lives in the HF dataset**, not in the repo: `state/`, `embeddings/`,
+  `lancedb/`, `jobs/`. Pull them from HF before trusting any local copy.
+- `deploy/hf-space/` — the Space app; `deploy-space.yml` pushes it on change, so the repo stays
+  the single source of truth for what runs there.
 - `docs/` — `index.html` dashboard + generated `jobs.json` (served by Pages), `adr/`,
-  `AI_Integration/`.
-- `.github/workflows/` — `ci.yml` (lint + format + tests), `bot.yml` (Telegram alerts).
+  `AI_Integration/`, `agents/` (issue tracker, triage, domain, deployment runbooks).
+- `.github/workflows/` — `pipeline.yml` (the 5-stage ingest), `pipeline-smoke.yml`, `ci.yml`
+  (lint + format + tests), `bot.yml` (Telegram alerts), `deploy-space.yml`, `cleanup-index.yml`.
 
 ## Development
 
@@ -126,12 +225,21 @@ python -m headstart                  # curated scrape → docs/jobs.json
 python -m http.server -d docs        # preview the dashboard at http://localhost:8000
 ```
 
-Semantic-search demo (needs a corpus in `data/jobs/`; the embedding artifacts are regenerable
-locally and gitignored for size):
+Semantic-search demo. The corpus and embedding artifacts are gitignored — pull them from the HF
+dataset first (see [`docs/agents/deployment.md`](./docs/agents/deployment.md) for auth):
 
 ```bash
 pip install -e ".[embed,ui]"
-python scripts/embed/embed_jobs.py        # embed the English tech corpus → data/embeddings/jobs/
-python scripts/embed/sync_index.py        # incremental add/evict into the LanceDB `jobs` table
+python -c "from huggingface_hub import snapshot_download; snapshot_download(
+    'imPoseidon/headstart-index', repo_type='dataset', local_dir='.',
+    allow_patterns=['data/state/*','data/embeddings/jobs/*','data/lancedb/*'])"
 python scripts/ui/serve.py                # search UI at http://localhost:8000
+```
+
+To rebuild rather than download — note `embed_jobs.py` is CPU-bound and belongs on CI at any real
+scale (ADR-0025):
+
+```bash
+python scripts/embed/embed_jobs.py --resume   # embed the English tech corpus
+python scripts/embed/sync_index.py            # incremental add/evict into the LanceDB `jobs` table
 ```

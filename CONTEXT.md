@@ -117,6 +117,10 @@ _Avoid_: conflating with **Bucket** — a Bucket is a token-length class for one
 **LPT (Longest Processing Time first)**:
 The greedy heuristic the planners bin-pack with: sort the items by descending cost, then hand each next item to whichever shard is currently least-loaded. Chosen over hashing or round-robin because per-item cost is heavy-tailed — embed cost spans ~20× from the ≤512 to the ≤4096 **Bucket** — so a cost-blind split reliably saddles one shard with the heavy items and it straggles while the rest idle (ADR-0025).
 
+**GitHub VM**:
+The term for the GitHub Actions jobs a matrix fan-out spreads across separate machines — the scrape and embed shards of ADR-0025/ADR-0026 each run on their own GitHub VM. Say "GitHub VM" whenever the point is the _machine_: its own IP (why per-host scrape politeness is unchanged), its own cold filesystem (why every shard re-runs checkout, `pip install`, and a model download), and its own memory and disk (why shard state moves as artifacts, never shared storage).
+_Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns — one shard runs on one GitHub VM, but the shard is the board list or Doc list, not the machine.
+
 ## Relationships
 
 - A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**.
