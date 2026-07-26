@@ -31,12 +31,14 @@ name: nightly-pipeline
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 on:
   schedule:
-    # four cycles a day, 6h apart: the 21:30 nightly plus day runs that give the CPU embed budget
-    # more slots. Runs serialize via the concurrency group.
-    - cron: "30 21 * * *" # the compulsory nightly
-    - cron: "30 3 * * *"
-    - cron: "30 9 * * *"
-    - cron: "30 15 * * *"
+    # Twelve cycles a day, 2h apart on odd hours so the 21:30 nightly keeps its slot. Runs
+    # serialize via the concurrency group, and this interval is *shorter than a run*: measured
+    # over the last 12 scheduled runs, duration was min 33 / mean 84 / max 124 min, and starts
+    # landed a mean of ~97 min after their cron slot. So cycles will queue rather than all fire —
+    # `cancel-in-progress: false` makes a late run wait, and GitHub drops a scheduled trigger when
+    # one is already pending. Expect fewer than 12 effective runs/day; the ceiling is set by run
+    # duration, not by this cron.
+    - cron: "30 1-23/2 * * *" # includes 21:30, the compulsory nightly
   workflow_dispatch:
     inputs:
       max_boards:
