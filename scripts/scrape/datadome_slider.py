@@ -540,20 +540,35 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
     return not challenged(await _safe_source(tab))
 
 
+# Manual-first is the default. A human at the keyboard clears these in seconds (measured: 9s),
+# whereas every auto attempt spends a Whisper transcription or a scored drag, and a *rejected*
+# drag is what earned a hard block. Auto-solve stays available for unattended runs via
+# --auto-solve, which flips this.
+AUTO_SOLVE = False
+
+
 async def solve_slider(
     tab,
     browser,
     artifacts_dir=None,
-    try_audio: bool = True,
-    drag_attempts: int = 2,
+    try_audio: bool | None = None,
+    drag_attempts: int | None = None,
     manual_wait_secs: float = 300,
 ) -> bool:
-    """Clear a DataDome challenge. Escalation, audio-first (the audio markup is in the DOM;
-    the slider widget is dynamic): audio + Whisper -> dynamic slider drag (frame-walking,
-    real page coords) -> wait for a manual solve in the browser. Name kept for callers' imports.
+    """Clear a DataDome challenge.
+
+    Default (AUTO_SOLVE False): hand it straight to the human in the visible browser window.
+    With --auto-solve: audio + Whisper -> humanized slider drag -> manual wait as the backstop.
+    `try_audio`/`drag_attempts` override the mode explicitly when passed.
     """
+    if try_audio is None:
+        try_audio = AUTO_SOLVE
+    if drag_attempts is None:
+        drag_attempts = 2 if AUTO_SOLVE else 0
     if not challenged(await _safe_source(tab)):
         return True
+    if not try_audio and not drag_attempts:
+        print("    challenge hit — manual solve (auto-solve off)", flush=True)
     if try_audio:
         print("    challenge hit — trying audio + Whisper first...", flush=True)
         try:

@@ -18,7 +18,7 @@ Location forms: a normal location scrapes /role/l/{role}/{location}; the special
 "remote" scrapes the location-agnostic remote board /role/r/{role}.
 
 Usage:  python scripts/scrape/run_wellfound.py [role] [location]
-            [--headless] [--proxy host:port] [--no-warmup] [--no-scroll] [--max-pages N]
+            [--headless] [--proxy host:port] [--no-warmup] [--no-scroll] [--auto-solve] [--max-pages N]
             [--delay S] [--jitter S]
         python scripts/scrape/run_wellfound.py software-engineer india
         python scripts/scrape/run_wellfound.py software-architect remote   # -> /role/r/...
@@ -33,7 +33,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from datadome_slider import (  # same dir; sys.path[0] as a script
+import datadome_slider  # same dir; sys.path[0] as a script
+from datadome_slider import (
     _safe_source,
     audio_ready,
     solve_slider,
@@ -120,16 +121,51 @@ def _is_blocked(html: str) -> bool:
     )
 
 
-# A *challenge* is solvable; a *hard block* is not. DataDome serves both from
-# captcha-delivery.com, so `_is_blocked` cannot tell them apart — which is how a run once spent
-# its whole time "solving" a page that had no slider, no audio panel and no answer boxes, because
-# the real title was "You have been blocked" (see artifacts/failures/2026-07-26_133539).
-_HARD_BLOCK_MARKERS = ("You have been blocked", "Access is temporarily restricted")
+# A *challenge* is solvable; a *hard block* is not. Both come from captcha-delivery.com, so
+# `_is_blocked` cannot tell them apart.
+#
+# Two traps, both learned the hard way by comparing real captures (artifacts/failures/):
+#  * `<title>You have been blocked</title>` is DataDome's title on the SOLVABLE challenge too —
+#    it is not a block marker, and keying on it aborts perfectly good runs.
+#  * Neither marker appears in the main document at all. The challenge/block is rendered inside
+#    the captcha OOPIF, so this must be given the FRAME's html, never `tab.page_source`.
+#
+# What actually separates them, measured: the block page carries "Access is temporarily
+# restricted" and has zero challenge widgets (22 KB, 0 .sliderContainer); the challenge page has
+# no such text and is full of them (625 KB, 18 .sliderContainer, 19 .audio-captcha-inputs).
+_BLOCK_TEXT = "Access is temporarily restricted"
+_CHALLENGE_WIDGETS = ("sliderContainer", "audio-captcha-inputs", "captcha__puzzle")
 
 
-def is_hard_block(html: str) -> bool:
-    """True when DataDome has denied access outright, rather than offering a challenge."""
-    return any(m in html for m in _HARD_BLOCK_MARKERS)
+def is_hard_block(frame_html: str) -> bool:
+    """True when DataDome denied access outright rather than offering a challenge.
+
+    Takes the CAPTCHA FRAME's html (see `_captcha_frame_html`), not the main page's.
+    """
+    if not frame_html:
+        return False
+    if any(w in frame_html for w in _CHALLENGE_WIDGETS):
+        return False  # a widget is present -> there is something to solve -> not a hard block
+    return _BLOCK_TEXT in frame_html
+
+
+async def _captcha_frame_html(tab, browser) -> str:
+    """Html of the DataDome captcha OOPIF, or '' when there isn't one.
+
+    `tab` is required: _attach_captcha_frame reads its connection port to build the frame
+    Tab. Passing None raises, and the except below would swallow it into "" — leaving the
+    block detection silently inert, which is the exact failure this whole function replaces.
+    """
+    if tab is None or browser is None:
+        return ""
+    try:
+        from datadome_slider import _attach_captcha_frame, _safe_source
+
+        frame = await _attach_captcha_frame(tab, browser)
+        return await _safe_source(frame) if frame is not None else ""
+    except Exception as e:
+        print(f"    [block-check] frame read failed: {type(e).__name__}", flush=True)
+        return ""
 
 
 class HardBlocked(RuntimeError):
@@ -366,7 +402,7 @@ async def scrape_url(
     # First page (start_page): clears the challenge and tells us how many pages exist.
     html = await _load_page(tab, f"{base_url}?page={start_page}", browser)
     DEBUG_HTML.write_text(html, encoding="utf-8")
-    if is_hard_block(html):
+    if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
         raise HardBlocked(f"hard block on page {start_page} of {base_url}")
     if _is_blocked(html):
         print(
@@ -394,7 +430,7 @@ async def scrape_url(
         # the interval band and makes the cadence more machine-regular.
         await asyncio.sleep(delay + random.random() * jitter)
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
-        if is_hard_block(html):
+        if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
             raise HardBlocked(f"hard block on page {page} of {base_url}")
         if _is_blocked(html):
             consecutive_blocks += 1
@@ -478,6 +514,8 @@ def main() -> int:
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
     human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
+    # Manual solve is the default; --auto-solve re-enables audio + the humanized drag.
+    datadome_slider.AUTO_SOLVE = "--auto-solve" in sys.argv
     proxy = _flag("--proxy", "") or None  # e.g. http://user:pass@host:port
     max_pages = _flag("--max-pages", 0)  # 0 = all pages
     delay = _flag("--delay", 4.0)  # seconds between pages

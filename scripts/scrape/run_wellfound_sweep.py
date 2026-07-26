@@ -12,7 +12,7 @@ Standing rule: only ever request Wellfound through Cloudflare WARP — this abor
 so it can't leak the residential IP.
 
 Run:  python scripts/scrape/run_wellfound_sweep.py
-          [--headless] [--max-pages N] [--delay S] [--jitter S] [--no-warmup] [--no-scroll]
+          [--headless] [--max-pages N] [--delay S] [--jitter S] [--no-warmup] [--no-scroll] [--auto-solve]
 """
 
 import asyncio
@@ -22,6 +22,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from pydoll.browser import Chrome
+import datadome_slider
 from datadome_slider import audio_ready
 from run_wellfound import COLS, EXP, OUT, HardBlocked, _flag, _options, scrape_url
 
@@ -72,6 +73,8 @@ async def main() -> int:
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
     human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
+    # Manual solve is the default; --auto-solve re-enables audio + the humanized drag.
+    datadome_slider.AUTO_SOLVE = "--auto-solve" in sys.argv
     append = "--append" in sys.argv
     max_pages = _flag("--max-pages", 0)  # 0 = all pages per board
     delay = _flag("--delay", 4.0)
