@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import os
 import random
 import sys
 import time
@@ -165,9 +166,20 @@ def main() -> int:
         help=f"comma-separated subset of: {', '.join(_VARIANTS)}",
     )
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument(
+        "--threads",
+        type=int,
+        default=0,
+        help="torch intra-op threads (0 = torch's default, which is one per PHYSICAL core). "
+        "The runner advertises 4 vCPUs but has 2 physical cores + SMT, so torch picks 2; "
+        "pass 4 to test whether the SMT siblings buy anything (ADR-0029).",
+    )
     args = ap.parse_args()
 
     import torch
+
+    if args.threads:
+        torch.set_num_threads(args.threads)
 
     budget = 128_000_000 // 4  # the CPU attention budget embed_run uses
     # Version provenance is load-bearing: the backend extras drag transformers down to 4.5x
@@ -177,9 +189,11 @@ def main() -> int:
     import sentence_transformers
 
     print(
-        f"threads={torch.get_num_threads()} (nproc may differ — torch counts physical cores) "
-        f"torch={torch.__version__} transformers={transformers.__version__} "
-        f"sentence-transformers={sentence_transformers.__version__}",
+        f"threads={torch.get_num_threads()}"
+        f"{' (forced)' if args.threads else ' (torch default = physical cores)'}"
+        f" omp={os.environ.get('OMP_NUM_THREADS', 'unset')}"
+        f" torch={torch.__version__} transformers={transformers.__version__}"
+        f" sentence-transformers={sentence_transformers.__version__}",
         file=sys.stderr,
         flush=True,
     )
