@@ -18,7 +18,8 @@ Location forms: a normal location scrapes /role/l/{role}/{location}; the special
 "remote" scrapes the location-agnostic remote board /role/r/{role}.
 
 Usage:  python scripts/scrape/run_wellfound.py [role] [location]
-            [--headless] [--proxy host:port] [--no-warmup] [--max-pages N] [--delay S]
+            [--headless] [--proxy host:port] [--no-warmup] [--no-scroll] [--audio-first] [--max-pages N]
+            [--delay S] [--jitter S]
         python scripts/scrape/run_wellfound.py software-engineer india
         python scripts/scrape/run_wellfound.py software-architect remote   # -> /role/r/...
 """
@@ -32,10 +33,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import datadome_slider  # same dir; sys.path[0] as a script
 from datadome_slider import (
     _safe_source,
+    audio_ready,
     solve_slider,
-)  # same dir; sys.path[0] as a script
+)
 from pydoll.browser import Chrome
 from pydoll.browser.options import ChromiumOptions
 from pydoll.interactions.scroll import ScrollPosition
@@ -83,6 +86,12 @@ async def _human_pause(tab) -> None:
     Only call this on a resolved app page: dispatching input while the challenge page is up or
     mid-navigation can leave the CDP command unacked until pydoll's 60s timeout. The wait_for
     is a backstop so a stalled dispatch can never block the scrape.
+
+    ``--no-scroll`` skips this entirely. It is the single biggest per-page cost (a smooth
+    humanized scroll plus a 0.4-1.2s dwell, on every page of every board), so dropping it is the
+    largest speed lever available — but it also removes the only behavioural signal we emit, and
+    behaviour is what the paragraph above exists to produce. Expect more challenges with it off;
+    that is the trade being made, not a bug.
     """
 
     async def _act():
@@ -110,6 +119,59 @@ def _is_blocked(html: str) -> bool:
         or "Just a moment" in html
         or "__NEXT_DATA__" not in html
     )
+
+
+# A *challenge* is solvable; a *hard block* is not. Both come from captcha-delivery.com, so
+# `_is_blocked` cannot tell them apart.
+#
+# Two traps, both learned the hard way by comparing real captures (artifacts/failures/):
+#  * `<title>You have been blocked</title>` is DataDome's title on the SOLVABLE challenge too —
+#    it is not a block marker, and keying on it aborts perfectly good runs.
+#  * Neither marker appears in the main document at all. The challenge/block is rendered inside
+#    the captcha OOPIF, so this must be given the FRAME's html, never `tab.page_source`.
+#
+# What actually separates them, measured: the block page carries "Access is temporarily
+# restricted" and has zero challenge widgets (22 KB, 0 .sliderContainer); the challenge page has
+# no such text and is full of them (625 KB, 18 .sliderContainer, 19 .audio-captcha-inputs).
+_BLOCK_TEXT = "Access is temporarily restricted"
+_CHALLENGE_WIDGETS = ("sliderContainer", "audio-captcha-inputs", "captcha__puzzle")
+
+
+def is_hard_block(frame_html: str) -> bool:
+    """True when DataDome denied access outright rather than offering a challenge.
+
+    Takes the CAPTCHA FRAME's html (see `_captcha_frame_html`), not the main page's.
+    """
+    if not frame_html:
+        return False
+    if any(w in frame_html for w in _CHALLENGE_WIDGETS):
+        return False  # a widget is present -> there is something to solve -> not a hard block
+    return _BLOCK_TEXT in frame_html
+
+
+async def _captcha_frame_html(tab, browser) -> str:
+    """Html of the DataDome captcha OOPIF, or '' when there isn't one.
+
+    `tab` is required: _attach_captcha_frame reads its connection port to build the frame
+    Tab. Passing None raises, and the except below would swallow it into "" — leaving the
+    block detection silently inert, which is the exact failure this whole function replaces.
+    """
+    if tab is None or browser is None:
+        return ""
+    try:
+        from datadome_slider import _attach_captcha_frame, _safe_source
+
+        frame = await _attach_captcha_frame(tab, browser)
+        return await _safe_source(frame) if frame is not None else ""
+    except Exception as e:
+        print(f"    [block-check] frame read failed: {type(e).__name__}", flush=True)
+        return ""
+
+
+class HardBlocked(RuntimeError):
+    """Access denied outright. Unlike a challenge there is nothing to solve, and unlike a
+    per-board block there is no point trying the next board — every request now gets the same
+    page, and each one re-signals while the restriction is live. Aborts the whole run."""
 
 
 async def _load_page(tab, url: str, browser=None) -> str:
@@ -298,7 +360,9 @@ async def scrape_url(
     seen: set[str],
     max_pages: int,
     delay: float,
+    jitter: float,
     warmup: bool,
+    human_pause: bool = True,
     start_page: int = 1,
 ) -> tuple[int, bool]:
     """Scrape `?page=N` of one board from `start_page` onward into `writer`, deduping via `seen`.
@@ -330,7 +394,7 @@ async def scrape_url(
     # not a cold deep-link (DataDome's intent-based detection, method #6).
     if warmup:
         warm = await _load_page(tab, "https://wellfound.com/jobs", browser)
-        if not _is_blocked(
+        if human_pause and not _is_blocked(
             warm
         ):  # only humanize on a resolved page, never the challenge
             await _human_pause(tab)
@@ -338,6 +402,8 @@ async def scrape_url(
     # First page (start_page): clears the challenge and tells us how many pages exist.
     html = await _load_page(tab, f"{base_url}?page={start_page}", browser)
     DEBUG_HTML.write_text(html, encoding="utf-8")
+    if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
+        raise HardBlocked(f"hard block on page {start_page} of {base_url}")
     if _is_blocked(html):
         print(
             f"  BLOCKED on page {start_page}: DataDome served the challenge instead of the app."
@@ -354,13 +420,18 @@ async def scrape_url(
     last = max(last, start_page)
     print(f"  {page_count} pages available; scraping {start_page}..{last}", flush=True)
     emit(jobs, start_page, last)
-    await _human_pause(tab)  # dwell on the resolved page before paginating
+    if human_pause:
+        await _human_pause(tab)  # dwell on the resolved page before paginating
 
     consecutive_blocks = 0
     for page in range(start_page + 1, last + 1):
-        # Jittered pacing — polite, and machine-precise intervals are themselves a tell.
-        await asyncio.sleep(delay + random.random() * 2)
+        # Jittered pacing — polite, and machine-precise intervals are themselves a tell, so
+        # `jitter` is the width of the random spread, not decoration: narrowing it tightens
+        # the interval band and makes the cadence more machine-regular.
+        await asyncio.sleep(delay + random.random() * jitter)
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
+        if _is_blocked(html) and is_hard_block(await _captcha_frame_html(tab, browser)):
+            raise HardBlocked(f"hard block on page {page} of {base_url}")
         if _is_blocked(html):
             consecutive_blocks += 1
             print(
@@ -378,7 +449,8 @@ async def scrape_url(
                 break
             continue
         consecutive_blocks = 0
-        await _human_pause(tab)
+        if human_pause:
+            await _human_pause(tab)
         jobs, _ = parse_page(html, scraped_at)
         emit(jobs, page, last)
     return added, True
@@ -389,8 +461,10 @@ async def scrape(
     headless: bool,
     max_pages: int,
     delay: float,
+    jitter: float,
     proxy: str | None,
     warmup: bool,
+    human_pause: bool,
 ) -> int:
     """Single-board scrape: open one Chrome + the CSV, scrape `base_url`, stream rows."""
     opts = _options(headless, proxy)
@@ -419,7 +493,9 @@ async def scrape(
             seen,
             max_pages,
             delay,
+            jitter,
             warmup,
+            human_pause,
         )
     f.close()
     print(f"DONE: {added} jobs -> data/jobs/wellfound.csv", flush=True)
@@ -437,9 +513,13 @@ def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
+    human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
+    # The slider drag is the default solver; --audio-first tries audio before it.
+    datadome_slider.AUDIO_FIRST = "--audio-first" in sys.argv
     proxy = _flag("--proxy", "") or None  # e.g. http://user:pass@host:port
     max_pages = _flag("--max-pages", 0)  # 0 = all pages
     delay = _flag("--delay", 4.0)  # seconds between pages
+    jitter = _flag("--jitter", 2.0)  # width of the random spread added to --delay
     role = args[0] if args else "software-engineer"
     location = args[1] if len(args) > 1 else "india"
     # location "remote" → the location-agnostic remote board /role/r/{role};
@@ -448,12 +528,16 @@ def main() -> int:
         base_url = f"https://wellfound.com/role/r/{role}"
     else:
         base_url = f"https://wellfound.com/role/l/{role}/{location}"
+    ok, status = audio_ready()
+    print(f"audio fallback: {'OK' if ok else 'MISSING'} — {status}", flush=True)
     print(
         f"GET {base_url}  (headless={headless}, max_pages={max_pages or 'all'},"
-        f" proxy={'yes' if proxy else 'no'}, warmup={warmup})",
+        f" proxy={'yes' if proxy else 'no'}, warmup={warmup}, scroll={human_pause})",
         flush=True,
     )
-    return asyncio.run(scrape(base_url, headless, max_pages, delay, proxy, warmup))
+    return asyncio.run(
+        scrape(base_url, headless, max_pages, delay, jitter, proxy, warmup, human_pause)
+    )
 
 
 if __name__ == "__main__":

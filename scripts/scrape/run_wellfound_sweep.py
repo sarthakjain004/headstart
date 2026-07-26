@@ -12,7 +12,7 @@ Standing rule: only ever request Wellfound through Cloudflare WARP — this abor
 so it can't leak the residential IP.
 
 Run:  python scripts/scrape/run_wellfound_sweep.py
-          [--headless] [--max-pages N] [--delay S] [--no-warmup]
+          [--headless] [--max-pages N] [--delay S] [--jitter S] [--no-warmup] [--no-scroll] [--audio-first]
 """
 
 import asyncio
@@ -22,7 +22,9 @@ import urllib.request
 from datetime import datetime, timezone
 
 from pydoll.browser import Chrome
-from run_wellfound import COLS, EXP, OUT, _flag, _options, scrape_url
+import datadome_slider
+from datadome_slider import audio_ready
+from run_wellfound import COLS, EXP, OUT, HardBlocked, _flag, _options, scrape_url
 
 # Keep in sync with docs/wellfound/target-roles.md
 ROLES = [
@@ -66,11 +68,17 @@ async def main() -> int:
             flush=True,
         )
         return 2
+    ok, status = audio_ready()
+    print(f"audio fallback: {'OK' if ok else 'MISSING'} — {status}", flush=True)
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
+    human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
+    # The slider drag is the default solver; --audio-first tries audio before it.
+    datadome_slider.AUDIO_FIRST = "--audio-first" in sys.argv
     append = "--append" in sys.argv
     max_pages = _flag("--max-pages", 0)  # 0 = all pages per board
     delay = _flag("--delay", 4.0)
+    jitter = _flag("--jitter", 2.0)  # width of the random spread added to --delay
     start_board = _flag(
         "--start-board", 0
     )  # 0-based index into the (filtered) board list
@@ -118,19 +126,34 @@ async def main() -> int:
                 flush=True,
             )
             # Warm-up only before the first board scraped; later boards are already in-session.
-            added, ok = await scrape_url(
-                tab,
-                browser,
-                url,
-                scraped_at,
-                writer,
-                f,
-                seen,
-                max_pages,
-                delay,
-                warmup and i == start_board,
-                start_page=sp,
-            )
+            try:
+                added, ok = await scrape_url(
+                    tab,
+                    browser,
+                    url,
+                    scraped_at,
+                    writer,
+                    f,
+                    seen,
+                    max_pages,
+                    delay,
+                    jitter,
+                    warmup and i == start_board,
+                    human_pause,
+                    start_page=sp,
+                )
+            except HardBlocked as e:
+                # Stop the whole sweep: every further request returns the same denial and
+                # re-signals while it is live. Resume with --start-board once it lapses.
+                per[label] = "HARD-BLOCKED"
+                print(
+                    f"\n!! HARD BLOCK: {e}\n"
+                    f"   DataDome denied access outright — not a solvable challenge.\n"
+                    f"   Stopping the sweep. Let the restriction lapse, then resume with:\n"
+                    f"     --append --start-board {i} --start-page {sp}",
+                    flush=True,
+                )
+                break
             per[label] = added if ok else "BLOCKED"
     f.close()
 
