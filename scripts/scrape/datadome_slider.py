@@ -209,12 +209,23 @@ def _moved(before: dict | None, after: dict | None) -> str:
     return f"handle moved {dx}px, mask grew {dw}px -> {verdict}"
 
 
-# Side-effect JS: switch to the image/slider tab (needed if audio-first switched away).
-_IMAGE_TAB_JS = """
-const tg=[...document.querySelectorAll('.captcha-toggle,button,[role=button],[role=tab]')];
-const img=tg.find(e=>!/audio|sound|volume/i.test(
-  ((e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title')))||'')+' '+(e.textContent||'')))||tg[0];
-if(img) img.click();
+# Side-effect JS: switch BACK to the image/slider tab after the audio attempt.
+# Raw string: the JS regex below contains \s, which Python would otherwise read as an escape.
+_IMAGE_TAB_JS = r"""
+// Symmetric to _AUDIO_TAB_JS: click the real toggle by id rather than "first element that
+// doesn't look audio-ish", which resolved by document order and was only ever correct by luck.
+// This became load-bearing the moment the audio path started genuinely switching panels — until
+// then the widget never left the visual tab, so a no-op here was invisible.
+// Only click when audio is actually the active panel: these toggles are stateful, so clicking
+// the already-active one risks toggling the slider away rather than to it.
+const audio = document.querySelector('#captcha__audio');
+const audioActive = audio && /(^|\s)toggled(\s|$)/.test(audio.className || '');
+if (audioActive) {
+  const b = document.querySelector('#captcha__puzzle__button')
+        || [...document.querySelectorAll('button.captcha-toggle')].find(
+             e => /visual|image|puzzle/i.test((e.getAttribute('title')||'')+' '+(e.getAttribute('aria-label')||'')));
+  if (b) b.click();
+}
 """
 
 
@@ -508,11 +519,22 @@ async def solve_slider(
 # Side-effect JS: switch to the audio tab (clicking the captcha's own UI doesn't need a
 # trusted event — only the answer is validated). Returns nothing; we read state via find().
 _AUDIO_TAB_JS = """
-const els=[...document.querySelectorAll('button,[role=button],[role=tab],a,div')];
-const t=els.find(e=>/audio|sound|volume/i.test(
-    (e.getAttribute&&(e.getAttribute('aria-label')||e.getAttribute('title')||''))
-    + ' ' + (e.textContent||'') + ' ' + (e.innerHTML||'')));
-if(t) t.click();
+// Click the real toggle BUTTON. The old version scanned buttons AND divs and matched on
+// innerHTML, so any ancestor container whose markup merely *contains* the audio panel matched
+// first — it clicked a plain <div>, which does nothing. The panel stayed hidden and every
+// subsequent element lookup failed with ElementNotVisible.
+const b = document.querySelector('#captcha__audio__button')
+      || [...document.querySelectorAll('button.captcha-toggle')].find(
+           e => /audio/i.test((e.getAttribute('title')||'')+' '+(e.getAttribute('aria-label')||'')));
+if (b) b.click();
+"""
+
+# Are the answer boxes actually on screen yet? The panel animates in after the toggle click.
+_AUDIO_VISIBLE_JS = """
+return (function(){
+  const i=[...document.querySelectorAll('.audio-captcha-inputs')];
+  return {total:i.length, visible:i.filter(e=>e.getBoundingClientRect().width>0).length};
+})();
 """
 
 
@@ -530,7 +552,17 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
         await frame.execute_script(_AUDIO_TAB_JS)
     except Exception:
         pass
-    await asyncio.sleep(2)
+    # Wait for the panel to actually be on screen. Proceeding blind is what produced
+    # `ElementNotVisible` on every challenge: the answer boxes exist in the DOM from the start,
+    # but sit inside #captcha__audio, which is display:none until the toggle marks it `toggled`.
+    for _ in range(10):
+        await asyncio.sleep(0.5)
+        vis = await _eval(frame, _AUDIO_VISIBLE_JS) or {}
+        if vis.get("visible"):
+            break
+    else:
+        print("    audio: panel never became visible — falling through", flush=True)
+        return False
     if (
         artifacts_dir
     ):  # dump audio-challenge DOM so selectors can be refined from real markup
@@ -572,22 +604,50 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     print(f"    audio transcript -> {answer!r}", flush=True)
     if not answer:
         return False
-    inp = await frame.find(tag_name="input", raise_exc=False)
-    if not inp:
-        print("    audio: no input field found", flush=True)
+    # The answer is NOT one text field. DataDome renders one box per digit —
+    # `.audio-captcha-inputs`, maxlength="1", data-index 0..N — so the old
+    # `find(tag_name="input")` + `insert_text(answer)` pushed a 6-char string at a 1-char box
+    # (and `find` returned whichever input came first in the document, including the hidden
+    # contact-form ones). Type one digit per box instead.
+    boxes = await frame.find(
+        class_name="audio-captcha-inputs", find_all=True, raise_exc=False
+    )
+    boxes = boxes if isinstance(boxes, list) else ([boxes] if boxes else [])
+    if not boxes:
+        print("    audio: no answer boxes found", flush=True)
         return False
-    await inp.insert_text(answer)
-    await asyncio.sleep(0.4 + random.random() * 0.4)
-    buttons = await frame.find(tag_name="button", raise_exc=False, find_all=True)
-    buttons = buttons if isinstance(buttons, list) else ([buttons] if buttons else [])
-    for b in buttons:
-        # pydoll declares `text` as an ASYNC property, so `b.text` is a coroutine, not a str.
-        # Without the await, `(b.text or "").lower()` raised AttributeError ('coroutine' object
-        # has no attribute 'lower'), the loop died before clicking anything, and the answer sat
-        # typed-but-unsubmitted — which is why a correct transcript still never cleared.
-        label = ((await b.text) or "").lower()
-        if any(k in label for k in ("submit", "verify", "check", "confirm")):
-            await b.click()
-            break
+    if len(answer) != len(boxes):
+        # Guard rather than guess: a transcript that doesn't fill the boxes exactly is a
+        # mis-transcription, and a partial fill leaves submit disabled anyway.
+        print(
+            f"    audio: transcript has {len(answer)} digits but {len(boxes)} boxes — skipping",
+            flush=True,
+        )
+        return False
+    for box, digit in zip(boxes, answer):
+        await box.click()  # focus the box; these auto-advance on input
+        await box.type_text(digit)
+        await asyncio.sleep(0.06 + random.random() * 0.12)
+    await asyncio.sleep(0.3 + random.random() * 0.4)
+    # The submit button ships `disabled` and only enables once every box is filled, so it must
+    # be clicked after the loop above, never before.
+    btn = await frame.find(class_name="audio-captcha-submit-button", raise_exc=False)
+    if btn is None:
+        buttons = await frame.find(tag_name="button", raise_exc=False, find_all=True)
+        buttons = (
+            buttons if isinstance(buttons, list) else ([buttons] if buttons else [])
+        )
+        for b in buttons:
+            # pydoll declares `text` as an ASYNC property, so `b.text` is a coroutine, not a
+            # str; without the await this raised AttributeError and killed the loop before any
+            # click, leaving a correct answer typed but never submitted.
+            label = ((await b.text) or "").lower()
+            if any(k in label for k in ("submit", "verify", "check", "confirm")):
+                btn = b
+                break
+    if btn is None:
+        print("    audio: no submit button found", flush=True)
+        return False
+    await btn.click()
     await asyncio.sleep(3)
     return not challenged(await _safe_source(tab))
