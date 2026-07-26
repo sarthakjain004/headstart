@@ -389,7 +389,9 @@ async def solve_slider(
                 print("    audio challenge cleared", flush=True)
                 return True
         except Exception as e:
-            print(f"    audio path errored: {type(e).__name__}", flush=True)
+            # Print the message, not just the class: "audio path errored: AttributeError" gave
+            # no way to tell which attribute, and hid the async-property bug above for two runs.
+            print(f"    audio path errored: {type(e).__name__}: {e}", flush=True)
     if drag_attempts and challenged(await _safe_source(tab)):
         if await _try_slider(tab, browser, artifacts_dir, drag_attempts):
             return True
@@ -474,10 +476,12 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     buttons = await frame.find(tag_name="button", raise_exc=False, find_all=True)
     buttons = buttons if isinstance(buttons, list) else ([buttons] if buttons else [])
     for b in buttons:
-        if any(
-            k in (b.text or "").lower()
-            for k in ("submit", "verify", "check", "confirm")
-        ):
+        # pydoll declares `text` as an ASYNC property, so `b.text` is a coroutine, not a str.
+        # Without the await, `(b.text or "").lower()` raised AttributeError ('coroutine' object
+        # has no attribute 'lower'), the loop died before clicking anything, and the answer sat
+        # typed-but-unsubmitted — which is why a correct transcript still never cleared.
+        label = ((await b.text) or "").lower()
+        if any(k in label for k in ("submit", "verify", "check", "confirm")):
             await b.click()
             break
     await asyncio.sleep(3)
