@@ -540,11 +540,11 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
     return not challenged(await _safe_source(tab))
 
 
-# Manual-first is the default. A human at the keyboard clears these in seconds (measured: 9s),
-# whereas every auto attempt spends a Whisper transcription or a scored drag, and a *rejected*
-# drag is what earned a hard block. Auto-solve stays available for unattended runs via
-# --auto-solve, which flips this.
-AUTO_SOLVE = False
+# The humanized slider drag is the default solver: it is 4-for-4 live since the pressure fix.
+# The audio path is OFF by default because it has never once cleared a challenge — it still
+# cannot open its own panel — so running it first only spends a Whisper transcription and a few
+# seconds before falling through to the drag anyway. --audio-first re-enables it.
+AUDIO_FIRST = False
 
 
 async def solve_slider(
@@ -557,18 +557,18 @@ async def solve_slider(
 ) -> bool:
     """Clear a DataDome challenge.
 
-    Default (AUTO_SOLVE False): hand it straight to the human in the visible browser window.
-    With --auto-solve: audio + Whisper -> humanized slider drag -> manual wait as the backstop.
-    `try_audio`/`drag_attempts` override the mode explicitly when passed.
+    Default: humanized slider drag, with a manual wait in the visible browser as the backstop.
+    With --audio-first: try audio + Whisper before the drag. `try_audio`/`drag_attempts`
+    override the mode explicitly when passed.
     """
     if try_audio is None:
-        try_audio = AUTO_SOLVE
+        try_audio = AUDIO_FIRST
     if drag_attempts is None:
-        drag_attempts = 2 if AUTO_SOLVE else 0
+        drag_attempts = 2
     if not challenged(await _safe_source(tab)):
         return True
-    if not try_audio and not drag_attempts:
-        print("    challenge hit — manual solve (auto-solve off)", flush=True)
+    if not try_audio:
+        print("    challenge hit — sliding (audio off)", flush=True)
     if try_audio:
         print("    challenge hit — trying audio + Whisper first...", flush=True)
         try:

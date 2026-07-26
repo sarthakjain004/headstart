@@ -18,7 +18,7 @@ Location forms: a normal location scrapes /role/l/{role}/{location}; the special
 "remote" scrapes the location-agnostic remote board /role/r/{role}.
 
 Usage:  python scripts/scrape/run_wellfound.py [role] [location]
-            [--headless] [--proxy host:port] [--no-warmup] [--no-scroll] [--auto-solve] [--max-pages N]
+            [--headless] [--proxy host:port] [--no-warmup] [--no-scroll] [--audio-first] [--max-pages N]
             [--delay S] [--jitter S]
         python scripts/scrape/run_wellfound.py software-engineer india
         python scripts/scrape/run_wellfound.py software-architect remote   # -> /role/r/...
@@ -514,8 +514,8 @@ def main() -> int:
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
     human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
-    # Manual solve is the default; --auto-solve re-enables audio + the humanized drag.
-    datadome_slider.AUTO_SOLVE = "--auto-solve" in sys.argv
+    # The slider drag is the default solver; --audio-first tries audio before it.
+    datadome_slider.AUDIO_FIRST = "--audio-first" in sys.argv
     proxy = _flag("--proxy", "") or None  # e.g. http://user:pass@host:port
     max_pages = _flag("--max-pages", 0)  # 0 = all pages
     delay = _flag("--delay", 4.0)  # seconds between pages
