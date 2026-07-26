@@ -12,7 +12,7 @@ Standing rule: only ever request Wellfound through Cloudflare WARP — this abor
 so it can't leak the residential IP.
 
 Run:  python scripts/scrape/run_wellfound_sweep.py
-          [--headless] [--max-pages N] [--delay S] [--no-warmup]
+          [--headless] [--max-pages N] [--delay S] [--jitter S] [--no-warmup] [--no-scroll]
 """
 
 import asyncio
@@ -71,9 +71,11 @@ async def main() -> int:
     print(f"audio fallback: {'OK' if ok else 'MISSING'} — {status}", flush=True)
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
+    human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
     append = "--append" in sys.argv
     max_pages = _flag("--max-pages", 0)  # 0 = all pages per board
     delay = _flag("--delay", 4.0)
+    jitter = _flag("--jitter", 2.0)  # width of the random spread added to --delay
     start_board = _flag(
         "--start-board", 0
     )  # 0-based index into the (filtered) board list
@@ -131,7 +133,9 @@ async def main() -> int:
                 seen,
                 max_pages,
                 delay,
+                jitter,
                 warmup and i == start_board,
+                human_pause,
                 start_page=sp,
             )
             per[label] = added if ok else "BLOCKED"

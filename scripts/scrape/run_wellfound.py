@@ -18,7 +18,8 @@ Location forms: a normal location scrapes /role/l/{role}/{location}; the special
 "remote" scrapes the location-agnostic remote board /role/r/{role}.
 
 Usage:  python scripts/scrape/run_wellfound.py [role] [location]
-            [--headless] [--proxy host:port] [--no-warmup] [--max-pages N] [--delay S]
+            [--headless] [--proxy host:port] [--no-warmup] [--no-scroll] [--max-pages N]
+            [--delay S] [--jitter S]
         python scripts/scrape/run_wellfound.py software-engineer india
         python scripts/scrape/run_wellfound.py software-architect remote   # -> /role/r/...
 """
@@ -84,6 +85,12 @@ async def _human_pause(tab) -> None:
     Only call this on a resolved app page: dispatching input while the challenge page is up or
     mid-navigation can leave the CDP command unacked until pydoll's 60s timeout. The wait_for
     is a backstop so a stalled dispatch can never block the scrape.
+
+    ``--no-scroll`` skips this entirely. It is the single biggest per-page cost (a smooth
+    humanized scroll plus a 0.4-1.2s dwell, on every page of every board), so dropping it is the
+    largest speed lever available — but it also removes the only behavioural signal we emit, and
+    behaviour is what the paragraph above exists to produce. Expect more challenges with it off;
+    that is the trade being made, not a bug.
     """
 
     async def _act():
@@ -299,7 +306,9 @@ async def scrape_url(
     seen: set[str],
     max_pages: int,
     delay: float,
+    jitter: float,
     warmup: bool,
+    human_pause: bool = True,
     start_page: int = 1,
 ) -> tuple[int, bool]:
     """Scrape `?page=N` of one board from `start_page` onward into `writer`, deduping via `seen`.
@@ -331,7 +340,7 @@ async def scrape_url(
     # not a cold deep-link (DataDome's intent-based detection, method #6).
     if warmup:
         warm = await _load_page(tab, "https://wellfound.com/jobs", browser)
-        if not _is_blocked(
+        if human_pause and not _is_blocked(
             warm
         ):  # only humanize on a resolved page, never the challenge
             await _human_pause(tab)
@@ -355,12 +364,15 @@ async def scrape_url(
     last = max(last, start_page)
     print(f"  {page_count} pages available; scraping {start_page}..{last}", flush=True)
     emit(jobs, start_page, last)
-    await _human_pause(tab)  # dwell on the resolved page before paginating
+    if human_pause:
+        await _human_pause(tab)  # dwell on the resolved page before paginating
 
     consecutive_blocks = 0
     for page in range(start_page + 1, last + 1):
-        # Jittered pacing — polite, and machine-precise intervals are themselves a tell.
-        await asyncio.sleep(delay + random.random() * 2)
+        # Jittered pacing — polite, and machine-precise intervals are themselves a tell, so
+        # `jitter` is the width of the random spread, not decoration: narrowing it tightens
+        # the interval band and makes the cadence more machine-regular.
+        await asyncio.sleep(delay + random.random() * jitter)
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
         if _is_blocked(html):
             consecutive_blocks += 1
@@ -379,7 +391,8 @@ async def scrape_url(
                 break
             continue
         consecutive_blocks = 0
-        await _human_pause(tab)
+        if human_pause:
+            await _human_pause(tab)
         jobs, _ = parse_page(html, scraped_at)
         emit(jobs, page, last)
     return added, True
@@ -390,8 +403,10 @@ async def scrape(
     headless: bool,
     max_pages: int,
     delay: float,
+    jitter: float,
     proxy: str | None,
     warmup: bool,
+    human_pause: bool,
 ) -> int:
     """Single-board scrape: open one Chrome + the CSV, scrape `base_url`, stream rows."""
     opts = _options(headless, proxy)
@@ -420,7 +435,9 @@ async def scrape(
             seen,
             max_pages,
             delay,
+            jitter,
             warmup,
+            human_pause,
         )
     f.close()
     print(f"DONE: {added} jobs -> data/jobs/wellfound.csv", flush=True)
@@ -438,9 +455,11 @@ def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     headless = "--headless" in sys.argv
     warmup = "--no-warmup" not in sys.argv
+    human_pause = "--no-scroll" not in sys.argv  # skip the per-page mouse+scroll dwell
     proxy = _flag("--proxy", "") or None  # e.g. http://user:pass@host:port
     max_pages = _flag("--max-pages", 0)  # 0 = all pages
     delay = _flag("--delay", 4.0)  # seconds between pages
+    jitter = _flag("--jitter", 2.0)  # width of the random spread added to --delay
     role = args[0] if args else "software-engineer"
     location = args[1] if len(args) > 1 else "india"
     # location "remote" → the location-agnostic remote board /role/r/{role};
@@ -453,10 +472,12 @@ def main() -> int:
     print(f"audio fallback: {'OK' if ok else 'MISSING'} — {status}", flush=True)
     print(
         f"GET {base_url}  (headless={headless}, max_pages={max_pages or 'all'},"
-        f" proxy={'yes' if proxy else 'no'}, warmup={warmup})",
+        f" proxy={'yes' if proxy else 'no'}, warmup={warmup}, scroll={human_pause})",
         flush=True,
     )
-    return asyncio.run(scrape(base_url, headless, max_pages, delay, proxy, warmup))
+    return asyncio.run(
+        scrape(base_url, headless, max_pages, delay, jitter, proxy, warmup, human_pause)
+    )
 
 
 if __name__ == "__main__":
