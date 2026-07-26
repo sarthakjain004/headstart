@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 from pydoll.browser import Chrome
 from datadome_slider import audio_ready
-from run_wellfound import COLS, EXP, OUT, _flag, _options, scrape_url
+from run_wellfound import COLS, EXP, OUT, HardBlocked, _flag, _options, scrape_url
 
 # Keep in sync with docs/wellfound/target-roles.md
 ROLES = [
@@ -123,21 +123,34 @@ async def main() -> int:
                 flush=True,
             )
             # Warm-up only before the first board scraped; later boards are already in-session.
-            added, ok = await scrape_url(
-                tab,
-                browser,
-                url,
-                scraped_at,
-                writer,
-                f,
-                seen,
-                max_pages,
-                delay,
-                jitter,
-                warmup and i == start_board,
-                human_pause,
-                start_page=sp,
-            )
+            try:
+                added, ok = await scrape_url(
+                    tab,
+                    browser,
+                    url,
+                    scraped_at,
+                    writer,
+                    f,
+                    seen,
+                    max_pages,
+                    delay,
+                    jitter,
+                    warmup and i == start_board,
+                    human_pause,
+                    start_page=sp,
+                )
+            except HardBlocked as e:
+                # Stop the whole sweep: every further request returns the same denial and
+                # re-signals while it is live. Resume with --start-board once it lapses.
+                per[label] = "HARD-BLOCKED"
+                print(
+                    f"\n!! HARD BLOCK: {e}\n"
+                    f"   DataDome denied access outright — not a solvable challenge.\n"
+                    f"   Stopping the sweep. Let the restriction lapse, then resume with:\n"
+                    f"     --append --start-board {i} --start-page {sp}",
+                    flush=True,
+                )
+                break
             per[label] = added if ok else "BLOCKED"
     f.close()
 

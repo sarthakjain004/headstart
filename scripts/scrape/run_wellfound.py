@@ -120,6 +120,24 @@ def _is_blocked(html: str) -> bool:
     )
 
 
+# A *challenge* is solvable; a *hard block* is not. DataDome serves both from
+# captcha-delivery.com, so `_is_blocked` cannot tell them apart — which is how a run once spent
+# its whole time "solving" a page that had no slider, no audio panel and no answer boxes, because
+# the real title was "You have been blocked" (see artifacts/failures/2026-07-26_133539).
+_HARD_BLOCK_MARKERS = ("You have been blocked", "Access is temporarily restricted")
+
+
+def is_hard_block(html: str) -> bool:
+    """True when DataDome has denied access outright, rather than offering a challenge."""
+    return any(m in html for m in _HARD_BLOCK_MARKERS)
+
+
+class HardBlocked(RuntimeError):
+    """Access denied outright. Unlike a challenge there is nothing to solve, and unlike a
+    per-board block there is no point trying the next board — every request now gets the same
+    page, and each one re-signals while the restriction is live. Aborts the whole run."""
+
+
 async def _load_page(tab, url: str, browser=None) -> str:
     """Navigate to one URL, waiting out / solving the DataDome challenge.
 
@@ -348,6 +366,8 @@ async def scrape_url(
     # First page (start_page): clears the challenge and tells us how many pages exist.
     html = await _load_page(tab, f"{base_url}?page={start_page}", browser)
     DEBUG_HTML.write_text(html, encoding="utf-8")
+    if is_hard_block(html):
+        raise HardBlocked(f"hard block on page {start_page} of {base_url}")
     if _is_blocked(html):
         print(
             f"  BLOCKED on page {start_page}: DataDome served the challenge instead of the app."
@@ -374,6 +394,8 @@ async def scrape_url(
         # the interval band and makes the cadence more machine-regular.
         await asyncio.sleep(delay + random.random() * jitter)
         html = await _load_page(tab, f"{base_url}?page={page}", browser)
+        if is_hard_block(html):
+            raise HardBlocked(f"hard block on page {page} of {base_url}")
         if _is_blocked(html):
             consecutive_blocks += 1
             print(
