@@ -277,6 +277,66 @@ async def _attach_captcha_frame(tab, browser):
     return None
 
 
+async def _oopif_offset(tab) -> tuple[float, float]:
+    """Page offset of the captcha OOPIF iframe (≈0,0 when it fills the viewport).
+
+    OOPIF-relative coordinates have to be shifted by this to become main-page coordinates that
+    `tab`'s mouse dispatch will land on.
+    """
+    try:
+        frames = await tab.find(tag_name="iframe", find_all=True, raise_exc=False) or []
+        for el in frames if isinstance(frames, list) else [frames]:
+            if "captcha-delivery" in (el.get_attribute("src") or ""):
+                b = await el.get_bounds_using_js()
+                return b.get("x", 0) or 0, b.get("y", 0) or 0
+    except Exception:
+        pass
+    return 0.0, 0.0
+
+
+_RECT_JS = """
+return (function(){
+  const e = document.querySelector(%r);
+  if(!e) return null;
+  const b = e.getBoundingClientRect();
+  if(b.width < 2 || b.height < 2) return null;
+  return {x:b.left + b.width/2, y:b.top + b.height/2};
+})();
+"""
+
+
+async def _click_trusted(tab, oopif, selector: str) -> bool:
+    """Click an element in the captcha frame with REAL mouse input, not JS `.click()`.
+
+    A scripted `.click()` dispatches an event with `isTrusted: false`. DataDome's own tag checks
+    `isTrusted` (it is why _human_pause uses CDP input, and why the pressure artifact mattered),
+    so its UI handlers ignore synthetic clicks — which is why toggling to the audio panel silently
+    did nothing and the answer boxes stayed `display:none`. Resolve the element's centre, shift it
+    by the OOPIF offset, and dispatch a genuine press/release there.
+    """
+    rect = await _eval(oopif, _RECT_JS % selector)
+    if not rect:
+        return False
+    ox, oy = await _oopif_offset(tab)
+    x, y = ox + rect["x"], oy + rect["y"]
+    await _mouse(tab, MouseEventType.MOUSE_MOVED, x, y)
+    await asyncio.sleep(0.05 + random.random() * 0.10)
+    await _mouse(
+        tab,
+        MouseEventType.MOUSE_PRESSED,
+        x,
+        y,
+        force=_PRESSED,
+        button=MouseButton.LEFT,
+        clicks=1,
+    )
+    await asyncio.sleep(0.04 + random.random() * 0.08)
+    await _mouse(
+        tab, MouseEventType.MOUSE_RELEASED, x, y, button=MouseButton.LEFT, clicks=1
+    )
+    return True
+
+
 async def _slider_geometry(tab, oopif):
     """Locate the dynamically-rendered slider; return page-coord (sx, sy, ex) or None.
 
@@ -287,16 +347,7 @@ async def _slider_geometry(tab, oopif):
     geo = await _eval(oopif, _SLIDER_JS)
     if not geo:
         return None
-    ox = oy = 0.0
-    try:
-        frames = await tab.find(tag_name="iframe", find_all=True, raise_exc=False) or []
-        for el in frames if isinstance(frames, list) else [frames]:
-            if "captcha-delivery" in (el.get_attribute("src") or ""):
-                b = await el.get_bounds_using_js()
-                ox, oy = b.get("x", 0) or 0, b.get("y", 0) or 0
-                break
-    except Exception:
-        pass
+    ox, oy = await _oopif_offset(tab)
     sx = ox + geo["hx"] + geo["hw"] / 2
     sy = oy + geo["hy"] + geo["hh"] / 2
     ex = (
@@ -420,9 +471,14 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
             )
         except Exception:
             pass
-    try:  # audio-first may have left the audio tab active; switch back to the slider
-        await oopif.execute_script(_IMAGE_TAB_JS)
-        await asyncio.sleep(1.0)
+    # audio-first may have left the audio tab active; switch back to the slider. Same reasoning
+    # as the audio toggle: a real click, because the handler ignores untrusted ones.
+    try:
+        state = await _eval(oopif, _STATE_JS) or {}
+        if "toggled" in ((state.get("panels") or {}).get("audio") or ""):
+            if not await _click_trusted(tab, oopif, "#captcha__puzzle__button"):
+                await oopif.execute_script(_IMAGE_TAB_JS)
+            await asyncio.sleep(1.0)
     except Exception:
         pass
     # One directory per solve, so a failure's evidence can't be overwritten by the next challenge.
@@ -548,10 +604,13 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     frame = await _attach_captcha_frame(tab, browser)
     if frame is None:
         return False
-    try:
-        await frame.execute_script(_AUDIO_TAB_JS)
-    except Exception:
-        pass
+    # Real mouse click first — DataDome's toggle handler ignores untrusted synthetic clicks.
+    # The JS click stays as a fallback for markup variants without that id.
+    if not await _click_trusted(tab, frame, "#captcha__audio__button"):
+        try:
+            await frame.execute_script(_AUDIO_TAB_JS)
+        except Exception:
+            pass
     # Wait for the panel to actually be on screen. Proceeding blind is what produced
     # `ElementNotVisible` on every challenge: the answer boxes exist in the DOM from the start,
     # but sit inside #captcha__audio, which is display:none until the toggle marks it `toggled`.
