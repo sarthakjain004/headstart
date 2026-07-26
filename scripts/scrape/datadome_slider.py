@@ -14,9 +14,11 @@ See experiment/wellfound-datadome/LOG.md.
 """
 
 import asyncio
+import json
 import random
 import re
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from pydoll.browser.tab import Tab
@@ -132,6 +134,80 @@ function search(){
 }
 return search();
 """
+
+# Widget state, sampled either side of a drag. The decisive field is the handle's `left` and the
+# mask's width: if they are unchanged after a drag, the input never reached the widget (our
+# coordinates or dispatch are wrong). If they DID move and the challenge still stands, the drag
+# landed and DataDome scored it and rejected it — two very different bugs that the logs could not
+# previously tell apart.
+_STATE_JS = r"""
+return (function(){
+  const q = s => document.querySelector(s);
+  const r = e => { if(!e) return null; const b=e.getBoundingClientRect();
+                   return {left:Math.round(b.left), top:Math.round(b.top),
+                           width:Math.round(b.width), height:Math.round(b.height)}; };
+  const el = s => { const e=q(s); return e ? {rect:r(e), cls:e.className,
+                    style:e.getAttribute('style')||''} : null; };
+  return {
+    url: location.href,
+    container: el('.sliderContainer'),
+    handle:    el('.slider'),
+    mask:      el('.sliderMask'),
+    target:    el('.sliderTarget'),
+    sliderText: (q('.sliderText')||{}).innerText || null,
+    toast: (q('.toast')||{}).innerText || null,
+    panels: {puzzle:(q('#captcha__puzzle')||{}).className||null,
+             bottom:(q('#captcha__frame__bottom')||{}).className||null,
+             audio:(q('#captcha__audio')||{}).className||null},
+    canvases: [...document.querySelectorAll('canvas')].map(c=>({w:c.width,h:c.height})),
+    bodyText: (document.body ? document.body.innerText : '').slice(0,1500)
+  };
+})();
+"""
+
+
+async def _capture(tab, oopif, outdir: Path, tag: str) -> dict | None:
+    """Snapshot widget state + DOM + screenshot into `outdir` under `tag`. Never raises."""
+    state = await _eval(oopif, _STATE_JS)
+    outdir.mkdir(parents=True, exist_ok=True)
+    try:
+        (outdir / f"{tag}-state.json").write_text(
+            json.dumps(state, indent=1), encoding="utf-8"
+        )
+    except Exception:
+        pass
+    for obj, name in (
+        (oopif, f"{tag}-captcha-dom.html"),
+        (tab, f"{tag}-page-dom.html"),
+    ):
+        try:
+            (outdir / name).write_text(await obj.page_source, encoding="utf-8")
+        except Exception:
+            pass
+    try:
+        await tab.take_screenshot(path=str(outdir / f"{tag}.png"))
+    except Exception:
+        pass
+    return state
+
+
+def _moved(before: dict | None, after: dict | None) -> str:
+    """Did the drag actually shift the widget? The single most diagnostic line in the capture."""
+    if not before or not after:
+        return "unknown (state capture failed)"
+    bh = (before.get("handle") or {}).get("rect") or {}
+    ah = (after.get("handle") or {}).get("rect") or {}
+    bm = (before.get("mask") or {}).get("rect") or {}
+    am = (after.get("mask") or {}).get("rect") or {}
+    dx = (ah.get("left", 0) or 0) - (bh.get("left", 0) or 0)
+    dw = (am.get("width", 0) or 0) - (bm.get("width", 0) or 0)
+    verdict = (
+        "INPUT NEVER REACHED THE WIDGET (coords/dispatch wrong)"
+        if dx == 0 and dw == 0
+        else "drag landed — widget moved, so DataDome scored and rejected it"
+    )
+    return f"handle moved {dx}px, mask grew {dw}px -> {verdict}"
+
 
 # Side-effect JS: switch to the image/slider tab (needed if audio-first switched away).
 _IMAGE_TAB_JS = """
@@ -338,6 +414,12 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
         await asyncio.sleep(1.0)
     except Exception:
         pass
+    # One directory per solve, so a failure's evidence can't be overwritten by the next challenge.
+    run_dir = (
+        Path(artifacts_dir) / "failures" / datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        if artifacts_dir
+        else None
+    )
     for attempt in range(attempts):
         if not challenged(await _safe_source(tab)):
             return True
@@ -352,11 +434,19 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
                 f"    slider attempt {attempt + 1}: handle not locatable (dynamic widget)",
                 flush=True,
             )
+            if run_dir:
+                await _capture(tab, oopif, run_dir, f"attempt{attempt + 1}-nohandle")
+                print(f"    [capture] {run_dir}", flush=True)
             return False
         sx, sy, ex = coords
         print(
             f"    slider attempt {attempt + 1}: drag ({sx:.0f},{sy:.0f})->({ex:.0f}) [dynamic]",
             flush=True,
+        )
+        before = (
+            await _capture(tab, oopif, run_dir, f"attempt{attempt + 1}-before")
+            if run_dir
+            else None
         )
         await _humanized_drag(
             tab, sx, sy, ex + random.uniform(-2, 2), sy + random.uniform(-2, 2)
@@ -365,6 +455,21 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
         if not challenged(await _safe_source(tab)):
             print(f"    slider cleared on attempt {attempt + 1}", flush=True)
             return True
+        # Failed: record the post-drag state while it is still on screen, and say in one line
+        # whether the widget even moved — the difference between "we missed" and "we were judged".
+        if run_dir:
+            after = await _capture(tab, oopif, run_dir, f"attempt{attempt + 1}-after")
+            print(f"    [capture] {_moved(before, after)}", flush=True)
+            try:
+                (run_dir / f"attempt{attempt + 1}-drag.json").write_text(
+                    json.dumps(
+                        {"sx": sx, "sy": sy, "ex": ex, "attempt": attempt + 1}, indent=1
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+            print(f"    [capture] evidence -> {run_dir}", flush=True)
     return not challenged(await _safe_source(tab))
 
 
