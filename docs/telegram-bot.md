@@ -29,7 +29,7 @@ Until the secrets exist the workflow is a deliberate green no-op.
 
 - **Latency:** GitHub schedules cron loosely, so replies/alerts can lag 15–40 min. For
   instant replies, command-handling could move to a webhook (e.g. a free Cloudflare Worker);
-  notifications are scrape-paced (every 6h) either way.
+  notifications are scrape-paced (every 2h) either way.
 - **Privacy:** chat ids and filters live only in the private Gist, never the repo.
 - **First run** seeds the "seen jobs" set without alerting, so subscribers only get roles
   added after they subscribe.

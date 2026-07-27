@@ -176,7 +176,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Keep commit messages to a maximum of 50 words.
 
 ## Repo Conventions
-- **The 6-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
+- **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
   One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
   `scrape`, `scrape_join`, `filter_tech`, `update_ledgers` (`priority`/`cost` subcommands),
   `embed_plan`, `embed_run`, `embed_merge`, `index` (`sync`/`prune`/`compact` subcommands).

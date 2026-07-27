@@ -39,11 +39,11 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>76,214 live of 123,510<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>91,064 live of 144,583<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
-    subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, every 6h &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
+    subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, every 2h &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
         P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>20 enabled scrapers → fragments"]
@@ -97,7 +97,7 @@ guarantee — a shard that hits its budget still forwards what it finished.
 **Discovery** runs occasionally and by hand; its output, the liveness ledger under
 `data/validate/liveness/`, is committed to git and is what the ingest pipeline reads.
 
-**Ingest** (`.github/workflows/pipeline.yml`) runs on a 6-hour cron as five stages, two of them
+**Ingest** (`.github/workflows/pipeline.yml`) runs on a 2-hour cron as five stages, two of them
 matrix fan-outs capped at 15 concurrent **GitHub VMs** (ADR-0025 sharded embed, ADR-0026 sharded
 scrape). A run-level `concurrency` group serializes whole runs so two never race on the dataset.
 
@@ -110,14 +110,14 @@ their own schedules.
 
 ### Which boards a run picks
 
-A run does not scrape all 51,314 live boards on enabled ATSes. `pick_boards` takes a slice of
-`--max-boards` (default **20,000**) and splits it **70/30**: the top 70% by board-priority score —
+A run does not scrape all 66,164 live boards on enabled ATSes. `pick_boards` takes a slice of
+`--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
-and a random 30% exploration tail drawn from everything else, so newly-productive boards can never
-starve. The ledger currently holds 21,379 scored boards, comfortably more than the 14,000-board
-head, so the split holds exactly; only past ~30,500 boards would unused head slots roll into
-exploration. Boards a run skips are simply left alone — eviction is scoped to boards actually
-present in the scrape (ADR-0014), so a partial harvest never damages what it didn't look at.
+and a random 70% exploration tail drawn from everything else, so newly-productive boards can never
+starve. The tail is random over *everything* not in the head, not over unscraped boards alone, so
+it re-samples known boards too; that is what keeps eviction working on boards outside the head.
+Boards a run skips are simply left alone — eviction is scoped to boards actually present in the
+scrape (ADR-0014), so a partial harvest never damages what it didn't look at.
 
 ### Nothing scraped is ever wasted
 
@@ -154,7 +154,7 @@ than scraped. Its scraper class and tests stay intact; re-enable by removing it 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **123,510 boards**: 76,214 live, 30,362 dead, 16,934 unknown.
+liveness pipeline has probed **144,583 boards**: 91,064 live, 36,703 dead, 16,814 unknown.
 
 ## AI semantic search
 
@@ -200,7 +200,7 @@ correctness against the live Space.
   `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`
   (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus the bot: `filters.py`,
   `bot.py`, `telegram.py`, `state.py`.
-- `src/headstart/ingest/` — **the 6-hourly pipeline run**, one module per stage step, invoked as
+- `src/headstart/ingest/` — **the 2-hourly pipeline run**, one module per stage step, invoked as
   `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape`, `scrape_join`,
   `filter_tech`, `update_ledgers` (`priority`/`cost`), `embed_plan`, `embed_run`, `embed_merge`,
   `index` (`sync`/`prune`/`compact`). `.github/workflows/pipeline.yml` runs exactly these. Its
