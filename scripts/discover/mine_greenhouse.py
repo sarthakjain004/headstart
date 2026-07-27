@@ -25,8 +25,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
-PAGES = ROOT / "scripts" / "wayback_pages.py"
+PAGES = ROOT / "scripts" / "discover" / "wayback_pages.py"
 WORKERS = "4"
+
+# Fail loudly if the helper moves again. This exact path went stale in the scripts/ reorg and
+# `check=False` below swallowed the exit-2, so all three wayback miners reported success while
+# mining nothing — zoho and lever for weeks, greenhouse until 2026-07-27. A missing helper is a
+# broken miner, not a page that happened to fail.
+if not PAGES.exists():
+    raise SystemExit(f"helper not found: {PAGES} — did scripts/ move?")
 
 # (label, host). Add new regional data-center hosts here as Greenhouse adds them.
 HOSTS = [
