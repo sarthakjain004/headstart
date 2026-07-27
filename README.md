@@ -110,7 +110,9 @@ their own schedules.
 
 ### Which boards a run picks
 
-A run does not scrape all 66,164 live boards on enabled ATSes. `pick_boards` takes a slice of
+A run does not scrape every board it could. Enabled ATSes hold 66,182 live boards, of which
+**51,304 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so the 14,878
+live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
 and a random 70% exploration tail drawn from everything else, so newly-productive boards can never
