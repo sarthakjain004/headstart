@@ -2,6 +2,67 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## A cross-encoder reranker needs the Job *text*, which the index deliberately doesn't keep (2026-07-26)
+
+Designing resume→Job matching, the plan was "retrieve top N by cosine, then rerank properly." Two
+facts kill the obvious version of that.
+
+**A cross-encoder does not run on vectors.** The current search is a **bi-encoder**: resume and
+**Doc** are embedded *separately*, and only the two finished vectors are compared (cosine). That
+separation is exactly what makes precomputing possible — a Job's vector can be built once, months
+before anyone searches. A **cross-encoder** inverts this: it feeds **both raw texts into one model
+together**, so every resume token can attend to every job-description token, and it emits one
+relevance score for the pair. That joint attention is the whole accuracy gain, and it is also why
+nothing can be precomputed — the score exists only for a *pair*, and there are N pairs per search.
+The general form of the trap: **anything computed from the stored vectors alone cannot know more
+than cosine already knows**, because the vector is a lossy summary. More signal means going back to
+the text.
+
+**The text isn't there.** `index._schema()` stores id/ats/company/title/location/remote/
+employment_type/experience/min_years/max_years/experience_source/salary/department/url/posted_at,
+plus the vector. No description — by design, per ADR-0005/0006: a Doc is a transient string at embed
+time, encoded, and dropped. `title` is the only surviving text. So a cross-encoder in the Space
+would first need descriptions added to the index (~5 KB/Job × ~20k ≈ **~100 MB** on a snapshot the
+Space downloads at startup, ADR-0020 free tier), or a per-search fetch from the tech JSONL.
+
+**And the CPU budget is the harder wall.** Extrapolating from the measured 558 tok/s for a 137M
+model on 2 cores (ADR-0029 thread sweep): a pair is ~100 resume tokens + the ~1,040-token median
+description ≈ 1,140 tokens, so N=30 is ~34k tokens ≈ **~60 s** at nomic-class speed, worse for a
+278M reranker (bge-reranker-base) at ~120 s. Only a small reranker (MiniLM-class, ~22M) *and*
+truncating the description to ~256 tokens gets it to roughly 4 s — and that combination discards
+much of the accuracy the cross-encoder was adopted for. Estimates from a base rate, not measured on
+the Space; measure before committing.
+
+## Cosine similarity is a ranking signal, not a match percentage (2026-07-26)
+
+The UI renders `round(1 - _distance, 3)` as a score pill. Next to a typed query nobody over-reads
+it; next to a pasted **resume** every user will read 0.62 as "I'm a 62% match." That reading is
+wrong in three separate ways, and the fix is not rescaling.
+
+**The range never reaches 0.** Vectors are L2-normalized, so cosine is the angle between two points
+on a sphere. But every Job description and every resume is professional English about work — shared
+vocabulary, shared sentence shapes — so nothing in the corpus is ever near-perpendicular. Scores
+bunch into a narrow band near the top. Like measuring only adults' heights: everyone lands in
+150–200 cm, so rescaling that to "0–100% tall" makes an average person read as 40%.
+
+**Nothing was ever calibrated.** A calibrated score promises *of everything I scored 0.7, about 70%
+really are good fits*. The model was trained only so that **more relevant ranks higher** — ordering
+is the guarantee, magnitude is a by-product. No training step and no eval ever checked magnitude
+against outcomes, so a percent sign is a promise the number cannot keep.
+
+**The scale moves with the query.** Score depends on both texts, so a long resume and a short one
+produce different distributions against the same Job. Two equally good candidates can see 0.55 and
+0.71 purely from how their resume was worded — a number that shifts for reasons unrelated to fit
+cannot be a fit percentage.
+
+Practical consequences: rank gaps are tiny (top-1 to top-20 can be ~0.04, mostly noise), so
+displaying three decimals implies resolution that isn't there. If a real number is wanted, it has to
+come from a different operation than retrieval — a per-pair score, or a **coverage count** (met *k*
+of *n* stated requirements), which is defensible because it counts concrete things instead of
+predicting. Worth measuring your own index's score distribution (50 queries, spread of rank 1 vs
+rank 20) before designing around any assumed band; the 0.4–0.8 figure is the typical pattern for
+same-domain normalized embeddings, not a measurement of this corpus.
+
 ## Workable's Cloudflare is burst-tolerant but challenges sustained probing (2026-07-04)
 
 Re-probing workable's 16.6k unknowns through the new per-host gate (8 in-flight, 4 req/s): a

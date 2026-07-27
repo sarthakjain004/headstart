@@ -6,9 +6,19 @@ Zoho Recruit runs many regional data centers, each its OWN domain: zohorecruit.c
 region is a SEPARATE namespace. We had only mined .com, missing the entire .in / .eu /
 .com.au / .ca cohorts — the .in one being Indian companies on Zoho's India data center.
 
+The list below is the *complete* set of live Zoho Recruit data centers, enumerated 2026-07-27
+by DNS + HTTP probe rather than assumed: .jp, .uk, .sa, .sg and .com.cn also answer, and each
+serves the identical careers stack (a bogus tenant returns HTTP 200 with `cl-error-block`, the
+soft-404 check_liveness.p_zoho already treats as DEAD). Only .com.br resolves without being a
+tenant namespace — its root 400s and the wildcard subdomain doesn't resolve — so it is excluded.
+.co.uk/.nl/.de/.fr/.za/.mx have no DNS at all.
+
 This page-mines every data-center domain with a real cohort and folds the deduped tenants
 into data/wayback-ats/zoho.csv. Dedup is by full host (url), not the bare label, because
-"acme.zohorecruit.com" and "acme.zohorecruit.in" can be different companies.
+"acme.zohorecruit.com" and "acme.zohorecruit.in" can be different companies. NB the liveness
+ledger and data/ats-tenants-merged/ are keyed on the bare *tenant*, so a label present on two
+data centers still collapses downstream (44 such hosts measured 2026-07-27) — a full host is
+the only collision-free key for Zoho.
 
 After running, re-run scripts/merge/merge_tenants.py.
 
@@ -22,7 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
-PAGES = ROOT / "scripts" / "wayback_pages.py"
+PAGES = ROOT / "scripts" / "discover" / "wayback_pages.py"
 WORKERS = "4"
 
 CANON = ("zoho", "zohorecruit.com")  # writes zoho.csv directly (resumes prior state)
@@ -31,6 +41,11 @@ REGIONAL = [
     ("zoho_eu", "zohorecruit.eu"),  # EU
     ("zoho_au", "zohorecruit.com.au"),  # Australia
     ("zoho_ca", "zohorecruit.ca"),  # Canada
+    ("zoho_jp", "zohorecruit.jp"),  # Japan
+    ("zoho_sa", "zohorecruit.sa"),  # Saudi Arabia
+    ("zoho_cn", "zohorecruit.com.cn"),  # China
+    ("zoho_uk", "zohorecruit.uk"),  # UK
+    ("zoho_sg", "zohorecruit.sg"),  # Singapore
 ]
 
 
