@@ -24,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
-PAGES = ROOT / "scripts" / "wayback_pages.py"
+PAGES = ROOT / "scripts" / "discover" / "wayback_pages.py"
 WORKERS = "4"
 
 CANON = ("lever", "jobs.lever.co")  # writes lever.csv directly, resumes prior state
