@@ -47,11 +47,18 @@ on:
     inputs:
       max_boards:
         description: boards to scrape this run (0 = all live boards)
-        # 20000 of 51,314 live Boards on enabled ATSes. pick_boards splits this 70/30, so the run
-        # takes the top 14,000 scored Boards (the priority ledger holds 21,379, so the head is
-        # never short) plus 6,000 random unscored ones. Sized from the ledger: that slice carries
-        # ~59k more tech postings than the old 8,000, i.e. ~39k new Docs/run, ~126 min of embed
-        # across 15 shards at the post-pin-fix 2.89 s/Doc (~172 min at the pre-fix 3.96). Overshoot
+        # 20000 of ~52,925 live Boards on enabled ATSes. pick_boards splits this **30/70**
+        # (EXPLORE_FRAC=0.7, board_priority.py): the top 6,000 scored Boards plus a 14,000-Board
+        # random tail. Flipped from 70/30 on 2026-07-27 to work through the unscraped backlog —
+        # measured against both HF state ledgers (board_priority ∪ board_cost = 49,449 Boards ever
+        # scraped, keyed through each scraper's slug_from), 8,068 live Boards had never been
+        # scraped, 4,187 of them Workday. NB the 14,000 tail exceeds that backlog, so once it is
+        # cleared the tail is ordinary random resampling, not exploration.
+        # Trade-off: the scored head shrinks 14,000 -> 6,000, so top-yield Boards are revisited
+        # less often per run. That slows Eviction (a Job only leaves the index when its Board is
+        # re-scraped and the posting is gone), partly offset by the 2h cadence.
+        # Sizing: that slice carries ~59k more tech postings than the old 8,000, i.e. ~39k new
+        # Docs/run, ~126 min of embed across 15 shards at the post-pin-fix 2.89 s/Doc. Overshoot
         # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
         default: "20000"
 
