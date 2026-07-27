@@ -2,6 +2,74 @@
 
 Running log of non-obvious findings worth keeping. Newest first.
 
+## Liveness probes can't tell "no jobs" from "no Board" — four ATSes, one failure class (2026-07-27)
+
+A ten-agent discovery sweep turned up the same bug in four unrelated probes: **an ATS answers 200
+for a slug that never existed**, so a probe reading only the status code, or only a count, files
+phantoms as `live`. It is the most dangerous shape of wrong, because the output looks like data.
+
+| ATS | what a nonexistent slug returns | discriminator |
+|---|---|---|
+| smartrecruiters | `200 {"totalFound": 0}` — identical to a real Board with nothing open | Board host, redirects **not** followed |
+| eightfold | the vendor's *own* careers board, HTTP 200 on every surface | `domain=` param on the sitemap's job URLs |
+| keka | `200` + HTML "Invalid Tenant" / "Forbidden Access" | parse the body, never the status |
+| zoho | `200` soft-404 (recorded 2026-07-03) | body shape |
+
+Blast radius when unnoticed: eightfold had **44 Boards recorded live at exactly 63 jobs** —
+accenture, adp, walmart — because the fallthrough board was counted for each; accenture/adp/walmart
+returned a **byte-identical** 14,403-byte sitemap (same SHA-256) while a real tenant (qualcomm)
+returned 479,510 bytes / 1,903 jobs. Five of those rows predated the sweep. smartrecruiters had
+**121 phantom rows** and a "99.9% hit rate" that was purely the artifact restating itself.
+
+**Two traps in the fix.** (1) *Redirects hide the signal.* `careers.smartrecruiters.com/{slug}`
+returns 200 for every slug once redirects are followed — the shared `_get` follows them, so the
+check silently passes everything. Only with `allow_redirects=False` does the **target** show:
+a never-existed slug bounces to the generic `jobs.smartrecruiters.com`, while a customer running its
+career site on its own domain bounces there instead (`Accor` → `careers.accor.com`) and is real.
+(2) *Order matters.* Ask the authoritative API **first** and consult the host only to settle a zero;
+a host-first check discards custom-domain Boards — 88 of them holding 45,134 postings.
+
+**Cheap general guard:** assert variance before writing a batch. One count covering ≥40% of a batch
+is a fallthrough signature, not a coincidence — `_warn_if_constant` in `check_liveness.py` now
+shouts. And when a surface genuinely cannot resolve a count, the honest verdict is `unknown` (it
+gets re-probed) rather than a fabricated number or a premature `dead` (ADR-0012).
+
+## Three wayback miners silently mined nothing for weeks (2026-07-27)
+
+`mine_greenhouse.py`, `mine_zoho.py` and `mine_lever.py` each invoked `scripts/wayback_pages.py` —
+a path the `scripts/` reorg had moved to `scripts/discover/`. Because the call used
+`subprocess.run(..., check=False)`, the exit-2 was swallowed and every miner **reported success
+while producing nothing**, then rewrote its own output file from itself. Undetectable from the
+outside: the run printed its normal progress and exited 0.
+
+Concrete cost: `jobs.eu.lever.co` had never been mined at all, and one pass over it found 26 EU
+Boards. Zoho's docstring separately claimed five data centres where **ten** exist — Japan, Saudi
+Arabia and China held real unmined Boards.
+
+Two habits fall out. **`check=False` on a helper invocation needs a reason**, otherwise a missing
+helper is indistinguishable from a helper that ran; an existence assert on the path costs one line
+and fails loudly. And **a miner's docstring is a claim, not evidence** — enumerate the namespace by
+probe before trusting a hardcoded list.
+
+## The same Board lands twice when casing drifts (2026-07-27)
+
+Ledgers key on the exact string `{ats}:{slug}`, so a rediscovered Board written with different
+casing than the baseline creates a **second row for the same Board**: smartrecruiters 1,616 pairs
+(238,726 double-counted postings, a 21% overstatement), workday 745. Both APIs accept either
+spelling, so nothing fails — the ledger just quietly doubles.
+
+Check `rows == unique slugs == case-folded unique slugs` before landing a batch; any inequality is
+duplication. The same defect wearing a different hat cost zoho 44 Boards, where the ledger keyed on
+a bare label while a Zoho slug is really a *host*, collapsing `acme.zohorecruit.in` and
+`acme.zohorecruit.com` into one row.
+
+**Choosing which spelling survives has a cost worth pricing.** `board_priority.csv` and
+`board_cost.csv` key on the same string, so re-casing an existing Board orphans its EWMA tech-yield
+score and its measured scrape cost — it re-enters as unscored and gets cost-estimated from the ATS
+median. Re-casing 1,616 smartrecruiters Slugs orphaned **883** of them. Prefer the API's own
+canonical identifier when it reports one (smartrecruiters returns `identifier: "Accor"` even when
+queried as `accor`), and otherwise keep the existing form for known Boards.
+
 ## A cross-encoder reranker needs the Job *text*, which the index deliberately doesn't keep (2026-07-26)
 
 Designing resume→Job matching, the plan was "retrieve top N by cosine, then rerank properly." Two
