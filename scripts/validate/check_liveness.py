@@ -259,8 +259,22 @@ def p_greenhouse(t, u):
 
 
 def p_lever(t, u):
-    host = "api.eu" if "jobs.eu.lever.co" in u else "api"
-    return _classify(f"https://{host}.lever.co/v0/postings/{t}?mode=json", _len_of)
+    # Try the instance the discovered url hints at, then the other one — the slug alone doesn't
+    # say which instance hosts the board, exactly as LeverScraper.fetch_raw already assumes.
+    # Trusting the url's hint alone marks a board DEAD whenever discovery found it on the global
+    # host but the company actually sits on EU: measured 2026-07-27, 13 boards the ledger called
+    # dead answered live on api.eu.lever.co. Only a 404 from *both* instances is definitive.
+    hinted = "api.eu" if "jobs.eu.lever.co" in u else "api"
+    verdict = DEAD
+    for host in (hinted, "api" if hinted == "api.eu" else "api.eu"):
+        v, jobs = _classify(
+            f"https://{host}.lever.co/v0/postings/{t}?mode=json", _len_of
+        )
+        if v == LIVE:
+            return v, jobs
+        if v == UNKNOWN:
+            verdict = UNKNOWN  # inconclusive on one instance -> can't call it dead
+    return verdict, None
 
 
 def p_ashby(t, u):
@@ -552,6 +566,27 @@ def p_rippling(t, u):
     )
 
 
+# Eightfold's own careers board, served as the fallthrough for any {slug}.eightfold.ai host that
+# resolves but has no tenant board behind it. Its job URLs carry `?domain=eightfold.ai`; a real
+# tenant's carry its own (`domain=micron.com`, `domain=kering.com`, ...). Verified 2026-07-27:
+# accenture / adp / walmart all returned the *byte-identical* 14,403-byte sitemap — same SHA-256,
+# 63 jobs each — while 24 sampled known-good Boards every one carried their own domain. Without
+# this check those hosts read as LIVE with a plausible-looking 63 jobs and the scrape would file
+# Eightfold's own postings under the wrong company.
+_EF_VENDOR_DOMAIN = re.compile(r"/careers/job/[^<\s]*?[?&]domain=eightfold\.ai\b", re.I)
+_EF_TENANT_DOMAIN = re.compile(r"/careers/job/[^<\s]*?[?&]domain=([^&\"'<\s]+)", re.I)
+
+
+def _eightfold_is_vendor_board(text):
+    """True when this sitemap is Eightfold's own board rather than the queried tenant's."""
+    domains = {d.lower() for d in _EF_TENANT_DOMAIN.findall(text)}
+    if not domains:
+        return False  # no domain= to judge by (older sitemaps) — leave the verdict to the caller
+    return domains == {"eightfold.ai"} or bool(
+        _EF_VENDOR_DOMAIN.search(text) and len(domains) == 1
+    )
+
+
 def p_eightfold(t, u):
     # The public PCSX board: /careers/sitemap.xml lists every job as a /careers/job/ URL (or a
     # sitemap_index of child sitemaps — for the count we just probe the first child). A 200 that
@@ -563,6 +598,8 @@ def p_eightfold(t, u):
     if status != 200:
         return UNKNOWN, None
     text = body.decode("utf-8", "replace")
+    if _eightfold_is_vendor_board(text):
+        return DEAD, None
     n = text.count("/careers/job/")
     if n:
         return LIVE, n
@@ -572,7 +609,10 @@ def p_eightfold(t, u):
     if child and "index" not in child.group(1).lower():
         cs, cbody = _get(child.group(1))
         if cs == 200:
-            return LIVE, cbody.decode("utf-8", "replace").count("/careers/job/")
+            ctext = cbody.decode("utf-8", "replace")
+            if _eightfold_is_vendor_board(ctext):
+                return DEAD, None
+            return LIVE, ctext.count("/careers/job/")
     if "<urlset" in text or "<sitemapindex" in text:
         return LIVE, 0  # valid but empty board
     return DEAD, None

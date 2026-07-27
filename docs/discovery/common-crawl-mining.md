@@ -95,6 +95,23 @@ had captures; it only surfaced at `CC-MAIN-2020-45`, where the newer ATSes (turb
 qandle, beehive — founded ~2019–2021) legitimately have zero captures. Fix: capture the HTTP
 status — `200` parse, `404` legitimate-empty, only `429/403/5xx`/timeouts are real blocks.
 
+**400 "Page N invalid" read as a throttle** — the same trap one status code over, found again
+2026-07-27 while mining Ashby. A page *past the end* is not an empty `200`; it is:
+
+```
+GET …/CC-MAIN-2026-25-index?url=jobs.ashbyhq.com&matchType=domain&page=2
+400 {"message": "Page 2 invalid: First Page is 0, Last Page is 1"}
+```
+
+So the "only `429/403/5xx` are real blocks" rule above is necessary but not sufficient: a miner
+that walks `page=0,1,2,…` until it errors will read the very next page after the data ends as a
+block. `mine_ashby.py` did, and its blocked-branch `return`ed out of the sweep, so it aborted on
+the *first* crawl and left 38 of 39 unmined — silently, looking exactly like a genuine throttle.
+Fix, and the pattern to copy: ask `&showNumPages=true` first (it answers
+`{"pages": N, "pageSize": …, "blocks": …}`) and iterate `range(N)`, so the bad page is never
+requested; treat a `400` whose body says `invalid` as definitively-empty; and make a blocked page
+`continue` (left unmarked in the checkpoint, retried next run) rather than abort the whole sweep.
+
 **Flaky old indexes.** The 2013–2018 crawls are served more slowly and throw intermittent
 `502`s. Fix: bumped per-query retries to 6 with backoff, so a transient `502` is absorbed
 within a crawl instead of aborting it.
@@ -121,6 +138,41 @@ range, and **two separate NordVPN exits** (a Seattle IP, then a London IP) — e
 for ~35–40 crawls before CC cut it off. The only client-side escape is a **fresh exit IP**:
 when blocked, switch the VPN to another server and rerun `scripts/discover/cc_miner.py` — it resumes where it
 stopped. That rotation is how we covered the full range across three IPs.
+
+**It is a TCP-level refusal, so no HTTP client can talk its way past it.** Diagnosed precisely
+2026-07-27: DNS still resolves (`index.commoncrawl.org` → `54.237.141.66`), but a bare
+`socket.connect((host, 443))` returns `ECONNREFUSED` in ~4s — *before* any TLS handshake, so
+there is no JA3 fingerprint or JS challenge involved. `curl_cffi` with `impersonate="chrome"`
+and `"safari"` both fail identically with `curl: (7)`. Don't reach for TLS impersonation or a
+challenge solver here; they fix a different failure. Rotate the IP, wait it out, or use the
+mirror below.
+
+### The S3 mirror is a *different host* and is not blocked
+
+**`data.commoncrawl.org` stays reachable while `index.commoncrawl.org` refuses the same IP**
+(verified 2026-07-27: `HTTP 206` on a range GET, minutes after the API host started refusing).
+It serves the very same index files, so the whole CDX feeder can run off it — no VPN rotation,
+and it is *cheaper* than the API because it fetches only the gzip blocks for one host instead of
+paging a whole result set.
+
+The layout is `cc-index/collections/{crawl}/indexes/`, holding `cluster.idx` plus `cdx-NNNNN.gz`.
+`cluster.idx` is a **sorted, sparse** map — one line per ~3000 index lines:
+
+```
+com,ashbyhq,jobs)/ 20260614013756<TAB>cdx-00036.gz<TAB>515211635<TAB>215470<TAB>890150
+{SURT key} {timestamp}      {block file}   {offset}     {length}   {block #}
+```
+
+Sorted order is the whole trick: binary-search it with ~25 range GETs of 16 KB (~20s over a
+101 MB file), then range-GET just the `cdx-NNNNN.gz` blocks it points at and gunzip them.
+`scripts/discover/mine_ashby.py` (`_cc_blocks` / `commoncrawl_s3`) implements this and is the
+pattern to copy.
+
+**The one bug to avoid: `cluster.idx` is sparse, so the block holding your host normally
+*starts at a key below it*.** Selecting only lines whose key is `>= prefix` therefore misses the
+block that actually contains the data — often returning nothing at all and looking like "this
+host isn't in this crawl". You must also carry the **last line whose key sorts before the
+prefix**. For `com,ashbyhq,` the covering block began at `com,ashbyhq,academy)/`.
 
 The 2008–2012 tail (4 crawls) was deliberately skipped: counts had been frozen since the
 2016 crawls (every ATS we track postdates them), so they add nothing. The data shows it —
