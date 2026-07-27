@@ -1,6 +1,13 @@
 import random
 
-from headstart.board_priority import BoardPriority, load, pick_boards, save, update
+from headstart.board_priority import (
+    EXPLORE_FRAC,
+    BoardPriority,
+    load,
+    pick_boards,
+    save,
+    update,
+)
 from headstart.config import CompanyRef
 
 TODAY = "2026-07-06"
@@ -63,7 +70,9 @@ def test_pick_boards_split_and_order():
     scores = {f"lever:c{i}": float(100 - i) for i in range(20)}
     picked = pick_boards(companies, scores, 10, rng=random.Random(7))
     assert len(picked) == 10
-    head, tail = picked[:7], picked[7:]
+    # head size follows EXPLORE_FRAC, so retuning the split doesn't invalidate this test
+    head_n = 10 - round(10 * EXPLORE_FRAC)
+    head, tail = picked[:head_n], picked[head_n:]
     head_scores = [scores[f"lever:{c.slug}"] for c in head]
     assert head_scores == sorted(head_scores, reverse=True)  # score-desc head
     assert head_scores[0] == 100.0  # top board always first

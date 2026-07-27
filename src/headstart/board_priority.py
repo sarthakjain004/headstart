@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 FIELDS = ("board", "score", "last_tech_jobs", "updated_at")
 CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on history)
-EXPLORE_FRAC = 0.3  # slice share reserved for random exploration of unscored boards
+EXPLORE_FRAC = 0.7  # slice share reserved for random exploration of unscored boards
 PRUNE_BELOW = 0.05  # decayed rows below this drop out (~3 zero-tech scrapes)
 
 
