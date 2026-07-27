@@ -80,7 +80,11 @@ def extract(url):
         not site or "." in site or site.lower() in SKIP_SITE
     ):  # "." rejects favicon.ico, robots.txt, etc.
         return None
-    return f"{tenant}/{site}", f"https://{host}/{site}"
+    # The slug is lowercased (the url keeps the site's true casing): merge_tenants lowercases the
+    # tenant column, and the liveness ledger keys on it verbatim. Emitting "acme/External_Careers"
+    # beside an existing "acme/external_careers" makes the checker treat one board as two and
+    # re-probe it into a duplicate row — the cxs API accepts either casing, so both read live.
+    return f"{tenant}/{site.lower()}", f"https://{host}/{site}"
 
 
 def main():

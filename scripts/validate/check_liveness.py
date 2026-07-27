@@ -587,14 +587,65 @@ def _eightfold_is_vendor_board(text):
     )
 
 
+_EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
+# The vendor's own group ids. A host serving these has no tenant board of its own, whichever
+# surface you ask — `volkscience.com` is Eightfold's pre-rename identity and the portal default.
+_EF_VENDOR_GROUPS = {"volkscience.com", "eightfold.ai"}
+
+
+def _eightfold_pcsx(t):
+    """The Board's PCSX total, the surface ``EightfoldScraper`` actually prefers.
+
+    Always returns a (verdict, jobs) pair. DEAD only where a surface *definitively* says "not
+    here" (404/410, or no board app on the page); everything inconclusive — 403, 429, 5xx,
+    timeout — is UNKNOWN, never DEAD. That distinction is the whole point: this runs when the
+    sitemap already 404'd, so a transient failure here would otherwise manufacture a definitive
+    DEAD out of two non-answers.
+
+    Measured 2026-07-27: ``bms.eightfold.ai`` 404s its sitemap yet serves 772 jobs here, so the
+    sitemap-only DEAD was wrong for it. The group id doubles as the fallthrough check —
+    accenture/adp/walmart/target all report ``volkscience.com``.
+    """
+    status, body = _get(f"https://{t}/careers")
+    if status in (404, 410):
+        return DEAD, None  # both surfaces say there is nothing here
+    if status != 200:
+        return UNKNOWN, None
+    m = _EF_GROUP_ID.search(body.decode("utf-8", "replace"))
+    if not m:
+        return DEAD, None  # a page, but not an Eightfold board app
+    group = m.group(1)
+    if group.lower() in _EF_VENDOR_GROUPS:
+        return DEAD, None  # vendor fallthrough, not this company's Board
+    query = urllib.parse.urlencode(
+        {"domain": group, "query": "", "location": "", "start": 0}
+    )
+    status, body = _get(f"https://{t}/api/pcsx/search?{query}")
+    if status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        data = json.loads(body.decode("utf-8", "replace")).get("data") or {}
+    except ValueError:
+        return UNKNOWN, None
+    if "count" not in data:
+        return UNKNOWN, None
+    return LIVE, int(data.get("count") or 0)
+
+
 def p_eightfold(t, u):
     # The public PCSX board: /careers/sitemap.xml lists every job as a /careers/job/ URL (or a
     # sitemap_index of child sitemaps — for the count we just probe the first child). A 200 that
     # is neither shape (internal-mobility-only tenant behind SSO, or a non-EF host) means no public
     # board -> DEAD. Jobs count is a lower bound on index-split tenants; enough for the hiring cut.
     status, body = _get(f"https://{t}/careers/sitemap.xml")
-    if status == "dns" or status in (404, 410):
+    if status == "dns":
         return DEAD, None
+    if status in (404, 410):
+        # One surface saying "not here" isn't the whole board. The scraper *prefers* the PCSX
+        # API, so ask it before calling this dead.
+        return _eightfold_pcsx(t)
     if status != 200:
         return UNKNOWN, None
     text = body.decode("utf-8", "replace")
