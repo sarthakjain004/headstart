@@ -9,11 +9,11 @@ deduped tokens into data/wayback-ats/greenhouse.csv.
 
 After running, re-run scripts/merge/merge_tenants.py to refresh the merged set.
 
-Not yet covered (future layers — see docs/discovery/overview.md): embedded boards
-(`greenhouse.io/embed/job_board?for={token}` on a company's own careers page) and
-custom-domain boards (the `gh_src=`/`gh_jid=` fingerprint / JobPosting JSON-LD). The unified
-API `boards-api.greenhouse.io/v1/boards/{token}` is region-agnostic, so once a token is found
-on any host it resolves the same way.
+Embedded Boards (`greenhouse.io/embed/job_board?for={slug}` on a Company's own careers page)
+have no `{host}/{slug}` URL, so `extract()` here skips them — they are mined separately by
+mine_greenhouse_embeds.py, which reads the `for=` parameter and also picks up the
+custom-domain cohort. The unified API `boards-api.greenhouse.io/v1/boards/{slug}` is
+region-agnostic, so once a Slug is found on any host it resolves the same way.
 
 Run:  python scripts/discover/mine_greenhouse.py
 """
