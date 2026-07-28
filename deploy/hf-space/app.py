@@ -42,7 +42,15 @@ _table = lancedb.connect(_STATE / "data" / "lancedb").open_table(TABLE)
 _ATSES = sorted(
     {r["ats"] for r in _table.search().select(["ats"]).limit(1_000_000).to_list()}
 )
-print(f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes", flush=True)
+# The Space redeploys on merge, but `first_seen` only appears on the next pipeline run (ADR-0031).
+# Filtering on a column the table lacks errors every query, so the feature stays dark until the
+# column lands and then switches itself on — no coordinated deploy.
+_HAS_FIRST_SEEN = "first_seen" in _table.schema.names
+print(
+    f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes"
+    + ("" if _HAS_FIRST_SEEN else " (no first_seen column yet — 'new since' hidden)"),
+    flush=True,
+)
 
 app = Flask(__name__)
 
@@ -56,6 +64,13 @@ _ETYPE_CLAUSES = {
     " OR lower(employment_type) LIKE '%freelance%')",
     "internship": "lower(employment_type) LIKE '%intern%'",
 }
+
+
+def _int_arg(name: str) -> int | None:
+    """An optional integer query param, absent when unset. Raises ``ValueError`` on garbage, which
+    ``/search`` turns into a 400 — the same handling every other filter already relies on."""
+    raw = request.args.get(name)
+    return int(raw) if raw else None
 
 
 def _like(term: str) -> str:
@@ -93,8 +108,11 @@ def _build_filter(
     company: str | None,
     has_salary: bool,
     posted_within: int | None,
+    seen_within: int | None,
 ) -> str | None:
-    """The prod-table where-clause (mirrors headstart.search.build_filter's live filters)."""
+    """The prod-table where-clause. `headstart.search.build_filter` carries the same three core
+    filters (remote / employment_type / max_years); the rest — location, salary, recency — live only
+    here, so the two have diverged and this one is the reference (ADR-0031)."""
     filters: list[str] = []
     if remote:
         filters.append("remote = true")
@@ -123,6 +141,15 @@ def _build_filter(
             datetime.now(timezone.utc) - timedelta(days=int(posted_within))
         ).strftime("%Y-%m-%d")
         filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
+    if seen_within is not None and _HAS_FIRST_SEEN:
+        # In HOURS, not days: this window is meant to be shorter than one pipeline cycle. No shape
+        # guard is needed here — unlike `posted_at`, we write `first_seen` ourselves, so it is
+        # always ISO-8601 UTC. Rows predating the column are null, and `NULL >= '…'` is never true,
+        # so they drop out on their own (ADR-0031).
+        since = (
+            datetime.now(timezone.utc) - timedelta(hours=int(seen_within))
+        ).isoformat(timespec="seconds")
+        filters.append(f"first_seen >= '{since}'")
     return " AND ".join(filters) if filters else None
 
 
@@ -146,6 +173,7 @@ def _search(query: str, where: str | None, k: int) -> list[dict]:
             "salary": r.get("salary"),
             "ats": r.get("ats"),
             "posted_at": r.get("posted_at"),
+            "first_seen": r.get("first_seen"),
             "url": _canonical_url(
                 r.get("ats"), r.get("url")
             ),  # temporary; see _canonical_url
@@ -160,20 +188,18 @@ def search():
     if not q:
         return jsonify([])
     try:
-        max_years = request.args.get("max_years")
         k = int(request.args.get("k") or 20)
         where = _build_filter(
             remote=request.args.get("remote") == "true",
-            max_years=int(max_years) if max_years else None,
+            max_years=_int_arg("max_years"),
             ats=(request.args.get("ats") or "").strip() or None,
             etype=(request.args.get("etype") or "").strip() or None,
             india=(request.args.get("india") or "").strip().lower() or None,
             location=(request.args.get("location") or "").strip() or None,
             company=(request.args.get("company") or "").strip() or None,
             has_salary=request.args.get("has_salary") == "true",
-            posted_within=int(request.args.get("posted_within"))
-            if request.args.get("posted_within")
-            else None,
+            posted_within=_int_arg("posted_within"),
+            seen_within=_int_arg("seen_within"),
         )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
@@ -261,6 +287,8 @@ _TEMPLATE = """<!doctype html>
   .tag.score{ background:var(--red-tint); border-color:rgba(229,9,20,.25); color:#ff8189;
     font-weight:600; }
   .tag.sal{ color:#e8e8ec; border-color:var(--line2); }
+  .tag.new{ background:rgba(46,204,113,.12); border-color:rgba(46,204,113,.3); color:#5fd693;
+    font-weight:600; }
   .empty{ color:var(--mut); text-align:center; padding:56px 20px; font-size:14.5px; }
   .foot{ color:#5c5c66; text-align:center; font-size:12px; margin-top:44px; }
 
@@ -302,6 +330,11 @@ _TEMPLATE = """<!doctype html>
         <option value="1">last 24h</option><option value="7">last 7 days</option>
         <option value="30">last 30 days</option><option value="90">last 90 days</option>
       </select></div>
+    <div class="f"__SINCE_HIDDEN__><label>New to HeadStart</label>
+      <select id="seen"><option value="">any time</option>
+        <option value="2">last 2h</option><option value="24">last 24h</option>
+        <option value="168">last 7 days</option>
+      </select></div>
     <div class="f"><label>Sort</label>
       <select id="sort"><option value="rel">relevance</option>
         <option value="new">newest first</option></select></div>
@@ -332,6 +365,13 @@ const age = d => {
   if (days < 365) return Math.floor(days/30) + 'mo ago';
   return Math.floor(days/365) + 'y ago';
 };
+// Indexed inside the window the user asked for, so the badge always means "newer than your
+// filter" — defaulting to 24h when no window is set. `first_seen` is ours, so it always parses.
+const isNew = s => {
+  const t = Date.parse(s || ''); if (isNaN(t)) return false;
+  const hours = Number((el('seen') && el('seen').value) || 24);
+  return Date.now() - t < hours * 3600000;
+};
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:55%"></div>' +
   '<div class="shim" style="width:32%; margin-top:10px"></div>' +
@@ -348,6 +388,7 @@ async function go(){
   if (el('location').value.trim()) p.set('location', el('location').value.trim());
   if (el('company').value.trim()) p.set('company', el('company').value.trim());
   if (el('posted').value) p.set('posted_within', el('posted').value);
+  if (el('seen') && el('seen').value) p.set('seen_within', el('seen').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
@@ -369,6 +410,7 @@ async function go(){
         ${r.min_years!=null? '<span class="tag">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
         ${r.salary? '<span class="tag sal">'+esc(r.salary)+'</span>':''}
         ${age(r.posted_at)? '<span class="tag">'+age(r.posted_at)+'</span>':''}
+        ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
         ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
       </div>
     </div>`).join('') + '</div>';
@@ -377,6 +419,9 @@ async function go(){
 
 _PAGE = (
     _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}")
+    # Hidden until the pipeline adds the column, so the control can ship ahead of the data
+    # (the `el('seen')` guard in go() keeps the query-string builder happy either way).
+    .replace("__SINCE_HIDDEN__", "" if _HAS_FIRST_SEEN else ' style="display:none"')
     .replace(
         "__ATS_OPTIONS__",
         "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),
