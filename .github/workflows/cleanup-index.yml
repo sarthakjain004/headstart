@@ -1,10 +1,21 @@
 name: cleanup-index
 
-# One-shot manual index cleanup (ADR-0023): download the served LanceDB index, prune stale and
-# duplicate rows, rebuild it fresh to reclaim orphan fragments, re-upload the compacted index, and
-# restart the Space. Use to reset a bloated/dirty index without a full scrape+embed cycle. Runs on
-# Actions (roomy disk, the HF_TOKEN secret, fast network) — never locally.
+# Index cleanup (ADR-0023): download the served LanceDB index, prune stale and duplicate rows,
+# rebuild it fresh to reclaim orphan fragments, re-upload the compacted index, and restart the
+# Space. Runs on Actions (roomy disk, the HF_TOKEN secret, fast network) — never locally.
+#
+# Now also the pipeline's periodic compaction. `index compact` used to run on EVERY pipeline run,
+# which rebuilt the table into one new .lance file each time — a brand-new ~755 MB blob that HF
+# stores in full and retains forever, filling the 100 GB quota in ~45 runs. Between compactions
+# Lance simply appends: `sync`/`prune` write small new fragments and leave the existing file alone,
+# so a run uploads ~10% of the table instead of all of it.
+#
+# Every 2 days, not weekly: Lance's own guidance is to optimize after ~20 data-modification
+# operations, and the pipeline does several per run. Fragments accumulating between compactions is
+# the deliberate trade — more files to open per query, reclaimed here.
 on:
+  schedule:
+    - cron: "0 6 */2 * *" # 06:00 UTC, clear of the pipeline's :30 slots and the Sunday 04:00 squash
   workflow_dispatch:
 
 permissions:
