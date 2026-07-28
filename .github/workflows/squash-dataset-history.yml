@@ -1,0 +1,81 @@
+name: squash-dataset-history
+
+# Reclaim HF dataset storage by collapsing its git history.
+#
+# Every pipeline run rewrites three large LFS blobs wholesale (embeddings.f32, jobs.lance,
+# meta.jsonl ~= 1.9 GB) and HF retains *every* prior revision, so the 100 GB quota fills at roughly
+# 1.9 GB/run — about 45 runs. On 2026-07-27 it hit 96.8 GB of 100 with only 1.9 GB of live files:
+# 95 GB was dead revisions. A push against a full quota fails mid-run and leaves the dataset
+# half-written, so this runs on a schedule rather than waiting for the wall.
+#
+# `super_squash_history` is the only lever the HF API offers — it collapses the branch to a single
+# commit and drops the orphaned blobs. There is no prune-to-last-N. The trade is deliberate and
+# total: **all rollback history is destroyed**. That is acceptable here because everything in the
+# dataset is derived state the pipeline regenerates, and the current revision is untouched.
+#
+# The reclaim is asynchronous — HF garbage-collects the orphans on its own schedule, so
+# `usedStorage` can lag the squash by a couple of hours. Don't read a flat number as a failure.
+on:
+  schedule:
+    - cron: "0 4 * * 0" # Sundays 04:00 UTC — an even hour, clear of the pipeline's :30 odd-hour slots
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-pipeline # never squash while a run is mid-upload
+  cancel-in-progress: false
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+
+jobs:
+  squash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install "huggingface_hub>=0.34"
+      - name: Squash history
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo = os.environ["HF_DATASET"]
+
+          def state():
+              info = api.repo_info(repo, repo_type="dataset", files_metadata=True)
+              live = sum(f.size or 0 for f in info.siblings)
+              commits = len(api.list_repo_commits(repo, repo_type="dataset"))
+              return info.used_storage or 0, live, commits
+
+          used, live, commits = state()
+          print(f"before: usedStorage {used/1e9:.2f} GB · live files {live/1e9:.2f} GB "
+                f"· {commits} commits · history {(used-live)/1e9:.2f} GB", flush=True)
+
+          # Nothing to reclaim on a single-commit repo — skip rather than churn the branch.
+          if commits <= 1:
+              print("already a single commit; nothing to squash", flush=True)
+              raise SystemExit(0)
+
+          api.super_squash_history(repo_id=repo, repo_type="dataset")
+          print("squashed", flush=True)
+
+          used2, live2, commits2 = state()
+          print(f"after:  usedStorage {used2/1e9:.2f} GB · live files {live2/1e9:.2f} GB "
+                f"· {commits2} commits", flush=True)
+          # usedStorage lags: HF garbage-collects orphaned LFS blobs asynchronously.
+          print(f"::notice::live files {live2/1e9:.2f} GB across {commits2} commit(s); "
+                f"usedStorage reads {used2/1e9:.2f} GB and falls as HF collects the orphans")
+
+          # The live-file set must survive a squash untouched — that is the whole safety property.
+          if live2 < live:
+              raise SystemExit(f"live files shrank ({live/1e9:.2f} -> {live2/1e9:.2f} GB) — investigate")
+          PY
