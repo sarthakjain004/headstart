@@ -37,7 +37,6 @@ Requires dnspython for the `dns` stage (not a base dependency — CI installs ba
 
 import csv
 import json
-import re
 import sys
 import threading
 import time
@@ -49,7 +48,6 @@ sys.path.insert(0, str(ROOT / "src"))
 from headstart import http  # noqa: E402 - needs src on sys.path first
 
 UA = "HeadStart-discovery/0.1 (careers-board discovery; polite)"
-UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 # Keka renders these at HTTP 200: unknown slug -> "Invalid Tenant", disabled portal ->
 # "Forbidden Access". Either means there is no public Board behind the label.
 DEAD_MARKERS = ("Invalid Tenant", "Forbidden Access")
@@ -188,12 +186,17 @@ def _get(url: str, pol: _Politeness, timeout: int = 20):
 def verify(label: str, pol: _Politeness) -> tuple[str, str, int | None]:
     """(label, verdict, jobs). verdict is live / dead / unknown; jobs only for live.
 
-    Mirrors KekaScraper: portal info -> org UUID (falling back to the /careers HTML) -> embed
-    jobs. Reads the body for Keka's HTTP-200 soft errors instead of trusting the status code.
+    One request: the careers SPA's own job call (`/api/jobs/{portal}/active`, portal "default"),
+    read off cdn.keka.com/careers/v/2026/scripts/app/app.min.js. It needs no org UUID, so it also
+    reads the Boards whose portal exposes none — Keka only leaks the UUID inside an
+    /ats/documents/{uuid}/ asset path (the careers background image, else the org logo), so a
+    portal with neither is invisible to the UUID route even while serving jobs.
+
+    Reads the body for Keka's HTTP-200 soft errors ("Invalid Tenant" / "Forbidden Access")
+    instead of trusting the status code.
     """
-    base = f"https://{label}.keka.com/careers/api"
     try:
-        r = _get(f"{base}/organization/default/careerportalinfo", pol)
+        r = _get(f"https://{label}.keka.com/careers/api/jobs/default/active", pol)
     except Exception:
         return label, "unknown", None
     if r.status_code in (404, 410):
@@ -203,27 +206,13 @@ def verify(label: str, pol: _Politeness) -> tuple[str, str, int | None]:
     body = r.text
     if any(m in body for m in DEAD_MARKERS):
         return label, "dead", None
-    match = UUID_RE.search(body)
-    if not match:  # background-less portal — the /careers HTML still embeds the UUID
-        try:
-            page = _get(f"https://{label}.keka.com/careers", pol)
-        except Exception:
-            return label, "unknown", None
-        if any(m in page.text for m in DEAD_MARKERS):
-            return label, "dead", None
-        match = UUID_RE.search(page.text)
-    if not match:
-        return label, "unknown", None
     try:
-        jobs = _get(f"{base}/embedjobs/default/active/{match.group(0)}", pol)
-        data = json.loads(jobs.text)
+        data = json.loads(body)
     except Exception:
         return label, "unknown", None
-    return (
-        (label, "live", len(data))
-        if isinstance(data, list)
-        else (label, "unknown", None)
-    )
+    if not isinstance(data, list):
+        return label, "unknown", None
+    return label, "live", len(data)
 
 
 def stage_verify(cand_file: Path, out: Path) -> int:

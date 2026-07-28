@@ -396,9 +396,12 @@ jobs:
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index prune --apply
-      - name: Compact the table
-        if: needs.scrape-plan.outputs.run == 'true'
-        run: python -m headstart.ingest.index compact
+      # No compaction here — it moved to the every-2-days `cleanup-index` run. `index compact`
+      # rebuilds the table into ONE new .lance file, so every run minted a brand-new ~755 MB blob
+      # that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB quota filled in ~45
+      # runs. Lance appends instead: `sync`/`prune` write small new fragments and leave the big
+      # existing file untouched, so a run now uploads a fraction of the table. Measured on a
+      # 20k-row 61.6 MB table: 5 appends + a delete added 5 files totalling 6.17 MB (~10%).
       - name: Upload index state
         if: needs.scrape-plan.outputs.run == 'true'
         env:
@@ -416,11 +419,13 @@ jobs:
           }
           up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
-          # --delete prunes remote fragments no longer present locally. `index compact` rewrites
-          # the table into fresh fragment files each run; without --delete the superseded ones pile
-          # up in the dataset forever. Keep the served index at its compacted size.
+          # Deliberately NOT --delete: nothing compacts here any more, so no local fragment is
+          # superseded and every remote one is still live data. Passing --delete would make this a
+          # full-table replace again — the exact cost this change removes. The every-2-days
+          # `cleanup-index` run compacts and re-uploads *with* --delete, which is where superseded
+          # fragments get reaped.
           up "$HF_DATASET" data/lancedb data/lancedb \
-            --repo-type dataset --delete "*" --commit-message "nightly: lancedb index"
+            --repo-type dataset --commit-message "nightly: lancedb index"
           up "$HF_DATASET" data/state data/state \
             --repo-type dataset --commit-message "nightly: board priority"
       - name: Restart the Space to pick up the new index
