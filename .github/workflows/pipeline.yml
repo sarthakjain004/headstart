@@ -108,16 +108,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python -c "
-          import os
-          from huggingface_hub import snapshot_download
-          snapshot_download(
-              os.environ['HF_DATASET'], repo_type='dataset', local_dir='.',
-              allow_patterns=['data/state/*'], token=os.environ['HF_TOKEN'],
-          )
-          print('priority state downloaded')
-          "
+        run: python -m headstart.ingest.state_fetch 'data/state/*'
       - name: Plan the scrape fan-out
         id: plan
         if: steps.gate.outputs.run == 'true'
@@ -219,17 +210,7 @@ jobs:
       - name: Download meta + priority state (light — the embed diff + ledger blend)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python -c "
-          import os
-          from huggingface_hub import snapshot_download
-          snapshot_download(
-              os.environ['HF_DATASET'], repo_type='dataset', local_dir='.',
-              allow_patterns=['data/embeddings/jobs/meta.jsonl', 'data/state/*'],
-              token=os.environ['HF_TOKEN'],
-          )
-          print('meta + state downloaded')
-          "
+        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/meta.jsonl' 'data/state/*'
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
@@ -353,17 +334,7 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python -c "
-          import os
-          from huggingface_hub import snapshot_download
-          snapshot_download(
-              os.environ['HF_DATASET'], repo_type='dataset', local_dir='.',
-              allow_patterns=['data/embeddings/jobs/*', 'data/lancedb/*'],
-              token=os.environ['HF_TOKEN'],
-          )
-          print('store + lancedb downloaded')
-          "
+        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
       - name: Download corpus + refreshed state
         # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
         # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no

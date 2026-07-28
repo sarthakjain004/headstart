@@ -45,13 +45,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           df -h / | tail -1
-          python -c "
-          import os
-          from huggingface_hub import snapshot_download
-          snapshot_download(os.environ['HF_DATASET'], repo_type='dataset', local_dir='.',
-                            allow_patterns=['data/lancedb/*'], token=os.environ['HF_TOKEN'])
-          print('downloaded')
-          "
+          python -m headstart.ingest.state_fetch 'data/lancedb/*'
           du -sh data/lancedb
       - name: Prune stale + duplicate rows
         run: python -m headstart.ingest.index prune --apply
