@@ -97,6 +97,13 @@ Before implementing:
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
 
+**Always ask clarifying questions, and keep asking.** This is not a one-time gate you pass before
+implementing — it applies at every stage, however far into the work you are. Each time the work
+reveals a fork you can't settle from the request or the code, ask then and there; don't bank
+questions for the end, and don't go quiet just because you already asked once. A question late is
+far cheaper than a wrong deliverable. Where a genuine choice exists, put the options in front of me
+rather than picking silently — even when one looks obvious to you.
+
 ### 2. Simplicity First
 Minimum code that solves the problem. Nothing speculative.
 
