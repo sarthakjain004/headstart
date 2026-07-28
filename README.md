@@ -181,6 +181,71 @@ query drives the embedding.
   dead boards and case-variant duplicates, `index compact` rewrites the table to reclaim orphan
   fragments (ADR-0014, ADR-0019, ADR-0023).
 
+### The served table
+
+One row per Job in the LanceDB `jobs` table — the only thing the Space reads. Defined by `_schema()`
+in [`src/headstart/ingest/index.py`](src/headstart/ingest/index.py); `tests/test_readme_schema.py`
+fails if this table drifts from it.
+
+| column | type | notes |
+| --- | --- | --- |
+| `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
+| `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
+| `company` | string | the ATS slug, not a display name |
+| `title` | string | embedded, with the description |
+| `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
+| `remote` | bool | |
+| `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), normalised at query time |
+| `experience` | string | raw, for display (`"2 - 5 Years"`) |
+| `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
+| `max_years` | int32 | nullable |
+| `experience_source` | string | `field` \| `regex` \| `seniority` \| null — how the years were derived (ADR-0018) |
+| `salary` | string | raw, for display (`"INR 3 - 5 (Annual)"`) |
+| `department` | string | raw ATS text |
+| `url` | string | the job-detail link |
+| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `06-Jan-2026`) and null on ~14% of rows |
+| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once. Null on rows predating the column (ADR-0031) |
+| `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
+
+Two example rows, real values from the live index (vector elided):
+
+```jsonc
+{
+  "id": "ashby:level:538c0fe2-504d-45e9-8ae6-2b44de217418",
+  "ats": "ashby", "company": "level",
+  "title": "Backend Engineer (senior or above)",
+  "location": "Austin", "remote": false, "employment_type": "FullTime",
+  "experience": null, "min_years": 5, "max_years": null, "experience_source": "seniority",
+  "salary": null, "department": null,
+  "url": "https://jobs.ashbyhq.com/level/538c0fe2-504d-45e9-8ae6-2b44de217418",
+  "posted_at": "2026-01-09T00:46:44.672+00:00",     // ISO — this ATS is well-behaved
+  "first_seen": "2026-07-28T12:58:27+00:00",
+  "vector": [0.021, -0.043, /* … 768 floats … */]
+}
+{
+  "id": "darwinbox:jslhrms:a683d2db261645",
+  "ats": "darwinbox", "company": "jslhrms",
+  "title": "Assistant Engineer (Central QA)",
+  "location": "Jajpur, Odisha , India", "remote": false, "employment_type": "Full Time",
+  "experience": "2 - 5 Years", "min_years": 2, "max_years": 5, "experience_source": "field",
+  "salary": "INR 3 - 5 (Annual) (Annual)",
+  "department": "Central QA - IMS, OE (0050_JSL__CQA_L177)",
+  "url": "https://jslhrms.darwinbox.in/ms/candidatev2/main/careers/jobDetails/a683d2db261645",
+  "posted_at": "23-Jun-2026",                        // NOT ISO — why the recency filter
+  "first_seen": "2026-07-28T12:58:27+00:00",         // needs a shape guard on posted_at
+  "vector": [0.013, 0.008, /* … 768 floats … */]
+}
+```
+
+The second row is the reason `posted_at` and `first_seen` are separate columns rather than one
+"date". `23-Jun-2026` sorts lexicographically *above* any ISO cutoff, so a naive
+`posted_at >= '2026-07-01'` would let it into every window — hence the `LIKE '____-__-__%'` shape
+guard on that filter, and none on `first_seen`, which we write ourselves.
+
+Note the corpus files under `data/jobs/` carry a few fields the table does not, e.g. `scraped_at`
+and the full `description`. The description is embedded, not stored — the vector is what survives
+into the table.
+
 ### Retrieval eval
 
 Ranking quality is measured, not asserted (ADR-0011). A five-stage harness in `scripts/eval/`:
