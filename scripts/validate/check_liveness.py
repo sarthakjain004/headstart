@@ -177,7 +177,6 @@ def _fetch(method, url, **kw):
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
-_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
 
@@ -326,8 +325,15 @@ def p_zoho(t, u):
 
 
 def p_keka(t, u):
-    base = f"https://{t}.keka.com/careers/api"
-    status, body = _get(f"{base}/organization/default/careerportalinfo")
+    # The careers SPA's own job call (read off cdn.keka.com/careers/v/2026/scripts/app/app.min.js:
+    # `$.ajax('/api/jobs/${apiPortalName}/active')`, apiPortalName defaulting to "default"). It
+    # needs no org UUID, which is what makes it strictly better than the embedjobs route this
+    # probe used to take: that one had to recover the UUID from an /ats/documents/{uuid}/ asset
+    # path — the careers background image, else the org logo on the /careers page — so a portal
+    # with *neither* exposed no UUID at all and was recorded UNKNOWN despite serving jobs.
+    # Measured 2026-07-27: 25 of 25 sampled ledger-UNKNOWNs answered LIVE here, with real count
+    # variance; dead slugs and garbage controls were unchanged.
+    status, body = _get(f"https://{t}.keka.com/careers/api/jobs/default/active")
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -337,23 +343,8 @@ def p_keka(t, u):
     # Access" (disabled portal) — both mean no public board, so definitively DEAD.
     if "Invalid Tenant" in text or "Forbidden Access" in text:
         return DEAD, None
-    uuid = _keka_uuid(t, text)
-    if not uuid:
-        return UNKNOWN, None
-    return _classify(f"{base}/embedjobs/default/active/{uuid}", _len_of)
-
-
-def _keka_uuid(t, info):
-    """The org UUID: from careerportalinfo when a background image carries it (in
-    careersBackgroundPath), else from the /careers page (background-less portals omit it there)."""
-    m = _UUID.search(info)
-    if m:
-        return m.group(0)
-    status, body = _get(f"https://{t}.keka.com/careers")
-    if status == 200:
-        m = _UUID.search(body.decode("utf-8", "replace"))
-        return m.group(0) if m else None
-    return None
+    n = _len_of(body)
+    return (LIVE, n) if n is not None else (UNKNOWN, None)
 
 
 # A data center conclusively says a Workday tenant/site is "not here" via 404/410/422. Everything
@@ -479,7 +470,47 @@ def p_darwinbox(t, u):
     return (DEAD, None) if dns_fails == 2 else (UNKNOWN, None)
 
 
+# The Board host's redirect target, for slugs the posting API can't settle (see p_smartrecruiters).
+_SR_NOT_A_BOARD = "jobs.smartrecruiters.com"
+
+
+def _sr_board_host(slug):
+    """Does the Board host serve this slug? True / False / None when it can't be told.
+
+    Redirects are deliberately NOT followed: every slug 200s once you chase them, which is what
+    makes the naive check useless. The *target* is the signal — a slug that was never a Board
+    bounces to the generic job search, while a customer running its career site on its own domain
+    bounces to that domain (``Accor`` -> ``careers.accor.com``) and is perfectly real.
+    """
+    try:
+        r = _fetch(
+            "GET",
+            f"https://careers.smartrecruiters.com/{urllib.parse.quote(slug)}",
+            headers={"User-Agent": UA},
+            allow_redirects=False,
+        )
+    except http.RequestsError as e:
+        return False if _is_dns(e) else None
+    if r is None:
+        return None
+    if r.status_code == 200:
+        return True
+    if r.status_code in (301, 302, 303, 307, 308):
+        return _SR_NOT_A_BOARD not in (r.headers.get("location") or "")
+    if r.status_code in (400, 404, 410):
+        return False
+    return None
+
+
 def p_smartrecruiters(t, u):
+    # The posting API answers 200 {"totalFound": 0} for a slug that never existed, identically to a
+    # real Board with nothing open — so the count alone cannot separate them, and taking it at face
+    # value files phantoms as live (121 such rows were found in the ledger, 2026-07-27).
+    #
+    # Only a ZERO count is ambiguous: totalFound > 0 is proof on its own. So settle zeroes on the
+    # Board host, and *only* zeroes — a real Board whose customer runs its career site on its own
+    # domain also redirects away from the Board host, so consulting the host first would discard
+    # the largest Boards in the set (88 of them, 45,134 postings).
     def count(b):
         try:
             d = json.loads(b)
@@ -488,9 +519,15 @@ def p_smartrecruiters(t, u):
         tf = d.get("totalFound")
         return tf if isinstance(tf, int) else len(d.get("content") or [])
 
-    return _classify(
+    verdict, jobs = _classify(
         f"https://api.smartrecruiters.com/v1/companies/{t}/postings?limit=10", count
     )
+    if verdict != LIVE or jobs:
+        return verdict, jobs
+    served = _sr_board_host(t)
+    if served is None:
+        return UNKNOWN, None  # couldn't tell -> re-probe rather than guess
+    return (LIVE, 0) if served else (DEAD, None)
 
 
 def p_teamtailor(t, u):
