@@ -55,8 +55,10 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    *only its assigned Docs* (the planner already English-gated, bucketed, and deduped them), encoding new
    vectors into a shard-scoped `embeddings.f32` + `meta.jsonl` fragment. Stateless — no prior store, no
    LanceDB. `fail-fast: false`; a timed-out shard banks its partial fragment.
-5. **`merge`** (1 job — the single writer, `if: always()`) — `snapshot_download` the *prior* store + served
-   table (`data/embeddings/jobs/*`, `data/lancedb/*`), **concatenate** the embed fragments onto the store
+5. **`merge`** (1 job — the single writer, `if: always()`) — **fetch** the *prior* store + served
+   table (`ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'` — a bare `snapshot_download`
+   silently returns the empty gitignored dir when the Hub errors, so the fetch asserts the state
+   actually landed and aborts otherwise, ADR-0030), **concatenate** the embed fragments onto the store
    (`ingest.embed_merge`, reconciling any partial tail), then the unchanged tail: **sync** the LanceDB `jobs`
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
