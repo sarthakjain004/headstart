@@ -77,6 +77,18 @@ def _iso_within(posted_at: str | None, days: int) -> bool:
     return posted_at >= cutoff
 
 
+def _seen_within(first_seen: str | None, hours: int) -> bool:
+    """``first_seen`` is written by ``index sync``, not an ATS, so it is always full ISO-8601 UTC —
+    no shape guard needed, unlike ``_iso_within``. A null predates the column (ADR-0031) and must
+    never appear inside a window."""
+    if not first_seen:
+        return False
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(
+        timespec="seconds"
+    )
+    return first_seen >= cutoff
+
+
 def _etype_ok(value: str | None, canonical: str) -> bool:
     v = (value or "").lower()
     return {
@@ -123,6 +135,18 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 f"posted_within={days}",
                 {"q": "software engineer", "posted_within": days, "k": 40},
                 lambda r, d=days: _iso_within(r.get("posted_at"), d),
+                "",
+            )
+        )
+    # Hours, not days — the window is meant to be shorter than one pipeline cycle. Every row
+    # predating the migration is null, so a run before the column has propagated returns nothing,
+    # which is a pass (the predicate is only applied to rows that came back).
+    for hours in (2, 24, 168):
+        cases.append(
+            (
+                f"seen_within={hours}h",
+                {"q": "software engineer", "seen_within": hours, "k": 40},
+                lambda r, h=hours: _seen_within(r.get("first_seen"), h),
                 "",
             )
         )

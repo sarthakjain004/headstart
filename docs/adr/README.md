@@ -39,3 +39,4 @@ supersedes it and note the supersession in both.
 | [0028](0028-ingest-package.md) | The 6-hourly ingest run lives in `src/headstart/ingest/` | 2026-07-25 |
 | [0029](0029-embedding-cost-model.md) | Embedding cost is linear in tokens — length-sort batches | 2026-07-25 |
 | [0030](0030-fail-closed-on-unfetched-state.md) | Fail closed when the prior state was not fetched | 2026-07-28 |
+| [0031](0031-first-seen-index-stamp.md) | Stamp `first_seen` when a Job enters the index | 2026-07-28 |

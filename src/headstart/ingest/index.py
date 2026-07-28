@@ -15,7 +15,9 @@ posting that vanished from a scraped Board is evicted; Boards absent from the sc
 touched (partial-harvest safety). On the first run the table is created empty and the plan is
 all-add; the identical path does true incremental add/evict on every later run — no
 overwrite-rebuild (ADR-0019). Corpus ids without a vector (non-English, or not yet embedded) are
-reported and skipped — run ``embed_run --resume`` first to close that gap.
+reported and skipped — run ``embed_run --resume`` first to close that gap. Each row added is
+stamped ``first_seen`` with the run's time, which is when *we* indexed it rather than the company's
+``posted_at``; sync adds the column to a table that predates it before writing (ADR-0031).
 
 **prune** sweeps what the board-scoped sync structurally cannot reach:
 
@@ -50,6 +52,7 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +82,10 @@ _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progr
 _MIN_KEEP_BOARDS = (
     1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
 )
+# When *we* first indexed the Job, as an ISO-8601 UTC string — not `posted_at`, which is the
+# company's posting date and says nothing about when we found it (ADR-0031). Held as a module
+# constant because both `_schema` (new tables) and `sync`'s migration (the live table) need it.
+_FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
@@ -103,6 +110,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("department", pa.string()),
             pa.field("url", pa.string()),
             pa.field("posted_at", pa.string()),
+            _FIRST_SEEN_FIELD,
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ]
     )
@@ -186,10 +194,25 @@ def sync(args: argparse.Namespace) -> int:
         index_ids = []
     print(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'", flush=True)
 
+    # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
+    # existed keeps its frozen schema — and `apply_sync` requires rows to match it exactly. Add the
+    # column before writing any row that carries it. Idempotent, so it runs once and then no-ops
+    # (ADR-0031); existing rows get null, which is honest — we don't know when we first saw them.
+    if _FIRST_SEEN_FIELD.name not in table.schema.names:
+        print(
+            f"[sync] adding '{_FIRST_SEEN_FIELD.name}' to the existing table",
+            flush=True,
+        )
+        table.add_columns(_FIRST_SEEN_FIELD)
+
     plan = plan_sync(index_ids, fresh, boards)
     print(f"plan: add {len(plan.add)}, evict {len(plan.delete)}", flush=True)
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
+    # One stamp for the whole run: every Job added here arrived in the same scrape, and
+    # `sync` is the only place rows are ever added, so each row is stamped exactly once. A Job that
+    # is evicted and later reappears is stamped afresh — it is newly visible again (ADR-0031).
+    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     add_ids = sorted(plan.add)
     for start in range(0, len(add_ids), _ADD_CHUNK):
         chunk = add_ids[start : start + _ADD_CHUNK]
@@ -197,6 +220,7 @@ def sync(args: argparse.Namespace) -> int:
         for job_id in chunk:
             row = dict(metas[row_of[job_id]])
             row["vector"] = vectors[row_of[job_id]].tolist()
+            row[_FIRST_SEEN_FIELD.name] = stamp
             rows.append(row)
         apply_sync(table, rows, ())
         print(

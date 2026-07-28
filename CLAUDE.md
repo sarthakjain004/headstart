@@ -199,6 +199,17 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   measurement), `ui/`. Whenever you add a script, put it
   in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
   rather than dropping it loose in `scripts/`. Keep `scripts/` itself free of stray top-level scripts.
+- **The README documents the served-table schema — keep it in lockstep with `_schema()`.** README
+  §"The served table" carries every column of the LanceDB `jobs` table (type + what it means) plus
+  two worked example rows. If you change `_schema()` in `src/headstart/ingest/index.py` — adding,
+  removing, renaming, or retyping a column — update that section **in the same change**, examples
+  included. A stale schema is worse than no schema, because it gets trusted.
+  `tests/test_readme_schema.py` enforces it by parsing the README table and comparing it, in order,
+  against `_schema()`. Note it `importorskip`s pyarrow, so it **skips in CI** — run the suite
+  locally (with the `[embed]` extra installed) before opening any schema PR, and don't read a green
+  CI as proof the docs are current. When you touch that section, re-check the example rows against
+  real data rather than editing them from memory: `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"`
+  returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls
