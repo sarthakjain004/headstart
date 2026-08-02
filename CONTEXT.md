@@ -104,6 +104,21 @@ How many Docs are encoded together in one pass, fixed per **Bucket** so batch si
 **Throughput (jobs/s, s/doc)**:
 The measured embedding rate — not a fixed constant. The embed step logs a running `jobs/s` average per batch straight to the CI log; its reciprocal, seconds-per-Doc, is the more useful number for predicting run length. Throughput differs sharply by **Bucket** (short Docs batch efficiently; the ≤4096 Bucket, Batch size 1, costs roughly 20x longer per Doc) and by which runner executes the run — so there is no single "embedding speed," only a per-Bucket rate read off real logs.
 
+**Query**:
+The natural-language sentence a user types describing *only the role they want* ("backend engineer at a climate startup"). It drives the embedding and nothing else — every structured constraint belongs to a **Search filter** instead, which is what makes the hybrid split explicit at the UI. A Query that carries years, salary, or a location is a Query doing a **Search filter**'s job.
+_Avoid_: search term, keywords — it is a sentence describing a role, not a bag of terms to match.
+
+**Search filter**:
+A structured constraint the user sets themselves on the **Search index** — remote, employment type, `min_years`, recency — compiled into a deterministic where-clause that runs *before* ranking. Distinct from **Filter**, which is a **Subscriber**'s notification criteria on the **Feed**; the two share a word and nothing else.
+_Avoid_: bare "filter" in search contexts — ambiguous with the Subscriber's **Filter**.
+
+**Résumé**:
+Text a user pastes to have a **Résumé query** written from it. It is never stored, never logged, and never leaves the request that carried it — the derived Query is the only thing that survives.
+_Avoid_: CV, profile — "profile" implies something persisted, which this deliberately is not.
+
+**Résumé query**:
+The **Query** an LLM writes from a **Résumé**, shown to the user in the search box and editable before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
+
 ### Pipeline scheduling and sharding
 
 **Board-priority ledger (EWMA)**:

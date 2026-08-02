@@ -180,6 +180,11 @@ query drives the embedding.
   vectors and evicts postings that vanished from a scraped board, `index prune` sweeps rows on
   dead boards and case-variant duplicates, `index compact` rewrites the table to reclaim orphan
   fragments (ADR-0014, ADR-0019, ADR-0023).
+- **Résumé → query (private beta):** paste a résumé and an LLM writes the one role-describing
+  query it implies, into the search box, editable before it runs — the query stays role-only
+  (years/salary are scrubbed in code; those belong to filters). LLM calls go through a private
+  llm-router over an SSH tunnel, gated by a beta password validated once per IP; the résumé text
+  is used for that single call and never stored (ADR-0032).
 
 ### The served table
 
