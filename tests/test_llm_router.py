@@ -50,6 +50,10 @@ def test_ask_returns_the_completion_text(monkeypatch):
     assert captured["auth"] == "Bearer sk-test"
     assert captured["body"]["model"] == "agent-default"
     assert captured["body"]["messages"] == [{"role": "user", "content": "hello"}]
+    # Regression for the truncation bug: the router's default model spends ~600 thinking tokens
+    # before the one-line answer, so a small budget comes back `finish_reason: length` as a
+    # fragment ("Java, GraphQL"). The wired budget must leave room for reasoning + answer.
+    assert captured["body"]["max_tokens"] == llm_router._MAX_TOKENS >= 2000
 
 
 def test_unreachable_router_raises_router_unavailable(monkeypatch):
