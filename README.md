@@ -39,7 +39,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>91,064 live of 144,583<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>91,051 live of 144,765<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -156,7 +156,7 @@ than scraped. Its scraper class and tests stay intact; re-enable by removing it 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **144,583 boards**: 91,064 live, 36,703 dead, 16,814 unknown.
+liveness pipeline has probed **144,765 boards**: 91,051 live, 36,892 dead, 16,822 unknown.
 
 ## AI semantic search
 

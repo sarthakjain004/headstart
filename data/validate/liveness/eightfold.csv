@@ -27,7 +27,7 @@ eightfold,aldogroup.eightfold.ai,aldogroup.eightfold.ai,dead,,2026-07-27
 eightfold,allstate.eightfold.ai,allstate.eightfold.ai,dead,,2026-07-27
 eightfold,alnylam.eightfold.ai,alnylam.eightfold.ai,live,162,2026-07-27
 eightfold,also.eightfold.ai,also.eightfold.ai,dead,,2026-07-27
-eightfold,amdocs-sandbox.eightfold.ai,amdocs-sandbox.eightfold.ai,live,2099,2026-07-27
+eightfold,amdocs-sandbox.eightfold.ai,amdocs-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,amdocs.eightfold.ai,amdocs.eightfold.ai,live,5,2026-07-27
 eightfold,american-express.eightfold.ai,american-express.eightfold.ai,dead,,2026-07-21
 eightfold,americanfidelity.eightfold.ai,americanfidelity.eightfold.ai,dead,,2026-07-27
@@ -47,7 +47,7 @@ eightfold,ardene.eightfold.ai,ardene.eightfold.ai,dead,,2026-07-27
 eightfold,ascendion.eightfold.ai,ascendion.eightfold.ai,live,138,2026-07-27
 eightfold,aspeninstitute.eightfold.ai,aspeninstitute.eightfold.ai,dead,,2026-07-27
 eightfold,astrazeneca.eightfold.ai,astrazeneca.eightfold.ai,live,927,2026-07-27
-eightfold,atb-sandbox.eightfold.ai,atb-sandbox.eightfold.ai,live,27,2026-07-27
+eightfold,atb-sandbox.eightfold.ai,atb-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,atb.eightfold.ai,atb.eightfold.ai,live,41,2026-07-27
 eightfold,att.eightfold.ai,att.eightfold.ai,dead,,2026-07-27
 eightfold,auburn.eightfold.ai,auburn.eightfold.ai,dead,,2026-07-27
@@ -57,7 +57,7 @@ eightfold,automationanywhere.eightfold.ai,automationanywhere.eightfold.ai,dead,,
 eightfold,avigo.eightfold.ai,avigo.eightfold.ai,dead,,2026-07-27
 eightfold,awginc.eightfold.ai,awginc.eightfold.ai,dead,,2026-07-27
 eightfold,baruch.eightfold.ai,baruch.eightfold.ai,dead,,2026-07-27
-eightfold,bayer-sandbox.eightfold.ai,bayer-sandbox.eightfold.ai,live,0,2026-07-28
+eightfold,bayer-sandbox.eightfold.ai,bayer-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,bayer.eightfold.ai,bayer.eightfold.ai,live,630,2026-07-27
 eightfold,bcbs.eightfold.ai,bcbs.eightfold.ai,dead,,2026-07-27
 eightfold,bcbsa.eightfold.ai,bcbsa.eightfold.ai,dead,,2026-07-27
@@ -74,7 +74,7 @@ eightfold,bjs.eightfold.ai,bjs.eightfold.ai,dead,,2026-07-27
 eightfold,bloomberg.eightfold.ai,bloomberg.eightfold.ai,dead,,2026-07-27
 eightfold,bluebirdbio.eightfold.ai,bluebirdbio.eightfold.ai,dead,,2026-07-27
 eightfold,bluecrabconsulting.eightfold.ai,bluecrabconsulting.eightfold.ai,live,2,2026-07-27
-eightfold,bms-dev-sandbox.eightfold.ai,bms-dev-sandbox.eightfold.ai,live,25,2026-07-28
+eightfold,bms-dev-sandbox.eightfold.ai,bms-dev-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,bms.eightfold.ai,bms.eightfold.ai,live,774,2026-07-28
 eightfold,bnsf.eightfold.ai,bnsf.eightfold.ai,dead,,2026-07-27
 eightfold,bny-mellon.eightfold.ai,bny-mellon.eightfold.ai,dead,,2026-07-21
@@ -86,7 +86,7 @@ eightfold,bostonscientific.eightfold.ai,bostonscientific.eightfold.ai,live,628,2
 eightfold,box.eightfold.ai,box.eightfold.ai,dead,,2026-07-27
 eightfold,bridgebio.eightfold.ai,bridgebio.eightfold.ai,dead,,2026-07-27
 eightfold,brinksinc.eightfold.ai,brinksinc.eightfold.ai,dead,,2026-07-27
-eightfold,britishcouncil-sandbox.eightfold.ai,britishcouncil-sandbox.eightfold.ai,live,43,2026-07-27
+eightfold,britishcouncil-sandbox.eightfold.ai,britishcouncil-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,britishcouncil.eightfold.ai,britishcouncil.eightfold.ai,live,85,2026-07-27
 eightfold,brkenergy.eightfold.ai,brkenergy.eightfold.ai,dead,,2026-07-27
 eightfold,brocku.eightfold.ai,brocku.eightfold.ai,dead,,2026-07-27
@@ -117,7 +117,7 @@ eightfold,circana.eightfold.ai,circana.eightfold.ai,live,396,2026-07-27
 eightfold,circleci.eightfold.ai,circleci.eightfold.ai,dead,,2026-07-27
 eightfold,cisco.eightfold.ai,cisco.eightfold.ai,dead,,2026-07-27
 eightfold,citi.eightfold.ai,citi.eightfold.ai,live,3444,2026-07-27
-eightfold,citigroup-qa-sandbox.eightfold.ai,citigroup-qa-sandbox.eightfold.ai,live,3193,2026-07-27
+eightfold,citigroup-qa-sandbox.eightfold.ai,citigroup-qa-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,citigroup.eightfold.ai,citigroup.eightfold.ai,dead,,2026-07-27
 eightfold,citizensbank.eightfold.ai,citizensbank.eightfold.ai,dead,,2026-07-27
 eightfold,cityyear.eightfold.ai,cityyear.eightfold.ai,dead,,2026-07-27
@@ -142,7 +142,7 @@ eightfold,conga.eightfold.ai,conga.eightfold.ai,dead,,2026-07-27
 eightfold,constellis.eightfold.ai,constellis.eightfold.ai,dead,,2026-07-27
 eightfold,content.eightfold.ai,content.eightfold.ai,dead,,2026-07-27
 eightfold,cornell.eightfold.ai,cornell.eightfold.ai,dead,,2026-07-27
-eightfold,corteva-sandbox.eightfold.ai,corteva-sandbox.eightfold.ai,live,73,2026-07-27
+eightfold,corteva-sandbox.eightfold.ai,corteva-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,corteva.eightfold.ai,corteva.eightfold.ai,live,0,2026-07-28
 eightfold,costar.eightfold.ai,costar.eightfold.ai,live,462,2026-07-27
 eightfold,coty.eightfold.ai,coty.eightfold.ai,dead,,2026-07-27
@@ -193,7 +193,7 @@ eightfold,directsourcepro-tya.eightfold.ai,directsourcepro-tya.eightfold.ai,dead
 eightfold,directsourcepro-wky.eightfold.ai,directsourcepro-wky.eightfold.ai,dead,,2026-07-27
 eightfold,dmsf.eightfold.ai,dmsf.eightfold.ai,dead,,2026-07-27
 eightfold,does.eightfold.ai,does.eightfold.ai,dead,,2026-07-27
-eightfold,dolby-sandbox.eightfold.ai,dolby-sandbox.eightfold.ai,live,77,2026-07-27
+eightfold,dolby-sandbox.eightfold.ai,dolby-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,dolby.eightfold.ai,dolby.eightfold.ai,live,79,2026-07-27
 eightfold,dp.eightfold.ai,dp.eightfold.ai,dead,,2026-07-27
 eightfold,dpr.eightfold.ai,dpr.eightfold.ai,dead,,2026-07-27
@@ -205,7 +205,7 @@ eightfold,eaton.eightfold.ai,eaton.eightfold.ai,live,2255,2026-07-27
 eightfold,edmodo.eightfold.ai,edmodo.eightfold.ai,dead,,2026-07-27
 eightfold,effem.eightfold.ai,effem.eightfold.ai,dead,,2026-07-27
 eightfold,egnyte.eightfold.ai,egnyte.eightfold.ai,dead,,2026-07-27
-eightfold,elcompanies-sandbox.eightfold.ai,elcompanies-sandbox.eightfold.ai,live,275,2026-07-27
+eightfold,elcompanies-sandbox.eightfold.ai,elcompanies-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,elcompanies.eightfold.ai,elcompanies.eightfold.ai,live,1166,2026-07-27
 eightfold,elevateservices.eightfold.ai,elevateservices.eightfold.ai,dead,,2026-07-27
 eightfold,ellucian.eightfold.ai,ellucian.eightfold.ai,dead,,2026-07-27
@@ -232,7 +232,7 @@ eightfold,foleyeq.eightfold.ai,foleyeq.eightfold.ai,live,75,2026-07-27
 eightfold,fonix.eightfold.ai,fonix.eightfold.ai,dead,,2026-07-27
 eightfold,foodora.eightfold.ai,foodora.eightfold.ai,dead,,2026-07-27
 eightfold,ford.eightfold.ai,ford.eightfold.ai,live,593,2026-07-27
-eightfold,fortive-sandbox.eightfold.ai,fortive-sandbox.eightfold.ai,live,399,2026-07-27
+eightfold,fortive-sandbox.eightfold.ai,fortive-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,fortive.eightfold.ai,fortive.eightfold.ai,live,307,2026-07-27
 eightfold,forvia.eightfold.ai,forvia.eightfold.ai,dead,,2026-07-27
 eightfold,ftr.eightfold.ai,ftr.eightfold.ai,live,87,2026-07-27
@@ -275,10 +275,10 @@ eightfold,hoosiertalentnetwork.eightfold.ai,hoosiertalentnetwork.eightfold.ai,de
 eightfold,hostos.eightfold.ai,hostos.eightfold.ai,dead,,2026-07-28
 eightfold,houstonisd.eightfold.ai,houstonisd.eightfold.ai,dead,,2026-07-27
 eightfold,houzz.eightfold.ai,houzz.eightfold.ai,dead,,2026-07-28
-eightfold,hp-sandbox.eightfold.ai,hp-sandbox.eightfold.ai,live,1102,2026-07-27
+eightfold,hp-sandbox.eightfold.ai,hp-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,hp.eightfold.ai,hp.eightfold.ai,live,1286,2026-07-27
 eightfold,hpe.eightfold.ai,hpe.eightfold.ai,dead,,2026-07-28
-eightfold,hsbc-uat-sandbox.eightfold.ai,hsbc-uat-sandbox.eightfold.ai,live,1156,2026-07-27
+eightfold,hsbc-uat-sandbox.eightfold.ai,hsbc-uat-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,hsbc.eightfold.ai,hsbc.eightfold.ai,live,1508,2026-07-27
 eightfold,hulu.eightfold.ai,hulu.eightfold.ai,dead,,2026-07-27
 eightfold,humana.eightfold.ai,humana.eightfold.ai,dead,,2026-07-28
@@ -320,10 +320,10 @@ eightfold,juniper.eightfold.ai,juniper.eightfold.ai,live,0,2026-07-28
 eightfold,jvs.eightfold.ai,jvs.eightfold.ai,dead,,2026-07-28
 eightfold,jwu.eightfold.ai,jwu.eightfold.ai,dead,,2026-07-28
 eightfold,jyve.eightfold.ai,jyve.eightfold.ai,dead,,2026-07-28
-eightfold,kdrp-sandbox.eightfold.ai,kdrp-sandbox.eightfold.ai,live,231,2026-07-27
+eightfold,kdrp-sandbox.eightfold.ai,kdrp-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,kdrp.eightfold.ai,kdrp.eightfold.ai,live,606,2026-07-27
 eightfold,keeptruckin.eightfold.ai,keeptruckin.eightfold.ai,dead,,2026-07-27
-eightfold,kering-sandbox.eightfold.ai,kering-sandbox.eightfold.ai,live,898,2026-07-27
+eightfold,kering-sandbox.eightfold.ai,kering-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,kering.eightfold.ai,kering.eightfold.ai,live,1066,2026-07-27
 eightfold,kipp.eightfold.ai,kipp.eightfold.ai,dead,,2026-07-28
 eightfold,kpmg.eightfold.ai,kpmg.eightfold.ai,dead,,2026-07-27
@@ -337,11 +337,11 @@ eightfold,lamresearch.eightfold.ai,lamresearch.eightfold.ai,live,1267,2026-07-27
 eightfold,learning.eightfold.ai,learning.eightfold.ai,unknown,,2026-07-28
 eightfold,lehighvalley.eightfold.ai,lehighvalley.eightfold.ai,dead,,2026-07-28
 eightfold,lehman.eightfold.ai,lehman.eightfold.ai,dead,,2026-07-28
-eightfold,lgcns-sandbox.eightfold.ai,lgcns-sandbox.eightfold.ai,live,146,2026-07-27
+eightfold,lgcns-sandbox.eightfold.ai,lgcns-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,lgcns.eightfold.ai,lgcns.eightfold.ai,live,104,2026-07-27
 eightfold,li.eightfold.ai,li.eightfold.ai,dead,,2026-07-27
 eightfold,liberty-mutual.eightfold.ai,liberty-mutual.eightfold.ai,dead,,2026-07-21
-eightfold,libertymutual-sandbox.eightfold.ai,libertymutual-sandbox.eightfold.ai,live,411,2026-07-27
+eightfold,libertymutual-sandbox.eightfold.ai,libertymutual-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,libertymutual.eightfold.ai,libertymutual.eightfold.ai,live,217,2026-07-27
 eightfold,libertymutualgroup.eightfold.ai,libertymutualgroup.eightfold.ai,dead,,2026-07-28
 eightfold,lilly.eightfold.ai,lilly.eightfold.ai,dead,,2026-07-28
@@ -365,13 +365,13 @@ eightfold,meddata.eightfold.ai,meddata.eightfold.ai,dead,,2026-07-27
 eightfold,medtronic.eightfold.ai,medtronic.eightfold.ai,dead,,2026-07-27
 eightfold,meijer.eightfold.ai,meijer.eightfold.ai,dead,,2026-07-28
 eightfold,mercado-libre.eightfold.ai,mercado-libre.eightfold.ai,dead,,2026-07-21
-eightfold,mercadolibre-sandbox.eightfold.ai,mercadolibre-sandbox.eightfold.ai,live,517,2026-07-27
+eightfold,mercadolibre-sandbox.eightfold.ai,mercadolibre-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,mercadolibre.eightfold.ai,mercadolibre.eightfold.ai,live,830,2026-07-27
 eightfold,mercer.eightfold.ai,mercer.eightfold.ai,dead,,2026-07-27
 eightfold,merck.eightfold.ai,merck.eightfold.ai,dead,,2026-07-28
 eightfold,meritamerica.eightfold.ai,meritamerica.eightfold.ai,dead,,2026-07-27
 eightfold,micron.eightfold.ai,micron.eightfold.ai,live,2717,2026-07-27
-eightfold,microsoft-tm2-dev-sandbox.eightfold.ai,microsoft-tm2-dev-sandbox.eightfold.ai,live,2108,2026-07-27
+eightfold,microsoft-tm2-dev-sandbox.eightfold.ai,microsoft-tm2-dev-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,microsoft.eightfold.ai,microsoft.eightfold.ai,live,1636,2026-07-27
 eightfold,microsoftai.eightfold.ai,microsoftai.eightfold.ai,dead,,2026-07-27
 eightfold,midfirst.eightfold.ai,midfirst.eightfold.ai,dead,,2026-07-27
@@ -401,7 +401,7 @@ eightfold,nawb.eightfold.ai,nawb.eightfold.ai,dead,,2026-07-27
 eightfold,ncvioc.eightfold.ai,ncvioc.eightfold.ai,dead,,2026-07-28
 eightfold,neom.eightfold.ai,neom.eightfold.ai,unknown,,2026-07-28
 eightfold,netapp.eightfold.ai,netapp.eightfold.ai,unknown,,2026-07-28
-eightfold,netflix-sandbox.eightfold.ai,netflix-sandbox.eightfold.ai,live,472,2026-07-27
+eightfold,netflix-sandbox.eightfold.ai,netflix-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,netflix.eightfold.ai,netflix.eightfold.ai,live,477,2026-07-27
 eightfold,newellbrands.eightfold.ai,newellbrands.eightfold.ai,dead,,2026-07-28
 eightfold,newyorklife.eightfold.ai,newyorklife.eightfold.ai,live,302,2026-07-27
@@ -415,7 +415,7 @@ eightfold,northwesternmutual.eightfold.ai,northwesternmutual.eightfold.ai,dead,,
 eightfold,novobanco.eightfold.ai,novobanco.eightfold.ai,dead,,2026-07-27
 eightfold,nttdata.eightfold.ai,nttdata.eightfold.ai,live,16303,2026-07-27
 eightfold,nutanix.eightfold.ai,nutanix.eightfold.ai,dead,,2026-07-27
-eightfold,nvidia-sandbox.eightfold.ai,nvidia-sandbox.eightfold.ai,live,1156,2026-07-27
+eightfold,nvidia-sandbox.eightfold.ai,nvidia-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,nvidia.eightfold.ai,nvidia.eightfold.ai,live,2638,2026-07-27
 eightfold,nyu.eightfold.ai,nyu.eightfold.ai,dead,,2026-07-27
 eightfold,nyulangone.eightfold.ai,nyulangone.eightfold.ai,dead,,2026-07-27
@@ -511,7 +511,7 @@ eightfold,swingeducation.eightfold.ai,swingeducation.eightfold.ai,dead,,2026-07-
 eightfold,syf.eightfold.ai,syf.eightfold.ai,dead,,2026-07-28
 eightfold,symetra.eightfold.ai,symetra.eightfold.ai,live,69,2026-07-27
 eightfold,t.eightfold.ai,t.eightfold.ai,dead,,2026-07-27
-eightfold,tailoredbrands-sandbox.eightfold.ai,tailoredbrands-sandbox.eightfold.ai,live,380,2026-07-27
+eightfold,tailoredbrands-sandbox.eightfold.ai,tailoredbrands-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,tailoredbrands.eightfold.ai,tailoredbrands.eightfold.ai,live,1137,2026-07-27
 eightfold,tamu.eightfold.ai,tamu.eightfold.ai,dead,,2026-07-28
 eightfold,tamuc.eightfold.ai,tamuc.eightfold.ai,dead,,2026-07-28
@@ -577,7 +577,7 @@ eightfold,virginia.eightfold.ai,virginia.eightfold.ai,dead,,2026-07-28
 eightfold,virtahealth.eightfold.ai,virtahealth.eightfold.ai,dead,,2026-07-28
 eightfold,virtualcareercenter.eightfold.ai,virtualcareercenter.eightfold.ai,dead,,2026-07-27
 eightfold,vizientinc.eightfold.ai,vizientinc.eightfold.ai,live,202,2026-07-27
-eightfold,vodafone-qa-sandbox.eightfold.ai,vodafone-qa-sandbox.eightfold.ai,live,346,2026-07-27
+eightfold,vodafone-qa-sandbox.eightfold.ai,vodafone-qa-sandbox.eightfold.ai,dead,,2026-08-02
 eightfold,vodafone.eightfold.ai,vodafone.eightfold.ai,live,1406,2026-07-27
 eightfold,vs-errors.eightfold.ai,vs-errors.eightfold.ai,dead,,2026-07-27
 eightfold,wakefern.eightfold.ai,wakefern.eightfold.ai,dead,,2026-07-28
