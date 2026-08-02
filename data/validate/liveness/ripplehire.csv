@@ -18,7 +18,7 @@ ripplehire,axisbank-cp,https://axisbank-cp.ripplehire.com,dead,,2026-07-27
 ripplehire,axiscapital,https://axiscapital.ripplehire.com,live,0,2026-07-27
 ripplehire,axisdemo,https://axisdemo.ripplehire.com,dead,,2026-07-27
 ripplehire,axisfinance,https://axisfinance.ripplehire.com,live,234,2026-07-27
-ripplehire,axisfl-uat,https://axisfl-uat.ripplehire.com,live,118,2026-07-27
+ripplehire,axisfl-uat,https://axisfl-uat.ripplehire.com,dead,,2026-08-02
 ripplehire,axissecurities,https://axissecurities.ripplehire.com,live,78,2026-07-27
 ripplehire,axistrustee,https://axistrustee.ripplehire.com,live,3,2026-07-27
 ripplehire,axisuat,https://axisuat.ripplehire.com,dead,,2026-07-27
@@ -40,7 +40,7 @@ ripplehire,caratlane,https://caratlane.ripplehire.com,live,4,2026-07-27
 ripplehire,cimpress,https://cimpress.ripplehire.com,live,11,2026-07-27
 ripplehire,cipla,https://cipla.ripplehire.com,dead,,2026-07-27
 ripplehire,citiustech,https://citiustech.ripplehire.com,live,80,2026-07-27
-ripplehire,citiustech-uat,https://citiustech-uat.ripplehire.com,live,194,2026-07-27
+ripplehire,citiustech-uat,https://citiustech-uat.ripplehire.com,dead,,2026-08-02
 ripplehire,cpanel,https://cpanel.ripplehire.com,dead,,2026-07-27
 ripplehire,cpcalendars,https://cpcalendars.ripplehire.com,dead,,2026-07-27
 ripplehire,cpcontacts,https://cpcontacts.ripplehire.com,dead,,2026-07-27
@@ -129,7 +129,7 @@ ripplehire,qa1-acl-app,https://qa1-acl-app.ripplehire.com,dead,,2026-07-27
 ripplehire,qa1-atsl-app,https://qa1-atsl-app.ripplehire.com,dead,,2026-07-27
 ripplehire,qa1-tataaia,https://qa1-tataaia.ripplehire.com,live,209,2026-07-27
 ripplehire,qa1-ust-app,https://qa1-ust-app.ripplehire.com,live,300,2026-07-27
-ripplehire,qa4-demo,https://qa4-demo.ripplehire.com,live,837,2026-07-27
+ripplehire,qa4-demo,https://qa4-demo.ripplehire.com,dead,,2026-08-02
 ripplehire,qualitykiosk,https://qualitykiosk.ripplehire.com,dead,,2026-07-27
 ripplehire,quest-global,https://quest-global.ripplehire.com,live,0,2026-07-27
 ripplehire,quest-labs,https://quest-labs.ripplehire.com,dead,,2026-07-27
@@ -149,14 +149,14 @@ ripplehire,servicenow,https://servicenow.ripplehire.com,live,168,2026-07-27
 ripplehire,shopsocially,https://shopsocially.ripplehire.com,dead,,2026-07-27
 ripplehire,signup,https://signup.ripplehire.com,dead,,2026-07-27
 ripplehire,socialwavelength,https://socialwavelength.ripplehire.com,dead,,2026-07-27
-ripplehire,stldemo,https://stldemo.ripplehire.com,live,137,2026-07-27
+ripplehire,stldemo,https://stldemo.ripplehire.com,dead,,2026-08-02
 ripplehire,stltech,https://stltech.ripplehire.com,live,105,2026-07-27
 ripplehire,sungard,https://sungard.ripplehire.com,dead,,2026-07-27
 ripplehire,sunpharma,https://sunpharma.ripplehire.com,live,4,2026-07-27
 ripplehire,talentconnect,https://talentconnect.ripplehire.com,live,0,2026-07-27
 ripplehire,talic,https://talic.ripplehire.com,dead,,2026-07-27
 ripplehire,tataaia,https://tataaia.ripplehire.com,live,1158,2026-07-27
-ripplehire,tataaia-uat,https://tataaia-uat.ripplehire.com,live,1086,2026-07-27
+ripplehire,tataaia-uat,https://tataaia-uat.ripplehire.com,dead,,2026-08-02
 ripplehire,tataaig,https://tataaig.ripplehire.com,dead,,2026-07-27
 ripplehire,tatacapital,https://tatacapital.ripplehire.com,live,0,2026-07-27
 ripplehire,tataelxsi,https://tataelxsi.ripplehire.com,live,45,2026-07-27
@@ -183,7 +183,7 @@ ripplehire,tsci,https://tsci.ripplehire.com,dead,,2026-07-27
 ripplehire,tsl,https://tsl.ripplehire.com,dead,,2026-07-27
 ripplehire,ttpl,https://ttpl.ripplehire.com,dead,,2026-07-27
 ripplehire,uat,https://uat.ripplehire.com,dead,,2026-07-27
-ripplehire,uat-atsl-app,https://uat-atsl-app.ripplehire.com,live,37,2026-07-27
+ripplehire,uat-atsl-app,https://uat-atsl-app.ripplehire.com,dead,,2026-08-02
 ripplehire,uat-birlasoft,https://uat-birlasoft.ripplehire.com,dead,,2026-07-27
 ripplehire,uat-rcggs,https://uat-rcggs.ripplehire.com,dead,,2026-07-27
 ripplehire,uat2,https://uat2.ripplehire.com,live,788,2026-07-27
