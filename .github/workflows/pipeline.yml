@@ -317,9 +317,10 @@ jobs:
     needs: [scrape-plan, join, embed]
     if: always()
     runs-on: ubuntu-latest
-    # hang detector: ~5 min of work at this scale, plus up to ~4.5 min of `up()` retry backoff
-    # across the three HF uploads. All-or-nothing and the single writer, so it stays generous.
-    timeout-minutes: 38
+    # hang detector: ~5 min of work at this scale, up to ~4.5 min of `up()` retry backoff across
+    # the three HF uploads, and up to ~18 min of state_fetch retries (5 partial downloads of the
+    # ~1.3k-file lancedb dir + 7.5 min of waits, ADR-0033). Single writer, so it stays generous.
+    timeout-minutes: 48
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.scrape-plan.outputs.run == 'true'

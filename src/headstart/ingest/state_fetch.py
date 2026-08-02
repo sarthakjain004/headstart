@@ -18,7 +18,8 @@ the state it was building on had actually been fetched.
 So ask. The remote listing is the missing fact, and it fails closed where the download does not:
 ``list_repo_files`` raises on a 429 rather than falling back. Requiring exactly what the Hub reports
 also needs no bootstrap opt-out — a first run matches nothing, requires nothing, and proceeds.
-Retries mirror ``up()`` in ``pipeline.yml``: transient Hub failures should cost a wait, not state.
+Retries are sized to the measured outage, not to ``up()``: five attempts with exponential waits
+(ADR-0033), because HF's 429 windows run minutes and a 90-second budget lost 6 of 40 runs.
 
 Exit: 0 once every expected file is on disk, 1 when the state could not be fetched (ADR-0030).
 """
@@ -34,10 +35,17 @@ from pathlib import Path
 
 from headstart.ingest import REPO_ROOT
 
-_ATTEMPTS = 3
-_BACKOFF = (
-    30  # seconds, multiplied by the attempt number — 30s then 60s, as `up()` does
-)
+# Five attempts, exponential waits capped at 5 min: 30s → 60s → 120s → 240s (ADR-0033). Sized
+# against the measured failure — HF 429 windows lasting minutes, which the original 3×/90s
+# budget (copied from `up()`, not measured) could not ride out: 6 of 40 runs lost in 5 days.
+_ATTEMPTS = 5
+_BACKOFF = 30
+_BACKOFF_CAP = 300
+
+
+def wait_before(attempt: int) -> int:
+    """Seconds to wait after failed ``attempt`` (1-based): exponential from ``_BACKOFF``, capped."""
+    return min(_BACKOFF * 2 ** (attempt - 1), _BACKOFF_CAP)
 
 
 def remote_matches(remote_files: list[str], patterns: list[str]) -> set[str]:
@@ -82,10 +90,10 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         if attempt < _ATTEMPTS:
             print(
                 f"::warning::state fetch attempt {attempt} failed ({reason}); "
-                f"retrying in {attempt * _BACKOFF}s",
+                f"retrying in {wait_before(attempt)}s",
                 flush=True,
             )
-            time.sleep(attempt * _BACKOFF)
+            time.sleep(wait_before(attempt))
 
     print(
         f"[state_fetch] ABORT: could not fetch {' '.join(patterns)} from {repo} — {reason}.\n"
