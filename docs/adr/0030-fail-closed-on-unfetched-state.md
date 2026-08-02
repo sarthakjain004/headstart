@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-28
+- Amended by [ADR-0033](0033-state-fetch-retry-budget.md): the 3×/30 s–60 s retry budget described
+  below was re-sized after production measurement (the fail-closed semantics are unchanged).
 - Guards the download → mutate → upload cycle of [ADR-0020](0020-free-tier-deployment.md) across
   every stage of the sharded run ([ADR-0025](0025-parallelize-nightly-pipeline.md),
   [ADR-0026](0026-parallelize-nightly-scrape.md)). Changes no eviction, prune, or partial-harvest

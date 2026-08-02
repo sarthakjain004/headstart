@@ -41,3 +41,4 @@ supersedes it and note the supersession in both.
 | [0030](0030-fail-closed-on-unfetched-state.md) | Fail closed when the prior state was not fetched | 2026-07-28 |
 | [0031](0031-first-seen-index-stamp.md) | Stamp `first_seen` when a Job enters the index | 2026-07-28 |
 | [0032](0032-llm-access-via-router-behind-a-password.md) | LLM access goes through the router, behind a password | 2026-07-28 |
+| [0033](0033-state-fetch-retry-budget.md) | Size the state-fetch retry budget to the outage it actually faces | 2026-08-02 |

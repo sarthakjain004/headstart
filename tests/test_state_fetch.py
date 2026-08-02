@@ -24,6 +24,15 @@ _REMOTE = [
 ]
 
 
+def test_backoff_schedule_is_exponential_and_capped() -> None:
+    """ADR-0033: waits of 30/60/120/240 between five attempts — 7.5 min total, enough to ride
+    out the measured multi-minute 429 windows that a 90s budget lost 6 of 40 runs to. The cap
+    keeps a would-be attempt 6+ wait bounded if _ATTEMPTS ever grows."""
+    assert [sf.wait_before(n) for n in range(1, sf._ATTEMPTS)] == [30, 60, 120, 240]
+    assert sf.wait_before(10) == 300  # capped, not 30 * 2**9
+    assert sum(sf.wait_before(n) for n in range(1, sf._ATTEMPTS)) == 450
+
+
 def test_remote_matches_selects_only_matching_files() -> None:
     """A pattern set asks for a subset of what the repo holds — including nested paths, since
     `data/lancedb/*` must reach the table's fragment files, not just its top level."""
