@@ -259,6 +259,16 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   **Exception:** `data/validate/liveness/` is committed to git, so the repo is authoritative for
   it — do not look for it on HF. See `docs/agents/deployment.md`.
 
+### Adding or changing a scraper: run the filter harness first
+
+**Before any new ATS scraper's jobs ship — in the same PR that adds the scraper — run the
+`verify-search-filters` skill.** A new ATS is invisible to the harness until someone teaches it:
+its job-URL shape must be added to `scripts/eval/verify_filters.py`'s `URL_SHAPES` (derived from
+the scraper's `url=` construction and verified against the ATS's real routing, not assumed), and
+the harness must run clean, including its coverage gate (`atses_without_shape` empty). This rule
+exists because eightfold, freshteam and successfactors all shipped serving jobs no check ever
+looked at, and the gap surfaced as a user-visible bad result rather than a red run.
+
 ### Verifying experience-extraction coverage
 Whenever you change `experience.py`'s patterns, gauge the effect with
 `scripts/enrich/experience_coverage.py`: it runs `extract(field, description, title)` over

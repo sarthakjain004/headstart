@@ -61,6 +61,23 @@ URL_SHAPES = {
     "rippling": r"https://ats\.rippling\.com/[^/]+/jobs/[0-9a-f-]+",
     "trakstar": r"https://[^.]+\.hire\.trakstar\.com/jobs/[0-9a-z]+/?",
     "workday": r"https://[^.]+\.wd\d+\.myworkdayjobs\.com/.+/job/.+",
+    # scraper: f"https://{slug}{path}" where the SLUG IS THE BOARD HOST — five live ledger rows
+    # sit on custom domains (careers.micron.com, jobs.vodafone.com, portal.careers.hsbc.com…),
+    # so anchoring on .eightfold.ai flagged real rows. Host-agnostic like recruitee/darwinbox;
+    # verified live 2026-08-02 on both host kinds (amdocs-sandbox.eightfold.ai, careers.micron.com)
+    "eightfold": r"https://[^/]+/careers/job/\d+",
+    # scraper passes through the API's own url field; tenants live on {slug}.freshteam.com
+    "freshteam": r"https://[\w-]+\.freshteam\.com/jobs/[\w-]+",
+    # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
+    # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
+    "successfactors": r"https://[^/]+/job/.+/\d+/?",
+    # from the scraper's construction (oracle.py: /hcmUI/CandidateExperience/en/sites/{site}/job/{id});
+    # ZERO indexed rows today (single-company unlock, Icertis) so no live sample to verify against —
+    # the shape is source-derived only, and the first indexed row will exercise it.
+    "oracle": r"https://[^/]+/hcmUI/CandidateExperience/.+/job/\d+",
+    # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
+    # ZERO indexed rows today — source-derived only, same caveat as oracle.
+    "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
 }
 
 
@@ -323,6 +340,15 @@ def main() -> int:
     atses = sorted(a for a in seen if a)
     print(f"[setup] ATSes present in results: {atses}", file=sys.stderr, flush=True)
 
+    # The coverage GATE spans sampled ∪ registry — a low-ranking ATS (join, personio, trakstar
+    # measured absent from the 4-query sweep) must not evade the shape requirement by ranking
+    # low. Per-ATS check/url cases still run only over the sampled set: an ATS with zero indexed
+    # rows would produce meaningless cases (app.py's whitelist silently ignores unknown ats).
+    sys.path.insert(0, str(_ROOT / "src"))
+    from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS  # noqa: E402
+
+    gate_atses = sorted(set(atses) | (set(SCRAPERS) - DISABLED_ATS))
+
     checks = run_checks(args.base, atses)
     url_checks = run_url_checks(args.base, atses, http=not args.no_http)
 
@@ -345,6 +371,11 @@ def main() -> int:
                 for u in url_checks
                 if u.get("http_error") or (u.get("http_status") or 200) >= 400
             ),
+            # A served ATS with no URL_SHAPES entry used to print shape_ok=False but count
+            # nothing — three ATSes shipped unchecked that way (eightfold/freshteam/
+            # successfactors, caught 2026-08-02 by a user-visible sandbox row). Coverage is
+            # now a failure, not a footnote.
+            "atses_without_shape": sorted(a for a in gate_atses if a not in URL_SHAPES),
         },
     }
     _REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -356,6 +387,7 @@ def main() -> int:
         report["summary"]["checks_with_violations"]
         + report["summary"]["check_errors"]
         + report["summary"]["url_shape_failures"]
+        + len(report["summary"]["atses_without_shape"])
     )
     return 1 if bad else 0
 

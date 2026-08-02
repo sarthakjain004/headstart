@@ -31,11 +31,17 @@ current deployment and ADD what's missing (edit the script — it is meant to gr
 - Read `deploy/hf-space/app.py`: every query param `/search` accepts and every
   `_ETYPE_CLAUSES` key must have check cases. New filter param → new cases (single + at
   least one combo).
-- Every ATS in the live index needs a `URL_SHAPES` entry — the script prints the ATSes it
-  saw; an ATS without a pattern is a coverage gap, not a pass. Derive the expected job-URL
-  shape from the scraper's `url=` construction in `src/headstart/scrapers/{ats}.py`, and
-  distrust it: verify the shape against the ATS's real routing before encoding it (the
-  darwinbox scraper confidently built URLs its SPA wildcard-routed to the dashboard).
+- **ATS coverage is a hard gate, never a footnote.** The harness gates on the union of the
+  ATSes it sampled from the live index AND the scraper registry (`SCRAPERS − DISABLED_ATS`) —
+  sampling alone is not enumeration; join/personio/trakstar measurably never rank into the
+  4-query sweep. The summary's `atses_without_shape` must be empty: give every gated ATS a
+  `URL_SHAPES` entry **in the same session** — the harness exits nonzero otherwise, and it earned that
+  severity: three ATSes (eightfold, freshteam, successfactors) shipped unchecked while the
+  old code printed `shape_ok=False` and counted nothing, and the gap surfaced as a
+  user-visible sandbox row. Derive the expected job-URL shape from the scraper's `url=`
+  construction in `src/headstart/scrapers/{ats}.py`, and distrust it: verify the shape
+  against the ATS's real routing before encoding it (the darwinbox scraper confidently
+  built URLs its SPA wildcard-routed to the dashboard).
 - New Job fields surfaced by the API deserve integrity checks (non-null-ness, format).
 
 ## 2. Run it
