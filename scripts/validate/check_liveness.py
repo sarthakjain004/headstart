@@ -176,6 +176,37 @@ def _fetch(method, url, **kw):
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
+# Non-production boards are dead by convention, however alive their endpoint (ADR-0034).
+# Probing cannot tell fabricated jobs from real ones — sandbox tenants 200 with
+# production-looking counts (measured: eightfold amdocs-sandbox 2,099 "jobs" vs the real
+# board's 5; citigroup-qa-sandbox 3,193; ripplehire hdfcbank-uat 28,886 vs 173) — so the
+# HOST NAME is the signal: sandbox/uat/demo as a delimited token in tenant or url. Token-
+# bounded on purpose: one-word names like sandboxvr or thesandbox must not match.
+_NONPROD = re.compile(r"(?:^|[-./_])(?:sandbox|uat|demo)(?:[-./_]|$)", re.IGNORECASE)
+# Real companies whose *names* collide with the tokens (found by eyeballing every ledger
+# match before the convention landed). A company here can still have a nonprod board — the
+# exception is exact-tenant, not a pattern.
+_NONPROD_EXCEPTIONS = {
+    "sandbox-interactive-gmbh",  # Sandbox Interactive GmbH (Albion Online) — personio
+    "demo-duck",  # Demo Duck, video production agency — workable
+}
+# The inverse list: KNOWN nonprod tenants the token rule cannot see because the marker is
+# concatenated into the name — widening the regex to catch these would re-admit the
+# sandboxvr/thesandbox false positives, so they are named exactly instead.
+_NONPROD_TENANTS = {
+    "stldemo",  # ripplehire — STL (Sterlite Technologies) demo instance, 137 mirrored jobs
+}
+
+
+def is_nonprod(tenant: str, url: str) -> bool:
+    """A sandbox/UAT/demo board — marked dead before any probe is spent (ADR-0034)."""
+    if (tenant or "") in _NONPROD_EXCEPTIONS:
+        return False
+    if (tenant or "") in _NONPROD_TENANTS:
+        return True
+    return bool(_NONPROD.search(tenant or "") or _NONPROD.search(url or ""))
+
+
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
@@ -865,10 +896,15 @@ def main():
         def do(item):
             nonlocal probed
             ats, tenant, url = item
-            try:
-                verdict, jobs = PROBES[ats](tenant, url)
-            except Exception:
-                verdict, jobs = UNKNOWN, None
+            if is_nonprod(
+                tenant, url
+            ):  # dead by convention — no probe spent (ADR-0034)
+                verdict, jobs = DEAD, None
+            else:
+                try:
+                    verdict, jobs = PROBES[ats](tenant, url)
+                except Exception:
+                    verdict, jobs = UNKNOWN, None
             if verdict == UNKNOWN:
                 with ulock:
                     unknowns.append(item)

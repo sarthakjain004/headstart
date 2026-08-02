@@ -42,3 +42,4 @@ supersedes it and note the supersession in both.
 | [0031](0031-first-seen-index-stamp.md) | Stamp `first_seen` when a Job enters the index | 2026-07-28 |
 | [0032](0032-llm-access-via-router-behind-a-password.md) | LLM access goes through the router, behind a password | 2026-07-28 |
 | [0033](0033-state-fetch-retry-budget.md) | Size the state-fetch retry budget to the outage it actually faces | 2026-08-02 |
+| [0034](0034-nonprod-boards-dead-by-convention.md) | Non-production boards are dead by convention | 2026-08-02 |
