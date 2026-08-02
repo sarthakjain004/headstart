@@ -181,6 +181,11 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Do NOT add a `Co-Authored-By` trailer to commit messages.
 - Do NOT add "Generated with Claude Code" (or any similar attribution line) to PR descriptions.
 - Keep commit messages to a maximum of 50 words.
+- **Run the `code-review` skill on every code-changing PR before it merges** (the two-axis
+  Standards/Spec review, fixed point = the merge-base). Apply or explicitly defer its findings,
+  and re-verify (tests + lint) before merging. Docs-only PRs are exempt. This is the review that
+  caught a guard justified by a false premise on #77 and a glossary collision on #78 — it earns
+  its run time.
 
 ## Repo Conventions
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
@@ -210,6 +215,19 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   CI as proof the docs are current. When you touch that section, re-check the example rows against
   real data rather than editing them from memory: `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"`
   returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
+- **Every LLM API call in this project goes through the llm-router — never a provider SDK pointed
+  at a provider.** The router is a LiteLLM deployment on the Oracle box; callers use an
+  OpenAI-compatible client against its `/v1` endpoint with `LITELLM_MASTER_KEY` as the `api_key`,
+  and ask for a router-exposed model name (e.g. `agent-default`) rather than a vendor model id. One
+  place chooses the model, holds the provider keys, and carries the cost — so swapping providers is
+  a router config change, not a code change across callers. **The endpoint is deliberately not
+  public** (binds `127.0.0.1:4000`; only port 22 is open), so anything off-box reaches it through
+  the SSH tunnel or Tailscale — full recipes, including the HF Spaces one, in `docs/LLM_API.md`
+  (deliberately untracked: it names private infrastructure and this repo is public).
+  A remote caller that gates its own startup on the tunnel must degrade rather than die: bring the
+  app up regardless and fail that one endpoint, so a router outage never takes down the product.
+  **Known exception to migrate:** `scripts/eval/judge_pool.py:93` still constructs `Anthropic()`
+  against the default base URL — pre-existing, predates this rule.
 - Output must stream incrementally — never buffer until the program ends. Print per-item as
   work completes and flush (Python: `print(..., flush=True)` / `-u`; write results to a file
   progressively). A long batch that prints only at the end is forbidden: one slow item stalls

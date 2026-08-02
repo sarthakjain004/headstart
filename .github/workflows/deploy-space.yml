@@ -5,8 +5,14 @@ name: deploy-space
 on:
   push:
     branches: [main]
-    # src/headstart/geo.py is deployed into the Space too (copied in below)
-    paths: ["deploy/hf-space/**", "src/headstart/geo.py"]
+    # src/headstart modules deployed into the Space are copied in below
+    paths:
+      [
+        "deploy/hf-space/**",
+        "src/headstart/geo.py",
+        "src/headstart/llm_router.py",
+        "src/headstart/resume_query.py",
+      ]
   workflow_dispatch: {}
 
 permissions:
@@ -31,9 +37,11 @@ jobs:
             exit 0
           fi
           pip install "huggingface_hub[cli]"
-          # the India gazetteer lives in src/headstart (single source of truth, unit-tested
-          # there); the standalone Space app imports it as a sibling module
+          # these live in src/headstart (single source of truth, unit-tested there); the
+          # standalone Space app imports them as sibling modules
           cp src/headstart/geo.py deploy/hf-space/geo.py
+          cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
+          cp src/headstart/resume_query.py deploy/hf-space/resume_query.py
           # upload_folder, not `hf upload`: the CLI pre-creates the repo, and HF now answers
           # Docker-Space creates with a 402 paywall (new free Docker Spaces are PRO-only).
           # Ours exists and keeps running — targeting it directly needs no create call.

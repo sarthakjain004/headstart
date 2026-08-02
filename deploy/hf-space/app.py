@@ -8,12 +8,15 @@ task prefixes, filter clause) mirror ``headstart.search`` — keep them in locks
 
 from __future__ import annotations
 
+import hmac
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
+import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
+import resume_query  # synced from src/headstart/resume_query.py by deploy-space.yml
 from flask import Flask, jsonify, request
 from huggingface_hub import snapshot_download
 
@@ -46,9 +49,17 @@ _ATSES = sorted(
 # Filtering on a column the table lacks errors every query, so the feature stays dark until the
 # column lands and then switches itself on — no coordinated deploy.
 _HAS_FIRST_SEEN = "first_seen" in _table.schema.names
+# The Résumé feature is a private beta behind a shared password (ADR-0032). No secret set →
+# the endpoint answers 503 and the panel is hidden — same dark-until-ready shape as first_seen.
+_RESUME_PASSWORD = os.environ.get("RESUME_PASSWORD") or ""
+# IPs that have presented the password once; in-memory, so the set empties whenever the Space
+# sleeps or restarts and the password is simply asked for again. Only correct-password callers
+# are ever added, so its size is bounded by people who actually hold the secret.
+_RESUME_OK_IPS: set[str] = set()
 print(
     f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes"
-    + ("" if _HAS_FIRST_SEEN else " (no first_seen column yet — 'new since' hidden)"),
+    + ("" if _HAS_FIRST_SEEN else " (no first_seen column yet — 'new since' hidden)")
+    + ("" if _RESUME_PASSWORD else " (RESUME_PASSWORD unset — résumé search hidden)"),
     flush=True,
 )
 
@@ -206,6 +217,45 @@ def search():
     return jsonify(_search(q, where, max(1, min(k, _MAX_K))))
 
 
+def _client_ip() -> str:
+    """The caller's IP as the platform's own proxy reports it — the *rightmost*
+    ``X-Forwarded-For`` entry. Leftmost entries are client-supplied and trivially spoofed;
+    the rightmost was appended by the hop in front of us. Still a gate, not authentication:
+    IPs are shared (NAT) and forgeable in principle (ADR-0032)."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.rsplit(",", 1)[-1].strip()
+    return request.remote_addr or "?"
+
+
+@app.route("/resume-to-query", methods=["POST"])
+def resume_to_query():
+    """Paste a Résumé, get the one Query it implies — password-gated, once per IP (ADR-0032).
+
+    The pasted text is used for this single LLM call and never stored or logged."""
+    if not _RESUME_PASSWORD:
+        return jsonify({"error": "résumé search is not configured"}), 503
+    body = request.get_json(silent=True) or {}
+    ip = _client_ip()
+    if ip not in _RESUME_OK_IPS:
+        if not hmac.compare_digest(str(body.get("password") or ""), _RESUME_PASSWORD):
+            return jsonify({"error": "wrong or missing password"}), 401
+        _RESUME_OK_IPS.add(ip)
+    try:
+        query = resume_query.query_for(str(body.get("text") or ""), ask=llm_router.ask)
+    except resume_query.ResumeTooLong as exc:
+        return jsonify({"error": str(exc)}), 413
+    except resume_query.EmptyQuery as exc:
+        return jsonify({"error": str(exc)}), 502
+    except resume_query.ResumeError as exc:  # EmptyResume and any future refusal
+        return jsonify({"error": str(exc)}), 400
+    except llm_router.RouterUnavailable:
+        # Detail stays in the container log's traceback-free world: the caller only needs
+        # "temporarily off", and the reason may name internal hosts.
+        return jsonify({"error": "résumé search is temporarily unavailable"}), 503
+    return jsonify({"query": query})
+
+
 @app.route("/")
 def index():
     return _PAGE
@@ -292,6 +342,22 @@ _TEMPLATE = """<!doctype html>
   .empty{ color:var(--mut); text-align:center; padding:56px 20px; font-size:14.5px; }
   .foot{ color:#5c5c66; text-align:center; font-size:12px; margin-top:44px; }
 
+  .resume{ margin:10px 2px 0; }
+  .resume summary{ color:var(--mut); font-size:13px; cursor:pointer; user-select:none; }
+  .resume summary:hover{ color:var(--fg); }
+  .resume textarea{ width:100%; margin-top:10px; padding:12px 14px; resize:vertical;
+    background:var(--panel); color:var(--fg); border:1px solid var(--line);
+    border-radius:var(--r-md); font:inherit; font-size:13.5px; }
+  .resume textarea:focus{ outline:none; border-color:var(--red); }
+  .resume-row{ display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  .resume-row input{ padding:9px 11px; background:var(--panel); color:var(--fg);
+    border:1px solid var(--line); border-radius:var(--r-md); width:160px; }
+  .resume-row button{ padding:9px 18px; border:0; border-radius:var(--r-md);
+    background:var(--panel2); color:var(--fg); border:1px solid var(--line2); cursor:pointer; }
+  .resume-row button:hover{ border-color:var(--red); }
+  .resume-row button:disabled{ opacity:.5; cursor:wait; }
+  #rmsg{ color:var(--mut); font-size:12.5px; }
+
   .skel{ border:1px solid var(--line); background:var(--panel); border-radius:var(--r-lg);
     padding:18px 20px; margin-bottom:12px; }
   .shim{ height:14px; border-radius:8px;
@@ -308,6 +374,15 @@ _TEMPLATE = """<!doctype html>
     <input id="q" type="text" placeholder="describe the role — e.g. backend engineer at a climate startup" autofocus>
     <button onclick="go()">Search</button>
   </div>
+  <details class="resume"__RESUME_HIDDEN__>
+    <summary>or paste your résumé and let AI write the search</summary>
+    <textarea id="resume" rows="7" placeholder="paste the text of your résumé — it is used for this one request and never stored"></textarea>
+    <div class="resume-row">
+      <input id="rpass" type="password" placeholder="beta password" autocomplete="off">
+      <button onclick="readResume()" id="rbtn">Write my search</button>
+      <span id="rmsg"></span>
+    </div>
+  </details>
   <div class="filters">
     <div class="f"><label>ATS</label>
       <select id="ats"><option value="">any</option>__ATS_OPTIONS__</select></div>
@@ -376,6 +451,26 @@ const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:55%"></div>' +
   '<div class="shim" style="width:32%; margin-top:10px"></div>' +
   '<div class="shim" style="width:70%; margin-top:14px"></div></div>';
+// Résumé → Query: fills the search box for the user to edit, never searches on its own.
+// The password rides along when filled; the server remembers this IP after one success.
+async function readResume(){
+  const text = el('resume').value.trim();
+  const msg = el('rmsg'), btn = el('rbtn');
+  if (!text){ msg.textContent = 'paste your résumé first'; return; }
+  btn.disabled = true; msg.textContent = 'reading…';
+  try {
+    const r = await fetch('/resume-to-query', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text, password: el('rpass').value })
+    });
+    const data = await r.json();
+    if (!r.ok){ msg.textContent = data.error || ('failed (' + r.status + ')'); return; }
+    el('q').value = data.query;
+    el('q').focus();
+    msg.textContent = 'edit the search above, then hit Search';
+  } catch(e){ msg.textContent = 'request failed — try again'; }
+  finally { btn.disabled = false; }
+}
 async function go(){
   const q = el('q').value.trim(); if(!q) return;
   const p = new URLSearchParams({ q, k: el('k').value });
@@ -422,6 +517,8 @@ _PAGE = (
     # Hidden until the pipeline adds the column, so the control can ship ahead of the data
     # (the `el('seen')` guard in go() keeps the query-string builder happy either way).
     .replace("__SINCE_HIDDEN__", "" if _HAS_FIRST_SEEN else ' style="display:none"')
+    # Hidden until the RESUME_PASSWORD secret exists — dark feature, same shape as above.
+    .replace("__RESUME_HIDDEN__", "" if _RESUME_PASSWORD else ' style="display:none"')
     .replace(
         "__ATS_OPTIONS__",
         "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),

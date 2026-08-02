@@ -22,11 +22,14 @@ the full corpus must never land anywhere public (including git history).
 
 **Serving — public Docker Space `imPoseidon/headstart-search`**, live at
 `https://imposeidon-headstart-search.hf.space`. Built from `deploy/hf-space/` (Dockerfile, app.py,
-requirements.txt, README.md with the Space frontmatter) — the repo is the single source of truth;
-never edit the Space's files on the Hub directly. At container start the app `snapshot_download`s
-**only `data/lancedb/*`** from the dataset (the embeddings store is pipeline-only), loads the nomic
-encoder baked into the image, and serves Flask on port 7860. Free CPU tier: the Space sleeps when
-idle, and the first visitor after a quiet stretch waits ~a minute.
+start.sh, requirements.txt, README.md with the Space frontmatter; `geo.py`, `llm_router.py` and
+`resume_query.py` are copied in from `src/headstart/` by deploy-space.yml) — the repo is the single
+source of truth; never edit the Space's files on the Hub directly. The container boots via
+`start.sh`: a **best-effort** SSH tunnel to the llm-router first (serves only `/resume-to-query`;
+failure costs that endpoint a 503, never the boot — ADR-0032), then the app, which
+`snapshot_download`s **only `data/lancedb/*`** from the dataset (the embeddings store is
+pipeline-only), loads the nomic encoder baked into the image, and serves Flask on port 7860. Free
+CPU tier: the Space sleeps when idle, and the first visitor after a quiet stretch waits ~a minute.
 
 **Ingest — two GitHub Actions workflows**, both inert (green no-op) until the repo's `HF_TOKEN`
 secret is set:
@@ -101,6 +104,13 @@ Three `HF_TOKEN`s exist and they are **not interchangeable**:
 
 3. **Space secret `HF_TOKEN`** — a fine-grained **read** token scoped to the dataset only (the
    Space just downloads it).
+
+The résumé feature (ADR-0032) adds four more **Space** secrets, all under Space → Settings →
+Variables and secrets: `OCI_SSH_KEY` (tunnel private key), `LLM_ROUTER_SSH` (`user@host` of the
+router box — kept out of this public repo on purpose), `LITELLM_MASTER_KEY` (router auth), and
+`RESUME_PASSWORD` (the beta gate). Optional overrides: `LLM_ROUTER_MODEL` (default
+`agent-default`), `LLM_ROUTER_BASE`. Until they are set the feature ships dark — panel hidden,
+endpoint 503 — and the rest of the Space is unaffected.
 
 **Agents never set, read, or copy secrets** — the permission layer blocks it and that's correct.
 If a secret is missing or mis-scoped, tell the user exactly where it goes: repo secret via

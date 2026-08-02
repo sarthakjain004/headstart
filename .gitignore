@@ -64,3 +64,6 @@ data/ats-tenants-merged/active/.*
 data/eval/pool.jsonl
 # point-in-time filter-verification reports (scripts/eval/verify_filters.py)
 data/eval/filter_checks/
+# llm-router ops runbook — names private infrastructure (box address, key paths); this repo is
+# public, so it must never be committed (ADR-0032). Lives locally only.
+docs/LLM_API.md
