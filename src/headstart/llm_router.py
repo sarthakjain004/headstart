@@ -28,7 +28,16 @@ import os
 import urllib.error
 import urllib.request
 
-_TIMEOUT = 60  # seconds — one generation, no streaming
+# Measured against the live router (2026-08-02, the résumé prompt): a normal completion takes
+# 2-5s, but provider fallback can stretch one to 79.6s — which sat over the old 60s ceiling and
+# surfaced as 503s. One generation, no streaming.
+_TIMEOUT = 120
+# The router's default model *thinks*, and thinking bills into the completion budget: the same
+# one-line answer measured 599-706 completion tokens, ~590+ of them hidden reasoning. The old
+# budget of 200 was eaten before the answer began — every reply came back `finish_reason:
+# length`, truncated to fragments like "Java, GraphQL". Sized so reasoning plus a one-line
+# answer never hits the ceiling; visible output stays one line because the prompt says so.
+_MAX_TOKENS = 4000
 
 
 class RouterUnavailable(Exception):
@@ -42,7 +51,7 @@ def ask(prompt: str) -> str:
         {
             "model": os.environ.get("LLM_ROUTER_MODEL", "agent-default"),
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200,
+            "max_tokens": _MAX_TOKENS,
             "temperature": 0,
         }
     ).encode("utf-8")
