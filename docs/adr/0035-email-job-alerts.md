@@ -1,6 +1,6 @@
 # ADR-0035: Email job alerts — invite-only, Google-verified, one Digest per pipeline run
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-03
 - Adds a second delivery channel to the **Alerts** language (CONTEXT.md §Alerts), whose
   Subscriber/Filter/Notification terms are today Telegram-shaped.
@@ -102,6 +102,16 @@ an attachment is download-open-scroll; the spreadsheet exists for working the li
 is built with `xlsxwriter` (pure Python, no compiled dependencies) imported inside the render
 function. Zero matches sends nothing at all.
 
+**Mail leaves through Resend**, behind the `mail` seam so the provider is one adapter rather than
+a fact spread across the sender. Two of its limits are design inputs, not fine print. It needs a
+**verified sending domain**: the shared `onboarding@resend.dev` address only delivers to the
+Resend account's own mailbox, so reaching invited recipients requires a domain with Resend's
+SPF/DKIM records published — the one prerequisite this feature has outside the repo. And its free
+tier is 3,000 messages a month **capped at 100 a day**, where the daily cap binds first: twelve
+runs a day puts the ceiling near eight always-matching Subscribers, which the invite list is
+expected to stay well inside. Exceeding either limit is a paid-tier decision, and the seam means
+switching provider is a new adapter, not a change to how a Digest is built.
+
 ## Alternatives considered
 
 - **A GitHub Gist as the store**, as `headstart/state.py` does for the bot. A "secret" Gist is
@@ -118,11 +128,16 @@ function. Zero matches sends nothing at all.
   the corpus is the 2,000-Job Feed rather than the Search index.
 - **A fixed two-hour lookback** instead of per-Subscriber watermarks — see the cadence numbers
   above.
+- **Other senders.** Amazon SES is materially cheaper per message and would matter at scale, but
+  carries the same domain requirement plus a sandbox-exit request, and its ceiling is irrelevant
+  while the invite list is the binding constraint. Gmail SMTP with an app password is the only
+  option needing no domain (~500/day), and was rejected because it sends from a personal mailbox
+  and stakes that account's reputation on automated mail.
 
 ## Consequences
 
-Three new secrets join `HF_TOKEN`: `GOOGLE_CLIENT_ID`, `ALERTS_ALLOWLIST`, and one mail
-credential. Personal data enters the system for the first time, which is why the private-dataset
+Three new secrets join `HF_TOKEN`: `GOOGLE_CLIENT_ID`, `ALERTS_ALLOWLIST` and `RESEND_API_KEY`.
+Personal data enters the system for the first time, which is why the private-dataset
 path, the `.gitignore` line, and a rule that addresses are never printed to workflow logs are part
 of this decision rather than follow-up hygiene. Each record carries a random unsubscribe token, so
 the unsubscribe link needs no session and no signing key.
@@ -131,11 +146,8 @@ The Telegram bot is left untouched and still inert. Two alert paths with differe
 semantics is a real duplication, and the intended resolution — should email prove out — is to move
 Telegram onto the same `shortlist`, not to grow a second ranking rule.
 
-Volume is bounded by the invite list by design. At twelve runs a day a hosted free tier of ~3,000
-messages a month supports roughly eight always-matching Subscribers, and the send-nothing-on-zero
-rule puts the real number higher; the tier is the signal that this outgrew its assumptions.
-
-**Open:** the mail provider. Hosted senders (Resend, SES) need a verified sending domain before
-they will deliver to arbitrary recipients, which is real setup if no domain is on hand; Gmail SMTP
-with an app password sends immediately, caps at ~500/day, and is proportionate at invite-only
-scale. This ADR moves to Accepted once that is settled.
+Nothing ships until a sending domain is verified with Resend; until then the feature is inert in
+the same deliberate way the Telegram workflow is inert without its secrets. Volume is bounded by
+the invite list by design, and the send-nothing-on-zero rule keeps real usage under the nominal
+ceiling — the day Resend's 100/day cap is reached is the signal that this outgrew its assumptions,
+not a failure to design for scale.
