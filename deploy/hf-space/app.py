@@ -436,6 +436,7 @@ _TEMPLATE = """<!doctype html>
     background-clip:text; color:transparent; }
   .top-right{ display:flex; align-items:center; gap:10px; }
   .count{ font:500 12px/1 var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);
+    white-space:nowrap;
     background:var(--raise); border:1px solid var(--rule); padding:8px 12px; border-radius:var(--r-pill); }
   .count b{ color:var(--aqua); }
   .icon-btn{ width:36px; height:36px; border-radius:var(--r-md); border:1px solid var(--rule);
@@ -592,6 +593,22 @@ _TEMPLATE = """<!doctype html>
     font-size:12.5px; line-height:1.6; text-wrap:pretty; }
   .foot code{ font-family:var(--mono); color:var(--ink-2); }
 
+  /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
+     shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
+  @media (max-width:560px){
+    .shell{ padding:18px 14px 60px; }
+    .count{ display:none; }              /* the index size is context, not a control */
+    .searchbar{ flex-direction:column; }
+    .go{ padding:15px; width:100%; }
+    .hint{ gap:6px; }
+    .toolbar{ gap:8px 10px; }
+    .toolbar .note{ display:none; }      /* the selects say what they are */
+    .toolbar .n{ order:3; width:100%; }
+    .card{ padding:14px 15px; }
+    .card a.title{ font-size:15px; }
+    .match{ width:60px; }
+  }
+
   :focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important;
@@ -677,7 +694,7 @@ _TEMPLATE = """<!doctype html>
 
       <div class="set">
         <h2>Where</h2>
-        <div class="f"><label for="india">India</label>
+        <div class="f"><label for="india">India — city or region</label>
           <select id="india"><option value="">Anywhere</option>
             <option value="india">All India</option>__INDIA_OPTIONS__</select></div>
         <div class="f"><label for="location">Location</label>
@@ -851,7 +868,7 @@ async function go(){
     return `
     <div class="card" style="--tone:${c}; animation-delay:${Math.min(i,12)*35}ms">
       <div class="hd">
-        <div style="min-width:0">
+        <div style="flex:1; min-width:0">
           <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
