@@ -36,7 +36,7 @@ supersedes it and note the supersession in both.
 | [0025](0025-parallelize-nightly-pipeline.md) | Parallelize the nightly pipeline across GitHub Actions runners: plan → fan-out → merge | 2026-07-24 |
 | [0026](0026-parallelize-nightly-scrape.md) | Parallelize the nightly scrape (ADR-0025 Phase 2): scrape-plan → scrape-fan → join | 2026-07-25 |
 | [0027](0027-measured-scrape-cost-ledger.md) | Bin-pack the scrape fan-out on measured per-board seconds | 2026-07-25 |
-| [0028](0028-ingest-package.md) | The 6-hourly ingest run lives in `src/headstart/ingest/` | 2026-07-25 |
+| [0028](0028-ingest-package.md) | The scheduled ingest run lives in `src/headstart/ingest/` | 2026-07-25 |
 | [0029](0029-embedding-cost-model.md) | Embedding cost is linear in tokens — length-sort batches | 2026-07-25 |
 | [0030](0030-fail-closed-on-unfetched-state.md) | Fail closed when the prior state was not fetched | 2026-07-28 |
 | [0031](0031-first-seen-index-stamp.md) | Stamp `first_seen` when a Job enters the index | 2026-07-28 |
@@ -45,3 +45,4 @@ supersedes it and note the supersession in both.
 | [0034](0034-nonprod-boards-dead-by-convention.md) | Non-production boards are dead by convention | 2026-08-02 |
 | [0035](0035-email-job-alerts.md) | Email job alerts — invite-only, Google-verified, one Digest per run | 2026-08-05 |
 | [0036](0036-fetch-hf-state-without-xet.md) | Fetch HF state over the plain path, not Xet | 2026-08-05 |
+| [0037](0037-wellfound-three-surface-scrape.md) | Wellfound is scraped through three surfaces, behind a real browser | 2026-08-05 |
