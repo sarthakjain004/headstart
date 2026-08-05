@@ -28,6 +28,12 @@ concurrency:
 env:
   HF_DATASET: imPoseidon/headstart-index
   HF_SPACE: imPoseidon/headstart-search
+  # Fetch over the plain resolve/CDN path instead of Xet. Every pipeline failure since
+  # 2026-08-02 (21 of 25 runs) is a 429 from `…/xet-read-token`, tripped ~1000 files into the
+  # fetch; the table is now 2,563 files because compaction — the thing that reaps them — is
+  # itself blocked by the same 429. Xet asks that endpoint per file, so the request rate scales
+  # with file count and this repo has outgrown its limit.
+  HF_HUB_DISABLE_XET: "1"
 
 jobs:
   cleanup:
