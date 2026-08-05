@@ -22,10 +22,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)"
 
-# geo.py, llm_router.py and resume_query.py are not in the repo's deploy/hf-space/ —
-# deploy-space.yml copies them in from src/headstart/ (single source of truth, where their
-# tests live) before pushing to the Space.
+# geo.py, llm_router.py, resume_query.py and the alerts/ package are not in the repo's
+# deploy/hf-space/ — deploy-space.yml copies them in from src/headstart/ (single source of
+# truth, where their tests live) before pushing to the Space.
 COPY app.py geo.py llm_router.py resume_query.py start.sh .
+COPY alerts ./alerts
 RUN chmod +x start.sh
 EXPOSE 7860
 CMD ["./start.sh"]

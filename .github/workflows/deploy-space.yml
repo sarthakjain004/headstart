@@ -12,6 +12,7 @@ on:
         "src/headstart/geo.py",
         "src/headstart/llm_router.py",
         "src/headstart/resume_query.py",
+        "src/headstart/alerts/**",
       ]
   workflow_dispatch: {}
 
@@ -42,6 +43,11 @@ jobs:
           cp src/headstart/geo.py deploy/hf-space/geo.py
           cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
           cp src/headstart/resume_query.py deploy/hf-space/resume_query.py
+          # A package, not a flat file: its members import each other relatively, so the same
+          # directory works as `headstart.alerts` in the repo and as top-level `alerts` here.
+          rm -rf deploy/hf-space/alerts
+          cp -r src/headstart/alerts deploy/hf-space/alerts
+          find deploy/hf-space/alerts -name '__pycache__' -type d -exec rm -rf {} +
           # upload_folder, not `hf upload`: the CLI pre-creates the repo, and HF now answers
           # Docker-Space creates with a 402 paywall (new free Docker Spaces are PRO-only).
           # Ours exists and keeps running — targeting it directly needs no create call.

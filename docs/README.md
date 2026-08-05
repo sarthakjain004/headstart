@@ -15,6 +15,7 @@ Start here — docs are grouped by area.
 
 ## Operations & notes
 - [telegram-bot.md](telegram-bot.md) — Telegram new-job alert bot (runs on GitHub Actions).
+- [email-alerts.md](email-alerts.md) — invite-only email Digests after each pipeline run (ADR-0035).
 - [learnings.md](learnings.md) — running log of non-obvious findings (newest first).
 
 Deeper Wellfound R&D (captures, the device-check map, the experiment log) lives under
