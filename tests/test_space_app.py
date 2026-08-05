@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("flask")  # [ui] extra — not installed in CI's quality job
+pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
 
 APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
 
@@ -78,16 +78,18 @@ def app(tmp_path_factory):
             query_for=lambda *a, **k: "",
         ),
     }
+    # The Space imports the alerts package flat, as deploy-space.yml lays it down.
+    import headstart.alerts.access as _access
+    import headstart.alerts.identity as _identity
+    import headstart.alerts.store as _store
+
+    stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
+    stubs["alerts.store"] = _store
+    # Every stubbed name is restored, including the two above — leaving a fake `alerts` in
+    # sys.modules would follow this fixture into every later test in the session.
     saved = {name: sys.modules.get(name) for name in stubs}
     sys.modules.update(stubs)
     try:
-        # The Space imports the alerts package flat, as deploy-space.yml lays it down.
-        import headstart.alerts.access as _access
-        import headstart.alerts.identity as _identity
-        import headstart.alerts.store as _store
-
-        sys.modules["alerts"] = _module("alerts", access=_access, identity=_identity)
-        sys.modules["alerts.store"] = _store
         spec = importlib.util.spec_from_file_location("space_app", APP)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

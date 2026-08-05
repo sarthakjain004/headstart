@@ -19,16 +19,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
+from .access import normalize
+
 PREFIX = "subscriptions/"
+_ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id mints
 ALLOWLIST_PATH = "subscriptions/allowlist.json"
 
-# The Space `/search` parameters a Subscription may carry. Recency is deliberately absent:
-# `posted_within`/`seen_within` would fight the Watermark, which is what decides "new" here.
+# The Space `/search` parameters a Subscription may carry. `seen_within` is deliberately
+# absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
+# honouring both would fight. `posted_within` is kept: it filters `posted_at` (when the
+# employer posted), an independent constraint the user set and expects to survive.
 ALLOWED_SEARCH_FILTERS = frozenset(
     {
         "remote",
@@ -39,6 +45,7 @@ ALLOWED_SEARCH_FILTERS = frozenset(
         "location",
         "company",
         "has_salary",
+        "posted_within",
     }
 )
 
@@ -48,8 +55,11 @@ def now_iso() -> str:
 
 
 def subscription_id(email: str) -> str:
-    """A stable, non-reversing id for an address — re-subscribing overwrites one record."""
-    return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
+    """A stable, non-reversing id for an address — re-subscribing overwrites one record.
+
+    Normalized through `access.normalize`, the same function the allowlist compares with:
+    if the two ever disagreed, an allowlisted address could get a second record."""
+    return hashlib.sha256(normalize(email).encode("utf-8")).hexdigest()[:16]
 
 
 def _kept(search_filters: dict[str, Any]) -> dict[str, str]:
@@ -86,7 +96,7 @@ class Subscription:
         stamp = when or now_iso()
         return cls(
             id=subscription_id(email),
-            email=email.strip().lower(),
+            email=normalize(email),
             query=query.strip(),
             search_filters=_kept(search_filters),
             created_at=stamp,
@@ -174,12 +184,19 @@ class Store:
         return out
 
     def get(self, sub_id: str) -> Subscription | None:
-        """One Subscription by id, or None. Reads a single file rather than the whole set."""
+        """One Subscription by id, or None. Reads a single file rather than the whole set.
+
+        The id is checked against the shape `subscription_id` mints *before* it reaches a
+        repo path: it arrives from a query string, and an unchecked value would let a caller
+        name any file in the repo (`allowlist`, or a `../` traversal). Parsing is inside the
+        guard too, so a file that is not a Subscription answers None rather than raising."""
+        if not _ID.fullmatch(sub_id):
+            return None
         try:
             data = json.loads(_read(self._repo, f"{PREFIX}{sub_id}.json", self._token))
-        except Exception:  # noqa: BLE001 — absent or unreadable are the same answer here
+            return Subscription.from_dict(data)
+        except Exception:  # noqa: BLE001 — absent, unreadable and not-a-Subscription are one answer
             return None
-        return Subscription.from_dict(data)
 
     def put(self, sub: Subscription) -> None:
         _write(

@@ -113,10 +113,36 @@ def test_revising_keeps_the_unsubscribe_token_and_watermark():
 
 
 def test_get_returns_one_record_or_none(monkeypatch):
-    _Hub({"subscriptions/aaa.json": _record("aaa")}).install(monkeypatch)
+    real = st.subscription_id("ada@example.com")
+    _Hub({f"subscriptions/{real}.json": _record(real)}).install(monkeypatch)
     store = st.Store(REPO, TOKEN)
-    assert store.get("aaa").email == "ada@example.com"
-    assert store.get("nope") is None
+    assert store.get(real).email == "ada@example.com"
+    assert store.get("0" * 16) is None  # well-formed but absent
+
+
+@pytest.mark.parametrize(
+    "sub_id", ["allowlist", "../README", "aaa", "", "0" * 15, "NOTHEX0000000000"]
+)
+def test_get_refuses_ids_that_are_not_ids(monkeypatch, sub_id):
+    # The id arrives from a query string. Unchecked, `allowlist` reads the allowlist file
+    # and `../` walks out of the prefix — both reached hf_hub_download before this guard.
+    reads = []
+
+    def spy(repo, path, token):
+        reads.append(path)
+        raise AssertionError(f"unvalidated id reached a repo path: {path}")
+
+    monkeypatch.setattr(st, "_read", spy)
+    assert st.Store(REPO, TOKEN).get(sub_id) is None
+    assert reads == []
+
+
+def test_get_answers_none_for_a_file_that_is_not_a_subscription(monkeypatch):
+    ok = "a" * 16
+    _Hub({f"subscriptions/{ok}.json": b'{"allowed": ["ada@example.com"]}'}).install(
+        monkeypatch
+    )
+    assert st.Store(REPO, TOKEN).get(ok) is None
 
 
 def test_resubscribing_overwrites_rather_than_duplicates(monkeypatch):

@@ -1,5 +1,6 @@
-"""Digest rendering. The body is dependency-free so it runs in CI's quality job; the
-spreadsheet needs xlsxwriter and is skipped there (ADR-0035)."""
+"""Digest rendering (ADR-0035). The body renderer is dependency-free; the spreadsheet needs
+xlsxwriter, which is in the [dev] extra so this runs in CI — the importorskip below only
+guards a bare environment."""
 
 import pytest
 
@@ -51,9 +52,7 @@ def test_html_escapes_untrusted_fields():
 
 
 def test_xlsx_has_a_header_row_and_one_row_per_job():
-    pytest.importorskip(
-        "xlsxwriter"
-    )  # [alerts] extra — not installed in CI's quality job
+    pytest.importorskip("xlsxwriter")  # in [dev]; guard for a bare environment
     openpyxl = pytest.importorskip("openpyxl")
     import io
 

@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .access import normalize
+
 
 class IdentityError(Exception):
     """The credential was missing, malformed, unverified, or not issued for this app."""
@@ -51,7 +53,7 @@ def verify(
             f"sign-in could not be verified: {type(exc).__name__}"
         ) from exc
 
-    email = str(claims.get("email") or "").strip().lower()
+    email = normalize(str(claims.get("email") or ""))
     if not email:
         raise IdentityError("sign-in carried no email address")
     if not claims.get("email_verified"):

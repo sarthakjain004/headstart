@@ -99,8 +99,10 @@ completed` and exiting unless the conclusion was `success`. Email delivery must 
 domain with ingest in either direction: a 429-killed run sends nothing rather than stale results,
 and a mail bug can never fail the index.
 
-**The code is a package, `src/headstart/alerts/`**, with `store`, `identity`, `access`, `search`,
-`shortlist`, `digest`, `mail` and `run` as members. Two properties are load-bearing rather than
+**The code is a package, `src/headstart/alerts/`**, with `store`, `identity`, `access`,
+`space_query`, `shortlist`, `digest`, `mail` and `run` as members. (The Space client is
+`space_query`, not `search`: `headstart/search.py` already holds the ranking conventions, and
+Rule 3 rejects near-homographs that are hard to grep and easy to misread in a traceback.) Two properties are load-bearing rather than
 cosmetic. `__init__.py` stays **empty**, so the Space importing `alerts.store` executes nothing else
 and never drags the spreadsheet or mail dependencies into its image. Members import each other
 **relatively** (`from .store import …`), which makes the package position-independent — the same
