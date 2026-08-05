@@ -78,6 +78,11 @@ URL_SHAPES = {
     # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
     # ZERO indexed rows today — source-derived only, same caveat as oracle.
     "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
+    # run_sidecorpus*.py build f"https://sidecorpus.com/jobs/{id}-{slug}".rstrip("-"), so the
+    # slug is optional when a listing has none. Verified against all 6,462 rows of
+    # data/jobs/sidecorpus.csv (zero non-matching). Sidecorpus was served with NO shape entry
+    # until 2026-08-05 — the same class of gap the coverage gate above was added to catch.
+    "sidecorpus": r"https://sidecorpus\.com/jobs/\d+(-[\w-]+)?",
 }
 
 
