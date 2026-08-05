@@ -474,8 +474,9 @@ _TEMPLATE = """<!doctype html>
   .feature summary{ list-style:none; cursor:pointer; padding:14px 16px; display:flex; gap:11px;
     align-items:center; user-select:none; }
   .feature summary::-webkit-details-marker{ display:none; }
-  .feature .dot{ width:8px; height:8px; border-radius:50%; background:var(--violet); flex:none;
-    box-shadow:0 0 12px var(--violet); }
+  /* the brand gradient, not flat violet — violet on its own means "remote" on a result tag */
+  .feature .dot{ width:8px; height:8px; border-radius:50%; flex:none;
+    background:linear-gradient(135deg,var(--aqua),var(--violet)); box-shadow:0 0 12px var(--glow); }
   .feature .ttl{ font-weight:600; font-size:14px; }
   .feature .sub{ color:var(--ink-3); font-size:12.5px; margin-left:auto; }
   .feature .body{ padding:0 16px 16px; }
@@ -507,6 +508,7 @@ _TEMPLATE = """<!doctype html>
   .f{ display:flex; flex-direction:column; gap:5px; margin-bottom:11px; }
   .f:last-child{ margin-bottom:0; }
   .f label{ font-size:12px; color:var(--ink-2); font-weight:500; }
+  .f .tip{ font-size:11px; line-height:1.4; color:var(--ink-3); }
   .f select,.f input{ width:100%; padding:9px 11px; border-radius:var(--r-md); font:inherit;
     font-size:13px; background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
     outline:none; transition:border-color var(--step); }
@@ -576,14 +578,18 @@ _TEMPLATE = """<!doctype html>
     border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
 
   .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); }
-  .empty .big{ font:600 17px var(--serif); color:var(--ink); margin-bottom:8px; }
+  .empty{ max-width:56ch; margin-inline:auto; }
+  .empty .big{ font:600 17px var(--serif); color:var(--ink); margin-bottom:8px;
+    text-wrap:balance; }
   .skel{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
     padding:18px; margin-bottom:11px; }
   .shim{ height:13px; border-radius:7px; background:linear-gradient(90deg,
     var(--raise-2) 25%, var(--rule) 45%, var(--raise-2) 65%); background-size:200% 100%;
     animation:shim 1.2s linear infinite; }
   @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
-  .foot{ text-align:center; color:var(--ink-3); font-size:12px; margin-top:46px; }
+  /* running text, so it gets a measure — 1180px of prose is unreadable */
+  .foot{ max-width:62ch; margin:46px auto 0; text-align:center; color:var(--ink-3);
+    font-size:12.5px; line-height:1.6; text-wrap:pretty; }
   .foot code{ font-family:var(--mono); color:var(--ink-2); }
 
   :focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
@@ -661,8 +667,10 @@ _TEMPLATE = """<!doctype html>
             <option value="full-time">Full-time</option><option value="part-time">Part-time</option>
             <option value="contract">Contract</option><option value="internship">Internship</option>
           </select></div>
-        <div class="f"><label for="maxyears">Max experience wanted (years)</label>
-          <input id="maxyears" type="number" min="0" placeholder="Any"></div>
+        <div class="f"><label for="maxyears">Your experience (years)</label>
+          <input id="maxyears" type="number" min="0" placeholder="Any">
+          <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
+            requirement are kept.</span></div>
         <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
         <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
       </div>
@@ -714,7 +722,9 @@ _TEMPLATE = """<!doctype html>
     </main>
   </div>
 
-  <div class="foot">Ranked by <code>nomic</code> embeddings over a filtered LanceDB index · English-language tech roles, read straight from company boards</div>
+  <div class="foot">Every job here is read straight from the company's own careers page — no
+    reposts, no agencies, no expired listings. Your search is matched on meaning rather than
+    keywords. English-language tech roles, refreshed every couple of hours.</div>
 </div>
 <script>
 const el = s => document.getElementById(s);
@@ -751,7 +761,14 @@ const isNew = s => {
 };
 // Match strength gets a colour as well as a number: weak matches read violet, strong ones
 // read lime, so a scan down the column shows where the good results stop.
-const tone = s => s >= .75 ? 'var(--lime)' : s >= .6 ? 'var(--aqua)' : s >= .45 ? 'var(--amber)' : 'var(--violet)';
+// Match strength is a QUANTITY, so it gets a sequential ramp — one hue, increasing intensity —
+// not four different hues. Hue is reserved for categories (amber = new, lime = pays, violet =
+// remote); reusing those hues here would have made lime mean both "strong match" and "salary".
+// Weak matches fade toward the muted ink so a scan shows where the good results stop.
+const tone = s => {
+  const pct = Math.round(Math.max(0, Math.min(1, (s - .35) / .45)) * 100);
+  return `color-mix(in srgb, var(--aqua) ${25 + pct * .75}%, var(--ink-3))`;
+};
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
   '<div class="shim" style="width:30%; margin-top:10px"></div>' +
