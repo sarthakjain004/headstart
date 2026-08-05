@@ -64,6 +64,11 @@ data/ats-tenants-merged/active/.*
 data/eval/pool.jsonl
 # point-in-time filter-verification reports (scripts/eval/verify_filters.py)
 data/eval/filter_checks/
+# Subscription records pulled from the private headstart-subscribers dataset — email addresses,
+# never committed to this public repo (ADR-0035). The data/ ignores above are per-directory, so a
+# new top-level path needs its own line.
+subscriptions/
+
 # llm-router ops runbook — names private infrastructure (box address, key paths); this repo is
 # public, so it must never be committed (ADR-0032). Lives locally only.
 docs/LLM_API.md

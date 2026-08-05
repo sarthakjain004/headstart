@@ -78,6 +78,17 @@ A Subscriber's match criteria (e.g. location) deciding which Jobs to send.
 **Notification**:
 A message sent to a Subscriber for a Job that matches its Filter and hasn't been seen before.
 
+**Subscription** (ADR-0035):
+An email recipient's standing request for alerts — a Google-verified address, one **Query**, a set of **Search filters**, and its own **Watermark**. Deliberately not a **Subscriber**: a Subscription is ranked semantically against its Query and constrained by Search filters, where a Subscriber is matched by keyword against a **Filter**. The two are separate paths over separate corpora (**Search index** vs **Feed**).
+_Avoid_: subscriber, filter — both are taken by the Telegram path and mean something else there.
+
+**Watermark**:
+The instant a Subscription was last sent a **Digest**. The next Digest carries only Jobs whose `first_seen` is strictly after it, so an irregular pipeline cadence can neither double-send nor skip a window. Advanced only once a Digest has been accepted for delivery.
+
+**Digest**:
+The one email a Subscription receives after a pipeline run — its best new matches capped at 30, each with its semantic score and apply link, plus the same rows as a spreadsheet attachment. No matches sends no Digest.
+_Avoid_: alert, notification — a **Notification** is the Telegram path's per-Job message; a Digest is one batched email per run.
+
 ### Search
 
 **Tech filter**:
