@@ -1,0 +1,157 @@
+"""The Space's where-clause builder — `deploy/hf-space/app.py::_build_filter` (ADR-0035).
+
+That function is the *reference* filter implementation (its own docstring says so: it has
+diverged from `headstart.search.build_filter`), and it had no coverage anywhere, because
+`deploy/` sits outside `testpaths` and importing the app pulls in a model download, a
+SentenceTransformer and a LanceDB table.
+
+So the heavy imports are stubbed in `sys.modules` and the module is loaded from its path —
+the same importlib trick `tests/test_check_liveness.py` uses for `scripts/`. Only pure
+string-building is exercised; nothing here touches the network or the index.
+"""
+
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("flask")  # [ui] extra — not installed in CI's quality job
+
+APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
+
+
+def _module(name, **attrs):
+    mod = types.ModuleType(name)
+    for key, value in attrs.items():
+        setattr(mod, key, value)
+    return mod
+
+
+class _Table:
+    """Enough LanceDB for import time: an ats scan, a schema and a row count."""
+
+    schema = types.SimpleNamespace(names=["ats", "title", "first_seen"])
+
+    def search(self, *a, **k):
+        return self
+
+    def select(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def to_list(self):
+        return [{"ats": "greenhouse"}, {"ats": "lever"}]
+
+    def count_rows(self):
+        return 2
+
+
+@pytest.fixture(scope="module")
+def app(tmp_path_factory):
+    state = tmp_path_factory.mktemp("state")
+    stubs = {
+        "lancedb": _module(
+            "lancedb",
+            connect=lambda *a, **k: types.SimpleNamespace(
+                open_table=lambda *a, **k: _Table()
+            ),
+        ),
+        "sentence_transformers": _module(
+            "sentence_transformers", SentenceTransformer=lambda *a, **k: object()
+        ),
+        "huggingface_hub": _module(
+            "huggingface_hub", snapshot_download=lambda *a, **k: str(state)
+        ),
+        "geo": _module("geo", where=lambda place: None, DROPDOWN=["bengaluru"]),
+        "llm_router": _module(
+            "llm_router", RouterUnavailable=type("RU", (Exception,), {})
+        ),
+        "resume_query": _module(
+            "resume_query",
+            EmptyQuery=type("EQ", (Exception,), {}),
+            ResumeError=type("RE", (Exception,), {}),
+            ResumeTooLong=type("RTL", (Exception,), {}),
+            query_for=lambda *a, **k: "",
+        ),
+    }
+    saved = {name: sys.modules.get(name) for name in stubs}
+    sys.modules.update(stubs)
+    try:
+        # The Space imports the alerts package flat, as deploy-space.yml lays it down.
+        import headstart.alerts.access as _access
+        import headstart.alerts.identity as _identity
+        import headstart.alerts.store as _store
+
+        sys.modules["alerts"] = _module("alerts", access=_access, identity=_identity)
+        sys.modules["alerts.store"] = _store
+        spec = importlib.util.spec_from_file_location("space_app", APP)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        for name, previous in saved.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+
+
+def _clause(app, **kw):
+    base = dict(
+        remote=False,
+        max_years=None,
+        ats=None,
+        etype=None,
+        india=None,
+        location=None,
+        company=None,
+        has_salary=False,
+        posted_within=None,
+        seen_within=None,
+    )
+    base.update(kw)
+    return app._build_filter(**base)
+
+
+def test_no_filters_is_no_clause(app):
+    assert _clause(app) is None
+
+
+def test_first_seen_after_is_strictly_greater_than(app):
+    # Strict `>`: a Watermark taken from a row's own first_seen must not re-select that row.
+    clause = _clause(app, first_seen_after="2026-08-02T12:00:00+00:00")
+    assert clause == "first_seen > '2026-08-02T12:00:00+00:00'"
+
+
+def test_first_seen_after_is_reserialized_not_interpolated(app):
+    # The value arrives as free text and lands in a where-clause, so it is parsed and
+    # re-emitted; a quote cannot survive that round trip.
+    with pytest.raises(ValueError):
+        _clause(app, first_seen_after="2026-08-02' OR '1'='1")
+    with pytest.raises(ValueError):
+        _clause(app, first_seen_after="yesterday")
+
+
+def test_first_seen_after_normalizes_sub_second_precision(app):
+    clause = _clause(app, first_seen_after="2026-08-02T12:00:00.123456+00:00")
+    assert clause == "first_seen > '2026-08-02T12:00:00+00:00'"
+
+
+def test_first_seen_after_combines_with_other_filters(app):
+    clause = _clause(
+        app, remote=True, max_years=3, first_seen_after="2026-08-02T12:00:00+00:00"
+    )
+    assert clause.startswith("remote = true AND (min_years <= 3")
+    assert clause.endswith("AND first_seen > '2026-08-02T12:00:00+00:00'")
+
+
+def test_seen_within_still_works_beside_it(app):
+    assert "first_seen >= '" in _clause(app, seen_within=6)
+
+
+def test_unknown_ats_is_ignored_rather_than_interpolated(app):
+    assert _clause(app, ats="'; DROP TABLE jobs; --") is None

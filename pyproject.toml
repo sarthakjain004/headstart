@@ -24,6 +24,10 @@ ui = ["flask"]
 # pool; ranx = graded ranking metrics (nDCG@10) for the defensible score; scikit-learn
 # = Cohen's kappa validating the judge (arrives transitively via embed, named for clarity).
 eval = ["anthropic", "ranx", "scikit-learn"]
+# Email alerts (ADR-0035). google-auth verifies the Google sign-in credential (hand-rolling
+# the JWT checks is how you turn a signed assertion into a free-text field); xlsxwriter
+# builds the Digest's spreadsheet; huggingface_hub reads and writes the Subscription records.
+alerts = ["google-auth", "xlsxwriter", "huggingface_hub"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/headstart"]

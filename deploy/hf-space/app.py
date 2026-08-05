@@ -17,6 +17,12 @@ import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-spa
 import lancedb
 import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
 import resume_query  # synced from src/headstart/resume_query.py by deploy-space.yml
+
+# alerts/ is a package, synced from src/headstart/alerts/ by deploy-space.yml (ADR-0035).
+# Only these three members are imported here: alerts/__init__.py is empty on purpose, so the
+# Space never loads the Digest or Resend modules, whose dependencies it does not install.
+from alerts import access, identity
+from alerts.store import Store, Subscription
 from flask import Flask, jsonify, request
 from huggingface_hub import snapshot_download
 
@@ -56,12 +62,26 @@ _RESUME_PASSWORD = os.environ.get("RESUME_PASSWORD") or ""
 # sleeps or restarts and the password is simply asked for again. Only correct-password callers
 # are ever added, so its size is bounded by people who actually hold the secret.
 _RESUME_OK_IPS: set[str] = set()
+# Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
+# the Google client id the sign-in button needs, and a token scoped to the Subscriptions
+# dataset alone (never the index token, which is read-only by design).
+_GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID") or ""
+_SUBSCRIBERS_REPO = os.environ.get("SUBSCRIBERS_REPO") or ""
+_SUBSCRIBERS_TOKEN = os.environ.get("SUBSCRIBERS_TOKEN") or ""
+_ALERTS_ON = bool(_GOOGLE_CLIENT_ID and _SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN)
 print(
     f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes"
     + ("" if _HAS_FIRST_SEEN else " (no first_seen column yet — 'new since' hidden)")
-    + ("" if _RESUME_PASSWORD else " (RESUME_PASSWORD unset — résumé search hidden)"),
+    + ("" if _RESUME_PASSWORD else " (RESUME_PASSWORD unset — résumé search hidden)")
+    + ("" if _ALERTS_ON else " (alerts secrets unset — email alerts hidden)"),
     flush=True,
 )
+
+
+def _store() -> Store:
+    """A Subscriptions store per request — it holds no connection, only ids."""
+    return Store(_SUBSCRIBERS_REPO, _SUBSCRIBERS_TOKEN)
+
 
 app = Flask(__name__)
 
@@ -120,6 +140,7 @@ def _build_filter(
     has_salary: bool,
     posted_within: int | None,
     seen_within: int | None,
+    first_seen_after: str | None = None,
 ) -> str | None:
     """The prod-table where-clause. `headstart.search.build_filter` carries the same three core
     filters (remote / employment_type / max_years); the rest — location, salary, recency — live only
@@ -161,6 +182,17 @@ def _build_filter(
             datetime.now(timezone.utc) - timedelta(hours=int(seen_within))
         ).isoformat(timespec="seconds")
         filters.append(f"first_seen >= '{since}'")
+    if first_seen_after and _HAS_FIRST_SEEN:
+        # The alerts run's exact cutoff (ADR-0035), beside the UI's hour-granular window: a
+        # Digest must carry precisely what appeared since that Subscription's Watermark, and
+        # rounding up to whole hours would re-offer rows already mailed. Strictly `>`, so a
+        # Watermark taken from a row's own `first_seen` cannot re-select that row.
+        #
+        # This is the one recency value that arrives as free text and lands in a where-clause,
+        # so it is re-serialized from a parsed datetime rather than interpolated as given —
+        # anything unparseable raises ValueError, which /search already answers as 400.
+        moment = datetime.fromisoformat(first_seen_after).isoformat(timespec="seconds")
+        filters.append(f"first_seen > '{moment}'")
     return " AND ".join(filters) if filters else None
 
 
@@ -211,6 +243,8 @@ def search():
             has_salary=request.args.get("has_salary") == "true",
             posted_within=_int_arg("posted_within"),
             seen_within=_int_arg("seen_within"),
+            first_seen_after=(request.args.get("first_seen_after") or "").strip()
+            or None,
         )
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
@@ -254,6 +288,58 @@ def resume_to_query():
         # "temporarily off", and the reason may name internal hosts.
         return jsonify({"error": "résumé search is temporarily unavailable"}), 503
     return jsonify({"query": query})
+
+
+@app.route("/subscribe", methods=["POST"])
+def subscribe():
+    """Start email alerts for a Google-verified, allowlisted address (ADR-0035).
+
+    The address is taken from the verified ID token and never from the request body — a
+    caller-supplied address would let anyone sign a stranger up."""
+    if not _ALERTS_ON:
+        return jsonify({"error": "email alerts are not configured"}), 503
+    body = request.get_json(silent=True) or {}
+
+    query = (body.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "type the role you want first"}), 400
+    try:
+        email = identity.verify(str(body.get("credential") or ""), _GOOGLE_CLIENT_ID)
+    except identity.IdentityError as exc:
+        return jsonify({"error": str(exc)}), 401
+
+    store = _store()
+    if not access.is_allowed(email, store.allowlist()):
+        # Deliberately the same answer whether the list is missing or the address is absent.
+        return jsonify({"error": "email alerts are invite-only — ask for access"}), 403
+
+    filters = body.get("filters")
+    sub = Subscription.create(
+        email, query, filters if isinstance(filters, dict) else {}
+    )
+    store.put(sub)
+    return jsonify({"ok": True, "email": email})
+
+
+@app.route("/unsubscribe")
+def unsubscribe():
+    """One-click unsubscribe — the token in the link is the only credential it needs, which
+    is why a Digest can carry it and no session is involved."""
+    if not _ALERTS_ON:
+        return "email alerts are not configured", 503
+    sub_id = (request.args.get("id") or "").strip()
+    token = (request.args.get("token") or "").strip()
+    if not sub_id or not token:
+        return "that unsubscribe link is incomplete", 400
+
+    for sub in _store().all():
+        if sub.id == sub_id and hmac.compare_digest(sub.unsubscribe_token, token):
+            _store().remove(sub.id)
+            return (
+                "<p style='font-family:system-ui'>Unsubscribed. No more job digests "
+                "will be sent to this address.</p>"
+            )
+    return "that unsubscribe link is not valid", 404
 
 
 @app.route("/")
@@ -383,6 +469,16 @@ _TEMPLATE = """<!doctype html>
       <span id="rmsg"></span>
     </div>
   </details>
+  <details class="resume"__ALERTS_HIDDEN__>
+    <summary>or have new matches emailed to you after every refresh</summary>
+    <p style="margin:0 0 10px 0; font-size:13px; color:#9aa">Sign in with Google and we'll email you
+      the best 30 new jobs matching the search and filters above, each time the index refreshes —
+      with a spreadsheet attached. Invite-only while in beta. Every email has an unsubscribe link.</p>
+    <div class="resume-row">
+      <div id="gsignin"></div>
+      <span id="amsg"></span>
+    </div>
+  </details>
   <div class="filters">
     <div class="f"><label>ATS</label>
       <select id="ats"><option value="">any</option>__ATS_OPTIONS__</select></div>
@@ -471,19 +567,48 @@ async function readResume(){
   } catch(e){ msg.textContent = 'request failed — try again'; }
   finally { btn.disabled = false; }
 }
+// The filters as a plain object, read once so the search and the alert subscription can
+// never disagree about what the user asked for. The server whitelists these again.
+function currentFilters(){
+  const f = {};
+  if (el('remote').checked) f.remote = 'true';
+  if (el('hassalary').checked) f.has_salary = 'true';
+  if (el('maxyears').value) f.max_years = el('maxyears').value;
+  if (el('ats').value) f.ats = el('ats').value;
+  if (el('etype').value) f.etype = el('etype').value;
+  if (el('india').value) f.india = el('india').value;
+  if (el('location').value.trim()) f.location = el('location').value.trim();
+  if (el('company').value.trim()) f.company = el('company').value.trim();
+  if (el('posted').value) f.posted_within = el('posted').value;
+  if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
+  return f;
+}
+// Google sign-in returns a signed credential; the address is read from it server-side, so
+// the browser never gets to say who it is subscribing.
+async function onGoogleCredential(resp){
+  const msg = el('amsg');
+  const q = el('q').value.trim();
+  if (!q){ msg.textContent = 'type the role you want first'; return; }
+  msg.textContent = 'subscribing…';
+  try {
+    const r = await fetch('/subscribe', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ credential: resp.credential, query: q, filters: currentFilters() })
+    });
+    const data = await r.json();
+    msg.textContent = r.ok ? ('subscribed — digests will go to ' + data.email)
+                           : (data.error || ('failed (' + r.status + ')'));
+  } catch(e){ msg.textContent = 'request failed — try again'; }
+}
+function initAlerts(){
+  if (!window.google || !'__GOOGLE_CLIENT_ID__') return;
+  google.accounts.id.initialize({ client_id: '__GOOGLE_CLIENT_ID__', callback: onGoogleCredential });
+  google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
+}
 async function go(){
   const q = el('q').value.trim(); if(!q) return;
   const p = new URLSearchParams({ q, k: el('k').value });
-  if (el('remote').checked) p.set('remote','true');
-  if (el('hassalary').checked) p.set('has_salary','true');
-  if (el('maxyears').value) p.set('max_years', el('maxyears').value);
-  if (el('ats').value) p.set('ats', el('ats').value);
-  if (el('etype').value) p.set('etype', el('etype').value);
-  if (el('india').value) p.set('india', el('india').value);
-  if (el('location').value.trim()) p.set('location', el('location').value.trim());
-  if (el('company').value.trim()) p.set('company', el('company').value.trim());
-  if (el('posted').value) p.set('posted_within', el('posted').value);
-  if (el('seen') && el('seen').value) p.set('seen_within', el('seen').value);
+  for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
@@ -510,7 +635,9 @@ async function go(){
       </div>
     </div>`).join('') + '</div>';
 }
-</script></body></html>"""
+</script>
+<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>
+</body></html>"""
 
 _PAGE = (
     _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}")
@@ -519,6 +646,9 @@ _PAGE = (
     .replace("__SINCE_HIDDEN__", "" if _HAS_FIRST_SEEN else ' style="display:none"')
     # Hidden until the RESUME_PASSWORD secret exists — dark feature, same shape as above.
     .replace("__RESUME_HIDDEN__", "" if _RESUME_PASSWORD else ' style="display:none"')
+    # Same dark-until-ready shape: no alerts secrets, no panel and no sign-in button.
+    .replace("__ALERTS_HIDDEN__", "" if _ALERTS_ON else ' style="display:none"')
+    .replace("__GOOGLE_CLIENT_ID__", _GOOGLE_CLIENT_ID)
     .replace(
         "__ATS_OPTIONS__",
         "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),
