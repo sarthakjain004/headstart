@@ -22,7 +22,7 @@ import resume_query  # synced from src/headstart/resume_query.py by deploy-space
 # Only these three members are imported here: alerts/__init__.py is empty on purpose, so the
 # Space never loads the Digest or Resend modules, whose dependencies it does not install.
 from alerts import access, identity
-from alerts.store import Store, Subscription
+from alerts.store import Store, Subscription, subscription_id
 from flask import Flask, jsonify, request
 from huggingface_hub import snapshot_download
 
@@ -313,9 +313,15 @@ def subscribe():
         # Deliberately the same answer whether the list is missing or the address is absent.
         return jsonify({"error": "email alerts are invite-only — ask for access"}), 403
 
-    filters = body.get("filters")
-    sub = Subscription.create(
-        email, query, filters if isinstance(filters, dict) else {}
+    sent = body.get("filters")
+    search_filters = sent if isinstance(sent, dict) else {}
+    # Re-subscribing revises the record in place. Minting a new one would rotate the
+    # unsubscribe token, which would 404 the link in every Digest already delivered.
+    existing = store.get(subscription_id(email))
+    sub = (
+        existing.revised(query, search_filters)
+        if existing
+        else Subscription.create(email, query, search_filters)
     )
     store.put(sub)
     return jsonify({"ok": True, "email": email})
@@ -332,13 +338,18 @@ def unsubscribe():
     if not sub_id or not token:
         return "that unsubscribe link is incomplete", 400
 
-    for sub in _store().all():
-        if sub.id == sub_id and hmac.compare_digest(sub.unsubscribe_token, token):
-            _store().remove(sub.id)
-            return (
-                "<p style='font-family:system-ui'>Unsubscribed. No more job digests "
-                "will be sent to this address.</p>"
-            )
+    store = _store()
+    sub = store.get(sub_id)
+    if (
+        sub
+        and sub.unsubscribe_token
+        and hmac.compare_digest(sub.unsubscribe_token, token)
+    ):
+        store.remove(sub.id)
+        return (
+            "<p style='font-family:system-ui'>Unsubscribed. No more job digests "
+            "will be sent to this address.</p>"
+        )
     return "that unsubscribe link is not valid", 404
 
 

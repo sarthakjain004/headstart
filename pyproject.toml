@@ -14,7 +14,11 @@ dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerpr
 # ruff is version-pinned: its formatter output can shift between releases, so an
 # unpinned CI would reformat differently than local and fail `ruff format --check`.
 # Dependabot bumps this; bump commits carry any reformat with them.
-dev = ["pytest", "ruff==0.15.22"]
+# flask/xlsxwriter/openpyxl are here, not just in their own extras, so the tests that need
+# them actually RUN in CI rather than silently importorskip-ing: the Space's filter builder
+# and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All three
+# are small and pure-Python — this does not pull the ML stack into the quality job.
+dev = ["pytest", "ruff==0.15.22", "flask", "xlsxwriter", "openpyxl"]
 # Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
 embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb"]

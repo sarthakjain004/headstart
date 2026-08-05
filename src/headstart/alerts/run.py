@@ -18,8 +18,7 @@ from __future__ import annotations
 import os
 import sys
 
-from . import digest as digest_mod
-from . import mail, search
+from . import digest, mail, space_query
 from .access import is_allowed
 from .shortlist import shortlist
 from .store import Store, Subscription, now_iso
@@ -38,24 +37,24 @@ def send_one(
     api_key: str,
     sender: str,
 ) -> int:
-    """Search, shortlist, send, then advance the Watermark. Returns the rows mailed."""
-    rows = search.newly_seen(space, sub, sub.notified_at)
-    picked = shortlist(rows, sub.notified_at)
+    """Search, shortlist, send, then advance the Watermark. Returns the rows mailed.
+
+    The next Watermark is stamped *before* the search, not after the send. Stamping it
+    afterwards would silently drop every Job indexed while this Subscription was being
+    searched and mailed — they are older than the new Watermark, so no later run would ever
+    offer them. Taking the stamp first can only re-offer a row next run, which is the
+    at-least-once direction this feature chose.
+    """
+    cutoff = now_iso()
+    rows = space_query.newly_seen(space, sub, sub.watermark)
+    picked = shortlist(rows, sub.watermark)
     if not picked:
         return 0
 
-    body = digest_mod.render(sub, picked, unsubscribe_url(space, sub))
-    try:
-        attachment = digest_mod.to_xlsx(picked)
-    except ImportError:  # xlsxwriter absent — the body still carries every link
-        print(
-            "[alerts] xlsxwriter missing; sending without the spreadsheet", flush=True
-        )
-        attachment = None
-
-    mail.send(api_key, sender, sub.email, body, attachment)
+    body = digest.render(sub, picked, unsubscribe_url(space, sub))
+    mail.send(api_key, sender, sub.email, body, digest.to_xlsx(picked))
     # Only now: the send is the thing that must not be lost.
-    sub.notified_at = now_iso()
+    sub.watermark = cutoff
     store.put(sub)
     return len(picked)
 
@@ -63,7 +62,10 @@ def send_one(
 def main() -> int:
     missing = [name for name in _REQUIRED if not os.environ.get(name)]
     if missing:
-        print(f"alerts not configured (missing {', '.join(missing)}) - skipping")
+        print(
+            f"alerts not configured (missing {', '.join(missing)}) - skipping",
+            flush=True,
+        )
         return 0
 
     space = os.environ.get("SPACE_URL", "https://imposeidon-headstart-search.hf.space")

@@ -40,10 +40,10 @@ def _fetch(url: str) -> list[dict[str, Any]]:
         return json.load(response)
 
 
-def request_url(base: str, sub: Subscription, after: str, k: int = K) -> str:
+def request_url(base: str, sub: Subscription, after: str) -> str:
     """The `/search` URL for this Subscription's new Jobs — pure, so it is testable."""
-    params = {"q": sub.query, "k": str(k), "first_seen_after": after}
-    params.update(sub.filters)
+    params = {"q": sub.query, "k": str(K), "first_seen_after": after}
+    params.update(sub.search_filters)
     return f"{base.rstrip('/')}/search?{urllib.parse.urlencode(params)}"
 
 
@@ -51,7 +51,6 @@ def newly_seen(
     base: str,
     sub: Subscription,
     after: str,
-    k: int = K,
     fetch: Callable[[str], list[dict[str, Any]]] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> list[dict[str, Any]]:
@@ -60,7 +59,7 @@ def newly_seen(
     Retries a cold or briefly-unreachable Space; raises :class:`SearchUnavailable` once the
     budget is spent, so the run can skip one Subscription without advancing its Watermark.
     """
-    url = request_url(base, sub, after, k)
+    url = request_url(base, sub, after)
     call = fetch or _fetch
     for attempt, wait in enumerate((*_WAITS, None), start=1):
         try:

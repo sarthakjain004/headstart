@@ -75,6 +75,6 @@ would drop a window silently.
 - **Resend's free tier** is 3,000/month but **100/day**, and the daily cap binds first —
   roughly eight always-matching Subscriptions. Hitting it is the signal to move to a paid tier.
 - **The Space is always cold** when the alerts run starts, because the merge job restarts it at
-  the end of every pipeline run; `alerts.search` retries at 15s/30s/60s for that reason.
+  the end of every pipeline run; `alerts.space_query` retries at 15s/30s/60s for that reason.
 - **Privacy:** addresses live only in the private dataset, never in this public repo
   (`subscriptions/` is gitignored) and never in workflow logs — records are logged by id.

@@ -34,12 +34,14 @@ def _post(url: str, body: bytes, headers: dict[str, str]) -> dict[str, Any]:
         return json.load(response)
 
 
+FILENAME = "new-jobs.xlsx"
+
+
 def payload(
     sender: str,
     to: str,
     digest: Digest,
     attachment: bytes | None = None,
-    filename: str = "new-jobs.xlsx",
 ) -> dict[str, Any]:
     """The Resend request body — pure, so the attachment encoding is testable."""
     body: dict[str, Any] = {
@@ -52,7 +54,7 @@ def payload(
     if attachment:
         body["attachments"] = [
             {
-                "filename": filename,
+                "filename": FILENAME,
                 "content": base64.b64encode(attachment).decode("ascii"),
             }
         ]

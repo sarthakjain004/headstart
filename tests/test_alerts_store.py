@@ -41,7 +41,7 @@ def _record(sub_id, email="ada@example.com", query="backend engineer"):
             "query": query,
             "filters": {"remote": "true"},
             "created_at": "2026-08-01T00:00:00+00:00",
-            "notified_at": "2026-08-02T00:00:00+00:00",
+            "watermark": "2026-08-02T00:00:00+00:00",
             "unsubscribe_token": "t0ken",
         }
     ).encode()
@@ -59,7 +59,7 @@ def test_create_starts_the_watermark_now_so_no_backlog_is_mailed():
     )
     assert sub.email == "ada@example.com"
     assert sub.query == "backend engineer"
-    assert sub.notified_at == sub.created_at == "2026-08-05T10:00:00+00:00"
+    assert sub.watermark == sub.created_at == "2026-08-05T10:00:00+00:00"
     assert sub.unsubscribe_token
 
 
@@ -70,7 +70,7 @@ def test_create_keeps_only_allowed_filters():
         {"remote": "true", "company": "", "seen_within": "2", "nonsense": "x"},
     )
     # seen_within would fight the Watermark; empty and unknown keys are dropped.
-    assert sub.filters == {"remote": "true"}
+    assert sub.search_filters == {"remote": "true"}
 
 
 def test_round_trips_through_the_store(monkeypatch):
@@ -96,6 +96,27 @@ def test_all_skips_the_allowlist_and_unreadable_records(monkeypatch):
         }
     ).install(monkeypatch)
     assert [s.id for s in st.Store(REPO, TOKEN).all()] == ["aaa"]
+
+
+def test_revising_keeps_the_unsubscribe_token_and_watermark():
+    # Every Digest already delivered carries the old token; rotating it would 404 those
+    # links. Resetting the Watermark would skip whatever arrived since the last Digest.
+    first = st.Subscription.create("ada@example.com", "backend", {"remote": "true"})
+    second = first.revised("frontend", {"company": "acme"})
+
+    assert second.query == "frontend"
+    assert second.search_filters == {"company": "acme"}
+    assert second.id == first.id
+    assert second.unsubscribe_token == first.unsubscribe_token
+    assert second.watermark == first.watermark
+    assert second.created_at == first.created_at
+
+
+def test_get_returns_one_record_or_none(monkeypatch):
+    _Hub({"subscriptions/aaa.json": _record("aaa")}).install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    assert store.get("aaa").email == "ada@example.com"
+    assert store.get("nope") is None
 
 
 def test_resubscribing_overwrites_rather_than_duplicates(monkeypatch):

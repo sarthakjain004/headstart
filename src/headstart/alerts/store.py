@@ -1,7 +1,7 @@
 """Subscriptions, one file per record, in the private `headstart-subscribers` dataset (ADR-0035).
 
-`Store` is the whole interface: `all`, `put`, `remove`, `allowlist`. Behind it sit the repo
-layout, the JSON shape, and the HF client.
+`Store` is the whole interface: `all`, `get`, `put`, `remove`, `allowlist`. Behind it sit the
+repo layout, the JSON shape, and the HF client.
 
 **One file per Subscription is a correctness decision, not a scaling one.** A single JSON
 blob would be read-modify-write from two writers — the Space on subscribe/unsubscribe and
@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,7 +29,7 @@ ALLOWLIST_PATH = "subscriptions/allowlist.json"
 
 # The Space `/search` parameters a Subscription may carry. Recency is deliberately absent:
 # `posted_within`/`seen_within` would fight the Watermark, which is what decides "new" here.
-ALLOWED_FILTERS = frozenset(
+ALLOWED_SEARCH_FILTERS = frozenset(
     {
         "remote",
         "max_years",
@@ -52,6 +52,15 @@ def subscription_id(email: str) -> str:
     return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
 
 
+def _kept(search_filters: dict[str, Any]) -> dict[str, str]:
+    """Only the Search filters a Subscription may carry, as strings."""
+    return {
+        k: str(v)
+        for k, v in search_filters.items()
+        if k in ALLOWED_SEARCH_FILTERS and v != ""
+    }
+
+
 @dataclass
 class Subscription:
     """One person's standing request: a verified address, a Query, Search filters, a Watermark."""
@@ -59,14 +68,18 @@ class Subscription:
     id: str
     email: str
     query: str
-    filters: dict[str, str] = field(default_factory=dict)
+    search_filters: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
-    notified_at: str = ""  # the Watermark
+    watermark: str = ""  # last Digest accepted for delivery
     unsubscribe_token: str = ""
 
     @classmethod
     def create(
-        cls, email: str, query: str, filters: dict[str, Any], when: str | None = None
+        cls,
+        email: str,
+        query: str,
+        search_filters: dict[str, Any],
+        when: str | None = None,
     ) -> "Subscription":
         """A new Subscription whose Watermark starts *now*, so its first Digest carries
         only what appears after signup — nobody is mailed the backlog."""
@@ -75,15 +88,21 @@ class Subscription:
             id=subscription_id(email),
             email=email.strip().lower(),
             query=query.strip(),
-            filters={
-                k: str(v)
-                for k, v in filters.items()
-                if k in ALLOWED_FILTERS and v != ""
-            },
+            search_filters=_kept(search_filters),
             created_at=stamp,
-            notified_at=stamp,
+            watermark=stamp,
             unsubscribe_token=secrets.token_urlsafe(24),
         )
+
+    def revised(self, query: str, search_filters: dict[str, Any]) -> "Subscription":
+        """This Subscription with a new Query and Search filters, keeping everything else.
+
+        Re-subscribing must not mint a fresh `unsubscribe_token`: every Digest already
+        delivered carries the old one, and rotating it would 404 the unsubscribe link in
+        mail already sitting in someone's inbox. The Watermark is kept for the same reason
+        in reverse — resetting it to now would silently skip whatever arrived since the
+        last Digest."""
+        return replace(self, query=query.strip(), search_filters=_kept(search_filters))
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -153,6 +172,14 @@ class Store:
             except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
                 print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
         return out
+
+    def get(self, sub_id: str) -> Subscription | None:
+        """One Subscription by id, or None. Reads a single file rather than the whole set."""
+        try:
+            data = json.loads(_read(self._repo, f"{PREFIX}{sub_id}.json", self._token))
+        except Exception:  # noqa: BLE001 — absent or unreadable are the same answer here
+            return None
+        return Subscription.from_dict(data)
 
     def put(self, sub: Subscription) -> None:
         _write(
