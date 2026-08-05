@@ -361,174 +361,360 @@ def index():
 _TEMPLATE = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HeadStart — Semantic Job Search</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>HeadStart — semantic job search</title>
 <style>
+  /* ---- tokens. Every colour and size below is named here and used through the token,
+         so the light theme is a token swap rather than a second stylesheet. ---- */
   :root{
-    --bg:#0a0a0b; --panel:#141416; --panel2:#1a1a1d; --line:#232327; --line2:#2e2e34;
-    --fg:#f3f3f5; --mut:#96969f; --red:#e50914; --red-hi:#ff2c38; --red-tint:rgba(229,9,20,.12);
-    --r-lg:18px; --r-md:14px;
+    --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
+    --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
+    --aqua:#12D6B4; --aqua-deep:#0BA88C; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
+    --coral:#FB7185;
+    --glow:rgba(18,214,180,.22); --veil:rgba(8,11,20,.72);
+    --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
+    --shadow:0 18px 44px rgba(0,0,0,.42);
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --serif:ui-serif,"Iowan Old Style",Georgia,serif;
+    --step:.18s cubic-bezier(.2,.7,.3,1);
   }
+  @media (prefers-color-scheme: light){
+    :root{
+      --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
+      --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
+      --aqua:#00A98D; --aqua-deep:#00806B; --violet:#6D46E8; --amber:#B4740A; --lime:#5C9B12;
+      --coral:#DC4B62;
+      --glow:rgba(0,169,141,.18); --veil:rgba(255,255,255,.78);
+      --shadow:0 14px 34px rgba(20,28,54,.10);
+    }
+  }
+  /* the toggle wins over the OS preference, in both directions */
+  :root[data-theme="light"]{
+    --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
+    --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
+    --aqua:#00A98D; --aqua-deep:#00806B; --violet:#6D46E8; --amber:#B4740A; --lime:#5C9B12;
+    --coral:#DC4B62; --glow:rgba(0,169,141,.18); --veil:rgba(255,255,255,.78);
+    --shadow:0 14px 34px rgba(20,28,54,.10);
+  }
+  :root[data-theme="dark"]{
+    --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
+    --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
+    --aqua:#12D6B4; --aqua-deep:#0BA88C; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
+    --coral:#FB7185; --glow:rgba(18,214,180,.22); --veil:rgba(8,11,20,.72);
+    --shadow:0 18px 44px rgba(0,0,0,.42);
+  }
+
   *{ box-sizing:border-box; }
   html,body{ margin:0; }
-  body{ background:var(--bg); color:var(--fg);
-    font:15px/1.55 Inter,-apple-system,Segoe UI,Roboto,sans-serif;
-    background-image:radial-gradient(900px 380px at 50% -140px, rgba(229,9,20,.08), transparent 70%); }
-  .wrap{ max-width:880px; margin:0 auto; padding:44px 22px 72px; }
-  .brand{ display:flex; align-items:center; gap:10px; }
-  .mark{ width:14px; height:14px; background:var(--red); border-radius:4px;
-    box-shadow:0 0 18px rgba(229,9,20,.55); }
-  h1{ font-size:24px; font-weight:800; letter-spacing:-.02em; margin:0; }
-  h1 .red{ color:var(--red); }
-  .sub{ color:var(--mut); margin:6px 0 30px; font-size:13.5px; }
-  .sub b{ color:var(--fg); font-weight:600; }
+  body{
+    background:var(--ground); color:var(--ink); font:15px/1.55 var(--sans);
+    -webkit-font-smoothing:antialiased;
+    transition:background .3s ease, color .3s ease;
+  }
+  /* slow ambient wash behind the header — the only purely decorative motion on the page */
+  .aura{ position:fixed; inset:-30% -10% auto -10%; height:70vh; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(46% 52% at 22% 12%, var(--glow), transparent 70%),
+      radial-gradient(38% 46% at 78% 4%, rgba(139,92,246,.16), transparent 72%);
+    filter:blur(6px); animation:drift 22s ease-in-out infinite alternate; }
+  @keyframes drift{ from{ transform:translate3d(-2%,-1%,0) scale(1); }
+                    to{ transform:translate3d(3%,2%,0) scale(1.08); } }
 
-  .bar{ display:flex; gap:10px; margin-bottom:14px; }
-  input,select,button{ font:inherit; }
-  .bar input{ flex:1; padding:15px 18px; border-radius:var(--r-lg); border:1px solid var(--line2);
-    background:var(--panel); color:var(--fg); font-size:15.5px; outline:none;
-    transition:border-color .18s, box-shadow .18s; }
-  .bar input::placeholder{ color:#6c6c76; }
-  .bar input:focus{ border-color:var(--red); box-shadow:0 0 0 3px rgba(229,9,20,.18); }
-  .bar button{ padding:15px 28px; border:0; border-radius:var(--r-lg); background:var(--red);
-    color:#fff; font-weight:700; font-size:15px; cursor:pointer; letter-spacing:.01em;
-    transition:background .15s, transform .12s, box-shadow .15s; }
-  .bar button:hover{ background:var(--red-hi); transform:translateY(-1px);
-    box-shadow:0 6px 22px rgba(229,9,20,.32); }
-  .bar button:active{ transform:translateY(0); }
+  .shell{ position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:26px 22px 80px; }
 
-  .filters{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px;
-    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-lg);
-    padding:16px 18px 18px; margin-bottom:28px; }
-  .f{ display:flex; flex-direction:column; gap:6px; min-width:0; }
-  .f label{ font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
-    color:var(--mut); }
-  .f select,.f input[type=text],.f input[type=number]{ width:100%; padding:9px 11px;
-    border-radius:var(--r-md); border:1px solid var(--line2); background:var(--panel2);
-    color:var(--fg); font-size:13.5px; outline:none; transition:border-color .15s; }
-  .f select:focus,.f input:focus{ border-color:var(--red); }
-  .f.toggles{ flex-direction:row; align-items:flex-end; gap:16px; grid-column:span 2; }
-  .tg{ display:flex; align-items:center; gap:8px; color:var(--mut); font-size:13.5px;
-    cursor:pointer; user-select:none; padding-bottom:9px; }
-  .tg input{ appearance:none; width:34px; height:20px; border-radius:999px; background:var(--line2);
-    position:relative; cursor:pointer; transition:background .18s; margin:0; }
-  .tg input::after{ content:''; position:absolute; top:3px; left:3px; width:14px; height:14px;
-    border-radius:50%; background:#fff; transition:transform .18s; }
-  .tg input:checked{ background:var(--red); }
-  .tg input:checked::after{ transform:translateX(14px); }
+  /* ---- masthead ---- */
+  .top{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:30px; }
+  .brand{ display:flex; align-items:center; gap:11px; }
+  .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
+    background:linear-gradient(135deg,var(--aqua),var(--violet));
+    box-shadow:0 0 0 1px rgba(255,255,255,.10) inset, 0 8px 20px var(--glow); }
+  .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
+    border-radius:50%; background:var(--ground); }
+  .brand h1{ font:600 21px/1 var(--serif); letter-spacing:-.01em; margin:0; }
+  .brand h1 em{ font-style:normal;
+    background:linear-gradient(100deg,var(--aqua),var(--violet)); -webkit-background-clip:text;
+    background-clip:text; color:transparent; }
+  .top-right{ display:flex; align-items:center; gap:10px; }
+  .count{ font:500 12px/1 var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);
+    background:var(--raise); border:1px solid var(--rule); padding:8px 12px; border-radius:var(--r-pill); }
+  .count b{ color:var(--aqua); }
+  .icon-btn{ width:36px; height:36px; border-radius:var(--r-md); border:1px solid var(--rule);
+    background:var(--raise); color:var(--ink-2); cursor:pointer; font-size:15px; line-height:1;
+    transition:transform var(--step), border-color var(--step), color var(--step); }
+  .icon-btn:hover{ transform:translateY(-1px); border-color:var(--aqua); color:var(--aqua); }
 
-  .card{ border:1px solid var(--line); background:var(--panel); border-radius:var(--r-lg);
-    padding:18px 20px; margin-bottom:12px; transition:border-color .18s, transform .15s,
-    box-shadow .18s; }
-  .card:hover{ border-color:rgba(229,9,20,.45); transform:translateY(-1px);
-    box-shadow:0 10px 30px rgba(0,0,0,.35); }
-  .card a{ color:var(--fg); text-decoration:none; font-weight:600; font-size:16.5px;
-    letter-spacing:-.01em; }
-  .card a:hover{ color:var(--red-hi); }
-  .co{ color:var(--mut); font-size:13.5px; margin:4px 0 12px; }
-  .tags{ display:flex; gap:7px; flex-wrap:wrap; }
-  .tag{ font-size:11.5px; font-weight:500; padding:4px 11px; border-radius:999px;
-    background:var(--panel2); border:1px solid var(--line); color:var(--mut); }
-  .tag.score{ background:var(--red-tint); border-color:rgba(229,9,20,.25); color:#ff8189;
-    font-weight:600; }
-  .tag.sal{ color:#e8e8ec; border-color:var(--line2); }
-  .tag.new{ background:rgba(46,204,113,.12); border-color:rgba(46,204,113,.3); color:#5fd693;
-    font-weight:600; }
-  .empty{ color:var(--mut); text-align:center; padding:56px 20px; font-size:14.5px; }
-  .foot{ color:#5c5c66; text-align:center; font-size:12px; margin-top:44px; }
+  /* ---- search ---- */
+  .hero{ margin-bottom:22px; }
+  .searchbar{ display:flex; gap:10px; }
+  .field{ position:relative; flex:1; }
+  .field input{ width:100%; padding:17px 19px; border-radius:var(--r-xl); font:inherit; font-size:16px;
+    background:var(--raise); color:var(--ink); border:1px solid var(--rule-2); outline:none;
+    transition:border-color var(--step), box-shadow var(--step); }
+  .field input::placeholder{ color:var(--ink-3); }
+  .field input:focus{ border-color:var(--aqua); box-shadow:0 0 0 4px var(--glow); }
+  .go{ padding:0 30px; border:0; border-radius:var(--r-xl); cursor:pointer; color:#04121A;
+    font:700 15px/1 var(--sans); letter-spacing:.01em;
+    background:linear-gradient(120deg,var(--aqua),var(--lime));
+    transition:transform var(--step), box-shadow var(--step), filter var(--step); }
+  .go:hover{ transform:translateY(-2px); box-shadow:0 12px 30px var(--glow); filter:saturate(1.15); }
+  .go:active{ transform:translateY(0); }
+  .hint{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
+    color:var(--ink-3); font-size:12.5px; }
+  .chip{ border:1px dashed var(--rule-2); background:transparent; color:var(--ink-2);
+    padding:6px 12px; border-radius:var(--r-pill); font:inherit; font-size:12.5px; cursor:pointer;
+    transition:border-color var(--step), color var(--step), transform var(--step); }
+  .chip:hover{ border-color:var(--aqua); color:var(--aqua); transform:translateY(-1px); }
 
-  .resume{ margin:10px 2px 0; }
-  .resume summary{ color:var(--mut); font-size:13px; cursor:pointer; user-select:none; }
-  .resume summary:hover{ color:var(--fg); }
-  .resume textarea{ width:100%; margin-top:10px; padding:12px 14px; resize:vertical;
-    background:var(--panel); color:var(--fg); border:1px solid var(--line);
-    border-radius:var(--r-md); font:inherit; font-size:13.5px; }
-  .resume textarea:focus{ outline:none; border-color:var(--red); }
-  .resume-row{ display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
-  .resume-row input{ padding:9px 11px; background:var(--panel); color:var(--fg);
-    border:1px solid var(--line); border-radius:var(--r-md); width:160px; }
-  .resume-row button{ padding:9px 18px; border:0; border-radius:var(--r-md);
-    background:var(--panel2); color:var(--fg); border:1px solid var(--line2); cursor:pointer; }
-  .resume-row button:hover{ border-color:var(--red); }
-  .resume-row button:disabled{ opacity:.5; cursor:wait; }
-  #rmsg{ color:var(--mut); font-size:12.5px; }
+  /* ---- the two AI features, promoted out of footnotes ---- */
+  .features{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0 26px; }
+  @media (max-width:860px){ .features{ grid-template-columns:1fr; } }
+  .feature{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
+    overflow:hidden; transition:border-color var(--step); }
+  .feature[open]{ border-color:var(--rule-2); }
+  .feature summary{ list-style:none; cursor:pointer; padding:14px 16px; display:flex; gap:11px;
+    align-items:center; user-select:none; }
+  .feature summary::-webkit-details-marker{ display:none; }
+  .feature .dot{ width:8px; height:8px; border-radius:50%; background:var(--violet); flex:none;
+    box-shadow:0 0 12px var(--violet); }
+  .feature .ttl{ font-weight:600; font-size:14px; }
+  .feature .sub{ color:var(--ink-3); font-size:12.5px; margin-left:auto; }
+  .feature .body{ padding:0 16px 16px; }
+  .feature p{ color:var(--ink-2); font-size:13px; margin:0 0 12px; }
+  textarea{ width:100%; padding:12px 14px; resize:vertical; font:inherit; font-size:13.5px;
+    background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
+    border-radius:var(--r-md); outline:none; transition:border-color var(--step); }
+  textarea:focus{ border-color:var(--violet); }
+  .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  .row input{ padding:10px 12px; background:var(--raise-2); color:var(--ink);
+    border:1px solid var(--rule); border-radius:var(--r-md); font:inherit; width:170px; outline:none; }
+  .row input:focus{ border-color:var(--violet); }
+  .ghost{ padding:10px 18px; border-radius:var(--r-md); cursor:pointer; font:600 13.5px var(--sans);
+    background:var(--raise-2); color:var(--ink); border:1px solid var(--rule-2);
+    transition:border-color var(--step), transform var(--step); }
+  .ghost:hover{ border-color:var(--violet); transform:translateY(-1px); }
+  .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
+  .note{ color:var(--ink-3); font-size:12.5px; }
 
-  .skel{ border:1px solid var(--line); background:var(--panel); border-radius:var(--r-lg);
-    padding:18px 20px; margin-bottom:12px; }
-  .shim{ height:14px; border-radius:8px;
-    background:linear-gradient(90deg, var(--panel2) 25%, #232329 45%, var(--panel2) 65%);
-    background-size:200% 100%; animation:shim 1.15s linear infinite; }
+  /* ---- layout: sticky filter rail + results ---- */
+  .grid{ display:grid; grid-template-columns:260px 1fr; gap:22px; align-items:start; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  .rail{ position:sticky; top:20px; background:var(--raise); border:1px solid var(--rule);
+    border-radius:var(--r-lg); padding:16px; }
+  @media (max-width:900px){ .rail{ position:static; display:none; } .rail.open{ display:block; } }
+  .rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink-3); margin:0 0 10px; }
+  .set + .set{ margin-top:18px; padding-top:16px; border-top:1px solid var(--rule); }
+  .f{ display:flex; flex-direction:column; gap:5px; margin-bottom:11px; }
+  .f:last-child{ margin-bottom:0; }
+  .f label{ font-size:12px; color:var(--ink-2); font-weight:500; }
+  .f select,.f input{ width:100%; padding:9px 11px; border-radius:var(--r-md); font:inherit;
+    font-size:13px; background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
+    outline:none; transition:border-color var(--step); }
+  .f select:focus,.f input:focus{ border-color:var(--aqua); }
+  .sw{ display:flex; align-items:center; gap:9px; color:var(--ink-2); font-size:13px;
+    cursor:pointer; user-select:none; margin-bottom:9px; }
+  .sw input{ appearance:none; width:36px; height:21px; border-radius:var(--r-pill); flex:none;
+    background:var(--rule-2); position:relative; cursor:pointer; transition:background var(--step); margin:0; }
+  .sw input::after{ content:""; position:absolute; top:3px; left:3px; width:15px; height:15px;
+    border-radius:50%; background:#fff; transition:transform var(--step); }
+  .sw input:checked{ background:linear-gradient(120deg,var(--aqua),var(--lime)); }
+  .sw input:checked::after{ transform:translateX(15px); }
+  .clear{ width:100%; margin-top:14px; padding:9px; border-radius:var(--r-md); cursor:pointer;
+    background:transparent; border:1px solid var(--rule); color:var(--ink-3); font:inherit;
+    font-size:12.5px; transition:border-color var(--step), color var(--step); }
+  .clear:hover{ border-color:var(--coral); color:var(--coral); }
+
+  .toolbar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .toolbar .n{ font:500 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); }
+  .toolbar .spacer{ flex:1; }
+  .toolbar select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
+    color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
+  .filters-btn{ display:none; }
+  @media (max-width:900px){ .filters-btn{ display:inline-block; } }
+  .active{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
+  .pill{ display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:5px 10px;
+    border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule-2);
+    color:var(--ink-2); animation:pop .22s cubic-bezier(.2,.9,.3,1.3) both; }
+  .pill b{ color:var(--ink); font-weight:600; }
+  .pill button{ background:none; border:0; color:var(--ink-3); cursor:pointer; font-size:14px;
+    line-height:1; padding:0; }
+  .pill button:hover{ color:var(--coral); }
+  @keyframes pop{ from{ opacity:0; transform:scale(.86); } to{ opacity:1; transform:none; } }
+
+  /* ---- result cards ---- */
+  .card{ position:relative; background:var(--raise); border:1px solid var(--rule);
+    border-radius:var(--r-lg); padding:16px 18px 15px; margin-bottom:11px; overflow:hidden;
+    animation:rise .42s cubic-bezier(.2,.7,.3,1) both;
+    transition:border-color var(--step), transform var(--step), box-shadow var(--step); }
+  .card:hover{ transform:translateY(-2px); border-color:var(--rule-2); box-shadow:var(--shadow); }
+  .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+    background:var(--tone,var(--aqua)); opacity:.85; }
+  @keyframes rise{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
+  .card .hd{ display:flex; align-items:flex-start; gap:14px; }
+  .card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:16px;
+    letter-spacing:-.01em; line-height:1.35; }
+  .card a.title:hover{ color:var(--aqua); }
+  .card .org{ color:var(--ink-2); font-size:13px; margin-top:3px; }
+  .card .org span{ color:var(--ink-3); }
+  /* match strength: a bar plus the number, so it reads at a glance and survives colour-blindness */
+  .match{ flex:none; width:74px; text-align:right; }
+  .match .v{ font:600 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--aqua)); }
+  .match .track{ height:4px; border-radius:var(--r-pill); background:var(--rule); margin-top:5px;
+    overflow:hidden; }
+  .match .fill{ height:100%; border-radius:var(--r-pill); background:var(--tone,var(--aqua));
+    width:0; animation:fill .7s .1s cubic-bezier(.2,.7,.3,1) forwards; }
+  @keyframes fill{ to{ width:var(--pct,50%); } }
+  .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:11px; }
+  .tag{ font:500 11.5px var(--sans); padding:4px 10px; border-radius:var(--r-pill);
+    background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
+  .tag.mono{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .tag.new{ background:color-mix(in srgb, var(--amber) 16%, transparent); color:var(--amber);
+    border-color:color-mix(in srgb, var(--amber) 34%, transparent); font-weight:600; }
+  .tag.pay{ background:color-mix(in srgb, var(--lime) 15%, transparent); color:var(--lime);
+    border-color:color-mix(in srgb, var(--lime) 32%, transparent); }
+  .tag.rem{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet);
+    border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
+
+  .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); }
+  .empty .big{ font:600 17px var(--serif); color:var(--ink); margin-bottom:8px; }
+  .skel{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
+    padding:18px; margin-bottom:11px; }
+  .shim{ height:13px; border-radius:7px; background:linear-gradient(90deg,
+    var(--raise-2) 25%, var(--rule) 45%, var(--raise-2) 65%); background-size:200% 100%;
+    animation:shim 1.2s linear infinite; }
   @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
-  .fadein{ animation:fadein .3s ease; }
-  @keyframes fadein{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:none;} }
-</style></head><body><div class="wrap">
-  <div class="brand"><div class="mark"></div>
-    <h1>Head<span class="red">Start</span></h1></div>
-  <p class="sub">semantic search over <b>__NJOBS__</b> tech jobs, read straight from company ATS boards · refreshed 4× daily</p>
-  <div class="bar">
-    <input id="q" type="text" placeholder="describe the role — e.g. backend engineer at a climate startup" autofocus>
-    <button onclick="go()">Search</button>
+  .foot{ text-align:center; color:var(--ink-3); font-size:12px; margin-top:46px; }
+  .foot code{ font-family:var(--mono); color:var(--ink-2); }
+
+  :focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important;
+      transition-duration:.001ms !important; }
+    .match .fill{ width:var(--pct,50%); }
+  }
+</style></head><body>
+<div class="aura"></div>
+<div class="shell">
+
+  <header class="top">
+    <div class="brand">
+      <div class="mark"></div>
+      <h1>Head<em>Start</em></h1>
+    </div>
+    <div class="top-right">
+      <span class="count"><b>__NJOBS__</b> jobs indexed</span>
+      <button class="icon-btn" id="theme" onclick="flipTheme()" aria-label="Switch light or dark theme" title="Switch theme">◐</button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="searchbar">
+      <div class="field">
+        <input id="q" type="text" autofocus aria-label="Describe the role you want"
+               placeholder="Describe the role you want — e.g. backend engineer at a climate startup">
+      </div>
+      <button class="go" onclick="go()">Search</button>
+    </div>
+    <div class="hint">
+      <span>Try:</span>
+      <button class="chip" onclick="tryIt(this)">backend engineer at a climate startup</button>
+      <button class="chip" onclick="tryIt(this)">ML infrastructure, PyTorch</button>
+      <button class="chip" onclick="tryIt(this)">frontend engineer, design systems</button>
+    </div>
+  </section>
+
+  <div class="features">
+    <details class="feature"__RESUME_HIDDEN__>
+      <summary><span class="dot"></span><span class="ttl">Write my search from my résumé</span><span class="sub">AI</span></summary>
+      <div class="body">
+        <p>Paste your résumé and we'll turn it into a search you can edit. Used for this one
+           request — never stored.</p>
+        <textarea id="resume" rows="6" placeholder="Paste the text of your résumé"></textarea>
+        <div class="row">
+          <input id="rpass" type="password" placeholder="Beta password" autocomplete="off">
+          <button class="ghost" onclick="readResume()" id="rbtn">Write my search</button>
+          <span class="note" id="rmsg" role="status"></span>
+        </div>
+      </div>
+    </details>
+
+    <details class="feature"__ALERTS_HIDDEN__>
+      <summary><span class="dot"></span><span class="ttl">Email me new matches</span><span class="sub">invite only</span></summary>
+      <div class="body">
+        <p>We'll email you the best 30 new jobs matching the search and filters you've set here,
+           every time the index refreshes — with a spreadsheet attached. Every email has an
+           unsubscribe link.</p>
+        <div class="row">
+          <div id="gsignin"></div>
+          <span class="note" id="amsg" role="status"></span>
+        </div>
+      </div>
+    </details>
   </div>
-  <details class="resume"__RESUME_HIDDEN__>
-    <summary>or paste your résumé and let AI write the search</summary>
-    <textarea id="resume" rows="7" placeholder="paste the text of your résumé — it is used for this one request and never stored"></textarea>
-    <div class="resume-row">
-      <input id="rpass" type="password" placeholder="beta password" autocomplete="off">
-      <button onclick="readResume()" id="rbtn">Write my search</button>
-      <span id="rmsg"></span>
-    </div>
-  </details>
-  <details class="resume"__ALERTS_HIDDEN__>
-    <summary>or have new matches emailed to you after every refresh</summary>
-    <p style="margin:0 0 10px 0; font-size:13px; color:#9aa">Sign in with Google and we'll email you
-      the best 30 new jobs matching the search and filters above, each time the index refreshes —
-      with a spreadsheet attached. Invite-only while in beta. Every email has an unsubscribe link.</p>
-    <div class="resume-row">
-      <div id="gsignin"></div>
-      <span id="amsg"></span>
-    </div>
-  </details>
-  <div class="filters">
-    <div class="f"><label>ATS</label>
-      <select id="ats"><option value="">any</option>__ATS_OPTIONS__</select></div>
-    <div class="f"><label>Type</label>
-      <select id="etype"><option value="">any</option>
-        <option value="full-time">full-time</option><option value="part-time">part-time</option>
-        <option value="contract">contract</option><option value="internship">internship</option>
-      </select></div>
-    <div class="f"><label>Max years</label>
-      <input id="maxyears" type="number" min="0" placeholder="any"></div>
-    <div class="f"><label>India</label>
-      <select id="india"><option value="">anywhere</option>
-        <option value="india">all India</option>__INDIA_OPTIONS__</select></div>
-    <div class="f"><label>Location contains</label>
-      <input id="location" type="text" placeholder="e.g. berlin"></div>
-    <div class="f"><label>Company contains</label>
-      <input id="company" type="text" placeholder="e.g. binance"></div>
-    <div class="f"><label>Posted</label>
-      <select id="posted"><option value="">any time</option>
-        <option value="1">last 24h</option><option value="7">last 7 days</option>
-        <option value="30">last 30 days</option><option value="90">last 90 days</option>
-      </select></div>
-    <div class="f"__SINCE_HIDDEN__><label>New to HeadStart</label>
-      <select id="seen"><option value="">any time</option>
-        <option value="2">last 2h</option><option value="24">last 24h</option>
-        <option value="168">last 7 days</option>
-      </select></div>
-    <div class="f"><label>Sort</label>
-      <select id="sort"><option value="rel">relevance</option>
-        <option value="new">newest first</option></select></div>
-    <div class="f"><label>Results</label>
-      <select id="k"><option>10</option><option selected>20</option><option>50</option></select></div>
-    <div class="f toggles">
-      <label class="tg"><input type="checkbox" id="remote"> remote only</label>
-      <label class="tg"><input type="checkbox" id="hassalary"> has salary</label>
-    </div>
+
+  <div class="grid">
+    <aside class="rail" id="rail">
+      <div class="set">
+        <h2>Role</h2>
+        <div class="f"><label for="etype">Employment type</label>
+          <select id="etype"><option value="">Any</option>
+            <option value="full-time">Full-time</option><option value="part-time">Part-time</option>
+            <option value="contract">Contract</option><option value="internship">Internship</option>
+          </select></div>
+        <div class="f"><label for="maxyears">Max experience wanted (years)</label>
+          <input id="maxyears" type="number" min="0" placeholder="Any"></div>
+        <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
+        <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
+      </div>
+
+      <div class="set">
+        <h2>Where</h2>
+        <div class="f"><label for="india">India</label>
+          <select id="india"><option value="">Anywhere</option>
+            <option value="india">All India</option>__INDIA_OPTIONS__</select></div>
+        <div class="f"><label for="location">Location</label>
+          <input id="location" type="text" placeholder="e.g. Berlin"></div>
+        <div class="f"><label for="company">Company</label>
+          <input id="company" type="text" placeholder="e.g. Binance"></div>
+      </div>
+
+      <div class="set">
+        <h2>Freshness</h2>
+        <div class="f"><label for="posted">Posted by the employer</label>
+          <select id="posted"><option value="">Any time</option>
+            <option value="1">Last 24 hours</option><option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+          </select></div>
+        <div class="f"__SINCE_HIDDEN__><label for="seen">First seen by HeadStart</label>
+          <select id="seen"><option value="">Any time</option>
+            <option value="2">Last 2 hours</option><option value="24">Last 24 hours</option>
+            <option value="168">Last 7 days</option>
+          </select></div>
+        <div class="f"><label for="ats">Job board</label>
+          <select id="ats"><option value="">Any</option>__ATS_OPTIONS__</select></div>
+      </div>
+
+      <button class="clear" onclick="clearAll()">Clear all filters</button>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <button class="ghost filters-btn" onclick="toggleRail()">Filters</button>
+        <span class="n" id="n"></span>
+        <span class="spacer"></span>
+        <label class="note" for="sort">Sort</label>
+        <select id="sort" onchange="go()">
+          <option value="rel">Best match</option><option value="new">Newest first</option>
+        </select>
+        <label class="note" for="k">Show</label>
+        <select id="k" onchange="go()"><option>10</option><option selected>20</option><option>50</option></select>
+      </div>
+      <div class="active" id="active"></div>
+      <div id="results" aria-live="polite"></div>
+    </main>
   </div>
-  <div id="results"></div>
-  <div class="foot">nomic embeddings · LanceDB filter-then-rank · English tech corpus</div>
+
+  <div class="foot">Ranked by <code>nomic</code> embeddings over a filtered LanceDB index · English-language tech roles, read straight from company boards</div>
 </div>
 <script>
 const el = s => document.getElementById(s);
@@ -537,6 +723,15 @@ const el = s => document.getElementById(s);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+
+function flipTheme(){
+  const now = document.documentElement.getAttribute('data-theme')
+    || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+}
+function tryIt(btn){ el('q').value = btn.textContent.trim(); go(); }
+function toggleRail(){ el('rail').classList.toggle('open'); }
+
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
@@ -554,30 +749,14 @@ const isNew = s => {
   const hours = Number((el('seen') && el('seen').value) || 24);
   return Date.now() - t < hours * 3600000;
 };
+// Match strength gets a colour as well as a number: weak matches read violet, strong ones
+// read lime, so a scan down the column shows where the good results stop.
+const tone = s => s >= .75 ? 'var(--lime)' : s >= .6 ? 'var(--aqua)' : s >= .45 ? 'var(--amber)' : 'var(--violet)';
 const skeleton = () =>
-  '<div class="skel"><div class="shim" style="width:55%"></div>' +
-  '<div class="shim" style="width:32%; margin-top:10px"></div>' +
-  '<div class="shim" style="width:70%; margin-top:14px"></div></div>';
-// Résumé → Query: fills the search box for the user to edit, never searches on its own.
-// The password rides along when filled; the server remembers this IP after one success.
-async function readResume(){
-  const text = el('resume').value.trim();
-  const msg = el('rmsg'), btn = el('rbtn');
-  if (!text){ msg.textContent = 'paste your résumé first'; return; }
-  btn.disabled = true; msg.textContent = 'reading…';
-  try {
-    const r = await fetch('/resume-to-query', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ text, password: el('rpass').value })
-    });
-    const data = await r.json();
-    if (!r.ok){ msg.textContent = data.error || ('failed (' + r.status + ')'); return; }
-    el('q').value = data.query;
-    el('q').focus();
-    msg.textContent = 'edit the search above, then hit Search';
-  } catch(e){ msg.textContent = 'request failed — try again'; }
-  finally { btn.disabled = false; }
-}
+  '<div class="skel"><div class="shim" style="width:52%"></div>' +
+  '<div class="shim" style="width:30%; margin-top:10px"></div>' +
+  '<div class="shim" style="width:68%; margin-top:14px"></div></div>';
+
 // The filters as a plain object, read once so the search and the alert subscription can
 // never disagree about what the user asked for. The server whitelists these again.
 function currentFilters(){
@@ -594,58 +773,132 @@ function currentFilters(){
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
   return f;
 }
+const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Max years',
+  ats:'Board', etype:'Type', india:'India', location:'Location', company:'Company',
+  posted_within:'Posted ≤', seen_within:'First seen ≤' };
+const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats',
+  etype:'etype', india:'india', location:'location', company:'company',
+  posted_within:'posted', seen_within:'seen' };
+function drawActive(){
+  const f = currentFilters(), box = el('active');
+  box.innerHTML = Object.entries(f).map(([k,v]) =>
+    `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(v === 'true' ? 'yes' : v)}` +
+    `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
+  ).join('');
+}
+function dropFilter(key){
+  const c = el(CONTROL[key]); if (!c) return;
+  if (c.type === 'checkbox') c.checked = false; else c.value = '';
+  go();
+}
+function clearAll(){
+  Object.values(CONTROL).forEach(id => { const c = el(id); if (!c) return;
+    if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
+  go();
+}
+
+function firstRun(){
+  el('results').innerHTML = '<div class="empty"><div class="big">Describe the role, not the keywords</div>' +
+    'This searches meaning, so "someone to own our payments backend" works as well as a job title.<br>' +
+    'Set the structured constraints — experience, location, salary — on the left.</div>';
+}
+
+async function go(){
+  const q = el('q').value.trim();
+  drawActive();
+  if(!q){ firstRun(); el('n').textContent = ''; return; }
+  const p = new URLSearchParams({ q, k: el('k').value });
+  for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
+  el('results').innerHTML = skeleton() + skeleton() + skeleton();
+  el('n').textContent = 'searching…';
+  const t0 = performance.now();
+  let rows;
+  try { rows = await (await fetch('/search?'+p)).json(); }
+  catch(e){ el('results').innerHTML = '<div class="empty">That search didn\\'t go through. Try again.</div>';
+            el('n').textContent = ''; return; }
+  if(!Array.isArray(rows)){
+    el('results').innerHTML = '<div class="empty">One of the filters isn\\'t valid — clear it and try again.</div>';
+    el('n').textContent = ''; return; }
+  if(!rows.length){
+    el('results').innerHTML = '<div class="empty"><div class="big">Nothing matched</div>' +
+      'Try loosening a filter, or describe the role more broadly.</div>';
+    el('n').textContent = '0 results'; return; }
+  if (el('sort').value === 'new'){
+    const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
+    rows.sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
+  }
+  el('n').textContent = rows.length + ' result' + (rows.length===1?'':'s') +
+    ' · ' + Math.round(performance.now()-t0) + ' ms';
+  el('results').innerHTML = rows.map((r,i) => {
+    const s = Number(r.score) || 0, c = tone(s);
+    return `
+    <div class="card" style="--tone:${c}; animation-delay:${Math.min(i,12)*35}ms">
+      <div class="hd">
+        <div style="min-width:0">
+          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
+          <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+        </div>
+        <div class="match" title="Semantic similarity to your search">
+          <div class="v">${s.toFixed(2)}</div>
+          <div class="track"><div class="fill" style="--pct:${Math.round(Math.max(0,Math.min(1,s))*100)}%"></div></div>
+        </div>
+      </div>
+      <div class="tags">
+        ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
+        ${r.remote? '<span class="tag rem">remote</span>':''}
+        ${r.salary? '<span class="tag pay">'+esc(r.salary)+'</span>':''}
+        ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
+        ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
+        ${age(r.posted_at)? '<span class="tag mono">'+age(r.posted_at)+'</span>':''}
+        ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
+      </div>
+    </div>`; }).join('');
+}
+
+// Résumé → Query: fills the search box for the user to edit, never searches on its own.
+// The password rides along when filled; the server remembers this IP after one success.
+async function readResume(){
+  const text = el('resume').value.trim();
+  const msg = el('rmsg'), btn = el('rbtn');
+  if (!text){ msg.textContent = 'Paste your résumé first.'; return; }
+  btn.disabled = true; msg.textContent = 'Reading…';
+  try {
+    const r = await fetch('/resume-to-query', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text, password: el('rpass').value })
+    });
+    const data = await r.json();
+    if (!r.ok){ msg.textContent = data.error || ('Failed (' + r.status + ')'); return; }
+    el('q').value = data.query;
+    el('q').focus();
+    msg.textContent = 'Edit the search above, then hit Search.';
+  } catch(e){ msg.textContent = 'That request didn\\'t go through. Try again.'; }
+  finally { btn.disabled = false; }
+}
+
 // Google sign-in returns a signed credential; the address is read from it server-side, so
 // the browser never gets to say who it is subscribing.
 async function onGoogleCredential(resp){
   const msg = el('amsg');
   const q = el('q').value.trim();
-  if (!q){ msg.textContent = 'type the role you want first'; return; }
-  msg.textContent = 'subscribing…';
+  if (!q){ msg.textContent = 'Type the role you want first.'; return; }
+  msg.textContent = 'Subscribing…';
   try {
     const r = await fetch('/subscribe', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ credential: resp.credential, query: q, filters: currentFilters() })
     });
     const data = await r.json();
-    msg.textContent = r.ok ? ('subscribed — digests will go to ' + data.email)
-                           : (data.error || ('failed (' + r.status + ')'));
-  } catch(e){ msg.textContent = 'request failed — try again'; }
+    msg.textContent = r.ok ? ('Subscribed — digests go to ' + data.email)
+                           : (data.error || ('Failed (' + r.status + ')'));
+  } catch(e){ msg.textContent = 'That request didn\\'t go through. Try again.'; }
 }
 function initAlerts(){
   if (!window.google || !'__GOOGLE_CLIENT_ID__') return;
   google.accounts.id.initialize({ client_id: '__GOOGLE_CLIENT_ID__', callback: onGoogleCredential });
-  google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
+  google.accounts.id.renderButton(el('gsignin'), { theme: 'filled_black', size: 'medium' });
 }
-async function go(){
-  const q = el('q').value.trim(); if(!q) return;
-  const p = new URLSearchParams({ q, k: el('k').value });
-  for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
-  el('results').innerHTML = skeleton() + skeleton() + skeleton();
-  let rows;
-  try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ el('results').innerHTML = '<div class="empty">search failed — try again</div>'; return; }
-  if(!Array.isArray(rows)){ el('results').innerHTML = '<div class="empty">invalid filter</div>'; return; }
-  if(!rows.length){ el('results').innerHTML = '<div class="empty">no matches — try loosening a filter</div>'; return; }
-  if (el('sort').value === 'new'){
-    const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
-    rows.sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
-  }
-  el('results').innerHTML = '<div class="fadein">' + rows.map(r => `
-    <div class="card">
-      <a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
-      <div class="co">${esc(r.company)}${r.location? ' · '+esc(r.location) : ''}</div>
-      <div class="tags">
-        <span class="tag score">${Number(r.score)||0}</span>
-        ${r.remote? '<span class="tag">remote</span>':''}
-        ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
-        ${r.min_years!=null? '<span class="tag">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
-        ${r.salary? '<span class="tag sal">'+esc(r.salary)+'</span>':''}
-        ${age(r.posted_at)? '<span class="tag">'+age(r.posted_at)+'</span>':''}
-        ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
-        ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
-      </div>
-    </div>`).join('') + '</div>';
-}
+firstRun();
 </script>
 <script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>
 </body></html>"""
