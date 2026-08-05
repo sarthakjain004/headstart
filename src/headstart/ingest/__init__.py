@@ -1,4 +1,4 @@
-"""The 6-hourly ingest pipeline — every stage `.github/workflows/pipeline.yml` runs (ADR-0028).
+"""The 2-hourly ingest pipeline — every stage `.github/workflows/pipeline.yml` runs (ADR-0028).
 
 The run is two symmetric halves — **plan → run → gather** — so each module is named
 ``{half}_{role}`` and the two triples group together. In run order::
