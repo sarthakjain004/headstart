@@ -72,6 +72,13 @@ concurrency:
 env:
   HF_DATASET: imPoseidon/headstart-index
   HF_SPACE: imPoseidon/headstart-search
+  # Fetch and upload over the plain resolve/CDN path rather than Xet. Both paths get 429'd by
+  # this repo — measured 2026-08-05, 22 of them in one download — but only the plain path
+  # *survives* it: huggingface_hub retries a 429 internally and recovers, whereas on the Xet
+  # path it surfaced as a RuntimeError that killed the whole fetch, leaving state_fetch's own
+  # budget re-trying a doomed operation. That took out 21 of 25 runs from 2026-08-02, and the
+  # request rate scales with file count, which grows between compactions (ADR-0036).
+  HF_HUB_DISABLE_XET: "1"
 
 jobs:
   # ── Stage 1: select this run's board slice and bin-pack it into scrape shards. Downloads only the

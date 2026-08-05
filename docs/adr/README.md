@@ -44,3 +44,4 @@ supersedes it and note the supersession in both.
 | [0033](0033-state-fetch-retry-budget.md) | Size the state-fetch retry budget to the outage it actually faces | 2026-08-02 |
 | [0034](0034-nonprod-boards-dead-by-convention.md) | Non-production boards are dead by convention | 2026-08-02 |
 | [0035](0035-email-job-alerts.md) | Email job alerts — invite-only, Google-verified, one Digest per run | 2026-08-05 |
+| [0036](0036-fetch-hf-state-without-xet.md) | Fetch HF state over the plain path, not Xet | 2026-08-05 |

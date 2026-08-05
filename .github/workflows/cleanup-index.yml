@@ -28,6 +28,11 @@ concurrency:
 env:
   HF_DATASET: imPoseidon/headstart-index
   HF_SPACE: imPoseidon/headstart-search
+  # Fetch over the plain resolve/CDN path rather than Xet (ADR-0036). Both get 429'd by this
+  # repo; only the plain path survives one, because huggingface_hub retries it internally where
+  # the Xet path raised and killed the whole fetch. This job matters most: it is the only thing
+  # that reduces the file count, so when it fails the count grows until nothing can fetch at all.
+  HF_HUB_DISABLE_XET: "1"
 
 jobs:
   cleanup:
