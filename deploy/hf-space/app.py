@@ -368,9 +368,9 @@ _TEMPLATE = """<!doctype html>
   :root{
     --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
     --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
-    --aqua:#12D6B4; --aqua-deep:#0BA88C; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
+    --aqua:#12D6B4; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
     --coral:#FB7185;
-    --glow:rgba(18,214,180,.22); --veil:rgba(8,11,20,.72);
+    --glow:rgba(18,214,180,.22);
     --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
     --shadow:0 18px 44px rgba(0,0,0,.42);
     --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -378,30 +378,23 @@ _TEMPLATE = """<!doctype html>
     --serif:ui-serif,"Iowan Old Style",Georgia,serif;
     --step:.18s cubic-bezier(.2,.7,.3,1);
   }
+  /* Dark is the default above. Light is written twice — once for the OS preference, once for
+     the explicit toggle — because a media query and a plain selector cannot share one rule.
+     `:not([data-theme])` is what lets the toggle beat the OS in BOTH directions. Amber and lime
+     are darkened here: at 11.5px on a tinted chip the dark-theme values missed WCAG AA. */
   @media (prefers-color-scheme: light){
-    :root{
+    :root:not([data-theme]){
       --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
       --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
-      --aqua:#00A98D; --aqua-deep:#00806B; --violet:#6D46E8; --amber:#B4740A; --lime:#5C9B12;
-      --coral:#DC4B62;
-      --glow:rgba(0,169,141,.18); --veil:rgba(255,255,255,.78);
-      --shadow:0 14px 34px rgba(20,28,54,.10);
+      --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+      --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
     }
   }
-  /* the toggle wins over the OS preference, in both directions */
   :root[data-theme="light"]{
-    --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
-    --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
-    --aqua:#00A98D; --aqua-deep:#00806B; --violet:#6D46E8; --amber:#B4740A; --lime:#5C9B12;
-    --coral:#DC4B62; --glow:rgba(0,169,141,.18); --veil:rgba(255,255,255,.78);
-    --shadow:0 14px 34px rgba(20,28,54,.10);
-  }
-  :root[data-theme="dark"]{
-    --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
-    --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
-    --aqua:#12D6B4; --aqua-deep:#0BA88C; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
-    --coral:#FB7185; --glow:rgba(18,214,180,.22); --veil:rgba(8,11,20,.72);
-    --shadow:0 18px 44px rgba(0,0,0,.42);
+      --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
+      --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
+      --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+      --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
   }
 
   *{ box-sizing:border-box; }
@@ -436,6 +429,7 @@ _TEMPLATE = """<!doctype html>
     background-clip:text; color:transparent; }
   .top-right{ display:flex; align-items:center; gap:10px; }
   .count{ font:500 12px/1 var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);
+    white-space:nowrap;
     background:var(--raise); border:1px solid var(--rule); padding:8px 12px; border-radius:var(--r-pill); }
   .count b{ color:var(--aqua); }
   .icon-btn{ width:36px; height:36px; border-radius:var(--r-md); border:1px solid var(--rule);
@@ -446,7 +440,7 @@ _TEMPLATE = """<!doctype html>
   /* ---- search ---- */
   .hero{ margin-bottom:22px; }
   .searchbar{ display:flex; gap:10px; }
-  .field{ position:relative; flex:1; }
+  .field{ flex:1; }
   .field input{ width:100%; padding:17px 19px; border-radius:var(--r-xl); font:inherit; font-size:16px;
     background:var(--raise); color:var(--ink); border:1px solid var(--rule-2); outline:none;
     transition:border-color var(--step), box-shadow var(--step); }
@@ -466,7 +460,10 @@ _TEMPLATE = """<!doctype html>
   .chip:hover{ border-color:var(--aqua); color:var(--aqua); transform:translateY(-1px); }
 
   /* ---- the two AI features, promoted out of footnotes ---- */
-  .features{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0 26px; }
+  /* auto-fit, not 1fr 1fr: when only one panel is configured the other is display:none and
+     therefore not a grid item, so the survivor must fill the row rather than sit at half. */
+  .features{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:12px; margin:18px 0 26px; }
   @media (max-width:860px){ .features{ grid-template-columns:1fr; } }
   .feature{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
     overflow:hidden; transition:border-color var(--step); }
@@ -577,8 +574,8 @@ _TEMPLATE = """<!doctype html>
   .tag.rem{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet);
     border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
 
-  .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); }
-  .empty{ max-width:56ch; margin-inline:auto; }
+  .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); max-width:56ch;
+    margin-inline:auto; }
   .empty .big{ font:600 17px var(--serif); color:var(--ink); margin-bottom:8px;
     text-wrap:balance; }
   .skel{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
@@ -590,7 +587,21 @@ _TEMPLATE = """<!doctype html>
   /* running text, so it gets a measure — 1180px of prose is unreadable */
   .foot{ max-width:62ch; margin:46px auto 0; text-align:center; color:var(--ink-3);
     font-size:12.5px; line-height:1.6; text-wrap:pretty; }
-  .foot code{ font-family:var(--mono); color:var(--ink-2); }
+
+  /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
+     shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
+  @media (max-width:560px){
+    .shell{ padding:18px 14px 60px; }
+    .count{ display:none; }              /* the index size is context, not a control */
+    .searchbar{ flex-direction:column; }
+    .go{ padding:15px; width:100%; }
+    .hint{ gap:6px; }
+    .toolbar{ gap:8px 10px; }
+      .toolbar .n{ order:3; width:100%; }
+    .card{ padding:14px 15px; }
+    .card a.title{ font-size:15px; }
+    .match{ width:60px; }
+  }
 
   :focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
   @media (prefers-reduced-motion: reduce){
@@ -677,7 +688,7 @@ _TEMPLATE = """<!doctype html>
 
       <div class="set">
         <h2>Where</h2>
-        <div class="f"><label for="india">India</label>
+        <div class="f"><label for="india">India — city or region</label>
           <select id="india"><option value="">Anywhere</option>
             <option value="india">All India</option>__INDIA_OPTIONS__</select></div>
         <div class="f"><label for="location">Location</label>
@@ -698,7 +709,7 @@ _TEMPLATE = """<!doctype html>
             <option value="2">Last 2 hours</option><option value="24">Last 24 hours</option>
             <option value="168">Last 7 days</option>
           </select></div>
-        <div class="f"><label for="ats">Job board</label>
+        <div class="f"><label for="ats">Board</label>
           <select id="ats"><option value="">Any</option>__ATS_OPTIONS__</select></div>
       </div>
 
@@ -711,7 +722,7 @@ _TEMPLATE = """<!doctype html>
         <span class="n" id="n"></span>
         <span class="spacer"></span>
         <label class="note" for="sort">Sort</label>
-        <select id="sort" onchange="go()">
+        <select id="sort" onchange="resort()">
           <option value="rel">Best match</option><option value="new">Newest first</option>
         </select>
         <label class="note" for="k">Show</label>
@@ -723,7 +734,7 @@ _TEMPLATE = """<!doctype html>
   </div>
 
   <div class="foot">Every job here is read straight from the company's own careers page — no
-    reposts, no agencies, no expired listings. Your search is matched on meaning rather than
+    reposts and no agencies. Your search is matched on meaning rather than
     keywords. English-language tech roles, refreshed every couple of hours.</div>
 </div>
 <script>
@@ -740,7 +751,13 @@ function flipTheme(){
   document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
 }
 function tryIt(btn){ el('q').value = btn.textContent.trim(); go(); }
-function toggleRail(){ el('rail').classList.toggle('open'); }
+function toggleRail(){
+  const rail = el('rail');
+  const open = rail.classList.toggle('open');
+  // The rail sits before <main> in the DOM, so on a stacked phone layout it opens ABOVE the
+  // button that was just tapped. Without this the content jumps and the filters are off-screen.
+  if (open) rail.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
 
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
@@ -759,8 +776,6 @@ const isNew = s => {
   const hours = Number((el('seen') && el('seen').value) || 24);
   return Date.now() - t < hours * 3600000;
 };
-// Match strength gets a colour as well as a number: weak matches read violet, strong ones
-// read lime, so a scan down the column shows where the good results stop.
 // Match strength is a QUANTITY, so it gets a sequential ramp — one hue, increasing intensity —
 // not four different hues. Hue is reserved for categories (amber = new, lime = pays, violet =
 // remote); reusing those hues here would have made lime mean both "strong match" and "salary".
@@ -790,7 +805,7 @@ function currentFilters(){
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
   return f;
 }
-const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Max years',
+const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
   ats:'Board', etype:'Type', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤' };
 const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats',
@@ -814,21 +829,26 @@ function clearAll(){
   go();
 }
 
-function firstRun(){
+function showIntro(){
   el('results').innerHTML = '<div class="empty"><div class="big">Describe the role, not the keywords</div>' +
     'This searches meaning, so "someone to own our payments backend" works as well as a job title.<br>' +
     'Set the structured constraints — experience, location, salary — on the left.</div>';
 }
 
+let lastRows = null;   // kept so re-sorting never costs another embedding
+
+// Sorting is a view over rows we already have. Re-running go() would refetch /search and
+// re-encode the query server-side to reorder six results client-side.
+function resort(){ if (lastRows) draw(lastRows); else go(); }
+
 async function go(){
   const q = el('q').value.trim();
   drawActive();
-  if(!q){ firstRun(); el('n').textContent = ''; return; }
+  if(!q){ showIntro(); el('n').textContent = ''; return; }
   const p = new URLSearchParams({ q, k: el('k').value });
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   el('n').textContent = 'searching…';
-  const t0 = performance.now();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ el('results').innerHTML = '<div class="empty">That search didn\\'t go through. Try again.</div>';
@@ -840,18 +860,22 @@ async function go(){
     el('results').innerHTML = '<div class="empty"><div class="big">Nothing matched</div>' +
       'Try loosening a filter, or describe the role more broadly.</div>';
     el('n').textContent = '0 results'; return; }
+  lastRows = rows;
+  el('n').textContent = rows.length + ' result' + (rows.length===1?'':'s');
+  draw(rows);
+}
+
+function draw(rows){
   if (el('sort').value === 'new'){
     const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
-    rows.sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
+    rows = rows.slice().sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
   }
-  el('n').textContent = rows.length + ' result' + (rows.length===1?'':'s') +
-    ' · ' + Math.round(performance.now()-t0) + ' ms';
   el('results').innerHTML = rows.map((r,i) => {
     const s = Number(r.score) || 0, c = tone(s);
     return `
     <div class="card" style="--tone:${c}; animation-delay:${Math.min(i,12)*35}ms">
       <div class="hd">
-        <div style="min-width:0">
+        <div style="flex:1; min-width:0">
           <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
@@ -913,9 +937,9 @@ async function onGoogleCredential(resp){
 function initAlerts(){
   if (!window.google || !'__GOOGLE_CLIENT_ID__') return;
   google.accounts.id.initialize({ client_id: '__GOOGLE_CLIENT_ID__', callback: onGoogleCredential });
-  google.accounts.id.renderButton(el('gsignin'), { theme: 'filled_black', size: 'medium' });
+  google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
-firstRun();
+showIntro();
 </script>
 <script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>
 </body></html>"""
