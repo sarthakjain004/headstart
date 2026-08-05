@@ -1,7 +1,11 @@
-# ADR-0028: The 6-hourly ingest run lives in `src/headstart/ingest/`
+# ADR-0028: The scheduled ingest run lives in `src/headstart/ingest/`
 
 - Status: Accepted
 - Date: 2026-07-25
+- Cadence note (2026-07-26, #63): this ADR was written when the run was 6-hourly; it is now
+  2-hourly (`.github/workflows/pipeline.yml`, `cron: 30 1-23/2`). The decision — where the
+  run's code lives — is cadence-independent, so only the wording changed. Text below that
+  said "6-hourly" now says "scheduled".
 - Moves the entry points of [ADR-0025](0025-parallelize-nightly-pipeline.md) /
   [ADR-0026](0026-parallelize-nightly-scrape.md) / [ADR-0027](0027-measured-scrape-cost-ledger.md)
   into the package, collapses five of them into two, moves the four pipeline-only library modules
@@ -160,6 +164,6 @@ failure. Two subcommands, two workflow steps, failure semantics unchanged.
   The two `embed_jobs` tests keep their `importorskip` gates *above* the module import — CI's
   quality job installs base deps only, so a top-level import would error instead of skipping.
 - `scripts/pipeline/` and `scripts/rank/` no longer exist. `scripts/` now means "not in the
-  6-hourly run", which is the distinction that was missing.
+  scheduled run", which is the distinction that was missing.
 - Anyone with a local `python scripts/embed/embed_jobs.py --resume` habit needs the new command;
   the README quickstart and `docs/agents/deployment.md` are updated.
