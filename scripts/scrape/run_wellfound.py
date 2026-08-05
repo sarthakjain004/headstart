@@ -174,23 +174,28 @@ class HardBlocked(RuntimeError):
     page, and each one re-signals while the restriction is live. Aborts the whole run."""
 
 
-async def _load_page(tab, url: str, browser=None) -> str:
+async def _load_page(tab, url: str, browser=None, blocked=None) -> str:
     """Navigate to one URL, waiting out / solving the DataDome challenge.
 
     A distrusted (e.g. WARP) IP gets an interactive "slide right" slider that won't auto-clear;
     when we see it we attempt the humanized drag solver. A trusted IP just auto-passes.
+
+    `blocked` is the "not resolved yet" predicate, defaulting to `_is_blocked` (which keys on
+    __NEXT_DATA__). Pass a different one for page shapes that don't carry __NEXT_DATA__ — job
+    detail pages serve JSON-LD instead, so the default reads every one of them as blocked and
+    burns the whole 40s retry budget before returning html that was fine all along (measured:
+    41s/page vs 0.2s with the right predicate).
     """
+    blocked = blocked or _is_blocked
     await tab.go_to(url)
     html = await _safe_source(tab)
-    if not _is_blocked(
-        html
-    ):  # SSR page returns __NEXT_DATA__ at once when not challenged
+    if not blocked(html):  # SSR page resolves at once when not challenged
         return html
     solve_tried = False
     for attempt in range(20):  # ~40s budget for the challenge to resolve
         await asyncio.sleep(2)
         html = await _safe_source(tab)
-        if not _is_blocked(html):
+        if not blocked(html):
             return html
         if browser is not None and not solve_tried and "captcha-delivery.com" in html:
             solve_tried = True
@@ -199,7 +204,7 @@ async def _load_page(tab, url: str, browser=None) -> str:
             )
             if await solve_slider(tab, browser, EXP):
                 html = await _safe_source(tab)
-                if not _is_blocked(html):
+                if not blocked(html):
                     print("  slider solved — page resolved", flush=True)
                     return html
         if attempt == 9:
@@ -251,16 +256,15 @@ def _lf(s):
     return s.replace("\r\n", "\n").replace("\r", "\n") if isinstance(s, str) else s
 
 
-def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
-    """Normalize one role page's Apollo cache to Jobs; also return its total page count.
+def apollo_cache(html: str) -> dict:
+    """The page's Apollo cache (``props.pageProps.apolloState.data``), or {} if it has none.
 
-    The role page groups jobs by company: each ``StartupResult`` carries the company
-    name/slug plus ``highlightedJobListings`` refs into ``JobListingSearchResult`` entries.
-    ``ROOT_QUERY.seoLandingPageJobSearchResults`` reports ``pageCount`` for pagination.
+    Every Wellfound SSR page — role board and company page alike — carries its data here, so
+    both parsers share this one walk.
     """
     m = NEXT_DATA_RE.search(html)
     if not m:
-        return [], 0
+        return {}
     data = json.loads(m.group(1))
     cache = (
         data.get("props", {})
@@ -268,7 +272,18 @@ def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
         .get("apolloState", {})
         .get("data", {})
     )
-    if not isinstance(cache, dict):
+    return cache if isinstance(cache, dict) else {}
+
+
+def parse_page(html: str, scraped_at: str) -> tuple[list[dict], int]:
+    """Normalize one role page's Apollo cache to Jobs; also return its total page count.
+
+    The role page groups jobs by company: each ``StartupResult`` carries the company
+    name/slug plus ``highlightedJobListings`` refs into ``JobListingSearchResult`` entries.
+    ``ROOT_QUERY.seoLandingPageJobSearchResults`` reports ``pageCount`` for pagination.
+    """
+    cache = apollo_cache(html)
+    if not cache:
         return [], 0
 
     # pageCount lives at ROOT_QUERY.talent.seoLandingPageJobSearchResults({...}); `talent`
