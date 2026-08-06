@@ -40,6 +40,19 @@ non-sensitive: a client ID, no client secret, and no consent-screen verification
 sending *through* the user's mailbox with `gmail.send`, is a restricted scope requiring Google's
 CASA security assessment to exceed 100 users, and it would have the account mailing itself.
 
+**The Space installs `google-auth[requests]`, and the extra is load-bearing.** `google-auth`
+declares `requests` as an extra rather than a core dependency, and `google.auth.transport.requests`
+answers its absence with a bare `ImportError` — not `ModuleNotFoundError` — so plain `google-auth`
+resolves, installs and imports cleanly right up until a real credential arrives, then turns every
+sign-in into a 401 reading `sign-in could not be verified: ImportError`. Nothing else in the image
+supplies `requests`: `huggingface_hub` moved to httpx. This shipped that way and made the feature
+unusable while looking configured — the panel rendered, the client id was live, and the only
+symptom was a 401 nobody was watching. It is invisible to every seam this ADR chose: the `verifier`
+argument stands in for Google in `tests/test_alerts_identity.py`, `tests/test_space_app.py` stubs
+`sys.modules` to import `app.py` at all, and CI's quality job installs no extras. That is the cost
+of the lazy import below, taken deliberately — so the requirements line itself is now the assertion,
+in `test_space_requirements_ask_for_the_google_auth_requests_extra`.
+
 **Subscriptions live in their own private dataset, `imPoseidon/headstart-subscribers`, and the
 Space holds a write token scoped to it alone.** This is the security posture of the feature, not a
 filing preference. The Space's existing `HF_TOKEN` is a fine-grained **read** token scoped to the
