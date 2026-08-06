@@ -107,13 +107,6 @@ def test_no_matches_sends_nothing_and_does_not_advance(monkeypatch):
     assert store.saved == []
 
 
-def test_unsubscribe_url_carries_id_and_token():
-    sub = _sub()
-    sub.unsubscribe_token = "t0k"
-    url = transports.unsubscribe_url("https://space/", sub)
-    assert url == "https://space/unsubscribe?id=abc&token=t0k"
-
-
 def test_main_skips_cleanly_when_unconfigured(monkeypatch, capsys):
     for name in run._REQUIRED:
         monkeypatch.delenv(name, raising=False)

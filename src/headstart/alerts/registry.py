@@ -22,7 +22,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .store import _read, _write
+from .store import read_bytes, write_bytes
 
 PATH = "telegram/registry.json"
 
@@ -52,12 +52,16 @@ class Registry:
     master: str = ""
     pending: dict[str, Pending] = field(default_factory=dict)
     offset: int = 0
+    #: Chats the master refused. Kept, because forgetting a refusal re-opens the gate: the
+    #: same stranger's next `/start` would announce them again, indefinitely.
+    denied: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "master": self.master,
             "pending": {k: asdict(v) for k, v in self.pending.items()},
             "offset": self.offset,
+            "denied": self.denied,
         }
 
     @classmethod
@@ -71,10 +75,12 @@ class Registry:
                     pending[str(chat_id)] = Pending(
                         **{k: v for k, v in value.items() if k in known}
                     )
+        raw_denied = data.get("denied")
         return cls(
             master=str(data.get("master") or ""),
             pending=pending,
             offset=int(data.get("offset") or 0),
+            denied=[str(c) for c in raw_denied] if isinstance(raw_denied, list) else [],
         )
 
 
@@ -87,7 +93,7 @@ def load(repo: str, token: str) -> Registry:
     approval lives in `store` and not here.
     """
     try:
-        return Registry.from_dict(json.loads(_read(repo, PATH, token)))
+        return Registry.from_dict(json.loads(read_bytes(repo, PATH, token)))
     except Exception as exc:  # noqa: BLE001 — absent on first run is the normal case
         print(
             f"[bot] no registry yet ({type(exc).__name__}) - starting empty", flush=True
@@ -96,4 +102,6 @@ def load(repo: str, token: str) -> Registry:
 
 
 def save(repo: str, token: str, registry: Registry) -> None:
-    _write(repo, PATH, json.dumps(registry.to_dict(), indent=2).encode("utf-8"), token)
+    write_bytes(
+        repo, PATH, json.dumps(registry.to_dict(), indent=2).encode("utf-8"), token
+    )

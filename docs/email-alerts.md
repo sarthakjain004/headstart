@@ -78,6 +78,10 @@ in, and the run logs it as `invited but no query yet`.
 }
 ```
 
+An entry may also carry `"telegram": "<chat id>"`, which sends that person's digests as a
+Telegram DM instead of email (ADR-0038) — one transport each, never both. That is the
+hand-edited counterpart to the bot's own `/start` approval flow; see `docs/telegram-alerts.md`.
+
 `filters` accepts the `/search` parameters in `store.ALLOWED_SEARCH_FILTERS`; anything else is
 dropped silently. Where an entry names a query it wins over whatever is stored, so editing this
 file re-aims someone's alerts on the next run — their watermark and unsubscribe link survive it.

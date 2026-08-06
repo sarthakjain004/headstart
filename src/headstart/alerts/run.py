@@ -23,7 +23,6 @@ import os
 import sys
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
 
 from . import digest, space_query, transports
 from .shortlist import CAP, shortlist
@@ -41,27 +40,20 @@ class TransportUnset(Exception):
     """
 
 
-def deliver(
-    sub: Subscription,
-    jobs: list[dict[str, Any]],
-    attachment: bytes,
-    space: str,
-    config: Mapping[str, str],
-) -> str:
-    """Hand `jobs` to this Subscription's Transport. Returns the Transport's name.
+def transport_for(sub: Subscription, config: Mapping[str, str]):
+    """This Subscription's Transport, or `TransportUnset` if its secrets are absent.
 
-    The spreadsheet is rendered by the caller and passed in, so a Transport only has to
-    know how to deliver a body and a file — not how either is built.
-
-    `run` knows that a Transport exists and that it may be unconfigured; which channels
-    there are, and what each needs, is `transports`' business alone.
+    Resolved *before* the search rather than at delivery. A Space query is the expensive
+    part of a run — `space_query.K` rows with a retry budget — and paying it for a channel
+    that cannot send is pure waste; worse, if the Space is down those records raise and
+    count as failures, turning the run red for a channel the repo never configured, which
+    is precisely what `TransportUnset` exists to avoid.
     """
     transport = transports.for_subscription(sub)
     missing = transport.missing(config)
     if missing:
         raise TransportUnset(f"{transport.name}: {', '.join(missing)} unset")
-    transport.send(sub, jobs, attachment, space, config)
-    return transport.name
+    return transport
 
 
 def send_one(
@@ -78,21 +70,29 @@ def send_one(
     ever offer them. Taking the stamp first can only re-offer a row next run, which is the
     at-least-once direction this feature chose.
     """
+    transport = transport_for(sub, config)
     cutoff = now_iso()
     rows = space_query.newly_seen(space, sub, sub.watermark)
     # Ranked twice over, deliberately: the message carries the best `CAP`, the spreadsheet
     # carries every fresh row the Space returned. That is what makes the attachment worth
     # opening rather than a copy of what they just read — `space_query.K` is 100 against a
     # cap of 30, so two thirds of the matches were being discarded unseen.
-    ranked = shortlist(rows, sub.watermark, cap=len(rows) or 1)
+    ranked = shortlist(rows, sub.watermark, cap=len(rows))
     picked = ranked[:CAP]
     if not picked:
         return 0
 
-    deliver(sub, picked, digest.to_xlsx(ranked), space, config)
+    transport.send(
+        sub,
+        picked,
+        transports.Payload(digest.to_xlsx(ranked), len(ranked)),
+        space,
+        config,
+    )
     # Only now: the send is the thing that must not be lost.
     sub.watermark = cutoff
     store.put(sub)
+    print(f"[alerts] {sub.id}: delivered by {transport.name}", flush=True)
     return len(picked)
 
 

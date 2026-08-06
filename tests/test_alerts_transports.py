@@ -41,7 +41,7 @@ def test_an_empty_secret_counts_as_unset():
 def test_telegram_send_carries_the_chat_id_chunks_and_spreadsheet(monkeypatch):
     sent = []
     monkeypatch.setattr(
-        transports.digest, "to_telegram", lambda sub, jobs: ["one", "two"]
+        transports.digest, "to_telegram", lambda sub, jobs, total=None: ["one", "two"]
     )
     monkeypatch.setattr(
         transports.telegram,
@@ -54,7 +54,7 @@ def test_telegram_send_carries_the_chat_id_chunks_and_spreadsheet(monkeypatch):
     transports.TELEGRAM.send(
         _sub(telegram="4242"),
         [{"title": "Eng"}],
-        b"xlsx",
+        transports.Payload(b"xlsx", 2),
         "https://s",
         {"TELEGRAM_BOT_TOKEN": "t"},
     )
@@ -67,7 +67,7 @@ def test_email_send_passes_the_unsubscribe_url_telegram_has_no_use_for(monkeypat
     monkeypatch.setattr(
         transports.digest,
         "render",
-        lambda sub, jobs, url: seen.setdefault("url", url) or "body",
+        lambda sub, jobs, url, total=None: seen.setdefault("url", url) or "body",
     )
     monkeypatch.setattr(
         transports.mail,
@@ -79,7 +79,7 @@ def test_email_send_passes_the_unsubscribe_url_telegram_has_no_use_for(monkeypat
     transports.EMAIL.send(
         sub,
         [{"title": "Eng"}],
-        b"xlsx",
+        transports.Payload(b"xlsx", 1),
         "https://space",
         {"RESEND_API_KEY": "k", "ALERTS_SENDER": "a@x.dev"},
     )
@@ -108,14 +108,35 @@ def test_the_attachment_is_passed_through_not_rebuilt(monkeypatch):
         "send",
         lambda token, chat_id, chunks, attachment: seen.update(att=attachment),
     )
-    monkeypatch.setattr(transports.digest, "to_telegram", lambda sub, jobs: ["x"])
+    monkeypatch.setattr(
+        transports.digest, "to_telegram", lambda sub, jobs, total=None: ["x"]
+    )
 
     transports.TELEGRAM.send(
         _sub(telegram="1"),
         [{"title": "Eng"}],
-        b"the-bigger-xlsx",
+        transports.Payload(b"the-bigger-xlsx", 75),
         "https://s",
         {"TELEGRAM_BOT_TOKEN": "t"},
     )
 
     assert seen["att"] == b"the-bigger-xlsx"
+
+
+def test_the_payload_total_reaches_the_renderer_so_counts_are_not_understated():
+    """The body is capped and the spreadsheet is not, so a Digest that counted only what it
+    showed would say "30 new matches" over a file holding 75."""
+    seen = {}
+    transports.digest.to_telegram(
+        _sub(telegram="1", query="backend"),
+        [{"title": "Eng", "url": "https://j/1", "score": 0.5}],
+        total=75,
+    )
+    chunks = transports.digest.to_telegram(
+        _sub(telegram="1", query="backend"),
+        [{"title": "Eng", "url": "https://j/1", "score": 0.5}],
+        total=75,
+    )
+    assert "75 new job(s)" in chunks[0]
+    assert any("74 more" in c for c in chunks), "the rest must be pointed at the file"
+    assert seen == {}

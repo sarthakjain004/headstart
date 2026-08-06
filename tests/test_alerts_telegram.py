@@ -100,3 +100,32 @@ def test_multipart_body_is_well_formed():
     assert body.endswith(f"\r\n--{boundary}--\r\n".encode())
     assert b'filename="jobs.xlsx"' in body
     assert b"\x00binary" in body
+
+
+def test_parse_mode_is_omitted_when_asked_for_plain_text():
+    """The bot's replies contain `/q <what you're looking for>` and `/allow <id>`. Under
+    HTML parsing those are unsupported start tags: Telegram answers 200 with ok:false and
+    the message never arrives — which killed the very first /start."""
+    sent = []
+    telegram.send(
+        "tok",
+        "4242",
+        ["/q <what you're looking for>"],
+        parse_mode=None,
+        post=lambda u, b, h: sent.append(json.loads(b)) or {"ok": True},
+    )
+    assert "parse_mode" not in sent[0]
+    assert sent[0]["text"] == "/q <what you're looking for>", (
+        "sent verbatim, not escaped"
+    )
+
+
+def test_a_digest_still_goes_as_html():
+    sent = []
+    telegram.send(
+        "tok",
+        "4242",
+        ['<b>1 new</b> <a href="https://j/1">Role</a>'],
+        post=lambda u, b, h: sent.append(json.loads(b)) or {"ok": True},
+    )
+    assert sent[0]["parse_mode"] == "HTML"

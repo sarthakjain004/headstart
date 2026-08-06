@@ -87,7 +87,7 @@ The Telegram chat that approves everyone else — claimed by the first `/start` 
 The instant a Subscription was last sent a **Digest**. The next Digest carries only Jobs whose `first_seen` is strictly after it, so an irregular pipeline cadence can neither double-send nor skip a window. Advanced only once a Digest has been accepted for delivery.
 
 **Digest**:
-The one message a Subscription receives after a pipeline run — its best new matches capped at 30, each with its semantic score and apply link, plus the same rows as a spreadsheet attachment. One Digest regardless of **Transport**, though Telegram splits it across several messages to stay under the platform's size cap. No matches sends no Digest.
+The one message a Subscription receives after a pipeline run — its best new matches capped at 30, each with its semantic score and apply link, plus a spreadsheet attachment carrying **every** new match, not just the capped few shown. One Digest regardless of **Transport**, though Telegram splits it across several messages to stay under the platform's size cap. No matches sends no Digest.
 _Avoid_: alert, notification — a Digest is one batched message per run, not one per Job. Delivered over either **Transport**, so "email" is wrong for it too.
 
 ### Search

@@ -172,7 +172,49 @@ def main() -> int:
     else:  # pragma: no cover - the assert below is the real check
         raise AssertionError("a refused send must raise, or a Digest is silently lost")
 
-    step("10. The master revokes")
+    step("10. Every bot reply survives Telegram's parser")
+    # The gap this step closes: an earlier version sent bot replies through the Digest
+    # sender, which sets parse_mode=HTML. `/q <what you're looking for>` and `/allow <id>`
+    # are unsupported start tags, so Telegram answered ok:false and the very first /start
+    # failed. Faking the transport hid it — so check the payload, not just the flow.
+    import re
+
+    bodies = []
+    for text in (bot.HELP, bot.MASTER_HELP, "Approved Ada (@ada_l) — id 2000."):
+        telegram.send(
+            "t",
+            "1",
+            [text],
+            parse_mode=None,
+            post=lambda url, body, headers: (
+                bodies.append(json.loads(body)) or {"ok": True}
+            ),
+        )
+    assert all("parse_mode" not in b for b in bodies), (
+        "bot replies must go as plain text; they contain <…> that HTML mode rejects"
+    )
+    tags = [tag for b in bodies for tag in re.findall(r"<[^>]*>", b["text"])]
+    print(
+        f"  {len(bodies)} bot replies sent as plain text; they contain {len(tags)} <…> runs",
+        flush=True,
+    )
+    print(
+        f"  e.g. {tags[:2]} — these would be rejected under parse_mode=HTML", flush=True
+    )
+
+    digest_bodies = []
+    telegram.send(
+        "t",
+        "1",
+        chunks[:1],
+        post=lambda url, body, headers: (
+            digest_bodies.append(json.loads(body)) or {"ok": True}
+        ),
+    )
+    assert digest_bodies[0]["parse_mode"] == "HTML", "a Digest still needs its links"
+    print("  digest still sent as HTML (its links are escaped markup)", flush=True)
+
+    step("11. The master revokes")
     pump([update(MASTER, f"/revoke {ADA}", uid=6)], registry, store)
     print(f"  records remaining: {len(store.records)}", flush=True)
     assert store.records == {}

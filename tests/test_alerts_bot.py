@@ -248,3 +248,26 @@ def test_allow_is_idempotent_so_a_replay_cannot_reset_a_watermark():
     assert after.watermark == existing.watermark
     assert after.unsubscribe_token == existing.unsubscribe_token
     assert after.query == "backend", "an existing search survives a replayed approval"
+
+
+def test_a_denial_sticks_so_the_master_is_not_re_prompted():
+    registry = Registry(master=MASTER, pending={ADA: Pending(ADA, "ada_l", "Ada")})
+    store = _Store()
+
+    bot.handle(_update(MASTER, f"/deny {ADA}"), registry, store)
+    assert registry.denied == [ADA]
+
+    # Their next /start must not reach the master again.
+    replies = bot.handle(_update(ADA, "/start"), registry, store)
+    assert [chat for chat, _ in replies] == [ADA]
+    assert ADA not in registry.pending
+
+
+def test_the_master_can_change_their_mind_after_a_denial():
+    registry = Registry(master=MASTER, denied=[ADA], pending={ADA: Pending(ADA)})
+    store = _Store()
+
+    bot.handle(_update(MASTER, f"/allow {ADA}"), registry, store)
+
+    assert registry.denied == [], "an approval clears the refusal"
+    assert store.get(chat_subscription_id(ADA)) is not None

@@ -8,7 +8,8 @@ it be tested there at all.
 The body carries the links because that is the surface people actually use — a link is one
 tap on a phone, where an attachment is download-open-scroll. The spreadsheet is for working
 the list at a desk, and carries *more* than the body: callers render it from every fresh row
-rather than the capped shortlist, so the long tail is somewhere rather than discarded.
+they retrieved rather than the capped shortlist, so the long tail is somewhere rather than
+discarded. "Every match" means every one the Space returned — `space_query.K` bounds that.
 """
 
 from __future__ import annotations
@@ -36,16 +37,37 @@ def _line(job: dict[str, Any]) -> str:
     return " — ".join(bits)
 
 
-def subject_for(sub: Subscription, jobs: list[dict[str, Any]]) -> str:
-    n = len(jobs)
+def subject_for(
+    sub: Subscription, jobs: list[dict[str, Any]], total: int | None = None
+) -> str:
+    n = total if total is not None else len(jobs)
     return f"{n} new {'match' if n == 1 else 'matches'} for “{sub.query}”"
 
 
+def _tail(shown: int, total: int) -> str:
+    """How the body refers to what only the spreadsheet has."""
+    if total <= shown:
+        return "The attached spreadsheet has the same rows."
+    return (
+        f"Showing the top {shown}. The attached spreadsheet has all {total}, "
+        "including the rest."
+    )
+
+
 def render(
-    sub: Subscription, jobs: list[dict[str, Any]], unsubscribe_url: str
+    sub: Subscription,
+    jobs: list[dict[str, Any]],
+    unsubscribe_url: str,
+    total: int | None = None,
 ) -> Digest:
     """Subject, plain text and HTML for `jobs`. Callers only render when `jobs` is non-empty —
-    a Digest with nothing in it is not sent at all."""
+    a Digest with nothing in it is not sent at all.
+
+    `total` is how many matches there were, which may exceed the `jobs` shown: the body is
+    capped and the spreadsheet is not. Saying "30 new matches" over an attachment holding 75
+    understates the run, so the count comes from `total` and the body says where the rest is.
+    """
+    total = len(jobs) if total is None else total
     text_rows, html_rows = [], []
     for job in jobs:
         score = job.get("score")
@@ -61,26 +83,29 @@ def render(
 
     body = "\n".join(text_rows)
     text = (
-        f"{len(jobs)} new job(s) matching: {sub.query}\n\n{body}\n\n"
-        f"The attached spreadsheet has every new match, including any below these.\n"
+        f"{total} new job(s) matching: {sub.query}\n\n{body}\n\n"
+        f"{_tail(len(jobs), total)}\n"
         f"Unsubscribe: {unsubscribe_url}\n"
     )
     markup = (
         f'<div style="font-family:system-ui,sans-serif;max-width:640px">'
-        f"<p>{len(jobs)} new job(s) matching "
+        f"<p>{total} new job(s) matching "
         f"<strong>{html.escape(sub.query)}</strong>:</p>"
         f'<ul style="padding-left:18px">{"".join(html_rows)}</ul>'
-        f'<p style="color:#666;font-size:13px">The attached spreadsheet has every new match, including any below these.'
+        f'<p style="color:#666;font-size:13px">{html.escape(_tail(len(jobs), total))}'
         f' · <a href="{html.escape(unsubscribe_url, quote=True)}">Unsubscribe</a></p></div>'
     )
-    return Digest(subject=subject_for(sub, jobs), text=text, html=markup)
+    return Digest(subject=subject_for(sub, jobs, total), text=text, html=markup)
 
 
 PER_MESSAGE = 10
 
 
 def to_telegram(
-    sub: Subscription, jobs: list[dict[str, Any]], per_message: int = PER_MESSAGE
+    sub: Subscription,
+    jobs: list[dict[str, Any]],
+    per_message: int = PER_MESSAGE,
+    total: int | None = None,
 ) -> list[str]:
     """The same Digest as consecutive Telegram messages, newest-first order preserved.
 
@@ -94,10 +119,9 @@ def to_telegram(
     inline styling — and every interpolated value is escaped, since a job title containing
     a stray `<` would otherwise make Telegram reject the whole message.
     """
-    batches = [jobs[i : i + per_message] for i in range(0, len(jobs), per_message)] or [
-        []
-    ]
-    total = len(jobs)
+    shown = len(jobs)
+    total = shown if total is None else total
+    batches = [jobs[i : i + per_message] for i in range(0, shown, per_message)]
     out: list[str] = []
     for index, batch in enumerate(batches):
         lines = []
@@ -108,7 +132,7 @@ def to_telegram(
         else:
             lines.append(
                 f"<b>…continued ({index * per_message + 1}–"
-                f"{index * per_message + len(batch)} of {total})</b>"
+                f"{index * per_message + len(batch)} of {shown})</b>"
             )
         for job in batch:
             score = job.get("score")
@@ -120,6 +144,11 @@ def to_telegram(
                 f'• <a href="{url}">{html.escape(_line(job))}</a> · {score_text}'
             )
         out.append("\n".join(lines))
+    if total > shown:
+        out.append(
+            f"<b>{total - shown} more</b> didn't fit — they're all in the attached "
+            "spreadsheet."
+        )
     return out
 
 

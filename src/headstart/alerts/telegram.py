@@ -69,8 +69,16 @@ def send(
     chunks: list[str],
     attachment: bytes | None = None,
     post: Callable[[str, bytes, dict[str, str]], dict[str, Any]] | None = None,
+    parse_mode: str | None = "HTML",
 ) -> None:
-    """Send `chunks` as consecutive HTML messages, then the spreadsheet if there is one.
+    """Send `chunks` as consecutive messages, then the spreadsheet if there is one.
+
+    `parse_mode` is a parameter rather than a constant because the two callers need
+    opposite things. A Digest is markup — escaped links built by `digest.to_telegram`. The
+    bot's replies are prose containing `/q <what you're looking for>` and `/allow <id>`,
+    which under HTML parsing are unsupported start tags: Telegram answers 200 with
+    `"ok": false` and the message never arrives. Sending those as plain text is both
+    simpler and safer than escaping help text that has no markup in it to begin with.
 
     Raises :class:`TelegramError` on the first refusal. Sending stops there rather than
     pressing on: a partial Digest with the Watermark held back is re-sent whole next run,
@@ -91,24 +99,20 @@ def send(
             raise TelegramError(f"{method} refused: {reply}")
 
     for chunk in chunks:
-        _call(
-            "sendMessage",
-            json.dumps(
-                {
-                    "chat_id": chat_id,
-                    "text": chunk,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True,
-                }
-            ).encode("utf-8"),
-            "application/json",
-        )
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": chunk,
+            "disable_web_page_preview": True,
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        _call("sendMessage", json.dumps(payload).encode("utf-8"), "application/json")
 
     if attachment:
         body, content_type = multipart(
             {
                 "chat_id": chat_id,
-                "caption": "Every new match, including the ones below the top 30.",
+                "caption": "Every new match from this run, including the ones not listed above.",
             },
             FILENAME,
             attachment,

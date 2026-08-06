@@ -57,6 +57,13 @@ Write the query the way the search box wants it: **the role you want, not struct
 constraints**. "backend engineer at a climate startup" works; "3+ years, remote" does not,
 because years and remote are filters, not part of the semantic query (see `CLAUDE.md`).
 
+## Without the bot
+
+You can also put someone on Telegram by hand, if you already know their chat id: add
+`"telegram": "<chat id>"` to their `subscriptions/allowlist.json` entry (see
+`docs/email-alerts.md`). That routes their digests to Telegram instead of email — one
+transport each, never both. The bot exists so you don't have to collect chat ids yourself.
+
 ## Checking it without a token
 
 `python scripts/alerts/telegram_dry_run.py` walks the whole path against a fake Telegram and

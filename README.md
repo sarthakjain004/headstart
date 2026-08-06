@@ -104,8 +104,7 @@ scrape). A run-level `concurrency` group serializes whole runs so two never race
 **Serving** has two independent paths. The search index is the single-writer end: `merge` uploads
 to the private HF dataset `imPoseidon/headstart-index` and restarts the Space
 `imPoseidon/headstart-search`. Separately, `python -m headstart` scrapes the same ledger and writes
-`docs/jobs.json`; the GitHub Pages dashboard reads
-read *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
+`docs/jobs.json`; the GitHub Pages dashboard reads *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
 their own schedules.
 
 ### Which boards a run picks

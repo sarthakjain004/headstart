@@ -28,9 +28,23 @@ from .store import Subscription
 
 
 def unsubscribe_url(base: str, sub: Subscription) -> str:
-    """The one-click unsubscribe link a Digest carries. Email's concern: a Telegram DM is
-    stopped by blocking the bot or by striking the entry from the allowlist."""
+    """The one-click unsubscribe link an emailed Digest carries.
+
+    Email's concern alone: a Telegram DM is stopped with `/stop`, the master's `/revoke`, or
+    by blocking the bot, none of which need a token in a URL."""
     return f"{base.rstrip('/')}/unsubscribe?id={sub.id}&token={sub.unsubscribe_token}"
+
+
+@dataclass(frozen=True)
+class Payload:
+    """The spreadsheet, and how many matches it holds.
+
+    Bundled because the two always travel together and are always about the same Digest —
+    a Transport that got one without the other would render a count its file contradicts.
+    """
+
+    attachment: bytes
+    total: int
 
 
 @dataclass(frozen=True)
@@ -44,7 +58,7 @@ class Transport:
     name: str
     selects: Callable[[Subscription], bool]
     send: Callable[
-        [Subscription, list[dict[str, Any]], bytes, str, Mapping[str, str]], None
+        [Subscription, list[dict[str, Any]], "Payload", str, Mapping[str, str]], None
     ]
     needs: tuple[str, ...] = field(default_factory=tuple)
 
@@ -56,22 +70,22 @@ class Transport:
 def _send_telegram(
     sub: Subscription,
     jobs: list[dict[str, Any]],
-    attachment: bytes,
+    payload: "Payload",
     space: str,
     config: Mapping[str, str],
 ) -> None:
     telegram.send(
         config["TELEGRAM_BOT_TOKEN"],
         sub.telegram,
-        digest.to_telegram(sub, jobs),
-        attachment,
+        digest.to_telegram(sub, jobs, total=payload.total),
+        payload.attachment,
     )
 
 
 def _send_email(
     sub: Subscription,
     jobs: list[dict[str, Any]],
-    attachment: bytes,
+    payload: "Payload",
     space: str,
     config: Mapping[str, str],
 ) -> None:
@@ -79,8 +93,8 @@ def _send_email(
         config["RESEND_API_KEY"],
         config["ALERTS_SENDER"],
         sub.email,
-        digest.render(sub, jobs, unsubscribe_url(space, sub)),
-        attachment,
+        digest.render(sub, jobs, unsubscribe_url(space, sub), total=payload.total),
+        payload.attachment,
     )
 
 

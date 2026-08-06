@@ -278,6 +278,17 @@ def _delete(repo: str, path: str, token: str) -> None:
     _hf(token).delete_file(path_in_repo=path, repo_id=repo, repo_type="dataset")
 
 
+def read_bytes(repo: str, path: str, token: str) -> bytes:
+    """One file from the Subscriptions dataset. The public door `registry` comes in by —
+    it stores a record that is not a Subscription, so it needs the repo but not `Store`."""
+    return _read(repo, path, token)
+
+
+def write_bytes(repo: str, path: str, data: bytes, token: str) -> None:
+    """Write one file to the Subscriptions dataset. See :func:`read_bytes`."""
+    _write(repo, path, data, token)
+
+
 class Store:
     """Subscriptions in one private dataset. Construct with the repo id and a write token."""
 

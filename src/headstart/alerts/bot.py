@@ -113,6 +113,10 @@ def _request_access(
     command: str, chat_id: str, username: str, name: str, registry: Registry
 ) -> list[tuple[str, str]]:
     """Announce a newcomer to the master, once."""
+    if chat_id in registry.denied:
+        # Silent to the master: a refusal that re-announced on every /start would hand a
+        # stranger a way to keep prompting them.
+        return [(chat_id, "Your request for job alerts wasn't approved.")]
     if chat_id in registry.pending:
         return [
             (chat_id, "Still waiting on approval — you'll get a message when it's in.")
@@ -154,6 +158,10 @@ def _master_command(
         # unsubscribe token in messages already delivered.
         if store.get(chat_subscription_id(argument)) is None:
             store.put(Subscription.for_chat(argument))
+        if argument in registry.denied:
+            registry.denied.remove(
+                argument
+            )  # the master is allowed to change their mind
         return [
             (master, f"Approved {waiting.describe()}."),
             (argument, "You're in.\n\n" + HELP),
@@ -163,6 +171,8 @@ def _master_command(
         waiting = registry.pending.pop(argument, None)
         if waiting is None:
             return [(master, f"{argument} isn't waiting on anything.")]
+        if argument not in registry.denied:
+            registry.denied.append(argument)
         # The person is told, rather than left waiting on a message that never comes.
         return [
             (master, f"Denied {waiting.describe()}."),
@@ -231,7 +241,8 @@ def main() -> int:
     failed = 0
     for chat_id, text in replies:
         try:
-            sender.send(bot_token, chat_id, [text])
+            # Plain text: these replies are prose, and `/q <…>` would be read as markup.
+            sender.send(bot_token, chat_id, [text], parse_mode=None)
         except sender.TelegramError as exc:
             failed += 1
             print(f"[bot] reply to {chat_id} FAILED: {exc}", flush=True)

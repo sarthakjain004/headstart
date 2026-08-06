@@ -34,7 +34,7 @@ def test_a_missing_registry_reads_as_empty_so_the_next_start_claims_it(monkeypat
     def absent(repo, path, token):
         raise FileNotFoundError(path)
 
-    monkeypatch.setattr(reg, "_read", absent)
+    monkeypatch.setattr(reg, "read_bytes", absent)
     empty = reg.load(REPO, TOKEN)
 
     assert empty == reg.Registry()
@@ -60,7 +60,7 @@ def test_save_writes_the_registry_path(monkeypatch):
     written = {}
     monkeypatch.setattr(
         reg,
-        "_write",
+        "write_bytes",
         lambda repo, path, data, token: written.update(path=path, data=data),
     )
 
@@ -73,3 +73,11 @@ def test_save_writes_the_registry_path(monkeypatch):
 def test_the_registry_lives_beside_subscriptions_without_colliding_with_one():
     # `Store.all` walks `subscriptions/`; the registry must not be picked up as a record.
     assert not reg.PATH.startswith(st.PREFIX)
+
+
+def test_a_denial_is_remembered_so_the_gate_cannot_be_reopened():
+    # Forgetting a refusal would let the same stranger's next /start re-announce them to
+    # the master, indefinitely.
+    parsed = reg.Registry.from_dict({"master": "1", "denied": ["2000", 3000]})
+    assert parsed.denied == ["2000", "3000"]
+    assert reg.Registry.from_dict({"master": "1"}).denied == []

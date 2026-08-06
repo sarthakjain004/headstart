@@ -78,7 +78,22 @@ selecting on the chat id alone would deliver to them twice per run.
 offset — at `telegram/registry.json` in the same private dataset, so the bot and the alerts
 run share one store rather than two. Its offset advances even for updates that produce no
 reply, or an unanswerable update would be re-fetched forever; it is saved *after* sending, so
-a crash re-sends a message rather than silently losing it.
+a crash re-sends rather than silently losing. That ordering is only safe because every write
+`handle` makes is idempotent — `/allow` re-checks the store before minting, so a replay costs
+a duplicate message instead of a reset Watermark and a rotated unsubscribe token.
+
+**Delivery is resolved before the search, not at the send.** `run.transport_for` raises
+`TransportUnset` up front, so a Subscription on an unconfigured channel never costs a Space
+query. Checking at delivery instead meant paying `space_query.K` rows and an xlsxwriter build
+per record per run for a channel that could not send — and, if the Space were down, those
+records would raise and count as *failures*, turning the run red for a channel the repo had
+deliberately not configured. That is exactly what `TransportUnset` exists to prevent, so the
+check has to come first.
+
+**The message is capped and the spreadsheet is not, so the count comes from the spreadsheet.**
+`Payload` carries the attachment and the total together because a Transport given one without
+the other renders a headline its own file contradicts — "30 new matches" over 75 rows. The
+body says how many it is showing and where the rest are.
 
 **A Digest is chunked at 10 roles per message, with the full set as an `.xlsx`.** Ten keeps
 each message comfortably inside the 4096-character cap with room for long titles, and matches
@@ -86,6 +101,21 @@ the batch size the old bot already used. The spreadsheet goes via `sendDocument`
 Telegram call that cannot be JSON, so `multipart/form-data` is hand-rolled rather than pulling
 in `requests` for a single upload. Every interpolated value is HTML-escaped: a job title
 containing a stray `<` would otherwise make Telegram reject the whole message.
+
+**Parse mode is per-call, not a constant.** A Digest is markup — escaped links. The bot's
+replies are prose containing `/q <what you're looking for>` and `/allow <id>`, which under
+HTML parsing are unsupported start tags: Telegram answers 200 with `"ok": false` and the
+message never arrives. Sending replies as plain text is both simpler and safer than escaping
+help text with no markup in it. This is not hypothetical — an intermediate version of this
+change sent every reply as HTML, which would have failed the very first `/start`, the one that
+claims the master seat. `scripts/alerts/telegram_dry_run.py` now asserts the payloads rather
+than only the flow, because faking the transport is what hid it.
+
+**A refusal is remembered.** `/deny` records the chat in `registry.denied`, and a denied chat's
+later `/start` is answered without telling the master. Forgetting refusals would make the gate
+re-openable indefinitely — a stranger could re-prompt the owner on every `/start` — which would
+undo the reason for having approval at all. `/allow` clears the entry, so the master can change
+their mind.
 
 **A separate sender rather than reusing `headstart/telegram.py`.** That client swallows a
 failed send so one blocked chat cannot abort the polling loop — right for a bot answering
