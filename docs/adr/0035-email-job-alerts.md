@@ -40,6 +40,51 @@ non-sensitive: a client ID, no client secret, and no consent-screen verification
 sending *through* the user's mailbox with `gmail.send`, is a restricted scope requiring Google's
 CASA security assessment to exceed 100 users, and it would have the account mailing itself.
 
+**The Space installs `google-auth[requests]`, and the extra is load-bearing.** `google-auth`
+declares `requests` as an extra rather than a core dependency, and `google.auth.transport.requests`
+answers its absence with a bare `ImportError` — not `ModuleNotFoundError` — so plain `google-auth`
+resolves, installs and imports cleanly right up until a real credential arrives, then turns every
+sign-in into a 401 reading `sign-in could not be verified: ImportError`. Nothing else in the image
+supplies `requests`: `huggingface_hub` moved to httpx. This shipped that way and made the feature
+unusable while looking configured — the panel rendered, the client id was live, and the only
+symptom was a 401 nobody was watching. It is invisible to every seam this ADR chose: the `verifier`
+argument stands in for Google in `tests/test_alerts_identity.py`, `tests/test_space_app.py` stubs
+`sys.modules` to import `app.py` at all, and CI's quality job installs no extras. That is the cost
+of the lazy import below, taken deliberately — so the requirements line itself is now the assertion,
+in `test_space_requirements_ask_for_the_google_auth_requests_extra`.
+
+**The allowlist drives the run, and an entry may carry the Query itself.** *(Amended
+2026-08-06.)* As first built, a Subscription existed only once its owner had signed in with
+Google, and the allowlist merely gated who was permitted to — which meant enrolling somebody was
+a two-party operation: the owner edits a file, then that person signs in. For an invite list of
+people who are simply told "you're on it", that second step is the whole cost of the feature. So
+an allowlist entry may now be an object carrying `query` and `filters` rather than a bare
+address, and `run` iterates *invites* rather than stored Subscriptions, minting the Subscription
+on first sight. Bare strings still mean self-serve — invited, Query supplied at sign-in — so the
+Google path is unchanged for anyone who wants to choose their own.
+
+Three consequences are load-bearing rather than incidental.
+
+**An address struck off the list is never reached at all**, so removal stops mail without hunting
+down the record. That is stronger than the previous re-check for stopping mail, and weaker for
+cleanup: the orphaned `subscriptions/{id}.json` is never deleted, so re-adding that address later
+resumes from its old Watermark and mails the whole intervening backlog. Reconciling orphans is
+deferred, not solved.
+
+**A Subscription is stored before any send**, on both creation and revision. Its Watermark starts
+at now and `send_one` persists only after a Digest is accepted, so a first run matching nothing
+would otherwise leave the record unwritten, re-mint it with a fresh Watermark next run, and
+restart the window forever — nobody would ever be mailed.
+
+**An entry's own Query is authoritative; the file's `default_query` is only a seed.** The two are
+carried separately rather than folded together at parse. An entry's Query is a statement about
+that person, so it overrides what they last chose and is applied through `revised`, keeping the
+Watermark and the unsubscribe token. A default is a statement about nobody in particular, so it
+may seed an address with no record yet and is ignored for anyone who has one. Folding them
+together — the first cut of this change — meant a default silently overwrote a signed-in person's
+own Query on every run, forever, which would have made the Google path worse than useless for
+anyone it was left switched on for.
+
 **Subscriptions live in their own private dataset, `imPoseidon/headstart-subscribers`, and the
 Space holds a write token scoped to it alone.** This is the security posture of the feature, not a
 filing preference. The Space's existing `HF_TOKEN` is a fine-grained **read** token scoped to the

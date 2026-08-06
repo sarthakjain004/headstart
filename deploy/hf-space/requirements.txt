@@ -3,4 +3,4 @@ lancedb
 sentence-transformers>=3.0
 einops
 huggingface_hub
-google-auth
+google-auth[requests]
