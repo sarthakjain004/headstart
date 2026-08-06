@@ -68,6 +68,15 @@ def subscription_id(email: str) -> str:
     return hashlib.sha256(normalize(email).encode("utf-8")).hexdigest()[:16]
 
 
+def chat_subscription_id(chat_id: str) -> str:
+    """The id for a Telegram-only Subscription, which has no address to derive one from.
+
+    Namespaced with a `telegram:` prefix before hashing so it can never collide with an
+    address's id — the two live in one directory, and a collision would silently hand one
+    person another's Watermark and unsubscribe token."""
+    return hashlib.sha256(f"telegram:{chat_id}".encode("utf-8")).hexdigest()[:16]
+
+
 def _kept(search_filters: dict[str, Any]) -> dict[str, str]:
     """Only the Search filters a Subscription may carry, as strings."""
     return {
@@ -88,6 +97,9 @@ class Subscription:
     created_at: str = ""
     watermark: str = ""  # last Digest accepted for delivery
     unsubscribe_token: str = ""
+    telegram: str = (
+        ""  # chat id, mirrored from the Invite; set means DM rather than email
+    )
 
     @classmethod
     def create(
@@ -108,6 +120,31 @@ class Subscription:
             created_at=stamp,
             watermark=stamp,
             unsubscribe_token=secrets.token_urlsafe(24),
+        )
+
+    @classmethod
+    def for_chat(
+        cls, chat_id: str, query: str = "", when: str | None = None
+    ) -> "Subscription":
+        """A Subscription the Telegram bot created, keyed by chat rather than by address.
+
+        `email` stays empty on purpose: there is no verified address behind a chat, and
+        inventing a placeholder would put an unusable value where `transports.EMAIL` and
+        `access.is_allowed` both read a real one. The Watermark starts now for the same
+        reason it does in `create` — nobody is sent the backlog on joining.
+
+        The Query may be empty at first: approval and choosing what to look for are two
+        separate steps in the bot, and `alerts.run` skips a Subscription with no Query.
+        """
+        stamp = when or now_iso()
+        return cls(
+            id=chat_subscription_id(chat_id),
+            email="",
+            query=query.strip(),
+            created_at=stamp,
+            watermark=stamp,
+            unsubscribe_token=secrets.token_urlsafe(24),
+            telegram=str(chat_id),
         )
 
     def revised(self, query: str, search_filters: dict[str, Any]) -> "Subscription":
@@ -147,6 +184,7 @@ class Invite:
     default_query: str = (
         ""  # the file's fallback — seeds a new record, never revises one
     )
+    telegram: str = ""  # a Telegram chat id; when set, this person is DM'd, not emailed
 
 
 def parse_allowlist(data: Any) -> list[Invite]:
@@ -176,12 +214,14 @@ def parse_allowlist(data: Any) -> list[Invite]:
     out: list[Invite] = []
     seen: set[str] = set()
     for entry in entries:
+        chat_id = ""
         if isinstance(entry, str):
             email, query, raw_filters = entry, "", None
         elif isinstance(entry, dict):
             email = str(entry.get("email") or "")
             query = str(entry.get("query") or "")
             raw_filters = entry.get("filters")
+            chat_id = str(entry.get("telegram") or "").strip()
         else:
             continue
         # Normalized and de-duplicated here rather than at the comparison, because this
@@ -199,6 +239,7 @@ def parse_allowlist(data: Any) -> list[Invite]:
                     raw_filters if isinstance(raw_filters, dict) else {}
                 ),
                 default_query=default.strip(),
+                telegram=chat_id,
             )
         )
     return out

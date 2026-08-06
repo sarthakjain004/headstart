@@ -17,31 +17,57 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
+from dataclasses import replace
+from typing import Any
 
-from . import digest, mail, space_query
+from . import space_query, transports
 from .shortlist import shortlist
 from .store import Invite, Store, Subscription, now_iso, subscription_id
 
-_REQUIRED = ("SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN", "RESEND_API_KEY", "ALERTS_SENDER")
+_REQUIRED = ("SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
 
 
-def unsubscribe_url(base: str, sub: Subscription) -> str:
-    return f"{base.rstrip('/')}/unsubscribe?id={sub.id}&token={sub.unsubscribe_token}"
+class TransportUnset(Exception):
+    """This Subscription's transport has no secrets, so the run skips it rather than fails.
+
+    Distinct from a delivery failure on purpose: an unconfigured transport is the
+    dark-until-configured state the whole feature is built around, not something to retry
+    and report red every run.
+    """
+
+
+def deliver(
+    sub: Subscription,
+    jobs: list[dict[str, Any]],
+    space: str,
+    config: Mapping[str, str],
+) -> str:
+    """Hand `jobs` to this Subscription's Transport. Returns the Transport's name.
+
+    `run` knows that a Transport exists and that it may be unconfigured; which channels
+    there are, and what each needs, is `transports`' business alone.
+    """
+    transport = transports.for_subscription(sub)
+    missing = transport.missing(config)
+    if missing:
+        raise TransportUnset(f"{transport.name}: {', '.join(missing)} unset")
+    transport.send(sub, jobs, space, config)
+    return transport.name
 
 
 def send_one(
     sub: Subscription,
     store: Store,
     space: str,
-    api_key: str,
-    sender: str,
+    config: Mapping[str, str],
 ) -> int:
-    """Search, shortlist, send, then advance the Watermark. Returns the rows mailed.
+    """Search, shortlist, send, then advance the Watermark. Returns the rows delivered.
 
     The next Watermark is stamped *before* the search, not after the send. Stamping it
     afterwards would silently drop every Job indexed while this Subscription was being
-    searched and mailed — they are older than the new Watermark, so no later run would ever
-    offer them. Taking the stamp first can only re-offer a row next run, which is the
+    searched and delivered — they are older than the new Watermark, so no later run would
+    ever offer them. Taking the stamp first can only re-offer a row next run, which is the
     at-least-once direction this feature chose.
     """
     cutoff = now_iso()
@@ -50,8 +76,7 @@ def send_one(
     if not picked:
         return 0
 
-    body = digest.render(sub, picked, unsubscribe_url(space, sub))
-    mail.send(api_key, sender, sub.email, body, digest.to_xlsx(picked))
+    deliver(sub, picked, space, config)
     # Only now: the send is the thing that must not be lost.
     sub.watermark = cutoff
     store.put(sub)
@@ -81,16 +106,39 @@ def subscription_for(invite: Invite, store: Store) -> Subscription | None:
         if not seed:
             return None  # invited, but nothing to search for until they sign in
         fresh = Subscription.create(invite.email, seed, invite.search_filters)
+        fresh.telegram = invite.telegram
         store.put(fresh)
         return fresh
+
+    revised = existing
     if invite.query and (
         invite.query != existing.query
         or invite.search_filters != existing.search_filters
     ):
         revised = existing.revised(invite.query, invite.search_filters)
+    # The allowlist owns the transport outright — there is no self-serve way to set a chat
+    # id, so the file is the only thing that can ever be right about it.
+    if invite.telegram != revised.telegram:
+        revised = replace(revised, telegram=invite.telegram)
+    if revised is not existing:
         store.put(revised)
-        return revised
-    return existing
+    return revised
+
+
+def telegram_subscriptions(store: Store) -> list[Subscription]:
+    """Subscriptions the Telegram bot created, which no allowlist entry names (ADR-0038).
+
+    Two enrolment paths reach one run: the allowlist, which the owner hand-edits, and the
+    bot, where the master approves people who then choose their own Query. Bot records carry
+    a chat id and no address, so they are exactly the ones with `telegram` set and `email`
+    empty — an allowlisted person given a chat id by hand has both, and is already covered
+    by their Invite. Selecting on that rather than on `telegram` alone is what stops the
+    same person being delivered to twice in one run.
+
+    A record with no Query yet — approved but hasn't sent `/q` — is skipped by `main` the
+    same way an Invite with no Query is.
+    """
+    return [sub for sub in store.all() if sub.telegram and not sub.email]
 
 
 def main() -> int:
@@ -104,28 +152,39 @@ def main() -> int:
 
     space = os.environ.get("SPACE_URL", "https://imposeidon-headstart-search.hf.space")
     store = Store(os.environ["SUBSCRIBERS_REPO"], os.environ["SUBSCRIBERS_TOKEN"])
-    api_key, sender = os.environ["RESEND_API_KEY"], os.environ["ALERTS_SENDER"]
+    # Each transport is read but not demanded: a repo with only Telegram configured should
+    # run Telegram and skip the email Subscriptions, not refuse to start (ADR-0038).
+    config = {
+        name: os.environ.get(name, "")
+        for name in ("RESEND_API_KEY", "ALERTS_SENDER", "TELEGRAM_BOT_TOKEN")
+    }
 
-    # The allowlist drives the run, rather than being a filter over stored Subscriptions.
-    # That inverts one thing deliberately: an address struck off the list is never reached
-    # at all, so removal stops mail without hunting down the record — and an address added
-    # to it starts receiving without anyone signing in.
     invites = store.invites()
-    print(f"[alerts] {len(invites)} invited", flush=True)
+    chats = telegram_subscriptions(store)
+    print(f"[alerts] {len(invites)} invited, {len(chats)} via telegram", flush=True)
 
-    sent = failed = 0
-    for invite in invites:
-        # `subscription_for` reads and may write the store, so it sits inside the guard
-        # too: resolving one person must not be able to stop everybody else's Digest.
-        sub_id = subscription_id(invite.email)
+    sent = failed = skipped = 0
+    for item in (*invites, *chats):
+        # An Invite still has to be resolved to a Subscription, and may create one; a
+        # record the bot made is already the thing to deliver. Resolution reads and may
+        # write the store, so it sits inside the guard too: one person must not be able to
+        # stop everybody else's Digest.
+        from_allowlist = isinstance(item, Invite)
+        sub_id = subscription_id(item.email) if from_allowlist else item.id
         try:
-            sub = subscription_for(invite, store)
-            if sub is None:
-                print(
-                    f"[alerts] {sub_id}: invited but no query yet - skipped", flush=True
-                )
+            sub = subscription_for(item, store) if from_allowlist else item
+            if sub is None or not sub.query:
+                print(f"[alerts] {sub_id}: no query set yet - skipped", flush=True)
+                skipped += 1
                 continue
-            count = send_one(sub, store, space, api_key, sender)
+            count = send_one(sub, store, space, config)
+        except TransportUnset as exc:
+            # Not a failure: this is the dark-until-configured state the feature is built
+            # around, so it must not turn the run red — it would be red on every run of a
+            # repo deliberately using only one channel.
+            print(f"[alerts] {sub_id}: {exc} - skipped", flush=True)
+            skipped += 1
+            continue
         except Exception as exc:  # noqa: BLE001 — one bad Subscription must not stop the rest
             failed += 1
             print(f"[alerts] {sub_id}: FAILED {type(exc).__name__}: {exc}", flush=True)
@@ -137,7 +196,10 @@ def main() -> int:
             flush=True,
         )
 
-    print(f"[alerts] done: {sent} digest(s) sent, {failed} failed", flush=True)
+    print(
+        f"[alerts] done: {sent} digest(s) sent, {skipped} skipped, {failed} failed",
+        flush=True,
+    )
     return 1 if failed else 0
 
 

@@ -3,10 +3,11 @@ and one Subscription's failure never stops the rest (ADR-0035)."""
 
 import pytest
 
-from headstart.alerts import digest, mail, run, space_query
+from headstart.alerts import digest, mail, run, space_query, transports
 from headstart.alerts.store import Invite, Subscription, now_iso, subscription_id
 
 AFTER = "2026-08-02T12:00:00+00:00"
+CONFIG = {"RESEND_API_KEY": "key", "ALERTS_SENDER": "a@x.dev"}
 
 
 class _Store:
@@ -50,7 +51,7 @@ def test_sends_then_advances_the_watermark(monkeypatch, no_xlsx):
     )
     store, sub = _Store(), _sub()
 
-    assert run.send_one(sub, store, "https://s", "key", "a@x.dev") == 2
+    assert run.send_one(sub, store, "https://s", CONFIG) == 2
     assert sent == ["ada@example.com"]
     assert store.saved and store.saved[0][1] > AFTER  # Watermark moved forward
 
@@ -71,7 +72,7 @@ def test_watermark_is_stamped_before_the_search_not_after_the_send(
     monkeypatch.setattr(mail, "send", lambda *a, **k: "id")
     store, sub = _Store(), _sub()
 
-    run.send_one(sub, store, "https://s", "key", "a@x.dev")
+    run.send_one(sub, store, "https://s", CONFIG)
     assert searched_at["after"] == AFTER  # searched from the old Watermark
     assert AFTER < sub.watermark  # advanced...
     # ...but to a stamp taken before the search, so the window has no hole in it.
@@ -88,7 +89,7 @@ def test_a_failed_send_leaves_the_watermark_untouched(monkeypatch, no_xlsx):
     store, sub = _Store(), _sub()
 
     with pytest.raises(mail.MailError):
-        run.send_one(sub, store, "https://s", "key", "a@x.dev")
+        run.send_one(sub, store, "https://s", CONFIG)
     assert store.saved == []  # nothing written, so next run retries the same window
     assert sub.watermark == AFTER
 
@@ -102,14 +103,14 @@ def test_no_matches_sends_nothing_and_does_not_advance(monkeypatch):
     monkeypatch.setattr(mail, "send", explode)
     store, sub = _Store(), _sub()
 
-    assert run.send_one(sub, store, "https://s", "key", "a@x.dev") == 0
+    assert run.send_one(sub, store, "https://s", CONFIG) == 0
     assert store.saved == []
 
 
 def test_unsubscribe_url_carries_id_and_token():
     sub = _sub()
     sub.unsubscribe_token = "t0k"
-    url = run.unsubscribe_url("https://space/", sub)
+    url = transports.unsubscribe_url("https://space/", sub)
     assert url == "https://space/unsubscribe?id=abc&token=t0k"
 
 
@@ -230,3 +231,28 @@ def test_a_revision_is_stored_so_the_record_cannot_drift_stale():
     run.subscription_for(Invite("ada@example.com", "new query"), store)
 
     assert [s.query for s in store.saved] == ["new query"]
+
+
+def test_telegram_subscriptions_are_the_bot_records_only():
+    """Bot records carry a chat and no address; an allowlisted person given a chat id by
+    hand carries both, and their Invite already covers them — selecting on `telegram`
+    alone would deliver to that person twice in one run."""
+
+    class _All:
+        def __init__(self, records):
+            self._records = records
+
+        def all(self):
+            return self._records
+
+    from_bot = Subscription.for_chat("4242", "backend")
+    allowlisted_with_chat = Subscription(
+        id="x", email="ada@example.com", query="backend", telegram="9999"
+    )
+    plain_email = Subscription(id="y", email="bob@example.com", query="backend")
+
+    picked = run.telegram_subscriptions(
+        _All([from_bot, allowlisted_with_chat, plain_email])
+    )
+
+    assert [s.id for s in picked] == [from_bot.id]

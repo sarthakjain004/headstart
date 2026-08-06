@@ -65,33 +65,30 @@ A Board still **Unknown** after every Liveness pass — surfaced for review, nev
 The Live Boards — the Companies whose Board answered **Live**, read as the `status == live` rows of the Liveness ledger (`data/validate/liveness/{ats}.csv`, ADR-0012; supersedes the old `active/{ats}.csv`). "Currently hiring" is the further subset whose job count is above zero.
 
 **Feed**:
-The assembled `docs/jobs.json` the dashboard (and alert bot) consume. It is *derived* — built by reading the per-board `{ats}.jsonl` (the source of truth) back and deduping by Slug-aware id — and is the small **served curated subset**: the millions-scale harvest produces only the `.jsonl`, never a single feed.
+The assembled `docs/jobs.json` the dashboard consumes. It is *derived* — built by reading the per-board `{ats}.jsonl` (the source of truth) back and deduping by Slug-aware id — and is the small **served curated subset**: the millions-scale harvest produces only the `.jsonl`, never a single feed.
 
 ### Alerts
 
-**Subscriber**:
-A Telegram chat registered for job alerts, with its own Filter and seen-Job state.
+**Subscription** (ADR-0035, ADR-0038):
+One person's standing request for alerts — one **Query**, a set of **Search filters**, its own **Watermark**, and exactly one **Transport** to reach them by. Identified by a verified address or, for someone the bot enrolled, by their Telegram chat.
+_Avoid_: subscriber — the retired keyword bot's term for a chat matched by keyword against the **Feed**. That path is gone (ADR-0038); there is one ranking now, and everyone on it has a Subscription.
 
-**Filter**:
-A Subscriber's match criteria (e.g. location) deciding which Jobs to send.
-
-**Notification**:
-A message sent to a Subscriber for a Job that matches its Filter and hasn't been seen before.
-
-**Subscription** (ADR-0035):
-An email recipient's standing request for alerts — a verified address, one **Query**, a set of **Search filters**, and its own **Watermark**. Deliberately not a **Subscriber**: a Subscription is ranked semantically against its Query and constrained by Search filters, where a Subscriber is matched by keyword against a **Filter**. The two are separate paths over separate corpora (**Search index** vs **Feed**).
-_Avoid_: subscriber, filter — both are taken by the Telegram path and mean something else there.
+**Transport** (ADR-0038):
+The channel one Subscription is delivered by — email or a Telegram DM. Exactly one per Subscription, because a single **Watermark** can only be correct if one thing decides whether a **Digest** arrived.
 
 **Invite** (ADR-0035):
 One entry in the allowlist: an address the owner has permitted, optionally carrying the **Query** and **Search filters** to run for it. An Invite is what a human writes by hand; the **Subscription** is the state it produces, adding the **Watermark** and unsubscribe token that nobody should have to hand-edit. An Invite naming no Query means self-serve — permitted to sign in and choose one. `alerts.run.subscription_for` is the only place one becomes the other.
-_Avoid_: subscriber (the Telegram path's term), and "allowlist entry" as a distinct concept — the allowlist _is_ the set of Invites.
+_Avoid_: "allowlist entry" as a distinct concept — the allowlist _is_ the set of Invites.
+
+**Master** (ADR-0038):
+The Telegram chat that approves everyone else — claimed by the first `/start` the bot ever sees. Telegram's counterpart to the allowlist: the Invite path is the owner editing a file, the Master path is the owner answering `/allow` in a chat.
 
 **Watermark**:
 The instant a Subscription was last sent a **Digest**. The next Digest carries only Jobs whose `first_seen` is strictly after it, so an irregular pipeline cadence can neither double-send nor skip a window. Advanced only once a Digest has been accepted for delivery.
 
 **Digest**:
-The one email a Subscription receives after a pipeline run — its best new matches capped at 30, each with its semantic score and apply link, plus the same rows as a spreadsheet attachment. No matches sends no Digest.
-_Avoid_: alert, notification — a **Notification** is the Telegram path's per-Job message; a Digest is one batched email per run.
+The one message a Subscription receives after a pipeline run — its best new matches capped at 30, each with its semantic score and apply link, plus the same rows as a spreadsheet attachment. One Digest regardless of **Transport**, though Telegram splits it across several messages to stay under the platform's size cap. No matches sends no Digest.
+_Avoid_: alert, notification — a Digest is one batched message per run, not one per Job. Delivered over either **Transport**, so "email" is wrong for it too.
 
 ### Search
 
@@ -124,8 +121,7 @@ The natural-language sentence a user types describing *only the role they want* 
 _Avoid_: search term, keywords — it is a sentence describing a role, not a bag of terms to match.
 
 **Search filter**:
-A structured constraint the user sets themselves on the **Search index** — remote, employment type, `min_years`, recency — compiled into a deterministic where-clause that runs *before* ranking. Distinct from **Filter**, which is a **Subscriber**'s notification criteria on the **Feed**; the two share a word and nothing else.
-_Avoid_: bare "filter" in search contexts — ambiguous with the Subscriber's **Filter**.
+A structured constraint the user sets themselves on the **Search index** — remote, employment type, `min_years`, recency — compiled into a deterministic where-clause that runs *before* ranking. A **Subscription** carries a set of these, and they are the only kind of filter left: the retired keyword bot's per-Subscriber `Filter` over the **Feed** went with it (ADR-0038).
 
 **Résumé**:
 Text a user pastes to have a **Résumé query** written from it. It is never stored, never logged, and never leaves the request that carried it — the derived Query is the only thing that survives.
@@ -161,7 +157,7 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 - A **Scraper** (one per **ATS**) reads a **Board** and produces **Jobs**.
 - **Discovery** collects **Companies** (each as an `(ATS, slug)`) via **Feeders**; **Liveness** sorts their **Boards** into Live / Dead / Unknown and writes the Live ones to the **Active list**; **Resolve** maps a known **Company** to its `(ATS, slug)`.
 - The scrape step runs **Scrapers** over the **Active list** and assembles the **Feed**.
-- The alert bot matches **Jobs** from the **Feed** against each **Subscriber**'s **Filter** to emit **Notifications**.
+- The alerts run ranks **Jobs** from the **Search index** against each **Subscription**'s **Query**, and delivers the ones past its **Watermark** as one **Digest** over that Subscription's **Transport**.
 
 ## Example dialogue
 

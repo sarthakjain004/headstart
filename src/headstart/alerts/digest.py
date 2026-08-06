@@ -75,6 +75,53 @@ def render(
     return Digest(subject=subject_for(sub, jobs), text=text, html=markup)
 
 
+PER_MESSAGE = 10
+
+
+def to_telegram(
+    sub: Subscription, jobs: list[dict[str, Any]], per_message: int = PER_MESSAGE
+) -> list[str]:
+    """The same Digest as consecutive Telegram messages, newest-first order preserved.
+
+    Chunked because Telegram caps one message at 4096 characters and a Digest carries up to
+    30 roles — well past it. Ten per message keeps each comfortably inside the cap with room
+    for long titles, and matches the batch size the old keyword bot already used.
+
+    There is no unsubscribe link: a DM is stopped by blocking the bot or by the owner
+    striking the entry from the allowlist, so a URL carrying a token would be a second,
+    weaker path to the same thing. Telegram's HTML subset is `<b>` and `<a>`, hence no
+    inline styling — and every interpolated value is escaped, since a job title containing
+    a stray `<` would otherwise make Telegram reject the whole message.
+    """
+    batches = [jobs[i : i + per_message] for i in range(0, len(jobs), per_message)] or [
+        []
+    ]
+    total = len(jobs)
+    out: list[str] = []
+    for index, batch in enumerate(batches):
+        lines = []
+        if index == 0:
+            lines.append(
+                f"<b>{total} new job(s)</b> matching: {html.escape(sub.query)}"
+            )
+        else:
+            lines.append(
+                f"<b>…continued ({index * per_message + 1}–"
+                f"{index * per_message + len(batch)} of {total})</b>"
+            )
+        for job in batch:
+            score = job.get("score")
+            score_text = (
+                f"{float(score):.3f}" if isinstance(score, (int, float)) else "—"
+            )
+            url = html.escape(str(job.get("url") or ""), quote=True)
+            lines.append(
+                f'• <a href="{url}">{html.escape(_line(job))}</a> · {score_text}'
+            )
+        out.append("\n".join(lines))
+    return out
+
+
 def to_xlsx(jobs: list[dict[str, Any]]) -> bytes:
     """The same rows as a spreadsheet, apply links clickable."""
     import io
