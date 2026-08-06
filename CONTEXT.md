@@ -79,8 +79,12 @@ A Subscriber's match criteria (e.g. location) deciding which Jobs to send.
 A message sent to a Subscriber for a Job that matches its Filter and hasn't been seen before.
 
 **Subscription** (ADR-0035):
-An email recipient's standing request for alerts — a Google-verified address, one **Query**, a set of **Search filters**, and its own **Watermark**. Deliberately not a **Subscriber**: a Subscription is ranked semantically against its Query and constrained by Search filters, where a Subscriber is matched by keyword against a **Filter**. The two are separate paths over separate corpora (**Search index** vs **Feed**).
+An email recipient's standing request for alerts — a verified address, one **Query**, a set of **Search filters**, and its own **Watermark**. Deliberately not a **Subscriber**: a Subscription is ranked semantically against its Query and constrained by Search filters, where a Subscriber is matched by keyword against a **Filter**. The two are separate paths over separate corpora (**Search index** vs **Feed**).
 _Avoid_: subscriber, filter — both are taken by the Telegram path and mean something else there.
+
+**Invite** (ADR-0035):
+One entry in the allowlist: an address the owner has permitted, optionally carrying the **Query** and **Search filters** to run for it. An Invite is what a human writes by hand; the **Subscription** is the state it produces, adding the **Watermark** and unsubscribe token that nobody should have to hand-edit. An Invite naming no Query means self-serve — permitted to sign in and choose one. `alerts.run.subscription_for` is the only place one becomes the other.
+_Avoid_: subscriber (the Telegram path's term), and "allowlist entry" as a distinct concept — the allowlist _is_ the set of Invites.
 
 **Watermark**:
 The instant a Subscription was last sent a **Digest**. The next Digest carries only Jobs whose `first_seen` is strictly after it, so an irregular pipeline cadence can neither double-send nor skip a window. Advanced only once a Digest has been accepted for delivery.

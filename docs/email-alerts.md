@@ -55,10 +55,44 @@ dark-until-configured shape as the Telegram bot and the résumé feature.
 
 ## Adding and removing people
 
-Edit `subscriptions/allowlist.json` in the dataset. The allowlist is checked at signup **and**
-again before every Digest, so removing an address stops mail that is already flowing — no need
-to find and delete their record. Deleting `subscriptions/{id}.json` also works and is what the
+Edit `subscriptions/allowlist.json` in the dataset. It is the only edit path, and it is what the
+alerts run iterates — so removing an address stops mail that is already flowing, with no need to
+find and delete their record. Deleting `subscriptions/{id}.json` also works and is what the
 unsubscribe link does.
+
+An entry is either a **bare address** — invited, with their query coming either from their own
+sign-in on the Space or from `default_query` below — or an **object carrying the query**, which
+needs no sign-in at all: the run creates the subscription on first sight and mails from the next
+pipeline run onward. A bare address with no `default_query` set receives nothing until they sign
+in, and the run logs it as `invited but no query yet`.
+
+```json
+{
+  "default_query": "software engineer",
+  "allowed": [
+    "self-serve@example.com",
+    { "email": "ada@example.com",
+      "query": "backend engineer at a climate startup",
+      "filters": { "remote": "true", "max_years": "5" } }
+  ]
+}
+```
+
+`filters` accepts the `/search` parameters in `store.ALLOWED_SEARCH_FILTERS`; anything else is
+dropped silently. Where an entry names a query it wins over whatever is stored, so editing this
+file re-aims someone's alerts on the next run — their watermark and unsubscribe link survive it.
+Setting `query` without `filters` clears any filters they had chosen; that is the entry speaking
+for them, so say both or neither.
+
+`default_query` is **only a seed**, deliberately weaker than an entry's own query: it starts
+anyone who has no record yet, and is ignored for anyone who does. That is what keeps it from
+overwriting a query somebody picked for themselves at sign-in every run. So with a default set, a
+bare address does receive alerts without ever signing in — and if they later sign in and choose
+their own query, that choice sticks.
+
+**Recipients other than the Resend account owner need a verified sending domain.** Until then
+Resend refuses them and the run logs `FAILED` for that id every time, without advancing the
+watermark — loud, retried forever, never delivered. See step 5 above.
 
 ## How it runs
 
