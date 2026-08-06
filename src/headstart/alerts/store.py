@@ -142,8 +142,11 @@ class Invite:
     """
 
     email: str
-    query: str = ""
+    query: str = ""  # set explicitly on this entry — authoritative, overrides a sign-in
     search_filters: dict[str, str] = field(default_factory=dict)
+    default_query: str = (
+        ""  # the file's fallback — seeds a new record, never revises one
+    )
 
 
 def parse_allowlist(data: Any) -> list[Invite]:
@@ -152,8 +155,14 @@ def parse_allowlist(data: Any) -> list[Invite]:
     Two entry shapes, both valid. A **bare string** is the original shape and still means
     "may sign in and choose their own Query" — that is the self-serve path. An **object**
     (`{"email": …, "query": …, "filters": {…}}`) additionally carries what to search for, so
-    the owner can enrol someone who will never sign in at all. A top-level `default_query`
-    backs any entry that names none.
+    the owner can enrol someone who will never sign in at all.
+
+    A top-level `default_query` is kept **separate from an entry's own Query** rather than
+    folded into it, and the distinction is load-bearing. An entry's own Query is a statement
+    about that person, so it overrides whatever they last chose. A default is a statement
+    about nobody in particular — so it may *seed* someone who has no record yet, but must
+    never revise one. Folding the two together silently overwrote a signed-in person's own
+    Query on every run, forever.
 
     Anything unrecognised is dropped rather than raising: this file is hand-edited, and one
     malformed entry must not deny everybody — that failure belongs to a missing file, where
@@ -185,10 +194,11 @@ def parse_allowlist(data: Any) -> list[Invite]:
         out.append(
             Invite(
                 email=address,
-                query=(query or default).strip(),
+                query=query.strip(),
                 search_filters=_kept(
                     raw_filters if isinstance(raw_filters, dict) else {}
                 ),
+                default_query=default.strip(),
             )
         )
     return out

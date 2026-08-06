@@ -61,29 +61,35 @@ def send_one(
 def subscription_for(invite: Invite, store: Store) -> Subscription | None:
     """The Subscription this Invite should send against, created on first sight.
 
-    An Invite that names a Query is **authoritative**: the allowlist is the owner's one edit
-    path, so changing a Query there takes effect next run. It is applied through `revised`,
-    which keeps the Watermark and the unsubscribe token — so no window is skipped and no
-    link in mail already delivered goes dead. An Invite with no Query defers entirely to
-    whatever that person chose at sign-in.
+    An Invite that names a Query of its own is **authoritative**: the allowlist is the
+    owner's one edit path, so changing a Query there takes effect next run. It is applied
+    through `revised`, which keeps the Watermark and the unsubscribe token — so no window is
+    skipped and no link in mail already delivered goes dead. The file's `default_query` is
+    deliberately *not* authoritative: it seeds somebody with no record yet, and is ignored
+    for anyone who has one, so a default can never overwrite what they chose at sign-in.
 
-    A newly created Subscription is stored **immediately**, before any send. Its Watermark
-    starts at now, and `send_one` only persists after a Digest goes out — so leaving a
-    first-run-no-matches record unsaved would re-create it with a fresh Watermark every run,
-    and the window would restart forever. Nobody would ever be mailed.
+    Both the created and the revised record are stored **before any send**. Its Watermark
+    starts at now and `send_one` persists only after a Digest goes out — so a first run that
+    matches nothing would otherwise leave the record unwritten, re-create it with a fresh
+    Watermark next run, and restart the window forever. For a revision the stakes are lower
+    (the search already used the new Query) but the stored record is the durable view of
+    intent, and the one `/subscribe` reads back, so letting it drift stale is its own bug.
     """
     existing = store.get(subscription_id(invite.email))
     if existing is None:
-        if not invite.query:
+        seed = invite.query or invite.default_query
+        if not seed:
             return None  # invited, but nothing to search for until they sign in
-        fresh = Subscription.create(invite.email, invite.query, invite.search_filters)
+        fresh = Subscription.create(invite.email, seed, invite.search_filters)
         store.put(fresh)
         return fresh
     if invite.query and (
         invite.query != existing.query
         or invite.search_filters != existing.search_filters
     ):
-        return existing.revised(invite.query, invite.search_filters)
+        revised = existing.revised(invite.query, invite.search_filters)
+        store.put(revised)
+        return revised
     return existing
 
 

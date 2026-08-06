@@ -63,14 +63,27 @@ address, and `run` iterates *invites* rather than stored Subscriptions, minting 
 on first sight. Bare strings still mean self-serve — invited, Query supplied at sign-in — so the
 Google path is unchanged for anyone who wants to choose their own.
 
-Two consequences are load-bearing rather than incidental. An address struck off the list is now
-never reached at all, so removal stops mail without hunting down the record — strictly stronger
-than the previous re-check. And a **newly minted Subscription is stored before any send**: its
-Watermark starts at now and `send_one` persists only after a Digest is accepted, so leaving a
-first-run-no-matches record unsaved would restart the window every run and that person would
-never be mailed at all. Where an Invite names a Query it is authoritative and applied through
-`revised`, so editing the file takes effect next run while the Watermark and the unsubscribe
-token survive.
+Three consequences are load-bearing rather than incidental.
+
+**An address struck off the list is never reached at all**, so removal stops mail without hunting
+down the record. That is stronger than the previous re-check for stopping mail, and weaker for
+cleanup: the orphaned `subscriptions/{id}.json` is never deleted, so re-adding that address later
+resumes from its old Watermark and mails the whole intervening backlog. Reconciling orphans is
+deferred, not solved.
+
+**A Subscription is stored before any send**, on both creation and revision. Its Watermark starts
+at now and `send_one` persists only after a Digest is accepted, so a first run matching nothing
+would otherwise leave the record unwritten, re-mint it with a fresh Watermark next run, and
+restart the window forever — nobody would ever be mailed.
+
+**An entry's own Query is authoritative; the file's `default_query` is only a seed.** The two are
+carried separately rather than folded together at parse. An entry's Query is a statement about
+that person, so it overrides what they last chose and is applied through `revised`, keeping the
+Watermark and the unsubscribe token. A default is a statement about nobody in particular, so it
+may seed an address with no record yet and is ignored for anyone who has one. Folding them
+together — the first cut of this change — meant a default silently overwrote a signed-in person's
+own Query on every run, forever, which would have made the Google path worse than useless for
+anyone it was left switched on for.
 
 **Subscriptions live in their own private dataset, `imPoseidon/headstart-subscribers`, and the
 Space holds a write token scoped to it alone.** This is the security posture of the feature, not a

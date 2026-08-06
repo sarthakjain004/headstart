@@ -190,3 +190,43 @@ def test_an_invite_without_a_query_defers_to_what_they_chose_at_signin():
 
     assert sub.query == "their own query"
     assert store.saved == [], "an unchanged Subscription needs no write"
+
+
+def test_a_default_query_seeds_a_new_record_but_never_revises_a_signed_in_one():
+    # A default is a statement about nobody in particular. Folding it into the entry's own
+    # Query made it authoritative, which silently overwrote what a signed-in person chose
+    # at sign-in — every run, forever.
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="their own query",
+        watermark=AFTER,
+    )
+    store = _InviteStore({stored.id: stored})
+    invite = Invite("ada@example.com", "", {}, "the file default")
+
+    assert run.subscription_for(invite, store).query == "their own query"
+    assert store.saved == []
+
+    # The same default does seed somebody with no record at all.
+    fresh = run.subscription_for(
+        Invite("bob@example.com", "", {}, "the file default"), _InviteStore()
+    )
+    assert fresh.query == "the file default"
+
+
+def test_a_revision_is_stored_so_the_record_cannot_drift_stale():
+    # `send_one` persists only after a Digest goes out, so a revision followed by a run
+    # with no matches would leave the stored query stale — and that record is what
+    # `/subscribe` reads back.
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="old query",
+        watermark=AFTER,
+    )
+    store = _InviteStore({stored.id: stored})
+
+    run.subscription_for(Invite("ada@example.com", "new query"), store)
+
+    assert [s.query for s in store.saved] == ["new query"]

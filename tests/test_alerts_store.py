@@ -180,16 +180,16 @@ def test_allowlist_shapes(monkeypatch, body, expected):
             b' "filters": {"remote": "true", "bogus": "x"}}]}',
             [st.Invite("a@x.com", "backend", {"remote": "true"})],
         ),
-        # A top-level default backs any entry naming no Query of its own.
+        # A default is carried *separately*, never folded into the entry's own Query:
+        # it may seed somebody with no record, but must not revise a signed-in one.
         (
             b'{"default_query": "data engineer", "allowed": ["a@x.com"]}',
-            [st.Invite("a@x.com", "data engineer", {})],
+            [st.Invite("a@x.com", "", {}, "data engineer")],
         ),
-        # An entry's own Query beats the default.
         (
             b'{"default_query": "data", "allowed": [{"email": "a@x.com",'
             b' "query": "backend"}]}',
-            [st.Invite("a@x.com", "backend", {})],
+            [st.Invite("a@x.com", "backend", {}, "data")],
         ),
         # One malformed entry is dropped; it must not deny everybody else.
         (
