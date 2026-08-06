@@ -53,6 +53,25 @@ argument stands in for Google in `tests/test_alerts_identity.py`, `tests/test_sp
 of the lazy import below, taken deliberately — so the requirements line itself is now the assertion,
 in `test_space_requirements_ask_for_the_google_auth_requests_extra`.
 
+**The allowlist drives the run, and an entry may carry the Query itself.** *(Amended
+2026-08-06.)* As first built, a Subscription existed only once its owner had signed in with
+Google, and the allowlist merely gated who was permitted to — which meant enrolling somebody was
+a two-party operation: the owner edits a file, then that person signs in. For an invite list of
+people who are simply told "you're on it", that second step is the whole cost of the feature. So
+an allowlist entry may now be an object carrying `query` and `filters` rather than a bare
+address, and `run` iterates *invites* rather than stored Subscriptions, minting the Subscription
+on first sight. Bare strings still mean self-serve — invited, Query supplied at sign-in — so the
+Google path is unchanged for anyone who wants to choose their own.
+
+Two consequences are load-bearing rather than incidental. An address struck off the list is now
+never reached at all, so removal stops mail without hunting down the record — strictly stronger
+than the previous re-check. And a **newly minted Subscription is stored before any send**: its
+Watermark starts at now and `send_one` persists only after a Digest is accepted, so leaving a
+first-run-no-matches record unsaved would restart the window every run and that person would
+never be mailed at all. Where an Invite names a Query it is authoritative and applied through
+`revised`, so editing the file takes effect next run while the Watermark and the unsubscribe
+token survive.
+
 **Subscriptions live in their own private dataset, `imPoseidon/headstart-subscribers`, and the
 Space holds a write token scoped to it alone.** This is the security posture of the feature, not a
 filing preference. The Space's existing `HF_TOKEN` is a fine-grained **read** token scoped to the

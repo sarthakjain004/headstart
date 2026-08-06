@@ -1,7 +1,13 @@
 """Subscriptions, one file per record, in the private `headstart-subscribers` dataset (ADR-0035).
 
-`Store` is the whole interface: `all`, `get`, `put`, `remove`, `allowlist`. Behind it sit the
-repo layout, the JSON shape, and the HF client.
+`Store` is the whole interface: `all`, `get`, `put`, `remove`, `invites`, `allowlist`. Behind
+it sit the repo layout, the JSON shape, and the HF client.
+
+Two records, deliberately distinct. An **Invite** is what the owner writes by hand — an
+address, optionally the Query to run for it. A **Subscription** is the state that Invite
+produces: the same Query plus a Watermark and an unsubscribe token, which are machinery
+nobody should have to hand-edit. `alerts.run.subscription_for` is the one place that turns
+the first into the second.
 
 **One file per Subscription is a correctness decision, not a scaling one.** A single JSON
 blob would be read-modify-write from two writers — the Space on subscribe/unsubscribe and
@@ -126,6 +132,68 @@ class Subscription:
         return f"{PREFIX}{self.id}.json"
 
 
+@dataclass(frozen=True)
+class Invite:
+    """One allowlisted address, and optionally the Query the owner chose for it.
+
+    An Invite is *permission plus intent*; a Subscription is the running state that
+    permission produces (Watermark, unsubscribe token). Keeping them separate is what lets
+    the allowlist stay a hand-edited file: it names people, not machinery.
+    """
+
+    email: str
+    query: str = ""
+    search_filters: dict[str, str] = field(default_factory=dict)
+
+
+def parse_allowlist(data: Any) -> list[Invite]:
+    """The Invites in an allowlist document.
+
+    Two entry shapes, both valid. A **bare string** is the original shape and still means
+    "may sign in and choose their own Query" — that is the self-serve path. An **object**
+    (`{"email": …, "query": …, "filters": {…}}`) additionally carries what to search for, so
+    the owner can enrol someone who will never sign in at all. A top-level `default_query`
+    backs any entry that names none.
+
+    Anything unrecognised is dropped rather than raising: this file is hand-edited, and one
+    malformed entry must not deny everybody — that failure belongs to a missing file, where
+    it is deliberate, not to a stray comma.
+    """
+    entries = data.get("allowed") if isinstance(data, dict) else data
+    if not isinstance(entries, list):
+        return []
+    default = str(data.get("default_query") or "") if isinstance(data, dict) else ""
+
+    out: list[Invite] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if isinstance(entry, str):
+            email, query, raw_filters = entry, "", None
+        elif isinstance(entry, dict):
+            email = str(entry.get("email") or "")
+            query = str(entry.get("query") or "")
+            raw_filters = entry.get("filters")
+        else:
+            continue
+        # Normalized and de-duplicated here rather than at the comparison, because this
+        # list now *drives* sending: two casings of one address would mail that person
+        # twice, and both would derive the same `subscription_id`. First entry wins.
+        address = normalize(email)
+        if not address or address in seen:
+            continue
+        seen.add(address)
+        out.append(
+            Invite(
+                email=address,
+                query=(query or default).strip(),
+                search_filters=_kept(
+                    raw_filters if isinstance(raw_filters, dict) else {}
+                ),
+            )
+        )
+    return out
+
+
 def _hf(token: str):
     from huggingface_hub import HfApi
 
@@ -209,13 +277,19 @@ class Store:
     def remove(self, sub_id: str) -> None:
         _delete(self._repo, f"{PREFIX}{sub_id}.json", self._token)
 
-    def allowlist(self) -> list[str]:
-        """The permitted addresses. Unreadable or missing reads as empty — and
-        `access.is_allowed` refuses everyone on an empty list, which is the intent."""
+    def invites(self) -> list[Invite]:
+        """Everyone the allowlist names, with whatever Query the owner set for them.
+
+        Unreadable or missing reads as empty, and an empty list invites nobody — the same
+        deny-by-default direction `allowlist` has always had, so a fetch blip can never
+        open the feature up or start mailing strangers."""
         try:
             data = json.loads(_read(self._repo, ALLOWLIST_PATH, self._token))
         except Exception as exc:  # noqa: BLE001 — absent list must deny, not raise
             print(f"[alerts] allowlist unreadable ({exc}) — denying all", flush=True)
             return []
-        entries = data.get("allowed") if isinstance(data, dict) else data
-        return [str(e) for e in entries] if isinstance(entries, list) else []
+        return parse_allowlist(data)
+
+    def allowlist(self) -> list[str]:
+        """Just the permitted addresses, for `access.is_allowed` at signup."""
+        return [invite.email for invite in self.invites()]

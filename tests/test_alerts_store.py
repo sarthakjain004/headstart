@@ -157,14 +157,54 @@ def test_resubscribing_overwrites_rather_than_duplicates(monkeypatch):
 @pytest.mark.parametrize(
     "body, expected",
     [
-        (b'{"allowed": ["a@x.com", "B@x.com"]}', ["a@x.com", "B@x.com"]),
+        # Addresses come back normalized now that this list drives sending, not just
+        # comparison — see `parse_allowlist`.
+        (b'{"allowed": ["a@x.com", "B@x.com"]}', ["a@x.com", "b@x.com"]),
         (b'["a@x.com"]', ["a@x.com"]),
         (b"{}", []),
+        (b'{"allowed": [{"email": "a@x.com", "query": "backend"}]}', ["a@x.com"]),
     ],
 )
 def test_allowlist_shapes(monkeypatch, body, expected):
     _Hub({st.ALLOWLIST_PATH: body}).install(monkeypatch)
     assert st.Store(REPO, TOKEN).allowlist() == expected
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        # A bare string is still the self-serve shape: invited, no Query of its own.
+        (b'{"allowed": ["a@x.com"]}', [st.Invite("a@x.com", "", {})]),
+        (
+            b'{"allowed": [{"email": "A@x.com", "query": " backend ",'
+            b' "filters": {"remote": "true", "bogus": "x"}}]}',
+            [st.Invite("a@x.com", "backend", {"remote": "true"})],
+        ),
+        # A top-level default backs any entry naming no Query of its own.
+        (
+            b'{"default_query": "data engineer", "allowed": ["a@x.com"]}',
+            [st.Invite("a@x.com", "data engineer", {})],
+        ),
+        # An entry's own Query beats the default.
+        (
+            b'{"default_query": "data", "allowed": [{"email": "a@x.com",'
+            b' "query": "backend"}]}',
+            [st.Invite("a@x.com", "backend", {})],
+        ),
+        # One malformed entry is dropped; it must not deny everybody else.
+        (
+            b'{"allowed": [42, {"query": "no email"}, "a@x.com"]}',
+            [st.Invite("a@x.com")],
+        ),
+        # Same address twice, differing only in case, is one Invite — first wins.
+        (
+            b'{"allowed": [{"email": "a@x.com", "query": "first"}, "A@x.com"]}',
+            [st.Invite("a@x.com", "first", {})],
+        ),
+    ],
+)
+def test_parse_allowlist_entry_shapes(body, expected):
+    assert st.parse_allowlist(json.loads(body)) == expected
 
 
 def test_missing_allowlist_denies_rather_than_raising(monkeypatch):

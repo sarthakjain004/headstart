@@ -4,7 +4,7 @@ and one Subscription's failure never stops the rest (ADR-0035)."""
 import pytest
 
 from headstart.alerts import digest, mail, run, space_query
-from headstart.alerts.store import Subscription, now_iso
+from headstart.alerts.store import Invite, Subscription, now_iso, subscription_id
 
 AFTER = "2026-08-02T12:00:00+00:00"
 
@@ -118,3 +118,75 @@ def test_main_skips_cleanly_when_unconfigured(monkeypatch, capsys):
         monkeypatch.delenv(name, raising=False)
     assert run.main() == 0
     assert "not configured" in capsys.readouterr().out
+
+
+class _InviteStore:
+    """A store standing in for the dataset, remembering what was written."""
+
+    def __init__(self, records=None):
+        self.records = dict(records or {})
+        self.saved = []
+
+    def get(self, sub_id):
+        return self.records.get(sub_id)
+
+    def put(self, sub):
+        self.records[sub.id] = sub
+        self.saved.append(sub)
+
+
+def test_an_invite_with_a_query_creates_and_stores_a_subscription():
+    # Stored immediately: the Watermark starts now, and `send_one` only persists after a
+    # Digest goes out — so a first run with no matches would otherwise restart the window
+    # every run and this person would never be mailed at all.
+    store = _InviteStore()
+    invite = Invite("ada@example.com", "backend engineer", {"remote": "true"})
+
+    sub = run.subscription_for(invite, store)
+
+    assert sub is not None
+    assert sub.query == "backend engineer"
+    assert sub.search_filters == {"remote": "true"}
+    assert store.saved == [sub], (
+        "a new Subscription must survive a run that sends nothing"
+    )
+
+
+def test_an_invite_without_a_query_and_no_record_is_skipped():
+    assert run.subscription_for(Invite("ada@example.com"), _InviteStore()) is None
+
+
+def test_an_invite_query_revises_a_stored_subscription_keeping_watermark_and_token():
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="old query",
+        watermark=AFTER,
+        unsubscribe_token="keep-me",
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(Invite("ada@example.com", "new query"), store)
+
+    assert sub.query == "new query"
+    assert sub.watermark == AFTER, (
+        "revising must not skip the window since the last Digest"
+    )
+    assert sub.unsubscribe_token == "keep-me", (
+        "links already delivered must keep working"
+    )
+
+
+def test_an_invite_without_a_query_defers_to_what_they_chose_at_signin():
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="their own query",
+        watermark=AFTER,
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(Invite("ada@example.com"), store)
+
+    assert sub.query == "their own query"
+    assert store.saved == [], "an unchanged Subscription needs no write"

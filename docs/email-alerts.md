@@ -55,10 +55,35 @@ dark-until-configured shape as the Telegram bot and the résumé feature.
 
 ## Adding and removing people
 
-Edit `subscriptions/allowlist.json` in the dataset. The allowlist is checked at signup **and**
-again before every Digest, so removing an address stops mail that is already flowing — no need
-to find and delete their record. Deleting `subscriptions/{id}.json` also works and is what the
+Edit `subscriptions/allowlist.json` in the dataset. It is the only edit path, and it is what the
+alerts run iterates — so removing an address stops mail that is already flowing, with no need to
+find and delete their record. Deleting `subscriptions/{id}.json` also works and is what the
 unsubscribe link does.
+
+An entry is either a **bare address** — invited, but nothing is sent until they sign in on the
+Space and choose their own query — or an **object carrying the query**, which needs no sign-in at
+all: the run creates the subscription on first sight and mails from the next pipeline run onward.
+
+```json
+{
+  "default_query": "software engineer",
+  "allowed": [
+    "self-serve@example.com",
+    { "email": "ada@example.com",
+      "query": "backend engineer at a climate startup",
+      "filters": { "remote": "true", "max_years": "5" } }
+  ]
+}
+```
+
+`filters` accepts the `/search` parameters in `store.ALLOWED_SEARCH_FILTERS`; anything else is
+dropped silently. Where an entry names a query it wins over whatever is stored, so editing this
+file re-aims someone's alerts on the next run — their watermark and unsubscribe link survive it.
+`default_query` backs any entry that names none.
+
+**Recipients other than the Resend account owner need a verified sending domain.** Until then
+Resend refuses them and the run logs `FAILED` for that id every time, without advancing the
+watermark — loud, retried forever, never delivered. See step 5 above.
 
 ## How it runs
 
