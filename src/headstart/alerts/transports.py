@@ -43,7 +43,9 @@ class Transport:
 
     name: str
     selects: Callable[[Subscription], bool]
-    send: Callable[[Subscription, list[dict[str, Any]], str, Mapping[str, str]], None]
+    send: Callable[
+        [Subscription, list[dict[str, Any]], bytes, str, Mapping[str, str]], None
+    ]
     needs: tuple[str, ...] = field(default_factory=tuple)
 
     def missing(self, config: Mapping[str, str]) -> list[str]:
@@ -54,6 +56,7 @@ class Transport:
 def _send_telegram(
     sub: Subscription,
     jobs: list[dict[str, Any]],
+    attachment: bytes,
     space: str,
     config: Mapping[str, str],
 ) -> None:
@@ -61,13 +64,14 @@ def _send_telegram(
         config["TELEGRAM_BOT_TOKEN"],
         sub.telegram,
         digest.to_telegram(sub, jobs),
-        digest.to_xlsx(jobs),
+        attachment,
     )
 
 
 def _send_email(
     sub: Subscription,
     jobs: list[dict[str, Any]],
+    attachment: bytes,
     space: str,
     config: Mapping[str, str],
 ) -> None:
@@ -76,7 +80,7 @@ def _send_email(
         config["ALERTS_SENDER"],
         sub.email,
         digest.render(sub, jobs, unsubscribe_url(space, sub)),
-        digest.to_xlsx(jobs),
+        attachment,
     )
 
 

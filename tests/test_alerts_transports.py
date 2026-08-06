@@ -43,7 +43,6 @@ def test_telegram_send_carries_the_chat_id_chunks_and_spreadsheet(monkeypatch):
     monkeypatch.setattr(
         transports.digest, "to_telegram", lambda sub, jobs: ["one", "two"]
     )
-    monkeypatch.setattr(transports.digest, "to_xlsx", lambda jobs: b"xlsx")
     monkeypatch.setattr(
         transports.telegram,
         "send",
@@ -55,6 +54,7 @@ def test_telegram_send_carries_the_chat_id_chunks_and_spreadsheet(monkeypatch):
     transports.TELEGRAM.send(
         _sub(telegram="4242"),
         [{"title": "Eng"}],
+        b"xlsx",
         "https://s",
         {"TELEGRAM_BOT_TOKEN": "t"},
     )
@@ -64,7 +64,6 @@ def test_telegram_send_carries_the_chat_id_chunks_and_spreadsheet(monkeypatch):
 
 def test_email_send_passes_the_unsubscribe_url_telegram_has_no_use_for(monkeypatch):
     seen = {}
-    monkeypatch.setattr(transports.digest, "to_xlsx", lambda jobs: b"xlsx")
     monkeypatch.setattr(
         transports.digest,
         "render",
@@ -80,6 +79,7 @@ def test_email_send_passes_the_unsubscribe_url_telegram_has_no_use_for(monkeypat
     transports.EMAIL.send(
         sub,
         [{"title": "Eng"}],
+        b"xlsx",
         "https://space",
         {"RESEND_API_KEY": "k", "ALERTS_SENDER": "a@x.dev"},
     )
@@ -92,3 +92,30 @@ def test_email_send_passes_the_unsubscribe_url_telegram_has_no_use_for(monkeypat
 def test_unsubscribe_url_carries_id_and_token_without_a_double_slash(base):
     url = transports.unsubscribe_url(base, _sub(unsubscribe_token="t0k"))
     assert url == "https://space/unsubscribe?id=abc&token=t0k"
+
+
+def test_the_attachment_is_passed_through_not_rebuilt(monkeypatch):
+    """`run` renders the spreadsheet once, from every fresh row; a Transport that rebuilt
+    it from `jobs` would silently shrink it back to the capped shortlist."""
+    seen = {}
+    monkeypatch.setattr(
+        transports.digest,
+        "to_xlsx",
+        lambda jobs: pytest.fail("transport rebuilt the xlsx"),
+    )
+    monkeypatch.setattr(
+        transports.telegram,
+        "send",
+        lambda token, chat_id, chunks, attachment: seen.update(att=attachment),
+    )
+    monkeypatch.setattr(transports.digest, "to_telegram", lambda sub, jobs: ["x"])
+
+    transports.TELEGRAM.send(
+        _sub(telegram="1"),
+        [{"title": "Eng"}],
+        b"the-bigger-xlsx",
+        "https://s",
+        {"TELEGRAM_BOT_TOKEN": "t"},
+    )
+
+    assert seen["att"] == b"the-bigger-xlsx"

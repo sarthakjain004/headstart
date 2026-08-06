@@ -7,7 +7,8 @@ it be tested there at all.
 
 The body carries the links because that is the surface people actually use — a link is one
 tap on a phone, where an attachment is download-open-scroll. The spreadsheet is for working
-the list at a desk.
+the list at a desk, and carries *more* than the body: callers render it from every fresh row
+rather than the capped shortlist, so the long tail is somewhere rather than discarded.
 """
 
 from __future__ import annotations
@@ -61,7 +62,7 @@ def render(
     body = "\n".join(text_rows)
     text = (
         f"{len(jobs)} new job(s) matching: {sub.query}\n\n{body}\n\n"
-        f"The spreadsheet attached has the same rows.\n"
+        f"The attached spreadsheet has every new match, including any below these.\n"
         f"Unsubscribe: {unsubscribe_url}\n"
     )
     markup = (
@@ -69,7 +70,7 @@ def render(
         f"<p>{len(jobs)} new job(s) matching "
         f"<strong>{html.escape(sub.query)}</strong>:</p>"
         f'<ul style="padding-left:18px">{"".join(html_rows)}</ul>'
-        f'<p style="color:#666;font-size:13px">The attached spreadsheet has the same rows.'
+        f'<p style="color:#666;font-size:13px">The attached spreadsheet has every new match, including any below these.'
         f' · <a href="{html.escape(unsubscribe_url, quote=True)}">Unsubscribe</a></p></div>'
     )
     return Digest(subject=subject_for(sub, jobs), text=text, html=markup)
@@ -87,9 +88,9 @@ def to_telegram(
     30 roles — well past it. Ten per message keeps each comfortably inside the cap with room
     for long titles, and matches the batch size the old keyword bot already used.
 
-    There is no unsubscribe link: a DM is stopped by blocking the bot or by the owner
-    striking the entry from the allowlist, so a URL carrying a token would be a second,
-    weaker path to the same thing. Telegram's HTML subset is `<b>` and `<a>`, hence no
+    There is no unsubscribe link: a DM is stopped with `/stop`, by the master's `/revoke`,
+    or by blocking the bot — all of which the person already has to hand, so a URL carrying
+    a token would be a second, weaker path to the same thing. Telegram's HTML subset is `<b>` and `<a>`, hence no
     inline styling — and every interpolated value is escaped, since a job title containing
     a stray `<` would otherwise make Telegram reject the whole message.
     """
@@ -123,7 +124,10 @@ def to_telegram(
 
 
 def to_xlsx(jobs: list[dict[str, Any]]) -> bytes:
-    """The same rows as a spreadsheet, apply links clickable."""
+    """These rows as a spreadsheet, apply links clickable.
+
+    Callers pass every fresh row, not the capped shortlist the body shows — the attachment
+    is where the long tail lives."""
     import io
 
     import xlsxwriter

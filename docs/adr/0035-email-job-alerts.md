@@ -217,7 +217,8 @@ The Space performs its first durable write. Everything it holds in memory still 
 
 The Telegram bot is left untouched and still inert. Two alert paths with different matching
 semantics is a real duplication, and the intended resolution — should email prove out — is to move
-Telegram onto the same `shortlist`, not to grow a second ranking rule.
+Telegram onto the same `shortlist`, not to grow a second ranking rule. **Done in ADR-0038**, which
+also revisits this ADR's rejection of adapter classes: Telegram made that seam real.
 
 Nothing ships until a sending domain is verified with Resend and the Subscriptions repo exists;
 until then the feature is inert in the same deliberate way the Telegram workflow is inert without

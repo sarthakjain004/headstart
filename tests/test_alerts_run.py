@@ -256,3 +256,37 @@ def test_telegram_subscriptions_are_the_bot_records_only():
     )
 
     assert [s.id for s in picked] == [from_bot.id]
+
+
+def test_the_spreadsheet_carries_more_than_the_message(monkeypatch, no_xlsx):
+    """The user asked for "the excel file or some document with the larger jobset".
+    The body is capped at 30; the attachment must be every fresh row the Space returned."""
+    rows = [
+        {
+            "title": f"Engineer {i}",
+            "company": "Acme",
+            "score": i / 100,
+            "url": f"https://j/{i}",
+            "first_seen": "2026-08-02T13:00:00+00:00",
+        }
+        for i in range(75)
+    ]
+    monkeypatch.setattr(space_query, "newly_seen", lambda *a, **k: rows)
+    xlsx_rows = {}
+    monkeypatch.setattr(
+        digest, "to_xlsx", lambda jobs: xlsx_rows.setdefault("n", len(jobs)) and b"x"
+    )
+    body_rows = {}
+    monkeypatch.setattr(
+        run.transports,
+        "for_subscription",
+        lambda sub: transports.Transport(
+            name="fake",
+            selects=lambda s: True,
+            send=lambda s, jobs, att, space, cfg: body_rows.setdefault("n", len(jobs)),
+        ),
+    )
+
+    assert run.send_one(_sub(), _Store(), "https://s", CONFIG) == 30
+    assert body_rows["n"] == 30, "the message is capped"
+    assert xlsx_rows["n"] == 75, "the spreadsheet carries every fresh row"

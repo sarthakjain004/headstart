@@ -108,7 +108,7 @@ def send(
         body, content_type = multipart(
             {
                 "chat_id": chat_id,
-                "caption": "The same roles, plus the rest of the list.",
+                "caption": "Every new match, including the ones below the top 30.",
             },
             FILENAME,
             attachment,

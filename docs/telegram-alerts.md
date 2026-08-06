@@ -57,6 +57,14 @@ Write the query the way the search box wants it: **the role you want, not struct
 constraints**. "backend engineer at a climate startup" works; "3+ years, remote" does not,
 because years and remote are filters, not part of the semantic query (see `CLAUDE.md`).
 
+## Checking it without a token
+
+`python scripts/alerts/telegram_dry_run.py` walks the whole path against a fake Telegram and
+a fake store — master claims the bot, a stranger asks, the master approves, `/q`, a digest is
+delivered, a refusal is raised, the master revokes — printing each message as it would
+arrive. No network, no secrets. It checks the seams line up; only a live `/start` proves
+Telegram accepts the payloads.
+
 ## Notes
 
 - **A digest arrives as several messages plus a spreadsheet.** Telegram caps a message at

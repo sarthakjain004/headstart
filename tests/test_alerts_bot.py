@@ -222,3 +222,29 @@ def test_the_master_can_also_set_their_own_search():
     replies = bot.handle(_update(MASTER, "/q backend"), Registry(master=MASTER), store)
     assert store.get(chat_subscription_id(MASTER)).query == "backend"
     assert replies == [(MASTER, "Searching for: backend")]
+
+
+def test_only_start_claims_an_unclaimed_bot():
+    # Otherwise an idle "hi" to a freshly deployed bot hands away the master seat.
+    registry, store = Registry(), _Store()
+
+    replies = bot.handle(_update(ADA, "hello"), registry, store)
+
+    assert registry.master == "", "a stray message must not claim the seat"
+    assert replies == [(ADA, "Send /start to set up this bot.")]
+
+
+def test_allow_is_idempotent_so_a_replay_cannot_reset_a_watermark():
+    # The store is written before the registry, so a crash between them replays this
+    # /allow. A second Subscription.for_chat would reset the Watermark to now and rotate
+    # the unsubscribe token.
+    existing = Subscription.for_chat(ADA, "backend")
+    registry = Registry(master=MASTER, pending={ADA: Pending(ADA, "ada_l", "Ada")})
+    store = _Store({existing.id: existing})
+
+    bot.handle(_update(MASTER, f"/allow {ADA}"), registry, store)
+
+    after = store.get(existing.id)
+    assert after.watermark == existing.watermark
+    assert after.unsubscribe_token == existing.unsubscribe_token
+    assert after.query == "backend", "an existing search survives a replayed approval"

@@ -3,14 +3,18 @@
 `python -m headstart.alerts.run`, wired to the pipeline by `.github/workflows/alerts.yml`.
 
 The order below is the ADR's at-least-once decision, and it is deliberate: the Watermark
-advances **only after Resend has accepted the Digest**. A crash between the two re-sends at
-most one capped Digest next run; the opposite order would swallow a window silently and
-tell nobody — the failure `bot.py` still has.
+advances **only after the Transport has accepted the Digest**. A crash between the two
+re-sends at most one capped Digest next run; the opposite order would swallow a window
+silently and tell nobody.
+
+Two enrolment paths feed one run — the hand-edited allowlist and the Telegram bot's
+approvals (ADR-0038) — and each Subscription is delivered by exactly one Transport, so a
+single Watermark stays meaningful.
 
 One Subscription's failure never stops the rest, and a Subscription that fails is left with
 its Watermark untouched, so the next run retries exactly the window it missed. Progress
 prints per Subscription and flushes, per the repo's streaming-output rule — a run that
-printed only at the end would hide which address was mid-flight when it died.
+printed only at the end would hide which record was mid-flight when it died.
 """
 
 from __future__ import annotations
@@ -21,8 +25,8 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
-from . import space_query, transports
-from .shortlist import shortlist
+from . import digest, space_query, transports
+from .shortlist import CAP, shortlist
 from .store import Invite, Store, Subscription, now_iso, subscription_id
 
 _REQUIRED = ("SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN")
@@ -40,10 +44,14 @@ class TransportUnset(Exception):
 def deliver(
     sub: Subscription,
     jobs: list[dict[str, Any]],
+    attachment: bytes,
     space: str,
     config: Mapping[str, str],
 ) -> str:
     """Hand `jobs` to this Subscription's Transport. Returns the Transport's name.
+
+    The spreadsheet is rendered by the caller and passed in, so a Transport only has to
+    know how to deliver a body and a file — not how either is built.
 
     `run` knows that a Transport exists and that it may be unconfigured; which channels
     there are, and what each needs, is `transports`' business alone.
@@ -52,7 +60,7 @@ def deliver(
     missing = transport.missing(config)
     if missing:
         raise TransportUnset(f"{transport.name}: {', '.join(missing)} unset")
-    transport.send(sub, jobs, space, config)
+    transport.send(sub, jobs, attachment, space, config)
     return transport.name
 
 
@@ -72,11 +80,16 @@ def send_one(
     """
     cutoff = now_iso()
     rows = space_query.newly_seen(space, sub, sub.watermark)
-    picked = shortlist(rows, sub.watermark)
+    # Ranked twice over, deliberately: the message carries the best `CAP`, the spreadsheet
+    # carries every fresh row the Space returned. That is what makes the attachment worth
+    # opening rather than a copy of what they just read — `space_query.K` is 100 against a
+    # cap of 30, so two thirds of the matches were being discarded unseen.
+    ranked = shortlist(rows, sub.watermark, cap=len(rows) or 1)
+    picked = ranked[:CAP]
     if not picked:
         return 0
 
-    deliver(sub, picked, space, config)
+    deliver(sub, picked, digest.to_xlsx(ranked), space, config)
     # Only now: the send is the thing that must not be lost.
     sub.watermark = cutoff
     store.put(sub)
@@ -105,8 +118,10 @@ def subscription_for(invite: Invite, store: Store) -> Subscription | None:
         seed = invite.query or invite.default_query
         if not seed:
             return None  # invited, but nothing to search for until they sign in
-        fresh = Subscription.create(invite.email, seed, invite.search_filters)
-        fresh.telegram = invite.telegram
+        fresh = replace(
+            Subscription.create(invite.email, seed, invite.search_filters),
+            telegram=invite.telegram,
+        )
         store.put(fresh)
         return fresh
 

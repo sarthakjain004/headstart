@@ -76,7 +76,12 @@ def handle(
     argument = argument.strip()
 
     if not registry.master:
-        # Trust on first use: whoever holds the token opens the bot and claims it.
+        # Trust on first use: whoever holds the token opens the bot and claims it. Only
+        # `/start` claims it — an idle "hi" or a stray `/status` to a fresh bot would
+        # otherwise hand the seat to whoever happened to type first, which is neither what
+        # ADR-0038 says nor what anyone would expect.
+        if command != "start":
+            return [(chat_id, "Send /start to set up this bot.")]
         registry.master = chat_id
         return [(chat_id, MASTER_HELP)]
 
@@ -143,7 +148,12 @@ def _master_command(
         waiting = registry.pending.pop(argument, None)
         if waiting is None:
             return [(master, f"{argument} isn't waiting on anything.")]
-        store.put(Subscription.for_chat(argument))
+        # Idempotent: the registry is saved after the store, so a crash in between replays
+        # this `/allow` next run. Minting a second record would reset that person's
+        # Watermark to now — silently skipping everything since — and rotate the
+        # unsubscribe token in messages already delivered.
+        if store.get(chat_subscription_id(argument)) is None:
+            store.put(Subscription.for_chat(argument))
         return [
             (master, f"Approved {waiting.describe()}."),
             (argument, "You're in.\n\n" + HELP),
@@ -192,17 +202,18 @@ def main() -> int:
         )
         return 0
 
-    from headstart.telegram import TelegramClient
-
     from . import registry as registry_store
+    from . import telegram as sender
 
     repo, token = os.environ["SUBSCRIBERS_REPO"], os.environ["SUBSCRIBERS_TOKEN"]
-    client = TelegramClient(os.environ["TELEGRAM_BOT_TOKEN"])
+    bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     store = Store(repo, token)
     registry = registry_store.load(repo, token)
 
+    from headstart.telegram import TelegramClient
+
     replies: list[tuple[str, str]] = []
-    updates = client.get_updates(offset=registry.offset)
+    updates = TelegramClient(bot_token).get_updates(offset=registry.offset)
     for update in updates:
         # Advanced even for updates that produce no reply, or an unanswerable one would be
         # re-fetched every run forever.
@@ -212,19 +223,30 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001 — one bad update must not stall the queue
             print(f"[bot] update {update.get('update_id')} failed: {exc}", flush=True)
 
+    # `alerts.telegram.send` rather than the polling client's `send_message`, which swallows
+    # failures. A swallowed failure here is not cosmetic: the update that put somebody in
+    # `pending` is consumed either way, so a lost announcement leaves them told to wait for
+    # an answer the master was never asked for. Failing loudly makes the run red, and
+    # `/pending` is the recovery.
+    failed = 0
     for chat_id, text in replies:
-        client.send_message(chat_id, text)
+        try:
+            sender.send(bot_token, chat_id, [text])
+        except sender.TelegramError as exc:
+            failed += 1
+            print(f"[bot] reply to {chat_id} FAILED: {exc}", flush=True)
+            continue
         print(f"[bot] replied to {chat_id}", flush=True)
 
-    # Saved after sending: a crash before this re-handles the update and re-sends, which is
-    # a duplicate message. Saving first would instead lose it silently.
+    # Saved after sending: a crash before this replays the update, and every write `handle`
+    # makes is idempotent, so a replay costs a duplicate message rather than a lost one.
     registry_store.save(repo, token, registry)
     print(
-        f"[bot] {len(updates)} update(s), {len(replies)} repl(ies), "
-        f"{len(registry.pending)} waiting",
+        f"[bot] {len(updates)} update(s), {len(replies) - failed} repl(ies), "
+        f"{failed} failed, {len(registry.pending)} waiting",
         flush=True,
     )
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
