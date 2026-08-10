@@ -78,7 +78,8 @@ decision against ADR-0014, not taken here.
 - Old tags are gone; anything grepping CI logs must use the module-name tags
   (`[embed]` → `[embed_run]` — `docs/AI_Integration/embedding-throughput.md`'s rate recipe
   updated in this change).
-- `index.py` output moved from stdout to stderr (nothing parsed it).
+- `index.py` and `filter_tech.py` output moved from stdout to stderr (nothing parsed
+  either).
 - Scripts under `scripts/` that import the scrapers get WARNING+ on stderr for free via
   logging's last-resort handler; they can opt into the full format with one `log.setup()`.
 - New prints in pipeline code are a defect: log through `headstart.log` instead.

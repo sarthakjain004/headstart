@@ -13,7 +13,7 @@ import logging
 import sys
 from pathlib import Path
 
-import headstart.ingest.scrape_run as nh
+import headstart.ingest.scrape_run as scrape_run
 
 
 class _Result:
@@ -32,7 +32,7 @@ def test_assignment_scrapes_exactly_the_listed_boards(tmp_path, monkeypatch):
         captured["on_board"] = on_board
         return _Result(len(companies))
 
-    monkeypatch.setattr(nh, "scrape_all", fake_scrape_all)
+    monkeypatch.setattr(scrape_run, "scrape_all", fake_scrape_all)
 
     assignment = tmp_path / "shard-0.jsonl"
     rows = [("lever", "acme", "Acme"), ("workday", "big", "Big"), ("keka", "x", None)]
@@ -49,19 +49,21 @@ def test_assignment_scrapes_exactly_the_listed_boards(tmp_path, monkeypatch):
         ["scrape_run", "--assignment", str(assignment), "--outdir", str(outdir)],
     )
 
-    assert nh.main() == 0
+    assert scrape_run.main() == 0
     got = [(c.ats, c.slug, c.name) for c in captured["companies"]]
     assert got == rows  # exact board list, in order
     assert (
         Path(captured["jobs_dir"]) == outdir
     )  # scraped into the shard's own fragment dir
-    assert captured["on_board"] is nh._log_board  # live per-board logging is wired
+    assert (
+        captured["on_board"] is scrape_run._log_board
+    )  # live per-board logging is wired
 
 
 def test_log_board_failure_at_info_success_at_debug(caplog):
     caplog.set_level(logging.DEBUG, logger="headstart.ingest.scrape_run")
-    nh._log_board("lever:acme", 0, "RuntimeError: boom")
-    nh._log_board("lever:beta", 12, None)
+    scrape_run._log_board("lever:acme", 0, "RuntimeError: boom")
+    scrape_run._log_board("lever:beta", 12, None)
 
     failed, ok = caplog.records
     assert (
@@ -79,7 +81,7 @@ def test_error_summary_groups_by_type_and_ats():
         "workday:c": "Timeout: slowest",
         "greenhouse:d": "HTTPError: 500",
     }
-    assert nh._error_summary(errors) == (
+    assert scrape_run._error_summary(errors) == (
         "3 Timeout (lever 2, workday 1); 1 HTTPError (greenhouse 1)"
     )
 
@@ -87,15 +89,15 @@ def test_error_summary_groups_by_type_and_ats():
 def test_error_summary_caps_atses_at_three_with_more_tail():
     atses = ["a", "a", "a", "b", "b", "c", "d", "e"]
     errors = {f"{ats}:{i}": "Timeout: x" for i, ats in enumerate(atses)}
-    assert nh._error_summary(errors) == "8 Timeout (a 3, b 2, c 1, +2 more)"
+    assert scrape_run._error_summary(errors) == "8 Timeout (a 3, b 2, c 1, +2 more)"
 
 
 def test_error_summary_no_tail_at_exactly_three_atses():
     errors = {"a:1": "E: x", "b:1": "E: y", "c:1": "E: z"}
-    assert nh._error_summary(errors) == "3 E (a 1, b 1, c 1)"
+    assert scrape_run._error_summary(errors) == "3 E (a 1, b 1, c 1)"
 
 
 def test_error_summary_empty_and_colonless_message():
-    assert nh._error_summary({}) == ""
+    assert scrape_run._error_summary({}) == ""
     # a message with no ":" groups under the whole message
-    assert nh._error_summary({"x:a": "boom"}) == "1 boom (x 1)"
+    assert scrape_run._error_summary({"x:a": "boom"}) == "1 boom (x 1)"

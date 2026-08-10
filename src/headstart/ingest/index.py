@@ -123,22 +123,22 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     the user how to repair it (``embed_run --resume`` reconciles and re-commits)."""
     manifest_path = _STORE / "manifest.json"
     if not manifest_path.exists():
-        _log.error(
+        log.fail(
+            _log,
             f"no committed store at {_STORE} (manifest.json missing) — "
-            "run python -m headstart.ingest.embed_run first (--resume finishes an interrupted run)"
+            "run python -m headstart.ingest.embed_run first (--resume finishes an interrupted run)",
         )
-        raise SystemExit(1)
     dim = json.loads(manifest_path.read_text())["dim"]
     metas = [
         json.loads(line) for line in (_STORE / "meta.jsonl").open(encoding="utf-8")
     ]
     vectors = np.fromfile(_STORE / "embeddings.f32", dtype="float32")
     if vectors.size != len(metas) * dim:
-        _log.error(
+        log.fail(
+            _log,
             f"store is inconsistent ({vectors.size} floats for {len(metas)} metadata rows, dim {dim}) — "
-            "run python -m headstart.ingest.embed_run --resume to reconcile it"
+            "run python -m headstart.ingest.embed_run --resume to reconcile it",
         )
-        raise SystemExit(1)
     return metas, vectors.reshape(-1, dim)
 
 

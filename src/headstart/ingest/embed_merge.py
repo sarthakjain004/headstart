@@ -91,10 +91,10 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
             with vec_path.open("r+b") as vf:
                 vf.truncate(want)  # drop the extra in-flight vector row(s)
         elif size < want:
-            _log.error(
-                f"prior store corrupt: {size} vector bytes for {n} rows (dim {dim})"
+            log.fail(
+                _log,
+                f"prior store corrupt: {size} vector bytes for {n} rows (dim {dim})",
             )
-            raise SystemExit(1)
     return n
 
 
@@ -138,17 +138,16 @@ def main() -> int:
         for f in frags:
             fdim = _dim_from_manifest(f) or dim
             if fdim is None:
-                _log.error(f"fragment {f} has no manifest and no dim is known")
-                raise SystemExit(1)
+                log.fail(_log, f"fragment {f} has no manifest and no dim is known")
             good = _good_meta_lines(f / "meta.jsonl")
             nrows = len(good)
             want = nrows * fdim * _FLOAT_BYTES
             raw = (f / "embeddings.f32").read_bytes()
             if len(raw) < want:
-                _log.error(
-                    f"fragment {f} corrupt: {len(raw)} vector bytes for {nrows} rows (dim {fdim})"
+                log.fail(
+                    _log,
+                    f"fragment {f} corrupt: {len(raw)} vector bytes for {nrows} rows (dim {fdim})",
                 )
-                raise SystemExit(1)
             vf.write(
                 raw[:want]
             )  # trim any in-flight partial row past the last good meta line
@@ -182,10 +181,10 @@ def main() -> int:
 
     vbytes = vec_path.stat().st_size
     if vbytes != total * dim * _FLOAT_BYTES:
-        _log.error(
-            f"store inconsistent after merge: {vbytes} bytes for {total} rows (dim {dim})"
+        log.fail(
+            _log,
+            f"store inconsistent after merge: {vbytes} bytes for {total} rows (dim {dim})",
         )
-        raise SystemExit(1)
     _log.info(
         f"merged {appended} new vectors — store now holds {total} (dim {dim}) -> {store}"
     )

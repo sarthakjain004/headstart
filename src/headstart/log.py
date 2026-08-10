@@ -21,6 +21,7 @@ import logging
 import os
 import sys
 from importlib.machinery import ModuleSpec
+from typing import NoReturn
 
 _LEVELS = {
     "debug": logging.DEBUG,
@@ -42,7 +43,9 @@ class _Formatter(logging.Formatter):
         if record.levelno >= logging.WARNING:
             if os.environ.get("GITHUB_ACTIONS"):
                 kind = "error" if record.levelno >= logging.ERROR else "warning"
-                return f"::{kind}::[{tag}] {message}"
+                # workflow commands are line-oriented: a raw newline would truncate the
+                # annotation mid-message; %0A renders as a newline inside it
+                return f"::{kind}::[{tag}] {message.replace(chr(10), '%0A')}"
             return (
                 f"{self.formatTime(record, '%H:%M:%S')} [{tag}] "
                 f"{record.levelname}: {message}"
@@ -60,6 +63,13 @@ def get(name: str, spec: ModuleSpec | None = None) -> logging.Logger:
     if name == "__main__" and spec is not None:
         name = spec.name
     return logging.getLogger(name)
+
+
+def fail(logger: logging.Logger, message: str) -> NoReturn:
+    """Log ``message`` at ERROR (an ``::error::`` annotation under Actions) and exit 1 —
+    the one shape every fatal pipeline abort shares."""
+    logger.error(message)
+    raise SystemExit(1)
 
 
 def setup() -> None:

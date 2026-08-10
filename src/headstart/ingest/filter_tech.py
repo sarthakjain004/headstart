@@ -32,7 +32,7 @@ def main() -> int:
     ap.add_argument("--dst", type=Path, default=REPO_ROOT / "data" / "jobs" / "tech")
     args = ap.parse_args()
     if not args.src.is_dir():
-        raise SystemExit(f"no source dir at {args.src}")
+        log.fail(_log, f"no source dir at {args.src}")
 
     stats = filter_jobs(args.src, args.dst)
     _log.info(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")

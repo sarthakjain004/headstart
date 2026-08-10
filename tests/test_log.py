@@ -7,6 +7,8 @@ annotation), the HEADSTART_LOG level switch, and setup idempotence.
 
 import logging
 
+import pytest
+
 import headstart.log as log
 
 
@@ -43,6 +45,28 @@ def test_info_stays_plain_under_actions(monkeypatch):
     # only anomalies annotate — INFO would flood the summary page
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     assert not log._Formatter().format(_record()).startswith("::")
+
+
+def test_annotation_escapes_newlines(monkeypatch):
+    # workflow commands are line-oriented: a raw newline would truncate the annotation
+    # mid-message (state_fetch's ABORT is multi-line), so %0A must carry it instead
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    line = log._Formatter().format(
+        _record(level=logging.ERROR, msg="first line\nsecond line")
+    )
+    assert line == "::error::[scrape_run] first line%0Asecond line"
+
+
+def test_fail_logs_error_and_exits_1(caplog):
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.embed_merge")
+    with pytest.raises(SystemExit) as exc:
+        log.fail(logging.getLogger("headstart.ingest.embed_merge"), "store corrupt")
+    assert exc.value.code == 1
+    assert ["store corrupt"] == [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "headstart.ingest.embed_merge"
+    ]
 
 
 def test_get_resolves_dunder_main_via_spec():

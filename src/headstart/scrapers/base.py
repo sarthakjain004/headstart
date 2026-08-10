@@ -167,7 +167,7 @@ class BaseScraper(ABC):
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results
 
-    def report_detail_gaps(self, results: Sequence[Any], what: str = "details") -> None:
+    def report_detail_gaps(self, results: Sequence[Any], what: str) -> None:
         """Log how many of a detail pass's results came back empty (None) — the gaps behind
         ADR-0021's null fields. One INFO line per Board, only when something is missing; the
         failure was isolated per item (the fan_out contract), so this line is usually the

@@ -10,6 +10,10 @@ from headstart.config import load_active_companies, load_companies
 from headstart.harvest import build_feed, scrape_all, write_feed
 from headstart.tech_filter import filter_jobs
 
+# Explicit name: run as `python -m headstart` this module is "headstart.__main__", and
+# [__main__] says nothing — [feed] is what this entry builds.
+_log = log.get("headstart.feed")
+
 _ROOT = Path(__file__).resolve().parents[2]
 _CONFIG = _ROOT / "config" / "companies.toml"
 _LEDGER = _ROOT / "data" / "validate" / "liveness"
@@ -48,7 +52,7 @@ def main() -> None:
     kept = sum(k for k, _ in tech.values())
     total = sum(t for _, t in tech.values())
     if total:
-        print(
+        _log.info(
             f"tech filter: kept {kept}/{total} ({100 * kept / total:.0f}% tech) "
             f"-> per-ATS JSONL under {_TECH_DIR}"
         )
@@ -56,19 +60,19 @@ def main() -> None:
     if build_dashboard_feed:
         feed = build_feed(_TECH_DIR, result.errors)
         write_feed(feed, _OUTPUT)
-        print(f"wrote {feed['count']} tech jobs to {_OUTPUT}")
+        _log.info(f"wrote {feed['count']} tech jobs to {_OUTPUT}")
     else:
-        print(
+        _log.info(
             f"scraped {result.unique} unique jobs from {result.boards} boards "
             f"-> full set under {_JOBS_DIR}, tech subset under {_TECH_DIR}"
         )
 
     if result.errors:
-        print(f"{len(result.errors)} board(s) failed:")
+        _log.info(f"{len(result.errors)} board(s) failed:")
         for key, message in list(result.errors.items())[:10]:
-            print(f"  {key}: {message}")
+            _log.info(f"  {key}: {message}")
         if len(result.errors) > 10:
-            print(f"  ...and {len(result.errors) - 10} more")
+            _log.info(f"  ...and {len(result.errors) - 10} more")
 
 
 if __name__ == "__main__":

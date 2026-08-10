@@ -56,6 +56,16 @@ def session() -> _requests.Session:
     return existing
 
 
+def _note_retry(method: str, url: str, attempt: int, attempts: int, why: str) -> float:
+    """Log one retry decision at DEBUG and return the backoff delay for the caller to sleep."""
+    delay = 1.5 * (attempt + 1)
+    _log.debug(
+        f"{method} {url} attempt {attempt + 1}/{attempts} {why}; "
+        f"retrying in {delay:.1f}s"
+    )
+    return delay
+
+
 def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
     """Make a request over the pooled session, retrying transient failures with backoff.
 
@@ -70,20 +80,14 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
-            delay = 1.5 * (attempt + 1)
-            _log.debug(
-                f"{method} {url} attempt {attempt + 1}/{attempts} failed ({exc}); "
-                f"retrying in {delay:.1f}s"
-            )
-            time.sleep(delay)
+            time.sleep(_note_retry(method, url, attempt, attempts, f"failed ({exc})"))
             continue
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
-            delay = 1.5 * (attempt + 1)
-            _log.debug(
-                f"{method} {url} -> {response.status_code}; "
-                f"retrying in {delay:.1f}s (attempt {attempt + 1}/{attempts})"
+            time.sleep(
+                _note_retry(
+                    method, url, attempt, attempts, f"-> {response.status_code}"
+                )
             )
-            time.sleep(delay)
             continue
         return response
     raise AssertionError(
@@ -105,20 +109,16 @@ async def fetch_async(
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
-            delay = 1.5 * (attempt + 1)
-            _log.debug(
-                f"{method} {url} attempt {attempt + 1}/{attempts} failed ({exc}); "
-                f"retrying in {delay:.1f}s"
+            await asyncio.sleep(
+                _note_retry(method, url, attempt, attempts, f"failed ({exc})")
             )
-            await asyncio.sleep(delay)
             continue
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
-            delay = 1.5 * (attempt + 1)
-            _log.debug(
-                f"{method} {url} -> {response.status_code}; "
-                f"retrying in {delay:.1f}s (attempt {attempt + 1}/{attempts})"
+            await asyncio.sleep(
+                _note_retry(
+                    method, url, attempt, attempts, f"-> {response.status_code}"
+                )
             )
-            await asyncio.sleep(delay)
             continue
         return response
     raise AssertionError("unreachable")  # pragma: no cover
