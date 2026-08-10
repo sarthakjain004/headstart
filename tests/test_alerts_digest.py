@@ -61,3 +61,48 @@ def test_xlsx_has_a_header_row_and_one_row_per_job():
     assert [c.value for c in sheet[1]] == list(d.COLUMNS)
     assert sheet.max_row == len(JOBS) + 1
     assert sheet.cell(row=2, column=1).value == "Acme"
+
+
+def test_to_telegram_chunks_past_the_message_cap():
+    # Telegram caps a message at 4096 chars and a Digest carries up to 30 roles.
+    sub = Subscription(id="a", email="a@b.c", query="backend")
+    jobs = [
+        {
+            "title": f"Engineer {i}",
+            "company": "Acme",
+            "score": 0.5,
+            "url": f"https://j/{i}",
+        }
+        for i in range(25)
+    ]
+
+    chunks = d.to_telegram(sub, jobs)
+
+    assert len(chunks) == 3, "25 roles at 10 per message"
+    assert all(len(c) < 4096 for c in chunks)
+    assert "25 new job(s)" in chunks[0]
+    assert "continued (11" in chunks[1]
+    # Every role appears exactly once across the chunks, in order.
+    joined = "\n".join(chunks)
+    assert [
+        i for i in range(25) if f"Engineer {i}<" in joined or f"Engineer {i} " in joined
+    ]
+    assert joined.count("https://j/7") == 1
+
+
+def test_to_telegram_escapes_markup_so_telegram_cannot_reject_the_message():
+    sub = Subscription(id="a", email="a@b.c", query="c++ <dev>")
+    jobs = [
+        {
+            "title": "R&D <lead>",
+            "company": "A&B",
+            "score": 1.0,
+            "url": "https://j/1?a=1&b=2",
+        }
+    ]
+
+    only = d.to_telegram(sub, jobs)[0]
+
+    assert "<dev>" not in only and "&lt;dev&gt;" in only
+    assert "R&amp;D" in only
+    assert "a=1&amp;b=2" in only

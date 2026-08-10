@@ -1,7 +1,8 @@
 name: telegram-bot
 
-# Polls Telegram for /start + filter commands and sends new-job alerts.
-# Inert (green no-op) until the secrets below are set — see docs/telegram-bot.md.
+# Polls Telegram for /start and the master's /allow, /deny, /revoke (ADR-0038).
+# Enrolment only — Digests are sent by alerts.yml, ranked by the same shortlist as email.
+# Inert (green no-op) until the secrets below are set — see docs/telegram-alerts.md.
 on:
   schedule:
     - cron: "*/15 * * * *"   # every 15 min (GitHub may delay scheduled runs)
@@ -11,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: telegram-bot         # never let two runs race on the shared gist state
+  group: telegram-bot         # never let two runs race on the shared registry
   cancel-in-progress: false
 
 jobs:
@@ -28,11 +29,6 @@ jobs:
       - name: Run bot (skips cleanly until secrets are set)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          STATE_GIST_TOKEN: ${{ secrets.STATE_GIST_TOKEN }}
-          STATE_GIST_ID: ${{ secrets.STATE_GIST_ID }}
-        run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$STATE_GIST_TOKEN" ] || [ -z "$STATE_GIST_ID" ]; then
-            echo "Telegram secrets not set - skipping. See docs/telegram-bot.md."
-            exit 0
-          fi
-          python -m headstart.bot
+          SUBSCRIBERS_REPO: ${{ vars.SUBSCRIBERS_REPO }}
+          SUBSCRIBERS_TOKEN: ${{ secrets.SUBSCRIBERS_TOKEN }}
+        run: python -m headstart.alerts.bot

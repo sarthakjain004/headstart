@@ -11,7 +11,7 @@ A query like *"senior backend role on distributed systems, remote, paying over $
   words may not appear in the Job. → **embeddings + vector search**.
 - **Hard constraints** — "senior (≥5y), remote, salary > $150k." Match by *rule*. Embeddings
   handle numbers, ranges, and negation poorly. → **structured filter** (a richer
-  `filters.matches()`).
+  `filters.matches()`, removed in ADR-0038).
 
 The design **parses the query into both**, filters on the constraints first, then ranks the
 survivors by semantic similarity. Embedding everything and vector-searching the whole query
@@ -42,7 +42,8 @@ The user's paragraph → a typed object via **structured outputs**:
 
 Cheap on a small model (`claude-haiku-4-5`), and it is a **single request, not an agent**. The
 structured fields feed the filter; `semantic_query` feeds the vector search. This slots directly
-onto the existing `Filter` seam in `src/headstart/filters.py`.
+onto the `Search filter` seam in `src/headstart/alerts/store.py` (`ALLOWED_SEARCH_FILTERS`);
+the keyword `Filter` this once named was retired with the bot in ADR-0038.
 
 ### 2. The index
 
@@ -107,8 +108,8 @@ index doesn't rot — re-embed new/changed Jobs, drop ids that go dead.
 
 ## Grounding in the current code
 
-- `src/headstart/filters.py` — `Filter` / `matches()` is the structured-filter seam to extend.
+- `src/headstart/alerts/store.py` — `ALLOWED_SEARCH_FILTERS` is the structured-filter seam to extend (the old `filters.py` went with ADR-0038).
 - `src/headstart/models.py` — the `Job` record; `id` is the natural embedding key; `experience`
   and `salary` are the free-text fields needing enrichment.
 - `data/jobs/{ats}.jsonl` — the incremental, id-keyed corpus to embed from.
-- `src/headstart/bot.py` — the alert path to upgrade for semantic alerts.
+- `src/headstart/alerts/run.py` — the alert path, already semantic since ADR-0035/0038.

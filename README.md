@@ -65,7 +65,7 @@ flowchart TB
         S1[("<b>HF dataset</b><br/>headstart-index<br/>vectors · LanceDB · ledger")]
         S2["<b>HF Space</b><br/>headstart-search<br/>filter-then-rank"]
         S3["<b>GitHub Pages</b><br/>static dashboard"]
-        S4["<b>Telegram bot</b><br/>every 15m · filter alerts"]
+        S4["<b>Telegram bot</b><br/>every 15m · enrolment only"]
         S1 --> S2
     end
 
@@ -104,8 +104,7 @@ scrape). A run-level `concurrency` group serializes whole runs so two never race
 **Serving** has two independent paths. The search index is the single-writer end: `merge` uploads
 to the private HF dataset `imPoseidon/headstart-index` and restarts the Space
 `imPoseidon/headstart-search`. Separately, `python -m headstart` scrapes the same ledger and writes
-`docs/jobs.json`; the GitHub Pages dashboard and the Telegram bot (`bot.yml`, every 15 min) both
-read *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
+`docs/jobs.json`; the GitHub Pages dashboard reads *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
 their own schedules.
 
 ### Which boards a run picks
@@ -270,8 +269,11 @@ correctness against the live Space.
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
   feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
   `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`
-  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus the bot: `filters.py`,
-  `bot.py`, `telegram.py`, `state.py`.
+  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus `telegram.py`, the
+  polling client the enrolment bot uses.
+- `src/headstart/alerts/` — job alerts (ADR-0035, ADR-0038): `store` and `registry` (records),
+  `transports` (which channel delivers a Digest), `mail` and `telegram` (the senders), `bot`
+  (Telegram enrolment), `digest`, `shortlist`, `space_query`, `run`.
 - `src/headstart/ingest/` — **the 2-hourly pipeline run**, one module per stage step, invoked as
   `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape`, `scrape_join`,
   `filter_tech`, `update_ledgers` (`priority`/`cost`), `embed_plan`, `embed_run`, `embed_merge`,

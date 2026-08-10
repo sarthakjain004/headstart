@@ -42,5 +42,9 @@ jobs:
           SUBSCRIBERS_TOKEN: ${{ secrets.SUBSCRIBERS_TOKEN }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERTS_SENDER: ${{ vars.ALERTS_SENDER }}
+          # Each transport is optional: whichever secrets are set is what gets delivered,
+          # and Subscriptions on an unconfigured one are skipped rather than failing the
+          # run (ADR-0038).
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SPACE_URL: ${{ vars.SPACE_URL }}
         run: python -u -m headstart.alerts.run
