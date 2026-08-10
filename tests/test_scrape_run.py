@@ -62,16 +62,27 @@ def test_assignment_scrapes_exactly_the_listed_boards(tmp_path, monkeypatch):
 
 def test_log_board_failure_at_info_success_at_debug(caplog):
     caplog.set_level(logging.DEBUG, logger="headstart.ingest.scrape_run")
-    scrape_run._log_board("lever:acme", 0, "RuntimeError: boom")
-    scrape_run._log_board("lever:beta", 12, None)
+    scrape_run._log_board("lever:acme", 0, "RuntimeError: boom", 4.2)
+    scrape_run._log_board("lever:beta", 12, None, 0.8)
 
     failed, ok = caplog.records
     assert (
         failed.levelno == logging.INFO
     )  # failures stream live, visible at default level
-    assert failed.getMessage() == "lever:acme failed: RuntimeError: boom"
+    assert failed.getMessage() == "lever:acme failed after 4s: RuntimeError: boom"
     assert ok.levelno == logging.DEBUG  # successes are per-board detail
-    assert ok.getMessage() == "lever:beta: 12 jobs"
+    assert ok.getMessage() == "lever:beta: 12 jobs in 0.8s"
+
+
+def test_log_board_slow_board_surfaces_at_info(caplog):
+    # the cost ledger never records a board the shard budget kills, so the INFO line is the
+    # only place a monster board gets named
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    scrape_run._log_board("workday:giant/External", 9000, None, 1830.4)
+
+    (slow,) = caplog.records
+    assert slow.levelno == logging.INFO
+    assert slow.getMessage() == "slow board workday:giant/External: 9000 jobs in 1830s"
 
 
 def test_error_summary_groups_by_type_and_ats():
