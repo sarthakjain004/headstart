@@ -44,6 +44,8 @@ def test_main_partitions_every_selected_board(tmp_path, monkeypatch):
             "scrape_plan",
             "--priority",
             str(tmp_path / "none.csv"),
+            "--cost",
+            str(tmp_path / "nocost.csv"),  # isolate from any real local ledger
             "--out-dir",
             str(out),
             "--max-boards",

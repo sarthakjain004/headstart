@@ -182,6 +182,7 @@ class SuccessFactorsScraper(BaseScraper):
                 lambda pair: self._job_fields(pair[0]),
                 workers=_DETAIL_WORKERS,
             )
+        self.report_detail_gaps(fields, "detail fields")
         return [
             {"url": url, "id": job_id, "fields": page_fields}
             for (url, job_id), page_fields in zip(listed, fields)

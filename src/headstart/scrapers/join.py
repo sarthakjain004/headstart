@@ -85,6 +85,7 @@ class JoinScraper(BaseScraper):
                 lambda it: self._job_description(it.get("id")),
                 workers=_DETAIL_WORKERS,
             )
+        self.report_detail_gaps(descriptions, "descriptions")
         for item, description in zip(items, descriptions):
             item["_description"] = description
         return {"company": company, "items": items}

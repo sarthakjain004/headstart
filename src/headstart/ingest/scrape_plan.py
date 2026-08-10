@@ -30,15 +30,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
+from headstart import log
 from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
 from headstart.ingest import REPO_ROOT
 from headstart.ingest.binpack import lpt_pack, shard_count
+
+_log = log.get(__name__, __spec__)
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
@@ -90,6 +92,7 @@ def _write_plan(
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--ledger",
@@ -141,11 +144,7 @@ def main() -> int:
     companies = pick_boards(companies, scores, args.max_boards)
     n = len(companies)
     priority = sum(1 for c in companies if scores.get(f"{c.ats}:{c.slug}", 0.0) > 0.0)
-    print(
-        f"[plan-scrape] slice: {n} boards ({priority} priority + {n - priority} exploration)",
-        file=sys.stderr,
-        flush=True,
-    )
+    _log.info(f"slice: {n} boards ({priority} priority + {n - priority} exploration)")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -154,11 +153,7 @@ def main() -> int:
 
     if n == 0:
         _write_plan(out_dir, shards=[], count=0, per_shard=[])
-        print(
-            "[plan-scrape] no active boards — emitted empty plan",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info("no active boards — emitted empty plan")
         return 0
 
     # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
@@ -171,22 +166,18 @@ def main() -> int:
         # shard count follows the same unit as the packing: seconds of work, not board count
         sizing_total, sizing_target = sum(costs), args.target_seconds
         have = sum(1 for k in keys if k in cost_rows)
-        print(
-            f"[plan-scrape] cost: measured seconds for {have}/{n} boards "
-            f"({len(cost_rows)} in ledger); rest estimated from their ATS median",
-            file=sys.stderr,
-            flush=True,
+        _log.info(
+            f"cost: measured seconds for {have}/{n} boards "
+            f"({len(cost_rows)} in ledger); rest estimated from their ATS median"
         )
     else:
         costs = [
             _coldstart_cost(c.ats, scores.get(k, 0.0)) for c, k in zip(companies, keys)
         ]
         sizing_total, sizing_target = float(n), float(args.target_boards)
-        print(
-            "[plan-scrape] cost: no measurements yet — cold-start heuristic (ADR-0026); "
-            "the join writes data/state/board_cost.csv and the next run packs on seconds",
-            file=sys.stderr,
-            flush=True,
+        _log.info(
+            "cost: no measurements yet — cold-start heuristic (ADR-0026); "
+            "the join writes data/state/board_cost.csv and the next run packs on seconds"
         )
 
     total_cost = sum(costs)
@@ -212,11 +203,9 @@ def main() -> int:
                 )
         per_shard.append(len(shard_boards[k]))
         load = loads[k] / 60 if measured else loads[k]
-        print(
-            f"[plan-scrape] shard {k}: {len(shard_boards[k])} boards "
-            + (f"(~{load:.1f} min)" if measured else f"(cost ~{load:.0f})"),
-            file=sys.stderr,
-            flush=True,
+        _log.info(
+            f"shard {k}: {len(shard_boards[k])} boards "
+            + (f"(~{load:.1f} min)" if measured else f"(cost ~{load:.0f})")
         )
 
     _write_plan(out_dir, shards=list(range(m)), count=n, per_shard=per_shard)
@@ -226,9 +215,7 @@ def main() -> int:
         if measured
         else " (cold-start cost units)"
     )
-    print(
-        f"[plan-scrape] {n} boards across {m} shards{tail}", file=sys.stderr, flush=True
-    )
+    _log.info(f"{n} boards across {m} shards{tail}")
     return 0
 
 

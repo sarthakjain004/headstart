@@ -18,28 +18,32 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from headstart import log
 from headstart.ingest import REPO_ROOT
 from headstart.tech_filter import filter_jobs
 
+_log = log.get(__name__, __spec__)
+
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--src", type=Path, default=REPO_ROOT / "data" / "jobs")
     ap.add_argument("--dst", type=Path, default=REPO_ROOT / "data" / "jobs" / "tech")
     args = ap.parse_args()
     if not args.src.is_dir():
-        raise SystemExit(f"no source dir at {args.src}")
+        log.fail(_log, f"no source dir at {args.src}")
 
     stats = filter_jobs(args.src, args.dst)
-    print(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")
+    _log.info(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")
     kept = total = 0
     for ats, (k, t) in sorted(stats.items()):
         kept += k
         total += t
         if t:
-            print(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
+            _log.info(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
     if total:
-        print(
+        _log.info(
             f"{'TOTAL':<16}{kept:>9}{total:>9}{100 * kept / total:>7.1f}%"
             f"  (dropped {total - kept} non-tech) -> {args.dst}"
         )

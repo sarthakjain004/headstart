@@ -1,4 +1,5 @@
 import json
+import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -465,6 +466,31 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
     s._resolve_instance()
     assert s._instance is None
     assert ".wd3." in s.url()
+
+
+def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
+    # a mid-crawl 404 (None from _post) skips that page but keeps the rest, and one
+    # WARNING reports the gap — the tripwire for a partial board
+    from headstart.scrapers.workday import WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    pages = {
+        20: {"jobPostings": [{"bulletFields": ["R20"]}]},
+        40: None,  # this page 404ed mid-crawl
+        60: {"jobPostings": [{"bulletFields": ["R60"]}]},
+        80: {"jobPostings": [{"bulletFields": ["R80"]}]},
+    }
+    monkeypatch.setattr(s, "_post", lambda applied, offset: pages[offset])
+    absorbed = []
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    s._paginate({}, 100, absorbed.extend)
+    # the surviving pages are absorbed, in offset order
+    assert [p["bulletFields"][0] for p in absorbed] == ["R20", "R60", "R80"]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].name == "headstart.scrapers.workday"
+    assert "1 page(s) 404ed" in warnings[0].getMessage()
+    assert "workday:acme/ext" in warnings[0].getMessage()  # the board key
 
 
 def test_trakstar_parse():

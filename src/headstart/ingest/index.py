@@ -51,7 +51,6 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -60,6 +59,7 @@ import lancedb
 import numpy as np
 import pyarrow as pa
 
+from headstart import log
 from headstart.corpus import board_of, iter_jobs
 from headstart.ingest import REPO_ROOT
 from headstart.ingest.index_plan import (
@@ -69,6 +69,8 @@ from headstart.ingest.index_plan import (
     plan_sync,
 )
 from headstart.search import PROD_TABLE
+
+_log = log.get(__name__, __spec__)
 
 _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
@@ -121,9 +123,10 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     the user how to repair it (``embed_run --resume`` reconciles and re-commits)."""
     manifest_path = _STORE / "manifest.json"
     if not manifest_path.exists():
-        sys.exit(
+        log.fail(
+            _log,
             f"no committed store at {_STORE} (manifest.json missing) — "
-            "run python -m headstart.ingest.embed_run first (--resume finishes an interrupted run)"
+            "run python -m headstart.ingest.embed_run first (--resume finishes an interrupted run)",
         )
     dim = json.loads(manifest_path.read_text())["dim"]
     metas = [
@@ -131,9 +134,10 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     ]
     vectors = np.fromfile(_STORE / "embeddings.f32", dtype="float32")
     if vectors.size != len(metas) * dim:
-        sys.exit(
+        log.fail(
+            _log,
             f"store is inconsistent ({vectors.size} floats for {len(metas)} metadata rows, dim {dim}) — "
-            "run python -m headstart.ingest.embed_run --resume to reconcile it"
+            "run python -m headstart.ingest.embed_run --resume to reconcile it",
         )
     return metas, vectors.reshape(-1, dim)
 
@@ -169,20 +173,19 @@ def sync(args: argparse.Namespace) -> int:
     metas, vectors = _load_store()
     row_of = {meta["id"]: i for i, meta in enumerate(metas)}
     dim = vectors.shape[1]
-    print(f"store: {len(metas)} embedded Jobs (dim {dim})", flush=True)
+    _log.info(f"store: {len(metas)} embedded Jobs (dim {dim})")
 
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
     boards = _scraped_boards(args.scraped, corpus_ids)
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
-    print(
+    _log.info(
         f"corpus: {len(corpus_ids)} Jobs on {len(boards)} Boards; {len(fresh)} have vectors"
         + (
             f" — {unembedded} without (non-English, or run embed_run --resume)"
             if unembedded
             else ""
-        ),
-        flush=True,
+        )
     )
 
     db = lancedb.connect(args.db)
@@ -192,21 +195,18 @@ def sync(args: argparse.Namespace) -> int:
     else:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
         index_ids = []
-    print(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'", flush=True)
+    _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
     # existed keeps its frozen schema — and `apply_sync` requires rows to match it exactly. Add the
     # column before writing any row that carries it. Idempotent, so it runs once and then no-ops
     # (ADR-0031); existing rows get null, which is honest — we don't know when we first saw them.
     if _FIRST_SEEN_FIELD.name not in table.schema.names:
-        print(
-            f"[sync] adding '{_FIRST_SEEN_FIELD.name}' to the existing table",
-            flush=True,
-        )
+        _log.info(f"adding '{_FIRST_SEEN_FIELD.name}' to the existing table")
         table.add_columns(_FIRST_SEEN_FIELD)
 
     plan = plan_sync(index_ids, fresh, boards)
-    print(f"plan: add {len(plan.add)}, evict {len(plan.delete)}", flush=True)
+    _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
@@ -223,27 +223,21 @@ def sync(args: argparse.Namespace) -> int:
             row[_FIRST_SEEN_FIELD.name] = stamp
             rows.append(row)
         apply_sync(table, rows, ())
-        print(
-            f"[sync] added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}",
-            flush=True,
-        )
+        _log.info(f"added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}")
 
-    print(
-        f"done: table '{PROD_TABLE}' now holds {table.count_rows()} rows at {args.db}",
-        flush=True,
+    _log.info(
+        f"done: table '{PROD_TABLE}' now holds {table.count_rows()} rows at {args.db}"
     )
     return 0
 
 
 def prune(args: argparse.Namespace) -> int:
     keep = live_keep_set(args.ledger)
-    print(f"keep-set: {len(keep)} canonical live Boards (enabled ATSes)", flush=True)
+    _log.info(f"keep-set: {len(keep)} canonical live Boards (enabled ATSes)")
     if len(keep) < _MIN_KEEP_BOARDS:
-        print(
-            f"[prune] ABORT: keep-set has only {len(keep)} Boards (< {_MIN_KEEP_BOARDS}) — the ledger "
-            "looks broken/empty; refusing to prune so a bad ledger can't evict the index.",
-            file=sys.stderr,
-            flush=True,
+        _log.error(
+            f"ABORT: keep-set has only {len(keep)} Boards (< {_MIN_KEEP_BOARDS}) — the ledger "
+            "looks broken/empty; refusing to prune so a bad ledger can't evict the index."
         )
         return 1
 
@@ -251,23 +245,21 @@ def prune(args: argparse.Namespace) -> int:
     index_ids = _all_ids(table)
     off_board, duplicate = plan_prune(index_ids, keep)
     evict = off_board + duplicate
-    print(
+    _log.info(
         f"index: {len(index_ids)} rows | evict {len(evict)} "
-        f"({len(off_board)} off-Board + {len(duplicate)} duplicate) -> {len(index_ids) - len(evict)} remain",
-        flush=True,
+        f"({len(off_board)} off-Board + {len(duplicate)} duplicate) -> {len(index_ids) - len(evict)} remain"
     )
 
     if not args.apply:
         for label, ids in (("off-Board", off_board), ("duplicate", duplicate)):
             for jid in ids[:8]:
-                print(f"  [{label}] {jid}", flush=True)
-        print("dry-run — pass --apply to delete", flush=True)
+                _log.info(f"  [{label}] {jid}")
+        _log.info("dry-run — pass --apply to delete")
         return 0
 
     apply_sync(table, [], evict)
-    print(
-        f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {table.count_rows()}",
-        flush=True,
+    _log.info(
+        f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {table.count_rows()}"
     )
     return 0
 
@@ -277,7 +269,7 @@ def compact(args: argparse.Namespace) -> int:
     db = lancedb.connect(db_path)
     names = list(db.list_tables().tables)
     if not names:
-        print("no tables to compact", flush=True)
+        _log.info("no tables to compact")
         return 0
 
     rebuilt = db_path.with_name(db_path.name + ".rebuild")
@@ -286,18 +278,17 @@ def compact(args: argparse.Namespace) -> int:
     for name in names:
         rows = db.open_table(name).to_arrow()  # only the live version's rows
         fresh.create_table(name, rows)
-        print(
-            f"rebuilt '{name}': {fresh.open_table(name).count_rows()} rows", flush=True
-        )
+        _log.info(f"rebuilt '{name}': {fresh.open_table(name).count_rows()} rows")
 
     # Swap the rebuilt store in for the bloated one (orphan fragments dropped with the old dir).
     shutil.rmtree(db_path)
     rebuilt.rename(db_path)
-    print(f"compacted: rebuilt {len(names)} table(s) fresh at {db_path}", flush=True)
+    _log.info(f"compacted: rebuilt {len(names)} table(s) fresh at {db_path}")
     return 0
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

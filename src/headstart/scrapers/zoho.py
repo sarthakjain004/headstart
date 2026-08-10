@@ -69,6 +69,7 @@ class ZohoScraper(BaseScraper):
             fetched = self.fan_out(
                 empty, self._detail_description, workers=_DETAIL_WORKERS
             )
+            self.report_detail_gaps(fetched, "description backfills")
             details = {jid: d for jid, d in zip(empty, fetched) if d}
         return {"page": page, "details": details}
 

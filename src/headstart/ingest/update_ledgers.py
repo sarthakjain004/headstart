@@ -29,10 +29,10 @@ Seed the priority ledger from a full local corpus with::
 from __future__ import annotations
 
 import argparse
-import sys
 from collections import Counter
 from pathlib import Path
 
+from headstart import log
 from headstart.board_cost import ats_medians, read_shard_rows
 from headstart.board_cost import load as load_cost
 from headstart.board_cost import save as save_cost
@@ -43,6 +43,8 @@ from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
 from headstart.ingest import REPO_ROOT
+
+_log = log.get(__name__, __spec__)
 
 _JOBS = REPO_ROOT / "data" / "jobs"
 _TECH = REPO_ROOT / "data" / "jobs" / "tech"
@@ -61,20 +63,14 @@ def priority(args: argparse.Namespace) -> int:
     new = sum(1 for b in snapshot_boards if b in rows and b not in prev)
     pruned = sum(1 for b in snapshot_boards if b in prev and b not in rows)
     carried = sum(1 for b in prev if b not in snapshot_boards)
-    print(
+    _log.info(
         f"priority: {len(snapshot_boards)} boards in snapshot | "
         f"{len(rows)} ledger rows ({new} new, {pruned} pruned, {carried} carried) "
-        f"-> {args.ledger}",
-        file=sys.stderr,
-        flush=True,
+        f"-> {args.ledger}"
     )
     top = sorted(rows.items(), key=lambda kv: -kv[1].score)[:10]
     for board, p in top:
-        print(
-            f"  {p.score:9.1f}  {board} ({p.last_tech_jobs} tech jobs)",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"  {p.score:9.1f}  {board} ({p.last_tech_jobs} tech jobs)")
     return 0
 
 
@@ -87,11 +83,7 @@ def cost(args: argparse.Namespace) -> int:
             if rows:
                 shards += 1
             measured.update(rows)
-            print(
-                f"[cost] {path.parent.name}: {len(rows)} timed boards",
-                file=sys.stderr,
-                flush=True,
-            )
+            _log.info(f"cost: {path.parent.name}: {len(rows)} timed boards")
 
     prev = load_cost(args.ledger)
     rows = update_cost(prev, measured)
@@ -99,18 +91,17 @@ def cost(args: argparse.Namespace) -> int:
 
     new = sum(1 for b in measured if b not in prev)
     total = sum(c.seconds for c in rows.values())
-    print(
-        f"[cost] {len(measured)} boards timed across {shards} shard(s) | "
-        f"{len(rows)} ledger rows ({new} new) | Σ {total / 60:.0f} board-minutes -> {args.ledger}",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"cost: {len(measured)} boards timed across {shards} shard(s) | "
+        f"{len(rows)} ledger rows ({new} new) | Σ {total / 60:.0f} board-minutes -> {args.ledger}"
     )
     for ats, med in sorted(ats_medians(rows).items(), key=lambda kv: -kv[1])[:8]:
-        print(f"  {med:8.1f}s median  {ats}", file=sys.stderr, flush=True)
+        _log.info(f"  {med:8.1f}s median  {ats}")
     return 0
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

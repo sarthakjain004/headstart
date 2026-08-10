@@ -1,4 +1,35 @@
+import logging
+
 from headstart.scrapers.base import BaseScraper
+
+
+class _StubScraper(BaseScraper):
+    """Minimal concrete scraper for exercising BaseScraper instance methods."""
+
+    ats = "stub"
+
+    def url(self):
+        return "https://example.invalid/jobs"
+
+    def parse(self, raw, scraped_at):
+        return []
+
+
+def test_report_detail_gaps_logs_missing_counts(caplog):
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    _StubScraper("acme").report_detail_gaps(["desc", None, None], what="descriptions")
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.name == "headstart.scrapers.stub"
+    assert record.levelno == logging.INFO
+    assert "stub:acme" in record.getMessage()  # the board key
+    assert "2/3 descriptions missing" in record.getMessage()
+
+
+def test_report_detail_gaps_silent_when_complete(caplog):
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    _StubScraper("acme").report_detail_gaps(["a", "b"], what="descriptions")
+    assert caplog.records == []
 
 
 def test_fan_out_isolates_failures_and_preserves_input_order():
