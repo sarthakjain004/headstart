@@ -1,0 +1,55 @@
+name: cluster-roles
+
+# One-off (manual) fit of the frozen role-family centroids for the trends ledger (ADR-0040).
+# Runs here, not locally: the embedding store it reads is ~850 MB on the HF dataset, and heavy
+# pulls stay off laptops. Refitting re-bases every trend series, so this never runs on a
+# schedule — dispatching it is the explicit re-base decision (bump `version` in the script).
+
+on:
+  workflow_dispatch:
+    inputs:
+      k:
+        description: fix K (0 = sweep 16,24,32,40 and pick by sampled silhouette)
+        default: "0"
+      version:
+        description: centroid-set version to stamp — a refit MUST bump this (ADR-0040)
+        default: "1"
+
+permissions:
+  contents: read
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+  HF_HUB_DISABLE_XET: "1" # plain path survives this repo's 429s (ADR-0036)
+
+jobs:
+  cluster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45 # ~5 min fetch + minutes of MiniBatchKMeans; generous hang detector
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - name: Download the embedding store + any prior centroids (the version guard needs them)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/state/role_centroids/*'
+      - name: Fit the role-family centroids
+        run: |
+          python scripts/embed/cluster_roles.py \
+            --k "${{ inputs.k }}" --version "${{ inputs.version }}"
+      - name: Upload centroids to the dataset
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf upload "$HF_DATASET" data/state/role_centroids data/state/role_centroids \
+            --repo-type dataset --commit-message "role centroids (cluster-roles one-off)"
+      - name: Keep the manifest readable from the run page
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: role-centroids-manifest
+          path: data/state/role_centroids/manifest.json
+          retention-days: 30
