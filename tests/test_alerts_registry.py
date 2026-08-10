@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from headstart.alerts import registry as reg
 from headstart.alerts import store as st
 
@@ -81,3 +83,15 @@ def test_a_denial_is_remembered_so_the_gate_cannot_be_reopened():
     parsed = reg.Registry.from_dict({"master": "1", "denied": ["2000", 3000]})
     assert parsed.denied == ["2000", "3000"]
     assert reg.Registry.from_dict({"master": "1"}).denied == []
+
+
+def test_a_broken_install_is_not_reported_as_an_absent_registry(monkeypatch):
+    # A missing huggingface_hub is not "first run" — saying so claims the bot is fine
+    # while it can neither read nor write. This is how it read when bot.yml installed
+    # base deps only.
+    def no_hub(repo, path, token):
+        raise ModuleNotFoundError("No module named 'huggingface_hub'")
+
+    monkeypatch.setattr(reg, "read_bytes", no_hub)
+    with pytest.raises(ModuleNotFoundError):
+        reg.load(REPO, TOKEN)
