@@ -7,7 +7,7 @@ codebase. HeadStart is **single-context**: one `CONTEXT.md` at the repo root and
 ## Before exploring, read these
 
 - **`CONTEXT.md`** at the repo root — the domain glossary (ATS, Company, Board, Job, Slug, Scraper;
-  Discovery, Feeder, Resolve, Liveness, Active list, Feed; Subscriber, Filter, Notification).
+  Discovery, Feeder, Resolve, Liveness, Active list, Feed; Subscription, Invite, Transport, Master, Watermark, Digest).
 - **`docs/adr/`** — read the ADRs that touch the area you're about to work in (`README.md` indexes
   them). Each `NNNN-*.md` is one decision: the option picked, the ones rejected, and why.
 

@@ -14,7 +14,7 @@ Start here — docs are grouped by area.
 - [discovery/common-crawl-mining.md](discovery/common-crawl-mining.md) — the Common Crawl mining run for India-tier ATS tenants.
 
 ## Operations & notes
-- [telegram-bot.md](telegram-bot.md) — Telegram new-job alert bot (runs on GitHub Actions).
+- [telegram-alerts.md](telegram-alerts.md) — job alerts as Telegram DMs: bot setup, the master's approval flow, commands.
 - [email-alerts.md](email-alerts.md) — invite-only email Digests after each pipeline run (ADR-0035).
 - [learnings.md](learnings.md) — running log of non-obvious findings (newest first).
 
