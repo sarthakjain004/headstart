@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -39,6 +38,7 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
+from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
 from headstart.ingest import REPO_ROOT
@@ -51,6 +51,8 @@ from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the
     to_meta,
 )
 from headstart.search import DOC_PREFIX, MODEL
+
+_log = log.get(__name__, __spec__)
 
 _SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
 _OUTDIR = REPO_ROOT / "data" / "embeddings" / "jobs"
@@ -218,7 +220,7 @@ def _load_model() -> tuple[SentenceTransformer, str, int, int]:
     Returns ``(model, device, dim, attention_budget)``; CPU quarters the budget (fp32 doubles
     the attention memory of the MPS/fp16 path, and CI runners are small)."""
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"loading {MODEL} on {device} ...", file=sys.stderr, flush=True)
+    _log.info(f"loading {MODEL} on {device} ...")
     model = SentenceTransformer(MODEL, trust_remote_code=True, device=device)
     if device == "mps":
         model = model.half()  # fp16 on the GPU: ~2x faster + half the memory; vectors upcast to f32 on store
@@ -295,11 +297,7 @@ def _encode_groups(
         n = batch_size_for(bucket, budget)
         idxs = _length_sorted(idxs, tokens, n)
         pin = make_pin_doc(model.tokenizer, bucket) if pin_shapes else None
-        print(
-            f"[embed] bucket ≤{bucket} tokens: {len(idxs)} docs in batches of {n}",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"bucket ≤{bucket} tokens: {len(idxs)} docs in batches of {n}")
         for s in range(0, len(idxs), n):
             chunk = idxs[s : s + n]
             batch_metas = [metas[j] for j in chunk]
@@ -325,11 +323,9 @@ def _encode_groups(
                     failed += len(chunk)
                     consec_failed += len(chunk)
                     bad = [m["id"] for m in batch_metas]
-                    print(
-                        f"[embed] batch FAILED ({type(exc).__name__}: {exc}) — skipped "
-                        f"{len(bad)} (e.g. {bad[:2]}); retry with --resume",
-                        file=sys.stderr,
-                        flush=True,
+                    _log.warning(
+                        f"batch FAILED ({type(exc).__name__}: {exc}) — skipped "
+                        f"{len(bad)} (e.g. {bad[:2]}); retry with --resume"
                     )
                 else:
                     store.add(vectors, batch_metas)
@@ -337,20 +333,14 @@ def _encode_groups(
                     consec_failed = 0
                 break
             rate = done / (time.monotonic() - start)
-            msg = f"[embed] {done}/{total} | {rate:0.0f} jobs/s"
-            print(
-                msg + (f" | {failed} failed" if failed else ""),
-                file=sys.stderr,
-                flush=True,
-            )
+            msg = f"{done}/{total} | {rate:0.0f} jobs/s"
+            _log.info(msg + (f" | {failed} failed" if failed else ""))
             # A wedged accelerator fails every allocation no matter how small — stop instead
             # of marching through the queue marking everything failed; --resume resumes here.
             if consec_failed >= 64:
-                print(
-                    f"[embed] {consec_failed} consecutive failures — allocator looks wedged; "
-                    "stopping (re-run with --resume)",
-                    file=sys.stderr,
-                    flush=True,
+                _log.warning(
+                    f"{consec_failed} consecutive failures — allocator looks wedged; "
+                    "stopping (re-run with --resume)"
                 )
                 wedged = True
                 break
@@ -391,11 +381,9 @@ def _run_assignment(
             tokens.append(int(rec.get("tokens") or bucket))
             docs.append(rec["doc"])
             metas.append(rec["meta"])
-    print(
+    _log.info(
         f"assignment: {len(docs)} docs from {path} | "
-        + ", ".join(f"≤{b}:{len(groups[b])}" for b in _BUCKETS),
-        file=sys.stderr,
-        flush=True,
+        + ", ".join(f"≤{b}:{len(groups[b])}" for b in _BUCKETS)
     )
 
     store = EmbeddingStore(
@@ -407,14 +395,13 @@ def _run_assignment(
             model, device, docs, metas, groups, store, budget, tokens
         )
     count = store.close(_manifest(device, str(path), dim))
-    print(
-        f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)"
     )
 
 
 def main() -> None:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--source",
@@ -455,11 +442,7 @@ def main() -> None:
 
     store = EmbeddingStore(outdir, dim, resume=args.resume)
     if store.done:
-        print(
-            f"resume: {len(store.done)} Jobs already embedded — will skip those",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"resume: {len(store.done)} Jobs already embedded — will skip those")
 
     # Steps 1-4: select rows, skip already-done ids (A2), English-gate, build doc text + metadata.
     docs: list[str] = []
@@ -477,33 +460,27 @@ def main() -> None:
         metas.append(to_meta(job))
         if args.limit and len(docs) >= args.limit:
             break
-    print(
-        f"to embed: {len(docs)} (scanned {scanned}, already-done {already}, non-English {dropped})",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"to embed: {len(docs)} (scanned {scanned}, already-done {already}, non-English {dropped})"
     )
 
     manifest = _manifest(device, args.source, dim)
     if not docs:
         count = store.close(manifest)
-        print(
-            f"nothing new to embed — store holds {count} vectors.",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"nothing new to embed — store holds {count} vectors.")
         return
 
     # Group docs into token-length buckets, measured with the real tokenizer — a char-based
     # estimate undershoots on tokenizer-dense docs (a bilingual description whose English head
     # passes the language gate but whose CJK tail tokenizes at ~1 token/char).
-    print("measuring token lengths ...", file=sys.stderr, flush=True)
+    _log.info("measuring token lengths ...")
     tok_lens: list[int] = []
     for s in range(0, len(docs), 1024):
         enc = model.tokenizer(
             docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS
         )
         tok_lens.extend(len(ids) for ids in enc["input_ids"])
-        print(f"[tokenize] {len(tok_lens)}/{len(docs)}", file=sys.stderr, flush=True)
+        _log.info(f"tokenized {len(tok_lens)}/{len(docs)}")
     groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
     for idx, n_tok in enumerate(tok_lens):
         groups[bucket_for(n_tok)].append(idx)
@@ -511,22 +488,16 @@ def main() -> None:
     if scores:
         for b in _BUCKETS:
             groups[b] = order_by_priority(groups[b], metas, scores)
-        print(
-            "[embed] priority ordering applied within buckets",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info("priority ordering applied within buckets")
 
     done, failed = _encode_groups(
         model, device, docs, metas, groups, store, budget, tok_lens
     )
 
     count = store.close(manifest)
-    print(
+    _log.info(
         f"done: embedded {done} this run ({failed} failed) — store now holds {count} vectors "
-        f"of dim {dim} -> {outdir}",
-        file=sys.stderr,
-        flush=True,
+        f"of dim {dim} -> {outdir}"
     )
 
 

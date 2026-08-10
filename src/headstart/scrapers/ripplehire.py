@@ -79,6 +79,7 @@ class RippleHireScraper(BaseScraper):
         descriptions = self.fan_out(
             need, lambda j: self._job_description(token, j["jobSeq"])
         )
+        self.report_detail_gaps(descriptions, "descriptions")
         for j, desc in zip(need, descriptions):
             j["jobDesc"] = desc
         return jobs

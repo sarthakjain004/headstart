@@ -44,6 +44,7 @@ class SmartRecruitersScraper(BaseScraper):
                 lambda p: self._job_description(p.get("id")),
                 workers=_DETAIL_WORKERS,
             )
+        self.report_detail_gaps(descriptions, "descriptions")
         for posting, description in zip(postings, descriptions):
             posting["_description"] = description
         return data

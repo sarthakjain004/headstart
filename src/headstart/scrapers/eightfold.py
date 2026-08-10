@@ -162,6 +162,7 @@ class EightfoldScraper(BaseScraper):
                 lambda pid: self._description(group_id, pid),
                 workers=_DETAIL_WORKERS,
             )
+        self.report_detail_gaps(descs, "descriptions")
         records = []
         for pos, desc in zip(positions, descs):
             position_id = str(pos.get("id"))
@@ -213,6 +214,7 @@ class EightfoldScraper(BaseScraper):
             fields = self.fan_out(
                 listed, lambda u: self._jsonld(u), workers=_DETAIL_WORKERS
             )
+        self.report_detail_gaps(fields, "detail fields")
         return [
             {"id": _sitemap_position_id(u), "url": u, "fields": f}
             for u, f in zip(listed, fields)

@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 import time
 from fnmatch import fnmatch
 from pathlib import Path
 
+from headstart import log
 from headstart.ingest import REPO_ROOT
+
+_log = log.get(__name__, __spec__)
 
 # Five attempts, exponential waits capped at 5 min: 30s → 60s → 120s → 240s (ADR-0033). Sized
 # against the measured failure — HF 429 windows lasting minutes, which the original 3×/90s
@@ -77,9 +79,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             )
             absent = absent_locally(wanted, REPO_ROOT)
             if not absent:
-                print(
-                    f"fetched {len(wanted)} file(s): {' '.join(patterns)}", flush=True
-                )
+                _log.info(f"fetched {len(wanted)} file(s): {' '.join(patterns)}")
                 return 0
             reason = (
                 f"{len(absent)} of {len(wanted)} expected file(s) did not land, "
@@ -88,24 +88,22 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         except Exception as exc:  # noqa: BLE001 — any Hub failure is retried the same way
             reason = f"{type(exc).__name__}: {exc}"
         if attempt < _ATTEMPTS:
-            print(
-                f"::warning::state fetch attempt {attempt} failed ({reason}); "
-                f"retrying in {wait_before(attempt)}s",
-                flush=True,
+            _log.warning(
+                f"state fetch attempt {attempt} failed ({reason}); "
+                f"retrying in {wait_before(attempt)}s"
             )
             time.sleep(wait_before(attempt))
 
-    print(
-        f"[state_fetch] ABORT: could not fetch {' '.join(patterns)} from {repo} — {reason}.\n"
+    _log.error(
+        f"ABORT: could not fetch {' '.join(patterns)} from {repo} — {reason}.\n"
         "Refusing to continue: the state dirs are gitignored, so proceeding would rebuild and "
-        "publish from an empty store as if this were a first run.",
-        file=sys.stderr,
-        flush=True,
+        "publish from an empty store as if this were a first run."
     )
     return 1
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "patterns", nargs="+", help="allow_patterns to fetch (repo-relative globs)"

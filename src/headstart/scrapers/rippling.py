@@ -83,6 +83,9 @@ class RipplingScraper(BaseScraper):
                 workers=_DETAIL_WORKERS,
                 default={},
             )
+        # {} is this scraper's failure sentinel (a real record is never empty), so map
+        # falsy to None for the gap count.
+        self.report_detail_gaps([d or None for d in details], "details")
         for item, detail in zip(items, details):
             item["_detail"] = detail
         return items

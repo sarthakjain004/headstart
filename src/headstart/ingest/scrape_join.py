@@ -17,10 +17,12 @@ Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
+from headstart import log
 from headstart.ingest import REPO_ROOT
+
+_log = log.get(__name__, __spec__)
 
 _SHARDS = (
     REPO_ROOT / "data" / "scrape" / "fragments"
@@ -34,6 +36,7 @@ def _fragment_dirs(root: Path) -> list[Path]:
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--shards",
@@ -55,11 +58,7 @@ def main() -> int:
     for frag in frags:
         for f in sorted(frag.glob("*.jsonl")):
             per_ats.setdefault(f.name, []).append(f)
-    print(
-        f"[join] {len(frags)} shard(s), {len(per_ats)} ATS file(s)",
-        file=sys.stderr,
-        flush=True,
-    )
+    _log.info(f"{len(frags)} shard(s), {len(per_ats)} ATS file(s)")
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
@@ -72,17 +71,9 @@ def main() -> int:
                             dst.write(line if line.endswith("\n") else line + "\n")
                             n += 1
         total += n
-        print(
-            f"[join] {ats_file}: {n} lines from {len(sources)} shard(s)",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
 
-    print(
-        f"[join] wrote {total} lines across {len(per_ats)} ATS files -> {out}",
-        file=sys.stderr,
-        flush=True,
-    )
+    _log.info(f"wrote {total} lines across {len(per_ats)} ATS files -> {out}")
     return 0
 
 

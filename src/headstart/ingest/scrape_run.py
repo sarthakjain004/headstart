@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
+from collections import Counter, defaultdict
 from pathlib import Path
 
+from headstart import log
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, load_active_companies
 from headstart.harvest import scrape_all
@@ -32,6 +33,8 @@ from headstart.ingest import REPO_ROOT
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
+
+_log = log.get(__name__, __spec__)
 
 
 def _read_assignment(path: Path) -> list[CompanyRef]:
@@ -49,7 +52,37 @@ def _read_assignment(path: Path) -> list[CompanyRef]:
     return companies
 
 
+def _log_board(key: str, jobs: int, error: str | None) -> None:
+    """Live per-board line as each board completes — failures at INFO so a shard killed by its
+    CI time budget has already streamed them; successes are per-board detail (DEBUG)."""
+    if error is not None:
+        _log.info(f"{key} failed: {error}")
+    else:
+        _log.debug(f"{key}: {jobs} jobs")
+
+
+def _error_summary(errors: dict[str, str]) -> str:
+    """Group board errors ("ats:slug" -> "ExcType: message") by exception type x ATS.
+
+    Renders types sorted by count desc as ``{n} {ExcType} ({ats1} n1, {ats2} n2, {ats3} n3,
+    +k more)`` (top 3 ATSes), joined by "; "."""
+    by_type: dict[str, Counter] = defaultdict(Counter)
+    for key, message in errors.items():
+        by_type[message.split(":", 1)[0]][key.split(":", 1)[0]] += 1
+    parts = []
+    for exc_type, atses in sorted(
+        by_type.items(), key=lambda item: (-sum(item[1].values()), item[0])
+    ):
+        ranked = sorted(atses.items(), key=lambda item: (-item[1], item[0]))
+        detail = ", ".join(f"{ats} {n}" for ats, n in ranked[:3])
+        if len(ranked) > 3:
+            detail += f", +{len(ranked) - 3} more"
+        parts.append(f"{sum(atses.values())} {exc_type} ({detail})")
+    return "; ".join(parts)
+
+
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--max-boards",
@@ -73,11 +106,7 @@ def main() -> int:
         args.assignment
     ):  # ADR-0026 scrape-shard mode — the planner already selected these boards
         companies = _read_assignment(Path(args.assignment))
-        print(
-            f"harvest: {len(companies)} boards from {args.assignment} (shard)",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"harvest: {len(companies)} boards from {args.assignment} (shard)")
     else:
         companies = load_active_companies(_LEDGER, min_jobs=0)
         scores = load_scores(_PRIORITY)
@@ -85,21 +114,26 @@ def main() -> int:
         priority = sum(
             1 for c in companies if scores.get(f"{c.ats}:{c.slug}", 0.0) > 0.0
         )
-        print(
+        _log.info(
             f"harvest: {len(companies)} boards this run "
-            f"({priority} priority + {len(companies) - priority} exploration)",
-            file=sys.stderr,
-            flush=True,
+            f"({priority} priority + {len(companies) - priority} exploration)"
         )
 
     start = time.monotonic()
-    result = scrape_all(companies, jobs_dir=Path(args.outdir), progress_every=200)
+    result = scrape_all(
+        companies,
+        jobs_dir=Path(args.outdir),
+        progress_every=200,
+        on_board=_log_board,
+    )
     elapsed = time.monotonic() - start
-    print(
+    if result.errors:
+        _log.warning(
+            f"{len(result.errors)} board errors: {_error_summary(result.errors)}"
+        )
+    _log.info(
         f"done: {result.unique} jobs from {result.boards} boards in {elapsed:0.0f}s "
-        f"({len(result.errors)} board errors)",
-        file=sys.stderr,
-        flush=True,
+        f"({len(result.errors)} board errors)"
     )
     return 0
 
