@@ -66,6 +66,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
     from huggingface_hub import list_repo_files, snapshot_download
 
     for attempt in range(1, _ATTEMPTS + 1):
+        started = time.monotonic()
         try:
             wanted = remote_matches(
                 list_repo_files(repo, repo_type="dataset", token=token), patterns
@@ -79,7 +80,12 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             )
             absent = absent_locally(wanted, REPO_ROOT)
             if not absent:
-                _log.info(f"fetched {len(wanted)} file(s): {' '.join(patterns)}")
+                # the seconds are the point: HF download variance is what makes the merge
+                # job's wall time swing 2-3x run to run
+                _log.info(
+                    f"fetched {len(wanted)} file(s) in "
+                    f"{time.monotonic() - started:.0f}s: {' '.join(patterns)}"
+                )
                 return 0
             reason = (
                 f"{len(absent)} of {len(wanted)} expected file(s) did not land, "

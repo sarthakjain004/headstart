@@ -318,6 +318,10 @@ class WorkdayScraper(BaseScraper):
             return
 
         param, values = facet
+        _log.debug(
+            f"{self.board_key()}: total {total} is capped — subdividing by {param} "
+            f"into {len(values)} queries (depth {depth + 1})"
+        )
         for value_id, _count in values:
             self._exhaust({**applied, param: [value_id]}, absorb, depth + 1)
 

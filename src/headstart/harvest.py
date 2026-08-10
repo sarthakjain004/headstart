@@ -156,7 +156,7 @@ def scrape_all(
     max_workers: int | None = None,
     progress_every: int = 0,
     resume: bool = False,
-    on_board: Callable[[str, int, str | None], None] | None = None,
+    on_board: Callable[[str, int, str | None, float], None] | None = None,
 ) -> RunResult:
     """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
 
@@ -172,8 +172,9 @@ def scrape_all(
     skips boards already recorded in its ``.done`` journal, so an interrupted harvest continues
     instead of restarting.
 
-    ``on_board(key, n_new_jobs, error)``, if given, is called on the main thread as each board
-    completes (``error`` is None on success) — the hook for live per-board logging.
+    ``on_board(key, n_new_jobs, error, seconds)``, if given, is called on the main thread as each
+    board completes (``error`` is None on success; ``seconds`` is the board's measured scrape
+    time, the same number the cost ledger records) — the hook for live per-board logging.
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
@@ -192,6 +193,9 @@ def scrape_all(
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
         companies = [c for c in companies if f"{c.ats}:{c.slug}" not in writer.done]
+        _log.info(
+            f"resume: {len(writer.done)} boards already done — {len(companies)} left"
+        )
 
     seen_ids: set[str] = set()
     errors: dict[str, str] = {}
@@ -217,9 +221,10 @@ def scrape_all(
                 writer.mark_done(
                     key
                 )  # mark on completion (success or error): resume moves on
-                writer.record_cost(key, elapsed.pop(key, 0.0), n_fresh)
+                seconds = elapsed.pop(key, 0.0)
+                writer.record_cost(key, seconds, n_fresh)
                 if on_board is not None:
-                    on_board(key, n_fresh, errors.get(key))
+                    on_board(key, n_fresh, errors.get(key), seconds)
                 if progress_every and done % progress_every == 0:
                     _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
