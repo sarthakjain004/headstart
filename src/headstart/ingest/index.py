@@ -169,6 +169,21 @@ def _scraped_boards(scraped: str | Path, corpus_ids: set[str]) -> set[str]:
     return {board_of(job_id) for job_id in corpus_ids}
 
 
+_IDS_PER_LINE = 100  # batched id logging: skimmable lines, any single id still greps
+
+
+def _log_ids(label: str, ids: list[str]) -> None:
+    """Every id behind a table change, ~100 per line — the merge log is the only record of
+    *which* Jobs came and went (counts alone forced the churn investigation to reconstruct
+    this statistically), and batching keeps 4k ids to ~40 lines."""
+    for start in range(0, len(ids), _IDS_PER_LINE):
+        chunk = ids[start : start + _IDS_PER_LINE]
+        _log.info(
+            f"{label} [{start + 1}-{start + len(chunk)} of {len(ids)}]: "
+            + " ".join(chunk)
+        )
+
+
 def sync(args: argparse.Namespace) -> int:
     metas, vectors = _load_store()
     row_of = {meta["id"]: i for i, meta in enumerate(metas)}
@@ -207,6 +222,7 @@ def sync(args: argparse.Namespace) -> int:
 
     plan = plan_sync(index_ids, fresh, boards)
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
+    _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
@@ -214,6 +230,7 @@ def sync(args: argparse.Namespace) -> int:
     # is evicted and later reappears is stamped afresh — it is newly visible again (ADR-0031).
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     add_ids = sorted(plan.add)
+    _log_ids("add", add_ids)
     for start in range(0, len(add_ids), _ADD_CHUNK):
         chunk = add_ids[start : start + _ADD_CHUNK]
         rows = []
@@ -257,6 +274,8 @@ def prune(args: argparse.Namespace) -> int:
         _log.info("dry-run — pass --apply to delete")
         return 0
 
+    _log_ids("prune off-Board", off_board)
+    _log_ids("prune duplicate", duplicate)
     apply_sync(table, [], evict)
     _log.info(
         f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {table.count_rows()}"

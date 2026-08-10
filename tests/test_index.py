@@ -172,3 +172,24 @@ def test_migration_is_idempotent(tmp_path, monkeypatch):
     assert "first_seen" in (
         lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE).schema.names
     )
+
+
+def test_log_ids_batches_and_labels(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="headstart.ingest.index")
+    idx._log_ids("evict", [f"lever:acme:{n}" for n in range(250)])
+
+    lines = [r.getMessage() for r in caplog.records if r.message.startswith("evict")]
+    assert len(lines) == 3  # 250 ids at 100/line
+    assert lines[0].startswith("evict [1-100 of 250]: lever:acme:0 ")
+    assert lines[2].startswith("evict [201-250 of 250]: ")
+    assert lines[2].endswith("lever:acme:249")
+
+
+def test_log_ids_silent_on_empty(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="headstart.ingest.index")
+    idx._log_ids("add", [])
+    assert not caplog.records

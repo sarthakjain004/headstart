@@ -52,13 +52,20 @@ def _read_assignment(path: Path) -> list[CompanyRef]:
     return companies
 
 
-def _log_board(key: str, jobs: int, error: str | None) -> None:
+_SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler material
+
+
+def _log_board(key: str, jobs: int, error: str | None, seconds: float) -> None:
     """Live per-board line as each board completes — failures at INFO so a shard killed by its
-    CI time budget has already streamed them; successes are per-board detail (DEBUG)."""
+    CI time budget has already streamed them, and slow boards at INFO so the shards' stragglers
+    are named in the run log (the cost ledger never records a board the budget kills, so the
+    log is the only place a monster board shows up); routine successes stay DEBUG."""
     if error is not None:
-        _log.info(f"{key} failed: {error}")
+        _log.info(f"{key} failed after {seconds:.0f}s: {error}")
+    elif seconds >= _SLOW_BOARD_S:
+        _log.info(f"slow board {key}: {jobs} jobs in {seconds:.0f}s")
     else:
-        _log.debug(f"{key}: {jobs} jobs")
+        _log.debug(f"{key}: {jobs} jobs in {seconds:.1f}s")
 
 
 def _error_summary(errors: dict[str, str]) -> str:

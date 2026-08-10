@@ -262,15 +262,29 @@ def main() -> int:
     start = time.monotonic()
     counter = {"done": 0, "jobs": 0, "errors": 0}
 
-    def on_board(key: str, n_jobs: int, error: str | None) -> None:
+    def on_board(key: str, n_jobs: int, error: str | None, seconds: float) -> None:
         # called on scrape_all's main thread as each board finishes — safe to mutate/log here
         counter["done"] += 1
         if error:
             counter["errors"] += 1
-            log.warning("[%d/%d] %s FAILED: %s", counter["done"], total, key, error)
+            log.warning(
+                "[%d/%d] %s FAILED after %.1fs: %s",
+                counter["done"],
+                total,
+                key,
+                seconds,
+                error,
+            )
         else:
             counter["jobs"] += n_jobs
-            log.info("[%d/%d] %s -> %d jobs", counter["done"], total, key, n_jobs)
+            log.info(
+                "[%d/%d] %s -> %d jobs (%.1fs)",
+                counter["done"],
+                total,
+                key,
+                n_jobs,
+                seconds,
+            )
         if counter["done"] % 25 == 0:
             el = time.monotonic() - start
             log.info(
