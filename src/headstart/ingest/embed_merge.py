@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
+from headstart import log
 from headstart.ingest import REPO_ROOT
 from headstart.search import DOC_PREFIX, MODEL
+
+_log = log.get(__name__, __spec__)
 
 _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _FRAGMENTS = REPO_ROOT / "data" / "embeddings" / "fragments"
@@ -89,13 +91,15 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
             with vec_path.open("r+b") as vf:
                 vf.truncate(want)  # drop the extra in-flight vector row(s)
         elif size < want:
-            sys.exit(
-                f"[merge] prior store corrupt: {size} vector bytes for {n} rows (dim {dim})"
+            _log.error(
+                f"prior store corrupt: {size} vector bytes for {n} rows (dim {dim})"
             )
+            raise SystemExit(1)
     return n
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--store",
@@ -125,10 +129,8 @@ def main() -> int:
         dim = _dim_from_manifest(f)
 
     prior_rows = _reconcile_store(meta_path, vec_path, dim)
-    print(
-        f"[merge] prior store: {prior_rows} vectors; {len(frags)} fragment(s) under {frag_root}",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"prior store: {prior_rows} vectors; {len(frags)} fragment(s) under {frag_root}"
     )
 
     appended = 0
@@ -136,15 +138,17 @@ def main() -> int:
         for f in frags:
             fdim = _dim_from_manifest(f) or dim
             if fdim is None:
-                sys.exit(f"[merge] fragment {f} has no manifest and no dim is known")
+                _log.error(f"fragment {f} has no manifest and no dim is known")
+                raise SystemExit(1)
             good = _good_meta_lines(f / "meta.jsonl")
             nrows = len(good)
             want = nrows * fdim * _FLOAT_BYTES
             raw = (f / "embeddings.f32").read_bytes()
             if len(raw) < want:
-                sys.exit(
-                    f"[merge] fragment {f} corrupt: {len(raw)} vector bytes for {nrows} rows (dim {fdim})"
+                _log.error(
+                    f"fragment {f} corrupt: {len(raw)} vector bytes for {nrows} rows (dim {fdim})"
                 )
+                raise SystemExit(1)
             vf.write(
                 raw[:want]
             )  # trim any in-flight partial row past the last good meta line
@@ -152,19 +156,11 @@ def main() -> int:
             mf.write("".join(s + "\n" for s in good))
             mf.flush()
             appended += nrows
-            print(
-                f"[merge] +{nrows} from {f.name} (running total {prior_rows + appended})",
-                file=sys.stderr,
-                flush=True,
-            )
+            _log.info(f"+{nrows} from {f.name} (running total {prior_rows + appended})")
 
     total = prior_rows + appended
     if dim is None:  # no prior store and no fragments — a degenerate empty first run
-        print(
-            "[merge] no store and no fragments — nothing to merge",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info("no store and no fragments — nothing to merge")
         return 0
 
     (store / "manifest.json").write_text(
@@ -186,13 +182,12 @@ def main() -> int:
 
     vbytes = vec_path.stat().st_size
     if vbytes != total * dim * _FLOAT_BYTES:
-        sys.exit(
-            f"[merge] store inconsistent after merge: {vbytes} bytes for {total} rows (dim {dim})"
+        _log.error(
+            f"store inconsistent after merge: {vbytes} bytes for {total} rows (dim {dim})"
         )
-    print(
-        f"[merge] merged {appended} new vectors — store now holds {total} (dim {dim}) -> {store}",
-        file=sys.stderr,
-        flush=True,
+        raise SystemExit(1)
+    _log.info(
+        f"merged {appended} new vectors — store now holds {total} (dim {dim}) -> {store}"
     )
     return 0
 

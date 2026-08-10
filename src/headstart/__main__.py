@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from headstart import log
 from headstart.config import load_active_companies, load_companies
 from headstart.harvest import build_feed, scrape_all, write_feed
 from headstart.tech_filter import filter_jobs
@@ -18,6 +19,7 @@ _TECH_DIR = _JOBS_DIR / "tech"
 
 
 def main() -> None:
+    log.setup()
     # Prefer the liveness ledger (its live boards, ADR-0012); fall back to the curated seed if
     # the ledger hasn't been generated yet.
     using_ledger = any(_LEDGER.glob("*.csv"))

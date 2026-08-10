@@ -47,3 +47,4 @@ supersedes it and note the supersession in both.
 | [0036](0036-fetch-hf-state-without-xet.md) | Fetch HF state over the plain path, not Xet | 2026-08-05 |
 | [0037](0037-wellfound-three-surface-scrape.md) | Wellfound is scraped through three surfaces, behind a real browser | 2026-08-05 |
 | [0038](0038-telegram-alerts-and-pluggable-transports.md) | Telegram alerts — one Digest, pluggable transports, enrolment by approval | 2026-08-06 |
+| [0039](0039-pipeline-logging.md) | Pipeline logging through one stdlib seam (`headstart.log`) | 2026-08-10 |

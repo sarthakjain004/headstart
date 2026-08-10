@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job
 
 _USER_AGENT = "headstart/0.1 (job-board reader)"
@@ -166,6 +166,17 @@ class BaseScraper(ABC):
 
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results
+
+    def report_detail_gaps(self, results: Sequence[Any], what: str = "details") -> None:
+        """Log how many of a detail pass's results came back empty (None) — the gaps behind
+        ADR-0021's null fields. One INFO line per Board, only when something is missing; the
+        failure was isolated per item (the fan_out contract), so this line is usually the
+        only trace the gap leaves."""
+        missing = sum(1 for r in results if r is None)
+        if missing:
+            log.get(f"headstart.scrapers.{self.ats}").info(
+                f"{self.board_key()}: {missing}/{len(results)} {what} missing"
+            )
 
     @staticmethod
     def async_fanout_enabled() -> bool:

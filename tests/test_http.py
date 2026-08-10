@@ -6,6 +6,8 @@ and sleep is neutralized, so each test asserts exactly what fetch retries, what 
 and what it hands back for the caller to classify.
 """
 
+import logging
+
 import pytest
 
 import headstart.http as http
@@ -89,3 +91,15 @@ def test_transient_network_exhausted_raises(monkeypatch):
     with pytest.raises(http.RequestsError):
         http.fetch("GET", "u")
     assert len(calls) == 3
+
+
+def test_retries_log_debug_records(monkeypatch, caplog):
+    caplog.set_level(logging.DEBUG, logger="headstart.http")
+    _stub(monkeypatch, [_err(28), 503, 200])  # one network retry, one status retry
+    http.fetch("GET", "u")
+
+    records = [r for r in caplog.records if r.name == "headstart.http"]
+    assert [r.levelno for r in records] == [logging.DEBUG, logging.DEBUG]
+    assert "attempt 1/3 failed" in records[0].getMessage()
+    assert "-> 503" in records[1].getMessage()
+    assert "retrying" in records[1].getMessage()

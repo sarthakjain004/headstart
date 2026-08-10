@@ -25,8 +25,8 @@ future task.
 Source: `gh run view 30089055186 --log` (nightly-pipeline, 2026-07-24, `ubuntu-latest`, CPU —
 no GPU on this runner, so `device="cpu"`, fp32, and the attention budget is quartered vs. the
 MPS/fp16 path ADR-0005 describes for local runs). Rates are back-computed from the timestamp
-gap between consecutive `[embed] N/total` log lines, not the coarse rounded `jobs/s` the script
-itself prints.
+gap between consecutive `[embed] N/total` log lines (tagged `[embed_run] N/total` since the
+ADR-0039 logging change), not the coarse rounded `jobs/s` the script itself prints.
 
 | Bucket (tokens) | Batch size | Docs this run | Measured rate | s/doc |
 |---|---:|---:|---|---:|

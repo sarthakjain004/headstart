@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
+from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
 from headstart.ingest import REPO_ROOT
@@ -45,6 +45,8 @@ from headstart.ingest.doc_prep import (
 )
 from headstart.search import MODEL
 
+_log = log.get(__name__, __spec__)
+
 _SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
 _PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
@@ -53,7 +55,7 @@ _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 # Measured CPU seconds-per-Doc per Bucket, from the 2026-07-24 ubuntu-latest run recorded in
 # docs/AI_Integration/embedding-throughput.md. Hardcoded (not derived from live CI logs) for
 # Phase 1 (ADR-0025): deterministic, one dict to edit. Refresh with the recipe in that doc
-# (`gh run view <id> --log | grep '[embed]'`) when runner performance drifts.
+# (`gh run view <id> --log | grep '[embed_run]'`) when runner performance drifts.
 _S_PER_DOC = {512: 0.8, 1024: 1.7, 2048: 4.4, 4096: 18.0}
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per lane
 _TARGET_SECONDS = (
@@ -88,9 +90,7 @@ def _token_lengths(tok, docs: list[str]) -> list[int]:
     for s in range(0, len(docs), 1024):
         enc = tok(docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS)
         lengths.extend(len(ids) for ids in enc["input_ids"])
-        print(
-            f"[plan] tokenized {len(lengths)}/{len(docs)}", file=sys.stderr, flush=True
-        )
+        _log.info(f"tokenized {len(lengths)}/{len(docs)}")
     return lengths
 
 
@@ -109,6 +109,7 @@ def _write_plan(
 
 
 def main() -> int:
+    log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--source",
@@ -150,7 +151,7 @@ def main() -> int:
 
     prior = _prior_ids(Path(args.prior_meta))
     scores = load_scores(Path(args.priority))
-    print(f"[plan] prior store: {len(prior)} embedded ids", file=sys.stderr, flush=True)
+    _log.info(f"prior store: {len(prior)} embedded ids")
 
     # Collect the new English Docs — same gate/build/meta as embed_run, via the shared module.
     ids: list[str] = []
@@ -171,10 +172,8 @@ def main() -> int:
         docs.append(build_doc(job))
         metas.append(to_meta(job))
         boards.append(board_of(jid))
-    print(
-        f"[plan] new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped})",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped})"
     )
 
     out_dir = Path(args.out_dir)
@@ -184,11 +183,7 @@ def main() -> int:
 
     if not docs:
         _write_plan(out_dir, shards=[], count=0, makespan=0.0, loads=[])
-        print(
-            "[plan] nothing new to embed — emitted empty plan",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info("nothing new to embed — emitted empty plan")
         return 0
 
     tok = _load_tokenizer()
@@ -203,11 +198,7 @@ def main() -> int:
     if args.limit and len(keep) > args.limit:
         keep.sort(key=lambda i: (scores.get(boards[i], 0.0), -costs[i]), reverse=True)
         keep = sorted(keep[: args.limit])
-        print(
-            f"[plan] admission: capped {len(docs)} -> {len(keep)} top-priority Docs",
-            file=sys.stderr,
-            flush=True,
-        )
+        _log.info(f"admission: capped {len(docs)} -> {len(keep)} top-priority Docs")
 
     sel_costs = [costs[i] for i in keep]
     total_cost = sum(sel_costs)
@@ -237,21 +228,17 @@ def main() -> int:
                     )
                     + "\n"
                 )
-        print(
-            f"[plan] shard {k}: {len(shard_items[k])} docs, ~{loads[k] / 60:.1f} min -> {path}",
-            file=sys.stderr,
-            flush=True,
+        _log.info(
+            f"shard {k}: {len(shard_items[k])} docs, ~{loads[k] / 60:.1f} min -> {path}"
         )
 
     makespan = max(loads) if loads else 0.0
     _write_plan(
         out_dir, shards=list(range(m)), count=len(keep), makespan=makespan, loads=loads
     )
-    print(
-        f"[plan] {len(keep)} Docs across {m} shards; predicted makespan ~{makespan / 60:.1f} min "
-        f"(total work Σ {total_cost / 60:.1f} min)",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"{len(keep)} Docs across {m} shards; predicted makespan ~{makespan / 60:.1f} min "
+        f"(total work Σ {total_cost / 60:.1f} min)"
     )
     return 0
 

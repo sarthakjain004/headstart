@@ -28,7 +28,11 @@ from typing import Any
 from curl_cffi import requests as _requests
 from curl_cffi.requests import RequestsError  # re-exported for callers' except blocks
 
+from headstart import log
+
 __all__ = ["fetch", "fetch_async", "session", "RequestsError"]
+
+_log = log.get(__name__)
 
 _local = threading.local()
 _TRANSIENT = {
@@ -66,10 +70,20 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
-            time.sleep(1.5 * (attempt + 1))
+            delay = 1.5 * (attempt + 1)
+            _log.debug(
+                f"{method} {url} attempt {attempt + 1}/{attempts} failed ({exc}); "
+                f"retrying in {delay:.1f}s"
+            )
+            time.sleep(delay)
             continue
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
-            time.sleep(1.5 * (attempt + 1))
+            delay = 1.5 * (attempt + 1)
+            _log.debug(
+                f"{method} {url} -> {response.status_code}; "
+                f"retrying in {delay:.1f}s (attempt {attempt + 1}/{attempts})"
+            )
+            time.sleep(delay)
             continue
         return response
     raise AssertionError(
@@ -91,10 +105,20 @@ async def fetch_async(
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
-            await asyncio.sleep(1.5 * (attempt + 1))
+            delay = 1.5 * (attempt + 1)
+            _log.debug(
+                f"{method} {url} attempt {attempt + 1}/{attempts} failed ({exc}); "
+                f"retrying in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
             continue
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
-            await asyncio.sleep(1.5 * (attempt + 1))
+            delay = 1.5 * (attempt + 1)
+            _log.debug(
+                f"{method} {url} -> {response.status_code}; "
+                f"retrying in {delay:.1f}s (attempt {attempt + 1}/{attempts})"
+            )
+            await asyncio.sleep(delay)
             continue
         return response
     raise AssertionError("unreachable")  # pragma: no cover

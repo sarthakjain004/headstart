@@ -62,6 +62,7 @@ class TrakstarScraper(BaseScraper):
             )
         else:
             results = self.fan_out(codes, self._job_posting, workers=_DETAIL_WORKERS)
+        self.report_detail_gaps(results, "JSON-LD postings")
         postings = dict(zip(codes, results))
         return {"html": html, "postings": postings}
 

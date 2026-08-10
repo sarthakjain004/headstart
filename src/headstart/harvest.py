@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,10 +21,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from headstart import log
 from headstart.board_cost import SHARD_HEADER, shard_row
 from headstart.config import CompanyRef
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
+
+_log = log.get(__name__)
 
 # Per-board scrape timings a shard hands to the join (ADR-0027). Undotted on purpose — see
 # JobWriter.record_cost.
@@ -141,11 +143,9 @@ def _emit_progress(
 ) -> None:
     elapsed = time.monotonic() - start
     rate = done / elapsed if elapsed else 0.0
-    print(
-        f"[scrape] {done}/{total} boards | {unique} jobs | {errors} errors | "
-        f"{elapsed:0.0f}s | {rate:0.1f} boards/s",
-        file=sys.stderr,
-        flush=True,
+    _log.info(
+        f"{done}/{total} boards | {unique} jobs | {errors} errors | "
+        f"{elapsed:0.0f}s | {rate:0.1f} boards/s"
     )
 
 

@@ -32,9 +32,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+_log = log.get(__name__)
 
 _URL_PATTERN = re.compile(
     r"^https://(?P<company>[^.]+)\.(?P<instance>wd\d+)\.myworkdayjobs\.com/(?P<site>[^/?#]+)"
@@ -233,6 +235,7 @@ class WorkdayScraper(BaseScraper):
                 lambda item: self._job_detail(item.get("externalPath")),
                 workers=_DETAIL_WORKERS,
             )
+        self.report_detail_gaps(details, "details")
         for item, detail in zip(postings, details):
             item["_detail"] = detail or {}
         return postings
@@ -319,10 +322,20 @@ class WorkdayScraper(BaseScraper):
             self._exhaust({**applied, param: [value_id]}, absorb, depth + 1)
 
     def _paginate(self, applied: dict[str, list[str]], total: int, absorb) -> None:
-        """Page through offsets [20, total) sequentially."""
+        """Page through offsets [20, total) sequentially. Pages whose ``_post`` 404s
+        mid-crawl are skipped as before, but one warning now reports how many went
+        missing — the tripwire for a partial board."""
+        missing = 0
         for offset in range(_PAGE_LIMIT, total, _PAGE_LIMIT):
             payload = self._post(applied, offset=offset)
+            if payload is None:
+                missing += 1
             absorb((payload or {}).get("jobPostings") or [])
+        if missing:
+            _log.warning(
+                f"{self.board_key()}: {missing} page(s) 404ed mid-crawl — "
+                f"board partial ({total} listed)"
+            )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, site = self._parts()
