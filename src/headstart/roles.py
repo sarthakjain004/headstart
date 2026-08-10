@@ -24,9 +24,6 @@ import numpy as np
 
 _INTERN = re.compile(r"\bintern(ship)?\b|\btrainee\b", re.IGNORECASE)
 
-# min_years -> band edges; None (no signal) is "unspecified", kept as its own honest series.
-BANDS = ("unspecified", "intern", "entry", "mid", "senior", "staff")
-
 
 def load(store: Path) -> tuple[np.ndarray, dict[str, Any]]:
     """The centroid matrix (K × dim, unit rows) and its manifest."""

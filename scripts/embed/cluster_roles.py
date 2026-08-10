@@ -45,9 +45,11 @@ _TOP_TITLES = 30
 
 # Tokens that name a level or a workplace, not a role family — dropped from the provisional
 # label so "senior backend engineer" and "backend engineer" pull toward the same name.
+# (Numerals and single letters never reach here: the tokenizer is letters-only and one-char
+# tokens are dropped at the call site.)
 _LABEL_STOPWORDS = frozenset(
     "senior sr jr junior staff lead principal head chief intern trainee associate"
-    " i ii iii iv v 1 2 3 4 the a an of and or remote hybrid onsite".split()
+    " ii iii iv the an of and or remote hybrid onsite".split()
 )
 
 
@@ -55,10 +57,8 @@ def load_store(store: Path) -> tuple[np.ndarray, list[str]]:
     """The store's vectors and row-aligned titles."""
     dim = json.loads((store / "manifest.json").read_text())["dim"]
     vectors = np.fromfile(store / "embeddings.f32", dtype="float32").reshape(-1, dim)
-    titles = [
-        json.loads(line).get("title") or ""
-        for line in (store / "meta.jsonl").open(encoding="utf-8")
-    ]
+    with (store / "meta.jsonl").open(encoding="utf-8") as fh:
+        titles = [json.loads(line).get("title") or "" for line in fh]
     if len(titles) != len(vectors):
         raise SystemExit(f"store torn: {len(vectors)} vectors, {len(titles)} meta rows")
     return vectors, titles
@@ -99,6 +99,13 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=_OUT)
     ap.add_argument("--k", type=int, default=0, help="fix K (default: sweep and pick)")
     ap.add_argument("--sweep", default="16,24,32,40")
+    ap.add_argument(
+        "--version",
+        type=int,
+        default=1,
+        help="centroid-set version to stamp; a refit MUST bump this — every trend series "
+        "keys on it, so overwriting a shipped version splices incomparable bases (ADR-0040)",
+    )
     args = ap.parse_args()
 
     vectors, titles = load_store(args.store)
@@ -132,11 +139,20 @@ def main() -> int:
         )
         _log.info(f"cluster {c}: {len(members)} rows — {clusters[-1]['label']}")
 
+    manifest_path = args.out / "manifest.json"
+    if manifest_path.exists():
+        prior = json.loads(manifest_path.read_text(encoding="utf-8"))["version"]
+        if prior >= args.version:
+            log.fail(
+                _log,
+                f"centroid store at {args.out} already holds version {prior} — a refit "
+                f"must bump --version past it (got {args.version}); see ADR-0040",
+            )
     roles.save(
         args.out,
         centroids,
         {
-            "version": 1,
+            "version": args.version,
             "k": k,
             "dim": int(centroids.shape[1]),
             "normalized": True,

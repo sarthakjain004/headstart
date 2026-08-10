@@ -11,6 +11,9 @@ on:
       k:
         description: fix K (0 = sweep 16,24,32,40 and pick by sampled silhouette)
         default: "0"
+      version:
+        description: centroid-set version to stamp — a refit MUST bump this (ADR-0040)
+        default: "1"
 
 permissions:
   contents: read
@@ -30,12 +33,14 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[embed]" "huggingface_hub[cli]"
-      - name: Download the embedding store (vectors + meta)
+      - name: Download the embedding store + any prior centroids (the version guard needs them)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*'
+        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/state/role_centroids/*'
       - name: Fit the role-family centroids
-        run: python scripts/embed/cluster_roles.py --k "${{ github.event.inputs.k || '0' }}"
+        run: |
+          python scripts/embed/cluster_roles.py \
+            --k "${{ inputs.k }}" --version "${{ inputs.version }}"
       - name: Upload centroids to the dataset
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

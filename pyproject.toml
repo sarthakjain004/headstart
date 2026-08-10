@@ -21,7 +21,9 @@ dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerpr
 dev = ["pytest", "ruff==0.15.22", "flask", "xlsxwriter", "openpyxl"]
 # Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
-embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb"]
+# scikit-learn arrives transitively via sentence-transformers; named because
+# scripts/embed/cluster_roles.py imports it directly (ADR-0040).
+embed = ["sentence-transformers>=3.0", "einops", "langdetect", "lancedb", "scikit-learn"]
 # Local dev UI for the semantic search (scripts/ui/serve.py)
 ui = ["flask"]
 # Retrieval-eval harness (scripts/eval/). anthropic = the LLM-judge that grades the
