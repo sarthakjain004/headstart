@@ -91,9 +91,17 @@ def load(repo: str, token: str) -> Registry:
     `/start` claims it. That is the intended failure direction only because the alternative
     is a bot that can never be set up; it is *not* a security boundary, which is why
     approval lives in `store` and not here.
+
+    `ImportError` is deliberately **not** caught. A missing `huggingface_hub` is a broken
+    install, not an absent record, and reporting it as "no registry yet" is actively
+    misleading — it says the bot is fine and starting fresh while it is in fact unable to
+    read or write anything. That is exactly how it read when `bot.yml` was still installing
+    base deps only: a green-looking line, then a traceback ten lines later.
     """
     try:
         return Registry.from_dict(json.loads(read_bytes(repo, PATH, token)))
+    except ImportError:
+        raise
     except Exception as exc:  # noqa: BLE001 — absent on first run is the normal case
         print(
             f"[bot] no registry yet ({type(exc).__name__}) - starting empty", flush=True
