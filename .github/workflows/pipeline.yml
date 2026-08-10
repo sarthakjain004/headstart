@@ -375,6 +375,13 @@ jobs:
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index prune --apply
+      - name: Append role-trend counts (ADR-0040)
+        # Never fatal: the module itself no-ops with a warning when the centroid store hasn't
+        # reached this runner (fit not shipped yet, or the join's state artifact was lost) —
+        # trends must not sink a run that already scraped and embedded successfully.
+        if: needs.scrape-plan.outputs.run == 'true'
+        continue-on-error: true
+        run: python -m headstart.ingest.role_trends
       # No compaction here — it moved to the every-2-days `cleanup-index` run. `index compact`
       # rebuilds the table into ONE new .lance file, so every run minted a brand-new ~755 MB blob
       # that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB quota filled in ~45
