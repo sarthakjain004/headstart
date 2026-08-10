@@ -81,7 +81,8 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             absent = absent_locally(wanted, REPO_ROOT)
             if not absent:
                 # the seconds are the point: HF download variance is what makes the merge
-                # job's wall time swing 2-3x run to run
+                # job's wall time swing 2-3x run to run (per-attempt, so a retried success
+                # reports the attempt that landed, not the waits before it)
                 _log.info(
                     f"fetched {len(wanted)} file(s) in "
                     f"{time.monotonic() - started:.0f}s: {' '.join(patterns)}"

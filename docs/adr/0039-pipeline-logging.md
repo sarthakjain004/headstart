@@ -49,6 +49,11 @@ DEBUG is per-item detail (each successful board, each HTTP retry); WARNING is an
 run survives (a failed embed batch, a partial Workday board, the grouped board-error
 summary); ERROR is a fatal abort — every `exit 1` path (`state_fetch` exhaustion, the prune
 keep-set guard, torn-store checks) now emits an `::error::` annotation before exiting.
+Two deliberate INFO exceptions to "per-item is DEBUG": `index sync`/`prune` log every
+added/evicted/pruned id (batched ~100/line — the merge log is the only record of *which*
+rows changed, and DEBUG would record nothing in CI), and `scrape_run` names slow boards
+(≥120 s) at INFO rather than WARNING, because a straggler board is routine enough that
+WARNING would spam the annotation summary.
 
 **The dropped signals now log.** `scrape_run` wires the `on_board` hook: each failed board
 logs one INFO line *live* — a shard killed by its CI time budget has already streamed every

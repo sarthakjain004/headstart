@@ -192,9 +192,11 @@ def scrape_all(
 
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
+        before = len(companies)
         companies = [c for c in companies if f"{c.ats}:{c.slug}" not in writer.done]
         _log.info(
-            f"resume: {len(writer.done)} boards already done — {len(companies)} left"
+            f"resume: {before - len(companies)} of {before} boards already done — "
+            f"{len(companies)} left"
         )
 
     seen_ids: set[str] = set()
