@@ -21,8 +21,14 @@ Dry-run by default. ATSes that need more than a slug to address — Workday want
 SuccessFactors a vanity host — cannot be searched this way, so a company that moved *there* still
 looks gone here. That is a floor on what this finds, not a clean bill of health.
 
+Some moves the search cannot reach — a company that changed provider *and* renamed. Those come
+from research and are supplied by ``--moves`` as ``old_ats old_slug new_ats new_slug`` lines, with
+``-  -`` as the destination when the Board is known dead but no replacement was found. Curated or
+searched, nothing is written unproven: the source must probe dead and the destination live-with-jobs.
+
     python scripts/validate/relocate_dead_boards.py dead_ids.txt
     python scripts/validate/relocate_dead_boards.py dead_ids.txt --apply
+    python scripts/validate/relocate_dead_boards.py --moves data/validate/board_moves.txt --apply
 """
 
 from __future__ import annotations
@@ -65,15 +71,31 @@ SLUG_ADDRESSABLE = (
 
 
 def url_template(ats: str, rows: dict) -> str | None:
-    """Infer this ATS's careers-URL shape from a ledger row that already uses it.
+    """Infer this ATS's careers-URL shape from the ledger rows that already use it.
 
     Reading the shape off real data beats hardcoding fourteen of them here, where they would be a
-    second source of truth to keep in step with each scraper.
+    second source of truth to keep in step with each scraper. Two things this must not do naively:
+
+    * **Take any old row.** A ledger accumulates conventions: rippling's seeded rows are bare
+      ``ats.rippling.com/{tenant}`` while every row ``check_liveness`` writes today carries the
+      scheme, and the fossils still outnumber them 2,323 to 346. So neither first-row-wins nor a
+      whole-file mode is right — both elect the fossil. Match what the ledger's *current writer*
+      produces, by taking the modal shape among the most recently checked rows.
+    * **Replace the tenant anywhere it appears.** A tenant like ``ats`` occurs in the host as well
+      as the path, and a leftmost replace would rewrite the host. Only the last occurrence — the
+      path segment naming the board — is the tenant.
     """
-    for row in rows.values():
-        if row.tenant and row.url and row.tenant in row.url:
-            return row.url.replace(row.tenant, "{tenant}", 1)
-    return None
+    shaped = [
+        (row.checked_at or "", row.url.rpartition(row.tenant)[0] + "{tenant}")
+        for row in rows.values()
+        if row.tenant and row.url and row.url.endswith(row.tenant)
+    ]
+    if not shaped:
+        return None
+    newest = max(when for when, _ in shaped)
+    return collections.Counter(
+        shape for when, shape in shaped if when == newest
+    ).most_common(1)[0][0]
 
 
 def search(slug: str, workers: int) -> list[tuple[str, int]]:
@@ -97,7 +119,7 @@ def search(slug: str, workers: int) -> list[tuple[str, int]]:
 
 
 def read_moves(path: Path) -> list[tuple[str, str, str, str]]:
-    """Curated ``old_ats old_slug new_ats new_slug`` rows (TSV, ``#`` comments allowed).
+    """Curated ``old_ats old_slug new_ats new_slug`` rows, whitespace-separated, ``#`` comments ok.
 
     The search above only ever tries the *same* slug on another provider, so it is blind to a
     company that moved and renamed — ``greenhouse:aerospike`` is live as ``rippling:aerospike-inc``,
@@ -123,7 +145,7 @@ def main() -> int:
         "ids", nargs="?", help="file of {ats}:{slug} lines for Boards that 404'd"
     )
     ap.add_argument(
-        "--moves", type=Path, help="TSV of curated old_ats old_slug new_ats new_slug"
+        "--moves", type=Path, help="curated `old_ats old_slug new_ats new_slug` lines"
     )
     ap.add_argument("--workers", type=int, default=14)
     ap.add_argument("--apply", action="store_true", help="write the ledger corrections")
@@ -147,7 +169,8 @@ def main() -> int:
             ledgers[ats] = liveness.load(LEDGER / f"{ats}.csv")
         return ledgers[ats]
 
-    moved, stayed_dead, today = [], [], date.today().isoformat()
+    moved, stayed_dead, dead_only = [], [], []
+    today = date.today().isoformat()
     for n, jid in enumerate(ids, 1):
         old_ats, _, slug = jid.partition(":")
         hits = search(slug, args.workers)
@@ -162,9 +185,25 @@ def main() -> int:
             flush=True,
         )
 
-    for old_ats, old_slug, new_ats, new_slug in (
-        read_moves(args.moves) if args.moves else []
-    ):
+    curated = read_moves(args.moves) if args.moves else []
+    for old_ats, old_slug, new_ats, new_slug in curated:
+        # the source is only marked dead if it says so itself — the `ids` path earns that by
+        # probing, and a curated line must not be trusted to assert it for free
+        try:
+            src_verdict, _ = PROBES[old_ats](old_slug, "")
+        except Exception:  # noqa: BLE001 - treat an unreachable source as unproven
+            src_verdict = "error"
+        if src_verdict != liveness.DEAD:
+            print(
+                f"  skip {old_ats}:{old_slug} — source probed {src_verdict}, "
+                "not dead, so nothing to relocate",
+                flush=True,
+            )
+            continue
+        if new_ats == "-":  # proven dead, no destination found: record the half we know
+            dead_only.append((old_ats, old_slug))
+            print(f"  dead {old_ats}:{old_slug:<32} (no known replacement)", flush=True)
+            continue
         if new_ats not in PROBES:
             print(
                 f"  skip {old_ats}:{old_slug} -> {new_ats}:{new_slug} "
@@ -189,7 +228,11 @@ def main() -> int:
             flush=True,
         )
 
-    print(f"\n{len(moved)} moved, {len(stayed_dead)} gone (of {len(ids)})", flush=True)
+    print(
+        f"\n{len(moved)} moved, {len(dead_only)} dead with no replacement"
+        + (f", {len(stayed_dead)} of {len(ids)} searched found nothing" if ids else ""),
+        flush=True,
+    )
     flow = collections.Counter((o, hits[0][0]) for o, _, hits, _ in moved)
     for (a, b), count in flow.most_common():
         print(f"  {a} -> {b}: {count}", flush=True)
@@ -225,6 +268,15 @@ def main() -> int:
             today,
         )
         touched.add(new_ats)
+
+    for old_ats, old_slug in dead_only:
+        old = ledger(old_ats)
+        if old_slug in old:
+            row = old[old_slug]
+            old[old_slug] = liveness.Verdict(
+                old_ats, old_slug, row.url, liveness.DEAD, None, today
+            )
+            touched.add(old_ats)
 
     for ats in sorted(touched):
         liveness.write(LEDGER / f"{ats}.csv", ledgers[ats].values())

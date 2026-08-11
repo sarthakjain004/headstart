@@ -11,15 +11,12 @@ ashby       atomicsemi                    ashby     fab2            # Atomic Sem
 ashby       august                        ashby     august-health   # same ATS, hyphenated slug
 ashby       accelevents                   workable  accelevents     # same slug, provider changed
 #
-# Researched but deliberately NOT applied:
-#   greenhouse:ascendanalytics -> bamboohr:ascendanalytics
-#       BambooHR has no scraper, so recording it live would promise a Board we cannot read.
-#   greenhouse:aurorainnovation -> ashby (private org)
-#       Hiring (~100 roles) but the Ashby org slug is not publicly derivable; seven guesses 404'd.
-#       Their own aurora.tech/api/jobs-index serves the full set if a one-off is ever wanted.
-#   greenhouse:ast -> greenhouse:astspacemobile
-#       Ambiguous: "AST" is also Allegheny Science & Technology, separately in this batch. A lead.
-#   greenhouse:attune -> greenhouse:pinnacolassurance
-#       That is the parent (Pinnacol), a different legal entity — it would mis-attribute the jobs.
-#   greenhouse:ascend -> greenhouse:ascend21
-#       Two live boards match the name (ascend21, ascendtogether); which one is unresolved.
+# Dead where they stand, with no destination we are willing to assert. `-` records only the half
+# that is proven: the Board 404s, so it must stop being scraped. Recording an unproven destination
+# would be worse than recording none, but leaving the source `live` keeps the pipeline fetching a
+# 404 every run — which is what it was doing (aurorainnovation at live,144; attune at live,1).
+greenhouse  ascendanalytics    -  -   # on BambooHR, which has no scraper — we could not read it
+greenhouse  aurorainnovation   -  -   # hiring ~100 roles on Ashby; org slug not publicly derivable
+greenhouse  ast                -  -   # "AST" is ambiguous: AST SpaceMobile vs Allegheny Sci & Tech
+greenhouse  attune             -  -   # pinnacolassurance is the parent, a different legal entity
+greenhouse  ascend             -  -   # ascend21 and ascendtogether both live; which one is unclear
