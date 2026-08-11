@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_liveness import PROBES  # noqa: E402 - needs the paths above first
 
 from headstart import liveness  # noqa: E402
+from headstart.scrapers.registry import SCRAPERS  # noqa: E402
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
@@ -81,21 +82,49 @@ def url_template(ats: str, rows: dict) -> str | None:
       scheme, and the fossils still outnumber them 2,323 to 346. So neither first-row-wins nor a
       whole-file mode is right — both elect the fossil. Match what the ledger's *current writer*
       produces, by taking the modal shape among the most recently checked rows.
-    * **Replace the tenant anywhere it appears.** A tenant like ``ats`` occurs in the host as well
-      as the path, and a leftmost replace would rewrite the host. Only the last occurrence — the
-      path segment naming the board — is the tenant.
+    * **Replace the tenant's first occurrence.** A tenant like ``ats`` appears in the host as well
+      as the path, so a leftmost replace rewrites the host. Take the *last* occurrence instead.
+
+    It must equally not assume where in the URL the tenant sits. Half these ATSes name the board in
+    a **subdomain** (``https://{tenant}.darwinbox.in``, ``{tenant}.freshteam.com``) and half in a
+    **path** (``https://jobs.ashbyhq.com/{tenant}``), so anything anchored to the URL's tail silently
+    yields nothing for darwinbox, freshteam, keka, personio and ripplehire — and a ``None`` here
+    means a move writes no destination at all. Keep whatever follows the tenant.
     """
-    shaped = [
-        (row.checked_at or "", row.url.rpartition(row.tenant)[0] + "{tenant}")
-        for row in rows.values()
-        if row.tenant and row.url and row.url.endswith(row.tenant)
-    ]
+    shaped: list[tuple[str, str]] = []
+    for row in rows.values():
+        if not (row.tenant and row.url):
+            continue
+        head, found, tail = row.url.rpartition(row.tenant)
+        if found:
+            shaped.append((row.checked_at or "", f"{head}{{tenant}}{tail}"))
     if not shaped:
         return None
+    # Among the current writer's rows, take the *shortest* shape. A ledger's URL column also holds
+    # job-detail links and referral URLs that happen to contain the tenant — teamtailor's
+    # `www.teamtailor.com/?utm_content={tenant}...`, rippling's `.../{tenant}/jobs` — and every one
+    # of those is longer than the board address itself. Ties go to the most common.
     newest = max(when for when, _ in shaped)
-    return collections.Counter(
-        shape for when, shape in shaped if when == newest
-    ).most_common(1)[0][0]
+    current = collections.Counter(shape for when, shape in shaped if when == newest)
+    return min(current, key=lambda shape: (len(shape), -current[shape]))
+
+
+def derives_back(ats: str, slug: str, url: str) -> bool:
+    """Would the pipeline rebuild ``slug`` from this row?
+
+    ``load_active_companies`` does not use the ledger's slug directly — it calls
+    ``scraper.slug_from(tenant, url)``. For most ATSes that returns the tenant and the url is
+    decoration, but personio and zoho derive the slug *from the url* (their slug is the whole host),
+    so a plausible-looking url that reads back as something else would quietly scrape a different
+    Board. Cheaper to check than to reason about per ATS.
+    """
+    scraper = SCRAPERS.get(ats)
+    if scraper is None:
+        return False
+    try:
+        return scraper.slug_from(slug, url) == slug
+    except Exception:  # noqa: BLE001 - a url the scraper cannot parse is not usable
+        return False
 
 
 def search(slug: str, workers: int) -> list[tuple[str, int]]:
@@ -204,10 +233,13 @@ def main() -> int:
             dead_only.append((old_ats, old_slug))
             print(f"  dead {old_ats}:{old_slug:<32} (no known replacement)", flush=True)
             continue
+        # From here the source is known dead, so it is recorded whatever becomes of the
+        # destination. Refusing an unproven replacement is not a reason to keep fetching a 404.
         if new_ats not in PROBES:
+            dead_only.append((old_ats, old_slug))
             print(
-                f"  skip {old_ats}:{old_slug} -> {new_ats}:{new_slug} "
-                f"— no probe for {new_ats}, so we could not scrape it either",
+                f"  dead {old_ats}:{old_slug:<32} (no probe for {new_ats}; "
+                "we could not scrape the replacement either)",
                 flush=True,
             )
             continue
@@ -215,10 +247,11 @@ def main() -> int:
             verdict, jobs = PROBES[new_ats](new_slug, "")
         except Exception:  # noqa: BLE001 - an unreachable target is not a confirmed move
             verdict, jobs = "error", None
-        if verdict != "live" or not (jobs or 0):
+        if verdict != liveness.LIVE or not (jobs or 0):
+            dead_only.append((old_ats, old_slug))
             print(
-                f"  skip {old_ats}:{old_slug} -> {new_ats}:{new_slug} "
-                f"— target probed {verdict} ({jobs or 0} jobs), not written",
+                f"  dead {old_ats}:{old_slug:<32} (target {new_ats}:{new_slug} probed "
+                f"{verdict} with {jobs or 0} jobs, so not written)",
                 flush=True,
             )
             continue
@@ -242,34 +275,10 @@ def main() -> int:
         return 0
 
     touched = set()
-    for old_ats, slug, hits, new_slug in moved:
-        old = ledger(old_ats)
-        if slug in old:
-            row = old[slug]
-            old[slug] = liveness.Verdict(
-                old_ats, slug, row.url, liveness.DEAD, None, today
-            )
-            touched.add(old_ats)
-        new_ats, jobs = hits[0]  # the board carrying the most jobs
-        new = ledger(new_ats)
-        template = url_template(new_ats, new)
-        if template is None:
-            print(
-                f"  skip {new_ats}:{new_slug} — no URL shape to infer from", flush=True
-            )
-            continue
-        existing = new.get(new_slug)
-        new[new_slug] = liveness.Verdict(
-            new_ats,
-            new_slug,
-            existing.url if existing else template.format(tenant=new_slug),
-            liveness.LIVE,
-            jobs,
-            today,
-        )
-        touched.add(new_ats)
 
-    for old_ats, old_slug in dead_only:
+    def bury(old_ats: str, old_slug: str) -> None:
+        """Record a Board that probed dead. Safe to call for a move whose destination fell through:
+        the source's own 404 is what justifies this, not the existence of a replacement."""
         old = ledger(old_ats)
         if old_slug in old:
             row = old[old_slug]
@@ -277,6 +286,40 @@ def main() -> int:
                 old_ats, old_slug, row.url, liveness.DEAD, None, today
             )
             touched.add(old_ats)
+
+    for old_ats, slug, hits, new_slug in moved:
+        new_ats, jobs = hits[0]  # the board carrying the most jobs
+        new = ledger(new_ats)
+        template = url_template(new_ats, new)
+        if template is None:
+            # write nothing: burying the source here would delist a live Board and put no
+            # replacement in its place, which is strictly worse than leaving the row stale
+            print(
+                f"  skip {old_ats}:{slug} -> {new_ats}:{new_slug} "
+                "— no URL shape to infer from, source left untouched",
+                flush=True,
+            )
+            continue
+        existing = new.get(new_slug)
+        url = existing.url if existing else template.format(tenant=new_slug)
+        if not derives_back(new_ats, new_slug, url):
+            # the url column is not decoration: `load_active_companies` feeds it to `slug_from` to
+            # rebuild the slug. A url the scraper reads back as something else would silently
+            # scrape the wrong Board, so refuse it rather than infer harder.
+            print(
+                f"  skip {old_ats}:{slug} -> {new_ats}:{new_slug} — inferred url {url!r} "
+                "does not read back as that slug, source left untouched",
+                flush=True,
+            )
+            continue
+        new[new_slug] = liveness.Verdict(
+            new_ats, new_slug, url, liveness.LIVE, jobs, today
+        )
+        touched.add(new_ats)
+        bury(old_ats, slug)  # only once the replacement is actually in the ledger
+
+    for old_ats, old_slug in dead_only:
+        bury(old_ats, old_slug)
 
     for ats in sorted(touched):
         liveness.write(LEDGER / f"{ats}.csv", ledgers[ats].values())
