@@ -115,7 +115,7 @@ endpoint 503 — and the rest of the Space is unaffected.
 The sign-in wall (ADR-0042) adds one more **Space** secret: `SECRET_KEY`, a long random string
 the session cookie is signed with (`python -c "import secrets; print(secrets.token_hex(32))"`).
 The wall turns on only when both `SECRET_KEY` and `GOOGLE_CLIENT_ID` are set; until then the
-page stays open and anonymous. Rotating `SECRET_KEY` signs every user out (their cookies stop
+page stays open and anonymous. Rotating `SECRET_KEY` signs everyone out (their cookies stop
 verifying) and breaks nothing else.
 
 **Agents never set, read, or copy secrets** — the permission layer blocks it and that's correct.
