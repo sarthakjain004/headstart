@@ -3,7 +3,11 @@
 - Status: Accepted
 - Date: 2026-07-28
 - Amended by [ADR-0033](0033-state-fetch-retry-budget.md): the 3×/30 s–60 s retry budget described
-  below was re-sized after production measurement (the fail-closed semantics are unchanged).
+  below was re-sized after production measurement, and its 2026-08-11 amendment replaced the
+  `list_repo_files` tree walk with `remote_files` (one `repo_info(expand=["siblings"])` request) and
+  made the waits follow HF's `RateLimit` header. The fail-closed semantics are unchanged throughout —
+  `remote_files` additionally raises when the Hub answers without a `siblings` list, rather than
+  reading that as an empty repo.
 - Guards the download → mutate → upload cycle of [ADR-0020](0020-free-tier-deployment.md) across
   every stage of the sharded run ([ADR-0025](0025-parallelize-nightly-pipeline.md),
   [ADR-0026](0026-parallelize-nightly-scrape.md)). Changes no eviction, prune, or partial-harvest
@@ -49,7 +53,7 @@ actually arrived.
 **Never publish state derived from a prior state you failed to load.**
 
 **Ask the Hub what exists, then assert it landed.** `headstart.ingest.state_fetch` replaces all
-four inline downloads. It calls `list_repo_files` first — which *raises* on a 429 instead of falling
+four inline downloads. It lists the repo first — which *raises* on a 429 instead of falling
 back — then downloads, then checks every matched file is on disk, retrying 3× with 30 s/60 s backoff
 to mirror `up()`. The download path previously had no retry at all, which is why a transient failure
 became state loss instead of a wait.
@@ -101,7 +105,7 @@ every 2-4 hours and the alternative is a silent 95% index deletion, that is the 
 `_load_store`'s missing-manifest abort — a sign the "don't publish garbage" rule keeps being
 rediscovered locally rather than stated once. Worth watching, not worth centralising yet.
 
-One hole is knowingly left open. When `list_repo_files` succeeds but matches nothing, the fetch
+One hole is knowingly left open. When the listing succeeds but matches nothing, the fetch
 requires nothing and the run bootstraps — which is correct for a genuine first run, and wrong if
 `HF_DATASET` ever points at an emptied or mistyped repo. Closing it needs a witness that survives a
 failed fetch, and the obvious candidate (the committed liveness ledger) is present on a fresh fork
