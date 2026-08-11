@@ -4,7 +4,11 @@ The property under test is the one whose absence cost run 30304173982 its state:
 lists files that the fetch then fails to deliver, the caller must be told, not left with an empty
 dir that reads as a legitimate first run. The remote listing is what makes that decidable, so the
 two pure halves — which remote files a pattern set asks for, and which of those failed to land —
-are tested directly; the fetch itself is I/O.
+are tested directly; the download itself is I/O.
+
+The rest is what the Hub tells us and how we answer it (ADR-0033's amendment): the one-line failure
+`reason_for` publishes to an annotation, the window `reset_after` reads out of a 429, and
+`remote_files` refusing to read a missing `siblings` list as an empty repo.
 """
 
 from __future__ import annotations
@@ -75,7 +79,7 @@ def test_reason_survives_an_error_carrying_no_response() -> None:
     )
 
 
-def test_reset_after_reads_the_hubs_own_window(monkeypatch) -> None:
+def test_reset_after_reads_the_hubs_own_window() -> None:
     """HF answers a 429 with `RateLimit: "api";r=<left>;t=<seconds to reset>`. Quotas are fixed
     5-minute windows, so `t` is the only wait that actually clears one — guessing at it is what
     made all 10 retries of 2026-08-11 fail."""
