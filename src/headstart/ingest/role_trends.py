@@ -30,49 +30,65 @@ _log = log.get(__name__, __spec__)
 
 _DB = REPO_ROOT / "data" / "lancedb"
 _CENTROIDS = REPO_ROOT / "data" / "state" / "role_centroids"
+_FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0040)
 _LEDGER = REPO_ROOT / "data" / "state" / "role_trends.csv"
 
-_COLUMNS = ("ts", "version", "cluster", "label", "band", "count")
+_COLUMNS = ("ts", "version", "family", "band", "count")
 
 
 def count_groups(
-    rows, centroids, manifest
-) -> dict[tuple[int, str], int]:  # (cluster, band) -> count
-    """Assign every served row to (family centroid, experience band) and count."""
+    rows, centroids, families: dict[int, str | None]
+) -> tuple[dict[tuple[str, str], int], int]:
+    """Count served rows into ``(family, band)`` groups; non-tech rows are counted apart.
+
+    Returns ``(counts, non_tech)``. Rows whose cluster maps to None are the tech filter's
+    known creep (ADR-0017 is recall-biased on purpose) — kept out of the role groups, but
+    returned as one number so the ledger carries a filter-health series (ADR-0040)."""
     import numpy as np
 
     vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False)).astype(
         "float32", copy=False
     )
-    families = roles.assign(vectors, centroids)
+    clusters = roles.assign(vectors, centroids)
     min_years = rows["min_years"].to_pylist()
     titles = rows["title"].to_pylist()
     employment = rows["employment_type"].to_pylist()
 
-    counts: dict[tuple[int, str], int] = {}
-    for family, years, title, etype in zip(families, min_years, titles, employment):
-        key = (int(family), roles.band(years, title, etype))
+    counts: dict[tuple[str, str], int] = {}
+    non_tech = 0
+    for cluster, years, title, etype in zip(clusters, min_years, titles, employment):
+        family = families[int(cluster)]
+        if family is None:
+            non_tech += 1
+            continue
+        key = (family, roles.band(years, title, etype))
         counts[key] = counts.get(key, 0) + 1
-    return counts
+    return counts, non_tech
 
 
 def append_ledger(
-    ledger: Path, counts: dict[tuple[int, str], int], manifest: dict, ts: str
+    ledger: Path,
+    counts: dict[tuple[str, str], int],
+    non_tech: int,
+    version: int,
+    ts: str,
 ) -> int:
-    """Append one row per non-empty group, header on first write. Returns rows written."""
-    labels = {c["id"]: c["label"] for c in manifest["clusters"]}
+    """Append one row per non-empty group + the non-tech diagnostic. Header on first write.
+
+    The diagnostic rides the same file as ``(non-tech, all)`` — one number per run, unbanded
+    because a band on a Data Entry Clerk means nothing. The chart filters it out; its trend is
+    the tech filter's health over time. Returns rows written."""
     fresh = not ledger.exists()
     ledger.parent.mkdir(parents=True, exist_ok=True)
     with ledger.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         if fresh:
             writer.writerow(_COLUMNS)
-        for (cluster, band), n in sorted(counts.items()):
-            writer.writerow(
-                [ts, manifest["version"], cluster, labels.get(cluster, ""), band, n]
-            )
+        for (family, band), n in sorted(counts.items()):
+            writer.writerow([ts, version, family, band, n])
+        writer.writerow([ts, version, roles.NON_TECH, "all", non_tech])
         fh.flush()
-    return len(counts)
+    return len(counts) + 1
 
 
 def main() -> int:
@@ -80,6 +96,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", default=str(_DB))
     ap.add_argument("--centroids", type=Path, default=_CENTROIDS)
+    ap.add_argument("--families", type=Path, default=_FAMILIES)
     ap.add_argument("--ledger", type=Path, default=_LEDGER)
     args = ap.parse_args()
 
@@ -95,6 +112,7 @@ def main() -> int:
     from headstart.search import PROD_TABLE
 
     centroids, manifest = roles.load(args.centroids)
+    families = roles.load_families(args.families, manifest)
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     n = table.count_rows()
     rows = (
@@ -103,19 +121,25 @@ def main() -> int:
         .limit(max(n, 1))
         .to_arrow()
     )
+    named = len({f for f in families.values() if f is not None})
     _log.info(
-        f"assigning {n} served rows to {manifest['k']} families "
+        f"assigning {n} served rows to {named} families via {manifest['k']} clusters "
         f"(centroid version {manifest['version']})"
     )
 
-    counts = count_groups(rows, centroids, manifest)
+    counts, non_tech = count_groups(rows, centroids, families)
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    groups = append_ledger(args.ledger, counts, manifest, ts)
+    written = append_ledger(args.ledger, counts, non_tech, manifest["version"], ts)
     top = sorted(counts.items(), key=lambda kv: -kv[1])[:5]
-    labels = {c["id"]: c["label"] for c in manifest["clusters"]}
     _log.info(
-        f"appended {groups} group rows @ {ts} -> {args.ledger} | top: "
-        + ", ".join(f"{labels.get(c, c)}/{band} {n}" for (c, band), n in top)
+        f"appended {written} rows @ {ts} -> {args.ledger} | top: "
+        + ", ".join(f"{family}/{band} {c}" for (family, band), c in top)
+    )
+    _log.info(
+        f"non-tech: {non_tech} of {n} served rows ({100 * non_tech / n:.1f}% — the "
+        "ADR-0017 filter's creep) excluded from the chart"
+        if n
+        else "non-tech: 0 of 0 served rows"
     )
     return 0
 

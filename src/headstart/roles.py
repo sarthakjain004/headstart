@@ -44,8 +44,50 @@ def save(store: Path, centroids: np.ndarray, manifest: dict[str, Any]) -> None:
 
 
 def assign(vectors: np.ndarray, centroids: np.ndarray) -> np.ndarray:
-    """Nearest-centroid family per row — cosine via one matmul (both sides unit-normalized)."""
+    """Nearest-centroid cluster per row — cosine via one matmul (both sides unit-normalized)."""
     return np.argmax(vectors @ centroids.T, axis=1)
+
+
+NON_TECH = "non-tech"  # the reserved family: counted as a diagnostic, never charted
+
+
+def load_families(path: Path, manifest: dict[str, Any]) -> dict[int, str | None]:
+    """The curated cluster → family map: ``{cluster_id: family_name}``, None where the cluster
+    is non-tech (ADR-0040).
+
+    k-means clusters are raw material, not the taxonomy: a fit splits one role family across
+    several clusters by seniority or phrasing, and concentrates the tech filter's non-tech
+    creep (retail "front end", data-entry spam, manufacturing/civil engineering) into clusters
+    of its own. The map is curated and lives in git — it is reviewable content, unlike the
+    generated centroids.
+
+    Validated hard, because both failure modes are silent: a cluster missing from the map
+    would drop out of every chart unnoticed, and a map written against a different fit would
+    label rows with another fit's families.
+    """
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    if spec["centroid_version"] != manifest["version"]:
+        raise ValueError(
+            f"{path} maps centroid version {spec['centroid_version']}, but the store holds "
+            f"version {manifest['version']} — re-curate the map after a refit (ADR-0040)"
+        )
+    mapping: dict[int, str | None] = {}
+    for family in spec["families"]:
+        for cluster in family["clusters"]:
+            if cluster in mapping:
+                raise ValueError(f"{path}: cluster {cluster} mapped twice")
+            mapping[cluster] = family["name"]
+    for cluster in spec["non_tech"]["clusters"]:
+        if cluster in mapping:
+            raise ValueError(f"{path}: cluster {cluster} mapped twice")
+        mapping[cluster] = None
+    missing = sorted(set(range(manifest["k"])) - mapping.keys())
+    if missing:
+        raise ValueError(
+            f"{path} leaves cluster(s) {missing} unmapped — every cluster must land in a "
+            "family or in non_tech, or its rows vanish from the chart"
+        )
+    return mapping
 
 
 def band(min_years: int | None, title: str | None, employment_type: str | None) -> str:

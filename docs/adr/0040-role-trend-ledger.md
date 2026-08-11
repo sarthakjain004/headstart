@@ -59,6 +59,56 @@ run stale.
   CI (`docs/LLM_API.md`); routing every run's titles through it would put private
   infrastructure on the critical path. LLM use stays one-off (cluster naming).
 
+## Amendment (2026-08-11): raw clusters are not the taxonomy
+
+The first fit (version 1, K=40 chosen by the sweep, 435,186 vectors, sampled silhouette
+**0.032**) shipped and was read before any ledger was written. It showed two things the
+original decision assumed away:
+
+- **The clusters absorb the tech filter's creep, and it is not small.** Cluster 38 (1,077
+  rows) was *retail* front-end ("Teammate Endzone & Loyalty (Front End)"); cluster 23 (5,595)
+  was work-from-home data-entry spam; clusters 34/35/39/19 (~70,000 combined) were
+  manufacturing, civil and facilities engineering (Quality, Supplier Quality, Project,
+  Building, Site, Field Service, Operating Engineer). ADR-0017's filter is recall-biased by
+  design, so this is expected — but charting it unchanged would put "Retail Front End" on a
+  tech-trends graph.
+- **The family axis partly re-derives the seniority axis.** Clusters 30 (Senior SWE), 9
+  (SWE/Staff), 29 and 13 (Lead/Principal SWE) and 36 (Senior mixed) are one family split by
+  level — precisely what the band axis exists to express. Charting them separately fragments
+  the largest trend line five ways and double-counts seniority.
+
+So **k-means output is raw material, not the taxonomy**. Two changes:
+
+1. **Refit at a fixed higher K** (version 2, K=72) — deliberately *not* by silhouette sweep,
+   which measures separation rather than the merge-friendliness actually wanted; on this data
+   a higher-K sweep would simply return its lowest candidate. Finer clusters mix fewer roles,
+   so the curation below has cleaner material.
+2. **A curated cluster → family map**, `config/role_families.json`, in **git rather than the
+   manifest**: it is reviewable content, unlike the generated centroids, and a PR diff is the
+   right place to argue about what counts as a family. `roles.load_families` validates it hard
+   — the version must match the fit, no cluster may be mapped twice, and **every** cluster must
+   land in a family or in `non_tech`, because an unmapped cluster would silently vanish from
+   every chart. Clusters mapped to `non_tech` are excluded from the role groups and counted
+   into one unbanded `(non-tech, all)` ledger row per run: a standing ADR-0017 filter-health
+   series, free.
+
+Curating the map is therefore part of shipping a fit. A refit re-bases both the centroids and
+the map (both carry the version), which is the re-base this ADR already required.
+
+**Outcome of version 2** (K=72, 438,424 rows, sampled silhouette 0.038). The finer fit
+separated cleanly where version 1 blurred: Java, Python, mobile, SRE, cloud, network, DBA and
+data-centre roles each got their own cluster instead of being folded into a generic
+"developer" blob. Curated into **24 families**, the largest being software-engineering (27.7%,
+itself the merge of 20 clusters k-means had split by seniority and phrasing), AI/ML (6.9%) and
+systems-engineering (5.3%).
+
+**22.6% of the served index (98,949 rows) mapped to non-tech** — industrial and manufacturing
+engineering (Process, Quality, Automation, semiconductor fab), civil and facilities (Project,
+Site, Building, Water/Wastewater), field service and maintenance, gig/data-entry listings, and
+retail. That is a direct measurement of ADR-0017's recall bias, which had never been
+quantified; the `(non-tech, all)` series now tracks it every run, and it is the number to
+watch if the tech filter is ever tightened.
+
 ## Consequences
 
 - Ships in three parts: centroids + this ADR; the `role_trends` merge step + workflow wiring;

@@ -8,6 +8,7 @@ warning + exit 0 — trends must never sink a run that already scraped and embed
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -41,22 +42,32 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
     )
 
 
-def _centroids(store: Path) -> None:
-    centroids = np.eye(
-        2, _DIM, dtype=np.float32
-    )  # family 0 = x-axis, family 1 = y-axis
+def _centroids(store: Path, families_path: Path, non_tech: list[int] = []) -> None:
+    """Three orthogonal clusters + the curated map: 0,1 are tech families, 2 is non-tech."""
+    centroids = np.eye(3, _DIM, dtype=np.float32)
     roles.save(
         store,
         centroids,
         {
             "version": 1,
-            "k": 2,
+            "k": 3,
             "dim": _DIM,
-            "clusters": [
-                {"id": 0, "label": "backend engineer"},
-                {"id": 1, "label": "data scientist"},
-            ],
+            "clusters": [{"id": i, "label": f"raw {i}"} for i in range(3)],
         },
+    )
+    families_path.parent.mkdir(parents=True, exist_ok=True)
+    families_path.write_text(
+        json.dumps(
+            {
+                "centroid_version": 1,
+                "families": [
+                    {"name": "software-engineering", "clusters": [0]},
+                    {"name": "data-science", "clusters": [1]},
+                ],
+                "non_tech": {"clusters": [2] + non_tech},
+            }
+        ),
+        encoding="utf-8",
     )
 
 
@@ -71,6 +82,8 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             str(tmp_path / "db"),
             "--centroids",
             str(tmp_path / "rc"),
+            "--families",
+            str(tmp_path / "families.json"),
             "--ledger",
             str(ledger),
         ],
@@ -79,9 +92,11 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
     return ledger
 
 
-def test_counts_served_rows_into_version_cluster_band_groups(tmp_path, monkeypatch):
-    _centroids(tmp_path / "rc")
-    x, y = [1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]
+def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypatch):
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    x = [1.0, 0.0, 0.0, 0.0]  # -> cluster 0, family software-engineering
+    y = [0.0, 1.0, 0.0, 0.0]  # -> cluster 1, family data-science
+    z = [0.0, 0.0, 1.0, 0.0]  # -> cluster 2, NON-TECH
     _table(
         tmp_path / "db",
         [
@@ -108,27 +123,27 @@ def test_counts_served_rows_into_version_cluster_band_groups(tmp_path, monkeypat
             },
             {
                 "id": "d",
-                "title": "Data Scientist",
+                "title": "Data Entry Clerk",
                 "employment_type": None,
-                "min_years": None,
-                "vector": y,
+                "min_years": 2,
+                "vector": z,
             },
         ],
     )
     ledger = _run(tmp_path, monkeypatch)
 
-    rows = list(csv.DictReader(ledger.open()))
-    groups = {
-        (r["cluster"], r["band"]): (r["count"], r["label"], r["version"]) for r in rows
-    }
-    assert groups[("0", "senior")] == ("2", "backend engineer", "1")
-    assert groups[("1", "intern")] == ("1", "data scientist", "1")
-    assert groups[("1", "unspecified")] == ("1", "data scientist", "1")
-    assert len(rows) == 3  # only non-empty groups
+    rows = {(r["family"], r["band"]): r["count"] for r in csv.DictReader(ledger.open())}
+    assert (
+        rows[("software-engineering", "senior")] == "2"
+    )  # 5 and 6 years band together
+    assert rows[("data-science", "intern")] == "1"
+    # the non-tech row is the diagnostic: one unbanded number, never a chart series
+    assert rows[("non-tech", "all")] == "1"
+    assert ("data-science", "mid") not in rows  # only non-empty groups
 
 
 def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
-    _centroids(tmp_path / "rc")
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
     _table(
         tmp_path / "db",
         [
@@ -145,8 +160,8 @@ def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
     _run(tmp_path, monkeypatch)  # second run appends
 
     lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,cluster,label,band,count"
-    assert len(lines) == 3  # header + one group per run
+    assert lines[0] == "ts,version,family,band,count"
+    assert len(lines) == 5  # header + (one group + the non-tech diagnostic) per run
     assert sum(1 for line in lines if line.startswith("ts,")) == 1
 
 
