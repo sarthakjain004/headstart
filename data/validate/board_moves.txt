@@ -11,6 +11,22 @@ ashby       atomicsemi                    ashby     fab2            # Atomic Sem
 ashby       august                        ashby     august-health   # same ATS, hyphenated slug
 ashby       accelevents                   workable  accelevents     # same slug, provider changed
 #
+# Found by per-company research over the boards that 404'd (batches covering 93 of the 292).
+# Rebrands and renames dominate; a same-slug sweep cannot see any of these.
+greenhouse  capitalrx          greenhouse  judihealth              # Capital Rx rebranded to Judi Health
+greenhouse  cadencesolutions   greenhouse  solutions               # cadence.care
+greenhouse  cloud9cannabis     greenhouse  cloud9                  # medium: jobs are the same dispensary chain
+greenhouse  loyal              greenhouse  loyal36                 # dog-longevity biotech
+ashby       charta-health      ashby       chartahealth            # stray hyphen in the recorded slug
+ashby       medal              ashby       generalintuition-medal  # Medal rebranded to General Intuition
+greenhouse  azumo              workable    azumo                   # same slug: the sweep's Workable leg 429'd
+greenhouse  karmanplus         workable    karmanplus              # same slug: ditto
+#
+# Rejected as different legal entities, on the same rule that rejected attune -> pinnacolassurance.
+# Both are already live in the ledger anyway, so nothing is lost by not linking them:
+#   ashby:carbyne -> greenhouse:axon   Axon acquired Carbyne; those 485 jobs are Axon's, not Carbyne's.
+#   ashby:certn   -> ashby:HighlightTA An RPO hosting Certn's roles; already carried as `highlightta`.
+#
 # Dead where they stand, with no destination we are willing to assert. `-` records only the half
 # that is proven: the Board 404s, so it must stop being scraped. Recording an unproven destination
 # would be worse than recording none, but leaving the source `live` keeps the pipeline fetching a
