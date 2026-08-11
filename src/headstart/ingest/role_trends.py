@@ -2,16 +2,16 @@
 """Append this run's role-group counts to the trends ledger (ADR-0040) — merge stage.
 
 Runs after ``index sync`` and ``index prune``, so it counts the **served stock**: every row
-still in the ``jobs`` table is assigned to its nearest frozen role-family centroid
-(``headstart.roles``) and banded by the experience columns the table already carries, and one
-``(ts, version, cluster, label, band, count)`` row per non-empty group is appended to
-``data/state/role_trends.csv``. Series identity keys on ``(version, cluster)`` — ``label`` is
-display text that may be polished later without breaking a line, and ``version`` changes only
-on an explicit centroid refit (a re-base, ADR-0040).
+still in the ``jobs`` table is assigned to its nearest frozen centroid, that cluster is mapped
+to a curated role family (``config/role_families.json``), the row is banded by the experience
+columns the table already carries, and one ``(ts, version, family, band, count)`` row per
+non-empty group is appended to ``data/state/role_trends.csv`` — plus one unbanded
+``(non-tech, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
+changes only on an explicit centroid refit (a re-base, ADR-0040).
 
-Degrades rather than dies: with no centroid store on disk (the fit hasn't shipped, or the
-join's state artifact was lost) it logs a warning and exits 0 — trends must never sink a run
-that already scraped and embedded successfully.
+Degrades rather than dies: without the centroid store or the family map on disk (the fit
+hasn't shipped, or the join's state artifact was lost) it logs a warning and exits 0 — trends
+must never sink a run that already scraped and embedded successfully.
 
 Run: python -m headstart.ingest.role_trends
 """
@@ -22,6 +22,8 @@ import argparse
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
+
+import numpy as np
 
 from headstart import log, roles
 from headstart.ingest import REPO_ROOT
@@ -44,11 +46,9 @@ def count_groups(
     Returns ``(counts, non_tech)``. Rows whose cluster maps to None are the tech filter's
     known creep (ADR-0017 is recall-biased on purpose) — kept out of the role groups, but
     returned as one number so the ledger carries a filter-health series (ADR-0040)."""
-    import numpy as np
-
-    vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False)).astype(
-        "float32", copy=False
-    )
+    # to_numpy on the (possibly chunked) vector column yields one array per row; stacking is
+    # row-aligned with the other columns' to_pylist across chunk boundaries.
+    vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
     clusters = roles.assign(vectors, centroids)
     min_years = rows["min_years"].to_pylist()
     titles = rows["title"].to_pylist()
@@ -56,7 +56,9 @@ def count_groups(
 
     counts: dict[tuple[str, str], int] = {}
     non_tech = 0
-    for cluster, years, title, etype in zip(clusters, min_years, titles, employment):
+    for cluster, years, title, etype in zip(
+        clusters, min_years, titles, employment, strict=True
+    ):
         family = families[int(cluster)]
         if family is None:
             non_tech += 1
@@ -100,10 +102,19 @@ def main() -> int:
     ap.add_argument("--ledger", type=Path, default=_LEDGER)
     args = ap.parse_args()
 
-    if not (args.centroids / "manifest.json").exists():
+    # Both inputs are checked, not just the centroids: the map ships in git while the
+    # centroids ride the state artifact, so they go missing for different reasons — and the
+    # step is `continue-on-error`, which would turn an unguarded FileNotFoundError into a
+    # green run that silently never accrues a row.
+    missing = [
+        str(p)
+        for p in (args.centroids / "manifest.json", args.families)
+        if not p.exists()
+    ]
+    if missing:
         _log.warning(
-            f"no centroid store at {args.centroids} — skipping trends this run "
-            "(fit one with the cluster-roles workflow, ADR-0040)"
+            f"skipping trends this run — missing {', '.join(missing)} (fit centroids with "
+            "the cluster-roles workflow; the family map ships in git, ADR-0040)"
         )
         return 0
 
@@ -115,6 +126,9 @@ def main() -> int:
     families = roles.load_families(args.families, manifest)
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     n = table.count_rows()
+    if not n:  # nothing to count, and np.stack has no empty case
+        _log.warning(f"served table '{PROD_TABLE}' is empty — no trend rows this run")
+        return 0
     rows = (
         table.search()
         .select(["vector", "min_years", "title", "employment_type"])
@@ -138,8 +152,6 @@ def main() -> int:
     _log.info(
         f"non-tech: {non_tech} of {n} served rows ({100 * non_tech / n:.1f}% — the "
         "ADR-0017 filter's creep) excluded from the chart"
-        if n
-        else "non-tech: 0 of 0 served rows"
     )
     return 0
 

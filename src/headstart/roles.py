@@ -73,6 +73,11 @@ def load_families(path: Path, manifest: dict[str, Any]) -> dict[int, str | None]
         )
     mapping: dict[int, str | None] = {}
     for family in spec["families"]:
+        if family["name"] == NON_TECH:
+            raise ValueError(
+                f"{path}: '{NON_TECH}' is reserved for the diagnostic series — a family of "
+                "that name would collide with it in the ledger"
+            )
         for cluster in family["clusters"]:
             if cluster in mapping:
                 raise ValueError(f"{path}: cluster {cluster} mapped twice")

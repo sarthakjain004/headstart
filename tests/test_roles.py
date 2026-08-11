@@ -121,3 +121,17 @@ def test_load_families_rejects_a_double_mapped_cluster(tmp_path):
     )
     with pytest.raises(ValueError, match=r"mapped twice"):
         roles.load_families(path, _manifest())
+
+
+def test_load_families_rejects_the_reserved_non_tech_name(tmp_path):
+    # a family so named would collide with the diagnostic series in the ledger
+    path = _spec(
+        tmp_path,
+        {
+            "centroid_version": 1,
+            "families": [{"name": roles.NON_TECH, "clusters": [0, 1, 2]}],
+            "non_tech": {"clusters": []},
+        },
+    )
+    with pytest.raises(ValueError, match=r"reserved"):
+        roles.load_families(path, _manifest())

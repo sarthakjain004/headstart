@@ -1,8 +1,9 @@
 """Tests for the trends-ledger step (headstart.ingest.role_trends, ADR-0040).
 
-Three contracts: served rows are counted into (centroid version, cluster, band) groups; the
-ledger appends run over run with one header; and a missing centroid store degrades to a
-warning + exit 0 — trends must never sink a run that already scraped and embedded.
+Contracts: served rows are counted into (family, band) groups with non-tech held apart; the
+ledger appends run over run with one header; and every degenerate input (missing centroids,
+missing family map, empty table) exits 0 without writing — trends must never sink a run that
+already scraped and embedded, nor silently look healthy while accruing nothing.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
     )
 
 
-def _centroids(store: Path, families_path: Path, non_tech: list[int] = []) -> None:
+def _centroids(store: Path, families_path: Path) -> None:
     """Three orthogonal clusters + the curated map: 0,1 are tech families, 2 is non-tech."""
     centroids = np.eye(3, _DIM, dtype=np.float32)
     roles.save(
@@ -64,7 +65,7 @@ def _centroids(store: Path, families_path: Path, non_tech: list[int] = []) -> No
                     {"name": "software-engineering", "clusters": [0]},
                     {"name": "data-science", "clusters": [1]},
                 ],
-                "non_tech": {"clusters": [2] + non_tech},
+                "non_tech": {"clusters": [2]},
             }
         ),
         encoding="utf-8",
@@ -172,3 +173,41 @@ def test_missing_centroid_store_degrades_to_noop(tmp_path, monkeypatch, caplog):
     ledger = _run(tmp_path, monkeypatch)  # no _centroids(), no table — must not matter
     assert not ledger.exists()
     assert any("skipping trends" in r.getMessage() for r in caplog.records)
+
+
+def test_missing_family_map_degrades_to_noop(tmp_path, monkeypatch, caplog):
+    """The centroids ride the HF state artifact but the map ships in git, so they go missing
+    for different reasons — and the workflow step is continue-on-error, which would turn an
+    unguarded FileNotFoundError into a green run that never accrues a row."""
+    import logging
+
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    (tmp_path / "families.json").unlink()
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch)
+    assert not ledger.exists()
+    assert any("families.json" in r.getMessage() for r in caplog.records)
+
+
+def test_empty_served_table_degrades_to_noop(tmp_path, monkeypatch, caplog):
+    # np.stack has no empty case, so an empty table must be caught before the count
+    import logging
+
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _table(tmp_path / "db", [])
+    caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch)
+    assert not ledger.exists()
+    assert any("is empty" in r.getMessage() for r in caplog.records)

@@ -12,6 +12,7 @@ The run is two symmetric halves — **plan → run → gather** — so each modu
     embed_run       stage 4  (matrix) embed one shard's Docs into a fragment
     embed_merge     stage 5  concatenate the embed fragments onto the store
     index           stage 5  sync -> prune -> compact the LanceDB table
+    role_trends     stage 5  count the served stock into role families (ADR-0040)
 
 One more entry point is not a stage but opens three of them (and ``cleanup-index``)::
 
@@ -19,7 +20,7 @@ One more entry point is not a stage but opens three of them (and ``cleanup-index
 
 Each is run as ``python -m headstart.ingest.<module>``. They live here rather than under
 ``scripts/`` because they are the product's pipeline, not one-off tooling: being importable
-makes them unit-testable without ``importlib`` path-loading, and keeps the run's 13 entry
+makes them unit-testable without ``importlib`` path-loading, and keeps the run's 14 entry
 points from being scattered across five ``scripts/`` subdirs mixed in with R&D scripts.
 
 Alongside them, the three helper modules with no consumer outside this package::

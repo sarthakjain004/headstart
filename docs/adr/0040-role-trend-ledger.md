@@ -34,14 +34,14 @@ purpose:
 **The centroids are frozen and versioned.** Assignment against fixed centroids keeps every
 trend line's identity stable run over run. Refitting re-bases the entire series, so it is an
 explicit decision — dispatch the workflow, bump `version`, and the ledger carries
-`centroid_version` per row so a chart never silently splices two bases.
+the centroid `version` per row so a chart never silently splices two bases.
 
 **Counts measure the live index stock, not the run's scrape.** The per-run snapshot is
 partial by design (shard budgets, board rotation), so its counts would swing for pipeline
-reasons. The merge stage — after `index sync` and `index prune` — reads `id, vector,
-min_years, title, employment_type` from the served table, assigns, bands, and appends
-`(ts, centroid_version, family, band, count)` rows to `data/state/role_trends.csv`, which
-rides the existing state upload (~K×6 rows per run, tiny forever).
+reasons. The merge stage — after `index sync` and `index prune` — reads `vector, min_years,
+title, employment_type` from the served table, assigns, bands, and appends
+`(ts, version, family, band, count)` rows to `data/state/role_trends.csv`, which rides the
+existing state upload (a few dozen rows per run, tiny forever).
 
 **Surface: the Space.** A `/trends` endpoint serves the ledger; the UI charts families with
 roll-down to bands. The Space already restarts after every run, so the chart is at most one
