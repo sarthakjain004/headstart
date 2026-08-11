@@ -73,9 +73,9 @@ this ADR all cut the pipeline's runtime and its timeout/upload failures.
 
 ## Amendment (2026-08-11): the duplicate representative is the *live* casing, not the lex-min one
 
-**Status:** accepted. Supersedes the lex-min rule in "A prune sweep" (b) above, and its clause (a)
-"mapped through `board_key()` **and lowercased**" — the keep-set now carries the ledger's own casing
-(matching is still case-insensitive).
+**Status:** accepted. Supersedes the lex-min rule in "A prune sweep" (b) above, and that paragraph's
+"the keep-set is the live ledger … mapped through `board_key()` **and lowercased**" — the keep-set
+now carries the ledger's own casing (matching is still case-insensitive).
 
 Two distinct churn loops were found in the 2026-08-10/11 CI logs, one per prune reason. The
 **off-Board** one is a plain defect: `PersonioScraper` ids each Job by the tenant
@@ -98,8 +98,9 @@ casing sorts below the live one, the two disagree permanently:
   ADR-0014's partial-harvest guard therefore protects it.
 
 So the fresh row churns in and out on every run while the fossil is both **immortal and never
-refreshed** — a permanently stale row that no code path can remove. Measured over the 8 runs of
-2026-08-10/11: 136–192 duplicate prunes per run, with individual ids
+refreshed** — a permanently stale row that no code path can remove. Measured over the 6 runs of
+2026-08-10/11 that reached the prune step (the other 2 aborted in `state_fetch`): 136–532 duplicate
+prunes per run, mean 217, with individual ids
 (`workday:tapestry/tapestry_careers:JR2221`) pruned in 3 separate runs. See
 `docs/pipeline/2026-08-11_first-logged-runs.md`.
 

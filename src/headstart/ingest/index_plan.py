@@ -128,9 +128,8 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
         native = jid.rsplit(":", 1)[1]
         groups[(canon, native)].append(jid)
     duplicate: list[str] = []
-    for (canon, native), ids in groups.items():
+    for (canon, _), ids in groups.items():
         if len(ids) > 1:
-            scraped = f"{live[canon]}:{native}"
-            kept = scraped if scraped in ids else sorted(ids)[0]
+            kept = next((i for i in ids if board_of(i) == live[canon]), sorted(ids)[0])
             duplicate.extend(i for i in ids if i != kept)
     return off_board, duplicate
