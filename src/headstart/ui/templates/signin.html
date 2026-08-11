@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HeadStart — sign in</title>
+<style>
+  /* A subset of index.html's tokens — just enough for one card. PR 3 restructures the page
+     into shared templates; until then this door stays deliberately tiny. */
+  :root{
+    --ground:#0E1220; --raise:#161B2C; --rule:#252C42; --ink:#EEF1F8; --ink-2:#A8B0C6;
+    --ink-3:#6F7896; --aqua:#12D6B4; --violet:#8B5CF6; --glow:rgba(18,214,180,.22);
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:ui-serif,"Iowan Old Style",Georgia,serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --ground:#F6F7FB; --raise:#FFFFFF; --rule:#E2E6F0; --ink:#131726; --ink-2:#4C5570;
+      --ink-3:#7A83A0; --aqua:#00806B; --violet:#5B34D6; --glow:rgba(0,128,107,.16); }
+  }
+  *{ box-sizing:border-box; } html,body{ margin:0; height:100%; }
+  body{ background:var(--ground); color:var(--ink); font:15px/1.55 var(--sans);
+    display:grid; place-items:center; }
+  .door{ background:var(--raise); border:1px solid var(--rule); border-radius:20px;
+    padding:38px 40px; max-width:400px; margin:20px; text-align:center; }
+  .mark{ width:34px; height:34px; border-radius:10px; margin:0 auto 14px; position:relative;
+    background:linear-gradient(135deg,var(--aqua),var(--violet));
+    box-shadow:0 0 0 1px rgba(255,255,255,.10) inset, 0 8px 20px var(--glow); }
+  .mark::after{ content:""; position:absolute; inset:10px 10px auto auto; width:8px; height:8px;
+    border-radius:50%; background:var(--ground); }
+  h1{ font:600 22px/1.2 var(--serif); margin:0 0 6px; }
+  h1 em{ font-style:normal; background:linear-gradient(100deg,var(--aqua),var(--violet));
+    -webkit-background-clip:text; background-clip:text; color:transparent; }
+  p{ color:var(--ink-2); font-size:13.5px; margin:0 0 22px; }
+  .g{ display:flex; justify-content:center; }
+  .note{ color:var(--ink-3); font-size:12.5px; margin-top:16px; min-height:1em; }
+</style></head><body>
+<div class="door">
+  <div class="mark"></div>
+  <h1>Head<em>Start</em></h1>
+  <p>Tech jobs read straight from company career boards, matched on meaning.
+     Sign in to search.</p>
+  <div class="g" id="gbtn"></div>
+  <div class="note" id="msg" role="status"></div>
+</div>
+<script>
+async function onCred(resp){
+  const msg = document.getElementById('msg');
+  try{
+    const r = await fetch('/auth/google', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ credential: resp.credential }) });
+    if (r.ok){ location.reload(); return; }
+    const d = await r.json().catch(() => ({}));
+    msg.textContent = d.error || ('Sign-in failed (' + r.status + ')');
+  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+}
+function initSignin(){
+  if (!window.google) return;
+  google.accounts.id.initialize({ client_id:'__GOOGLE_CLIENT_ID__', callback:onCred });
+  google.accounts.id.renderButton(document.getElementById('gbtn'),
+    { theme:'outline', size:'large' });
+}
+</script>
+<script src="https://accounts.google.com/gsi/client" async onload="initSignin()"></script>
+</body></html>

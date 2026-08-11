@@ -76,6 +76,7 @@
     background:var(--raise); color:var(--ink-2); cursor:pointer; font-size:15px; line-height:1;
     transition:transform var(--step), border-color var(--step), color var(--step); }
   .icon-btn:hover{ transform:translateY(-1px); border-color:var(--aqua); color:var(--aqua); }
+  #who{ max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ---- search ---- */
   .hero{ margin-bottom:22px; }
@@ -257,7 +258,7 @@
      shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
   @media (max-width:560px){
     .shell{ padding:18px 14px 60px; }
-    .count{ display:none; }              /* the index size is context, not a control */
+    .count, #who{ display:none; }        /* the index size is context, not a control */
     .searchbar{ flex-direction:column; }
     .go{ padding:15px; width:100%; }
     .hint{ gap:6px; }
@@ -284,6 +285,8 @@
       <h1>Head<em>Start</em></h1>
     </div>
     <div class="top-right">
+      <span class="note" id="who"></span>
+      <button class="ghost" id="signout" style="display:none" onclick="signOut()">Sign out</button>
       <span class="count"><b>__NJOBS__</b> jobs indexed</span>
       <button class="icon-btn" id="theme" onclick="flipTheme()" aria-label="Switch light or dark theme" title="Switch theme">◐</button>
     </div>
@@ -430,6 +433,20 @@ function flipTheme(){
   document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
 }
 function tryIt(btn){ el('q').value = btn.textContent.trim(); go(); }
+// The header identity. /me answers from the caller's own session cookie; when the sign-in
+// wall is off (or the caller somehow reached this page signed out) it stays blank.
+async function whoAmI(){
+  try{
+    const d = await (await fetch('/me')).json();
+    if (!d.auth || !d.email) return;
+    el('who').textContent = d.email;
+    el('signout').style.display = '';
+  }catch(e){}
+}
+async function signOut(){
+  try{ await fetch('/signout', { method:'POST' }); }catch(e){}
+  location.reload();
+}
 function toggleRail(){
   const rail = el('rail');
   const open = rail.classList.toggle('open');
@@ -701,6 +718,7 @@ function initAlerts(){
   google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
 showIntro();
+whoAmI();
 if (el('trends')) loadTrends(null);   // the panel is absent entirely until a ledger exists
 </script>
 <script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>
