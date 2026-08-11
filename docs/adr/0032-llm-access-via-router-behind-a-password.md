@@ -1,6 +1,7 @@
 # ADR-0032: LLM access goes through the router, behind a password
 
-- Status: Accepted
+- Status: Accepted; the password/IP gate is superseded by
+  [ADR-0041](0041-profile-stored-extraction.md)'s per-Account cap (the router path itself stands)
 - Date: 2026-07-28
 - Establishes how any HeadStart feature reaches an LLM. Scopes the first such feature, the
   **Résumé query**, against the filter-then-rank search design of
