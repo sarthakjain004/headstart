@@ -82,6 +82,12 @@ it, and neither was known when this ADR was written:
    headroom). `/api/datasets/{id}/tree/...` is an API-bucket call.
 2. **Every 429 carries the reset time**: `RateLimit: "api";r=<remaining>;t=<seconds to reset>`.
 
+Both were confirmed against the live Hub on 2026-08-11 rather than taken from the docs: a plain
+`GET /api/datasets/imPoseidon/headstart-index?expand=siblings` came back with
+`ratelimit: "api";r=994;t=28` and `ratelimit-policy: "fixed window";"api";q=1000;w=300` — a
+1,000-request quota over a 300-second fixed window, exactly as documented. Note HF sends the header
+**lower-cased**, so the lookup folds keys rather than trusting the caller's mapping type.
+
 So the ladder was guessing at a number the server was already sending, and guessing *low*: attempts
 land at 0/30/90/210/450 s, four of them inside about three and a half minutes. Each retry spends
 another API request in the very window it is waiting on, holding the bucket saturated. The measured
@@ -97,16 +103,26 @@ exponential ladder, which is why it stays. One header can carry several policies
 which bucket was blown, so `reset_after` takes the **longest** reset: it is the only one guaranteed
 to have cleared, and over-waiting is bounded by the budget below while under-waiting is the bug.
 
+**And stop rather than retry early.** If the budget cannot cover the window the Hub named, the fetch
+aborts instead of sleeping what it can afford and trying anyway: a truncated wait buys a request
+that is *known* to arrive inside a closed window, which is the precise habit this amendment exists
+to end. Measured across header shapes: `t=300` sleeps once and stops (not 300 then a doomed 150),
+`t=9999` aborts immediately having slept nothing, and `t=28` — the value the live Hub actually
+returned — gets four full attempts inside 112 s.
+
 **List in one request.** `list_repo_files` goes through `list_repo_tree(recursive=True)`, which
 pages at ~1,000 entries: two `/tree/` requests at our current 1,601 files, and another every ~1,000
 the repo grows by (it grew ~90 per run across these 8 runs — 1,048 → 1,601 — between compactions,
 ADR-0036). `remote_files` now reads the listing from `repo_info(expand=["siblings"])`, one
 `/api/datasets/{id}` request whatever the file count.
 
-Be honest about the size of this: it is 2 requests → 1, not the per-directory blow-out first
-supposed, so it is **not** on its own an explanation for exhausting a 1,000-request window. It earns
-its place because it is on the exact endpoint that 429'd, and because it stops growing. What is
-actually consuming the API bucket is not yet measured — see "Not addressed".
+Be honest about the size of this. The count sawtooths with compaction — measured on the live repo
+the same day, **1,601 files before a compaction and 42 after** — so the saving is one request per
+fetch at the top of the sawtooth and *zero* at the bottom. It is **not** on its own an explanation
+for exhausting a 1,000-request window. It earns its place by being constant rather than growing, and
+by being on the exact endpoint that 429'd. Both listings were diffed against the live repo: identical
+42 files, and identical selections for all three production pattern sets. What is actually consuming
+the API bucket remains unmeasured — see "Not addressed".
 
 It **fails closed** when the Hub answers without `siblings`: `DatasetInfo.siblings` is `None` there,
 and an empty listing would make `absent_locally` report nothing missing, i.e. exactly the

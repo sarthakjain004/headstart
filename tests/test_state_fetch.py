@@ -109,6 +109,16 @@ def test_reset_after_takes_the_longest_of_several_policies() -> None:
     assert sf.reset_after(exc) == 137
 
 
+def test_reset_after_reads_the_header_hf_actually_sends() -> None:
+    """Captured live 2026-08-11: HF sends these lower-cased, alongside
+    `ratelimit-policy: "fixed window";"api";q=1000;w=300`. The real response matches keys
+    case-insensitively; a plain mapping does not, so the lookup must not depend on the caller's
+    header type."""
+    exc = _hub_error(_HF_429, 429)
+    exc.response.headers = {"ratelimit": '"api";r=994;t=28'}  # type: ignore[attr-defined]
+    assert sf.reset_after(exc) == 28
+
+
 def test_reset_after_falls_back_to_retry_after() -> None:
     exc = _hub_error(_HF_429, 429)
     exc.response.headers = {"Retry-After": "90"}  # type: ignore[attr-defined]
@@ -201,8 +211,11 @@ def test_fetch_recovers_once_the_advised_window_passes(
 def test_fetch_fails_closed_and_stays_inside_the_budget(
     hub, monkeypatch, tmp_path
 ) -> None:
-    """A window that never reopens must still abort, and must not sleep past the budget the job
-    timeouts are sized against."""
+    """A window that never reopens must still abort, and must not sleep past the budget.
+
+    It must also not spend its last 150s on a retry it *knows* is early: with a 300s window the
+    budget affords one full wait and part of a second, and a truncated wait buys a request that is
+    guaranteed to 429 — the habit that lost both runs. So one sleep, then stop."""
     slept = _fake_hub(
         hub,
         monkeypatch,
@@ -211,6 +224,7 @@ def test_fetch_fails_closed_and_stays_inside_the_budget(
         headers={"RateLimit": '"api";r=0;t=300'},
     )
     assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
+    assert slept == [300]  # not [300, 150]
     assert sum(slept) <= sf._WAIT_BUDGET
 
 
