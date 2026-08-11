@@ -495,6 +495,10 @@ def auth_google():
 
 @app.route("/signout", methods=["POST"])
 def signout():
+    # Guarded like /auth/google: with no SECRET_KEY the session is Flask's NullSession,
+    # and clearing that raises rather than no-ops.
+    if not _AUTH_ON:
+        return jsonify({"error": "sign-in is not configured"}), 503
     session.clear()
     return jsonify({"ok": True})
 

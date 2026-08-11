@@ -200,6 +200,8 @@ def test_wall_off_keeps_the_page_open(app):
     assert b"jobs indexed" in client.get("/").data
     assert client.get("/search?q=").json == []
     assert client.get("/me").json == {"auth": False, "email": None}
+    # Not a 500: clearing a NullSession raises, so the route must refuse first.
+    assert client.post("/signout").status_code == 503
 
 
 def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
@@ -207,8 +209,14 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     page = client.get("/").data
     assert b"Sign in to search" in page
     assert b"jobs indexed" not in page
+    # The door's Google button carries the real client id — a drifted placeholder would
+    # ship a dead button on a page that otherwise renders fine.
+    assert b"client-id.example" in page
     assert client.get("/search?q=x").status_code == 401
     assert client.get("/trends").status_code == 401
+    assert client.post("/resume-to-query", json={}).status_code == 401
+    assert client.post("/subscribe", json={}).status_code == 401
+    assert client.post("/signout").status_code == 401
 
 
 def test_signin_flow(auth_app, monkeypatch):
