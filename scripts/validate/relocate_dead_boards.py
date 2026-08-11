@@ -96,18 +96,50 @@ def search(slug: str, workers: int) -> list[tuple[str, int]]:
     return sorted(found, key=lambda x: -x[1])
 
 
+def read_moves(path: Path) -> list[tuple[str, str, str, str]]:
+    """Curated ``old_ats old_slug new_ats new_slug`` rows (TSV, ``#`` comments allowed).
+
+    The search above only ever tries the *same* slug on another provider, so it is blind to a
+    company that moved and renamed — ``greenhouse:aerospike`` is live as ``rippling:aerospike-inc``,
+    and no amount of probing ``aerospike`` finds it. Those come from research rather than from a
+    sweep, so they are supplied explicitly. Each is still probed before anything is written: a
+    curated mapping is a hypothesis, and the ledger only records what answered.
+    """
+    moves = []
+    for line in path.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) != 4:
+            raise SystemExit(f"bad move line (want 4 fields): {line!r}")
+        moves.append(tuple(parts))  # type: ignore[arg-type]
+    return moves
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("ids", help="file of {ats}:{slug} lines for Boards that 404'd")
+    ap.add_argument(
+        "ids", nargs="?", help="file of {ats}:{slug} lines for Boards that 404'd"
+    )
+    ap.add_argument(
+        "--moves", type=Path, help="TSV of curated old_ats old_slug new_ats new_slug"
+    )
     ap.add_argument("--workers", type=int, default=14)
     ap.add_argument("--apply", action="store_true", help="write the ledger corrections")
     args = ap.parse_args()
+    if not args.ids and not args.moves:
+        ap.error("give an ids file, --moves, or both")
 
-    ids = [
-        ln.strip()
-        for ln in Path(args.ids).read_text().splitlines()
-        if ln.strip() and not ln.startswith("#")
-    ]
+    ids = (
+        [
+            ln.strip()
+            for ln in Path(args.ids).read_text().splitlines()
+            if ln.strip() and not ln.startswith("#")
+        ]
+        if args.ids
+        else []
+    )
     ledgers: dict[str, dict] = {}
 
     def ledger(ats: str) -> dict:
@@ -123,15 +155,42 @@ def main() -> int:
             stayed_dead.append(jid)
             print(f"  [{n}/{len(ids)}] {jid:<44} no live board anywhere", flush=True)
             continue
-        moved.append((old_ats, slug, hits))
+        moved.append((old_ats, slug, hits, slug))  # searched: the slug is unchanged
         print(
             f"  [{n}/{len(ids)}] {jid:<44} -> "
             + ", ".join(f"{a}({j})" for a, j in hits),
             flush=True,
         )
 
+    for old_ats, old_slug, new_ats, new_slug in (
+        read_moves(args.moves) if args.moves else []
+    ):
+        if new_ats not in PROBES:
+            print(
+                f"  skip {old_ats}:{old_slug} -> {new_ats}:{new_slug} "
+                f"— no probe for {new_ats}, so we could not scrape it either",
+                flush=True,
+            )
+            continue
+        try:
+            verdict, jobs = PROBES[new_ats](new_slug, "")
+        except Exception:  # noqa: BLE001 - an unreachable target is not a confirmed move
+            verdict, jobs = "error", None
+        if verdict != "live" or not (jobs or 0):
+            print(
+                f"  skip {old_ats}:{old_slug} -> {new_ats}:{new_slug} "
+                f"— target probed {verdict} ({jobs or 0} jobs), not written",
+                flush=True,
+            )
+            continue
+        moved.append((old_ats, old_slug, [(new_ats, jobs)], new_slug))
+        print(
+            f"  move {old_ats}:{old_slug:<32} -> {new_ats}:{new_slug} ({jobs} jobs)",
+            flush=True,
+        )
+
     print(f"\n{len(moved)} moved, {len(stayed_dead)} gone (of {len(ids)})", flush=True)
-    flow = collections.Counter((o, hits[0][0]) for o, _, hits in moved)
+    flow = collections.Counter((o, hits[0][0]) for o, _, hits, _ in moved)
     for (a, b), count in flow.most_common():
         print(f"  {a} -> {b}: {count}", flush=True)
 
@@ -140,7 +199,7 @@ def main() -> int:
         return 0
 
     touched = set()
-    for old_ats, slug, hits in moved:
+    for old_ats, slug, hits, new_slug in moved:
         old = ledger(old_ats)
         if slug in old:
             row = old[slug]
@@ -152,13 +211,15 @@ def main() -> int:
         new = ledger(new_ats)
         template = url_template(new_ats, new)
         if template is None:
-            print(f"  skip {new_ats}:{slug} — no URL shape to infer from", flush=True)
+            print(
+                f"  skip {new_ats}:{new_slug} — no URL shape to infer from", flush=True
+            )
             continue
-        existing = new.get(slug)
-        new[slug] = liveness.Verdict(
+        existing = new.get(new_slug)
+        new[new_slug] = liveness.Verdict(
             new_ats,
-            slug,
-            existing.url if existing else template.format(tenant=slug),
+            new_slug,
+            existing.url if existing else template.format(tenant=new_slug),
             liveness.LIVE,
             jobs,
             today,

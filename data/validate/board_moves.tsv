@@ -1,0 +1,25 @@
+# Boards that moved provider *and* changed slug, so the same-slug search in
+# scripts/validate/relocate_dead_boards.py cannot find them. Researched from each company's own
+# careers page, then probed before writing (`--moves`); a line here is a hypothesis, not a fact.
+#
+# old_ats  old_slug  new_ats  new_slug
+greenhouse  aerospike                     rippling  aerospike-inc   # ats.rippling.com/aerospike-inc/jobs
+greenhouse  affinity                      ashby     affinity.co     # Ashby slugs may contain a dot
+greenhouse  alleghenysciencetechnology    ashby     alleghenyst     # alleghenyst.com; the longer domain is parked
+ashby       attentivemobile               greenhouse attentive      # Attentive: cross-ATS *and* renamed
+ashby       atomicsemi                    ashby     fab2            # Atomic Semi renamed to Fab2
+ashby       august                        ashby     august-health   # same ATS, hyphenated slug
+ashby       accelevents                   workable  accelevents     # same slug, provider changed
+#
+# Researched but deliberately NOT applied:
+#   greenhouse:ascendanalytics -> bamboohr:ascendanalytics
+#       BambooHR has no scraper, so recording it live would promise a Board we cannot read.
+#   greenhouse:aurorainnovation -> ashby (private org)
+#       Hiring (~100 roles) but the Ashby org slug is not publicly derivable; seven guesses 404'd.
+#       Their own aurora.tech/api/jobs-index serves the full set if a one-off is ever wanted.
+#   greenhouse:ast -> greenhouse:astspacemobile
+#       Ambiguous: "AST" is also Allegheny Science & Technology, separately in this batch. A lead.
+#   greenhouse:attune -> greenhouse:pinnacolassurance
+#       That is the parent (Pinnacol), a different legal entity — it would mis-attribute the jobs.
+#   greenhouse:ascend -> greenhouse:ascend21
+#       Two live boards match the name (ascend21, ascendtogether); which one is unresolved.
