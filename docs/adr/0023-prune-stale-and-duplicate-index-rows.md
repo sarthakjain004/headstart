@@ -73,7 +73,17 @@ this ADR all cut the pipeline's runtime and its timeout/upload failures.
 
 ## Amendment (2026-08-11): the duplicate representative is the *live* casing, not the lex-min one
 
-**Status:** accepted, supersedes the lex-min rule in "A prune sweep" (b) above.
+**Status:** accepted. Supersedes the lex-min rule in "A prune sweep" (b) above, and its clause (a)
+"mapped through `board_key()` **and lowercased**" — the keep-set now carries the ledger's own casing
+(matching is still case-insensitive).
+
+Two distinct churn loops were found in the 2026-08-10/11 CI logs, one per prune reason. The
+**off-Board** one is a plain defect: `PersonioScraper` ids each Job by the tenant
+(`slug.split(".")[0]`) but inherited the default `board_key()` of `{ats}:{slug}`, and personio's
+slug is the whole host — so the keep-set held `personio:{tenant}.jobs.personio.com` while the rows
+carried `personio:{tenant}`, and all 2,740 live personio Boards pruned as off-Board on every run.
+Fixed by overriding `board_key()`; `base.py` already documented that contract. The **duplicate** one
+is the design flaw this amendment revises:
 
 The recurrence argument above — "scrape and prune agree on the representative, [so] a future scrape
 *re-sees* the kept rows" — is false, and CI logs show it failing every run. Both sides do apply the

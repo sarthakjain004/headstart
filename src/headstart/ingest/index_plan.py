@@ -116,10 +116,8 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
     the fossil's duplicate on every run, forever, while the fossil itself went stale and immortal.
     Falls back to lex-min when no row carries the live casing (the group is all fossils)."""
     live: dict[str, str] = {}
-    for board in keep:  # lex-min on collision, matching ``config._dedupe_boards``
-        canon = board.lower()
-        if canon not in live or board < live[canon]:
-            live[canon] = board
+    for board in sorted(keep):  # sorted so a caller's set order can't change the plan
+        live.setdefault(board.lower(), board)
     off_board: list[str] = []
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for jid in index_ids:
@@ -130,9 +128,9 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
         native = jid.rsplit(":", 1)[1]
         groups[(canon, native)].append(jid)
     duplicate: list[str] = []
-    for (canon, _native), ids in groups.items():
+    for (canon, native), ids in groups.items():
         if len(ids) > 1:
-            scraped = f"{live[canon]}:{_native}"
+            scraped = f"{live[canon]}:{native}"
             kept = scraped if scraped in ids else sorted(ids)[0]
             duplicate.extend(i for i in ids if i != kept)
     return off_board, duplicate
