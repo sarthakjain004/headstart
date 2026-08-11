@@ -33,8 +33,11 @@ HAR_Analysis/
 # Experiment captures — screenshots/HTML with anti-bot session tokens; keep local.
 experiment/
 
-# Local config and data inputs — keep out of the repo
-config/
+# Local config and data inputs — keep out of the repo. `config/*` rather than `config/`:
+# git cannot re-include a file whose parent DIRECTORY is excluded, and the curated role
+# taxonomy below must stay tracked (ADR-0040).
+config/*
+!config/role_families.json
 
 # Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
 data/scratch/

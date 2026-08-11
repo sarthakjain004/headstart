@@ -43,6 +43,9 @@ jobs:
           cp src/headstart/geo.py deploy/hf-space/geo.py
           cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
           cp src/headstart/resume_query.py deploy/hf-space/resume_query.py
+          # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
+          # these labels. Same single-source-of-truth reason as the modules above.
+          cp config/role_families.json deploy/hf-space/role_families.json
           # A package, not a flat file: its members import each other relatively, so the same
           # directory works as `headstart.alerts` in the repo and as top-level `alerts` here.
           rm -rf deploy/hf-space/alerts

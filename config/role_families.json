@@ -1,0 +1,83 @@
+{
+  "_comment": "Curated cluster -> role-family map for the trends ledger (ADR-0040). Keys on centroid_version: the cluster ids are meaningless against any other fit, so a refit re-curates this file. Every cluster of the fit must appear exactly once here or in non_tech - headstart.roles.load_families refuses to load otherwise, because an unmapped cluster would silently vanish from every chart. Cluster contents are in the fit's manifest.json (label + top_titles); the counts below are count_at_fit, kept as a sanity anchor for review.",
+  "centroid_version": 2,
+  "families": [
+    {
+      "name": "software-engineering",
+      "label": "Software Engineering (general)",
+      "clusters": [0, 7, 12, 13, 17, 21, 25, 30, 31, 34, 37, 38, 39, 41, 44, 48, 53, 63, 67, 71],
+      "note": "The catch-all for backend/frontend/fullstack/platform SWE titles that k-means split by seniority and phrasing rather than by domain. 71 is a location-boilerplate cluster ('Remote, Latin America') holding genuinely mixed tech roles; 48 is one Windows/Desktop posting replicated across ~30 cities."
+    },
+    {
+      "name": "web-development",
+      "label": "Web & .NET Development",
+      "clusters": [11],
+      "note": "Full Stack / .Net / Web / ServiceNow developer titles."
+    },
+    { "name": "java-development", "label": "Java Development", "clusters": [46] },
+    { "name": "python-development", "label": "Python Development", "clusters": [62] },
+    { "name": "mobile-development", "label": "Mobile Development", "clusters": [28] },
+    {
+      "name": "ai-ml",
+      "label": "AI / Machine Learning",
+      "clusters": [3, 51, 52],
+      "note": "51 is the startup-shaped cluster (Forward Deployed / GTM / Product Engineer alongside AI Engineer)."
+    },
+    { "name": "data-engineering", "label": "Data Engineering", "clusters": [55] },
+    { "name": "data-science", "label": "Data Science", "clusters": [60] },
+    { "name": "data-analytics", "label": "Data & Business Analytics", "clusters": [10] },
+    { "name": "security-engineering", "label": "Security Engineering", "clusters": [9] },
+    { "name": "devops", "label": "DevOps", "clusters": [58] },
+    {
+      "name": "sre-platform",
+      "label": "SRE & Platform Engineering",
+      "clusters": [2, 50]
+    },
+    { "name": "cloud-infrastructure", "label": "Cloud Infrastructure", "clusters": [22] },
+    { "name": "network-infrastructure", "label": "Network Infrastructure", "clusters": [32, 68] },
+    {
+      "name": "systems-engineering",
+      "label": "Systems Engineering",
+      "clusters": [56, 57, 70]
+    },
+    {
+      "name": "hardware-embedded",
+      "label": "Hardware, Firmware & Silicon",
+      "clusters": [5, 36, 59],
+      "note": "Firmware, ASIC/design verification, physical design. 36 mixes chip design with fab equipment maintenance."
+    },
+    { "name": "qa-test", "label": "QA & Test Engineering", "clusters": [1] },
+    { "name": "architecture", "label": "Solution & Enterprise Architecture", "clusters": [64] },
+    { "name": "engineering-management", "label": "Engineering Management", "clusters": [18] },
+    { "name": "tech-leadership", "label": "Tech Leads", "clusters": [23, 29] },
+    {
+      "name": "product-management",
+      "label": "Product & Technical Program Management",
+      "clusters": [20],
+      "note": "Mixed: Product Manager alongside founder/CTO and lead-scientist titles."
+    },
+    {
+      "name": "enterprise-platform",
+      "label": "SAP & Salesforce Platforms",
+      "clusters": [4, 26]
+    },
+    {
+      "name": "it-operations",
+      "label": "IT & Data Centre Operations",
+      "clusters": [16, 19, 24],
+      "note": "Sysadmin/DBA plus data-centre technicians — infrastructure operations, not software authoring."
+    },
+    { "name": "it-support", "label": "Technical Support", "clusters": [49] }
+  ],
+  "non_tech": {
+    "_comment": "Excluded from the chart, counted into one (non-tech, all) ledger row per run as an ADR-0017 filter-health series. These are what the recall-biased tech filter lets through, and the clustering concentrates them.",
+    "clusters": [6, 8, 14, 15, 27, 33, 35, 40, 42, 43, 45, 47, 54, 61, 65, 66, 69],
+    "reasons": {
+      "industrial-and-manufacturing": [6, 8, 14, 27, 43, 47, 65, 66],
+      "civil-and-facilities": [33, 54, 61],
+      "field-service-and-maintenance": [15, 35],
+      "gig-and-data-entry": [40, 42],
+      "retail-and-business-ops": [45, 69]
+    }
+  }
+}
