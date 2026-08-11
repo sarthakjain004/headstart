@@ -112,6 +112,12 @@ router box — kept out of this public repo on purpose), `LITELLM_MASTER_KEY` (r
 `agent-default`), `LLM_ROUTER_BASE`. Until they are set the feature ships dark — panel hidden,
 endpoint 503 — and the rest of the Space is unaffected.
 
+The sign-in wall (ADR-0042) adds one more **Space** secret: `SECRET_KEY`, a long random string
+the session cookie is signed with (`python -c "import secrets; print(secrets.token_hex(32))"`).
+The wall turns on only when both `SECRET_KEY` and `GOOGLE_CLIENT_ID` are set; until then the
+page stays open and anonymous. Rotating `SECRET_KEY` signs everyone out (their cookies stop
+verifying) and breaks nothing else.
+
 **Agents never set, read, or copy secrets** — the permission layer blocks it and that's correct.
 If a secret is missing or mis-scoped, tell the user exactly where it goes: repo secret via
 `gh secret set HF_TOKEN`, Space secret under Space → Settings → Variables and secrets. Adding a
