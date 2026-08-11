@@ -1,0 +1,120 @@
+<section class="hero">
+  <div class="searchbar">
+    <div class="field">
+      <input id="q" type="text" autofocus aria-label="Describe the role you want"
+             placeholder="Describe the role you want — e.g. backend engineer at a climate startup">
+    </div>
+    <button class="go" onclick="go()">Search</button>
+  </div>
+  <div class="hint">
+    <span>Try:</span>
+    <button class="chip" onclick="tryIt(this)">backend engineer at a climate startup</button>
+    <button class="chip" onclick="tryIt(this)">ML infrastructure, PyTorch</button>
+    <button class="chip" onclick="tryIt(this)">frontend engineer, design systems</button>
+  </div>
+</section>
+
+{% if resume_on or alerts_on %}
+<div class="features">
+  {% if resume_on %}
+  <details class="feature">
+    <summary><span class="dot"></span><span class="ttl">Write my search from my résumé</span><span class="sub">AI</span></summary>
+    <div class="body">
+      <p>Paste your résumé and we'll turn it into a search you can edit. Used for this one
+         request — never stored.</p>
+      <textarea id="resume" rows="6" placeholder="Paste the text of your résumé"></textarea>
+      <div class="row">
+        <input id="rpass" type="password" placeholder="Beta password" autocomplete="off">
+        <button class="ghost" onclick="readResume()" id="rbtn">Write my search</button>
+        <span class="note" id="rmsg" role="status"></span>
+      </div>
+    </div>
+  </details>
+  {% endif %}
+
+  {% if alerts_on %}
+  <details class="feature">
+    <summary><span class="dot"></span><span class="ttl">Email me new matches</span><span class="sub">invite only</span></summary>
+    <div class="body">
+      <p>We'll email you the best 30 new jobs matching the search and filters you've set here,
+         every time the index refreshes — with a spreadsheet attached. Every email has an
+         unsubscribe link.</p>
+      <div class="row">
+        <div id="gsignin"></div>
+        <span class="note" id="amsg" role="status"></span>
+      </div>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid">
+  <aside class="rail" id="rail">
+    <div class="set">
+      <h2>Role</h2>
+      <div class="f"><label for="etype">Employment type</label>
+        <select id="etype"><option value="">Any</option>
+          <option value="full-time">Full-time</option><option value="part-time">Part-time</option>
+          <option value="contract">Contract</option><option value="internship">Internship</option>
+        </select></div>
+      <div class="f"><label for="maxyears">Your experience (years)</label>
+        <input id="maxyears" type="number" min="0" placeholder="Any">
+        <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
+          requirement are kept.</span></div>
+      <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
+      <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
+    </div>
+
+    <div class="set">
+      <h2>Where</h2>
+      <div class="f"><label for="india">India — city or region</label>
+        <select id="india"><option value="">Anywhere</option>
+          <option value="india">All India</option>
+          {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="f"><label for="location">Location</label>
+        <input id="location" type="text" placeholder="e.g. Berlin"></div>
+      <div class="f"><label for="company">Company</label>
+        <input id="company" type="text" placeholder="e.g. Binance"></div>
+    </div>
+
+    <div class="set">
+      <h2>Freshness</h2>
+      <div class="f"><label for="posted">Posted by the employer</label>
+        <select id="posted"><option value="">Any time</option>
+          <option value="1">Last 24 hours</option><option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+        </select></div>
+      {% if has_first_seen %}
+      <div class="f"><label for="seen">First seen by HeadStart</label>
+        <select id="seen"><option value="">Any time</option>
+          <option value="2">Last 2 hours</option><option value="24">Last 24 hours</option>
+          <option value="168">Last 7 days</option>
+        </select></div>
+      {% endif %}
+      <div class="f"><label for="ats">Board</label>
+        <select id="ats"><option value="">Any</option>
+          {% for a in atses %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+        </select></div>
+    </div>
+
+    <button class="clear" onclick="clearAll()">Clear all filters</button>
+  </aside>
+
+  <main>
+    <div class="toolbar">
+      <button class="ghost filters-btn" onclick="toggleRail()">Filters</button>
+      <span class="n" id="n"></span>
+      <span class="spacer"></span>
+      <label class="note" for="sort">Sort</label>
+      <select id="sort" onchange="resort()">
+        <option value="rel">Best match</option><option value="new">Newest first</option>
+      </select>
+      <label class="note" for="k">Show</label>
+      <select id="k" onchange="go()"><option>10</option><option selected>20</option><option>50</option></select>
+    </div>
+    <div class="active" id="active"></div>
+    <div id="results" aria-live="polite"></div>
+  </main>
+</div>

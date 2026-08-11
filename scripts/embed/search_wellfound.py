@@ -17,7 +17,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.search import EVAL_TABLE, build_filter, encode_query, load_encoder
+from headstart.search import EVAL_TABLE, encode_query, eval_filter, load_encoder
 
 _DB = Path(__file__).resolve().parents[2] / "data" / "lancedb"
 
@@ -39,7 +39,7 @@ def main() -> None:
     args = ap.parse_args()
 
     try:
-        where = build_filter(
+        where = eval_filter(
             remote=args.remote,
             employment_type=args.employment_type,
             max_years=args.max_years,

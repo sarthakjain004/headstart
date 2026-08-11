@@ -1,15 +1,14 @@
-"""The Space app's request layer — `deploy/hf-space/app.py` (ADR-0035, ADR-0042).
+"""The Space app's wall and routes — `deploy/hf-space/app.py` (ADR-0035, ADR-0042).
 
-Two things live here: `_build_filter`, the *reference* filter implementation (its own
-docstring says so: it has diverged from `headstart.search.build_filter`), and the sign-in
-wall — both had no coverage anywhere, because `deploy/` sits outside `testpaths` and
-importing the app pulls in a model download, a SentenceTransformer and a LanceDB table.
-
-So the heavy imports are stubbed in `sys.modules` and the module is loaded from its path —
-the same importlib trick `tests/test_check_liveness.py` uses for `scripts/`. Only pure
-string-building and Flask's test client are exercised; nothing here touches the network or
-the index. Auth requests ride `base_url="https://localhost"` because the session cookie is
-`Secure` and the test client honours that over plain http.
+The filter/search logic itself lives in `headstart.search` and is tested in
+`tests/test_search.py`; what's left here is what only the app owns — the sign-in wall and
+the wiring — which had no coverage anywhere, because `deploy/` sits outside `testpaths`
+and importing the app pulls in a model download, a SentenceTransformer and a LanceDB
+table. So the heavy imports are stubbed in `sys.modules` (the real `headstart.search`
+rides along as the flat `search` module, exactly as deploy-space.yml lays it down) and the
+module is loaded from its path — the same importlib trick `tests/test_check_liveness.py`
+uses for `scripts/`. Auth requests ride `base_url="https://localhost"` because the session
+cookie is `Secure` and the test client honours that over plain http.
 """
 
 import importlib.util
@@ -73,7 +72,12 @@ def _space_app(state, env=None):
         "huggingface_hub": _module(
             "huggingface_hub", snapshot_download=lambda *a, **k: str(state)
         ),
-        "geo": _module("geo", where=lambda place: None, DROPDOWN=["bengaluru"]),
+        "geo": _module(
+            "geo",
+            where=lambda place: None,
+            DROPDOWN=["bengaluru"],
+            dropdown_options=lambda: [("bengaluru", "Bengaluru")],
+        ),
         "llm_router": _module(
             "llm_router", RouterUnavailable=type("RU", (Exception,), {})
         ),
@@ -85,13 +89,16 @@ def _space_app(state, env=None):
             query_for=lambda *a, **k: "",
         ),
     }
-    # The Space imports the alerts package flat, as deploy-space.yml lays it down.
+    # The Space imports the alerts package and the search module flat, as deploy-space.yml
+    # lays them down — the real modules, not fakes, so the wiring under test is real.
     import headstart.alerts.access as _access
     import headstart.alerts.identity as _identity
     import headstart.alerts.store as _store
+    import headstart.search as _search
 
     stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
     stubs["alerts.store"] = _store
+    stubs["search"] = _search
     # Every stubbed name is restored, including the two above — leaving a fake `alerts` in
     # sys.modules would follow this fixture into every later test in the session. Env vars
     # are restored the same way, for the same reason.
@@ -131,63 +138,6 @@ def auth_app(tmp_path_factory):
         env={"SECRET_KEY": "test-secret", "GOOGLE_CLIENT_ID": "client-id.example"},
     ) as module:
         yield module
-
-
-def _clause(app, **kw):
-    base = dict(
-        remote=False,
-        max_years=None,
-        ats=None,
-        etype=None,
-        india=None,
-        location=None,
-        company=None,
-        has_salary=False,
-        posted_within=None,
-        seen_within=None,
-    )
-    base.update(kw)
-    return app._build_filter(**base)
-
-
-def test_no_filters_is_no_clause(app):
-    assert _clause(app) is None
-
-
-def test_first_seen_after_is_strictly_greater_than(app):
-    # Strict `>`: a Watermark taken from a row's own first_seen must not re-select that row.
-    clause = _clause(app, first_seen_after="2026-08-02T12:00:00+00:00")
-    assert clause == "first_seen > '2026-08-02T12:00:00+00:00'"
-
-
-def test_first_seen_after_is_reserialized_not_interpolated(app):
-    # The value arrives as free text and lands in a where-clause, so it is parsed and
-    # re-emitted; a quote cannot survive that round trip.
-    with pytest.raises(ValueError):
-        _clause(app, first_seen_after="2026-08-02' OR '1'='1")
-    with pytest.raises(ValueError):
-        _clause(app, first_seen_after="yesterday")
-
-
-def test_first_seen_after_normalizes_sub_second_precision(app):
-    clause = _clause(app, first_seen_after="2026-08-02T12:00:00.123456+00:00")
-    assert clause == "first_seen > '2026-08-02T12:00:00+00:00'"
-
-
-def test_first_seen_after_combines_with_other_filters(app):
-    clause = _clause(
-        app, remote=True, max_years=3, first_seen_after="2026-08-02T12:00:00+00:00"
-    )
-    assert clause.startswith("remote = true AND (min_years <= 3")
-    assert clause.endswith("AND first_seen > '2026-08-02T12:00:00+00:00'")
-
-
-def test_seen_within_still_works_beside_it(app):
-    assert "first_seen >= '" in _clause(app, seen_within=6)
-
-
-def test_unknown_ats_is_ignored_rather_than_interpolated(app):
-    assert _clause(app, ats="'; DROP TABLE jobs; --") is None
 
 
 # ---- the sign-in wall (ADR-0042) ----
