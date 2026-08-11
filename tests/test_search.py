@@ -239,6 +239,14 @@ def test_k_is_capped():
     assert table.last_k == 100
 
 
+def test_k_zero_floors_to_one_not_the_default():
+    # The old route's `int(raw or 20)` gave k=0 → 1 row; an `or` on the parsed int would
+    # have silently turned it into 20. Pin the floor.
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "k": "0"})
+    assert table.last_k == 1
+
+
 def test_garbage_int_raises_valueerror():
     searcher, _ = _searcher()
     with pytest.raises(ValueError):

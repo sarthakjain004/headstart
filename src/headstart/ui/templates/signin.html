@@ -3,8 +3,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — sign in</title>
 <style>
-  /* A subset of index.html's tokens — just enough for one card. PR 3 restructures the page
-     into shared templates; until then this door stays deliberately tiny. */
+  /* A subset of style.css's tokens — just enough for one card. Deliberately self-contained:
+     signed-out requests can't fetch /static (the wall gates it), so the door inlines all it needs. */
   :root{
     --ground:#0E1220; --raise:#161B2C; --rule:#252C42; --ink:#EEF1F8; --ink-2:#A8B0C6;
     --ink-3:#6F7896; --aqua:#12D6B4; --violet:#8B5CF6; --glow:rgba(18,214,180,.22);

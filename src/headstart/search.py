@@ -25,8 +25,9 @@ constants and both filter builders stay importable (and unit-testable) without t
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
     from headstart import geo
@@ -140,14 +141,17 @@ def build_filter(
     posted_within: int | None = None,
     seen_within: int | None = None,
     first_seen_after: str | None = None,
-    atses: Any = (),
-    has_first_seen: bool = False,
+    atses: Collection[str],
+    has_first_seen: bool,
 ) -> str | None:
     """The prod-table where-clause — the reference Search-filter compiler (ADR-0031).
 
     ``atses`` is the whitelist of ATSes actually present in the served table and
     ``has_first_seen`` whether the table carries that column — both runtime facts of the
-    index a :class:`JobSearch` learns once at startup and passes through.
+    index a :class:`JobSearch` learns once at startup and passes through. Deliberately
+    required, not defaulted: a caller that forgot them would silently drop the ATS
+    whitelist and turn the alerts Watermark cutoff into no clause at all (ADR-0035's
+    exactness guarantee).
     """
     filters: list[str] = []
     if remote:
@@ -254,7 +258,10 @@ class JobSearch:
             atses=self.atses,
             has_first_seen=self.has_first_seen,
         )
-        k = max(1, min(_int("k") or 20, self.max_k))
+        # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
+        # `or` on the parsed int would silently turn k=0 into the default 20 instead.
+        k = _int("k")
+        k = max(1, min(20 if k is None else k, self.max_k))
         search = self._table.search(encode_query(self._model, query)).metric("cosine")
         if where:
             search = search.where(where, prefilter=True)
