@@ -36,3 +36,45 @@ greenhouse  aurorainnovation   -  -   # hiring ~100 roles on Ashby; org slug not
 greenhouse  ast                -  -   # "AST" is ambiguous: AST SpaceMobile vs Allegheny Sci & Tech
 greenhouse  attune             -  -   # pinnacolassurance is the parent, a different legal entity
 greenhouse  ascend             -  -   # ascend21 and ascendtogether both live; which one is unclear
+
+# ---------------------------------------------------------------------------------------------
+# Batch research over the 245 Boards that 404'd (2026-08-11). 242 were classified; these are the
+# ACTIVE ones on a provider we can scrape. Every line is still probed before it is written, so a
+# wrong row is refused rather than trusted. Workday names a Board by its careers URL, not a slug.
+ashby       certn                        -           -                                                                      # RPO board (HighlightTA); already carried as ashby:highlightta
+ashby       datasnipper.com              ashby       datasnipper                                                            # DataSnipper
+ashby       deltia                       ashby       almetra                                                                # Deltia (now Almetra)
+ashby       fireworksai                  ashby       fireworks                                                              # Fireworks AI
+ashby       fractional-ai                ashby       odewithanthropic                                                       # Fractional AI (now Ode)
+ashby       fundamentalresearchlabs      ashby       fundamental                                                            # Fundamental Research Labs
+ashby       reservoir-media              ashby       reservoir                                                              # Reservoir Media
+ashby       robin-ai                     workable    robin-ai                                                               # Robin AI
+ashby       terrafirma                   ashby       TerraFirma-Inc                                                         # TerraFirma Robotics (TerraFirma Inc)
+ashby       trove                        ashby       trovehq                                                                # Trove (collectibles app, NYC)
+ashby       visier                       greenhouse  visiersolutionsinc                                                     # Visier Solutions
+greenhouse  bluecoreinc                  workable    bluecore                                                               # Bluecore
+greenhouse  civilscience                 -           -                                                                      # teamtailor behind a custom domain - no expressible teamtailor slug
+greenhouse  corescientific               workday     https://corescientific.wd108.myworkdayjobs.com/corescientificcareers   # Core Scientific
+greenhouse  enchargeai                   greenhouse  enchargeai36                                                           # EnCharge AI
+greenhouse  ezinc                        rippling    e-zinc                                                                 # e-Zinc Inc.
+greenhouse  fal                          ashby       fal-ai                                                                 # fal (fal.ai)
+greenhouse  free-job-boards-moia         greenhouse  moia                                                                   # MOIA (Volkswagen)
+greenhouse  gafg                         -           -                                                                      # careers routes to KKR, the parent - a different legal entity
+greenhouse  galileofinancialtechnologies -           -                                                                      # parent SoFi's board; would mis-attribute SoFi's jobs
+greenhouse  gogratia                     ashby       gratia                                                                 # Go Gratia
+greenhouse  gradientcomfort              rippling    gradientcomfort                                                        # Gradient Comfort
+greenhouse  nironmagnetics               rippling    niron                                                                  # Niron Magnetics
+greenhouse  nutrabolt                    workday     https://nutrabolt.wd108.myworkdayjobs.com/Nutrabolt_Careers            # Nutrabolt (C4 Energy)
+greenhouse  ottoaviation                 workday     https://ottoaerospaceinc.wd108.myworkdayjobs.com/Otto_External_Careers # Otto Aviation (now Otto Aerospace)
+greenhouse  paloit                       ashby       palo-it                                                                # PALO IT
+greenhouse  pdmgroupasp                  greenhouse  pdmgroup                                                               # PDM Group
+greenhouse  plotly                       ashby       plotly                                                                 # Plotly
+greenhouse  quartzbio                    -           -                                                                      # folded into parent Precision for Medicine's board
+greenhouse  scanditlinkedin              greenhouse  scandit                                                                # Scandit
+greenhouse  selkirksport                 workable    selkirksport                                                           # Selkirk Sport
+greenhouse  seniordoc                    -           -                                                                      # folded under parent Brigade Health; rebrand vs parent unresolved
+greenhouse  tdw                          workday     https://tdwilliamson.wd1.myworkdayjobs.com/TDWCareers                  # T.D. Williamson (TDW)
+greenhouse  voltaiq                      rippling    voltaiq-careers                                                        # Voltaiq
+greenhouse  withumsmithbrown             workday     https://withum.wd108.myworkdayjobs.com/Withum_Careers_Page             # WithumSmith+Brown
+greenhouse  wyndlabs                     ashby       wynd-labs                                                              # Wynd Labs (Grass)
+greenhouse  xhiring                      ashby       wynd-labs                                                              # Wynd Labs (Grass) - duplicate LinkedIn-c
