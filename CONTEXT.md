@@ -69,8 +69,8 @@ The assembled `docs/jobs.json` the dashboard consumes. It is *derived* — built
 
 ### Alerts
 
-**Subscription** (ADR-0035, ADR-0038):
-One person's standing request for alerts — one **Query**, a set of **Search filters**, its own **Watermark**, and exactly one **Transport** to reach them by. Identified by a verified address or, for someone the bot enrolled, by their Telegram chat.
+**Subscription** (ADR-0035, ADR-0038, ADR-0042):
+The one **Saved set** per **Account** whose email is turned on — its Query and Search filters plus the delivery machinery: its own **Watermark** and exactly one **Transport** to reach them by. Identified by a verified address or, for someone the bot enrolled, by their Telegram chat. Email delivery stays invite-only even though sign-up is open.
 _Avoid_: subscriber — the retired keyword bot's term for a chat matched by keyword against the **Feed**. That path is gone (ADR-0038); there is one ranking now, and everyone on it has a Subscription.
 
 **Transport** (ADR-0038):
@@ -124,11 +124,33 @@ _Avoid_: search term, keywords — it is a sentence describing a role, not a bag
 A structured constraint the user sets themselves on the **Search index** — remote, employment type, `min_years`, recency — compiled into a deterministic where-clause that runs *before* ranking. A **Subscription** carries a set of these, and they are the only kind of filter left: the retired keyword bot's per-Subscriber `Filter` over the **Feed** went with it (ADR-0038).
 
 **Résumé**:
-Text a user pastes to have a **Résumé query** written from it. It is never stored, never logged, and never leaves the request that carried it — the derived Query is the only thing that survives.
-_Avoid_: CV, profile — "profile" implies something persisted, which this deliberately is not.
+Text a user pastes or uploads to have their **Profile** extracted from it. The document itself is never stored or logged — it is read once by the extraction call and discarded; the **Profile** is the only thing that survives, and contact details are never part of it (ADR-0041, which superseded the earlier "nothing survives at all" rule).
+_Avoid_: CV. And keep it apart from **Profile** — the Résumé is the transient input, the Profile is the stored extraction.
 
 **Résumé query**:
-The **Query** an LLM writes from a **Résumé**, shown to the user in the search box and editable before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
+The role sentence an LLM writes from a **Résumé** — stored as the **Profile**'s sentence, editable there, and shown in the search box before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
+
+### Accounts
+
+**Account** (ADR-0042):
+A signed-in person, identified by the verified address their Google sign-in proves. The whole UI sits behind sign-in and anyone may create an Account; the costly paths keep their own gates — **Digest** delivery stays invite-only, **Résumé** parsing is capped per Account.
+_Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question.
+
+**Profile** (ADR-0041):
+The stored, structured extraction of an Account's career: one role sentence (the **Résumé query**) plus facts — current title, years of experience, skills, past roles, education, location. Built by one LLM call from a **Résumé** or edited by hand; the document it came from is discarded, and contact details are never kept. Split by purpose: the sentence drives ranking, the facts pre-fill **Search filters** — a Profile never smuggles years or location into the **Query**.
+_Avoid_: résumé — that names the transient input, not this stored record.
+
+**Saved set** (ADR-0042):
+One named **Query** + set of **Search filters** an Account keeps. The Matches tab runs a Saved set live — every matching Job, ranked, "new" marked where `first_seen` is known. Created from a working search ("Save this search"), never from a blank form. An Account may keep several; the one with email turned on is its **Subscription**.
+_Avoid_: alert — a Saved set is a page first; email is one optional outlet on one of them.
+
+**Saved job** (ADR-0042):
+A **Job** an Account starred, kept as a copy of its display fields from the moment of starring so **Eviction** cannot erase it; once the posting leaves the **Search index** it shows as "closed" rather than vanishing.
+_Avoid_: bookmark, favourite.
+
+**Match ring**:
+The match percentage displayed on a search result — the raw cosine score stretched through two fixed anchors (≈0.60 → 0%, ≈0.85 → 100%, tuned once against real queries, revisited only when the embedding model changes). Display only: ranking orders by the raw score.
+_Avoid_: reading it as a probability, or re-scaling it per results page — the same Job must show the same percentage wherever it appears.
 
 ### Pipeline scheduling and sharding
 
@@ -158,6 +180,7 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 - **Discovery** collects **Companies** (each as an `(ATS, slug)`) via **Feeders**; **Liveness** sorts their **Boards** into Live / Dead / Unknown and writes the Live ones to the **Active list**; **Resolve** maps a known **Company** to its `(ATS, slug)`.
 - The scrape step runs **Scrapers** over the **Active list** and assembles the **Feed**.
 - The alerts run ranks **Jobs** from the **Search index** against each **Subscription**'s **Query**, and delivers the ones past its **Watermark** as one **Digest** over that Subscription's **Transport**.
+- An **Account** keeps one **Profile**, any number of **Saved sets**, and its **Saved jobs**; at most one Saved set per Account is its **Subscription**.
 
 ## Example dialogue
 
@@ -170,4 +193,6 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 - **"board" vs "careers page"** — distinct: **Board** is the ATS-hosted listing; **Careers page** is the company's own page that links or embeds it.
 - **"posting/opening" vs "Job"** — resolved: **Job** is the normalized record; "posting" names the raw ATS record before normalization.
 - **"active"** — overloaded between "the board responds" (**Live**) and "currently hiring" (Live with count > 0); resolved: the **Active list** is the Live set, and "hiring" is the count-filtered subset.
+- **"Discover" (rejected tab name)** — the Search tab is called Search, not Discover: **Discovery** already names finding Companies on ATSes, and a UI label colliding with a glossary term would make every future conversation disambiguate.
+- **"match"** — three related things: a *match* is a **Job** a **Saved set**'s Query and filters admit; the Matches *tab* is that set run live; the **Match ring** is only the displayed score. None of them is the **Subscription**, which is the emailing Saved set.
 - **"Tenant" (retired)** — previously the `(ATS, slug)` pair. Dropped as a term: a **Company** *is* the thing on an ATS, located by its **Slug**, so we just say "a Company's slug on an ATS." The data still carries a `tenant` column (and the `data/ats-tenants-merged/` dir, `slug_from(tenant, …)` param keep the name) — a code/data rename is a separate change, not yet done.
