@@ -25,7 +25,7 @@ import resume_query  # synced from src/headstart/resume_query.py by deploy-space
 # Space never loads the Digest or Resend modules, whose dependencies it does not install.
 from alerts import access, identity
 from alerts.store import Store, Subscription, subscription_id
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from huggingface_hub import snapshot_download
 
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
@@ -113,11 +113,17 @@ _GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID") or ""
 _SUBSCRIBERS_REPO = os.environ.get("SUBSCRIBERS_REPO") or ""
 _SUBSCRIBERS_TOKEN = os.environ.get("SUBSCRIBERS_TOKEN") or ""
 _ALERTS_ON = bool(_GOOGLE_CLIENT_ID and _SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN)
+# Sign-in wall (ADR-0042): the whole UI sits behind Google sign-in once BOTH secrets exist.
+# Same dark-until-ready shape as everything above — a Space without them keeps the old open,
+# anonymous behaviour, so this can deploy ahead of its configuration.
+_SECRET_KEY = os.environ.get("SECRET_KEY") or ""
+_AUTH_ON = bool(_SECRET_KEY and _GOOGLE_CLIENT_ID)
 print(
     f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes"
     + ("" if _HAS_FIRST_SEEN else " (no first_seen column yet — 'new since' hidden)")
     + ("" if _RESUME_PASSWORD else " (RESUME_PASSWORD unset — résumé search hidden)")
-    + ("" if _ALERTS_ON else " (alerts secrets unset — email alerts hidden)"),
+    + ("" if _ALERTS_ON else " (alerts secrets unset — email alerts hidden)")
+    + ("" if _AUTH_ON else " (SECRET_KEY/GOOGLE_CLIENT_ID unset — sign-in wall off)"),
     flush=True,
 )
 
@@ -128,6 +134,32 @@ def _store() -> Store:
 
 
 app = Flask(__name__)
+# The session is a signed cookie (ADR-0042): Google is verified once at /auth/google, then
+# the cookie is the identity for weeks — re-sending the ~1h Google token would bounce users
+# mid-use. Lax + Secure: it never rides a cross-site POST, and only travels over https.
+# Rotating SECRET_KEY signs everyone out (their cookies stop verifying); nothing else breaks.
+app.config.update(
+    SECRET_KEY=_SECRET_KEY or None,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+# Paths that must answer signed out: the door itself, and the unsubscribe link every Digest
+# already delivered carries — a session wall must never break a mailed link. `/me` answers
+# from the caller's own cookie, so it can only tell you what you sent.
+_PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
+
+
+@app.before_request
+def _require_sign_in():
+    if not _AUTH_ON or request.path in _PUBLIC_PATHS:
+        return None
+    if not session.get("email"):
+        return jsonify({"error": "sign in first"}), 401
+    return None
+
 
 # Canonical employment-type filters mapped onto the messy per-ATS raw values
 # ("fulltime", "Full-time", "fulltime_permanent", "Permanent / Full-Time", …).
@@ -443,25 +475,60 @@ def trends():
     )
 
 
+@app.route("/auth/google", methods=["POST"])
+def auth_google():
+    """Trade a verified Google credential for the session cookie (ADR-0042).
+
+    Sign-up is open: any Google-verified address gets a session. The costly features keep
+    their own gates — this wall is identity, not entitlement."""
+    if not _AUTH_ON:
+        return jsonify({"error": "sign-in is not configured"}), 503
+    body = request.get_json(silent=True) or {}
+    try:
+        email = identity.verify(str(body.get("credential") or ""), _GOOGLE_CLIENT_ID)
+    except identity.IdentityError as exc:
+        return jsonify({"error": str(exc)}), 401
+    session.permanent = True
+    session["email"] = email
+    return jsonify({"ok": True, "email": email})
+
+
+@app.route("/signout", methods=["POST"])
+def signout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/me")
+def me():
+    """The identity behind the caller's own cookie — null when signed out or the wall is off.
+
+    The page header reads this to show who is signed in."""
+    return jsonify(
+        {"auth": _AUTH_ON, "email": session.get("email") if _AUTH_ON else None}
+    )
+
+
 @app.route("/")
 def index():
+    if _AUTH_ON and not session.get("email"):
+        return _SIGNIN_PAGE
     return _PAGE
 
 
-# The page template's single source is src/headstart/ui/templates/index.html; deploy-space.yml
-# syncs it next to this app the way it syncs geo.py and alerts/. In a repo checkout (tests,
-# local runs) the synced copy doesn't exist, so fall back to the source location.
-_TEMPLATE_PATH = Path(__file__).parent / "templates" / "index.html"
-if not _TEMPLATE_PATH.exists():
-    _TEMPLATE_PATH = (
-        Path(__file__).parents[2]
-        / "src"
-        / "headstart"
-        / "ui"
-        / "templates"
-        / "index.html"
-    )
-_TEMPLATE = _TEMPLATE_PATH.read_text(encoding="utf-8")
+# The page templates' single source is src/headstart/ui/templates/; deploy-space.yml syncs
+# the directory next to this app the way it syncs geo.py and alerts/. In a repo checkout
+# (tests, local runs) the synced copy doesn't exist, so fall back to the source location.
+_TEMPLATE_DIR = Path(__file__).parent / "templates"
+if not _TEMPLATE_DIR.exists():
+    _TEMPLATE_DIR = Path(__file__).parents[2] / "src" / "headstart" / "ui" / "templates"
+_TEMPLATE = (_TEMPLATE_DIR / "index.html").read_text(encoding="utf-8")
+# The sign-in door. Static per boot — the only thing it varies on is the client id.
+_SIGNIN_PAGE = (
+    (_TEMPLATE_DIR / "signin.html")
+    .read_text(encoding="utf-8")
+    .replace("__GOOGLE_CLIENT_ID__", _GOOGLE_CLIENT_ID)
+)
 
 _PAGE = (
     _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}")
