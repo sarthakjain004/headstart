@@ -72,6 +72,10 @@ def _space_app(state, env=None):
         "huggingface_hub": _module(
             "huggingface_hub", snapshot_download=lambda *a, **k: str(state)
         ),
+        # Governs app.py's own `import geo` (the dropdown) ONLY. The flat `search` module
+        # below is the real headstart.search, which bound the real headstart.geo at import —
+        # so /search filter behaviour here runs real geo, not this stub. Filter tests belong
+        # in tests/test_search.py, where that is explicit.
         "geo": _module(
             "geo",
             where=lambda place: None,

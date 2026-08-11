@@ -68,14 +68,17 @@ const isNew = s => {
   const hours = Number((el('seen') && el('seen').value) || 24);
   return Date.now() - t < hours * 3600000;
 };
+// The Match ring (ADR-0042): raw cosine lives in a narrow band (a strong on-topic query
+// tops out ≈0.78; an absurd one still scores ≈0.66), so the displayed % stretches it
+// through two fixed anchors — 0.60 → 0%, 0.85 → 100% — tuned once against real queries
+// and revisited only when the embedding model changes. Display only: ranking stays on the
+// raw score, and the same job shows the same % wherever it appears.
+const matchPct = s => Math.round(Math.max(0, Math.min(1, (s - .60) / .25)) * 100);
 // Match strength is a QUANTITY, so it gets a sequential ramp — one hue, increasing intensity —
 // not four different hues. Hue is reserved for categories (amber = new, lime = pays, violet =
 // remote); reusing those hues here would have made lime mean both "strong match" and "salary".
 // Weak matches fade toward the muted ink so a scan shows where the good results stop.
-const tone = s => {
-  const pct = Math.round(Math.max(0, Math.min(1, (s - .35) / .45)) * 100);
-  return `color-mix(in srgb, var(--aqua) ${25 + pct * .75}%, var(--ink-3))`;
-};
+const tone = s => `color-mix(in srgb, var(--aqua) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
   '<div class="shim" style="width:30%; margin-top:10px"></div>' +
@@ -163,7 +166,7 @@ function draw(rows){
     rows = rows.slice().sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
   }
   el('results').innerHTML = rows.map((r,i) => {
-    const s = Number(r.score) || 0, c = tone(s);
+    const s = Number(r.score) || 0, c = tone(s), pct = matchPct(s);
     return `
     <div class="card" style="--tone:${c}; animation-delay:${Math.min(i,12)*35}ms">
       <div class="hd">
@@ -171,9 +174,12 @@ function draw(rows){
           <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
-        <div class="match" title="Semantic similarity to your search">
-          <div class="v">${s.toFixed(2)}</div>
-          <div class="track"><div class="fill" style="--pct:${Math.round(Math.max(0,Math.min(1,s))*100)}%"></div></div>
+        <div class="match" title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+          <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
+            <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
+            <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
+          </svg>
+          <div class="v">${pct}%</div>
         </div>
       </div>
       <div class="tags">
@@ -281,7 +287,10 @@ function drawTrends(){
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
     const off = trendHidden.has(s.name) || i >= 8;
-    return `<li onclick="trendClick('${esc(s.name)}')" aria-pressed="${!off}"
+    // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
+    // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
+    // before the JS parses — a name with a quote would break out of the string.
+    return `<li data-name="${esc(s.name)}" aria-pressed="${!off}"
       style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<8?c:'var(--ink-3)'}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       <span class="ct">${(s.latest||0).toLocaleString()}</span>
@@ -313,6 +322,11 @@ function initAlerts(){
   google.accounts.id.initialize({ client_id: CFG.google_client_id, callback: onGoogleCredential });
   google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
+// One listener on the list itself — it survives every innerHTML redraw of its children.
+if (el('trends-legend')) el('trends-legend').addEventListener('click', e => {
+  const li = e.target.closest('li[data-name]');
+  if (li) trendClick(li.dataset.name);
+});
 showIntro();
 whoAmI();
 showTab(currentTab());

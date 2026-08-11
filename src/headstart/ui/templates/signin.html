@@ -54,7 +54,7 @@ async function onCred(resp){
 }
 function initSignin(){
   if (!window.google) return;
-  google.accounts.id.initialize({ client_id:'{{ google_client_id }}', callback:onCred });
+  google.accounts.id.initialize({ client_id: {{ google_client_id|tojson }}, callback:onCred });
   google.accounts.id.renderButton(document.getElementById('gbtn'),
     { theme:'outline', size:'large' });
 }

@@ -211,14 +211,17 @@ textarea:focus{ border-color:var(--violet); }
 .card a.title:hover{ color:var(--aqua); }
 .card .org{ color:var(--ink-2); font-size:13px; margin-top:3px; }
 .card .org span{ color:var(--ink-3); }
-/* match strength: a bar plus the number, so it reads at a glance and survives colour-blindness */
-.match{ flex:none; width:74px; text-align:right; }
-.match .v{ font:600 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--aqua)); }
-.match .track{ height:4px; border-radius:var(--r-pill); background:var(--rule); margin-top:5px;
-  overflow:hidden; }
-.match .fill{ height:100%; border-radius:var(--r-pill); background:var(--tone,var(--aqua));
-  width:0; animation:fill .7s .1s cubic-bezier(.2,.7,.3,1) forwards; }
-@keyframes fill{ to{ width:var(--pct,50%); } }
+/* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
+   colour-blindness. pathLength=100 on the circles makes the dasharray a straight percent. */
+.match{ flex:none; width:44px; height:44px; position:relative; }
+.ring{ width:44px; height:44px; display:block; transform:rotate(-90deg); }
+.ring circle{ fill:none; stroke-width:3.5; }
+.ring-track{ stroke:var(--rule); }
+.ring-fill{ stroke:var(--tone,var(--aqua)); stroke-linecap:round;
+  stroke-dasharray:0 100; animation:ringfill .7s .1s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes ringfill{ to{ stroke-dasharray:var(--p,50) 100; } }
+.match .v{ position:absolute; inset:0; display:grid; place-items:center;
+  font:600 10.5px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--aqua)); }
 .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:11px; }
 .tag{ font:500 11.5px var(--sans); padding:4px 10px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
@@ -291,12 +294,11 @@ textarea:focus{ border-color:var(--violet); }
     .toolbar .n{ order:3; width:100%; }
   .card{ padding:14px 15px; }
   .card a.title{ font-size:15px; }
-  .match{ width:60px; }
 }
 
 :focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important;
     transition-duration:.001ms !important; }
-  .match .fill{ width:var(--pct,50%); }
+  .ring-fill{ stroke-dasharray:var(--p,50) 100; }
 }
