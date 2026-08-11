@@ -27,6 +27,8 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # truth, where their tests live) before pushing to the Space.
 COPY app.py geo.py llm_router.py resume_query.py start.sh .
 COPY alerts ./alerts
+# Synced from src/headstart/ui/templates/ by deploy-space.yml, like the modules above.
+COPY templates ./templates
 RUN chmod +x start.sh
 EXPOSE 7860
 CMD ["./start.sh"]
