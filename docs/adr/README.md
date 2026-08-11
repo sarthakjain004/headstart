@@ -49,3 +49,5 @@ supersedes it and note the supersession in both.
 | [0038](0038-telegram-alerts-and-pluggable-transports.md) | Telegram alerts — one Digest, pluggable transports, enrolment by approval | 2026-08-06 |
 | [0039](0039-pipeline-logging.md) | Pipeline logging through one stdlib seam (`headstart.log`) | 2026-08-10 |
 | [0040](0040-role-trend-ledger.md) | Role-trend ledger: frozen embedding centroids × experience bands | 2026-08-10 |
+| [0041](0041-profile-stored-extraction.md) | Profile: store the LLM extraction, discard the Résumé | 2026-08-11 |
+| [0042](0042-signed-in-ui-saved-sets.md) | Sign-in-required UI: Accounts, Saved sets, Saved jobs on the per-record store | 2026-08-11 |
