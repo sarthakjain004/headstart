@@ -10,6 +10,7 @@ import pytest
 
 from headstart.ingest.index_plan import apply_sync, plan_prune, plan_sync
 from headstart.scrapers.greenhouse import GreenhouseScraper
+from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.workday import WorkdayScraper
 
 
@@ -91,12 +92,13 @@ def test_off_board_evicted_survivors_kept():
     assert dup == []
 
 
-def test_dedup_keeps_lexmin_casing():
-    # one job under two Board casings (both canonicalise into the live keep Board)
+def test_dedup_keeps_the_casing_the_live_ledger_scrapes():
+    # one job under two Board casings; the ledger scrapes 'co/site', so that row is the one a
+    # future scrape re-sees — keeping the lex-min 'co/Site' would strand a fossil sync can't evict
     keep = {"workday:co/site"}
     off, dup = plan_prune(["workday:co/Site:R1", "workday:co/site:R1"], keep)
     assert off == []
-    assert dup == ["workday:co/site:R1"]  # 'co/Site' (S<s) is kept, 'co/site' dropped
+    assert dup == ["workday:co/Site:R1"]
 
 
 def test_distinct_native_ids_are_not_duplicates():
@@ -105,12 +107,33 @@ def test_distinct_native_ids_are_not_duplicates():
     assert dup == []
 
 
-def test_three_way_casing_keeps_one():
-    keep = {"workday:co/site"}
+def test_three_way_casing_keeps_the_live_one():
+    keep = {"workday:co/Site"}
     ids = ["workday:co/SITE:R1", "workday:co/Site:R1", "workday:co/site:R1"]
     off, dup = plan_prune(ids, keep)
     assert off == []
-    assert sorted(dup) == ["workday:co/Site:R1", "workday:co/site:R1"]  # keep 'co/SITE'
+    assert sorted(dup) == ["workday:co/SITE:R1", "workday:co/site:R1"]
+
+
+def test_dedup_falls_back_to_lexmin_when_no_row_has_the_live_casing():
+    # every row is a fossil (the live casing isn't in the index yet) — still collapse to one
+    keep = {"workday:co/site"}
+    off, dup = plan_prune(["workday:co/SITE:R1", "workday:co/Site:R1"], keep)
+    assert off == []
+    assert dup == ["workday:co/Site:R1"]  # 'co/SITE' (I<i) sorts first
+
+
+def test_prune_does_not_churn_the_freshly_scraped_row():
+    # the regression that motivated the rule: sync re-adds what prune deleted, every run
+    keep = {"workday:co/site"}
+    fossil, fresh = "workday:co/Site:R1", "workday:co/site:R1"
+    index = {fossil}
+    for _ in range(3):
+        plan = plan_sync(index, {fresh}, {"workday:co/site"})
+        index = (index | set(plan.add)) - set(plan.delete)
+        off, dup = plan_prune(index, keep)
+        index -= set(off) | set(dup)
+    assert index == {fresh}  # the fossil is gone and the live row survives
 
 
 def test_board_key_default_is_ats_colon_slug():
@@ -120,3 +143,20 @@ def test_board_key_default_is_ats_colon_slug():
 def test_board_key_workday_is_company_slash_site():
     s = WorkdayScraper("https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite")
     assert s.board_key() == "workday:nvidia/NVIDIAExternalCareerSite"
+
+
+def test_board_key_personio_is_the_bare_tenant_its_ids_carry():
+    # personio's slug is the host, but `parse` builds ids from its first label, so the default
+    # `{ats}:{slug}` key would never match `board_of` of its own rows.
+    assert (
+        PersonioScraper("ailylabs.jobs.personio.com").board_key() == "personio:ailylabs"
+    )
+
+
+def test_prune_keeps_rows_whose_board_is_live():
+    # The churn this locks down: a live Board whose keep-set key disagrees with the ids it emits
+    # is pruned off-Board every run, and re-added by the next sync — forever.
+    keep = {PersonioScraper("ailylabs.jobs.personio.com").board_key()}
+    off, dup = plan_prune(["personio:ailylabs:2036107"], keep)
+    assert off == []
+    assert dup == []
