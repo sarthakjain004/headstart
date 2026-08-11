@@ -451,9 +451,9 @@ def index():
 # The page template's single source is src/headstart/ui/templates/index.html; deploy-space.yml
 # syncs it next to this app the way it syncs geo.py and alerts/. In a repo checkout (tests,
 # local runs) the synced copy doesn't exist, so fall back to the source location.
-_TPL = Path(__file__).parent / "templates" / "index.html"
-if not _TPL.exists():
-    _TPL = (
+_TEMPLATE_PATH = Path(__file__).parent / "templates" / "index.html"
+if not _TEMPLATE_PATH.exists():
+    _TEMPLATE_PATH = (
         Path(__file__).parents[2]
         / "src"
         / "headstart"
@@ -461,7 +461,7 @@ if not _TPL.exists():
         / "templates"
         / "index.html"
     )
-_TEMPLATE = _TPL.read_text(encoding="utf-8")
+_TEMPLATE = _TEMPLATE_PATH.read_text(encoding="utf-8")
 
 _PAGE = (
     _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}")

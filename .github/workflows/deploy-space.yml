@@ -52,7 +52,7 @@ jobs:
           rm -rf deploy/hf-space/alerts
           cp -r src/headstart/alerts deploy/hf-space/alerts
           find deploy/hf-space/alerts -name '__pycache__' -type d -exec rm -rf {} +
-          # The page template — one copy, rendered by the Space app and the local dev server.
+          # The page template — single source in src/headstart/ui, synced like the modules above.
           rm -rf deploy/hf-space/templates
           cp -r src/headstart/ui/templates deploy/hf-space/templates
           # upload_folder, not `hf upload`: the CLI pre-creates the repo, and HF now answers
