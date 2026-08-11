@@ -16,10 +16,15 @@ from replacing the served one. Nothing in the chain was wrong on its own; no ste
 the state it was building on had actually been fetched.
 
 So ask. The remote listing is the missing fact, and it fails closed where the download does not:
-``list_repo_files`` raises on a 429 rather than falling back. Requiring exactly what the Hub reports
-also needs no bootstrap opt-out — a first run matches nothing, requires nothing, and proceeds.
-Retries are sized to the measured outage, not to ``up()``: five attempts with exponential waits
-(ADR-0033), because HF's 429 windows run minutes and a 90-second budget lost 6 of 40 runs.
+``remote_files`` raises on a 429 rather than falling back, and raises again if the Hub answers
+without a ``siblings`` list at all. Requiring exactly what the Hub reports also needs no bootstrap
+opt-out — a first run matches nothing, requires nothing, and proceeds.
+
+Retries wait as long as the Hub says to. HF meters **fixed 5-minute windows** and reports the
+remaining seconds in the ``RateLimit`` header of every 429, so ``reset_after`` reads it and
+:func:`wait_before`'s exponential ladder (ADR-0033) is only the fallback for failures that advise
+nothing. Guessing was actively harmful: an early retry spends another request inside the window it
+is waiting on, which is how all 10 retries across the two runs lost on 2026-08-11 failed.
 
 Exit: 0 once every expected file is on disk, 1 when the state could not be fetched (ADR-0030).
 """
@@ -28,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import time
 from fnmatch import fnmatch
 from pathlib import Path
@@ -50,6 +56,64 @@ def wait_before(attempt: int) -> int:
     return min(_BACKOFF * 2 ** (attempt - 1), _BACKOFF_CAP)
 
 
+def reason_for(exc: Exception) -> str:
+    """Why a fetch attempt failed, on **one line**, leading with the HTTP status when there is one.
+
+    Both halves matter for the annotation. ``HfHubHTTPError`` stringifies over several lines with
+    the CloudFront request id first and the status on line 3, and a GitHub ``::warning::`` renders
+    only the first line (ADR-0039) — so plain ``{type}: {exc}`` published the one useless part and
+    hid the ``429`` that named the fault. The status comes off ``exc.response``, not off the text.
+    """
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    # every whitespace run collapsed to one space — an annotation stops at the first newline
+    detail = " ".join(str(exc).split())
+    prefix = f"HTTP {status} " if status else ""
+    return f"{type(exc).__name__}: {prefix}{detail}"
+
+
+def reset_after(exc: Exception) -> int | None:
+    """Seconds until the rate-limit window reopens, as the Hub itself reports it — or ``None``.
+
+    HF answers a 429 with ``RateLimit: "api";r=<remaining>;t=<seconds to reset>`` (the
+    ``draft-ietf-httpapi-ratelimit-headers`` scheme) and enforces quotas over **fixed 5-minute
+    windows**. So ``t`` is the only wait that actually clears one, and an exponential guess is worse
+    than useless: each early attempt spends another request inside the very window it is waiting on.
+    That is why not one of the 10 retries on 2026-08-11 recovered. Non-HTTP failures advise nothing
+    and fall back to :func:`wait_before`.
+    """
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    if match := re.search(r"\bt=(\d+)", str(headers.get("RateLimit", ""))):
+        return int(match.group(1))
+    if str(headers.get("Retry-After", "")).strip().isdigit():
+        return int(str(headers["Retry-After"]).strip())
+    return None
+
+
+def remote_files(repo: str, token: str | None) -> list[str]:
+    """Every file in the dataset repo, from a **single** Hub API request.
+
+    ``list_repo_files`` walks the ``/tree/`` endpoint, which costs one API call per directory — and
+    the API bucket is only 1,000 requests per 5-minute window on a free account, which is what both
+    runs lost on 2026-08-11 exhausted. ``repo_info(expand=["siblings"])`` answers from
+    ``/api/datasets/{id}`` in one call instead; it is HF's own recommendation for exactly this.
+
+    Fails closed. The Hub *omits* ``siblings`` rather than erroring, and ``DatasetInfo`` then holds
+    ``None`` — which would make ``wanted`` empty, ``absent_locally`` report nothing missing, and the
+    fetch claim success having downloaded nothing. That is precisely the empty-state-reads-as-a-
+    first-run failure this module exists to prevent (ADR-0030), so treat it as a failed attempt.
+    """
+    from huggingface_hub import repo_info
+
+    siblings = repo_info(
+        repo, repo_type="dataset", expand=["siblings"], token=token
+    ).siblings
+    if siblings is None:
+        raise RuntimeError(
+            f"Hub returned no `siblings` listing for {repo} — refusing to read that as an empty repo"
+        )
+    return [s.rfilename for s in siblings]
+
+
 def remote_matches(remote_files: list[str], patterns: list[str]) -> set[str]:
     """The repo-relative files the Hub reports for these patterns. ``fnmatch`` is what
     ``snapshot_download`` filters ``allow_patterns`` with, so ``*`` spans ``/`` here too — that is
@@ -63,14 +127,13 @@ def absent_locally(wanted: set[str], root: str | Path) -> list[str]:
 
 
 def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
-    from huggingface_hub import list_repo_files, snapshot_download
+    from huggingface_hub import snapshot_download
 
     for attempt in range(1, _ATTEMPTS + 1):
         started = time.monotonic()
+        advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
-            wanted = remote_matches(
-                list_repo_files(repo, repo_type="dataset", token=token), patterns
-            )
+            wanted = remote_matches(remote_files(repo, token), patterns)
             snapshot_download(
                 repo,
                 repo_type="dataset",
@@ -93,16 +156,22 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                 f"e.g. {absent[0]}"
             )
         except Exception as exc:  # noqa: BLE001 — any Hub failure is retried the same way
-            reason = f"{type(exc).__name__}: {exc}"
+            reason = reason_for(exc)
+            advised = reset_after(exc)
         if attempt < _ATTEMPTS:
+            # the Hub's own reset beats our guess; cap it at one window so a bogus header can't
+            # park the job past its timeout
+            wait = min(advised, _BACKOFF_CAP) if advised else wait_before(attempt)
             _log.warning(
-                f"state fetch attempt {attempt} failed ({reason}); "
-                f"retrying in {wait_before(attempt)}s"
+                f"state fetch attempt {attempt} failed ({reason}); retrying in {wait}s"
+                f"{' (Hub-advised)' if advised else ''}"
             )
-            time.sleep(wait_before(attempt))
+            time.sleep(wait)
 
     _log.error(
-        f"ABORT: could not fetch {' '.join(patterns)} from {repo} — {reason}.\n"
+        # reason first: this renders as a ::error:: annotation, which is read left-to-right and
+        # truncated, so the status has to beat the pattern list to the front (ADR-0039)
+        f"ABORT: {reason} — could not fetch {' '.join(patterns)} from {repo}.\n"
         "Refusing to continue: the state dirs are gitignored, so proceeding would rebuild and "
         "publish from an empty store as if this were a first run."
     )

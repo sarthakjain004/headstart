@@ -63,3 +63,51 @@ message; nothing downstream ever sees a partial state.
 A genuine long outage now holds a runner for up to ~18 extra minutes before failing — acceptable
 for a 4-cron/day pipeline where the alternative is losing the run outright. If HF throttling
 worsens to where even this budget flaps, the next lever is the xet toggle, not more waiting.
+
+## Amendment (2026-08-11): wait what the Hub says, and stop paying for the listing twice
+
+**Status:** accepted. The exponential ladder above is demoted to a *fallback*; it is no longer the
+primary schedule.
+
+The ladder was sized against a measured outage but never against HF's published contract, and the
+runs of 2026-08-10/11 showed it failing on its own terms: **10 rate-limit retries across two runs,
+zero recoveries.** Runs 31454850705 (`join`) and 31473400252 (`merge`) each burned all five attempts
+and aborted. See `docs/pipeline/2026-08-11_first-logged-runs.md`.
+
+Two facts from [HF's rate-limit documentation](https://huggingface.co/docs/hub/rate-limits) explain
+it, and neither was known when this ADR was written:
+
+1. **Quotas are fixed 5-minute windows**, metered in three buckets, and a free account gets **1,000
+   Hub API requests per window** (Resolvers, the `/resolve/` file downloads, get 5,000 — far more
+   headroom). `/api/datasets/{id}/tree/...` is an API-bucket call.
+2. **Every 429 carries the reset time**: `RateLimit: "api";r=<remaining>;t=<seconds to reset>`.
+
+So the ladder was guessing at a number the server was already sending, and guessing *low*: attempts
+land at 0/30/90/210/450 s, four of them inside about three and a half minutes. Each retry spends
+another API request in the very window it is waiting on, holding the bucket saturated. The measured
+signature is exactly that — `join` exhausted its ladder at 04:01:27 and `merge`, in the same run,
+fetched 1,521 files successfully at 04:05:40, one window boundary later.
+
+**Amended decision, two parts.**
+
+**Wait what the Hub advises.** `reset_after` reads `t=` from the `RateLimit` header (falling back to
+`Retry-After`), and the loop sleeps that instead of `wait_before(attempt)`, capped at `_BACKOFF_CAP`
+so a bogus header cannot park a job past its timeout. Failures that advise nothing — timeouts, DNS,
+a listing that did not land — still use the exponential ladder, which is why it stays.
+
+**Stop listing twice.** `list_repo_files` walked the `/tree/` endpoint, which costs one API request
+*per directory*; the state repo's file count grows ~90 per run between compactions (1,048 → 1,601
+across these 8 runs, ADR-0036), so that cost rises every run. `remote_files` now reads the whole
+listing from `repo_info(expand=["siblings"])` — a single `/api/datasets/{id}` request, which is HF's
+own recommendation for this pattern. It **fails closed** when the Hub answers without `siblings`:
+`DatasetInfo.siblings` is `None` there, and an empty listing would make `absent_locally` report
+nothing missing, i.e. exactly the empty-state-reads-as-a-first-run bug ADR-0030 exists to prevent.
+
+**Timeout arithmetic, re-checked.** Worst-case waiting rises from 7.5 min (30+60+120+240) to 20 min
+(4 × the 300 s cap). Against measured stage times — `merge` 5.9–10.2 min including a 143–406 s fetch,
+`join` ~6.5 min — the worst cases become ~30 min and ~27 min against job timeouts of **48** and **40**
+minutes. Both keep their margin, so no timeout changes; recorded here because the arithmetic is what
+this ADR exists to keep honest.
+
+**Not addressed:** the 1,000-per-window ceiling is the *free* tier. If API-bucket pressure keeps
+growing with file count, the levers are compacting more often (ADR-0036) or a paid plan (PRO: 2,500).
