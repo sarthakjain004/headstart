@@ -43,17 +43,32 @@ from headstart.ingest import REPO_ROOT
 
 _log = log.get(__name__, __spec__)
 
-# Five attempts, exponential waits capped at 5 min: 30s → 60s → 120s → 240s (ADR-0033). Sized
-# against the measured failure — HF 429 windows lasting minutes, which the original 3×/90s
-# budget (copied from `up()`, not measured) could not ride out: 6 of 40 runs lost in 5 days.
+# Five attempts inside a total sleeping budget of 450s (ADR-0033 and its 2026-08-11 amendment).
+# The exponential ladder — 30s → 60s → 120s → 240s — is now only the *fallback*, for failures the
+# Hub does not put a reset time on; a 429 carries its own window and `reset_after` reads it.
+# The budget is what the pipeline's job timeouts are sized against, so it is a ceiling on the sum
+# of every wait, not on any single one: `state_fetch` runs in `scrape-plan` too, whose job timeout
+# is 10 minutes. Spending it as the Hub directs rather than as we guess costs no extra wall time.
 _ATTEMPTS = 5
 _BACKOFF = 30
 _BACKOFF_CAP = 300
+_WAIT_BUDGET = 450
 
 
 def wait_before(attempt: int) -> int:
     """Seconds to wait after failed ``attempt`` (1-based): exponential from ``_BACKOFF``, capped."""
     return min(_BACKOFF * 2 ** (attempt - 1), _BACKOFF_CAP)
+
+
+def next_wait(attempt: int, advised: int | None, spent: int) -> int:
+    """Seconds to sleep before the next attempt; ``0`` means the budget is gone, so stop.
+
+    Prefers ``advised`` — what the Hub said its window needs — over the guessed ladder, including
+    an advised ``0`` (a window resetting right now, which the ladder would answer with a needless
+    30–240 s). Clamped to what is left of ``_WAIT_BUDGET`` so no caller can outlive its job timeout.
+    """
+    wait = wait_before(attempt) if advised is None else advised
+    return max(0, min(wait, _WAIT_BUDGET - spent))
 
 
 def reason_for(exc: Exception) -> str:
@@ -82,20 +97,32 @@ def reset_after(exc: Exception) -> int | None:
     and fall back to :func:`wait_before`.
     """
     headers = getattr(getattr(exc, "response", None), "headers", None) or {}
-    if match := re.search(r"\bt=(\d+)", str(headers.get("RateLimit", ""))):
-        return int(match.group(1))
-    if str(headers.get("Retry-After", "")).strip().isdigit():
-        return int(str(headers["Retry-After"]).strip())
-    return None
+    # One header can carry several policies ('"default";r=50;t=30, "api";r=0;t=137') and it does
+    # not say which bucket we blew, so take the longest reset: it is the only one guaranteed to
+    # have cleared. Over-waiting is bounded by `next_wait`'s budget; under-waiting is the bug.
+    resets = [
+        int(t) for t in re.findall(r"\bt=(\d+)", str(headers.get("RateLimit", "")))
+    ]
+    if resets:
+        return max(resets)
+    retry_after = str(headers.get("Retry-After", "")).strip()
+    # only the delay-seconds form; the HTTP-date form falls through to the ladder
+    return int(retry_after) if retry_after.isdigit() else None
 
 
 def remote_files(repo: str, token: str | None) -> list[str]:
     """Every file in the dataset repo, from a **single** Hub API request.
 
-    ``list_repo_files`` walks the ``/tree/`` endpoint, which costs one API call per directory — and
-    the API bucket is only 1,000 requests per 5-minute window on a free account, which is what both
-    runs lost on 2026-08-11 exhausted. ``repo_info(expand=["siblings"])`` answers from
-    ``/api/datasets/{id}`` in one call instead; it is HF's own recommendation for exactly this.
+    ``list_repo_files`` goes through ``list_repo_tree(recursive=True)``, which pages at ~1,000
+    entries — two ``/tree/`` requests at our current 1,601 files, and another every ~1,000 the repo
+    grows by. ``repo_info(expand=["siblings"])`` answers from ``/api/datasets/{id}`` in exactly one,
+    whatever the file count. A modest saving against a 1,000-request-per-5-minute API budget, but it
+    is on the endpoint that 429'd both runs lost on 2026-08-11, and it stops growing.
+
+    Note the trade: this listing is unpaginated, so a Hub-side truncation would be silent where the
+    tree walk would have kept paging. At ~1,601 files against a listing that serves far larger repos
+    whole, that is not a live risk — but it is the reason to keep the ``siblings is None`` guard
+    below strict rather than lenient.
 
     Fails closed. The Hub *omits* ``siblings`` rather than erroring, and ``DatasetInfo`` then holds
     ``None`` — which would make ``wanted`` empty, ``absent_locally`` report nothing missing, and the
@@ -114,11 +141,11 @@ def remote_files(repo: str, token: str | None) -> list[str]:
     return [s.rfilename for s in siblings]
 
 
-def remote_matches(remote_files: list[str], patterns: list[str]) -> set[str]:
+def remote_matches(listing: list[str], patterns: list[str]) -> set[str]:
     """The repo-relative files the Hub reports for these patterns. ``fnmatch`` is what
     ``snapshot_download`` filters ``allow_patterns`` with, so ``*`` spans ``/`` here too — that is
     what lets ``data/lancedb/*`` reach the table's nested fragment files."""
-    return {f for f in remote_files if any(fnmatch(f, p) for p in patterns)}
+    return {f for f in listing if any(fnmatch(f, p) for p in patterns)}
 
 
 def absent_locally(wanted: set[str], root: str | Path) -> list[str]:
@@ -129,6 +156,7 @@ def absent_locally(wanted: set[str], root: str | Path) -> list[str]:
 def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
     from huggingface_hub import snapshot_download
 
+    spent = 0  # seconds slept so far, against _WAIT_BUDGET
     for attempt in range(1, _ATTEMPTS + 1):
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
@@ -159,12 +187,14 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             reason = reason_for(exc)
             advised = reset_after(exc)
         if attempt < _ATTEMPTS:
-            # the Hub's own reset beats our guess; cap it at one window so a bogus header can't
-            # park the job past its timeout
-            wait = min(advised, _BACKOFF_CAP) if advised else wait_before(attempt)
+            wait = next_wait(attempt, advised, spent)
+            if wait == 0:
+                reason = f"{reason}; {_WAIT_BUDGET}s retry budget exhausted"
+                break
+            spent += wait
             _log.warning(
                 f"state fetch attempt {attempt} failed ({reason}); retrying in {wait}s"
-                f"{' (Hub-advised)' if advised else ''}"
+                f"{' (Hub-advised)' if advised is not None else ''}"
             )
             time.sleep(wait)
 

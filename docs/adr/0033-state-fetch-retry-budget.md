@@ -91,23 +91,40 @@ fetched 1,521 files successfully at 04:05:40, one window boundary later.
 **Amended decision, two parts.**
 
 **Wait what the Hub advises.** `reset_after` reads `t=` from the `RateLimit` header (falling back to
-`Retry-After`), and the loop sleeps that instead of `wait_before(attempt)`, capped at `_BACKOFF_CAP`
-so a bogus header cannot park a job past its timeout. Failures that advise nothing — timeouts, DNS,
-a listing that did not land — still use the exponential ladder, which is why it stays.
+the delay-seconds form of `Retry-After`), and `next_wait` sleeps that instead of `wait_before`.
+Failures that advise nothing — timeouts, DNS, a listing that did not land — still use the
+exponential ladder, which is why it stays. One header can carry several policies and does not say
+which bucket was blown, so `reset_after` takes the **longest** reset: it is the only one guaranteed
+to have cleared, and over-waiting is bounded by the budget below while under-waiting is the bug.
 
-**Stop listing twice.** `list_repo_files` walked the `/tree/` endpoint, which costs one API request
-*per directory*; the state repo's file count grows ~90 per run between compactions (1,048 → 1,601
-across these 8 runs, ADR-0036), so that cost rises every run. `remote_files` now reads the whole
-listing from `repo_info(expand=["siblings"])` — a single `/api/datasets/{id}` request, which is HF's
-own recommendation for this pattern. It **fails closed** when the Hub answers without `siblings`:
-`DatasetInfo.siblings` is `None` there, and an empty listing would make `absent_locally` report
-nothing missing, i.e. exactly the empty-state-reads-as-a-first-run bug ADR-0030 exists to prevent.
+**List in one request.** `list_repo_files` goes through `list_repo_tree(recursive=True)`, which
+pages at ~1,000 entries: two `/tree/` requests at our current 1,601 files, and another every ~1,000
+the repo grows by (it grew ~90 per run across these 8 runs — 1,048 → 1,601 — between compactions,
+ADR-0036). `remote_files` now reads the listing from `repo_info(expand=["siblings"])`, one
+`/api/datasets/{id}` request whatever the file count.
 
-**Timeout arithmetic, re-checked.** Worst-case waiting rises from 7.5 min (30+60+120+240) to 20 min
-(4 × the 300 s cap). Against measured stage times — `merge` 5.9–10.2 min including a 143–406 s fetch,
-`join` ~6.5 min — the worst cases become ~30 min and ~27 min against job timeouts of **48** and **40**
-minutes. Both keep their margin, so no timeout changes; recorded here because the arithmetic is what
-this ADR exists to keep honest.
+Be honest about the size of this: it is 2 requests → 1, not the per-directory blow-out first
+supposed, so it is **not** on its own an explanation for exhausting a 1,000-request window. It earns
+its place because it is on the exact endpoint that 429'd, and because it stops growing. What is
+actually consuming the API bucket is not yet measured — see "Not addressed".
 
-**Not addressed:** the 1,000-per-window ceiling is the *free* tier. If API-bucket pressure keeps
-growing with file count, the levers are compacting more often (ADR-0036) or a paid plan (PRO: 2,500).
+It **fails closed** when the Hub answers without `siblings`: `DatasetInfo.siblings` is `None` there,
+and an empty listing would make `absent_locally` report nothing missing, i.e. exactly the
+empty-state-reads-as-a-first-run bug ADR-0030 exists to prevent. The trade is that `siblings` is
+unpaginated where the tree walk kept paging, so a Hub-side truncation would be silent — not a live
+risk at 1,601 files, and the reason that guard stays strict.
+
+**Total waiting is unchanged, and that is deliberate.** Honouring `t` per attempt could sleep up to
+4 × 300 s = 20 min, which **would have broken `scrape-plan`** — `state_fetch` runs there too, under a
+10-minute job timeout, so it would have been killed mid-sleep and never printed the ABORT annotation
+the rest of this amendment exists to make readable. So `_WAIT_BUDGET` caps the *sum* of all waits at
+450 s, exactly the ladder's old worst case. The change reallocates the budget from a guess to the
+Hub's own number; it does not spend more of it. Every job timeout therefore keeps the margin ADR-0033
+already sized, and `next_wait` is a pure helper so that arithmetic is tested rather than asserted
+here — as this ADR required of `wait_before`.
+
+**Not addressed:** what actually exhausts the 1,000-request window is still unmeasured — this
+amendment removes one request per fetch and stops guessing at the wait, but does not explain the
+consumption. `snapshot_download` walks the tree itself, and the merge stage pulls 1,000–1,600 files
+per run, so the next step if this recurs is to count requests per stage rather than infer them. The
+remaining levers are compacting more often (ADR-0036) or leaving the free tier (PRO: 2,500/window).

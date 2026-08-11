@@ -127,6 +127,78 @@ def test_remote_files_returns_every_repo_path(monkeypatch) -> None:
     assert sf.remote_files("some/repo", token=None) == _REMOTE
 
 
+def test_next_wait_prefers_the_hubs_window_over_the_ladder() -> None:
+    assert sf.next_wait(attempt=1, advised=137, spent=0) == 137  # not the ladder's 30
+    assert sf.next_wait(attempt=1, advised=None, spent=0) == 30
+
+
+def test_next_wait_honours_an_advised_zero() -> None:
+    """`t=0` is a window resetting right now. Treating it as "no advice" (falsy, not None) sent it
+    to a needless 30-240s guess — the exact over-waiting this change exists to stop."""
+    assert sf.next_wait(attempt=1, advised=0, spent=0) == 0
+
+
+def test_next_wait_clamps_to_the_total_budget() -> None:
+    """The budget is what the job timeouts are sized against — `state_fetch` also runs in
+    `scrape-plan`, whose job timeout is 10 minutes, so no sequence of waits may exceed it."""
+    assert sf.next_wait(attempt=1, advised=300, spent=sf._WAIT_BUDGET - 100) == 100
+    assert sf.next_wait(attempt=1, advised=300, spent=sf._WAIT_BUDGET) == 0
+
+
+def _fake_hub(monkeypatch, tmp_path, *, fail_first: int, headers: dict) -> list[int]:
+    """Point `fetch_state` at a Hub that 429s `fail_first` times, and record what it sleeps."""
+    import huggingface_hub
+
+    calls = {"n": 0}
+    slept: list[int] = []
+    listing = ["data/state/board_priority.csv"]
+
+    def repo_info(*a, **k):
+        calls["n"] += 1
+        if calls["n"] <= fail_first:
+            exc = _hub_error(_HF_429, 429)
+            exc.response.headers = headers  # type: ignore[attr-defined]
+            raise exc
+        return type(
+            "I", (), {"siblings": [type("S", (), {"rfilename": listing[0]})()]}
+        )()
+
+    def snapshot_download(*a, **k):
+        (tmp_path / listing[0]).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / listing[0]).write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(huggingface_hub, "repo_info", repo_info)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sf.time, "sleep", slept.append)
+    return slept
+
+
+def test_fetch_recovers_once_the_advised_window_passes(monkeypatch, tmp_path) -> None:
+    """The 2026-08-11 case end to end: one 429 carrying a reset, then the window reopens."""
+    slept = _fake_hub(
+        monkeypatch, tmp_path, fail_first=1, headers={"RateLimit": '"api";r=0;t=137'}
+    )
+    assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+    assert slept == [137]  # the Hub's window, not the ladder's 30
+
+
+def test_fetch_fails_closed_and_stays_inside_the_budget(monkeypatch, tmp_path) -> None:
+    """A window that never reopens must still abort, and must not sleep past the budget the job
+    timeouts are sized against."""
+    slept = _fake_hub(
+        monkeypatch, tmp_path, fail_first=99, headers={"RateLimit": '"api";r=0;t=300'}
+    )
+    assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
+    assert sum(slept) <= sf._WAIT_BUDGET
+
+
+def test_fetch_falls_back_to_the_ladder_when_unadvised(monkeypatch, tmp_path) -> None:
+    slept = _fake_hub(monkeypatch, tmp_path, fail_first=99, headers={})
+    assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
+    assert slept == [30, 60, 120, 240]
+
+
 def test_remote_matches_selects_only_matching_files() -> None:
     """A pattern set asks for a subset of what the repo holds — including nested paths, since
     `data/lancedb/*` must reach the table's fragment files, not just its top level."""
