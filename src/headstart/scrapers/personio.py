@@ -43,6 +43,12 @@ class PersonioScraper(BaseScraper):
         host = (url or "").split("://", 1)[-1].rstrip("/")
         return host if "personio" in host else f"{tenant}.jobs.personio.de"
 
+    def board_key(self) -> str:
+        # the slug is the host, but `parse` ids each Job by its first label, so the default
+        # `{ats}:{slug}` would never match `board_of` of our own rows — and the index prune
+        # would evict every personio row as off-Board on every run (ADR-0023).
+        return f"{self.ats}:{self.slug.split('.')[0]}"
+
     def url(self) -> str:
         # no ?language= — that returns the listing but empties descriptions for non-English
         # tenants; the bare feed gives each posting in the company's own language.

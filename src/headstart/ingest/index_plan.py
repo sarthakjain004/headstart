@@ -86,15 +86,16 @@ def apply_sync(
 
 
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
-    """Canonical (lowercased) Board keys that should survive: every live ledger Board on an enabled
-    ATS, in the index's ``board_of`` key space (via ``board_key()``). ``load_active_companies``
-    already drops dead Boards and ``DISABLED_ATS``; ``min_jobs=0`` keeps currently-empty live Boards."""
+    """Board keys that should survive: every live ledger Board on an enabled ATS, in the index's
+    ``board_of`` key space (via ``board_key()``). ``load_active_companies`` already drops dead
+    Boards and ``DISABLED_ATS``; ``min_jobs=0`` keeps currently-empty live Boards.
+
+    Kept in the ledger's **own casing**, not lowercased: :func:`plan_prune` matches Boards
+    case-insensitively but needs the exact live casing to pick which duplicate row to keep."""
     keep: set[str] = set()
     for company in load_active_companies(ledger_dir, min_jobs=0):
         try:
-            keep.add(
-                get_scraper(company.ats, company.slug, company.name).board_key().lower()
-            )
+            keep.add(get_scraper(company.ats, company.slug, company.name).board_key())
         except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
             continue
     return keep
@@ -104,23 +105,34 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
 
     ``evict_off_board``: Board not in ``keep`` (dead / dropped from the ledger / disabled ATS).
-    ``evict_duplicate``: among the survivors, every id but the lexicographically-smallest per
-    ``(lowercased Board, native id)`` group — the case-variant dupes of one job (the same
-    representative :func:`headstart.config._dedupe_boards` keeps, so a future scrape re-sees the kept
-    row instead of re-embedding it)."""
+    ``evict_duplicate``: among the survivors, every id but one per ``(lowercased Board, native id)``
+    group — the case-variant dupes of one job.
+
+    The row kept is the one whose Board casing the **live ledger** produces, because that is the
+    casing a future scrape emits. Keeping the lexicographically-smallest instead (the rule until
+    2026-08-11) preserved whichever casing happened to sort first, which is often a *fossil* — a row
+    under a casing nothing scrapes any more. Sync cannot evict a fossil (its Board is absent from
+    ``scraped_boards``, so the partial-harvest guard protects it), so the fresh row was deleted as
+    the fossil's duplicate on every run, forever, while the fossil itself went stale and immortal.
+    Falls back to lex-min when no row carries the live casing (the group is all fossils)."""
+    live: dict[str, str] = {}
+    for board in keep:  # lex-min on collision, matching ``config._dedupe_boards``
+        canon = board.lower()
+        if canon not in live or board < live[canon]:
+            live[canon] = board
     off_board: list[str] = []
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for jid in index_ids:
         canon = board_of(jid).lower()
-        if canon not in keep:
+        if canon not in live:
             off_board.append(jid)
             continue
         native = jid.rsplit(":", 1)[1]
         groups[(canon, native)].append(jid)
     duplicate: list[str] = []
-    for ids in groups.values():
+    for (canon, _native), ids in groups.items():
         if len(ids) > 1:
-            duplicate.extend(
-                sorted(ids)[1:]
-            )  # keep the lex-min Board casing, drop the rest
+            scraped = f"{live[canon]}:{_native}"
+            kept = scraped if scraped in ids else sorted(ids)[0]
+            duplicate.extend(i for i in ids if i != kept)
     return off_board, duplicate
