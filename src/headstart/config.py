@@ -64,8 +64,11 @@ def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
     ``.../External`` vs ``.../external``) or by an equivalent tenant/url form that resolves to the
     same ``board_key``. Left in, each variant is scraped and indexed separately, so one job lands in
     the index two or three times. Keep the lexicographically-smallest ``board_key`` per canonical
-    (lowercased) key — the same representative the index prune keeps, so scrape and index agree and a
-    future scrape re-sees the kept rows rather than re-embedding them."""
+    (lowercased) key — this picks the Board that is actually scraped, and ``index_plan.plan_prune``
+    keeps the index row carrying *that* casing, so scrape and index agree. (Until 2026-08-11 the
+    prune instead kept the lex-min casing *present in the index*, which is a different population —
+    it includes casings that left the ledger — and the two disagreed permanently: ADR-0023's
+    amendment.)"""
     from headstart.scrapers.registry import SCRAPERS
 
     best: dict[str, tuple[str, CompanyRef]] = {}

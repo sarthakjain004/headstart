@@ -43,6 +43,17 @@ class PersonioScraper(BaseScraper):
         host = (url or "").split("://", 1)[-1].rstrip("/")
         return host if "personio" in host else f"{tenant}.jobs.personio.de"
 
+    @property
+    def _tenant(self) -> str:
+        """The slug is the whole host; the tenant is its first label."""
+        return self.slug.split(".")[0]
+
+    def board_key(self) -> str:
+        # Jobs are ided by tenant, not by the host-shaped slug, so the inherited `{ats}:{slug}`
+        # would never match `board_of` of our own rows and the prune would evict every personio
+        # row as off-Board on every run (ADR-0023). Both sides read `_tenant` so they can't drift.
+        return f"{self.ats}:{self._tenant}"
+
     def url(self) -> str:
         # no ?language= — that returns the listing but empties descriptions for non-English
         # tenants; the bare feed gives each posting in the company's own language.
@@ -53,7 +64,7 @@ class PersonioScraper(BaseScraper):
         return ET.fromstring(self._get().encode("utf-8"))
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        tenant = self.slug.split(".")[0]
+        tenant = self._tenant
         jobs: list[Job] = []
         for pos in raw.findall("position"):
             jid = _text(pos, "id")

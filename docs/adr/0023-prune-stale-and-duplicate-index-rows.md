@@ -70,3 +70,54 @@ this ADR all cut the pipeline's runtime and its timeout/upload failures.
   ~86k Workday corpus would re-embed. Rejected.
 - **Keep the tech-corpus eviction scope:** the original bug — strands rows on Boards that lose their
   tech jobs.
+
+## Amendment (2026-08-11): the duplicate representative is the *live* casing, not the lex-min one
+
+**Status:** accepted. Supersedes the lex-min rule in "A prune sweep" (b) above, and that paragraph's
+"the keep-set is the live ledger … mapped through `board_key()` **and lowercased**" — the keep-set
+now carries the ledger's own casing (matching is still case-insensitive).
+
+Two distinct churn loops were found in the 2026-08-10/11 CI logs, one per prune reason. The
+**off-Board** one is a plain defect: `PersonioScraper` ids each Job by the tenant
+(`slug.split(".")[0]`) but inherited the default `board_key()` of `{ats}:{slug}`, and personio's
+slug is the whole host — so the keep-set held `personio:{tenant}.jobs.personio.com` while the rows
+carried `personio:{tenant}`, and all 2,740 live personio Boards pruned as off-Board on every run.
+Fixed by overriding `board_key()`; `base.py` already documented that contract. The **duplicate** one
+is the design flaw this amendment revises:
+
+The recurrence argument above — "scrape and prune agree on the representative, [so] a future scrape
+*re-sees* the kept rows" — is false, and CI logs show it failing every run. Both sides do apply the
+same lex-min *rule*, but to **different populations**: `_dedupe_boards` takes lex-min over the
+**live ledger's** Board keys, while `plan_prune` took lex-min over the **casings present in the
+index**, which include historical rows whose casing left the ledger long ago. When such a *fossil*
+casing sorts below the live one, the two disagree permanently:
+
+- the scrape emits the live casing → `sync` adds that row;
+- `prune` sees the fossil sorting first, keeps it, and deletes the row just added;
+- `sync` cannot evict the fossil, because the fossil's Board is absent from `scraped_boards` and
+  ADR-0014's partial-harvest guard therefore protects it.
+
+So the fresh row churns in and out on every run while the fossil is both **immortal and never
+refreshed** — a permanently stale row that no code path can remove. Measured over the 6 runs of
+2026-08-10/11 that reached the prune step (the other 2 aborted in `state_fetch`): 136–532 duplicate
+prunes per run, mean 217, with individual ids
+(`workday:tapestry/tapestry_careers:JR2221`) pruned in 3 separate runs. See
+`docs/pipeline/2026-08-11_first-logged-runs.md`.
+
+**Amended decision.** `plan_prune` keeps the row whose Board casing the live ledger produces — the
+casing the next scrape will emit, and therefore the only row that can stay fresh — falling back to
+lex-min only when no row carries it (the group is all fossils, so any single survivor is equivalent
+and it will be replaced once the live casing is next scraped). `live_keep_set` consequently returns
+Board keys in the ledger's own casing instead of lowercasing them; `plan_prune` still matches Boards
+case-insensitively, and resolves ledger collisions by lex-min so it continues to agree with
+`_dedupe_boards`.
+
+**Consequences.** Fossils are now evicted rather than preserved, so the first run after this lands
+prunes a backlog rather than the steady ~140–190/run. No id-scheme change and no re-embedding: the
+surviving id is one already in the embedding store. The "no re-embedding in the common case" claim
+above still holds and now covers the fossil case too, since the kept casing is the scraped one.
+
+**Not addressed here:** ADR-0014's partial-harvest guard is what makes a fossil unreachable by
+`sync`. Widening the eviction scope to the canonical lowercased Board would fix the class rather
+than this instance, but it changes the guard that also protects partial harvests — the same rule the
+open per-board-timeout work must revisit. Deferred to that ADR.
