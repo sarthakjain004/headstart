@@ -13,11 +13,24 @@ The rest is what the Hub tells us and how we answer it (ADR-0033's amendment): t
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
 import headstart.ingest.state_fetch as sf
+
+
+@pytest.fixture
+def hub(monkeypatch):
+    """A stand-in `huggingface_hub`, since it lives in the [alerts] extra and CI's quality job
+    installs only [dev] — the same stubbing `test_space_app.py` uses to keep such tests running
+    in CI rather than silently skipping."""
+    module = types.ModuleType("huggingface_hub")
+    monkeypatch.setitem(sys.modules, "huggingface_hub", module)
+    return module
+
 
 _REMOTE = [
     "README.md",
@@ -88,6 +101,14 @@ def test_reset_after_reads_the_hubs_own_window() -> None:
     assert sf.reset_after(exc) == 137
 
 
+def test_reset_after_takes_the_longest_of_several_policies() -> None:
+    """One header can carry several buckets and doesn't say which we blew. Taking the first would
+    retry inside a window that hasn't cleared — the very failure this reads the header to avoid."""
+    exc = _hub_error(_HF_429, 429)
+    exc.response.headers = {"RateLimit": '"default";r=50;t=30, "api";r=0;t=137'}  # type: ignore[attr-defined]
+    assert sf.reset_after(exc) == 137
+
+
 def test_reset_after_falls_back_to_retry_after() -> None:
     exc = _hub_error(_HF_429, 429)
     exc.response.headers = {"Retry-After": "90"}  # type: ignore[attr-defined]
@@ -100,55 +121,43 @@ def test_reset_after_is_none_when_the_hub_advises_nothing() -> None:
     assert sf.reset_after(_hub_error(_HF_429, 429)) is None
 
 
-def test_remote_files_fails_closed_when_the_hub_omits_siblings(monkeypatch) -> None:
+def test_remote_files_fails_closed_when_the_hub_omits_siblings(hub) -> None:
     """`siblings` is None whenever the Hub doesn't return it, and an empty listing would make
     `absent_locally` report nothing missing — the empty-state-reads-as-first-run bug ADR-0030
     exists to prevent. It must raise so the attempt retries instead."""
-    import huggingface_hub
-
-    monkeypatch.setattr(
-        huggingface_hub,
-        "repo_info",
-        lambda *a, **k: type("I", (), {"siblings": None})(),
-    )
+    hub.repo_info = lambda *a, **k: type("I", (), {"siblings": None})()
     with pytest.raises(RuntimeError, match="siblings"):
         sf.remote_files("some/repo", token=None)
 
 
-def test_remote_files_returns_every_repo_path(monkeypatch) -> None:
-    import huggingface_hub
-
+def test_remote_files_returns_every_repo_path(hub) -> None:
     siblings = [type("S", (), {"rfilename": f})() for f in _REMOTE]
-    monkeypatch.setattr(
-        huggingface_hub,
-        "repo_info",
-        lambda *a, **k: type("I", (), {"siblings": siblings})(),
-    )
+    hub.repo_info = lambda *a, **k: type("I", (), {"siblings": siblings})()
     assert sf.remote_files("some/repo", token=None) == _REMOTE
 
 
-def test_next_wait_prefers_the_hubs_window_over_the_ladder() -> None:
-    assert sf.next_wait(attempt=1, advised=137, spent=0) == 137  # not the ladder's 30
-    assert sf.next_wait(attempt=1, advised=None, spent=0) == 30
+def test_retry_delay_prefers_the_hubs_window_over_the_ladder() -> None:
+    assert sf.retry_delay(attempt=1, advised=137, spent=0) == 137  # not the ladder's 30
+    assert sf.retry_delay(attempt=1, advised=None, spent=0) == 30
 
 
-def test_next_wait_honours_an_advised_zero() -> None:
+def test_retry_delay_honours_an_advised_zero() -> None:
     """`t=0` is a window resetting right now. Treating it as "no advice" (falsy, not None) sent it
     to a needless 30-240s guess — the exact over-waiting this change exists to stop."""
-    assert sf.next_wait(attempt=1, advised=0, spent=0) == 0
+    assert sf.retry_delay(attempt=1, advised=0, spent=0) == 0
 
 
-def test_next_wait_clamps_to_the_total_budget() -> None:
+def test_retry_delay_clamps_to_the_total_budget() -> None:
     """The budget is what the job timeouts are sized against — `state_fetch` also runs in
     `scrape-plan`, whose job timeout is 10 minutes, so no sequence of waits may exceed it."""
-    assert sf.next_wait(attempt=1, advised=300, spent=sf._WAIT_BUDGET - 100) == 100
-    assert sf.next_wait(attempt=1, advised=300, spent=sf._WAIT_BUDGET) == 0
+    assert sf.retry_delay(attempt=1, advised=300, spent=sf._WAIT_BUDGET - 100) == 100
+    assert sf.retry_delay(attempt=1, advised=300, spent=sf._WAIT_BUDGET) == 0
 
 
-def _fake_hub(monkeypatch, tmp_path, *, fail_first: int, headers: dict) -> list[int]:
+def _fake_hub(
+    hub, monkeypatch, tmp_path, *, fail_first: int, headers: dict
+) -> list[int]:
     """Point `fetch_state` at a Hub that 429s `fail_first` times, and record what it sleeps."""
-    import huggingface_hub
-
     calls = {"n": 0}
     slept: list[int] = []
     listing = ["data/state/board_priority.csv"]
@@ -167,34 +176,60 @@ def _fake_hub(monkeypatch, tmp_path, *, fail_first: int, headers: dict) -> list[
         (tmp_path / listing[0]).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / listing[0]).write_text("x", encoding="utf-8")
 
-    monkeypatch.setattr(huggingface_hub, "repo_info", repo_info)
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    hub.repo_info = repo_info
+    hub.snapshot_download = snapshot_download
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sf.time, "sleep", slept.append)
     return slept
 
 
-def test_fetch_recovers_once_the_advised_window_passes(monkeypatch, tmp_path) -> None:
+def test_fetch_recovers_once_the_advised_window_passes(
+    hub, monkeypatch, tmp_path
+) -> None:
     """The 2026-08-11 case end to end: one 429 carrying a reset, then the window reopens."""
     slept = _fake_hub(
-        monkeypatch, tmp_path, fail_first=1, headers={"RateLimit": '"api";r=0;t=137'}
+        hub,
+        monkeypatch,
+        tmp_path,
+        fail_first=1,
+        headers={"RateLimit": '"api";r=0;t=137'},
     )
     assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
     assert slept == [137]  # the Hub's window, not the ladder's 30
 
 
-def test_fetch_fails_closed_and_stays_inside_the_budget(monkeypatch, tmp_path) -> None:
+def test_fetch_fails_closed_and_stays_inside_the_budget(
+    hub, monkeypatch, tmp_path
+) -> None:
     """A window that never reopens must still abort, and must not sleep past the budget the job
     timeouts are sized against."""
     slept = _fake_hub(
-        monkeypatch, tmp_path, fail_first=99, headers={"RateLimit": '"api";r=0;t=300'}
+        hub,
+        monkeypatch,
+        tmp_path,
+        fail_first=99,
+        headers={"RateLimit": '"api";r=0;t=300'},
     )
     assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
     assert sum(slept) <= sf._WAIT_BUDGET
 
 
-def test_fetch_falls_back_to_the_ladder_when_unadvised(monkeypatch, tmp_path) -> None:
-    slept = _fake_hub(monkeypatch, tmp_path, fail_first=99, headers={})
+def test_fetch_retries_immediately_on_an_advised_zero(
+    hub, monkeypatch, tmp_path
+) -> None:
+    """`t=0` means the window is open now. Reading that 0 as "no budget left" aborted the whole
+    fetch after a single attempt — a lost run, and worse than the guess it replaced."""
+    slept = _fake_hub(
+        hub, monkeypatch, tmp_path, fail_first=1, headers={"RateLimit": '"api";r=0;t=0'}
+    )
+    assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+    assert slept == [0]
+
+
+def test_fetch_falls_back_to_the_ladder_when_unadvised(
+    hub, monkeypatch, tmp_path
+) -> None:
+    slept = _fake_hub(hub, monkeypatch, tmp_path, fail_first=99, headers={})
     assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
     assert slept == [30, 60, 120, 240]
 

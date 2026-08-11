@@ -43,7 +43,9 @@ from headstart.ingest import REPO_ROOT
 
 _log = log.get(__name__, __spec__)
 
-# Five attempts inside a total sleeping budget of 450s (ADR-0033 and its 2026-08-11 amendment).
+# Up to five attempts, inside a total sleeping budget of 450s (ADR-0033 + its 2026-08-11
+# amendment). Five is the ceiling, not a promise: the budget binds first whenever the Hub advises
+# long windows, so a rate-limited fetch may abort after three.
 # The exponential ladder — 30s → 60s → 120s → 240s — is now only the *fallback*, for failures the
 # Hub does not put a reset time on; a 429 carries its own window and `reset_after` reads it.
 # The budget is what the pipeline's job timeouts are sized against, so it is a ceiling on the sum
@@ -60,15 +62,22 @@ def wait_before(attempt: int) -> int:
     return min(_BACKOFF * 2 ** (attempt - 1), _BACKOFF_CAP)
 
 
-def next_wait(attempt: int, advised: int | None, spent: int) -> int:
-    """Seconds to sleep before the next attempt; ``0`` means the budget is gone, so stop.
+def retry_delay(attempt: int, advised: int | None, spent: int) -> int:
+    """Seconds to sleep before the next attempt.
 
     Prefers ``advised`` — what the Hub said its window needs — over the guessed ladder, including
-    an advised ``0`` (a window resetting right now, which the ladder would answer with a needless
-    30–240 s). Clamped to what is left of ``_WAIT_BUDGET`` so no caller can outlive its job timeout.
+    an advised ``0``, which means the window is open *now* and a wait would be pure loss (the
+    ladder would answer it with 30–240 s). Clamped to what is left of ``_WAIT_BUDGET`` so no caller
+    can outlive its job timeout. A ``0`` result is a delay, never a signal: whether any budget
+    remains is the caller's question, asked of ``spent``.
     """
     wait = wait_before(attempt) if advised is None else advised
     return max(0, min(wait, _WAIT_BUDGET - spent))
+
+
+def _response(exc: Exception) -> object | None:
+    """The HTTP response a Hub error carries, if it is an HTTP error at all."""
+    return getattr(exc, "response", None)
 
 
 def reason_for(exc: Exception) -> str:
@@ -79,7 +88,7 @@ def reason_for(exc: Exception) -> str:
     only the first line (ADR-0039) — so plain ``{type}: {exc}`` published the one useless part and
     hid the ``429`` that named the fault. The status comes off ``exc.response``, not off the text.
     """
-    status = getattr(getattr(exc, "response", None), "status_code", None)
+    status = getattr(_response(exc), "status_code", None)
     # every whitespace run collapsed to one space — an annotation stops at the first newline
     detail = " ".join(str(exc).split())
     prefix = f"HTTP {status} " if status else ""
@@ -96,10 +105,10 @@ def reset_after(exc: Exception) -> int | None:
     That is why not one of the 10 retries on 2026-08-11 recovered. Non-HTTP failures advise nothing
     and fall back to :func:`wait_before`.
     """
-    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    headers = getattr(_response(exc), "headers", None) or {}
     # One header can carry several policies ('"default";r=50;t=30, "api";r=0;t=137') and it does
     # not say which bucket we blew, so take the longest reset: it is the only one guaranteed to
-    # have cleared. Over-waiting is bounded by `next_wait`'s budget; under-waiting is the bug.
+    # have cleared. Over-waiting is bounded by `retry_delay`'s budget; under-waiting is the bug.
     resets = [
         int(t) for t in re.findall(r"\bt=(\d+)", str(headers.get("RateLimit", "")))
     ]
@@ -141,11 +150,11 @@ def remote_files(repo: str, token: str | None) -> list[str]:
     return [s.rfilename for s in siblings]
 
 
-def remote_matches(listing: list[str], patterns: list[str]) -> set[str]:
+def remote_matches(repo_files: list[str], patterns: list[str]) -> set[str]:
     """The repo-relative files the Hub reports for these patterns. ``fnmatch`` is what
     ``snapshot_download`` filters ``allow_patterns`` with, so ``*`` spans ``/`` here too — that is
     what lets ``data/lancedb/*`` reach the table's nested fragment files."""
-    return {f for f in listing if any(fnmatch(f, p) for p in patterns)}
+    return {f for f in repo_files if any(fnmatch(f, p) for p in patterns)}
 
 
 def absent_locally(wanted: set[str], root: str | Path) -> list[str]:
@@ -187,10 +196,12 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             reason = reason_for(exc)
             advised = reset_after(exc)
         if attempt < _ATTEMPTS:
-            wait = next_wait(attempt, advised, spent)
-            if wait == 0:
+            # budget checked on `spent`, never on the wait: an advised 0 means "the window is
+            # open now, retry immediately", which is a wait of 0 and not an exhausted budget
+            if spent >= _WAIT_BUDGET:
                 reason = f"{reason}; {_WAIT_BUDGET}s retry budget exhausted"
                 break
+            wait = retry_delay(attempt, advised, spent)
             spent += wait
             _log.warning(
                 f"state fetch attempt {attempt} failed ({reason}); retrying in {wait}s"

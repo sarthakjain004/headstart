@@ -91,7 +91,7 @@ fetched 1,521 files successfully at 04:05:40, one window boundary later.
 **Amended decision, two parts.**
 
 **Wait what the Hub advises.** `reset_after` reads `t=` from the `RateLimit` header (falling back to
-the delay-seconds form of `Retry-After`), and `next_wait` sleeps that instead of `wait_before`.
+the delay-seconds form of `Retry-After`), and `retry_delay` sleeps that instead of `wait_before`.
 Failures that advise nothing — timeouts, DNS, a listing that did not land — still use the
 exponential ladder, which is why it stays. One header can carry several policies and does not say
 which bucket was blown, so `reset_after` takes the **longest** reset: it is the only one guaranteed
@@ -119,8 +119,15 @@ risk at 1,601 files, and the reason that guard stays strict.
 10-minute job timeout, so it would have been killed mid-sleep and never printed the ABORT annotation
 the rest of this amendment exists to make readable. So `_WAIT_BUDGET` caps the *sum* of all waits at
 450 s, exactly the ladder's old worst case. The change reallocates the budget from a guess to the
-Hub's own number; it does not spend more of it. Every job timeout therefore keeps the margin ADR-0033
-already sized, and `next_wait` is a pure helper so that arithmetic is tested rather than asserted
+Hub's own number; it does not spend more of it, so no job's exposure grows.
+
+Be precise about what that does and does not buy. `merge` is sized for this (38 → 48 min, above).
+`scrape-plan` is **not**: its 10-minute timeout was measured against a ~40 s job, and ADR-0033 waved
+it through on the grounds that it "fetch[es] 2-4 files and sailed through" — it was never sized
+against 450 s of waiting. A full-budget outage there still leaves under a minute after checkout,
+setup and pip, so it can still be killed mid-sleep. The cap keeps that no worse than before rather
+than making it safe; sizing `scrape-plan` honestly is left open, and would be the thing to fix if a
+429 ever kills it. `retry_delay` is a pure helper so that arithmetic is tested rather than asserted
 here — as this ADR required of `wait_before`.
 
 **Not addressed:** what actually exhausts the 1,000-request window is still unmeasured — this
