@@ -108,7 +108,12 @@ def main() -> int:
     # green run that silently never accrues a row.
     missing = [
         str(p)
-        for p in (args.centroids / "manifest.json", args.families)
+        for p in (
+            args.centroids / "manifest.json",
+            args.centroids
+            / "centroids.f32",  # a half-landed store must not reach roles.load
+            args.families,
+        )
         if not p.exists()
     ]
     if missing:
@@ -122,23 +127,34 @@ def main() -> int:
 
     from headstart.search import PROD_TABLE
 
-    centroids, manifest = roles.load(args.centroids)
-    families = roles.load_families(args.families, manifest)
+    try:
+        centroids, manifest = roles.load(args.centroids)
+        families = roles.load_families(args.families, manifest)
+    except ValueError as exc:
+        # An unusable taxonomy is a real defect, not a missing prerequisite — most likely a
+        # refit shipped without re-curating the map, which ADR-0040 treats as routine. The
+        # workflow step is `continue-on-error`, so without this it would crash into a green
+        # run with no annotation at all; ERROR + exit 1 makes it visible and still non-fatal.
+        _log.error(f"role taxonomy unusable, no trends this run: {exc}")
+        return 1
+
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     n = table.count_rows()
     if not n:  # nothing to count, and np.stack has no empty case
         _log.warning(f"served table '{PROD_TABLE}' is empty — no trend rows this run")
         return 0
-    rows = (
-        table.search()
-        .select(["vector", "min_years", "title", "employment_type"])
-        .limit(max(n, 1))
-        .to_arrow()
-    )
+    # Logged before the read, not after: pulling the 768-d vector column for the whole table is
+    # the slow, memory-hungry part of this step, so it should not run unnarrated.
     named = len({f for f in families.values() if f is not None})
     _log.info(
         f"assigning {n} served rows to {named} families via {manifest['k']} clusters "
         f"(centroid version {manifest['version']})"
+    )
+    rows = (
+        table.search()
+        .select(["vector", "min_years", "title", "employment_type"])
+        .limit(n)
+        .to_arrow()
     )
 
     counts, non_tech = count_groups(rows, centroids, families)

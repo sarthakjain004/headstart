@@ -8,7 +8,9 @@ task prefixes, filter clause) mirror ``headstart.search`` — keep them in locks
 
 from __future__ import annotations
 
+import csv
 import hmac
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,7 +40,9 @@ snapshot_download(
     DATASET,
     repo_type="dataset",
     local_dir=_STATE,
-    allow_patterns=["data/lancedb/*"],
+    # the trends ledger is tiny (a few dozen rows per run) and matches nothing until the
+    # first pipeline run writes it — an absent pattern downloads nothing rather than failing
+    allow_patterns=["data/lancedb/*", "data/state/role_trends.csv"],
     token=os.environ.get("HF_TOKEN"),
 )
 
@@ -58,6 +62,46 @@ _HAS_FIRST_SEEN = "first_seen" in _table.schema.names
 # The Résumé feature is a private beta behind a shared password (ADR-0032). No secret set →
 # the endpoint answers 503 and the panel is hidden — same dark-until-ready shape as first_seen.
 _RESUME_PASSWORD = os.environ.get("RESUME_PASSWORD") or ""
+
+# Role trends (ADR-0040). Same dark-until-ready shape as the two above: the ledger only exists
+# after a pipeline run has written it, so an absent file hides the panel rather than erroring.
+# Read once at startup — the Space restarts after every run, so it is never more than one run
+# stale, and the file is a few dozen rows per run.
+_NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles.NON_TECH
+
+
+def _load_trends(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8", newline="") as fh:
+        return [
+            {
+                "ts": r["ts"],
+                "version": int(r["version"]),
+                "family": r["family"],
+                "band": r["band"],
+                "count": int(r["count"]),
+            }
+            for r in csv.DictReader(fh)
+        ]
+
+
+def _family_labels(path: Path) -> dict[str, str]:
+    """Display names, from the curated map synced beside this app (ADR-0040). The ledger
+    stores slugs so a label can be reworded without breaking a series; this resolves them."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {f["name"]: f.get("label", f["name"]) for f in spec["families"]}
+
+
+_TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.csv")
+_FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
+# A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
+# newest only. Older rows stay in the ledger, they just aren't charted.
+if _TRENDS:
+    _live_version = max(r["version"] for r in _TRENDS)
+    _TRENDS = [r for r in _TRENDS if r["version"] == _live_version]
 # IPs that have presented the password once; in-memory, so the set empties whenever the Space
 # sleeps or restarts and the password is simply asked for again. Only correct-password callers
 # are ever added, so its size is bounded by people who actually hold the secret.
@@ -353,6 +397,52 @@ def unsubscribe():
     return "that unsubscribe link is not valid", 404
 
 
+@app.route("/trends")
+def trends():
+    """Role-family counts over time (ADR-0040), or 503 until the ledger exists.
+
+    Default: one series per family, each point the family's total across bands at that run.
+    ``?family=<name>``: that family's series split by seniority band instead. The reserved
+    ``non-tech`` family is never a chart series — it rides along as ``non_tech``, the
+    tech-filter health number, so the page can show it as a caveat rather than a role."""
+    if not _TRENDS:
+        return jsonify(error="no trend data yet"), 503
+    band = request.args.get("family")
+    rows = [r for r in _TRENDS if r["family"] != _NON_TECH]
+    if band:
+        rows = [r for r in rows if r["family"] == band]
+        key = "band"
+    else:
+        key = "family"
+
+    series: dict[str, dict[str, int]] = {}
+    for r in rows:  # sum over the other axis, so a family point is its total
+        series.setdefault(r[key], {})
+        at = series[r[key]]
+        at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+    stamps = sorted({r["ts"] for r in rows})
+    out = [
+        {
+            "name": name,
+            "label": _FAMILY_LABELS.get(name, name),
+            # None (not 0) where a run has no row for this series: a gap is "not measured",
+            # and plotting it as zero would invent a crash that never happened
+            "points": [points.get(ts) for ts in stamps],
+            "latest": points.get(stamps[-1]) if stamps else None,
+        }
+        for name, points in series.items()
+    ]
+    out.sort(key=lambda s: -(s["latest"] or 0))
+    non_tech = {r["ts"]: r["count"] for r in _TRENDS if r["family"] == _NON_TECH}
+    return jsonify(
+        version=_TRENDS[-1]["version"],
+        stamps=stamps,
+        series=out,
+        non_tech=[non_tech.get(ts) for ts in stamps],
+        split_by=key,
+    )
+
+
 @app.route("/")
 def index():
     return _PAGE
@@ -584,6 +674,31 @@ _TEMPLATE = """<!doctype html>
     var(--raise-2) 25%, var(--rule) 45%, var(--raise-2) 65%); background-size:200% 100%;
     animation:shim 1.2s linear infinite; }
   @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+  /* ---- role trends (ADR-0040). Sits below results: it is context, not the search. ---- */
+  .trends{ margin-top:34px; padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
+    border-radius:var(--r-xl); }
+  .trends-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
+  .trends-head h2{ font-size:16px; margin:0; letter-spacing:-.01em; }
+  .trends-note{ color:var(--ink-3); font-size:12.5px; }
+  .trends-grid{ display:grid; grid-template-columns:1fr 232px; gap:18px; align-items:start;
+    margin-top:14px; }
+  #trends-chart{ width:100%; height:260px; overflow:visible; }
+  .trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;
+    max-height:260px; overflow-y:auto; }
+  .trends-legend li{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:8px;
+    font-size:12.5px; cursor:pointer; }
+  .trends-legend li:hover{ background:var(--raise-2); }
+  .trends-legend li[aria-pressed="true"]{ background:var(--raise-2); }
+  .trends-legend .swatch{ width:9px; height:9px; border-radius:3px; flex:none; }
+  .trends-legend .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .trends-legend .ct{ color:var(--ink-2); font-variant-numeric:tabular-nums; }
+  .trends-legend .dl{ font-variant-numeric:tabular-nums; font-size:11.5px; min-width:44px;
+    text-align:right; }
+  .up{ color:var(--lime); } .down{ color:var(--coral); } .flat{ color:var(--ink-3); }
+  .trends-grid .gridline{ stroke:var(--rule); stroke-width:1; }
+  .trends-grid .axis-label{ fill:var(--ink-3); font-size:10px; }
+  @media (max-width:760px){ .trends-grid{ grid-template-columns:1fr; } }
+
   /* running text, so it gets a measure — 1180px of prose is unreadable */
   .foot{ max-width:62ch; margin:46px auto 0; text-align:center; color:var(--ink-3);
     font-size:12.5px; line-height:1.6; text-wrap:pretty; }
@@ -730,6 +845,20 @@ _TEMPLATE = """<!doctype html>
       </div>
       <div class="active" id="active"></div>
       <div id="results" aria-live="polite"></div>
+
+      <section class="trends" id="trends"__TRENDS_HIDDEN__>
+        <div class="trends-head">
+          <h2>Which tech roles are growing</h2>
+          <span class="note" id="trends-scope"></span>
+        </div>
+        <div class="trends-note" id="trends-empty"></div>
+        <div class="trends-grid">
+          <svg id="trends-chart" viewBox="0 0 720 260" preserveAspectRatio="none"
+               role="img" aria-label="Open roles over time by category"></svg>
+          <ul class="trends-legend" id="trends-legend"></ul>
+        </div>
+        <div class="note" id="trends-foot"></div>
+      </section>
     </main>
   </div>
 
@@ -934,12 +1063,95 @@ async function onGoogleCredential(resp){
                            : (data.error || ('Failed (' + r.status + ')'));
   } catch(e){ msg.textContent = 'That request didn\\'t go through. Try again.'; }
 }
+/* ---- role trends (ADR-0040). The ledger is one count per (family, band) per pipeline run;
+   this draws a line per series and ranks them by how much they moved across the window. ---- */
+const TREND_COLOURS = ['#12D6B4','#8B5CF6','#F59E0B','#A3E635','#FB7185','#60A5FA','#F472B6','#34D399'];
+let trendData = null, trendDrill = null, trendHidden = new Set();
+
+async function loadTrends(family){
+  const r = await fetch('/trends' + (family ? '?family=' + encodeURIComponent(family) : ''));
+  if (!r.ok) { el('trends').style.display = 'none'; return; }
+  trendData = await r.json(); trendDrill = family || null; trendHidden = new Set();
+  drawTrends();
+}
+
+// A series' movement across the window. Uses its first and last MEASURED points, so a run that
+// skipped a family doesn't read as a crash to zero.
+function trendDelta(points){
+  const seen = points.filter(p => p != null);
+  if (seen.length < 2) return null;
+  const first = seen[0], last = seen[seen.length-1];
+  if (!first) return null;
+  return (last - first) / first * 100;
+}
+
+function drawTrends(){
+  const d = trendData; if (!d) return;
+  const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
+  const shown = d.series.filter(s => !trendHidden.has(s.name)).slice(0, 8);
+  const vals = shown.flatMap(s => s.points).filter(v => v != null);
+  const lo = 0, hi = Math.max(1, ...vals);
+  const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - 6) / (d.stamps.length - 1));
+  const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
+
+  let svg = '';
+  for (let g = 0; g <= 4; g++){                       // horizontal gridlines + y labels
+    const v = hi * g / 4, yy = y(v);
+    svg += `<line class="gridline" x1="${PAD_L}" y1="${yy}" x2="${W}" y2="${yy}"/>`;
+    svg += `<text class="axis-label" x="0" y="${yy+3}">${Math.round(v).toLocaleString()}</text>`;
+  }
+  shown.forEach((s, i) => {
+    const c = TREND_COLOURS[i % TREND_COLOURS.length];
+    // break the path at gaps rather than bridging them — an unmeasured run is not a value
+    let path = '', pen = 'M';
+    s.points.forEach((v, j) => { if (v == null) { pen = 'M'; return; } path += `${pen}${x(j).toFixed(1)},${y(v).toFixed(1)} `; pen = 'L'; });
+    svg += `<path d="${path.trim()}" fill="none" stroke="${c}" stroke-width="2"
+             stroke-linejoin="round" stroke-linecap="round"/>`;
+    const last = s.points.map((v,j)=>[v,j]).filter(([v])=>v!=null).pop();
+    if (last) svg += `<circle cx="${x(last[1]).toFixed(1)}" cy="${y(last[0]).toFixed(1)}" r="3" fill="${c}"/>`;
+  });
+  el('trends-chart').innerHTML = svg;
+
+  el('trends-legend').innerHTML = d.series.slice(0, 12).map((s, i) => {
+    const c = TREND_COLOURS[i % TREND_COLOURS.length];
+    const dl = trendDelta(s.points);
+    const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
+    const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
+    const off = trendHidden.has(s.name) || i >= 8;
+    return `<li onclick="trendClick('${esc(s.name)}')" aria-pressed="${!off}"
+      style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<8?c:'var(--ink-3)'}"></span>
+      <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
+      <span class="ct">${(s.latest||0).toLocaleString()}</span>
+      <span class="dl ${cls}">${txt}</span></li>`;
+  }).join('');
+
+  const runs = d.stamps.length;
+  el('trends-scope').textContent = trendDrill
+    ? 'by experience level — click to go back'
+    : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}`;
+  el('trends-empty').textContent = runs < 2
+    ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
+    : '';
+  const nt = d.non_tech.filter(v => v != null).pop();
+  el('trends-foot').textContent = nt
+    ? `Counts are live openings in the index, re-measured every pipeline run. ${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`
+    : 'Counts are live openings in the index, re-measured every pipeline run.';
+}
+
+function trendClick(name){
+  if (trendDrill) { loadTrends(null); return; }        // already drilled in — go back up
+  const s = trendData.series.find(x => x.name === name);
+  if (s && trendData.series.indexOf(s) < 8) { loadTrends(name); return; }
+  trendHidden.delete(name); drawTrends();              // off-chart series: bring it into view
+}
+
 function initAlerts(){
   if (!window.google || !'__GOOGLE_CLIENT_ID__') return;
   google.accounts.id.initialize({ client_id: '__GOOGLE_CLIENT_ID__', callback: onGoogleCredential });
   google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
 showIntro();
+if (el('trends')) loadTrends(null);   // the panel is absent entirely until a ledger exists
 </script>
 <script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>
 </body></html>"""
@@ -953,6 +1165,8 @@ _PAGE = (
     .replace("__RESUME_HIDDEN__", "" if _RESUME_PASSWORD else ' style="display:none"')
     # Same dark-until-ready shape: no alerts secrets, no panel and no sign-in button.
     .replace("__ALERTS_HIDDEN__", "" if _ALERTS_ON else ' style="display:none"')
+    # Likewise for trends: hidden until a pipeline run has written the ledger (ADR-0040).
+    .replace("__TRENDS_HIDDEN__", "" if _TRENDS else ' style="display:none"')
     .replace("__GOOGLE_CLIENT_ID__", _GOOGLE_CLIENT_ID)
     .replace(
         "__ATS_OPTIONS__",

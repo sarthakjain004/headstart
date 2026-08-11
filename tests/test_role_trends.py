@@ -211,3 +211,61 @@ def test_empty_served_table_degrades_to_noop(tmp_path, monkeypatch, caplog):
     ledger = _run(tmp_path, monkeypatch)
     assert not ledger.exists()
     assert any("is empty" in r.getMessage() for r in caplog.records)
+
+
+def test_stale_family_map_errors_visibly_instead_of_silently(
+    tmp_path, monkeypatch, caplog
+):
+    """A refit shipped without re-curating the map is routine (ADR-0040). The workflow step is
+    continue-on-error, so an unguarded ValueError would crash into a green run with no
+    annotation — it must surface as ERROR (an ::error:: under Actions) and exit non-zero."""
+    import logging
+
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    spec = json.loads((tmp_path / "families.json").read_text())
+    spec["centroid_version"] = 99  # the map now describes a different fit
+    (tmp_path / "families.json").write_text(json.dumps(spec), encoding="utf-8")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    ledger = tmp_path / "role_trends.csv"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "role_trends",
+            "--db",
+            str(tmp_path / "db"),
+            "--centroids",
+            str(tmp_path / "rc"),
+            "--families",
+            str(tmp_path / "families.json"),
+            "--ledger",
+            str(ledger),
+        ],
+    )
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
+    assert role_trends.main() == 1
+    assert not ledger.exists()
+    assert any("taxonomy unusable" in r.getMessage() for r in caplog.records)
+
+
+def test_half_landed_centroid_store_degrades_to_noop(tmp_path, monkeypatch, caplog):
+    # manifest without vectors: roles.load would crash on the missing file
+    import logging
+
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    (tmp_path / "rc" / "centroids.f32").unlink()
+    caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch)
+    assert not ledger.exists()
+    assert any("centroids.f32" in r.getMessage() for r in caplog.records)
