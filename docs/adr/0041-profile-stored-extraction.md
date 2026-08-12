@@ -48,6 +48,30 @@ flow.
 record, "delete my data" is removing that file plus the Account's Saved sets and Saved jobs —
 no document archive to scrub.
 
+## Implementation notes (2026-08-12)
+
+**The parse counter lives in its own file** — `profiles/{account}.parses.json`, beside the
+Profile record — **written only by the parse route.** Keeping it inside the record was tried
+first and reviewed out: every save is a read-modify-write of the record, so a save racing a
+parse writes back the stale counter it read, and interleaving the two on purpose refills the
+cap indefinitely. Disjoint files make that impossible by construction (ADR-0035's argument);
+"delete my profile" removes the career record and leaves the counter, so deletion never
+resets the cap. The counter read **fails closed**: an absent file is 0, but an unreadable or
+corrupt one answers 503 rather than 0 — a transient failure must not reset the cap either.
+
+**What counts as a parse:** any call that reached the router and got an answer — including
+one whose reply held no usable Profile (the user sees a 502; the read is spent). Refused
+before the router (empty or oversized paste) spends nothing. `RouterUnavailable` spends
+nothing: it is usually the router being down, and burning a user's reads on our outage is
+worse than the residual it accepts — a timeout after the router took the request may still
+complete upstream, uncounted. Accepted: that path is rare, throttled by the timeout itself,
+and bounded by retries a human is willing to make. Two concurrent parses under the cap can
+also both pass the check — one-record overshoot per race, same acceptance as ADR-0044's cap.
+
+**The scrub guards every door.** The Query rule is enforced in code on the extracted
+sentence *and* on hand-edited saves (`profile_extract.scrub_query` runs in both routes), so
+a Profile cannot smuggle years or salary into ranking whichever way the sentence arrived.
+
 ## Options rejected
 
 - **Typed fields only, no upload/LLM**: safest, no router cost — but a form most people skip,

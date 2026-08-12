@@ -21,7 +21,7 @@ from pathlib import Path
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
 import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
-import resume_query  # synced from src/headstart/resume_query.py by deploy-space.yml
+import profile_extract  # synced from src/headstart/profile_extract.py by deploy-space.yml
 import search  # the shared search path — synced from src/headstart/search.py (ADR-0042)
 
 # alerts/ is a package, synced from src/headstart/alerts/ by deploy-space.yml (ADR-0035).
@@ -29,8 +29,10 @@ import search  # the shared search path — synced from src/headstart/search.py 
 # Space never loads the Digest or Resend modules, whose dependencies it does not install.
 from alerts import access, identity
 from alerts.store import (
+    MAX_PARSES,
     MAX_SAVED,
     MAX_SETS,
+    Profile,
     SavedJob,
     SavedSet,
     Store,
@@ -62,9 +64,6 @@ _table = lancedb.connect(_STATE / "data" / "lancedb").open_table(search.PROD_TAB
 # The whole query path — parse, whitelist, rank, project — lives behind this one object
 # (search.JobSearch); its startup scan supplies the ATS dropdown and the first_seen flag.
 _searcher = search.JobSearch(_model, _table)
-# The Résumé feature is a private beta behind a shared password (ADR-0032). No secret set →
-# the endpoint answers 503 and the panel is hidden — same dark-until-ready shape as first_seen.
-_RESUME_PASSWORD = os.environ.get("RESUME_PASSWORD") or ""
 
 # Role trends (ADR-0040). Same dark-until-ready shape as the two above: the ledger only exists
 # after a pipeline run has written it, so an absent file hides the panel rather than erroring.
@@ -105,10 +104,6 @@ _FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
 if _TRENDS:
     _live_version = max(r["version"] for r in _TRENDS)
     _TRENDS = [r for r in _TRENDS if r["version"] == _live_version]
-# IPs that have presented the password once; in-memory, so the set empties whenever the Space
-# sleeps or restarts and the password is simply asked for again. Only correct-password callers
-# are ever added, so its size is bounded by people who actually hold the secret.
-_RESUME_OK_IPS: set[str] = set()
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -121,9 +116,11 @@ _ALERTS_ON = bool(_GOOGLE_CLIENT_ID and _SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN
 # anonymous behaviour, so this can deploy ahead of its configuration.
 _SECRET_KEY = os.environ.get("SECRET_KEY") or ""
 _AUTH_ON = bool(_SECRET_KEY and _GOOGLE_CLIENT_ID)
-# Saved sets (ADR-0043) and Saved jobs (ADR-0044) need both an identity (the wall) and
-# somewhere to keep per-Account records (the Subscriptions dataset) — either missing keeps
-# the Matches and Saved tabs "soon" items. One flag: the two share exactly these prerequisites.
+# Saved sets (ADR-0043), Saved jobs (ADR-0044) and Profiles (ADR-0041) need both an identity
+# (the wall) and somewhere to keep per-Account records (the Subscriptions dataset) — either
+# missing keeps the Matches, Saved and Profile tabs "soon" items. One flag: the three share
+# exactly these prerequisites. (A Profile's parse button additionally needs the llm-router at
+# request time; that path degrades to a 503 on its own.)
 _SETS_ON = _AUTH_ON and bool(_SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN)
 print(
     f"ready: {_table.count_rows()} jobs across {len(_searcher.atses)} ATSes"
@@ -132,7 +129,6 @@ print(
         if _searcher.has_first_seen
         else " (no first_seen column yet — 'new since' hidden)"
     )
-    + ("" if _RESUME_PASSWORD else " (RESUME_PASSWORD unset — résumé search hidden)")
     + ("" if _ALERTS_ON else " (alerts secrets unset — email alerts hidden)")
     + ("" if _AUTH_ON else " (SECRET_KEY/GOOGLE_CLIENT_ID unset — sign-in wall off)"),
     flush=True,
@@ -191,43 +187,120 @@ def search_jobs():
         return jsonify({"error": "invalid filter"}), 400
 
 
-def _client_ip() -> str:
-    """The caller's IP as the platform's own proxy reports it — the *rightmost*
-    ``X-Forwarded-For`` entry. Leftmost entries are client-supplied and trivially spoofed;
-    the rightmost was appended by the hop in front of us. Still a gate, not authentication:
-    IPs are shared (NAT) and forgeable in principle (ADR-0032)."""
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.rsplit(",", 1)[-1].strip()
-    return request.remote_addr or "?"
-
-
-@app.route("/resume-to-query", methods=["POST"])
-def resume_to_query():
-    """Paste a Résumé, get the one Query it implies — password-gated, once per IP (ADR-0032).
-
-    The pasted text is used for this single LLM call and never stored or logged."""
-    if not _RESUME_PASSWORD:
-        return jsonify({"error": "résumé search is not configured"}), 503
-    body = request.get_json(silent=True) or {}
-    ip = _client_ip()
-    if ip not in _RESUME_OK_IPS:
-        if not hmac.compare_digest(str(body.get("password") or ""), _RESUME_PASSWORD):
-            return jsonify({"error": "wrong or missing password"}), 401
-        _RESUME_OK_IPS.add(ip)
+def _parses(store: Store, account: str) -> int | None:
+    """The spent-reads count, or None when it can't be known right now (the caller
+    answers 503). ``parses_used`` raises on an unreadable or corrupt counter file rather
+    than answering 0 — a transient failure must never reset the lifetime cap."""
     try:
-        query = resume_query.query_for(str(body.get("text") or ""), ask=llm_router.ask)
-    except resume_query.ResumeTooLong as exc:
+        return store.parses_used(account)
+    except Exception as exc:  # noqa: BLE001 — fail closed, whatever the read broke on
+        print(f"[profile] parse counter unreadable for {account}: {exc}", flush=True)
+        return None
+
+
+def _profile_out(profile: Profile, used: int) -> dict:
+    """The record as the UI reads it, with the spent/remaining arithmetic done here so
+    the client never needs to know MAX_PARSES."""
+    return {
+        **profile.to_dict(),
+        "parses_used": used,
+        "parses_left": max(0, MAX_PARSES - used),
+    }
+
+
+@app.route("/profile")
+def get_profile():
+    """This Account's stored Profile (ADR-0041) — a blank one if nothing is stored yet."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "profiles are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    used = _parses(store, account)
+    if used is None:
+        return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
+    profile = store.get_profile(account) or Profile.blank(email)
+    return jsonify(_profile_out(profile, used))
+
+
+@app.route("/profile", methods=["POST"])
+def save_profile():
+    """Save hand-edited Profile fields. The query sentence is scrubbed here exactly like
+    the extracted one — the Query contract (CONTEXT.md) holds whichever door the sentence
+    came through — and the parse counter is not this route's to write at all: it lives in
+    its own file only the parse route touches, so a stale save cannot regress the cap."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "profiles are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    used = _parses(store, account)
+    if used is None:
+        return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
+    body = request.get_json(silent=True) or {}
+    body["query"] = profile_extract.scrub_query(str(body.get("query") or ""))
+    current = store.get_profile(account) or Profile.blank(email)
+    updated = current.revised(body)
+    store.put_profile(updated)
+    return jsonify(_profile_out(updated, used))
+
+
+@app.route("/profile/parse", methods=["POST"])
+def parse_resume():
+    """Paste a Résumé, get the stored Profile it implies — one LLM call (ADR-0041).
+
+    The pasted text is used for this single call and never stored or logged; only the
+    extraction is kept. Capped per Account for its lifetime: the cap bounds router spend,
+    so any attempt that reached the router counts, even one that extracted nothing — and
+    the counter is written *before* the profile, so a crash between the two writes can
+    only over-count, never under-count."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "profiles are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    used = _parses(store, account)
+    if used is None:
+        return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
+    if used >= MAX_PARSES:
+        return jsonify(
+            {"error": f"no résumé reads left — this account has used all {MAX_PARSES}"}
+        ), 400
+    body = request.get_json(silent=True) or {}
+    try:
+        fields = profile_extract.extract(
+            str(body.get("text") or ""), ask=llm_router.ask
+        )
+    except profile_extract.ResumeTooLong as exc:
         return jsonify({"error": str(exc)}), 413
-    except resume_query.EmptyQuery as exc:
+    except profile_extract.EmptyExtraction as exc:
+        # The router answered — the call was spent, so it counts against the cap.
+        store.put_parses(account, used + 1)
         return jsonify({"error": str(exc)}), 502
-    except resume_query.ResumeError as exc:  # EmptyResume and any future refusal
+    except profile_extract.ResumeError as exc:  # EmptyResume: refused before the router
         return jsonify({"error": str(exc)}), 400
     except llm_router.RouterUnavailable:
         # Detail stays in the container log's traceback-free world: the caller only needs
         # "temporarily off", and the reason may name internal hosts.
-        return jsonify({"error": "résumé search is temporarily unavailable"}), 503
-    return jsonify({"query": query})
+        return jsonify({"error": "résumé reading is temporarily unavailable"}), 503
+    store.put_parses(account, used + 1)
+    updated = (store.get_profile(account) or Profile.blank(email)).revised(fields)
+    store.put_profile(updated)
+    return jsonify(_profile_out(updated, used + 1))
+
+
+@app.route("/profile", methods=["DELETE"])
+def delete_profile():
+    """Remove the Profile's career record. The parse-counter file stays — deleting must
+    not reset the lifetime cap (ADR-0041)."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "profiles are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    if store.get_profile(account):
+        store.remove_profile(account)
+    return jsonify({"ok": True})
 
 
 @app.route("/subscribe", methods=["POST"])
@@ -614,10 +687,10 @@ def index():
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
         trends_on=bool(_TRENDS),
-        resume_on=bool(_RESUME_PASSWORD),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
         saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
+        profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
     )
 
 

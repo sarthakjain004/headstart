@@ -105,12 +105,13 @@ Three `HF_TOKEN`s exist and they are **not interchangeable**:
 3. **Space secret `HF_TOKEN`** — a fine-grained **read** token scoped to the dataset only (the
    Space just downloads it).
 
-The résumé feature (ADR-0032) adds four more **Space** secrets, all under Space → Settings →
-Variables and secrets: `OCI_SSH_KEY` (tunnel private key), `LLM_ROUTER_SSH` (`user@host` of the
-router box — kept out of this public repo on purpose), `LITELLM_MASTER_KEY` (router auth), and
-`RESUME_PASSWORD` (the beta gate). Optional overrides: `LLM_ROUTER_MODEL` (default
-`agent-default`), `LLM_ROUTER_BASE`. Until they are set the feature ships dark — panel hidden,
-endpoint 503 — and the rest of the Space is unaffected.
+The résumé feature (ADR-0032; since ADR-0041 it fills the Profile tab) adds three more
+**Space** secrets, all under Space → Settings → Variables and secrets: `OCI_SSH_KEY` (tunnel
+private key), `LLM_ROUTER_SSH` (`user@host` of the router box — kept out of this public repo
+on purpose), and `LITELLM_MASTER_KEY` (router auth). `RESUME_PASSWORD` is retired: the gate is
+now the per-Account parse cap, so it needs no secret. Optional overrides: `LLM_ROUTER_MODEL`
+(default `agent-default`), `LLM_ROUTER_BASE`. Until they are set the feature ships dark — the
+parse endpoint answers 503 — and the rest of the Space is unaffected.
 
 The sign-in wall (ADR-0042) adds one more **Space** secret: `SECRET_KEY`, a long random string
 the session cookie is signed with (`python -c "import secrets; print(secrets.token_hex(32))"`).

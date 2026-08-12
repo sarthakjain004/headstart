@@ -6,7 +6,7 @@ anything. Skipping any of those turns a signed assertion into a free-text field,
 why this does not hand-roll the JWT — `google-auth` is the reference implementation.
 
 The `verifier` seam keeps this testable without network or a real Google token, the way
-`resume_query.query_for(text, ask=…)` does. Scope is identity only: whether a verified
+`profile_extract.extract(text, ask=…)` does. Scope is identity only: whether a verified
 address is *allowed* to use alerts is `access`'s question.
 """
 
