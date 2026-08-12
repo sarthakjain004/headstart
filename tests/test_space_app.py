@@ -333,7 +333,9 @@ def test_sets_are_gated_by_the_wall(sets_app):
     assert sets_app.app.test_client().get("/sets").status_code == 401
 
 
-def test_toggle_off_semantics_and_fresh_machinery_on_reenable(sets_app, hub, monkeypatch):
+def test_toggle_off_semantics_and_fresh_machinery_on_reenable(
+    sets_app, hub, monkeypatch
+):
     import json as _json
 
     hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
@@ -349,8 +351,9 @@ def test_toggle_off_semantics_and_fresh_machinery_on_reenable(sets_app, hub, mon
     assert sub_path in hub
 
     # editing the NON-emailing set leaves the Subscription untouched
-    client.post("/sets", json={"id": b["id"], "name": "b", "query": "changed"},
-                base_url=_HTTPS)
+    client.post(
+        "/sets", json={"id": b["id"], "name": "b", "query": "changed"}, base_url=_HTTPS
+    )
     assert _json.loads(hub[sub_path])["query"] == "qa"
 
     # OFF on the emailing set removes it; ON again mints fresh machinery
@@ -374,22 +377,31 @@ def test_unsubscribe_clears_the_emailing_flag(sets_app, hub, monkeypatch):
     assert r.status_code == 200 and sub_path not in hub
     # the set no longer claims ✉ on, so a later edit cannot silently re-subscribe
     assert client.get("/sets", base_url=_HTTPS).json[0]["emails"] is False
-    client.post("/sets", json={"id": made["id"], "name": "a", "query": "edited"},
-                base_url=_HTTPS)
+    client.post(
+        "/sets",
+        json={"id": made["id"], "name": "a", "query": "edited"},
+        base_url=_HTTPS,
+    )
     assert sub_path not in hub
 
 
 def test_subscribe_refuses_while_sets_are_live(sets_app, hub, monkeypatch):
     client = _signed_in(sets_app, monkeypatch)
-    r = client.post("/subscribe", json={"credential": "x", "query": "q"}, base_url=_HTTPS)
+    r = client.post(
+        "/subscribe", json={"credential": "x", "query": "q"}, base_url=_HTTPS
+    )
     assert r.status_code == 409
 
 
-def test_presets_subscription_is_adopted_as_the_emailing_set(sets_app, hub, monkeypatch):
+def test_presets_subscription_is_adopted_as_the_emailing_set(
+    sets_app, hub, monkeypatch
+):
     import json as _json
 
     st = sets_app  # the loaded app module re-exports store names it imported
-    sub = st.Subscription.create("dev@example.com", "backend engineer", {"remote": "true"})
+    sub = st.Subscription.create(
+        "dev@example.com", "backend engineer", {"remote": "true"}
+    )
     hub[f"subscriptions/{sub.id}.json"] = _json.dumps(sub.to_dict()).encode()
 
     client = _signed_in(sets_app, monkeypatch)
@@ -409,7 +421,11 @@ def test_sets_keep_seen_within_but_the_projection_drops_it(sets_app, hub, monkey
     client = _signed_in(sets_app, monkeypatch)
     made = client.post(
         "/sets",
-        json={"name": "fresh", "query": "q", "filters": {"seen_within": "24", "remote": "true"}},
+        json={
+            "name": "fresh",
+            "query": "q",
+            "filters": {"seen_within": "24", "remote": "true"},
+        },
         base_url=_HTTPS,
     ).json
     assert made["search_filters"] == {"seen_within": "24", "remote": "true"}
