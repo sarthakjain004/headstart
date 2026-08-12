@@ -185,6 +185,7 @@ def build_filter(
             datetime.now(timezone.utc) - timedelta(days=int(posted_within))
         ).strftime("%Y-%m-%d")
         filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
+
     # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
     # text and lands in a where-clause, so it is re-serialized through date.fromisoformat —
     # garbage raises ValueError, which the routes answer as 400, and nothing user-typed is
