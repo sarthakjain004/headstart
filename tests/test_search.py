@@ -290,3 +290,11 @@ def test_run_passes_ranges_and_rejects_garbage():
     assert "first_seen < '2026-08-11'" in table.last_where
     with pytest.raises(ValueError):
         searcher.run({"q": "x", "posted_after": "not-a-date"})
+
+
+def test_range_overflow_is_a_valueerror_not_a_500():
+    # 9999-12-31 + 1 day overflows date; the route only turns ValueError into a 400.
+    with pytest.raises(ValueError):
+        _clause(posted_before="9999-12-31")
+    with pytest.raises(ValueError):
+        _clause(seen_before="9999-12-31")

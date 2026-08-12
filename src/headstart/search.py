@@ -190,18 +190,24 @@ def build_filter(
     # garbage raises ValueError, which the routes answer as 400, and nothing user-typed is
     # ever interpolated. Inclusive "before" compares strictly below the NEXT day, because
     # both columns hold date-or-datetime ISO strings and '2026-08-10T12:00' > '2026-08-10'.
+    def _next_day(value: str) -> str:
+        try:
+            return (date.fromisoformat(value) + timedelta(days=1)).isoformat()
+        except OverflowError as exc:  # 9999-12-31 + 1 day; a 400 like any bad date
+            raise ValueError(f"date out of range: {value!r}") from exc
+
     if posted_after:
         start = date.fromisoformat(posted_after).isoformat()
         filters.append(f"(posted_at >= '{start}' AND posted_at LIKE '____-__-__%')")
     if posted_before:
-        end = (date.fromisoformat(posted_before) + timedelta(days=1)).isoformat()
-        filters.append(f"(posted_at < '{end}' AND posted_at LIKE '____-__-__%')")
+        filters.append(
+            f"(posted_at < '{_next_day(posted_before)}' AND posted_at LIKE '____-__-__%')"
+        )
     if seen_after and has_first_seen:
         start = date.fromisoformat(seen_after).isoformat()
         filters.append(f"first_seen >= '{start}'")
     if seen_before and has_first_seen:
-        end = (date.fromisoformat(seen_before) + timedelta(days=1)).isoformat()
-        filters.append(f"first_seen < '{end}'")
+        filters.append(f"first_seen < '{_next_day(seen_before)}'")
     if seen_within is not None and has_first_seen:
         # In HOURS, not days: this window is meant to be shorter than one pipeline cycle.
         # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
