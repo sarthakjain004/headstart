@@ -37,10 +37,14 @@ from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.binpack import lpt_pack, shard_count
 
 _log = log.get(__name__, __spec__)
+
+# The shard's CI work budget (pipeline.yml's `timeout 60m`). Mirrored here only to warn when a
+# plan predicts past it — the workflow stays the single place that enforces it.
+_BUDGET_MIN = 60.0
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
@@ -80,19 +84,27 @@ def _coldstart_cost(ats: str, score: float) -> float:
 
 
 def _write_plan(
-    out_dir: Path, *, shards: list[int], count: int, per_shard: list[int]
+    out_dir: Path,
+    *,
+    shards: list[int],
+    count: int,
+    per_shard: list[int],
+    per_shard_minutes: list[float] | None = None,
 ) -> None:
-    (out_dir / "plan.json").write_text(
-        json.dumps(
-            {"shards": shards, "count": count, "per_shard_boards": per_shard}, indent=2
-        ),
-        encoding="utf-8",
-    )
+    plan: dict[str, object] = {
+        "shards": shards,
+        "count": count,
+        "per_shard_boards": per_shard,
+    }
+    if per_shard_minutes is not None:
+        plan["per_shard_minutes"] = [round(m, 2) for m in per_shard_minutes]
+    (out_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     print(json.dumps({"shards": shards, "count": count}), flush=True)
 
 
 def main() -> int:
     log.setup()
+    observability.context("scrape-plan")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--ledger",
@@ -208,14 +220,59 @@ def main() -> int:
             + (f"(~{load:.1f} min)" if measured else f"(cost ~{load:.0f})")
         )
 
-    _write_plan(out_dir, shards=list(range(m)), count=n, per_shard=per_shard)
+    # Ship the per-shard prediction, not just the board counts: a shard can then say what it
+    # actually cost against what it was promised, which is the only way a drifting cost model
+    # shows up. Minutes only when the ledger has measured seconds — cold-start cost units
+    # would be a meaningless ratio, so they are omitted rather than written as fake minutes.
+    per_shard_minutes = [loads[k] / 60 for k in range(m)] if measured else None
+    _write_plan(
+        out_dir,
+        shards=list(range(m)),
+        count=n,
+        per_shard=per_shard,
+        per_shard_minutes=per_shard_minutes,
+    )
+    makespan = max(loads) / 60 if measured else 0.0
     tail = (
-        f"; predicted makespan ~{max(loads) / 60:.1f} min "
+        f"; predicted makespan ~{makespan:.1f} min "
         f"(total work Σ {total_cost / 60:.1f} min)"
         if measured
         else " (cold-start cost units)"
     )
     _log.info(f"{n} boards across {m} shards{tail}")
+    if measured:
+        # The packer's own spread, which nothing logged: a planner that reports even shards is
+        # doing its job on Σ÷concurrency while the slowest single board decides the outcome.
+        even = total_cost / 60 / m
+        floor = max(costs) / 60 if costs else 0.0
+        _log.info(
+            f"predicted spread: min {min(loads) / 60:.1f} / mean {even:.1f} / "
+            f"max {makespan:.1f} min ({makespan / even if even else 0:.2f}x mean); "
+            f"single-board floor {floor:.1f} min"
+        )
+        if floor > even:
+            # The packing cannot go below its slowest single item, so when one board outweighs
+            # an even share the shard count is no longer the lever — that board is. Saying so
+            # here stops the next person tuning the packer at a problem it cannot reach.
+            _log.warning(
+                f"one board costs {floor:.1f} min, above the {even:.1f} min even share — "
+                "the makespan floor is this board, not the packing"
+            )
+        if makespan > _BUDGET_MIN:
+            # Worth an annotation: the planner is packing shards it expects to exceed the CI
+            # budget, so any shard whose prediction is close to right gets killed mid-harvest.
+            _log.warning(
+                f"predicted makespan ~{makespan:.1f} min exceeds the {_BUDGET_MIN:.0f} min "
+                "shard budget — shards matching their prediction will bank partials"
+            )
+    observability.summary(
+        "Scrape plan",
+        [
+            f"- {n} boards across {m} shards",
+            f"- predicted makespan **{makespan:.1f} min**"
+            + (f" (Σ work {total_cost / 60:.1f} min)" if measured else " — cold start"),
+        ],
+    )
     return 0
 
 
