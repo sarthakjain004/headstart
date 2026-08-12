@@ -2,8 +2,8 @@
 
 The scrape-shard (``--assignment``) mode (ADR-0026) must read the planner's board list verbatim
 and scrape exactly those boards into its own fragment dir — no slice selection. ``scrape_all`` is
-faked, so no network / real scraping. Also pins the run's logging helpers: ``_log_board`` (live
-per-board lines) and ``_error_summary`` (the type x ATS grouping behind the warning line).
+faked, so no network / real scraping. Also pins the run's logging helpers: ``_Progress.on_board``
+(live per-board lines) and ``_error_summary`` (the type x ATS grouping behind the warning line).
 """
 
 from __future__ import annotations
@@ -55,15 +55,15 @@ def test_assignment_scrapes_exactly_the_listed_boards(tmp_path, monkeypatch):
     assert (
         Path(captured["jobs_dir"]) == outdir
     )  # scraped into the shard's own fragment dir
-    assert (
-        captured["on_board"] is scrape_run._log_board
-    )  # live per-board logging is wired
+    # live per-board logging is wired, and it is the accumulator the shutdown path reads
+    assert isinstance(captured["on_board"].__self__, scrape_run._Progress)
 
 
 def test_log_board_failure_at_info_success_at_debug(caplog):
     caplog.set_level(logging.DEBUG, logger="headstart.ingest.scrape_run")
-    scrape_run._log_board("lever:acme", 0, "RuntimeError: boom", 4.2)
-    scrape_run._log_board("lever:beta", 12, None, 0.8)
+    progress = scrape_run._Progress(2)
+    progress.on_board("lever:acme", 0, "RuntimeError: boom", 4.2)
+    progress.on_board("lever:beta", 12, None, 0.8)
 
     failed, ok = caplog.records
     assert (
@@ -78,7 +78,7 @@ def test_log_board_slow_board_surfaces_at_info(caplog):
     # the cost ledger never records a board the shard budget kills, so the INFO line is the
     # only place a monster board gets named
     caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
-    scrape_run._log_board("workday:giant/External", 9000, None, 1830.4)
+    scrape_run._Progress(1).on_board("workday:giant/External", 9000, None, 1830.4)
 
     (slow,) = caplog.records
     assert slow.levelno == logging.INFO
@@ -112,3 +112,56 @@ def test_error_summary_empty_and_colonless_message():
     assert scrape_run._error_summary({}) == ""
     # a message with no ":" groups under the whole message
     assert scrape_run._error_summary({"x:a": "boom"}) == "1 boom (x 1)"
+
+
+def test_progress_tracks_what_is_left_undone():
+    """The number a budget-killed shard exists to report: work deferred to the next run."""
+    progress = scrape_run._Progress(assigned=5)
+    progress.on_board("lever:a", 3, None, 1.0)
+    progress.on_board("lever:b", 0, "Timeout: slow", 30.0)
+
+    assert (progress.done, progress.undone, progress.jobs) == (2, 3, 3)
+    assert progress.errors == {"lever:b": "Timeout: slow"}
+
+
+def test_report_survives_the_time_budget_and_still_writes_its_numbers(tmp_path, caplog):
+    """A shard killed mid-harvest used to report nothing at all — no counts, no errors, no
+    sign of what it skipped. It must now say all three, on the way down."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=100)
+    for i in range(40):
+        progress.on_board(f"lever:{i}", 2, None, 1.5)
+
+    scrape_run._report(
+        progress, tmp_path, elapsed=3600.0, predicted=30.0, killed=True, shard="7"
+    )
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("60 deferred to the next run" in m for m in messages)
+    assert any("done: 80 jobs from 40 boards" in m for m in messages)
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert report["killed_by_budget"] is True
+    assert (report["undone"], report["shard"], report["assigned"]) == (60, "7", 100)
+    assert report["board_seconds"]["max"] == 1.5
+
+
+def test_report_states_actual_against_the_planners_prediction(tmp_path, caplog):
+    """The comparison nothing made: a cost model can drift by 3x in plain sight without it."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=1)
+    progress.on_board("lever:a", 1, None, 2.0)
+
+    scrape_run._report(progress, tmp_path, elapsed=1200.0, predicted=40.0, killed=False)
+
+    assert any("actual/predicted 0.50x" in r.getMessage() for r in caplog.records)
+
+
+def test_predicted_minutes_reads_the_shards_own_entry(tmp_path):
+    (tmp_path / "plan.json").write_text(
+        json.dumps({"per_shard_minutes": [10.0, 20.5, 30.0]}), encoding="utf-8"
+    )
+    assert scrape_run._predicted_minutes(str(tmp_path / "shard-1.jsonl")) == 20.5
+    # an older plan without the field is absence, not an error — the shard just can't compare
+    (tmp_path / "plan.json").write_text(json.dumps({"count": 3}), encoding="utf-8")
+    assert scrape_run._predicted_minutes(str(tmp_path / "shard-1.jsonl")) is None
+    assert scrape_run._predicted_minutes(None) is None

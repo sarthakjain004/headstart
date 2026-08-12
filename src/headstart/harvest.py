@@ -203,33 +203,48 @@ def scrape_all(
     errors: dict[str, str] = {}
     total, done = len(companies), 0
     start = time.monotonic()
+    executor = ThreadPoolExecutor(max_workers=workers)
     try:
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(run_one, c): c for c in companies}
-            for future in as_completed(futures):
-                company = futures[future]
-                done += 1
-                key = f"{company.ats}:{company.slug}"
-                n_fresh = 0
-                try:
-                    jobs = future.result()
-                except Exception as exc:  # noqa: BLE001 - isolate per-company failures
-                    errors[key] = f"{type(exc).__name__}: {exc}"
-                else:
-                    fresh = [j for j in jobs if j.id not in seen_ids]
-                    seen_ids.update(j.id for j in fresh)
-                    writer.write(fresh)
-                    n_fresh = len(fresh)
-                writer.mark_done(
-                    key
-                )  # mark on completion (success or error): resume moves on
-                seconds = elapsed.pop(key, 0.0)
-                writer.record_cost(key, seconds, n_fresh)
-                if on_board is not None:
-                    on_board(key, n_fresh, errors.get(key), seconds)
-                if progress_every and done % progress_every == 0:
-                    _emit_progress(done, total, len(seen_ids), len(errors), start)
+        # Submission is inside the guarded block too: at 1,300 Boards it is not instantaneous,
+        # and a SIGTERM landing mid-submission would otherwise leave the executor un-shut-down,
+        # whose atexit hook drains the whole queue — the exact behaviour this guards against.
+        futures = {executor.submit(run_one, c): c for c in companies}
+        for future in as_completed(futures):
+            company = futures[future]
+            done += 1
+            key = f"{company.ats}:{company.slug}"
+            n_fresh = 0
+            try:
+                jobs = future.result()
+            except Exception as exc:  # noqa: BLE001 - isolate per-company failures
+                errors[key] = f"{type(exc).__name__}: {exc}"
+            else:
+                fresh = [j for j in jobs if j.id not in seen_ids]
+                seen_ids.update(j.id for j in fresh)
+                writer.write(fresh)
+                n_fresh = len(fresh)
+            writer.mark_done(
+                key
+            )  # mark on completion (success or error): resume moves on
+            seconds = elapsed.pop(key, 0.0)
+            writer.record_cost(key, seconds, n_fresh)
+            if on_board is not None:
+                on_board(key, n_fresh, errors.get(key), seconds)
+            if progress_every and done % progress_every == 0:
+                _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
+        # Every Board is submitted up front, so `with ThreadPoolExecutor(...)` would drain the
+        # whole queue on the way out — its __exit__ is shutdown(wait=True). Fine on a clean
+        # finish, wrong on a time budget: the SIGTERM meant to end the shard would instead wait
+        # for every remaining Board, blow the step timeout, and take the runner down before
+        # anything could be reported. cancel_futures drops what has not started.
+        #
+        # Two honest limits. A Board already running cannot be cancelled — you cannot kill a
+        # Python thread — so shutdown still blocks on the slowest in-flight one, and against a
+        # 2,237s straggler that alone can outlast the 6 min of slack between the 60m budget and
+        # the 66m step timeout. And their results are discarded either way: the loop that would
+        # have written them has already exited, so `wait=True` buys clean teardown, not work.
+        executor.shutdown(wait=True, cancel_futures=True)
         writer.close()
     return RunResult(errors=errors, unique=len(seen_ids), boards=done)
 

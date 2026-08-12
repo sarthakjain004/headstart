@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,7 @@ import pyarrow as pa
 
 from headstart import log
 from headstart.corpus import board_of, iter_jobs
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
     apply_sync,
     live_keep_set,
@@ -242,8 +243,14 @@ def sync(args: argparse.Namespace) -> int:
         apply_sync(table, rows, ())
         _log.info(f"added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}")
 
-    _log.info(
-        f"done: table '{PROD_TABLE}' now holds {table.count_rows()} rows at {args.db}"
+    final = table.count_rows()
+    _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
+    observability.summary(
+        "Index sync",
+        [
+            f"- added **{len(plan.add):,}**, evicted **{len(plan.delete):,}**",
+            f"- served table now holds **{final:,}** rows",
+        ],
     )
     return 0
 
@@ -267,6 +274,18 @@ def prune(args: argparse.Namespace) -> int:
         f"({len(off_board)} off-Board + {len(duplicate)} duplicate) -> {len(index_ids) - len(evict)} remain"
     )
 
+    # Which ATSes are losing rows, on every run rather than only a dry run. An eviction deletes
+    # rows a user could be looking at, and "evict 4,312" alone never said whose they were.
+    for label, ids in (("off-Board", off_board), ("duplicate", duplicate)):
+        if not ids:
+            continue
+        by_ats = Counter(jid.split(":", 1)[0] for jid in ids)
+        ranked = ", ".join(f"{ats} {n}" for ats, n in by_ats.most_common(5))
+        extra = f", +{len(by_ats) - 5} more" if len(by_ats) > 5 else ""
+        _log.info(
+            f"evict {label}: {len(ids)} rows across {len(by_ats)} ATSes ({ranked}{extra})"
+        )
+
     if not args.apply:
         for label, ids in (("off-Board", off_board), ("duplicate", duplicate)):
             for jid in ids[:8]:
@@ -277,8 +296,15 @@ def prune(args: argparse.Namespace) -> int:
     _log_ids("prune off-Board", off_board)
     _log_ids("prune duplicate", duplicate)
     apply_sync(table, [], evict)
-    _log.info(
-        f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {table.count_rows()}"
+    final = table.count_rows()
+    _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
+    observability.summary(
+        "Index prune",
+        [
+            f"- evicted **{len(evict):,}** ({len(off_board):,} off-Board, "
+            f"{len(duplicate):,} duplicate)",
+            f"- served table now holds **{final:,}** rows",
+        ],
     )
     return 0
 
@@ -308,6 +334,7 @@ def compact(args: argparse.Namespace) -> int:
 
 def main() -> int:
     log.setup()
+    observability.context("index")
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
