@@ -89,6 +89,21 @@ def _kept(search_filters: dict[str, Any]) -> dict[str, str]:
     }
 
 
+# A Saved set may additionally carry `seen_within`: the no-seen_within rule above exists
+# because it fights the Watermark, and a set run live in the Matches tab has no Watermark.
+# The filter drops at projection time — Subscription._kept never admits it (ADR-0043).
+SET_SEARCH_FILTERS = ALLOWED_SEARCH_FILTERS | {"seen_within"}
+
+
+def _kept_for_set(search_filters: dict[str, Any]) -> dict[str, str]:
+    """Only the Search filters a Saved set may carry, as strings."""
+    return {
+        k: str(v)
+        for k, v in search_filters.items()
+        if k in SET_SEARCH_FILTERS and v != ""
+    }
+
+
 @dataclass
 class Subscription:
     """One person's standing request: a verified address, a Query, Search filters, a Watermark."""
@@ -207,7 +222,7 @@ class SavedSet:
             account=subscription_id(email),
             name=name.strip()[:60],
             query=query.strip(),
-            search_filters=_kept(search_filters),
+            search_filters=_kept_for_set(search_filters),
             created_at=when or now_iso(),
         )
 
@@ -219,7 +234,7 @@ class SavedSet:
             self,
             name=name.strip()[:60],
             query=query.strip(),
-            search_filters=_kept(search_filters),
+            search_filters=_kept_for_set(search_filters),
         )
 
     def to_dict(self) -> dict[str, Any]:

@@ -20,7 +20,10 @@ function showTab(name){
   document.querySelectorAll('.side [data-tab]').forEach(a =>
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
   if (name === 'trends' && el('trends') && !trendData) loadTrends(null);
-  if (name === 'matches' && el('sets-strip') && !mySets) loadSets();
+  if (name === 'matches' && el('sets-strip')){
+    if (!mySets) loadSets();
+    else if (activeSetId) runSet(activeSetId);   // re-run on every visit — never stale
+  }
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
 
@@ -251,7 +254,7 @@ async function runSet(id){
   draw(rows, 'matches-results');
 }
 
-function setControls(s){
+function applySetToControls(s){
   el('q').value = s.query;
   Object.values(CONTROL).forEach(cid => { const c = el(cid); if (!c) return;
     if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
@@ -261,14 +264,14 @@ function setControls(s){
   }
 }
 
-async function setAction(act, id){
+async function handleSetAction(act, id){
   const s = (mySets || []).find(x => x.id === id); if (!s) return;
   if (act === 'run') return runSet(id);
-  if (act === 'refine'){ setControls(s); location.hash = '#search'; go(); return; }
+  if (act === 'refine'){ applySetToControls(s); location.hash = '#search'; go(); return; }
   if (act === 'rename'){
     const name = (window.prompt('Rename this set', s.name) || '').trim();
     if (!name || name === s.name) return;
-    await setPost('/sets', { id, name, query: s.query, filters: s.search_filters });
+    await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
     return;
   }
   if (act === 'del'){
@@ -278,7 +281,7 @@ async function setAction(act, id){
     return;
   }
   if (act === 'email'){
-    const r = await setPost('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }, true);
+    const r = await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }, true);
     if (r && !r.ok){
       const d = await r.json().catch(() => ({}));
       el('matches-msg').textContent = d.error || ('Failed (' + r.status + ')');
@@ -287,7 +290,7 @@ async function setAction(act, id){
 }
 
 // POST helper for set actions; reloads the strip afterwards so state is always server-truth.
-async function setPost(url, body, returnResponse){
+async function postAndReloadSets(url, body, returnResponse){
   let r = null;
   try{
     r = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -457,7 +460,7 @@ if (el('trends-legend')) el('trends-legend').addEventListener('click', e => {
 });
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
-  if (btn) setAction(btn.dataset.act, btn.dataset.id);
+  if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
 });
 showIntro();
 whoAmI();

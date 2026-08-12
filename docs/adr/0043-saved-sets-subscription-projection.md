@@ -35,6 +35,29 @@ only writer that keeps the two in step**; the alerts run does not know sets exis
 keep mailing. The cost: previously mailed unsubscribe links die, and a later re-enable mints
 a fresh token and a fresh now-Watermark. Accepted — the alternative (an orphan Subscription
 that keeps delivering a query the user deleted) is worse in exactly the way users notice.
+Symmetrically, **an /unsubscribe click clears the set's `emails` flag** — the Subscription id
+*is* the sets namespace for that address, so the route can find them; without this, the tab
+would keep showing ✉ on and the next edit of that set would silently re-subscribe the person.
+And **toggling OFF removes the Subscription only if the toggled set actually carried email**,
+so a stale tab acting on an outdated strip cannot stop someone's mail.
+
+**A Saved set may carry `seen_within`; the projection drops it.** ADR-0035 bans it from
+Subscriptions because it fights the Watermark — but a set run live in the Matches tab has no
+Watermark, and "Save this search" promises to keep the filters the user was looking at. So
+sets keep it (`SET_SEARCH_FILTERS`), and it falls away only where the Watermark takes over.
+
+**Pre-sets Subscriptions are adopted.** An address that subscribed before sets existed has a
+live Subscription and no set showing ✉ on — the split-brain this design exists to prevent.
+The first `GET /sets` for such an account materializes the Subscription as its emailing set
+(same query and filters); machinery untouched.
+
+**While sets are live, `/subscribe` refuses (409).** The projection invariant holds only if
+the sets endpoints are the sole Subscription writer, so the pre-sets endpoint stays for the
+wall-off configuration and is actively gated, not merely hidden, when `_SETS_ON`.
+
+**CSRF for the new session-authenticated writes** rides the session design: the cookie is
+`SameSite=Lax`, so it never accompanies a cross-site POST/DELETE, and the JSON bodies force
+a failing CORS preflight besides. No token machinery until something weakens either property.
 
 **Races accepted, same shape as ADR-0035:** editing the emailing set while a digest run
 advances its Watermark can lose one of the two writes to the *same* record; per-record files

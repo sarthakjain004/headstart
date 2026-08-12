@@ -240,6 +240,11 @@ def subscribe():
     query = (body.get("query") or "").strip()
     if not query:
         return jsonify({"error": "type the role you want first"}), 400
+    if _SETS_ON:
+        # ADR-0043: the sets endpoints are the only Subscription writer while sets are
+        # live — a direct subscribe here could desync the projection from the emailing
+        # set. The panel is hidden in this configuration; refuse direct calls too.
+        return jsonify({"error": "manage email from the Matches tab"}), 409
     try:
         email = identity.verify(str(body.get("credential") or ""), _GOOGLE_CLIENT_ID)
     except identity.IdentityError as exc:
@@ -252,15 +257,7 @@ def subscribe():
 
     sent = body.get("filters")
     search_filters = sent if isinstance(sent, dict) else {}
-    # Re-subscribing revises the record in place. Minting a new one would rotate the
-    # unsubscribe token, which would 404 the link in every Digest already delivered.
-    existing = store.get(subscription_id(email))
-    sub = (
-        existing.revised(query, search_filters)
-        if existing
-        else Subscription.create(email, query, search_filters)
-    )
-    store.put(sub)
+    _project_subscription(store, email, query, search_filters)
     return jsonify({"ok": True, "email": email})
 
 
@@ -283,6 +280,12 @@ def unsubscribe():
         and hmac.compare_digest(sub.unsubscribe_token, token)
     ):
         store.remove(sub.id)
+        # The Subscription id IS the sets namespace for this address, so an unsubscribe
+        # can and must clear the emailing flag — otherwise the tab keeps showing ✉ on,
+        # and the next edit of that set would silently re-project (re-subscribe) it.
+        for saved in store.sets_for(sub.id):
+            if saved.emails:
+                store.put_set(replace(saved, emails=False))
         return (
             "<p style='font-family:system-ui'>Unsubscribed. No more job digests "
             "will be sent to this address.</p>"
@@ -302,16 +305,20 @@ def _sets_gate() -> tuple[str, Store] | None:
     return email, _store()
 
 
-def _project_subscription(store: Store, email: str, saved: SavedSet) -> None:
-    """Write the Subscription as the delivery projection of the emailing set (ADR-0043).
+def _project_subscription(
+    store: Store, email: str, query: str, search_filters: dict
+) -> None:
+    """Write the Subscription — the delivery projection of the emailing set (ADR-0043),
+    and the same revise-or-create shape the wall-off /subscribe path uses.
 
     Revising keeps the Watermark and unsubscribe token (mailed links must survive edits);
-    creating starts the Watermark now, so nobody is mailed the backlog."""
+    creating starts the Watermark now, so nobody is mailed the backlog. Subscription's own
+    filter whitelist drops what a set may carry but a Digest may not (`seen_within`)."""
     existing = store.get(subscription_id(email))
     sub = (
-        existing.revised(saved.query, saved.search_filters)
+        existing.revised(query, search_filters)
         if existing
-        else Subscription.create(email, saved.query, saved.search_filters)
+        else Subscription.create(email, query, search_filters)
     )
     store.put(sub)
 
@@ -322,7 +329,23 @@ def list_sets():
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
-    return jsonify([s.to_dict() for s in store.sets_for(subscription_id(email))])
+    account = subscription_id(email)
+    sets = store.sets_for(account)
+    # Adoption (ADR-0043): an address that subscribed before sets existed has a live
+    # Subscription but no set showing ✉ on — the split-brain the projection exists to
+    # prevent. Materialize that Subscription as their emailing set, once.
+    if not any(s.emails for s in sets) and len(sets) < MAX_SETS:
+        sub = store.get(account)
+        if sub and sub.email and sub.query:
+            adopted = replace(
+                SavedSet.create(
+                    email, sub.query[:60], sub.query, dict(sub.search_filters)
+                ),
+                emails=True,
+            )
+            store.put_set(adopted)
+            sets.append(adopted)
+    return jsonify([s.to_dict() for s in sets])
 
 
 @app.route("/sets", methods=["POST"])
@@ -354,7 +377,7 @@ def save_set():
         updated = current.revised(name, query, filters)
         store.put_set(updated)
         if updated.emails:
-            _project_subscription(store, email, updated)
+            _project_subscription(store, email, updated.query, updated.search_filters)
         return jsonify(updated.to_dict())
 
     if len(store.sets_for(account)) >= MAX_SETS:
@@ -379,7 +402,7 @@ def delete_set(set_id: str):
         return jsonify({"error": "no such set"}), 404
     store.remove_set(account, set_id)
     if current.emails:
-        store.remove(subscription_id(email))
+        store.remove(account)
     return jsonify({"ok": True})
 
 
@@ -410,11 +433,15 @@ def set_email(set_id: str):
                 store.put_set(replace(other, emails=False))
         current = replace(current, emails=True)
         store.put_set(current)
-        _project_subscription(store, email, current)
+        _project_subscription(store, email, current.query, current.search_filters)
     else:
+        was_emailing = current.emails
         current = replace(current, emails=False)
         store.put_set(current)
-        store.remove(subscription_id(email))
+        # Only the set that actually carried email may take the Subscription with it —
+        # a stale tab toggling OFF on some other set must not stop someone's mail.
+        if was_emailing:
+            store.remove(account)
     return jsonify(current.to_dict())
 
 
