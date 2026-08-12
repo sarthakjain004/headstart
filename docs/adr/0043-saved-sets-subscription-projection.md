@@ -64,7 +64,11 @@ advances its Watermark can lose one of the two writes to the *same* record; per-
 keep it from ever touching a different one. The email toggle writes up to two set files plus
 the projection — not atomic, and a crash between writes can briefly leave two `emails` flags
 or a stale projection; every one of these states is self-healed by the next toggle or edit,
-and the alerts run reads only the single projection, so it can never double-mail.
+and the alerts run reads only the single projection, so it can never double-mail. One
+adoption-specific residual: a crash between flipping `emails` off and removing the
+Subscription leaves an orphan record that the next `GET /sets` adopts back as a visible
+emailing set — turned-off mail resurrected, but visibly (✉ on in the tab), one toggle to
+re-stop, and only through a one-request crash window. Accepted.
 
 ## Options rejected
 
