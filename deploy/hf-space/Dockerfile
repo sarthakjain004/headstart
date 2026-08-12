@@ -22,10 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)"
 
-# geo.py, llm_router.py, profile_extract.py and the alerts/ package are not in the repo's
-# deploy/hf-space/ — deploy-space.yml copies them in from src/headstart/ (single source of
-# truth, where their tests live) before pushing to the Space.
-COPY app.py geo.py llm_router.py profile_extract.py search.py start.sh .
+# geo.py, llm_router.py, profile_extract.py, role_families.json and the alerts/ package are
+# not in the repo's deploy/hf-space/ — deploy-space.yml copies them in from src/headstart/ and
+# config/ (single source of truth, where their tests live) before pushing to the Space.
+# role_families.json must be COPYed, not merely synced: app.py reads it from beside itself
+# inside the image, and without it every trend series renders as its slug (ADR-0040).
+COPY app.py geo.py llm_router.py profile_extract.py role_families.json search.py start.sh .
 COPY alerts ./alerts
 # Synced from src/headstart/ui/ by deploy-space.yml, like the modules above.
 COPY templates ./templates
