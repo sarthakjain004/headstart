@@ -226,6 +226,42 @@ def test_run_heals_stale_darwinbox_urls():
     )
 
 
+def test_run_moves_recruitee_links_onto_the_tenant_host():
+    """A stored recruitee row carries the customer's vanity domain, which is often dead. The
+    tenant is in the id and the offer slug is in the path, so the live link is derivable."""
+    row = dict(
+        _ROW,
+        ats="recruitee",
+        id="recruitee:transperfect:2141029",
+        url="https://transperfect.com/o/software-engineer-net-c-1",
+    )
+    rows = JobSearch(_Model(), _Table([row])).run({"q": "x"})
+    assert (
+        rows[0]["url"]
+        == "https://transperfect.recruitee.com/o/software-engineer-net-c-1"
+    )
+
+
+def test_recruitee_rewrite_leaves_alone_what_it_cannot_rebuild():
+    from headstart.search import _rehost_recruitee
+
+    jid = "recruitee:transperfect:1"
+    # already canonical
+    canonical = "https://transperfect.recruitee.com/o/a-role"
+    assert _rehost_recruitee(jid, canonical) == canonical
+    # an apply link keeps the offer segment, not the trailing /c/new
+    assert _rehost_recruitee(jid, "https://transperfect.com/o/a-role/c/new") == (
+        "https://transperfect.recruitee.com/o/a-role"
+    )
+    # no /o/ segment, and no usable id: served as stored rather than mangled
+    assert _rehost_recruitee(jid, "https://transperfect.com/careers") == (
+        "https://transperfect.com/careers"
+    )
+    assert _rehost_recruitee(None, "https://transperfect.com/o/a-role") == (
+        "https://transperfect.com/o/a-role"
+    )
+
+
 def test_filters_reach_the_where_clause():
     searcher, table = _searcher()
     searcher.run({"q": "x", "remote": "true", "ats": "darwinbox"})

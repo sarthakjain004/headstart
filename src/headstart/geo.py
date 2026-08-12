@@ -182,7 +182,7 @@ CITIES: dict[str, tuple[str, ...]] = {
 }
 
 # Per-city NOT-LIKE guards for aliases that collide with a specific other place.
-_EXCLUDE: dict[str, tuple[str, ...]] = {
+EXCLUDE: dict[str, tuple[str, ...]] = {
     "surat": ("surat thani",),  # Thailand
     "thane": ("kalyani",),  # 'kalyan' is inside Pune's Kalyani Nagar
 }
@@ -190,7 +190,7 @@ _EXCLUDE: dict[str, tuple[str, ...]] = {
 # Unambiguous state/UT names — country-level match only (catches "Karnataka, IN" residue).
 # Diacritic variants are the ones actually observed in workday strings. "punjab" is
 # deliberately absent (Pakistan). "goa" is already a city entry.
-_STATES: tuple[str, ...] = (
+STATES: tuple[str, ...] = (
     "karnataka",
     "karnātaka",
     "maharashtra",
@@ -262,7 +262,7 @@ def _city_where(city: str) -> str | None:
     if not aliases:
         return None
     clause = f"({_like_any(aliases)})"
-    for bad in _EXCLUDE.get(city, ()):
+    for bad in EXCLUDE.get(city, ()):
         clause = f"({clause} AND lower(location) NOT LIKE '%{bad}%')"
     return clause
 
@@ -280,7 +280,7 @@ def where(place: str) -> str | None:
             "(lower(location) LIKE '%india%' AND lower(location) NOT LIKE '%indiana%')"
         ]
         parts += [_city_where(c) for c in CITIES]  # keys exist: no Nones
-        parts.append(f"({_like_any(_STATES)})")
+        parts.append(f"({_like_any(STATES)})")
         return "(" + " OR ".join(p for p in parts if p) + ")"
     if place in REGIONS:
         return "(" + " OR ".join(_city_where(c) for c in REGIONS[place]) + ")"
