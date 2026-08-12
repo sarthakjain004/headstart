@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -80,7 +79,10 @@ URL_SHAPES = {
     # Was host-agnostic (`https://.+/o/[^/]+`) because tenants serve on custom careers
     # domains — which is exactly how it passed 458 rows whose custom host was dead. Both the
     # scraper and the serve-time rewrite now put every link on the tenant's own host, so the
-    # shape can assert that host and this check finally bites.
+    # shape can assert that host and this check finally bites. Both of them keep a fallback
+    # for an offer with no slug to build from, and a row that took it would fail here — which
+    # is the point: it has never happened (0 of 772 served rows, 0 of 612 offers inspected),
+    # so if it ever does, that is news and not something to wave through.
     "recruitee": r"https://[\w-]+\.recruitee\.com/o/[^/]+",
     "workable": r"https://apply\.workable\.com/(j/[A-Z0-9]+|[^/]+/j/[A-Z0-9]+)",
     "smartrecruiters": r"https://jobs\.smartrecruiters\.com/[^/]+/\d+",
@@ -124,10 +126,9 @@ def _session_cookie(path: Path) -> str:
 
     The wall verifies Google once and then trusts this cookie for weeks (ADR-0042), so
     presenting it is exactly what a real user's browser does — no bypass is added to the
-    app for the harness's benefit. ``HEADSTART_SESSION`` overrides the file for CI.
+    app for the harness's benefit.
     """
-    env = os.environ.get("HEADSTART_SESSION", "").strip()
-    raw = env or (path.read_text(encoding="utf-8").strip() if path.exists() else "")
+    raw = path.read_text(encoding="utf-8").strip() if path.exists() else ""
     # tolerate a whole `session=<value>` pasted from the devtools Cookie header
     return raw.split("session=", 1)[-1].strip().strip('";')
 
@@ -139,25 +140,26 @@ def _request(url: str) -> urllib.request.Request:
     return req
 
 
+def _read(url: str) -> list[dict]:
+    with urllib.request.urlopen(_request(url), timeout=120) as resp:
+        return json.load(resp)
+
+
 def _get(base: str, params: dict) -> list[dict]:
     """One ``/search`` call as the signed-in user.
 
     Retries once on a transport failure — the 2026-08-03 run logged two (a timeout and a
     connection reset) as check errors, which read as findings when they were only the
-    network. An HTTP status is never retried: that IS the finding.
+    network. A genuinely unreachable endpoint fails both attempts and still reports.
     """
     url = f"{base}/search?" + urllib.parse.urlencode(params)
-    for attempt in (1, 2):
-        try:
-            with urllib.request.urlopen(_request(url), timeout=120) as resp:
-                return json.load(resp)
-        except urllib.error.HTTPError:
-            raise
-        except OSError:
-            if attempt == 2:
-                raise
-            time.sleep(3)
-    raise AssertionError("unreachable")
+    try:
+        return _read(url)
+    except urllib.error.HTTPError:
+        raise  # an HTTP status is never retried: that IS the finding
+    except OSError:
+        time.sleep(3)
+        return _read(url)
 
 
 def _probe(base: str, path: str, params: dict) -> tuple[int, object]:
@@ -211,7 +213,7 @@ def _day_between(value: str | None, start: str | None, end: str | None) -> bool:
 def _india_ok(place: str, location: str | None) -> bool:
     """A place-filtered row must really name that place.
 
-    Checked against the gazetteer's alias DATA (``geo.CITIES``/``REGIONS``/``_STATES``)
+    Checked against the gazetteer's alias DATA (``geo.CITIES``/``REGIONS``/``STATES``)
     rather than by re-reading ``geo.where``'s SQL — a check built from the clause it is
     checking would rubber-stamp a broken clause. Also asserts the gazetteer's own
     documented traps stay out: Surat must not return Surat Thani, and country-level India
@@ -223,14 +225,14 @@ def _india_ok(place: str, location: str | None) -> bool:
             "indiana" in loc
         ):  # the carve-out geo.where spells out; the trap the filter must not fall into
             return False
-        pools = [("india",), *geo.CITIES.values(), geo._STATES]
+        pools = [("india",), *geo.CITIES.values(), geo.STATES]
     elif place in geo.REGIONS:
         pools = [geo.CITIES[c] for c in geo.REGIONS[place]]
     else:
         pools = [geo.CITIES.get(place, (place,))]
     if not any(alias in loc for pool in pools for alias in pool):
         return False
-    return not any(bad in loc for bad in geo._EXCLUDE.get(place, ()))
+    return not any(bad in loc for bad in geo.EXCLUDE.get(place, ()))
 
 
 def _row_ok(row: dict) -> bool:
@@ -365,6 +367,27 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             f"first_seen_after={moment}",
             {"q": "software engineer", "first_seen_after": moment, "k": 40},
             lambda r, m=moment: bool(r.get("first_seen")) and r["first_seen"] > m,
+            "",
+        )
+    )
+    # ...and in combination, because that is how a Digest actually queries: the Watermark
+    # cutoff never travels alone, it rides with the Subscription's own saved filters.
+    cases.append(
+        (
+            f"combo first_seen_after={moment}+remote+max_years=5",
+            {
+                "q": "software engineer",
+                "first_seen_after": moment,
+                "remote": "true",
+                "max_years": 5,
+                "k": 40,
+            },
+            lambda r, m=moment: (
+                bool(r.get("first_seen"))
+                and r["first_seen"] > m
+                and r.get("remote") is True
+                and (r.get("min_years") is None or r["min_years"] <= 5)
+            ),
             "",
         )
     )
@@ -546,6 +569,23 @@ def run_input_checks(base: str) -> list[dict]:
     return out
 
 
+def _points_at_this_job(row: dict, url: str) -> bool:
+    """For a link whose shape alone can't identify the job, that it identifies THIS one.
+
+    The greenhouse embed form is the case: a tenant's own board page may sit on any host, so
+    the pattern has to accept any host — which is precisely how recruitee's host-agnostic
+    shape waved through 458 dead links. What the embed does carry is the job in ``gh_jid``,
+    and the row carries the same native id, so pin one to the other. Every other link shape
+    identifies its job in the path already.
+    """
+    if "gh_jid=" not in url:
+        return True
+    return (
+        url.split("gh_jid=", 1)[1].split("&")[0]
+        == (row.get("id") or "").rsplit(":", 1)[-1]
+    )
+
+
 def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
     """Per-ATS URL-shape validation over sampled results + optional live HTTP probes."""
     samples: dict[str, list[dict]] = {}
@@ -565,7 +605,8 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
                 "ats": ats,
                 "url": url,
                 "title": r.get("title"),
-                "shape_ok": bool(pattern and re.match(pattern, url)),
+                "shape_ok": bool(pattern and re.match(pattern, url))
+                and _points_at_this_job(r, url),
                 "shape_known": pattern is not None,
             }
             if http and url.startswith("https://"):

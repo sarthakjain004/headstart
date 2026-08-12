@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.geo import _STATES, CITIES, DROPDOWN, REGIONS, where
+from headstart.geo import STATES, CITIES, DROPDOWN, REGIONS, where
 
 # Real-shaped location strings: (location, in_india, cities_it_belongs_to)
 _ROWS = [
@@ -71,7 +71,7 @@ def test_unknown_place_is_none():
 
 
 def test_alias_hygiene():
-    aliases = [a for aliases in CITIES.values() for a in aliases] + list(_STATES)
+    aliases = [a for aliases in CITIES.values() for a in aliases] + list(STATES)
     for a in aliases:
         assert a == a.lower() and "'" not in a and "%" not in a, a
     for trap in ("salt lake", "wai", "salem", "punjab", "verna", "whitefield", "supa"):

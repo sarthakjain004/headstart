@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from headstart.config import load_active_companies, load_companies
+from headstart.config import EXCLUDED_BOARDS, load_active_companies, load_companies
 from headstart.scrapers.registry import SCRAPERS
 
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "companies.toml"
@@ -76,6 +76,12 @@ def test_load_active_companies_maps_slug_and_filters(tmp_path):
     assert by_ats["greenhouse"].name == "stripe"
     assert by_ats["zoho"].slug == "01da.zohorecruit.eu"
     assert by_ats["workday"].slug == "https://3m.wd1.myworkdayjobs.com/search"
+
+
+def test_excluded_board_keys_are_lowercase():
+    """The lookup lowercases the ledger's key, so an entry carrying a capital could never
+    match — it would sit in the list looking effective while the Board kept being scraped."""
+    assert all(key == key.lower() for key in EXCLUDED_BOARDS)
 
 
 def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):

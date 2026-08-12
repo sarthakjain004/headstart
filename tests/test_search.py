@@ -243,21 +243,21 @@ def test_run_moves_recruitee_links_onto_the_tenant_host():
 
 
 def test_recruitee_rewrite_leaves_alone_what_it_cannot_rebuild():
-    from headstart.search import _recruitee_url
+    from headstart.search import _rehost_recruitee
 
     jid = "recruitee:transperfect:1"
     # already canonical
     canonical = "https://transperfect.recruitee.com/o/a-role"
-    assert _recruitee_url(jid, canonical) == canonical
+    assert _rehost_recruitee(jid, canonical) == canonical
     # an apply link keeps the offer segment, not the trailing /c/new
-    assert _recruitee_url(jid, "https://transperfect.com/o/a-role/c/new") == (
+    assert _rehost_recruitee(jid, "https://transperfect.com/o/a-role/c/new") == (
         "https://transperfect.recruitee.com/o/a-role"
     )
     # no /o/ segment, and no usable id: served as stored rather than mangled
-    assert _recruitee_url(jid, "https://transperfect.com/careers") == (
+    assert _rehost_recruitee(jid, "https://transperfect.com/careers") == (
         "https://transperfect.com/careers"
     )
-    assert _recruitee_url(None, "https://transperfect.com/o/a-role") == (
+    assert _rehost_recruitee(None, "https://transperfect.com/o/a-role") == (
         "https://transperfect.com/o/a-role"
     )
 

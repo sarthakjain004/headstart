@@ -128,10 +128,10 @@ _DARWINBOX_NEW = "/ms/candidatev2/main/careers/jobDetails/"
 # from what the row already carries: the id holds the tenant, the path holds the offer slug.
 # Rewriting here spares users the wait for every recruitee board to turn over. Remove once
 # they have.
-_RECRUITEE_HOST = ".recruitee.com"
+_RECRUITEE_DOMAIN = ".recruitee.com"
 
 
-def _recruitee_url(job_id: str | None, url: str) -> str:
+def _rehost_recruitee(job_id: str | None, url: str) -> str:
     """A recruitee link moved onto the tenant's own host, or the URL unchanged.
 
     Left alone when it is already canonical, when the id isn't the expected
@@ -141,13 +141,13 @@ def _recruitee_url(job_id: str | None, url: str) -> str:
     parts = (job_id or "").split(":")
     split = urlsplit(url)
     if (
-        split.netloc.endswith(_RECRUITEE_HOST)
+        split.netloc.endswith(_RECRUITEE_DOMAIN)
         or len(parts) < 3
         or "/o/" not in split.path
     ):
         return url
     offer = split.path.split("/o/", 1)[1].strip("/").split("/")[0]
-    return f"https://{parts[1]}{_RECRUITEE_HOST}/o/{offer}" if offer else url
+    return f"https://{parts[1]}{_RECRUITEE_DOMAIN}/o/{offer}" if offer else url
 
 
 def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str | None:
@@ -161,7 +161,7 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
     if ats == "darwinbox" and _DARWINBOX_OLD in url:
         return url.replace(_DARWINBOX_OLD, _DARWINBOX_NEW, 1)
     if ats == "recruitee":
-        return _recruitee_url(job_id, url)
+        return _rehost_recruitee(job_id, url)
     return url
 
 
