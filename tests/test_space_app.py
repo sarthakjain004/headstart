@@ -211,6 +211,10 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     # The door's Google button carries the real client id — a drifted placeholder would
     # ship a dead button on a page that otherwise renders fine.
     assert b"client-id.example" in page
+    # …and its way out of an embedding frame. huggingface.co/spaces/… frames the app, where
+    # Google's sign-in can't complete and a Lax session cookie wouldn't be sent anyway, so
+    # the door offers a new tab instead. Losing this strands every visitor arriving that way.
+    assert b'id="openout"' in page
     assert client.get("/search?q=x").status_code == 401
     assert client.get("/trends").status_code == 401
     assert client.post("/profile/parse", json={}).status_code == 401

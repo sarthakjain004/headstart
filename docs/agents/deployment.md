@@ -115,6 +115,15 @@ parse endpoint answers 503 — and the rest of the Space is unaffected.
 
 The sign-in wall (ADR-0042) adds one more **Space** secret: `SECRET_KEY`, a long random string
 the session cookie is signed with (`python -c "import secrets; print(secrets.token_hex(32))"`).
+
+**Once the wall is on, the app only works at its own URL** —
+`https://imposeidon-headstart-search.hf.space` — not at the `huggingface.co/spaces/…` page,
+which serves it inside a cross-site iframe. Two independent reasons, both verified against
+the live embed: HF's iframe `allow=` list has no `identity-credentials-get`, so Google's
+sign-in stalls part-way through; and the session cookie is `SameSite=Lax`, which browsers
+never send from inside another site's frame, so even a successful sign-in would land back on
+the door. The door detects the frame and offers a new tab rather than a button that hangs.
+Share the direct link; treat the huggingface.co page as a listing, not the app.
 The wall turns on only when both `SECRET_KEY` and `GOOGLE_CLIENT_ID` are set; until then the
 page stays open and anonymous. Rotating `SECRET_KEY` signs everyone out (their cookies stop
 verifying) and breaks nothing else.

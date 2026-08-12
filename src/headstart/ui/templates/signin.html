@@ -16,6 +16,9 @@
       --ink-3:#7A83A0; --aqua:#00806B; --violet:#5B34D6; --glow:rgba(0,128,107,.16); }
   }
   *{ box-sizing:border-box; } html,body{ margin:0; height:100%; }
+  /* a `display` rule outranks the hidden attribute, and both .openout and .g set one —
+     without this the escape hatch shows on the normal door and the dead button stays put */
+  [hidden]{ display:none !important; }
   body{ background:var(--ground); color:var(--ink); font:15px/1.55 var(--sans);
     display:grid; place-items:center; }
   .door{ background:var(--raise); border:1px solid var(--rule); border-radius:20px;
@@ -31,6 +34,10 @@
   p{ color:var(--ink-2); font-size:13.5px; margin:0 0 22px; }
   .g{ display:flex; justify-content:center; }
   .note{ color:var(--ink-3); font-size:12.5px; margin-top:16px; min-height:1em; }
+  .openout{ display:inline-block; text-decoration:none; font:600 14px var(--sans);
+    color:#04121A; padding:13px 24px; border-radius:12px;
+    background:linear-gradient(120deg,var(--aqua),var(--violet));
+    box-shadow:0 8px 22px var(--glow); }
 </style></head><body>
 <div class="door">
   <div class="mark"></div>
@@ -38,9 +45,30 @@
   <p>Tech jobs read straight from company career boards, matched on meaning.
      Sign in to search.</p>
   <div class="g" id="gbtn"></div>
+  <a class="openout" id="openout" hidden target="_blank" rel="noopener">Open HeadStart to sign in ↗</a>
   <div class="note" id="msg" role="status"></div>
 </div>
 <script>
+// Embedded in another site's page — huggingface.co/spaces/… frames this app — the door
+// cannot work in place, for two independent reasons, so it offers the way out instead.
+// 1. Google's sign-in needs the `identity-credentials-get` permission from the embedding
+//    page; HF's iframe doesn't grant it, so the flow hangs part-way through Google.
+// 2. The session cookie is SameSite=Lax (ADR-0043 leans on that instead of CSRF tokens),
+//    and Lax cookies are never sent from inside another site's frame — so even a
+//    successful sign-in would land back here, signed out, forever.
+// `location.href` is already the direct Space URL (it IS the iframe's src), so nothing
+// needs hardcoding; HF's sandbox allows popups, so the new tab opens.
+const EMBEDDED = window.top !== window.self;
+
+function offerNewTab(){
+  const out = document.getElementById('openout');
+  out.href = location.href;
+  out.hidden = false;
+  document.getElementById('gbtn').hidden = true;
+  document.getElementById('msg').textContent =
+    'Sign-in needs its own tab — this page is embedded inside Hugging Face.';
+}
+
 async function onCred(resp){
   const msg = document.getElementById('msg');
   try{
@@ -53,11 +81,13 @@ async function onCred(resp){
   }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 function initSignin(){
-  if (!window.google) return;
+  // Never render Google's button in a frame: it looks clickable and then stalls.
+  if (EMBEDDED || !window.google) return;
   google.accounts.id.initialize({ client_id: {{ google_client_id|tojson }}, callback:onCred });
   google.accounts.id.renderButton(document.getElementById('gbtn'),
     { theme:'outline', size:'large' });
 }
+if (EMBEDDED) offerNewTab();   // before Google's script loads — the door is usable at once
 </script>
 <script src="https://accounts.google.com/gsi/client" async onload="initSignin()"></script>
 </body></html>
