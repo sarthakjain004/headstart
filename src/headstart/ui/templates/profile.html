@@ -1,0 +1,56 @@
+<section class="profile">
+  <div class="profile-head">
+    <h2>Your profile</h2>
+    <span class="note" id="profile-msg" role="status"></span>
+  </div>
+
+  <div class="profile-card">
+    <p class="note">Paste your résumé and one AI read fills the profile below — only the
+      extraction is kept, never the document, and contact details are never part of it.
+      Everything stays editable by hand.</p>
+    <textarea id="presume" rows="6" placeholder="Paste the text of your résumé"></textarea>
+    <div class="row">
+      <button class="ghost" id="pparse">Read my résumé</button>
+      <span class="note" id="pparses"></span>
+    </div>
+  </div>
+
+  <div class="profile-card">
+    <div class="pfield wide">
+      <label for="pquery">What to search for — a role, not a bio</label>
+      <input id="pquery" placeholder="e.g. backend engineer, distributed systems, Python/Go">
+    </div>
+    <div class="pgrid">
+      <div class="pfield">
+        <label for="ptitle">Current title</label>
+        <input id="ptitle" placeholder="e.g. Senior Backend Engineer">
+      </div>
+      <div class="pfield">
+        <label for="pyears">Years of experience</label>
+        <input id="pyears" type="number" min="0" max="60" placeholder="e.g. 5">
+      </div>
+      <div class="pfield">
+        <label for="pskills">Skills</label>
+        <input id="pskills" placeholder="e.g. Python, Go, Kafka">
+      </div>
+      <div class="pfield">
+        <label for="proles">Past roles</label>
+        <input id="proles" placeholder="e.g. SDE II at Acme, SDE at Beta">
+      </div>
+      <div class="pfield">
+        <label for="pedu">Education</label>
+        <input id="pedu" placeholder="e.g. B.Tech Computer Science">
+      </div>
+      <div class="pfield">
+        <label for="plocation">Location</label>
+        <input id="plocation" placeholder="e.g. Bengaluru, India">
+      </div>
+    </div>
+    <div class="row">
+      <button class="go" id="psave">Save profile</button>
+      <button class="ghost" id="papply" title="Fill the Search tab from this profile">Search with this profile</button>
+      <span class="spacer"></span>
+      <button class="ghost danger" id="pdelete" title="Clears the stored career data">Delete profile</button>
+    </div>
+  </div>
+</section>

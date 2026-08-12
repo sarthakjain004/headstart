@@ -282,6 +282,55 @@ def test_sets_for_skips_unreadable_records(monkeypatch):
     assert [s.name for s in st.Store(REPO, TOKEN).sets_for(account)] == ["backend"]
 
 
+# ---- Profiles (ADR-0041) ----
+
+
+def test_profile_revised_bounds_fields_and_never_touches_the_counter():
+    started = st.replace(st.Profile.blank("Ada@Example.com "), parses_used=2)
+    edited = started.revised(
+        {
+            "query": "backend engineer",
+            "years": "12",
+            "title": "x" * 500,
+            "parses_used": 99,
+        }
+    )
+    assert edited.account == st.subscription_id("ada@example.com")
+    assert edited.query == "backend engineer"
+    assert edited.years == 12
+    assert len(edited.title) == 200
+    assert edited.parses_used == 2  # the body can never refill its own cap
+
+
+def test_profile_bad_years_become_none():
+    blank = st.Profile.blank("a@b.c")
+    assert blank.revised({"years": "several"}).years is None
+    assert blank.revised({"years": ""}).years is None
+    assert blank.revised({"years": 0}).years == 0
+    assert blank.revised({"years": 99}).years is None
+
+
+def test_profile_blanked_clears_career_data_and_keeps_the_cap():
+    lived = st.replace(
+        st.Profile.blank("ada@example.com").revised({"query": "q", "location": "Pune"}),
+        parses_used=3,
+    )
+    gone = lived.blanked()
+    assert gone.query == "" and gone.location == "" and gone.years is None
+    assert gone.parses_used == 3  # deleting must not reset the lifetime cap
+
+
+def test_profile_round_trips_and_guards_paths(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    profile = st.Profile.blank("ada@example.com").revised({"query": "backend"})
+    store.put_profile(profile)
+    assert profile.path() == f"profiles/{profile.account}.json"
+    assert profile.path() in hub.files
+    assert store.get_profile(profile.account).query == "backend"
+    assert store.get_profile("../allowlist") is None  # no caller names a repo path
+
+
 # ---- Saved jobs (ADR-0044) ----
 
 

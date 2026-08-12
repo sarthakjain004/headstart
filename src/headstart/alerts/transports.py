@@ -10,7 +10,7 @@ and `mail` have exactly one real implementation each, which is a hypothetical se
 real one" — sound at the time, and the reason the alerts package injects plain callables
 everywhere else. Telegram makes the seam real, so the premise is gone rather than the rule
 being wrong. What is kept is the *idiom*: a Transport is a record of functions, not a class
-hierarchy, so it still reads like `resume_query.query_for(text, ask=…)` and still fakes with
+hierarchy, so it still reads like `profile_extract.extract(text, ask=…)` and still fakes with
 `monkeypatch.setattr` rather than a mocking library.
 
 The order of `TRANSPORTS` is the selection order — most specific first, with email last as

@@ -287,6 +287,24 @@ textarea:focus{ border-color:var(--violet); }
   border-color:color-mix(in srgb, var(--coral) 32%, transparent); font-weight:600; }
 .card.gone a.title{ color:var(--ink-2); }  /* the copy outlived the posting — dim, don't hide */
 
+/* ---- the Profile tab (ADR-0041): one AI read fills it, hands edit it ---- */
+.profile-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.profile-head h2{ font:600 16px var(--sans); letter-spacing:-.01em; margin:0; }
+.profile-card{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-xl);
+  padding:18px 20px; margin-bottom:16px; }
+.profile-card textarea{ width:100%; margin:10px 0; }
+.profile-card .row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.profile-card .row .spacer{ flex:1; }
+.pgrid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;
+  margin:12px 0 16px; }
+.pfield label{ display:block; font-size:12px; color:var(--ink-2); margin-bottom:5px; }
+.pfield.wide{ margin-bottom:12px; }
+.pfield input{ width:100%; padding:10px 12px; border-radius:var(--r-md); font:inherit;
+  font-size:13.5px; background:var(--ground); color:var(--ink); border:1px solid var(--rule);
+  outline:none; }
+.pfield input:focus{ border-color:var(--violet); }
+.ghost.danger:hover{ border-color:var(--coral); color:var(--coral); }
+
 /* ---- role trends (ADR-0040), its own tab since the shell landed ---- */
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-xl); }

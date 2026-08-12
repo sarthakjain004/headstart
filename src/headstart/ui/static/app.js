@@ -25,6 +25,7 @@ function showTab(name){
     else if (activeSetId) runSet(activeSetId);   // re-run on every visit — never stale
   }
   if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
+  if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
 
@@ -484,25 +485,98 @@ async function toggleStar(jobId){
   }
 }
 
-// Résumé → Query: fills the search box for the user to edit, never searches on its own.
-// The password rides along when filled; the server remembers this IP after one success.
-async function readResume(){
-  const text = el('resume').value.trim();
-  const msg = el('rmsg'), btn = el('rbtn');
+/* ---- Profile (ADR-0041): the stored career extraction — one sentence that drives
+   ranking, facts that pre-fill filters. One LLM read per paste, capped per Account;
+   every field stays hand-editable, so the AI is a convenience, not a gate. ---- */
+const PROFILE_FIELDS = { query:'pquery', title:'ptitle', years:'pyears', skills:'pskills',
+  roles:'proles', education:'pedu', location:'plocation' };
+
+function fillProfileForm(p){
+  for (const [key, cid] of Object.entries(PROFILE_FIELDS))
+    el(cid).value = p[key] == null ? '' : p[key];
+  el('pparses').textContent = p.parses_left > 0
+    ? `${p.parses_left} of 3 résumé reads left`
+    : 'No résumé reads left — edit by hand below.';
+  el('pparse').disabled = !(p.parses_left > 0);
+}
+
+function readProfileForm(){
+  const out = {};
+  for (const [key, cid] of Object.entries(PROFILE_FIELDS)) out[key] = el(cid).value.trim();
+  return out;
+}
+
+async function loadProfile(){
+  const msg = el('profile-msg');
+  try{
+    const r = await fetch('/profile');
+    if (!r.ok){ msg.textContent = 'Couldn\'t load your profile.'; return; }
+    fillProfileForm(await r.json());
+  }catch(e){ msg.textContent = 'Couldn\'t load your profile.'; }
+}
+
+async function saveProfile(){
+  const msg = el('profile-msg');
+  msg.textContent = 'Saving…';
+  try{
+    const r = await fetch('/profile', { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                        body: JSON.stringify(readProfileForm()) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
+    fillProfileForm(d);
+    msg.textContent = 'Saved.';
+  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+}
+
+async function parseResume(){
+  const text = el('presume').value.trim();
+  const msg = el('profile-msg'), btn = el('pparse');
   if (!text){ msg.textContent = 'Paste your résumé first.'; return; }
   btn.disabled = true; msg.textContent = 'Reading…';
-  try {
-    const r = await fetch('/resume-to-query', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ text, password: el('rpass').value })
-    });
-    const data = await r.json();
-    if (!r.ok){ msg.textContent = data.error || ('Failed (' + r.status + ')'); return; }
-    el('q').value = data.query;
-    el('q').focus();
-    msg.textContent = 'Edit the search above, then hit Search.';
-  } catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
-  finally { btn.disabled = false; }
+  let ok = false, spent = false;
+  try{
+    const r = await fetch('/profile/parse', { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                              body: JSON.stringify({ text }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok){
+      ok = true;
+      fillProfileForm(d);   // also sets the button from the fresh parses_left
+      el('presume').value = '';   // the document was never stored; don't keep it on screen either
+      msg.textContent = 'Read — check the fields below, edit anything, then Save.';
+    } else {
+      spent = r.status === 502;   // the router answered nothing usable — a read was still spent
+      msg.textContent = d.error || ('Failed (' + r.status + ')');
+    }
+  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+  if (!ok){
+    if (spent) await loadProfile();   // refresh the reads-left counter (and button state)
+    else btn.disabled = false;
+  }
+}
+
+// The explicit hand-off to Search: the sentence becomes the query, the facts become
+// filters (years → experience, location → location) — never the other way around.
+function applyProfile(){
+  const p = readProfileForm();
+  if (!p.query){ el('profile-msg').textContent = 'Fill in what to search for first.'; return; }
+  el('q').value = p.query;
+  Object.values(CONTROL).forEach(id => { const c = el(id); if (!c) return;
+    if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
+  if (p.years) el('maxyears').value = p.years;
+  if (p.location) el('location').value = p.location;
+  location.hash = '#search';
+  go();
+}
+
+async function deleteProfile(){
+  if (!window.confirm('Clear your stored profile? Your saved sets and starred jobs stay.')) return;
+  const msg = el('profile-msg');
+  try{
+    const r = await fetch('/profile', { method: 'DELETE' });
+    if (!r.ok){ msg.textContent = 'Couldn\'t delete — try again.'; return; }
+    await loadProfile();
+    msg.textContent = 'Profile cleared.';
+  }catch(e){ msg.textContent = 'Couldn\'t delete — try again.'; }
 }
 
 // Google sign-in returns a signed credential; the address is read from it server-side, so
@@ -627,6 +701,12 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button[data-star]');
   if (b) toggleStar(b.dataset.star);
 });
+if (el('pparse')){
+  el('pparse').addEventListener('click', parseResume);
+  el('psave').addEventListener('click', saveProfile);
+  el('papply').addEventListener('click', applyProfile);
+  el('pdelete').addEventListener('click', deleteProfile);
+}
 if (el('matches-controls')){
   const rerun = () => { if (activeSetId) runSet(activeSetId); };
   // sort is a client-side reorder; a range change re-queries — both go through runSet

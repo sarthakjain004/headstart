@@ -17,25 +17,8 @@
 {# The subscribe panel is the pre-sets email path (ADR-0035); once Saved sets exist the
    email toggle lives on the Matches tab instead — two places saying "email me" would
    disagree about which query is delivered. #}
-{% if resume_on or (alerts_on and not sets_on) %}
+{% if alerts_on and not sets_on %}
 <div class="features">
-  {% if resume_on %}
-  <details class="feature">
-    <summary><span class="dot"></span><span class="ttl">Write my search from my résumé</span><span class="sub">AI</span></summary>
-    <div class="body">
-      <p>Paste your résumé and we'll turn it into a search you can edit. Used for this one
-         request — never stored.</p>
-      <textarea id="resume" rows="6" placeholder="Paste the text of your résumé"></textarea>
-      <div class="row">
-        <input id="rpass" type="password" placeholder="Beta password" autocomplete="off">
-        <button class="ghost" onclick="readResume()" id="rbtn">Write my search</button>
-        <span class="note" id="rmsg" role="status"></span>
-      </div>
-    </div>
-  </details>
-  {% endif %}
-
-  {% if alerts_on and not sets_on %}
   <details class="feature">
     <summary><span class="dot"></span><span class="ttl">Email me new matches</span><span class="sub">invite only</span></summary>
     <div class="body">
@@ -48,7 +31,6 @@
       </div>
     </div>
   </details>
-  {% endif %}
 </div>
 {% endif %}
 
