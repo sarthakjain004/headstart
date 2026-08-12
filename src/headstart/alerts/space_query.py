@@ -10,7 +10,7 @@ awake — and the merge job restarts it at the end of every pipeline run, so thi
 arrives at a cold Space. Hence the retry budget, in the shape ADR-0033 established: waits
 sized to a cold start (~1 min), not to a network blip.
 
-**Why k=100.** That is the Space's `_MAX_K`. Asking for the ceiling costs nothing and
+**Why k=100.** That is the Space's page cap (`JobSearch.max_k`). Asking for the ceiling costs nothing and
 leaves headroom if a lagging deploy ignores `first_seen_after` and `shortlist` has to do
 the cut itself.
 """
@@ -26,7 +26,7 @@ from typing import Any
 
 from .store import Subscription
 
-K = 100  # the Space's _MAX_K
+K = 100  # the Space's page cap (JobSearch.max_k)
 _TIMEOUT = 120  # a cold Space reloads the index and the encoder before it answers
 _WAITS = (15, 30, 60)  # three retries, sized to a Space cold start
 

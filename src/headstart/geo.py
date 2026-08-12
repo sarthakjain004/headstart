@@ -248,6 +248,11 @@ DROPDOWN: tuple[str, ...] = (
 )
 
 
+def dropdown_options() -> list[tuple[str, str]]:
+    """(value, label) pairs for the UI's India dropdown — the display side of DROPDOWN."""
+    return [(c, c.title().replace("Ncr", "NCR")) for c in DROPDOWN]
+
+
 def _like_any(aliases: tuple[str, ...]) -> str:
     return " OR ".join(f"lower(location) LIKE '%{a}%'" for a in aliases)
 

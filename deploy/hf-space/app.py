@@ -1,9 +1,11 @@
 """HeadStart semantic search — HF Space app (ADR-0020).
 
-Self-contained twin of ``scripts/ui/serve.py``: pulls the LanceDB ``jobs`` table from the
-private HF dataset at startup (HF_TOKEN Space secret), loads the nomic encoder (baked into the
-image), and serves the same filter-then-rank search page. The search conventions (model id,
-task prefixes, filter clause) mirror ``headstart.search`` — keep them in lockstep.
+Pulls the LanceDB ``jobs`` table from the private HF dataset at startup (HF_TOKEN Space
+secret), loads the nomic encoder (baked into the image), and serves the shared UI — the
+templates and static files synced from ``src/headstart/ui`` — over the shared search path,
+``search.JobSearch``, synced from ``src/headstart/search.py`` (ADR-0042). The local dev
+server (``scripts/ui/serve.py``) is a thin adapter over the same two modules, so nothing
+here is duplicated there any more.
 """
 
 from __future__ import annotations
@@ -12,28 +14,25 @@ import csv
 import hmac
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
 import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
 import resume_query  # synced from src/headstart/resume_query.py by deploy-space.yml
+import search  # the shared search path — synced from src/headstart/search.py (ADR-0042)
 
 # alerts/ is a package, synced from src/headstart/alerts/ by deploy-space.yml (ADR-0035).
 # Only these three members are imported here: alerts/__init__.py is empty on purpose, so the
 # Space never loads the Digest or Resend modules, whose dependencies it does not install.
 from alerts import access, identity
 from alerts.store import Store, Subscription, subscription_id
-from flask import Flask, jsonify, request, session
+from flask import Flask, jsonify, render_template, request, session
 from huggingface_hub import snapshot_download
 
-MODEL = "nomic-ai/nomic-embed-text-v1.5"
-QUERY_PREFIX = "search_query: "  # load-bearing (ADR-0005)
-TABLE = "jobs"
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
-_MAX_K = 100  # cap the page size so a crafted k can't dump the whole table
 
 print(f"pulling index from {DATASET} ...", flush=True)
 snapshot_download(
@@ -49,16 +48,11 @@ snapshot_download(
 print("loading encoder ...", flush=True)
 from sentence_transformers import SentenceTransformer  # noqa: E402 - after the cheap fail-fast download
 
-_model = SentenceTransformer(MODEL, trust_remote_code=True, device="cpu")
-_table = lancedb.connect(_STATE / "data" / "lancedb").open_table(TABLE)
-# the ATSes actually present in the index — feeds the filter dropdown, grows as ingestion does
-_ATSES = sorted(
-    {r["ats"] for r in _table.search().select(["ats"]).limit(1_000_000).to_list()}
-)
-# The Space redeploys on merge, but `first_seen` only appears on the next pipeline run (ADR-0031).
-# Filtering on a column the table lacks errors every query, so the feature stays dark until the
-# column lands and then switches itself on — no coordinated deploy.
-_HAS_FIRST_SEEN = "first_seen" in _table.schema.names
+_model = SentenceTransformer(search.MODEL, trust_remote_code=True, device="cpu")
+_table = lancedb.connect(_STATE / "data" / "lancedb").open_table(search.PROD_TABLE)
+# The whole query path — parse, whitelist, rank, project — lives behind this one object
+# (search.JobSearch); its startup scan supplies the ATS dropdown and the first_seen flag.
+_searcher = search.JobSearch(_model, _table)
 # The Résumé feature is a private beta behind a shared password (ADR-0032). No secret set →
 # the endpoint answers 503 and the panel is hidden — same dark-until-ready shape as first_seen.
 _RESUME_PASSWORD = os.environ.get("RESUME_PASSWORD") or ""
@@ -119,8 +113,12 @@ _ALERTS_ON = bool(_GOOGLE_CLIENT_ID and _SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN
 _SECRET_KEY = os.environ.get("SECRET_KEY") or ""
 _AUTH_ON = bool(_SECRET_KEY and _GOOGLE_CLIENT_ID)
 print(
-    f"ready: {_table.count_rows()} jobs across {len(_ATSES)} ATSes"
-    + ("" if _HAS_FIRST_SEEN else " (no first_seen column yet — 'new since' hidden)")
+    f"ready: {_table.count_rows()} jobs across {len(_searcher.atses)} ATSes"
+    + (
+        ""
+        if _searcher.has_first_seen
+        else " (no first_seen column yet — 'new since' hidden)"
+    )
     + ("" if _RESUME_PASSWORD else " (RESUME_PASSWORD unset — résumé search hidden)")
     + ("" if _ALERTS_ON else " (alerts secrets unset — email alerts hidden)")
     + ("" if _AUTH_ON else " (SECRET_KEY/GOOGLE_CLIENT_ID unset — sign-in wall off)"),
@@ -133,7 +131,17 @@ def _store() -> Store:
     return Store(_SUBSCRIBERS_REPO, _SUBSCRIBERS_TOKEN)
 
 
-app = Flask(__name__)
+# The UI's single source is src/headstart/ui (templates + static); deploy-space.yml syncs
+# both next to this app. In a repo checkout (tests, local runs) the synced copies don't
+# exist, so fall back to the source location.
+_UI = Path(__file__).parent
+if not (_UI / "templates").exists():
+    _UI = Path(__file__).parents[2] / "src" / "headstart" / "ui"
+app = Flask(
+    __name__,
+    template_folder=str(_UI / "templates"),
+    static_folder=str(_UI / "static"),
+)
 # The session is a signed cookie (ADR-0042): Google is verified once at /auth/google, then
 # the cookie is the identity for weeks — re-sending the ~1h Google token would bounce users
 # mid-use. Lax + Secure: it never rides a cross-site POST, and only travels over https.
@@ -161,170 +169,13 @@ def _require_sign_in():
     return None
 
 
-# Canonical employment-type filters mapped onto the messy per-ATS raw values
-# ("fulltime", "Full-time", "fulltime_permanent", "Permanent / Full-Time", …).
-_ETYPE_CLAUSES = {
-    "full-time": "(lower(employment_type) LIKE '%full%'"
-    " OR lower(employment_type) LIKE '%permanent%')",
-    "part-time": "lower(employment_type) LIKE '%part%'",
-    "contract": "(lower(employment_type) LIKE '%contract%'"
-    " OR lower(employment_type) LIKE '%freelance%')",
-    "internship": "lower(employment_type) LIKE '%intern%'",
-}
-
-
-def _int_arg(name: str) -> int | None:
-    """An optional integer query param, absent when unset. Raises ``ValueError`` on garbage, which
-    ``/search`` turns into a 400 — the same handling every other filter already relies on."""
-    raw = request.args.get(name)
-    return int(raw) if raw else None
-
-
-def _like(term: str) -> str:
-    """A user term made safe for a quoted LIKE pattern: quotes doubled, length-capped."""
-    return term[:60].replace("'", "''").lower()
-
-
-# TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
-# candidatev2 URL fix carry the old `/ms/candidate/careers/jobs/{id}` link, which on v2
-# tenants redirects to the careers home instead of the job. The stored data self-heals only
-# as those postings turn over (sync leaves re-seen ids untouched — headstart.ingest.index_plan), so this
-# rewrites the derivable URL at serve time as a stopgap. Remove once the darwinbox rows have
-# healed (or once sync refreshes changed metadata for re-seen ids — the proper fix).
-# Caveat: a legacy `new_careers=false` tenant's old-format URL would be wrongly rewritten,
-# but none exist today (60/60 surveyed are v2).
-_DARWINBOX_OLD = "/ms/candidate/careers/jobs/"
-_DARWINBOX_NEW = "/ms/candidatev2/main/careers/jobDetails/"
-
-
-def _canonical_url(ats: str | None, url: str | None) -> str | None:
-    """Serve-time URL normalization; only darwinbox's stale links are rewritten (see above)."""
-    if ats == "darwinbox" and url and _DARWINBOX_OLD in url:
-        return url.replace(_DARWINBOX_OLD, _DARWINBOX_NEW, 1)
-    return url
-
-
-def _build_filter(
-    *,
-    remote: bool,
-    max_years: int | None,
-    ats: str | None,
-    etype: str | None,
-    india: str | None,
-    location: str | None,
-    company: str | None,
-    has_salary: bool,
-    posted_within: int | None,
-    seen_within: int | None,
-    first_seen_after: str | None = None,
-) -> str | None:
-    """The prod-table where-clause. `headstart.search.build_filter` carries the same three core
-    filters (remote / employment_type / max_years); the rest — location, salary, recency — live only
-    here, so the two have diverged and this one is the reference (ADR-0031)."""
-    filters: list[str] = []
-    if remote:
-        filters.append("remote = true")
-    if max_years is not None:
-        filters.append(f"(min_years <= {int(max_years)} OR min_years IS NULL)")
-    if ats in _ATSES:  # whitelist — never interpolated from free text
-        filters.append(f"ats = '{ats}'")
-    if etype in _ETYPE_CLAUSES:
-        filters.append(_ETYPE_CLAUSES[etype])
-    if india:
-        clause = geo.where(india)  # canonical-place lookup — unknown values are ignored
-        if clause:
-            filters.append(clause)
-    if location:
-        filters.append(f"lower(location) LIKE '%{_like(location)}%'")
-    if company:
-        filters.append(f"lower(company) LIKE '%{_like(company)}%'")
-    if has_salary:
-        filters.append("salary IS NOT NULL")
-    if posted_within is not None:
-        # posted_at is a raw string; ISO-prefixed values (97%) compare correctly. The LIKE
-        # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
-        # '21-Apr-2026' sort lexicographically ABOVE any ISO cutoff and would otherwise
-        # leak into every window.
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=int(posted_within))
-        ).strftime("%Y-%m-%d")
-        filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
-    if seen_within is not None and _HAS_FIRST_SEEN:
-        # In HOURS, not days: this window is meant to be shorter than one pipeline cycle. No shape
-        # guard is needed here — unlike `posted_at`, we write `first_seen` ourselves, so it is
-        # always ISO-8601 UTC. Rows predating the column are null, and `NULL >= '…'` is never true,
-        # so they drop out on their own (ADR-0031).
-        since = (
-            datetime.now(timezone.utc) - timedelta(hours=int(seen_within))
-        ).isoformat(timespec="seconds")
-        filters.append(f"first_seen >= '{since}'")
-    if first_seen_after and _HAS_FIRST_SEEN:
-        # The alerts run's exact cutoff (ADR-0035), beside the UI's hour-granular window: a
-        # Digest must carry precisely what appeared since that Subscription's Watermark, and
-        # rounding up to whole hours would re-offer rows already mailed. Strictly `>`, so a
-        # Watermark taken from a row's own `first_seen` cannot re-select that row.
-        #
-        # This is the one recency value that arrives as free text and lands in a where-clause,
-        # so it is re-serialized from a parsed datetime rather than interpolated as given —
-        # anything unparseable raises ValueError, which /search already answers as 400.
-        moment = datetime.fromisoformat(first_seen_after).isoformat(timespec="seconds")
-        filters.append(f"first_seen > '{moment}'")
-    return " AND ".join(filters) if filters else None
-
-
-def _search(query: str, where: str | None, k: int) -> list[dict]:
-    qv = _model.encode([QUERY_PREFIX + query], normalize_embeddings=True)[0].astype(
-        "float32"
-    )
-    search = _table.search(qv).metric("cosine")
-    if where:
-        search = search.where(where, prefilter=True)
-    rows = search.limit(k).to_list()
-    return [
-        {
-            "score": round(1 - r["_distance"], 3),
-            "title": r["title"],
-            "company": r["company"],
-            "location": r.get("location"),
-            "remote": r["remote"],
-            "employment_type": r.get("employment_type"),
-            "min_years": r.get("min_years"),
-            "salary": r.get("salary"),
-            "ats": r.get("ats"),
-            "posted_at": r.get("posted_at"),
-            "first_seen": r.get("first_seen"),
-            "url": _canonical_url(
-                r.get("ats"), r.get("url")
-            ),  # temporary; see _canonical_url
-        }
-        for r in rows
-    ]
-
-
 @app.route("/search")
-def search():
-    q = (request.args.get("q") or "").strip()
-    if not q:
-        return jsonify([])
+def search_jobs():
+    """A thin adapter over the shared search path — parse/filter/rank live in JobSearch."""
     try:
-        k = int(request.args.get("k") or 20)
-        where = _build_filter(
-            remote=request.args.get("remote") == "true",
-            max_years=_int_arg("max_years"),
-            ats=(request.args.get("ats") or "").strip() or None,
-            etype=(request.args.get("etype") or "").strip() or None,
-            india=(request.args.get("india") or "").strip().lower() or None,
-            location=(request.args.get("location") or "").strip() or None,
-            company=(request.args.get("company") or "").strip() or None,
-            has_salary=request.args.get("has_salary") == "true",
-            posted_within=_int_arg("posted_within"),
-            seen_within=_int_arg("seen_within"),
-            first_seen_after=(request.args.get("first_seen_after") or "").strip()
-            or None,
-        )
+        return jsonify(_searcher.run(request.args))
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
-    return jsonify(_search(q, where, max(1, min(k, _MAX_K))))
 
 
 def _client_ip() -> str:
@@ -516,48 +367,19 @@ def me():
 @app.route("/")
 def index():
     if _AUTH_ON and not session.get("email"):
-        return _SIGNIN_PAGE
-    return _PAGE
-
-
-# The page templates' single source is src/headstart/ui/templates/; deploy-space.yml syncs
-# the directory next to this app the way it syncs geo.py and alerts/. In a repo checkout
-# (tests, local runs) the synced copy doesn't exist, so fall back to the source location.
-_TEMPLATE_DIR = Path(__file__).parent / "templates"
-if not _TEMPLATE_DIR.exists():
-    _TEMPLATE_DIR = Path(__file__).parents[2] / "src" / "headstart" / "ui" / "templates"
-_TEMPLATE = (_TEMPLATE_DIR / "index.html").read_text(encoding="utf-8")
-# The sign-in door. Static per boot — the only thing it varies on is the client id.
-_SIGNIN_PAGE = (
-    (_TEMPLATE_DIR / "signin.html")
-    .read_text(encoding="utf-8")
-    .replace("__GOOGLE_CLIENT_ID__", _GOOGLE_CLIENT_ID)
-)
-
-_PAGE = (
-    _TEMPLATE.replace("__NJOBS__", f"{_table.count_rows():,}")
-    # Hidden until the pipeline adds the column, so the control can ship ahead of the data
-    # (the `el('seen')` guard in go() keeps the query-string builder happy either way).
-    .replace("__SINCE_HIDDEN__", "" if _HAS_FIRST_SEEN else ' style="display:none"')
-    # Hidden until the RESUME_PASSWORD secret exists — dark feature, same shape as above.
-    .replace("__RESUME_HIDDEN__", "" if _RESUME_PASSWORD else ' style="display:none"')
-    # Same dark-until-ready shape: no alerts secrets, no panel and no sign-in button.
-    .replace("__ALERTS_HIDDEN__", "" if _ALERTS_ON else ' style="display:none"')
-    # Likewise for trends: hidden until a pipeline run has written the ledger (ADR-0040).
-    .replace("__TRENDS_HIDDEN__", "" if _TRENDS else ' style="display:none"')
-    .replace("__GOOGLE_CLIENT_ID__", _GOOGLE_CLIENT_ID)
-    .replace(
-        "__ATS_OPTIONS__",
-        "".join(f'<option value="{a}">{a}</option>' for a in _ATSES),
+        return render_template("signin.html", google_client_id=_GOOGLE_CLIENT_ID)
+    return render_template(
+        "base.html",
+        # the one blob the static JS reads (window.CFG); everything else is template-side
+        cfg={"google_client_id": _GOOGLE_CLIENT_ID},
+        njobs=f"{_table.count_rows():,}",
+        atses=_searcher.atses,
+        india_opts=geo.dropdown_options(),
+        has_first_seen=_searcher.has_first_seen,
+        trends_on=bool(_TRENDS),
+        resume_on=bool(_RESUME_PASSWORD),
+        alerts_on=_ALERTS_ON,
     )
-    .replace(
-        "__INDIA_OPTIONS__",
-        "".join(
-            f'<option value="{c}">{c.title().replace("Ncr", "NCR")}</option>'
-            for c in geo.DROPDOWN
-        ),
-    )
-)
 
 
 if __name__ == "__main__":
