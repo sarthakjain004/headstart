@@ -29,7 +29,9 @@ import search  # the shared search path — synced from src/headstart/search.py 
 # Space never loads the Digest or Resend modules, whose dependencies it does not install.
 from alerts import access, identity
 from alerts.store import (
+    MAX_SAVED,
     MAX_SETS,
+    SavedJob,
     SavedSet,
     Store,
     Subscription,
@@ -119,8 +121,9 @@ _ALERTS_ON = bool(_GOOGLE_CLIENT_ID and _SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN
 # anonymous behaviour, so this can deploy ahead of its configuration.
 _SECRET_KEY = os.environ.get("SECRET_KEY") or ""
 _AUTH_ON = bool(_SECRET_KEY and _GOOGLE_CLIENT_ID)
-# Saved sets (ADR-0043) need both an identity (the wall) and somewhere to keep per-Account
-# records (the Subscriptions dataset) — either missing keeps the Matches tab a "soon" item.
+# Saved sets (ADR-0043) and Saved jobs (ADR-0044) need both an identity (the wall) and
+# somewhere to keep per-Account records (the Subscriptions dataset) — either missing keeps
+# the Matches and Saved tabs "soon" items. One flag: the two share exactly these prerequisites.
 _SETS_ON = _AUTH_ON and bool(_SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN)
 print(
     f"ready: {_table.count_rows()} jobs across {len(_searcher.atses)} ATSes"
@@ -293,8 +296,9 @@ def unsubscribe():
     return "that unsubscribe link is not valid", 404
 
 
-def _sets_gate() -> tuple[str, Store] | None:
-    """The signed-in address and a store, or None when sets can't function.
+def _account_gate() -> tuple[str, Store] | None:
+    """The signed-in address and a store, or None when per-Account records can't function
+    — shared by the sets and the saved-jobs endpoints, which have the same prerequisites.
 
     Reached only with a session when the wall is on (before_request), so None here means
     the feature is unconfigured — the caller answers 503, mirroring the other dark
@@ -325,7 +329,7 @@ def _project_subscription(
 
 @app.route("/sets")
 def list_sets():
-    gate = _sets_gate()
+    gate = _account_gate()
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
@@ -354,7 +358,7 @@ def save_set():
 
     Updating the emailing set re-projects the Subscription in the same request, so the
     delivered Digest can never drift from what the tab shows."""
-    gate = _sets_gate()
+    gate = _account_gate()
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
@@ -392,7 +396,7 @@ def delete_set(set_id: str):
     """Delete a set. Deleting the emailing one also removes its Subscription — a set that
     no longer exists must not keep mailing (ADR-0043; the old unsubscribe links die with
     it, which re-enabling later replaces with fresh ones)."""
-    gate = _sets_gate()
+    gate = _account_gate()
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
@@ -412,7 +416,7 @@ def set_email(set_id: str):
 
     Delivery stays invite-only (ADR-0035): turning ON checks the allowlist; OFF removes
     the Subscription record, so the alerts run simply stops seeing this person."""
-    gate = _sets_gate()
+    gate = _account_gate()
     if not gate:
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
@@ -443,6 +447,74 @@ def set_email(set_id: str):
         if was_emailing:
             store.remove(account)
     return jsonify(current.to_dict())
+
+
+@app.route("/saved")
+def list_saved():
+    """Every job this Account starred, newest star first, each annotated ``open`` —
+    whether the posting is still in the index or has closed since (ADR-0042). The record
+    is a display copy taken at star time, so a closed job still renders; only the badge
+    changes."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "saved jobs are not configured"}), 503
+    email, store = gate
+    jobs = store.saved_for(subscription_id(email))
+    listed = _searcher.indexed([j.job_id for j in jobs])
+    return jsonify([{**j.to_dict(), "open": j.job_id in listed} for j in jobs])
+
+
+@app.route("/saved", methods=["POST"])
+def star_job():
+    """Star one job — the body carries the display copy the result card showed (ADR-0044).
+
+    Starring an already-starred job overwrites its record (the id derives from the job
+    id), refreshing the copy and the star time rather than duplicating."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "saved jobs are not configured"}), 503
+    email, store = gate
+    # `job_id`, not `id`: the response's `id` is the RECORD id, and one key meaning two
+    # things across request and response was a trap waiting for a caller.
+    body = request.get_json(silent=True) or {}
+    job_id = str(body.get("job_id") or "").strip()
+    title = str(body.get("title") or "").strip()
+    if not job_id or not title:
+        return jsonify({"error": "that job is missing its job_id or title"}), 400
+    job = SavedJob.create(
+        email,
+        job_id,
+        title,
+        company=str(body.get("company") or ""),
+        url=str(body.get("url") or ""),
+        location=str(body.get("location") or ""),
+        remote=bool(body.get("remote")),
+        salary=str(body.get("salary") or ""),
+    )
+    # One listing answers both checks: a re-star may always overwrite, a new star may not
+    # pass the cap. Cheaper than reading every record just to count them.
+    held = store.saved_ids(job.account)
+    if job.id not in held and len(held) >= MAX_SAVED:
+        return jsonify({"error": f"that's the limit — {MAX_SAVED} saved jobs"}), 400
+    store.put_saved(job)
+    # `open` is answered true without asking the index: the caller drew this row from the
+    # live index moments ago, and the Saved tab recomputes on every open (GET /saved), so
+    # a star landing just after an Eviction self-corrects the first time it is visible.
+    return jsonify({**job.to_dict(), "open": True})
+
+
+@app.route("/saved/<saved_id>", methods=["DELETE"])
+def unstar_job(saved_id: str):
+    """Remove one star, by its record id (the star's own id, not the job's)."""
+    gate = _account_gate()
+    if not gate:
+        return jsonify({"error": "saved jobs are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    if not store.get_saved(account, saved_id):
+        return jsonify({"error": "not starred"}), 404
+    store.remove_saved(account, saved_id)
+    return jsonify({"ok": True})
 
 
 @app.route("/trends")
@@ -545,6 +617,7 @@ def index():
         resume_on=bool(_RESUME_PASSWORD),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
+        saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
     )
 
 

@@ -299,6 +299,7 @@ class JobSearch:
             search = search.where(where, prefilter=True)
         return [
             {
+                "id": r.get("id"),  # the star identity — {ats}:{slug}:{native_id}
                 "score": round(1 - r["_distance"], 3),
                 "title": r["title"],
                 "company": r["company"],
@@ -316,3 +317,21 @@ class JobSearch:
             }
             for r in search.limit(k).to_list()
         ]
+
+    def indexed(self, ids: Collection[str]) -> set[str]:
+        """Which of these job ids are still in the index — the Saved tab's "closed" check.
+
+        The ids come back out of stored records the browser once sent, so they are escaped
+        like every other filter term before reaching the where-clause."""
+        wanted = [i for i in ids if i]
+        if not wanted:
+            return set()
+        quoted = ", ".join("'" + i.replace("'", "''") + "'" for i in wanted)
+        rows = (
+            self._table.search()
+            .select(["id"])
+            .where(f"id IN ({quoted})")
+            .limit(len(wanted))
+            .to_list()
+        )
+        return {r["id"] for r in rows}

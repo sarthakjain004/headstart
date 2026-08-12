@@ -48,6 +48,7 @@ def index():
         resume_on=False,
         alerts_on=False,
         sets_on=False,
+        saved_on=False,
     )
 
 
