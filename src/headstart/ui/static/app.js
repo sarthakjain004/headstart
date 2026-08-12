@@ -238,12 +238,39 @@ function renderSets(){
     </div>`).join('');
 }
 
+// The view controls: refine what the active set SHOWS — never written into the set.
+// Ranges go to the server (a range must filter before ranking); sort is a client-side
+// reorder of the rows already fetched, like the Search tab's resort().
+function matchesRange(){
+  const v = id => (el(id) && el(id).value) || '';
+  const r = {};
+  if (v('mposted-from')) r.posted_after = v('mposted-from');
+  if (v('mposted-to')) r.posted_before = v('mposted-to');
+  if (v('mseen-from')) r.seen_after = v('mseen-from');
+  if (v('mseen-to')) r.seen_before = v('mseen-to');
+  return r;
+}
+function sortMatches(rows){
+  const key = (el('msort') && el('msort').value) || 'score';
+  const dir = el('mdir') && el('mdir').dataset.dir === 'asc' ? 1 : -1;
+  const val = r => key === 'score' ? (Number(r.score) || 0)
+    : Date.parse((key === 'posted' ? r.posted_at : r.first_seen) || '');
+  return rows.slice().sort((a, b) => {
+    const va = val(a), vb = val(b);
+    const na = isNaN(va), nb = isNaN(vb);
+    if (na && nb) return 0;
+    if (na || nb) return na ? 1 : -1;   // rows without the date sink either direction
+    return (va - vb) * dir;
+  });
+}
+
 async function runSet(id){
   const s = (mySets || []).find(x => x.id === id); if (!s) return;
   activeSetId = id; renderSets();
   el('matches-msg').textContent = 'searching…';
   const p = new URLSearchParams({ q: s.query, k: 20 });
   for (const [key, value] of Object.entries(s.search_filters || {})) p.set(key, value);
+  for (const [key, value] of Object.entries(matchesRange())) p.set(key, value);
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
@@ -251,7 +278,7 @@ async function runSet(id){
   el('matches-msg').textContent = rows.length
     ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
     : `Nothing matches “${s.name}” right now`;
-  draw(rows, 'matches-results');
+  draw(sortMatches(rows), 'matches-results');
 }
 
 function applySetToControls(s){
@@ -462,6 +489,29 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
 });
+if (el('matches-controls')){
+  const rerun = () => { if (activeSetId) runSet(activeSetId); };
+  // sort is a client-side reorder; a range change re-queries — both go through runSet
+  // so the count message and rows always agree.
+  ['msort','mposted-from','mposted-to','mseen-from','mseen-to'].forEach(id => {
+    if (el(id)) el(id).addEventListener('change', rerun);
+  });
+  el('mdir').addEventListener('click', () => {
+    const b = el('mdir');
+    const dir = b.dataset.dir === 'desc' ? 'asc' : 'desc';
+    b.dataset.dir = dir;
+    b.textContent = dir === 'desc' ? '↓' : '↑';
+    b.setAttribute('aria-label', 'Sort direction, currently ' +
+      (dir === 'desc' ? 'descending' : 'ascending'));
+    rerun();
+  });
+  el('mclear').addEventListener('click', () => {
+    ['mposted-from','mposted-to','mseen-from','mseen-to'].forEach(id => {
+      if (el(id)) el(id).value = '';
+    });
+    rerun();
+  });
+}
 showIntro();
 whoAmI();
 showTab(currentTab());

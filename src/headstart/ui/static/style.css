@@ -263,6 +263,14 @@ textarea:focus{ border-color:var(--violet); }
 .set-tools [data-act="del"]:hover{ color:var(--coral); }
 .saverow{ margin-bottom:12px; }
 .saverow input{ flex:1; max-width:340px; }
+.matches-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+.matches-controls select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
+  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
+.matches-controls input[type="date"]{ padding:7px 9px; border-radius:var(--r-md); font:inherit;
+  font-size:12.5px; background:var(--raise); color:var(--ink); border:1px solid var(--rule);
+  outline:none; color-scheme:dark light; }
+.matches-controls .spacer{ flex:1; }
+.matches-controls .dir{ padding:8px 12px; font-size:14px; line-height:1; }
 
 /* ---- role trends (ADR-0040), its own tab since the shell landed ---- */
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
