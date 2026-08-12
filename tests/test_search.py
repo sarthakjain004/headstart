@@ -247,6 +247,27 @@ def test_k_zero_floors_to_one_not_the_default():
     assert table.last_k == 1
 
 
+def test_run_carries_the_job_id_for_starring():
+    table = _Table([dict(_ROW, id="darwinbox:acme:abc")])
+    assert JobSearch(_Model(), table).run({"q": "x"})[0]["id"] == "darwinbox:acme:abc"
+
+
+def test_indexed_answers_which_ids_survive_and_escapes_quotes():
+    # The Saved tab's "closed" check: ids come from stored records, so a quote must be
+    # doubled before the where-clause, like every other filter term.
+    table = _Table([{"ats": "darwinbox", "id": "a:b:1"}])
+    searcher = JobSearch(_Model(), table)
+    assert searcher.indexed(["a:b:1", "gone:x:9", "o'brien:x:1"]) == {"a:b:1"}
+    assert "'o''brien:x:1'" in table.last_where
+
+
+def test_indexed_skips_the_query_when_there_is_nothing_to_ask():
+    searcher, table = _searcher()
+    table.search = None  # any query attempt would now raise
+    assert searcher.indexed([]) == set()
+    assert searcher.indexed(["", ""]) == set()
+
+
 def test_garbage_int_raises_valueerror():
     searcher, _ = _searcher()
     with pytest.raises(ValueError):

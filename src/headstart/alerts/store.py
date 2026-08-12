@@ -1,7 +1,9 @@
 """Subscriptions, one file per record, in the private `headstart-subscribers` dataset (ADR-0035).
 
-`Store` is the whole interface: `all`, `get`, `put`, `remove`, `invites`, `allowlist`. Behind
-it sit the repo layout, the JSON shape, and the HF client.
+`Store` is the whole interface — Subscriptions (`all`, `get`, `put`, `remove`, `invites`,
+`allowlist`), Saved sets (`sets_for`, `get_set`, `put_set`, `remove_set`) and Saved jobs
+(`saved_for`, `saved_ids`, `get_saved`, `put_saved`, `remove_saved`). Behind it sit the
+repo layout, the JSON shapes, and the HF client.
 
 Two records, deliberately distinct. An **Invite** is what the owner writes by hand — an
 address, optionally the Query to run for it. A **Subscription** is the state that Invite
@@ -27,6 +29,7 @@ import hashlib
 import json
 import re
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
@@ -34,11 +37,15 @@ from typing import Any
 from .access import normalize
 
 PREFIX = "subscriptions/"
-_ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id mints
+_ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id and saved_job_id mint
 ALLOWLIST_PATH = "subscriptions/allowlist.json"
 SETS_PREFIX = "sets/"
 _SET_ID = re.compile(r"[0-9a-f]{8}")  # exactly what SavedSet.create mints
 MAX_SETS = 10  # per Account — an abuse bound, not a product promise (ADR-0043)
+SAVED_PREFIX = "saved/"
+MAX_SAVED = (
+    100  # starred jobs per Account — an abuse bound, not a product promise (ADR-0044)
+)
 
 # The Space `/search` parameters a Subscription may carry. `seen_within` is deliberately
 # absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
@@ -247,6 +254,75 @@ class SavedSet:
 
     def path(self) -> str:
         return f"{SETS_PREFIX}{self.account}/{self.id}.json"
+
+
+def saved_job_id(job_id: str) -> str:
+    """A stable record id for one starred Job — starring it again overwrites, never
+    duplicates. Same shape `subscription_id` mints, so `_ID` guards both."""
+    return hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:16]
+
+
+@dataclass
+class SavedJob:
+    """One Job an Account starred — a copy of its display fields, not a pointer (ADR-0042).
+
+    The index churns hard, so an id-only star would silently vanish within days; the copy
+    is taken at star time and survives Eviction. `job_id` stays alongside purely so the
+    Saved tab can ask the index "is this still listed?" and mark closed postings."""
+
+    id: str  # saved_job_id(job_id)
+    account: (
+        str  # subscription_id(email) — one namespace per address, never the address
+    )
+    job_id: str  # {ats}:{slug}:{native_id}, the served table's key
+    title: str
+    company: str
+    url: str
+    location: str = ""
+    remote: bool = False
+    salary: str = ""
+    starred_at: str = ""
+
+    @classmethod
+    def create(
+        cls,
+        email: str,
+        job_id: str,
+        title: str,
+        company: str = "",
+        url: str = "",
+        location: str = "",
+        remote: bool = False,
+        salary: str = "",
+        when: str | None = None,
+    ) -> "SavedJob":
+        """A new star. The display fields arrive from the browser (they are what its card
+        showed), so each is length-bounded here — the same discipline `_kept` applies to
+        filters — and the URL scheme is checked again at render time by the UI."""
+        job_id = job_id.strip()[:200]
+        return cls(
+            id=saved_job_id(job_id),
+            account=subscription_id(email),
+            job_id=job_id,
+            title=title.strip()[:200],
+            company=company.strip()[:100],
+            url=url.strip()[:500],
+            location=location.strip()[:120],
+            remote=bool(remote),
+            salary=salary.strip()[:120],
+            starred_at=when or now_iso(),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SavedJob":
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def path(self) -> str:
+        return f"{SAVED_PREFIX}{self.account}/{self.id}.json"
 
 
 @dataclass(frozen=True)
@@ -463,6 +539,67 @@ class Store:
         if not (_ID.fullmatch(account) and _SET_ID.fullmatch(set_id)):
             return
         _delete(self._repo, f"{SETS_PREFIX}{account}/{set_id}.json", self._token)
+
+    def saved_for(self, account: str) -> list[SavedJob]:
+        """Every Saved job one Account keeps, newest star first. Unreadable records are
+        skipped like everywhere else. Reads ride a small thread pool: up to MAX_SAVED
+        files, and serial HF reads would hold the Saved tab open for seconds."""
+        if not _ID.fullmatch(account):
+            return []
+        prefix = f"{SAVED_PREFIX}{account}/"
+        paths = [
+            p for p in _list_files(self._repo, self._token) if p.startswith(prefix)
+        ]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            out = [job for job in pool.map(self._read_saved, paths) if job]
+        out.sort(key=lambda j: j.starred_at, reverse=True)
+        return out
+
+    def _read_saved(self, path: str) -> SavedJob | None:
+        try:
+            return SavedJob.from_dict(json.loads(_read(self._repo, path, self._token)))
+        except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
+            print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
+            return None
+
+    def saved_ids(self, account: str) -> set[str]:
+        """Just the record ids one Account holds — the cheap already-starred and cap
+        check, one listing instead of reading every record."""
+        if not _ID.fullmatch(account):
+            return set()
+        prefix = f"{SAVED_PREFIX}{account}/"
+        return {
+            p[len(prefix) : -len(".json")]
+            for p in _list_files(self._repo, self._token)
+            if p.startswith(prefix) and p.endswith(".json")
+        }
+
+    def get_saved(self, account: str, saved_id: str) -> SavedJob | None:
+        """One Saved job by record id, or None — same traversal guard as :meth:`get`."""
+        if not (_ID.fullmatch(account) and _ID.fullmatch(saved_id)):
+            return None
+        try:
+            data = json.loads(
+                _read(
+                    self._repo, f"{SAVED_PREFIX}{account}/{saved_id}.json", self._token
+                )
+            )
+            return SavedJob.from_dict(data)
+        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+            return None
+
+    def put_saved(self, job: SavedJob) -> None:
+        _write(
+            self._repo,
+            job.path(),
+            json.dumps(job.to_dict(), indent=2).encode("utf-8"),
+            self._token,
+        )
+
+    def remove_saved(self, account: str, saved_id: str) -> None:
+        if not (_ID.fullmatch(account) and _ID.fullmatch(saved_id)):
+            return
+        _delete(self._repo, f"{SAVED_PREFIX}{account}/{saved_id}.json", self._token)
 
     def invites(self) -> list[Invite]:
         """Everyone the allowlist names, with whatever Query the owner set for them.

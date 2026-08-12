@@ -275,6 +275,18 @@ textarea:focus{ border-color:var(--violet); }
 .matches-controls .spacer{ flex:1; }
 .matches-controls .dir{ padding:8px 12px; font-size:14px; line-height:1; }
 
+/* ---- the Saved tab (ADR-0044): starred jobs, plus the star control on result cards ---- */
+.saved-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.saved-head h2{ font:600 16px var(--sans); letter-spacing:-.01em; margin:0; }
+.star{ background:none; border:0; cursor:pointer; font-size:19px; line-height:1;
+  color:var(--ink-3); padding:2px 4px; border-radius:var(--r-md); align-self:flex-start;
+  transition:color var(--step), transform var(--step); }
+.star:hover{ color:var(--amber); transform:scale(1.12); }
+.star.on{ color:var(--amber); }
+.tag.closed{ background:color-mix(in srgb, var(--coral) 15%, transparent); color:var(--coral);
+  border-color:color-mix(in srgb, var(--coral) 32%, transparent); font-weight:600; }
+.card.gone a.title{ color:var(--ink-2); }  /* the copy outlived the posting — dim, don't hide */
+
 /* ---- role trends (ADR-0040), its own tab since the shell landed ---- */
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-xl); }
