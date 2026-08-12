@@ -78,6 +78,46 @@ def test_load_active_companies_maps_slug_and_filters(tmp_path):
     assert by_ats["workday"].slug == "https://3m.wd1.myworkdayjobs.com/search"
 
 
+def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):
+    """The deny-list drops vendor test Boards without touching real ones that merely read
+    like tests — `greenhouse:stage` is KKR's board, and dropping it would cost 128 real jobs."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "greenhouse.csv",
+        [
+            "greenhouse,staging,https://boards.greenhouse.io/staging,live,1,2026-08-12",
+            "greenhouse,test1,https://boards.greenhouse.io/test1,live,1,2026-08-12",
+            "greenhouse,stage,https://boards.greenhouse.io/stage,live,128,2026-08-12",
+        ],
+    )
+    _write_ledger(
+        ledger,
+        "ripplehire.csv",
+        [
+            "ripplehire,prodtest,https://prodtest.ripplehire.com,live,863,2026-08-12",
+            "ripplehire,paytm,https://paytm.ripplehire.com,live,10,2026-08-12",
+        ],
+    )
+    slugs = {(c.ats, c.slug) for c in load_active_companies(ledger)}
+    assert slugs == {("greenhouse", "stage"), ("ripplehire", "paytm")}
+
+
+def test_excluded_boards_match_regardless_of_slug_casing(tmp_path):
+    """One entry must cover every casing the ledger carries — smartrecruiters lists the same
+    demo Board as both `Dev2` and `dev2`, and the pair survives `_dedupe_boards`."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "smartrecruiters.csv",
+        [
+            "smartrecruiters,Dev2,https://api.smartrecruiters.com/v1/companies/Dev2,live,9456,2026-08-12",
+            "smartrecruiters,dev2,https://api.smartrecruiters.com/v1/companies/dev2,live,9456,2026-08-12",
+        ],
+    )
+    assert load_active_companies(ledger) == []
+
+
 def test_load_active_companies_min_jobs(tmp_path):
     ledger = tmp_path / "liveness"
     _write_ledger(

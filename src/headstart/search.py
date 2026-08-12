@@ -28,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
     from headstart import geo
@@ -120,11 +121,47 @@ def _like(term: str) -> str:
 _DARWINBOX_OLD = "/ms/candidate/careers/jobs/"
 _DARWINBOX_NEW = "/ms/candidatev2/main/careers/jobDetails/"
 
+# TEMPORARY (2026-08-12) — INTENDED FOR REMOVAL, and the same stopgap shape as darwinbox's
+# above. Recruitee rows scraped before the tenant-host fix carry the customer's own vanity
+# domain (the API's `careers_url`), and a third of those domains do not serve the board at
+# all — see scrapers/recruitee._offer_url for the measurement. The right link is derivable
+# from what the row already carries: the id holds the tenant, the path holds the offer slug.
+# Rewriting here spares users the wait for every recruitee board to turn over. Remove once
+# they have.
+_RECRUITEE_HOST = ".recruitee.com"
 
-def _canonical_url(ats: str | None, url: str | None) -> str | None:
-    """Serve-time URL normalization; only darwinbox's stale links are rewritten (see above)."""
-    if ats == "darwinbox" and url and _DARWINBOX_OLD in url:
+
+def _recruitee_url(job_id: str | None, url: str) -> str:
+    """A recruitee link moved onto the tenant's own host, or the URL unchanged.
+
+    Left alone when it is already canonical, when the id isn't the expected
+    ``{ats}:{tenant}:{native}``, or when the path has no ``/o/`` segment to read the offer
+    from — a URL this can't rebuild confidently is better served as-is than mangled.
+    """
+    parts = (job_id or "").split(":")
+    split = urlsplit(url)
+    if (
+        split.netloc.endswith(_RECRUITEE_HOST)
+        or len(parts) < 3
+        or "/o/" not in split.path
+    ):
+        return url
+    offer = split.path.split("/o/", 1)[1].strip("/").split("/")[0]
+    return f"https://{parts[1]}{_RECRUITEE_HOST}/o/{offer}" if offer else url
+
+
+def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str | None:
+    """Serve-time normalization of links the stored row gets wrong (see the two notes above).
+
+    ``job_id`` is required rather than defaulted: recruitee's rewrite reads the tenant out of
+    it, and a caller that forgot to pass it would silently keep serving the dead link.
+    """
+    if not url:
+        return url
+    if ats == "darwinbox" and _DARWINBOX_OLD in url:
         return url.replace(_DARWINBOX_OLD, _DARWINBOX_NEW, 1)
+    if ats == "recruitee":
+        return _recruitee_url(job_id, url)
     return url
 
 
@@ -312,7 +349,7 @@ class JobSearch:
                 "posted_at": r.get("posted_at"),
                 "first_seen": r.get("first_seen"),
                 "url": _canonical_url(
-                    r.get("ats"), r.get("url")
+                    r.get("ats"), r.get("url"), r.get("id")
                 ),  # temporary; see _canonical_url
             }
             for r in search.limit(k).to_list()
