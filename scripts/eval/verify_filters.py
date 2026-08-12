@@ -47,6 +47,9 @@ _SESSION_FILE = Path.home() / ".headstart_session"
 # `k` can't dump the table. Asserted here, which means changing it there fails this run —
 # correct: a page-size change should be deliberate.
 _MAX_K = 100
+# Statuses that mean the posting is GONE, as opposed to a bot wall (403/429) or a transport
+# error — only these fail the run; see the summary's url_dead_links.
+_DEAD_STATUSES = frozenset({404, 410})
 # The signed-in session, set once by main(). Read ONLY by the calls that talk to our own
 # base; the per-ATS probes in run_url_checks build their own Request precisely so a live
 # session credential is never sent to a third-party job board.
@@ -569,21 +572,20 @@ def run_input_checks(base: str) -> list[dict]:
     return out
 
 
-def _points_at_this_job(row: dict, url: str) -> bool:
-    """For a link whose shape alone can't identify the job, that it identifies THIS one.
+def _gh_jid_matches_row(row: dict, url: str) -> bool:
+    """A greenhouse embed link's ``gh_jid`` names the job THIS row is for — vacuously true
+    of every other link, which identifies its job in the path.
 
-    The greenhouse embed form is the case: a tenant's own board page may sit on any host, so
-    the pattern has to accept any host — which is precisely how recruitee's host-agnostic
-    shape waved through 458 dead links. What the embed does carry is the job in ``gh_jid``,
-    and the row carries the same native id, so pin one to the other. Every other link shape
-    identifies its job in the path already.
+    The embed is the one form whose host can't be anchored: a tenant's board page may live
+    anywhere, which is exactly how recruitee's host-agnostic pattern waved through 458 dead
+    links. What the embed does carry is the job id, and so does the row
+    (``{ats}:{slug}:{native_id}``), so pin one to the other. Note this proves the link
+    *names* the job, never that its host serves it — only the HTTP probe can say that.
     """
     if "gh_jid=" not in url:
         return True
-    return (
-        url.split("gh_jid=", 1)[1].split("&")[0]
-        == (row.get("id") or "").rsplit(":", 1)[-1]
-    )
+    jid = re.split(r"[&#]", url.split("gh_jid=", 1)[1])[0]
+    return jid == (row.get("id") or "").rsplit(":", 1)[-1]
 
 
 def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
@@ -605,9 +607,12 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
                 "ats": ats,
                 "url": url,
                 "title": r.get("title"),
-                "shape_ok": bool(pattern and re.match(pattern, url))
-                and _points_at_this_job(r, url),
+                "shape_ok": bool(pattern and re.match(pattern, url)),
                 "shape_known": pattern is not None,
+                # kept OUT of shape_ok: a wrong-job link and a wrong-shaped link are
+                # different diagnoses, and step 3 of the skill has the reader walk each
+                # shape_ok=false to a root cause. Both fail the run; they just say why.
+                "points_at_job": _gh_jid_matches_row(r, url),
             }
             if http and url.startswith("https://"):
                 try:
@@ -629,6 +634,7 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
             out.append(rec)
             print(
                 f"[url] {ats}: shape_ok={rec['shape_ok']} "
+                f"right_job={rec['points_at_job']} "
                 f"status={rec.get('http_status', '-')} "
                 f"title_on_page={rec.get('title_on_page', '-')} {url[:70]}",
                 file=sys.stderr,
@@ -709,11 +715,22 @@ def main() -> int:
             "url_shape_failures": sum(
                 1 for u in url_checks if u["shape_known"] and not u["shape_ok"]
             ),
+            # Every non-2xx, INCLUDING the ones that are somebody else's bot wall — advisory,
+            # because a 403 on a URL a browser opens fine is TLS fingerprinting and chasing
+            # it teaches the reader to ignore red runs.
             "url_http_failures": sum(
                 1
                 for u in url_checks
                 if u.get("http_error") or (u.get("http_status") or 200) >= 400
             ),
+            # ...but a link that is GONE is the whole point of this harness, and until now it
+            # counted for nothing: the 2026-08-12 run's two recruitee 404s left the exit code
+            # untouched — it was red only because a greenhouse shape failed. A dead link now
+            # fails the run on its own.
+            "url_dead_links": sum(
+                1 for u in url_checks if (u.get("http_status") or 0) in _DEAD_STATUSES
+            ),
+            "url_wrong_job": sum(1 for u in url_checks if not u["points_at_job"]),
             # A served ATS with no URL_SHAPES entry used to print shape_ok=False but count
             # nothing — three ATSes shipped unchecked that way (eightfold/freshteam/
             # successfactors, caught 2026-08-02 by a user-visible sandbox row). Coverage is
@@ -730,6 +747,8 @@ def main() -> int:
         report["summary"]["checks_with_violations"]
         + report["summary"]["check_errors"]
         + report["summary"]["url_shape_failures"]
+        + report["summary"]["url_dead_links"]
+        + report["summary"]["url_wrong_job"]
         + len(report["summary"]["atses_without_shape"])
     )
     return 1 if bad else 0
