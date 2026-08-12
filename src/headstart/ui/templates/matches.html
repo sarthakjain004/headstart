@@ -1,0 +1,32 @@
+<section class="matches">
+  <div class="matches-head">
+    <h2>Your matches</h2>
+    <span class="note" id="matches-msg" role="status"></span>
+  </div>
+  <div class="sets-strip" id="sets-strip" aria-label="Saved sets"></div>
+  {# View controls, not filters: they refine what the active set shows right now and are
+     never written into the set (ADR-0043 keeps sets to relative windows that don't age). #}
+  <div class="matches-controls" id="matches-controls">
+    <label class="note" for="msort">Sort</label>
+    <select id="msort">
+      <option value="score">Match</option>
+      <option value="posted">Posted date</option>
+      {% if has_first_seen %}<option value="seen">First seen</option>{% endif %}
+    </select>
+    <button class="ghost dir" id="mdir" data-dir="desc" title="Flip sort direction"
+            aria-label="Sort direction, currently descending">↓</button>
+    <span class="spacer"></span>
+    <label class="note" for="mposted-from">Posted</label>
+    <input type="date" id="mposted-from" aria-label="Posted from">
+    <span class="note">–</span>
+    <input type="date" id="mposted-to" aria-label="Posted to">
+    {% if has_first_seen %}
+    <label class="note" for="mseen-from">First seen</label>
+    <input type="date" id="mseen-from" aria-label="First seen from">
+    <span class="note">–</span>
+    <input type="date" id="mseen-to" aria-label="First seen to">
+    {% endif %}
+    <button class="ghost" id="mclear">Clear</button>
+  </div>
+  <div id="matches-results" aria-live="polite"></div>
+</section>

@@ -144,6 +144,44 @@ def auth_app(tmp_path_factory):
         yield module
 
 
+@pytest.fixture(scope="module")
+def sets_app(tmp_path_factory):
+    """Wall on AND per-Account storage configured — Saved sets live (ADR-0043)."""
+    with _space_app(
+        tmp_path_factory.mktemp("state"),
+        env={
+            "SECRET_KEY": "test-secret",
+            "GOOGLE_CLIENT_ID": "client-id.example",
+            "SUBSCRIBERS_REPO": "acme/subs",
+            "SUBSCRIBERS_TOKEN": "tok",
+        },
+    ) as module:
+        yield module
+
+
+@pytest.fixture
+def hub(monkeypatch):
+    """A dict standing in for the Subscriptions dataset (tests/test_alerts_store.py's
+    pattern), patched onto the real headstart.alerts.store the app imports."""
+    import headstart.alerts.store as st
+
+    files: dict[str, bytes] = {}
+    monkeypatch.setattr(st, "_list_files", lambda repo, token: list(files))
+    monkeypatch.setattr(st, "_read", lambda repo, path, token: files[path])
+    monkeypatch.setattr(
+        st, "_write", lambda repo, path, data, token: files.__setitem__(path, data)
+    )
+    monkeypatch.setattr(st, "_delete", lambda repo, path, token: files.pop(path, None))
+    return files
+
+
+def _signed_in(app_module, monkeypatch, email="dev@example.com"):
+    monkeypatch.setattr(app_module.identity, "verify", lambda cred, cid: email)
+    client = app_module.app.test_client()
+    client.post("/auth/google", json={"credential": "tok"}, base_url=_HTTPS)
+    return client
+
+
 # ---- the sign-in wall (ADR-0042) ----
 
 _HTTPS = "https://localhost"  # the session cookie is Secure; plain http would drop it
@@ -201,3 +239,196 @@ def test_unsubscribe_stays_reachable_signed_out(auth_app):
     # The wall must never break a mailed link: /unsubscribe answers its own 503 here
     # (alerts unconfigured in this fixture), not the wall's 401.
     assert auth_app.app.test_client().get("/unsubscribe").status_code == 503
+
+
+# ---- Saved sets (ADR-0043) ----
+
+
+def test_sets_flow_create_list_email_delete(sets_app, hub, monkeypatch):
+    import json as _json
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+
+    # create two from "Save this search"
+    r = client.post(
+        "/sets",
+        json={
+            "name": "backend",
+            "query": "backend engineer",
+            "filters": {"remote": "true", "junk": "x"},
+        },
+        base_url=_HTTPS,
+    )
+    assert r.status_code == 200 and r.json["search_filters"] == {"remote": "true"}
+    first = r.json
+    second = client.post(
+        "/sets", json={"name": "ML", "query": "ML engineer"}, base_url=_HTTPS
+    ).json
+    assert [s["name"] for s in client.get("/sets", base_url=_HTTPS).json] == [
+        "backend",
+        "ML",
+    ]
+
+    # email ON projects the Subscription from the set
+    r = client.post(f"/sets/{first['id']}/email", json={"on": True}, base_url=_HTTPS)
+    assert r.status_code == 200 and r.json["emails"] is True
+    sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
+    sub = _json.loads(hub[sub_path])
+    assert sub["query"] == "backend engineer"
+    watermark, token = sub["watermark"], sub["unsubscribe_token"]
+
+    # moving email to the other set flips both flags and RE-projects, keeping machinery
+    client.post(f"/sets/{second['id']}/email", json={"on": True}, base_url=_HTTPS)
+    listed = {s["name"]: s["emails"] for s in client.get("/sets", base_url=_HTTPS).json}
+    assert listed == {"backend": False, "ML": True}
+    sub = _json.loads(hub[sub_path])
+    assert sub["query"] == "ML engineer"
+    assert (sub["watermark"], sub["unsubscribe_token"]) == (watermark, token)
+
+    # editing the emailing set re-projects in the same request
+    client.post(
+        "/sets",
+        json={"id": second["id"], "name": "ML", "query": "ML infra"},
+        base_url=_HTTPS,
+    )
+    assert _json.loads(hub[sub_path])["query"] == "ML infra"
+
+    # deleting the emailing set removes the Subscription — nothing keeps mailing
+    client.delete(f"/sets/{second['id']}", base_url=_HTTPS)
+    assert sub_path not in hub
+    assert [s["name"] for s in client.get("/sets", base_url=_HTTPS).json] == ["backend"]
+
+
+def test_email_on_is_invite_only(sets_app, hub, monkeypatch):
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["someone-else@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    made = client.post("/sets", json={"name": "x", "query": "y"}, base_url=_HTTPS).json
+    r = client.post(f"/sets/{made['id']}/email", json={"on": True}, base_url=_HTTPS)
+    assert r.status_code == 403
+    assert client.get("/sets", base_url=_HTTPS).json[0]["emails"] is False
+
+
+def test_sets_are_capped(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    for i in range(sets_app.MAX_SETS):
+        assert (
+            client.post(
+                "/sets", json={"name": f"s{i}", "query": "q"}, base_url=_HTTPS
+            ).status_code
+            == 200
+        )
+    r = client.post("/sets", json={"name": "one more", "query": "q"}, base_url=_HTTPS)
+    assert r.status_code == 400
+
+
+def test_sets_require_wall_and_storage(auth_app, monkeypatch):
+    # wall on but no SUBSCRIBERS storage: the endpoints answer 503, the tab stays "soon"
+    client = _signed_in(auth_app, monkeypatch)
+    assert client.get("/sets", base_url=_HTTPS).status_code == 503
+    assert b'data-tab="matches"' not in client.get("/", base_url=_HTTPS).data
+
+
+def test_sets_are_gated_by_the_wall(sets_app):
+    assert sets_app.app.test_client().get("/sets").status_code == 401
+
+
+def test_toggle_off_semantics_and_fresh_machinery_on_reenable(
+    sets_app, hub, monkeypatch
+):
+    import json as _json
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    a = client.post("/sets", json={"name": "a", "query": "qa"}, base_url=_HTTPS).json
+    b = client.post("/sets", json={"name": "b", "query": "qb"}, base_url=_HTTPS).json
+    client.post(f"/sets/{a['id']}/email", json={"on": True}, base_url=_HTTPS)
+    sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
+    token_before = _json.loads(hub[sub_path])["unsubscribe_token"]
+
+    # OFF on a set that never carried email must NOT stop the mail (stale-tab scenario)
+    client.post(f"/sets/{b['id']}/email", json={"on": False}, base_url=_HTTPS)
+    assert sub_path in hub
+
+    # editing the NON-emailing set leaves the Subscription untouched
+    client.post(
+        "/sets", json={"id": b["id"], "name": "b", "query": "changed"}, base_url=_HTTPS
+    )
+    assert _json.loads(hub[sub_path])["query"] == "qa"
+
+    # OFF on the emailing set removes it; ON again mints fresh machinery
+    client.post(f"/sets/{a['id']}/email", json={"on": False}, base_url=_HTTPS)
+    assert sub_path not in hub
+    client.post(f"/sets/{a['id']}/email", json={"on": True}, base_url=_HTTPS)
+    assert _json.loads(hub[sub_path])["unsubscribe_token"] != token_before
+
+
+def test_unsubscribe_clears_the_emailing_flag(sets_app, hub, monkeypatch):
+    import json as _json
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    made = client.post("/sets", json={"name": "a", "query": "qa"}, base_url=_HTTPS).json
+    client.post(f"/sets/{made['id']}/email", json={"on": True}, base_url=_HTTPS)
+    sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
+    sub = _json.loads(hub[sub_path])
+
+    r = client.get(f"/unsubscribe?id={sub['id']}&token={sub['unsubscribe_token']}")
+    assert r.status_code == 200 and sub_path not in hub
+    # the set no longer claims ✉ on, so a later edit cannot silently re-subscribe
+    assert client.get("/sets", base_url=_HTTPS).json[0]["emails"] is False
+    client.post(
+        "/sets",
+        json={"id": made["id"], "name": "a", "query": "edited"},
+        base_url=_HTTPS,
+    )
+    assert sub_path not in hub
+
+
+def test_subscribe_refuses_while_sets_are_live(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/subscribe", json={"credential": "x", "query": "q"}, base_url=_HTTPS
+    )
+    assert r.status_code == 409
+
+
+def test_presets_subscription_is_adopted_as_the_emailing_set(
+    sets_app, hub, monkeypatch
+):
+    import json as _json
+
+    st = sets_app  # the loaded app module re-exports store names it imported
+    sub = st.Subscription.create(
+        "dev@example.com", "backend engineer", {"remote": "true"}
+    )
+    hub[f"subscriptions/{sub.id}.json"] = _json.dumps(sub.to_dict()).encode()
+
+    client = _signed_in(sets_app, monkeypatch)
+    listed = client.get("/sets", base_url=_HTTPS).json
+    assert len(listed) == 1
+    assert listed[0]["emails"] is True
+    assert listed[0]["query"] == "backend engineer"
+    assert listed[0]["search_filters"] == {"remote": "true"}
+    # idempotent: a second read adopts nothing new
+    assert len(client.get("/sets", base_url=_HTTPS).json) == 1
+
+
+def test_sets_keep_seen_within_but_the_projection_drops_it(sets_app, hub, monkeypatch):
+    import json as _json
+
+    hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
+    client = _signed_in(sets_app, monkeypatch)
+    made = client.post(
+        "/sets",
+        json={
+            "name": "fresh",
+            "query": "q",
+            "filters": {"seen_within": "24", "remote": "true"},
+        },
+        base_url=_HTTPS,
+    ).json
+    assert made["search_filters"] == {"seen_within": "24", "remote": "true"}
+    client.post(f"/sets/{made['id']}/email", json={"on": True}, base_url=_HTTPS)
+    sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
+    assert _json.loads(hub[sub_path])["search_filters"] == {"remote": "true"}

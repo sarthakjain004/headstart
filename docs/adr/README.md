@@ -51,3 +51,4 @@ supersedes it and note the supersession in both.
 | [0040](0040-role-trend-ledger.md) | Role-trend ledger: frozen embedding centroids × experience bands | 2026-08-10 |
 | [0041](0041-profile-stored-extraction.md) | Profile: store the LLM extraction, discard the Résumé | 2026-08-11 |
 | [0042](0042-signed-in-ui-saved-sets.md) | Sign-in-required UI: Accounts, Saved sets, Saved jobs on the per-record store | 2026-08-11 |
+| [0043](0043-saved-sets-subscription-projection.md) | Saved sets as per-record files; the Subscription is the emailing set's projection | 2026-08-12 |

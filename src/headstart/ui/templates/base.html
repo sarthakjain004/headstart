@@ -24,7 +24,11 @@
   <div class="layout">
     <nav class="side" aria-label="Sections">
       <a class="nav-item" href="#search" data-tab="search" aria-current="page">Search</a>
+      {% if sets_on %}
+      <a class="nav-item" href="#matches" data-tab="matches" aria-current="false">Matches</a>
+      {% else %}
       <span class="nav-item soon" title="Coming soon">Matches<span class="chip-soon">soon</span></span>
+      {% endif %}
       <span class="nav-item soon" title="Coming soon">Saved<span class="chip-soon">soon</span></span>
       {% if trends_on %}
       <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
@@ -34,6 +38,9 @@
 
     <div class="content">
       <section class="panel" id="panel-search">{% include "search.html" %}</section>
+      {% if sets_on %}
+      <section class="panel" id="panel-matches" hidden>{% include "matches.html" %}</section>
+      {% endif %}
       {% if trends_on %}
       <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>
       {% endif %}
