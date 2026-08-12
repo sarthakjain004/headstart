@@ -442,7 +442,8 @@ async function toggleStar(jobId){
     catch(e){}
     if (!r || (!r.ok && r.status !== 404)){
       savedByJob.set(jobId, existing);
-      if (mySaved) mySaved.push(existing);
+      // a loadSaved may have refreshed mySaved while the DELETE was in flight — don't duplicate
+      if (mySaved && !mySaved.some(j => j.job_id === jobId)) mySaved.push(existing);
       paintStars(); renderSaved();
       starMsg('Couldn\'t remove that star — try again.');
     }
@@ -461,12 +462,20 @@ async function toggleStar(jobId){
   let r = null, d = null;
   try{
     r = await fetch('/saved', { method: 'POST', headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({ id: jobId, ...copy }) });
+                                body: JSON.stringify({ job_id: jobId, ...copy }) });
     d = await r.json().catch(() => null);
   }catch(e){}
   if (r && r.ok && d){
     savedByJob.set(jobId, d);
-    if (mySaved) mySaved = mySaved.map(j => j.job_id === jobId ? d : j);
+    // A loadSaved that raced this POST (opening the Saved tab re-fetches) read server truth
+    // from BEFORE the write and unpainted the star — repaint from the confirmed record, and
+    // put it back in the list if the refresh dropped it.
+    if (mySaved){
+      mySaved = mySaved.some(j => j.job_id === jobId)
+        ? mySaved.map(j => j.job_id === jobId ? d : j)
+        : [d, ...mySaved];
+    }
+    paintStars(); renderSaved();
   } else {
     savedByJob.delete(jobId);
     if (mySaved) mySaved = mySaved.filter(j => j.job_id !== jobId);

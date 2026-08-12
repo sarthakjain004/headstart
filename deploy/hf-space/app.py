@@ -474,8 +474,10 @@ def star_job():
     if not gate:
         return jsonify({"error": "saved jobs are not configured"}), 503
     email, store = gate
+    # `job_id`, not `id`: the response's `id` is the RECORD id, and one key meaning two
+    # things across request and response was a trap waiting for a caller.
     body = request.get_json(silent=True) or {}
-    job_id = str(body.get("id") or "").strip()
+    job_id = str(body.get("job_id") or "").strip()
     title = str(body.get("title") or "").strip()
     if not job_id or not title:
         return jsonify({"error": "that job is missing its id or title"}), 400
@@ -495,6 +497,9 @@ def star_job():
     if job.id not in held and len(held) >= MAX_SAVED:
         return jsonify({"error": f"that's the limit — {MAX_SAVED} saved jobs"}), 400
     store.put_saved(job)
+    # `open` is answered true without asking the index: the caller drew this row from the
+    # live index moments ago, and the Saved tab recomputes on every open (GET /saved), so
+    # a star landing just after an Eviction self-corrects the first time it is visible.
     return jsonify({**job.to_dict(), "open": True})
 
 

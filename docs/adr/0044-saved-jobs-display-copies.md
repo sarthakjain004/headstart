@@ -46,7 +46,10 @@ serial HF reads would hold the tab for many seconds, so `Store.saved_for` fetche
 
 **Races accepted:** re-starring from two tabs is last-write-wins on one record — the same
 job, the same copy, no loss that matters. Unstarring a job another tab already unstarred
-answers 404, which the UI treats as the same outcome.
+answers 404, which the UI treats as the same outcome. And the cap check is a listing read
+followed by a non-atomic write, so two stars racing at the boundary can land a 101st
+record — the cap is an abuse bound, not an invariant, and the overshoot is one record per
+race, so this is accepted rather than locked.
 
 ## Options rejected
 

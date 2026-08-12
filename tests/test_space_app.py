@@ -419,7 +419,7 @@ def test_presets_subscription_is_adopted_as_the_emailing_set(
 
 def _star_payload(job_id="greenhouse:acme:123", **over):
     body = {
-        "id": job_id,
+        "job_id": job_id,
         "title": "Backend Engineer",
         "company": "acme",
         "url": "https://boards.greenhouse.io/acme/jobs/123",
@@ -480,7 +480,8 @@ def test_star_requires_id_and_title(sets_app, hub, monkeypatch):
         client.post("/saved", json={"title": "x"}, base_url=_HTTPS).status_code == 400
     )
     assert (
-        client.post("/saved", json={"id": "a:b:1"}, base_url=_HTTPS).status_code == 400
+        client.post("/saved", json={"job_id": "a:b:1"}, base_url=_HTTPS).status_code
+        == 400
     )
 
 
