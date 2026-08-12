@@ -119,7 +119,8 @@ back short with no signal that it had. `first_seen` is written by us and already
 ISO string, so the addition is a `>` on a column that exists. Because
 `deploy/hf-space/app.py::_build_filter` is the reference implementation and currently has **no test
 coverage anywhere** (`deploy/` sits outside `testpaths`), the parameter ships with tests for the
-clause it builds.
+clause it builds. *(Since [ADR-0042](0042-signed-in-ui-saved-sets.md) the reference builder is
+`headstart.search.build_filter`, tested directly in `tests/test_search.py`.)*
 
 **Each Subscription carries its own Watermark, and delivery is at-least-once.** A fixed two-hour
 lookback would both double-send and drop Jobs given a 33–124 minute spread and skipped runs. The

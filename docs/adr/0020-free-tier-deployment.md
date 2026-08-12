@@ -45,6 +45,9 @@ Three free parts, with all state in one place:
    from the dataset, so the nightly restart picks up a fresh index with no image rebuild. The app
    is a self-contained twin of `scripts/ui/serve.py` — it duplicates the few search constants
    rather than installing the package, decoupling the Space from repo internals.
+   *(Superseded on this point by [ADR-0042](0042-signed-in-ui-saved-sets.md): the search path
+   and constants now live once in `headstart/search.py`, synced into the Space beside the app
+   the way `geo.py` is — still no package install.)*
 
 ## Rejected alternatives
 

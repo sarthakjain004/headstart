@@ -12,8 +12,9 @@ on:
         "src/headstart/geo.py",
         "src/headstart/llm_router.py",
         "src/headstart/resume_query.py",
+        "src/headstart/search.py",
         "src/headstart/alerts/**",
-        "src/headstart/ui/templates/**",
+        "src/headstart/ui/**",
       ]
   workflow_dispatch: {}
 
@@ -44,6 +45,7 @@ jobs:
           cp src/headstart/geo.py deploy/hf-space/geo.py
           cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
           cp src/headstart/resume_query.py deploy/hf-space/resume_query.py
+          cp src/headstart/search.py deploy/hf-space/search.py
           # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
           # these labels. Same single-source-of-truth reason as the modules above.
           cp config/role_families.json deploy/hf-space/role_families.json
@@ -52,9 +54,11 @@ jobs:
           rm -rf deploy/hf-space/alerts
           cp -r src/headstart/alerts deploy/hf-space/alerts
           find deploy/hf-space/alerts -name '__pycache__' -type d -exec rm -rf {} +
-          # The page template — single source in src/headstart/ui, synced like the modules above.
-          rm -rf deploy/hf-space/templates
+          # The UI (templates + static) — single source in src/headstart/ui, synced like
+          # the modules above.
+          rm -rf deploy/hf-space/templates deploy/hf-space/static
           cp -r src/headstart/ui/templates deploy/hf-space/templates
+          cp -r src/headstart/ui/static deploy/hf-space/static
           # upload_folder, not `hf upload`: the CLI pre-creates the repo, and HF now answers
           # Docker-Space creates with a 402 paywall (new free Docker Spaces are PRO-only).
           # Ours exists and keeps running — targeting it directly needs no create call.
