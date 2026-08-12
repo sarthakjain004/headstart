@@ -80,7 +80,7 @@ docs/LLM_API.md
 # copy would shadow the src/ originals via app.py's synced-first path check
 deploy/hf-space/geo.py
 deploy/hf-space/llm_router.py
-deploy/hf-space/resume_query.py
+deploy/hf-space/profile_extract.py
 deploy/hf-space/search.py
 deploy/hf-space/role_families.json
 deploy/hf-space/alerts/
