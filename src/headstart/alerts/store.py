@@ -36,6 +36,9 @@ from .access import normalize
 PREFIX = "subscriptions/"
 _ID = re.compile(r"[0-9a-f]{16}")  # exactly what subscription_id mints
 ALLOWLIST_PATH = "subscriptions/allowlist.json"
+SETS_PREFIX = "sets/"
+_SET_ID = re.compile(r"[0-9a-f]{8}")  # exactly what SavedSet.create mints
+MAX_SETS = 10  # per Account — an abuse bound, not a product promise (ADR-0043)
 
 # The Space `/search` parameters a Subscription may carry. `seen_within` is deliberately
 # absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
@@ -167,6 +170,68 @@ class Subscription:
 
     def path(self) -> str:
         return f"{PREFIX}{self.id}.json"
+
+
+@dataclass
+class SavedSet:
+    """One named Query + Search filters an Account keeps (ADR-0042, ADR-0043).
+
+    ``emails`` marks the one set per Account whose new matches are delivered. The
+    **Subscription record is a projection of that set** — same Query and filters, plus the
+    delivery machinery (Watermark, unsubscribe token) that must survive edits. The sets
+    endpoints in the Space app are the only writer that keeps the two in step; nothing in
+    the alerts run knows sets exist.
+    """
+
+    id: str
+    account: (
+        str  # subscription_id(email) — one namespace per address, never the address
+    )
+    name: str
+    query: str
+    search_filters: dict[str, str] = field(default_factory=dict)
+    emails: bool = False
+    created_at: str = ""
+
+    @classmethod
+    def create(
+        cls,
+        email: str,
+        name: str,
+        query: str,
+        search_filters: dict[str, Any],
+        when: str | None = None,
+    ) -> "SavedSet":
+        return cls(
+            id=secrets.token_hex(4),
+            account=subscription_id(email),
+            name=name.strip()[:60],
+            query=query.strip(),
+            search_filters=_kept(search_filters),
+            created_at=when or now_iso(),
+        )
+
+    def revised(
+        self, name: str, query: str, search_filters: dict[str, Any]
+    ) -> "SavedSet":
+        """This set with new content; identity, email flag and created_at stay."""
+        return replace(
+            self,
+            name=name.strip()[:60],
+            query=query.strip(),
+            search_filters=_kept(search_filters),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SavedSet":
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def path(self) -> str:
+        return f"{SETS_PREFIX}{self.account}/{self.id}.json"
 
 
 @dataclass(frozen=True)
@@ -338,6 +403,51 @@ class Store:
 
     def remove(self, sub_id: str) -> None:
         _delete(self._repo, f"{PREFIX}{sub_id}.json", self._token)
+
+    def sets_for(self, account: str) -> list[SavedSet]:
+        """Every Saved set one Account keeps, oldest first. Unreadable records are skipped
+        for the same reason ``all`` skips them — one bad file must not empty the tab."""
+        if not _ID.fullmatch(account):
+            return []
+        out: list[SavedSet] = []
+        prefix = f"{SETS_PREFIX}{account}/"
+        for path in _list_files(self._repo, self._token):
+            if not path.startswith(prefix):
+                continue
+            try:
+                out.append(
+                    SavedSet.from_dict(json.loads(_read(self._repo, path, self._token)))
+                )
+            except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
+                print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
+        out.sort(key=lambda s: s.created_at)
+        return out
+
+    def get_set(self, account: str, set_id: str) -> SavedSet | None:
+        """One Saved set by id, or None. Both parts are shape-checked before they reach a
+        repo path — same traversal guard as :meth:`get`."""
+        if not (_ID.fullmatch(account) and _SET_ID.fullmatch(set_id)):
+            return None
+        try:
+            data = json.loads(
+                _read(self._repo, f"{SETS_PREFIX}{account}/{set_id}.json", self._token)
+            )
+            return SavedSet.from_dict(data)
+        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+            return None
+
+    def put_set(self, saved: SavedSet) -> None:
+        _write(
+            self._repo,
+            saved.path(),
+            json.dumps(saved.to_dict(), indent=2).encode("utf-8"),
+            self._token,
+        )
+
+    def remove_set(self, account: str, set_id: str) -> None:
+        if not (_ID.fullmatch(account) and _SET_ID.fullmatch(set_id)):
+            return
+        _delete(self._repo, f"{SETS_PREFIX}{account}/{set_id}.json", self._token)
 
     def invites(self) -> list[Invite]:
         """Everyone the allowlist names, with whatever Query the owner set for them.

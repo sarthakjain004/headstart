@@ -14,6 +14,7 @@ import csv
 import hmac
 import json
 import os
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -24,10 +25,16 @@ import resume_query  # synced from src/headstart/resume_query.py by deploy-space
 import search  # the shared search path — synced from src/headstart/search.py (ADR-0042)
 
 # alerts/ is a package, synced from src/headstart/alerts/ by deploy-space.yml (ADR-0035).
-# Only these three members are imported here: alerts/__init__.py is empty on purpose, so the
+# Only these members are imported here: alerts/__init__.py is empty on purpose, so the
 # Space never loads the Digest or Resend modules, whose dependencies it does not install.
 from alerts import access, identity
-from alerts.store import Store, Subscription, subscription_id
+from alerts.store import (
+    MAX_SETS,
+    SavedSet,
+    Store,
+    Subscription,
+    subscription_id,
+)
 from flask import Flask, jsonify, render_template, request, session
 from huggingface_hub import snapshot_download
 
@@ -112,6 +119,9 @@ _ALERTS_ON = bool(_GOOGLE_CLIENT_ID and _SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN
 # anonymous behaviour, so this can deploy ahead of its configuration.
 _SECRET_KEY = os.environ.get("SECRET_KEY") or ""
 _AUTH_ON = bool(_SECRET_KEY and _GOOGLE_CLIENT_ID)
+# Saved sets (ADR-0043) need both an identity (the wall) and somewhere to keep per-Account
+# records (the Subscriptions dataset) — either missing keeps the Matches tab a "soon" item.
+_SETS_ON = _AUTH_ON and bool(_SUBSCRIBERS_REPO and _SUBSCRIBERS_TOKEN)
 print(
     f"ready: {_table.count_rows()} jobs across {len(_searcher.atses)} ATSes"
     + (
@@ -280,6 +290,134 @@ def unsubscribe():
     return "that unsubscribe link is not valid", 404
 
 
+def _sets_gate() -> tuple[str, Store] | None:
+    """The signed-in address and a store, or None when sets can't function.
+
+    Reached only with a session when the wall is on (before_request), so None here means
+    the feature is unconfigured — the caller answers 503, mirroring the other dark
+    features."""
+    email = session.get("email") if _AUTH_ON else None
+    if not (_SETS_ON and email):
+        return None
+    return email, _store()
+
+
+def _project_subscription(store: Store, email: str, saved: SavedSet) -> None:
+    """Write the Subscription as the delivery projection of the emailing set (ADR-0043).
+
+    Revising keeps the Watermark and unsubscribe token (mailed links must survive edits);
+    creating starts the Watermark now, so nobody is mailed the backlog."""
+    existing = store.get(subscription_id(email))
+    sub = (
+        existing.revised(saved.query, saved.search_filters)
+        if existing
+        else Subscription.create(email, saved.query, saved.search_filters)
+    )
+    store.put(sub)
+
+
+@app.route("/sets")
+def list_sets():
+    gate = _sets_gate()
+    if not gate:
+        return jsonify({"error": "saved sets are not configured"}), 503
+    email, store = gate
+    return jsonify([s.to_dict() for s in store.sets_for(subscription_id(email))])
+
+
+@app.route("/sets", methods=["POST"])
+def save_set():
+    """Create a Saved set, or update one when the body names an ``id`` (ADR-0043).
+
+    Updating the emailing set re-projects the Subscription in the same request, so the
+    delivered Digest can never drift from what the tab shows."""
+    gate = _sets_gate()
+    if not gate:
+        return jsonify({"error": "saved sets are not configured"}), 503
+    email, store = gate
+    body = request.get_json(silent=True) or {}
+    name = str(body.get("name") or "").strip()
+    query = str(body.get("query") or "").strip()
+    if not name:
+        return jsonify({"error": "name the set first"}), 400
+    if not query:
+        return jsonify({"error": "type the role you want first"}), 400
+    sent = body.get("filters")
+    filters = sent if isinstance(sent, dict) else {}
+    account = subscription_id(email)
+
+    set_id = str(body.get("id") or "")
+    if set_id:
+        current = store.get_set(account, set_id)
+        if not current:
+            return jsonify({"error": "no such set"}), 404
+        updated = current.revised(name, query, filters)
+        store.put_set(updated)
+        if updated.emails:
+            _project_subscription(store, email, updated)
+        return jsonify(updated.to_dict())
+
+    if len(store.sets_for(account)) >= MAX_SETS:
+        return jsonify({"error": f"that's the limit — {MAX_SETS} sets"}), 400
+    fresh = SavedSet.create(email, name, query, filters)
+    store.put_set(fresh)
+    return jsonify(fresh.to_dict())
+
+
+@app.route("/sets/<set_id>", methods=["DELETE"])
+def delete_set(set_id: str):
+    """Delete a set. Deleting the emailing one also removes its Subscription — a set that
+    no longer exists must not keep mailing (ADR-0043; the old unsubscribe links die with
+    it, which re-enabling later replaces with fresh ones)."""
+    gate = _sets_gate()
+    if not gate:
+        return jsonify({"error": "saved sets are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    current = store.get_set(account, set_id)
+    if not current:
+        return jsonify({"error": "no such set"}), 404
+    store.remove_set(account, set_id)
+    if current.emails:
+        store.remove(subscription_id(email))
+    return jsonify({"ok": True})
+
+
+@app.route("/sets/<set_id>/email", methods=["POST"])
+def set_email(set_id: str):
+    """Turn email on or off for one set — on moves it here from any other set.
+
+    Delivery stays invite-only (ADR-0035): turning ON checks the allowlist; OFF removes
+    the Subscription record, so the alerts run simply stops seeing this person."""
+    gate = _sets_gate()
+    if not gate:
+        return jsonify({"error": "saved sets are not configured"}), 503
+    email, store = gate
+    account = subscription_id(email)
+    current = store.get_set(account, set_id)
+    if not current:
+        return jsonify({"error": "no such set"}), 404
+    body = request.get_json(silent=True) or {}
+    turn_on = bool(body.get("on"))
+
+    if turn_on:
+        if not access.is_allowed(email, store.allowlist()):
+            return jsonify(
+                {"error": "email alerts are invite-only — ask for access"}
+            ), 403
+        for other in store.sets_for(account):
+            if other.emails and other.id != current.id:
+                store.put_set(replace(other, emails=False))
+        current = replace(current, emails=True)
+        store.put_set(current)
+        _project_subscription(store, email, current)
+    else:
+        current = replace(current, emails=False)
+        store.put_set(current)
+        store.remove(subscription_id(email))
+    return jsonify(current.to_dict())
+
+
 @app.route("/trends")
 def trends():
     """Role-family counts over time (ADR-0040), or 503 until the ledger exists.
@@ -379,6 +517,7 @@ def index():
         trends_on=bool(_TRENDS),
         resume_on=bool(_RESUME_PASSWORD),
         alerts_on=_ALERTS_ON,
+        sets_on=_SETS_ON,
     )
 
 
