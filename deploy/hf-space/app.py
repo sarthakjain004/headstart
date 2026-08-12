@@ -480,7 +480,7 @@ def star_job():
     job_id = str(body.get("job_id") or "").strip()
     title = str(body.get("title") or "").strip()
     if not job_id or not title:
-        return jsonify({"error": "that job is missing its id or title"}), 400
+        return jsonify({"error": "that job is missing its job_id or title"}), 400
     job = SavedJob.create(
         email,
         job_id,
