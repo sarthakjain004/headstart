@@ -253,3 +253,48 @@ def test_garbage_int_raises_valueerror():
         searcher.run({"q": "x", "k": "lots"})
     with pytest.raises(ValueError):
         searcher.run({"q": "x", "max_years": "several"})
+
+
+# ---- custom date ranges (Matches view controls; both ends optional, both inclusive) ----
+
+
+def test_posted_range_is_inclusive_and_shape_guarded():
+    clause = _clause(posted_after="2026-08-01", posted_before="2026-08-10")
+    # inclusive end: strictly below the NEXT day, since '2026-08-10T12:00' > '2026-08-10'
+    assert "(posted_at >= '2026-08-01' AND posted_at LIKE '____-__-__%')" in clause
+    assert "(posted_at < '2026-08-11' AND posted_at LIKE '____-__-__%')" in clause
+
+
+def test_seen_range_uses_first_seen_and_goes_dark_without_the_column():
+    clause = _clause(seen_after="2026-08-01", seen_before="2026-08-10")
+    assert "first_seen >= '2026-08-01'" in clause
+    assert "first_seen < '2026-08-11'" in clause
+    assert (
+        _clause(seen_after="2026-08-01", seen_before="2026-08-10", has_first_seen=False)
+        is None
+    )
+
+
+def test_range_values_are_reserialized_not_interpolated():
+    for kw in ("posted_after", "posted_before", "seen_after", "seen_before"):
+        with pytest.raises(ValueError):
+            _clause(**{kw: "2026-08-01' OR '1'='1"})
+        with pytest.raises(ValueError):
+            _clause(**{kw: "yesterday"})
+
+
+def test_run_passes_ranges_and_rejects_garbage():
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "posted_after": "2026-08-01", "seen_before": "2026-08-10"})
+    assert "posted_at >= '2026-08-01'" in table.last_where
+    assert "first_seen < '2026-08-11'" in table.last_where
+    with pytest.raises(ValueError):
+        searcher.run({"q": "x", "posted_after": "not-a-date"})
+
+
+def test_range_overflow_is_a_valueerror_not_a_500():
+    # 9999-12-31 + 1 day overflows date; the route only turns ValueError into a 400.
+    with pytest.raises(ValueError):
+        _clause(posted_before="9999-12-31")
+    with pytest.raises(ValueError):
+        _clause(seen_before="9999-12-31")

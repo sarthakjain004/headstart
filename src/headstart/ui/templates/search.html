@@ -14,7 +14,10 @@
   </div>
 </section>
 
-{% if resume_on or alerts_on %}
+{# The subscribe panel is the pre-sets email path (ADR-0035); once Saved sets exist the
+   email toggle lives on the Matches tab instead — two places saying "email me" would
+   disagree about which query is delivered. #}
+{% if resume_on or (alerts_on and not sets_on) %}
 <div class="features">
   {% if resume_on %}
   <details class="feature">
@@ -32,7 +35,7 @@
   </details>
   {% endif %}
 
-  {% if alerts_on %}
+  {% if alerts_on and not sets_on %}
   <details class="feature">
     <summary><span class="dot"></span><span class="ttl">Email me new matches</span><span class="sub">invite only</span></summary>
     <div class="body">
@@ -93,7 +96,7 @@
           <option value="168">Last 7 days</option>
         </select></div>
       {% endif %}
-      <div class="f"><label for="ats">Board</label>
+      <div class="f"><label for="ats">ATS provider</label>
         <select id="ats"><option value="">Any</option>
           {% for a in atses %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
         </select></div>
@@ -113,7 +116,17 @@
       </select>
       <label class="note" for="k">Show</label>
       <select id="k" onchange="go()"><option>10</option><option selected>20</option><option>50</option></select>
+      {% if sets_on %}
+      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
+      {% endif %}
     </div>
+    {% if sets_on %}
+    <div class="row saverow" id="saverow" style="display:none">
+      <input id="savename" type="text" placeholder="Name this search — e.g. backend roles" maxlength="60">
+      <button class="ghost" onclick="saveSearch()">Save</button>
+      <span class="note" id="savemsg" role="status"></span>
+    </div>
+    {% endif %}
     <div class="active" id="active"></div>
     <div id="results" aria-live="polite"></div>
   </main>

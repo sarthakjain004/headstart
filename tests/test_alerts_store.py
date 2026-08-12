@@ -210,3 +210,73 @@ def test_parse_allowlist_entry_shapes(body, expected):
 def test_missing_allowlist_denies_rather_than_raising(monkeypatch):
     _Hub().install(monkeypatch)  # no allowlist file at all
     assert st.Store(REPO, TOKEN).allowlist() == []
+
+
+# ---- Saved sets (ADR-0043) ----
+
+
+def test_saved_set_create_normalizes_and_keys_by_account():
+    saved = st.SavedSet.create(
+        "Ada@Example.com ",
+        "  backend roles  ",
+        " backend engineer ",
+        {"remote": "true", "junk": "x"},
+    )
+    assert saved.account == st.subscription_id("ada@example.com")
+    assert saved.name == "backend roles"
+    assert saved.query == "backend engineer"
+    assert saved.search_filters == {"remote": "true"}  # same whitelist as Subscriptions
+    assert not saved.emails
+    assert saved.path() == f"sets/{saved.account}/{saved.id}.json"
+
+
+def test_saved_set_revised_keeps_identity_and_email_flag():
+    saved = st.SavedSet.create("ada@example.com", "backend", "backend engineer", {})
+    flagged = st.replace(saved, emails=True)
+    revised = flagged.revised("ML roles", "ML engineer", {"max_years": 3})
+    assert (revised.id, revised.account, revised.created_at) == (
+        saved.id,
+        saved.account,
+        saved.created_at,
+    )
+    assert revised.emails is True
+    assert revised.search_filters == {"max_years": "3"}
+
+
+def test_sets_round_trip_scoped_to_their_account(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    mine = st.SavedSet.create("ada@example.com", "backend", "backend engineer", {})
+    theirs = st.SavedSet.create("bob@example.com", "frontend", "frontend engineer", {})
+    store.put_set(mine)
+    store.put_set(theirs)
+
+    assert [s.name for s in store.sets_for(mine.account)] == ["backend"]
+    assert store.get_set(mine.account, mine.id).query == "backend engineer"
+    assert store.get_set(mine.account, theirs.id) is None  # someone else's id: not mine
+
+    store.remove_set(mine.account, mine.id)
+    assert store.sets_for(mine.account) == []
+    assert hub.files  # the other account's record is untouched
+
+
+def test_set_lookups_reject_malformed_ids(monkeypatch):
+    _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    account = st.subscription_id("ada@example.com")
+    # neither part may name an arbitrary repo path
+    assert store.get_set("../allowlist", "deadbeef") is None
+    assert store.get_set(account, "../../secret") is None
+    assert store.sets_for("not-an-account") == []
+
+
+def test_sets_for_skips_unreadable_records(monkeypatch):
+    account = st.subscription_id("ada@example.com")
+    good = st.SavedSet.create("ada@example.com", "backend", "backend engineer", {})
+    _Hub(
+        {
+            good.path(): json.dumps(good.to_dict()).encode(),
+            f"sets/{account}/deadbeef.json": b"not json",
+        }
+    ).install(monkeypatch)
+    assert [s.name for s in st.Store(REPO, TOKEN).sets_for(account)] == ["backend"]

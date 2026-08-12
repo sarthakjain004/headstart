@@ -20,6 +20,10 @@ function showTab(name){
   document.querySelectorAll('.side [data-tab]').forEach(a =>
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
   if (name === 'trends' && el('trends') && !trendData) loadTrends(null);
+  if (name === 'matches' && el('sets-strip')){
+    if (!mySets) loadSets();
+    else if (activeSetId) runSet(activeSetId);   // re-run on every visit — never stale
+  }
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
 
@@ -101,7 +105,7 @@ function currentFilters(){
   return f;
 }
 const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
-  ats:'Board', etype:'Type', india:'India', location:'Location', company:'Company',
+  ats:'ATS provider', etype:'Type', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤' };
 const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats',
   etype:'etype', india:'india', location:'location', company:'company',
@@ -160,12 +164,12 @@ async function go(){
   draw(rows);
 }
 
-function draw(rows){
-  if (el('sort').value === 'new'){
+function draw(rows, target){
+  if (!target && el('sort').value === 'new'){   // the sort control belongs to the Search tab
     const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
     rows = rows.slice().sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
   }
-  el('results').innerHTML = rows.map((r,i) => {
+  el(target || 'results').innerHTML = rows.map((r,i) => {
     const s = Number(r.score) || 0, c = tone(s), pct = matchPct(s);
     return `
     <div class="card" style="--tone:${c}; animation-delay:${Math.min(i,12)*35}ms">
@@ -192,6 +196,160 @@ function draw(rows){
         ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
       </div>
     </div>`; }).join('');
+}
+
+/* ---- Saved sets (ADR-0043): the Matches tab runs one live; "Save this search" creates
+   one from the controls the user is looking at. All strip actions ride ONE delegated
+   listener + data attributes — never inline handlers with interpolated names. ---- */
+let mySets = null, activeSetId = null;
+
+async function loadSets(){
+  try{
+    const r = await fetch('/sets');
+    if (!r.ok){ el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
+    mySets = await r.json();
+  }catch(e){ el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
+  if (activeSetId && !mySets.some(s => s.id === activeSetId)) activeSetId = null;
+  renderSets();
+  if (!activeSetId && mySets.length) runSet(mySets[0].id);   // land on your first set
+}
+
+function renderSets(){
+  const strip = el('sets-strip');
+  if (!mySets.length){
+    strip.innerHTML = '';
+    el('matches-msg').textContent = '';
+    el('matches-results').innerHTML =
+      '<div class="empty"><div class="big">No saved sets yet</div>' +
+      'Search for a role, tune the filters, then hit "Save this search" — it lands here ' +
+      'and runs live every time you open this tab.</div>';
+    return;
+  }
+  strip.innerHTML = mySets.map(s => `
+    <div class="set-chip${s.id === activeSetId ? ' active' : ''}" data-id="${esc(s.id)}">
+      <button class="set-name" data-act="run" data-id="${esc(s.id)}"
+        title="${esc(s.query)}">${esc(s.name)}${s.emails ? ' <span class="mail-on" title="Emails you new matches">✉</span>' : ''}</button>
+      <span class="set-tools">
+        <button data-act="email" data-id="${esc(s.id)}" title="${s.emails ? 'Stop emailing this set' : 'Email me this set\'s new matches'}">${s.emails ? '✉ on' : '✉'}</button>
+        <button data-act="refine" data-id="${esc(s.id)}" title="Open in Search to adjust">Refine</button>
+        <button data-act="rename" data-id="${esc(s.id)}" title="Rename">✎</button>
+        <button data-act="del" data-id="${esc(s.id)}" title="Delete" aria-label="Delete ${esc(s.name)}">×</button>
+      </span>
+    </div>`).join('');
+}
+
+// The view controls: refine what the active set SHOWS — never written into the set.
+// Ranges go to the server (a range must filter before ranking); sort is a client-side
+// reorder of the rows already fetched, like the Search tab's resort().
+function matchesRange(){
+  const v = id => (el(id) && el(id).value) || '';
+  const r = {};
+  if (v('mposted-from')) r.posted_after = v('mposted-from');
+  if (v('mposted-to')) r.posted_before = v('mposted-to');
+  if (v('mseen-from')) r.seen_after = v('mseen-from');
+  if (v('mseen-to')) r.seen_before = v('mseen-to');
+  return r;
+}
+function sortMatches(rows){
+  const key = (el('msort') && el('msort').value) || 'score';
+  const dir = el('mdir') && el('mdir').dataset.dir === 'asc' ? 1 : -1;
+  const val = r => key === 'score' ? (Number(r.score) || 0)
+    : Date.parse((key === 'posted' ? r.posted_at : r.first_seen) || '');
+  return rows.slice().sort((a, b) => {
+    const va = val(a), vb = val(b);
+    const na = isNaN(va), nb = isNaN(vb);
+    if (na && nb) return 0;
+    if (na || nb) return na ? 1 : -1;   // rows without the date sink either direction
+    return (va - vb) * dir;
+  });
+}
+
+async function runSet(id){
+  const s = (mySets || []).find(x => x.id === id); if (!s) return;
+  activeSetId = id; renderSets();
+  el('matches-msg').textContent = 'searching…';
+  const p = new URLSearchParams({ q: s.query, k: 20 });
+  for (const [key, value] of Object.entries(s.search_filters || {})) p.set(key, value);
+  for (const [key, value] of Object.entries(matchesRange())) p.set(key, value);
+  let rows;
+  try { rows = await (await fetch('/search?'+p)).json(); }
+  catch(e){ el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
+  if (!Array.isArray(rows)){ el('matches-msg').textContent = 'A saved filter isn\'t valid — refine the set.'; return; }
+  el('matches-msg').textContent = rows.length
+    ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
+    : `Nothing matches “${s.name}” right now`;
+  draw(sortMatches(rows), 'matches-results');
+}
+
+function applySetToControls(s){
+  el('q').value = s.query;
+  Object.values(CONTROL).forEach(cid => { const c = el(cid); if (!c) return;
+    if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
+  for (const [key, value] of Object.entries(s.search_filters || {})){
+    const c = el(CONTROL[key]); if (!c) continue;
+    if (c.type === 'checkbox') c.checked = value === 'true'; else c.value = value;
+  }
+}
+
+async function handleSetAction(act, id){
+  const s = (mySets || []).find(x => x.id === id); if (!s) return;
+  if (act === 'run') return runSet(id);
+  if (act === 'refine'){ applySetToControls(s); location.hash = '#search'; go(); return; }
+  if (act === 'rename'){
+    const name = (window.prompt('Rename this set', s.name) || '').trim();
+    if (!name || name === s.name) return;
+    await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
+    return;
+  }
+  if (act === 'del'){
+    if (!window.confirm(`Delete “${s.name}”?${s.emails ? ' Its email digest stops too.' : ''}`)) return;
+    try{ await fetch('/sets/' + encodeURIComponent(id), { method: 'DELETE' }); }catch(e){}
+    mySets = null; loadSets();
+    return;
+  }
+  if (act === 'email'){
+    const r = await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }, true);
+    if (r && !r.ok){
+      const d = await r.json().catch(() => ({}));
+      el('matches-msg').textContent = d.error || ('Failed (' + r.status + ')');
+    }
+  }
+}
+
+// POST helper for set actions; reloads the strip afterwards so state is always server-truth.
+async function postAndReloadSets(url, body, returnResponse){
+  let r = null;
+  try{
+    r = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'},
+                           body: JSON.stringify(body) });
+  }catch(e){}
+  mySets = null; await loadSets();
+  return returnResponse ? r : null;
+}
+
+function saveSearchToggle(){
+  const row = el('saverow');
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+  if (row.style.display === '') el('savename').focus();
+}
+
+async function saveSearch(){
+  const name = el('savename').value.trim();
+  const q = el('q').value.trim();
+  const msg = el('savemsg');
+  if (!q){ msg.textContent = 'Type the role you want first.'; return; }
+  if (!name){ msg.textContent = 'Give it a name.'; return; }
+  try{
+    const r = await fetch('/sets', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name, query: q, filters: currentFilters() }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
+    mySets = null;                       // the strip reloads next time Matches opens
+    el('savename').value = '';
+    el('saverow').style.display = 'none';
+    msg.textContent = '';
+    el('n').textContent = `Saved — see Matches`;
+  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 
 // Résumé → Query: fills the search box for the user to edit, never searches on its own.
@@ -327,6 +485,33 @@ if (el('trends-legend')) el('trends-legend').addEventListener('click', e => {
   const li = e.target.closest('li[data-name]');
   if (li) trendClick(li.dataset.name);
 });
+if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
+});
+if (el('matches-controls')){
+  const rerun = () => { if (activeSetId) runSet(activeSetId); };
+  // sort is a client-side reorder; a range change re-queries — both go through runSet
+  // so the count message and rows always agree.
+  ['msort','mposted-from','mposted-to','mseen-from','mseen-to'].forEach(id => {
+    if (el(id)) el(id).addEventListener('change', rerun);
+  });
+  el('mdir').addEventListener('click', () => {
+    const b = el('mdir');
+    const dir = b.dataset.dir === 'desc' ? 'asc' : 'desc';
+    b.dataset.dir = dir;
+    b.textContent = dir === 'desc' ? '↓' : '↑';
+    b.setAttribute('aria-label', 'Sort direction, currently ' +
+      (dir === 'desc' ? 'descending' : 'ascending'));
+    rerun();
+  });
+  el('mclear').addEventListener('click', () => {
+    ['mposted-from','mposted-to','mseen-from','mseen-to'].forEach(id => {
+      if (el(id)) el(id).value = '';
+    });
+    rerun();
+  });
+}
 showIntro();
 whoAmI();
 showTab(currentTab());

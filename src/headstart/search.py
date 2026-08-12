@@ -26,7 +26,7 @@ constants and both filter builders stay importable (and unit-testable) without t
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
@@ -140,6 +140,10 @@ def build_filter(
     has_salary: bool = False,
     posted_within: int | None = None,
     seen_within: int | None = None,
+    posted_after: str | None = None,
+    posted_before: str | None = None,
+    seen_after: str | None = None,
+    seen_before: str | None = None,
     first_seen_after: str | None = None,
     atses: Collection[str],
     has_first_seen: bool,
@@ -181,6 +185,30 @@ def build_filter(
             datetime.now(timezone.utc) - timedelta(days=int(posted_within))
         ).strftime("%Y-%m-%d")
         filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
+
+    # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
+    # text and lands in a where-clause, so it is re-serialized through date.fromisoformat —
+    # garbage raises ValueError, which the routes answer as 400, and nothing user-typed is
+    # ever interpolated. Inclusive "before" compares strictly below the NEXT day, because
+    # both columns hold date-or-datetime ISO strings and '2026-08-10T12:00' > '2026-08-10'.
+    def _next_day(value: str) -> str:
+        try:
+            return (date.fromisoformat(value) + timedelta(days=1)).isoformat()
+        except OverflowError as exc:  # 9999-12-31 + 1 day; a 400 like any bad date
+            raise ValueError(f"date out of range: {value!r}") from exc
+
+    if posted_after:
+        start = date.fromisoformat(posted_after).isoformat()
+        filters.append(f"(posted_at >= '{start}' AND posted_at LIKE '____-__-__%')")
+    if posted_before:
+        filters.append(
+            f"(posted_at < '{_next_day(posted_before)}' AND posted_at LIKE '____-__-__%')"
+        )
+    if seen_after and has_first_seen:
+        start = date.fromisoformat(seen_after).isoformat()
+        filters.append(f"first_seen >= '{start}'")
+    if seen_before and has_first_seen:
+        filters.append(f"first_seen < '{_next_day(seen_before)}'")
     if seen_within is not None and has_first_seen:
         # In HOURS, not days: this window is meant to be shorter than one pipeline cycle.
         # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
@@ -254,6 +282,10 @@ class JobSearch:
             has_salary=args.get("has_salary") == "true",
             posted_within=_int("posted_within"),
             seen_within=_int("seen_within"),
+            posted_after=(args.get("posted_after") or "").strip() or None,
+            posted_before=(args.get("posted_before") or "").strip() or None,
+            seen_after=(args.get("seen_after") or "").strip() or None,
+            seen_before=(args.get("seen_before") or "").strip() or None,
             first_seen_after=(args.get("first_seen_after") or "").strip() or None,
             atses=self.atses,
             has_first_seen=self.has_first_seen,

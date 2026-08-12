@@ -1,7 +1,9 @@
 # ADR-0035: Email job alerts — invite-only, Google-verified, one Digest per pipeline run
 
 - Status: Accepted; [ADR-0042](0042-signed-in-ui-saved-sets.md) generalizes the Subscription to
-  "the one Saved set per Account with email on" (delivery, Watermark, and invite gate stand)
+  "the one Saved set per Account with email on", and [ADR-0043](0043-saved-sets-subscription-projection.md)
+  implements it as a projection — adding the sets endpoints as a third Subscription writer
+  beside subscribe/unsubscribe and the alerts run (delivery, Watermark, and invite gate stand)
 - Date: 2026-08-05
 - Adds a **Subscription** to the Alerts language (CONTEXT.md §Alerts), deliberately *beside*
   Telegram's Subscriber/Filter rather than reusing those terms.
