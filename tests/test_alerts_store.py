@@ -282,6 +282,74 @@ def test_sets_for_skips_unreadable_records(monkeypatch):
     assert [s.name for s in st.Store(REPO, TOKEN).sets_for(account)] == ["backend"]
 
 
+# ---- Profiles (ADR-0041) ----
+
+
+def test_profile_revised_bounds_fields_and_has_no_counter_to_touch():
+    edited = st.Profile.blank("Ada@Example.com ").revised(
+        {
+            "query": "backend engineer",
+            "years": "12",
+            "title": "x" * 500,
+            "parses_used": 99,  # not a Profile field — the counter lives in its own file
+        }
+    )
+    assert edited.account == st.subscription_id("ada@example.com")
+    assert edited.query == "backend engineer"
+    assert edited.years == 12
+    assert len(edited.title) == 200
+    assert "parses_used" not in edited.to_dict()
+
+
+def test_profile_bad_years_become_none():
+    blank = st.Profile.blank("a@b.c")
+    assert blank.revised({"years": "several"}).years is None
+    assert blank.revised({"years": ""}).years is None
+    assert blank.revised({"years": 0}).years == 0
+    assert blank.revised({"years": 99}).years is None
+
+
+def test_profile_round_trips_and_guards_paths(monkeypatch):
+    hub = _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    profile = st.Profile.blank("ada@example.com").revised({"query": "backend"})
+    store.put_profile(profile)
+    assert profile.path() == f"profiles/{profile.account}.json"
+    assert profile.path() in hub.files
+    assert store.get_profile(profile.account).query == "backend"
+    assert store.get_profile("../allowlist") is None  # no caller names a repo path
+
+
+def test_parse_counter_absent_is_zero_and_roundtrips(monkeypatch):
+    _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    account = st.subscription_id("ada@example.com")
+    assert store.parses_used(account) == 0  # never parsed
+    store.put_parses(account, 2)
+    assert store.parses_used(account) == 2
+    assert store.parses_used("not-an-account") == 0  # path guard
+
+
+def test_parse_counter_fails_closed_on_an_unreadable_file(monkeypatch):
+    # Absent answers 0, but corrupt/unreadable must RAISE — collapsing it to 0 the way
+    # get_profile collapses absent-and-unreadable would reset the lifetime cap on a blip.
+    account = st.subscription_id("ada@example.com")
+    _Hub({f"profiles/{account}.parses.json": b"not json"}).install(monkeypatch)
+    with pytest.raises(Exception):
+        st.Store(REPO, TOKEN).parses_used(account)
+
+
+def test_profile_delete_leaves_the_counter_file(monkeypatch):
+    _Hub().install(monkeypatch)
+    store = st.Store(REPO, TOKEN)
+    account = st.subscription_id("ada@example.com")
+    store.put_profile(st.Profile.blank("ada@example.com").revised({"query": "q"}))
+    store.put_parses(account, 3)
+    store.remove_profile(account)
+    assert store.get_profile(account) is None
+    assert store.parses_used(account) == 3  # the cap survives deletion (ADR-0041)
+
+
 # ---- Saved jobs (ADR-0044) ----
 
 

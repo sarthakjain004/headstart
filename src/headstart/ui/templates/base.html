@@ -37,7 +37,11 @@
       {% if trends_on %}
       <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
       {% endif %}
+      {% if profile_on %}
+      <a class="nav-item" href="#profile" data-tab="profile" aria-current="false">Profile</a>
+      {% else %}
       <span class="nav-item soon" title="Coming soon">Profile<span class="chip-soon">soon</span></span>
+      {% endif %}
     </nav>
 
     <div class="content">
@@ -47,6 +51,9 @@
       {% endif %}
       {% if saved_on %}
       <section class="panel" id="panel-saved" hidden>{% include "saved.html" %}</section>
+      {% endif %}
+      {% if profile_on %}
+      <section class="panel" id="panel-profile" hidden>{% include "profile.html" %}</section>
       {% endif %}
       {% if trends_on %}
       <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>

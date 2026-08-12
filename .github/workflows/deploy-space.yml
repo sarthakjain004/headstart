@@ -11,7 +11,7 @@ on:
         "deploy/hf-space/**",
         "src/headstart/geo.py",
         "src/headstart/llm_router.py",
-        "src/headstart/resume_query.py",
+        "src/headstart/profile_extract.py",
         "src/headstart/search.py",
         "src/headstart/alerts/**",
         "src/headstart/ui/**",
@@ -44,7 +44,7 @@ jobs:
           # standalone Space app imports them as sibling modules
           cp src/headstart/geo.py deploy/hf-space/geo.py
           cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
-          cp src/headstart/resume_query.py deploy/hf-space/resume_query.py
+          cp src/headstart/profile_extract.py deploy/hf-space/profile_extract.py
           cp src/headstart/search.py deploy/hf-space/search.py
           # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
           # these labels. Same single-source-of-truth reason as the modules above.

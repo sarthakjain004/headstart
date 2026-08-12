@@ -1,9 +1,10 @@
 """Subscriptions, one file per record, in the private `headstart-subscribers` dataset (ADR-0035).
 
 `Store` is the whole interface — Subscriptions (`all`, `get`, `put`, `remove`, `invites`,
-`allowlist`), Saved sets (`sets_for`, `get_set`, `put_set`, `remove_set`) and Saved jobs
-(`saved_for`, `saved_ids`, `get_saved`, `put_saved`, `remove_saved`). Behind it sit the
-repo layout, the JSON shapes, and the HF client.
+`allowlist`), Saved sets (`sets_for`, `get_set`, `put_set`, `remove_set`), Saved jobs
+(`saved_for`, `saved_ids`, `get_saved`, `put_saved`, `remove_saved`) and Profiles
+(`get_profile`, `put_profile`, `remove_profile`, plus the parse-cap counter `parses_used`
+/ `put_parses`). Behind it sit the repo layout, the JSON shapes, and the HF client.
 
 Two records, deliberately distinct. An **Invite** is what the owner writes by hand — an
 address, optionally the Query to run for it. A **Subscription** is the state that Invite
@@ -46,6 +47,8 @@ SAVED_PREFIX = "saved/"
 MAX_SAVED = (
     100  # starred jobs per Account — an abuse bound, not a product promise (ADR-0044)
 )
+PROFILE_PREFIX = "profiles/"
+MAX_PARSES = 3  # Résumé parses per Account, lifetime — bounds router spend (ADR-0041)
 
 # The Space `/search` parameters a Subscription may carry. `seen_within` is deliberately
 # absent — it filters `first_seen`, which is exactly what the Watermark already decides, so
@@ -325,6 +328,75 @@ class SavedJob:
         return f"{SAVED_PREFIX}{self.account}/{self.id}.json"
 
 
+def _profile_line(value: Any) -> str:
+    """A Profile field as one bounded line — mirrors profile_extract's bound (which this
+    module cannot import: in the Space image, alerts/ can't see the flat modules)."""
+    return str(value or "").strip()[:200]
+
+
+def _profile_years(value: Any) -> int | None:
+    if value in ("", None):
+        return None
+    try:
+        years = int(value)
+    except (TypeError, ValueError):
+        return None
+    return years if 0 <= years <= 60 else None
+
+
+@dataclass
+class Profile:
+    """One Account's stored career extraction (ADR-0041): the role sentence that drives
+    ranking plus the facts that pre-fill Search filters — never the Résumé itself.
+
+    The parse counter is deliberately NOT a field here — it lives in its own sibling file
+    written only by the parse route (:meth:`Store.put_parses`), so a Save's stale
+    read-modify-write of this record can never regress the lifetime cap. Deleting a
+    Profile removes this record; the counter file stays."""
+
+    account: str  # subscription_id(email) — one record per Account
+    query: str = ""  # the Résumé query — a role sentence, never years/salary/location
+    title: str = ""
+    years: int | None = None
+    skills: str = ""
+    roles: str = ""
+    education: str = ""
+    location: str = ""
+    updated_at: str = ""
+
+    @classmethod
+    def blank(cls, email: str) -> "Profile":
+        return cls(account=subscription_id(email))
+
+    def revised(self, fields: dict[str, Any], when: str | None = None) -> "Profile":
+        """This Profile with new career fields, bounded at the door; identity never comes
+        from the caller. The ``query`` sentence is scrubbed by the route before it gets
+        here (profile_extract.scrub_query — not importable from this package in the
+        Space image), so this only bounds it."""
+        return replace(
+            self,
+            query=_profile_line(fields.get("query")),
+            title=_profile_line(fields.get("title")),
+            years=_profile_years(fields.get("years")),
+            skills=_profile_line(fields.get("skills")),
+            roles=_profile_line(fields.get("roles")),
+            education=_profile_line(fields.get("education")),
+            location=_profile_line(fields.get("location")),
+            updated_at=when or now_iso(),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Profile":
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def path(self) -> str:
+        return f"{PROFILE_PREFIX}{self.account}.json"
+
+
 @dataclass(frozen=True)
 class Invite:
     """One allowlisted address, and optionally the Query the owner chose for it.
@@ -600,6 +672,59 @@ class Store:
         if not (_ID.fullmatch(account) and _ID.fullmatch(saved_id)):
             return
         _delete(self._repo, f"{SAVED_PREFIX}{account}/{saved_id}.json", self._token)
+
+    def get_profile(self, account: str) -> Profile | None:
+        """One Account's Profile, or None — same traversal guard as :meth:`get`."""
+        if not _ID.fullmatch(account):
+            return None
+        try:
+            data = json.loads(
+                _read(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
+            )
+            return Profile.from_dict(data)
+        except Exception:  # noqa: BLE001 — absent and unreadable are one answer
+            return None
+
+    def put_profile(self, profile: Profile) -> None:
+        _write(
+            self._repo,
+            profile.path(),
+            json.dumps(profile.to_dict(), indent=2).encode("utf-8"),
+            self._token,
+        )
+
+    def remove_profile(self, account: str) -> None:
+        """Delete the career record. The parse-counter file deliberately survives —
+        deleting must not reset the lifetime cap (ADR-0041)."""
+        if not _ID.fullmatch(account):
+            return
+        _delete(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
+
+    def parses_used(self, account: str) -> int:
+        """How many Résumé reads this Account has spent — the ADR-0041 cap's state.
+
+        Fail-closed contract: an ABSENT file answers 0 (never parsed), but an unreadable
+        or corrupt one RAISES — collapsing a transient failure into 0, the way
+        :meth:`get_profile` collapses absent and unreadable, would silently reset the
+        cap. The routes answer 503 and the user just tries again."""
+        if not _ID.fullmatch(account):
+            return 0
+        path = f"{PROFILE_PREFIX}{account}.parses.json"
+        if path not in _list_files(self._repo, self._token):
+            return 0
+        return int(json.loads(_read(self._repo, path, self._token))["parses_used"])
+
+    def put_parses(self, account: str, used: int) -> None:
+        """Record the new spent-reads total. Only the parse route writes this file, so a
+        Save's stale read of the Profile record can never regress the count."""
+        if not _ID.fullmatch(account):
+            return
+        _write(
+            self._repo,
+            f"{PROFILE_PREFIX}{account}.parses.json",
+            json.dumps({"parses_used": int(used)}).encode("utf-8"),
+            self._token,
+        )
 
     def invites(self) -> list[Invite]:
         """Everyone the allowlist names, with whatever Query the owner set for them.

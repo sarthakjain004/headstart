@@ -32,6 +32,13 @@ def _module(name, **attrs):
     return mod
 
 
+_RouterUnavailable = type("RouterUnavailable", (Exception,), {})
+
+
+def _no_router(prompt):
+    raise _RouterUnavailable("no router in tests")
+
+
 class _Table:
     """Enough LanceDB for import time: an ats scan, a schema and a row count."""
 
@@ -83,25 +90,25 @@ def _space_app(state, env=None):
             dropdown_options=lambda: [("bengaluru", "Bengaluru")],
         ),
         "llm_router": _module(
-            "llm_router", RouterUnavailable=type("RU", (Exception,), {})
-        ),
-        "resume_query": _module(
-            "resume_query",
-            EmptyQuery=type("EQ", (Exception,), {}),
-            ResumeError=type("RE", (Exception,), {}),
-            ResumeTooLong=type("RTL", (Exception,), {}),
-            query_for=lambda *a, **k: "",
+            "llm_router",
+            RouterUnavailable=_RouterUnavailable,
+            # default: no router in tests — the parse route answers 503 unless a test
+            # monkeypatches ask with a canned JSON reply
+            ask=_no_router,
         ),
     }
-    # The Space imports the alerts package and the search module flat, as deploy-space.yml
-    # lays them down — the real modules, not fakes, so the wiring under test is real.
+    # The Space imports the alerts package and the flat search/profile_extract modules, as
+    # deploy-space.yml lays them down — the real modules, not fakes, so the wiring under
+    # test is real (profile_extract is pure json/re, so its scrub runs for real too).
     import headstart.alerts.access as _access
     import headstart.alerts.identity as _identity
     import headstart.alerts.store as _store
+    import headstart.profile_extract as _profile_extract
     import headstart.search as _search
 
     stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
     stubs["alerts.store"] = _store
+    stubs["profile_extract"] = _profile_extract
     stubs["search"] = _search
     # Every stubbed name is restored, including the two above — leaving a fake `alerts` in
     # sys.modules would follow this fixture into every later test in the session. Env vars
@@ -206,7 +213,7 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     assert b"client-id.example" in page
     assert client.get("/search?q=x").status_code == 401
     assert client.get("/trends").status_code == 401
-    assert client.post("/resume-to-query", json={}).status_code == 401
+    assert client.post("/profile/parse", json={}).status_code == 401
     assert client.post("/subscribe", json={}).status_code == 401
     assert client.post("/signout").status_code == 401
 
@@ -412,6 +419,154 @@ def test_presets_subscription_is_adopted_as_the_emailing_set(
     assert listed[0]["search_filters"] == {"remote": "true"}
     # idempotent: a second read adopts nothing new
     assert len(client.get("/sets", base_url=_HTTPS).json) == 1
+
+
+# ---- Profile (ADR-0041) ----
+
+_EXTRACTION = {
+    "query": "backend engineer, Python",
+    "title": "SDE II",
+    "years": 4,
+    "skills": ["Python", "Go"],
+    "roles": ["SDE II at Acme"],
+    "education": "B.Tech",
+    "location": "Pune, India",
+}
+
+
+def _router_answers(app_module, monkeypatch, payload=None):
+    import json as _json
+
+    reply = _json.dumps(payload or _EXTRACTION)
+    monkeypatch.setattr(app_module.llm_router, "ask", lambda prompt: reply)
+
+
+def test_profile_get_save_roundtrip_and_counter_discipline(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    blank = client.get("/profile", base_url=_HTTPS).json
+    assert blank["query"] == "" and blank["parses_left"] == sets_app.MAX_PARSES
+
+    r = client.post(
+        "/profile",
+        json={
+            "query": "backend engineer",
+            "years": "4",
+            "skills": "Python, Go",
+            "parses_used": 99,  # must be ignored — nobody refills their own cap
+        },
+        base_url=_HTTPS,
+    )
+    assert r.status_code == 200
+    assert r.json["query"] == "backend engineer" and r.json["years"] == 4
+    assert r.json["parses_used"] == 0
+    assert client.get("/profile", base_url=_HTTPS).json["skills"] == "Python, Go"
+
+
+def test_hand_saved_query_is_scrubbed_like_the_extracted_one(
+    sets_app, hub, monkeypatch
+):
+    # The Query contract holds whichever door the sentence came through (ADR-0041):
+    # a hand-edited save must not smuggle years/salary into the ranking sentence.
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/profile",
+        json={
+            "query": "backend engineer, 7+ years of experience, $200k salary, Python"
+        },
+        base_url=_HTTPS,
+    )
+    assert r.status_code == 200
+    assert r.json["query"] == "backend engineer, Python"
+
+
+def test_unreadable_counter_fails_closed_not_open(sets_app, hub, monkeypatch):
+    # A transient failure reading the counter must never look like "0 used" — that
+    # would reset the lifetime cap. The routes answer 503 instead.
+    client = _signed_in(sets_app, monkeypatch)
+    account = sets_app.subscription_id("dev@example.com")
+    hub[f"profiles/{account}.parses.json"] = b"not json"
+    assert client.get("/profile", base_url=_HTTPS).status_code == 503
+    r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    assert r.status_code == 503
+
+
+def test_parse_fills_the_profile_and_spends_a_read(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    _router_answers(sets_app, monkeypatch)
+    r = client.post("/profile/parse", json={"text": "my résumé"}, base_url=_HTTPS)
+    assert r.status_code == 200
+    assert r.json["query"] == "backend engineer, Python"
+    assert r.json["skills"] == "Python, Go"  # lists land as one editable line
+    assert r.json["parses_left"] == sets_app.MAX_PARSES - 1
+
+
+def test_parse_cap_is_lifetime_and_survives_delete(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    _router_answers(sets_app, monkeypatch)
+    for _ in range(sets_app.MAX_PARSES):
+        r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+        assert r.status_code == 200
+    assert (
+        client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS).status_code
+        == 400
+    )
+    # deleting blanks the career data but keeps the counter — the cap must not reset
+    assert client.delete("/profile", base_url=_HTTPS).status_code == 200
+    after = client.get("/profile", base_url=_HTTPS).json
+    assert after["query"] == "" and after["parses_left"] == 0
+    assert (
+        client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS).status_code
+        == 400
+    )
+
+
+def test_failed_extraction_still_spends_a_read(sets_app, hub, monkeypatch):
+    # The router answered garbage — the call was made, so it counts (spend bound, ADR-0041)
+    client = _signed_in(sets_app, monkeypatch)
+    monkeypatch.setattr(sets_app.llm_router, "ask", lambda prompt: "not json at all")
+    r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    assert r.status_code == 502
+    assert (
+        client.get("/profile", base_url=_HTTPS).json["parses_left"]
+        == sets_app.MAX_PARSES - 1
+    )
+
+
+def test_empty_paste_refuses_before_the_router_and_spends_nothing(
+    sets_app, hub, monkeypatch
+):
+    client = _signed_in(sets_app, monkeypatch)  # ask still raises RouterUnavailable
+    r = client.post("/profile/parse", json={"text": "   "}, base_url=_HTTPS)
+    assert r.status_code == 400
+    assert (
+        client.get("/profile", base_url=_HTTPS).json["parses_left"]
+        == sets_app.MAX_PARSES
+    )
+
+
+def test_router_down_is_503_and_spends_nothing(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)  # the fixture's ask raises
+    r = client.post("/profile/parse", json={"text": "résumé"}, base_url=_HTTPS)
+    assert r.status_code == 503
+    assert (
+        client.get("/profile", base_url=_HTTPS).json["parses_left"]
+        == sets_app.MAX_PARSES
+    )
+
+
+def test_profile_requires_wall_and_storage(auth_app, monkeypatch):
+    client = _signed_in(auth_app, monkeypatch)
+    assert client.get("/profile", base_url=_HTTPS).status_code == 503
+    assert b'data-tab="profile"' not in client.get("/", base_url=_HTTPS).data
+
+
+def test_profile_is_gated_by_the_wall(sets_app):
+    assert sets_app.app.test_client().get("/profile").status_code == 401
+
+
+def test_profile_tab_appears_when_configured(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    assert b'data-tab="profile"' in client.get("/", base_url=_HTTPS).data
 
 
 # ---- Saved jobs (ADR-0044) ----

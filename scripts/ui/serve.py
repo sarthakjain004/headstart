@@ -45,10 +45,10 @@ def index():
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
         trends_on=False,
-        resume_on=False,
         alerts_on=False,
         sets_on=False,
         saved_on=False,
+        profile_on=False,
     )
 
 
