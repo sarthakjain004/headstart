@@ -203,9 +203,10 @@ def scrape_all(
     errors: dict[str, str] = {}
     total, done = len(companies), 0
     start = time.monotonic()
+    executor = ThreadPoolExecutor(max_workers=workers)
     try:
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(run_one, c): c for c in companies}
+        futures = {executor.submit(run_one, c): c for c in companies}
+        try:
             for future in as_completed(futures):
                 company = futures[future]
                 done += 1
@@ -229,6 +230,14 @@ def scrape_all(
                     on_board(key, n_fresh, errors.get(key), seconds)
                 if progress_every and done % progress_every == 0:
                     _emit_progress(done, total, len(seen_ids), len(errors), start)
+        finally:
+            # Every Board is submitted up front, so `with ThreadPoolExecutor(...)` would
+            # drain the whole queue on the way out — its __exit__ is shutdown(wait=True).
+            # That is fine on a clean finish and wrong on a time budget: the SIGTERM that is
+            # supposed to end the shard would instead wait for the remaining Boards, blow the
+            # step timeout, and take the runner down before anything could be reported.
+            # cancel_futures drops what has not started; the in-flight ones still finish.
+            executor.shutdown(wait=True, cancel_futures=True)
     finally:
         writer.close()
     return RunResult(errors=errors, unique=len(seen_ids), boards=done)

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 import headstart.harvest as harvest
 from headstart.board_cost import read_shard_rows
 from headstart.config import CompanyRef
@@ -218,3 +220,49 @@ def test_records_measured_seconds_for_every_board_including_failures(
     assert rows["x:good"][1] == 1  # jobs written
     assert rows["x:bad"][1] == 0  # errored board wrote none, but is still costed
     assert not harvest.COST_FILENAME.startswith(".")
+
+
+def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(tmp_path):
+    """The behaviour the scrape time budget depends on.
+
+    Every Board is submitted up front, so an exception raised inside the loop used to leave
+    ``ThreadPoolExecutor.__exit__`` waiting for the *whole* queue (shutdown(wait=True)). A shard
+    killed at 60 min would then keep scraping until the 66-min step timeout killed the runner —
+    reporting nothing, which is the failure this whole change exists to remove.
+    """
+    import time as _time
+
+    started: list[str] = []
+
+    class _Slow:
+        ats = "lever"
+
+        def __init__(self, slug):
+            self.slug = slug
+
+        def fetch(self):
+            started.append(self.slug)
+            _time.sleep(0.2)
+            return []
+
+    companies = [CompanyRef(ats="lever", slug=f"c{i}") for i in range(40)]
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(
+        "headstart.harvest.get_scraper", lambda ats, slug, name=None: _Slow(slug)
+    )
+
+    def stop_after_two(key, jobs, error, seconds):
+        if len(started) >= 2:
+            raise SystemExit("signal 15")
+
+    began = _time.monotonic()
+    with pytest.raises(SystemExit):
+        harvest.scrape_all(
+            companies, jobs_dir=tmp_path, max_workers=2, on_board=stop_after_two
+        )
+    took = _time.monotonic() - began
+    monkey.undo()
+
+    # 40 boards x 0.2s over 2 workers is ~4s if the queue drains; abandoning it is ~instant
+    assert took < 2.0, f"the queue drained instead of being abandoned ({took:.1f}s)"
+    assert len(started) < 40

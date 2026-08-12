@@ -41,7 +41,7 @@ from sentence_transformers import SentenceTransformer
 from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.ingest import REPO_ROOT, run_report
+from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
     _BUCKETS,
     _MAX_SEQ_TOKENS,
@@ -399,9 +399,10 @@ def _run_assignment(
         f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)"
     )
 
+
 def main() -> None:
     log.setup()
-    run_report.context("embed")
+    observability.context("embed")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--source",
@@ -499,7 +500,7 @@ def main() -> None:
         f"done: embedded {done} this run ({failed} failed) — store now holds {count} vectors "
         f"of dim {dim} -> {outdir}"
     )
-    run_report.summary(
+    observability.summary(
         "Embed shard",
         [
             f"- embedded **{done:,}** this run ({failed} failed)",

@@ -37,7 +37,7 @@ from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
-from headstart.ingest import REPO_ROOT, run_report
+from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.binpack import lpt_pack, shard_count
 
 _log = log.get(__name__, __spec__)
@@ -104,6 +104,7 @@ def _write_plan(
 
 def main() -> int:
     log.setup()
+    observability.context("scrape-plan")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--ledger",
@@ -264,7 +265,7 @@ def main() -> int:
                 f"predicted makespan ~{makespan:.1f} min exceeds the {_BUDGET_MIN:.0f} min "
                 "shard budget — shards matching their prediction will bank partials"
             )
-    run_report.summary(
+    observability.summary(
         "Scrape plan",
         [
             f"- {n} boards across {m} shards",

@@ -29,7 +29,7 @@ from headstart import http, log
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, load_active_companies
 from headstart.harvest import scrape_all
-from headstart.ingest import REPO_ROOT, run_report
+from headstart.ingest import REPO_ROOT, observability
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"
@@ -161,7 +161,7 @@ def _report(
     Runs in a `finally`, so it must not raise: the shard's fragment is already on disk and
     reaching the join matters more than its telemetry.
     """
-    spread = run_report.percentiles(progress.seconds)
+    spread = observability.percentiles(progress.seconds)
     retries = http.retry_stats()
     actual_min = elapsed / 60
     if killed:
@@ -189,7 +189,7 @@ def _report(
         f"done: {progress.jobs} jobs from {progress.done} boards in {elapsed:0.0f}s "
         f"({len(progress.errors)} board errors) | board seconds {spread}{ratio}"
     )
-    run_report.write_shard(
+    observability.write_shard(
         outdir,
         shard=shard,
         assigned=progress.assigned,
@@ -209,7 +209,7 @@ def _report(
 
 def main() -> int:
     log.setup()
-    run_report.context("scrape")
+    observability.context("scrape")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--max-boards",

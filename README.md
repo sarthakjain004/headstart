@@ -231,13 +231,14 @@ fails if this table drifts from it.
 | `salary` | string | raw, for display (`"INR 3 - 5 (Annual)"`) |
 | `department` | string | raw ATS text |
 | `url` | string | the job-detail link |
-| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 29%** of a 1,000-row live sample |
-| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once. Null on rows predating the column (ADR-0031), which is still **77%** of that same sample — so "new since" only sees the newer quarter of the table |
+| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 29%** of a 1,000-row live sample (2026-08-12) |
+| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once, and null on rows added before the column existed (ADR-0031). Measured **null on 77%** of that same sample, so the "new since" filter currently reaches under a quarter of the table |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
 
-Two example rows, fetched from the live index on 2026-08-12 — exactly as `/search` projects
-them, which is why `experience`, `max_years`, `experience_source`, `department` and the vector
-do not appear: the API omits those, though the table stores them.
+Two example rows, fetched from the live index on 2026-08-12 (signed in — `/search` 401s an
+anonymous caller) — exactly as `/search` projects them, which is why `experience`, `max_years`,
+`experience_source`, `department` and the vector do not appear: the API omits those, though the
+table stores them.
 
 ```jsonc
 {
@@ -306,7 +307,7 @@ registered; bot walls (403/429) stay advisory.
   `index` (`sync`/`prune`/`compact`), `role_trends` (ADR-0040). `.github/workflows/pipeline.yml`
   runs exactly these. Its pipeline-only helpers live here too: `binpack.py` (LPT packing shared by
   both planners), `doc_prep.py` (doc prep shared by embedder and planner), `index_plan.py` (the
-  pure add/evict and prune planners), `run_report.py` (run context, step summaries and the
+  pure add/evict and prune planners), `observability.py` (run context, step summaries and the
   per-shard reports the join aggregates), `state_fetch.py`.
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
   `scrape/` (one-off pulls), `filter/` (recall verification), plus the AI layer in `embed/`

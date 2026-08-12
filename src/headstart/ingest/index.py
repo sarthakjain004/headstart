@@ -62,7 +62,7 @@ import pyarrow as pa
 
 from headstart import log
 from headstart.corpus import board_of, iter_jobs
-from headstart.ingest import REPO_ROOT, run_report
+from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
     apply_sync,
     live_keep_set,
@@ -245,7 +245,7 @@ def sync(args: argparse.Namespace) -> int:
 
     final = table.count_rows()
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
-    run_report.summary(
+    observability.summary(
         "Index sync",
         [
             f"- added **{len(plan.add):,}**, evicted **{len(plan.delete):,}**",
@@ -298,7 +298,7 @@ def prune(args: argparse.Namespace) -> int:
     apply_sync(table, [], evict)
     final = table.count_rows()
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
-    run_report.summary(
+    observability.summary(
         "Index prune",
         [
             f"- evicted **{len(evict):,}** ({len(off_board):,} off-Board, "
@@ -334,6 +334,7 @@ def compact(args: argparse.Namespace) -> int:
 
 def main() -> int:
     log.setup()
+    observability.context("index")
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

@@ -32,17 +32,22 @@ _SHARD_REPORT = "_shard_report.json"
 
 
 def context(stage: str, **extra: Any) -> None:
-    """One line naming the run this log belongs to. Silent off CI, where it is noise."""
+    """One line naming the run this log belongs to. Silent off CI, where it is noise.
+
+    No bracketed prefix of its own: ADR-0039 fixes one line format whose only tag is the
+    module's name, which the formatter already supplies. ``stage`` rides as a field.
+    """
     run = os.environ.get("GITHUB_RUN_ID")
     if not run:
         return
     bits = {
+        "stage": stage,
         "run": run,
         "attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
         "sha": (os.environ.get("GITHUB_SHA") or "")[:7],
         **{k: v for k, v in extra.items() if v is not None},
     }
-    _log.info(f"[{stage}] " + " ".join(f"{k}={v}" for k, v in bits.items()))
+    _log.info(" ".join(f"{k}={v}" for k, v in bits.items()))
 
 
 def summary(title: str, lines: list[str]) -> None:

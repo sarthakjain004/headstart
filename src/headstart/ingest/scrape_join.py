@@ -21,7 +21,7 @@ from collections import Counter
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT, run_report
+from headstart.ingest import REPO_ROOT, observability
 
 _log = log.get(__name__, __spec__)
 
@@ -38,6 +38,7 @@ def _fragment_dirs(root: Path) -> list[Path]:
 
 def main() -> int:
     log.setup()
+    observability.context("join")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--shards",
@@ -87,7 +88,7 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
     hand. The reports ride the fragment artifacts here, so this is the first point where they
     can be added up.
     """
-    reports = run_report.read_shards(shards_root)
+    reports = observability.read_shards(shards_root)
     if not reports:
         _log.info(
             "no shard reports — nothing to aggregate (older shards, or a local run)"
@@ -100,7 +101,10 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
     retries: Counter[str] = Counter()
     for r in reports:
         retries.update(r.get("retries") or {})
-    slowest = max(reports, key=lambda r: float(r.get("seconds") or 0))
+    # `.get(... ) or 0` throughout, never direct indexing: a truncated report must not raise
+    # here. The join's real job is unioning the run's job data, and losing that to a broken
+    # telemetry file would be a far worse trade than losing one shard's numbers.
+    slowest = max(float(r.get("seconds") or 0) for r in reports)
     worst_board = max(
         (float((r.get("board_seconds") or {}).get("max") or 0) for r in reports),
         default=0.0,
@@ -110,6 +114,7 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
         for r in reports
         if r.get("predicted_minutes") and r.get("seconds")
     ]
+    ratio_span = f"{min(ratios):.2f}-{max(ratios):.2f}x" if ratios else ""
 
     if killed:
         # An annotation, not an info line: a shard that ran out of time silently deferred work,
@@ -121,19 +126,15 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
     if errors:
         _log.warning(f"{errors} board errors across {len(reports)} shards")
     _log.info(
-        f"fan-out: {len(reports)} shards | slowest {float(slowest['seconds']) / 60:.1f} min "
+        f"fan-out: {len(reports)} shards | slowest {slowest / 60:.1f} min "
         f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"
-        + (
-            f" | actual/predicted {min(ratios):.2f}-{max(ratios):.2f}x"
-            if ratios
-            else ""
-        )
+        + (f" | actual/predicted {ratio_span}" if ratio_span else "")
     )
-    run_report.summary(
+    observability.summary(
         "Scrape fan-out",
         [
             f"- {lines:,} job lines across {ats_files} ATS files",
-            f"- {len(reports)} shards, slowest **{float(slowest['seconds']) / 60:.1f} min**, "
+            f"- {len(reports)} shards, slowest **{slowest / 60:.1f} min**, "
             f"worst single board **{worst_board:.0f}s**",
             f"- {errors} board errors, {sum(retries.values())} retries"
             + (
@@ -145,11 +146,7 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
             if killed
             else "- no shard hit its time budget",
         ]
-        + (
-            [f"- actual/predicted **{min(ratios):.2f}-{max(ratios):.2f}x**"]
-            if ratios
-            else []
-        ),
+        + ([f"- actual/predicted **{ratio_span}**"] if ratio_span else []),
     )
 
 
