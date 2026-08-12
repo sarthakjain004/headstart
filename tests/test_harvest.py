@@ -222,7 +222,9 @@ def test_records_measured_seconds_for_every_board_including_failures(
     assert not harvest.COST_FILENAME.startswith(".")
 
 
-def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(tmp_path):
+def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
+    tmp_path, monkeypatch
+):
     """The behaviour the scrape time budget depends on.
 
     Every Board is submitted up front, so an exception raised inside the loop used to leave
@@ -246,8 +248,7 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(tmp_path):
             return []
 
     companies = [CompanyRef(ats="lever", slug=f"c{i}") for i in range(40)]
-    monkey = pytest.MonkeyPatch()
-    monkey.setattr(
+    monkeypatch.setattr(
         "headstart.harvest.get_scraper", lambda ats, slug, name=None: _Slow(slug)
     )
 
@@ -255,14 +256,13 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(tmp_path):
         if len(started) >= 2:
             raise SystemExit("signal 15")
 
-    began = _time.monotonic()
     with pytest.raises(SystemExit):
         harvest.scrape_all(
             companies, jobs_dir=tmp_path, max_workers=2, on_board=stop_after_two
         )
-    took = _time.monotonic() - began
-    monkey.undo()
 
-    # 40 boards x 0.2s over 2 workers is ~4s if the queue drains; abandoning it is ~instant
-    assert took < 2.0, f"the queue drained instead of being abandoned ({took:.1f}s)"
-    assert len(started) < 40
+    # The count, not the clock: draining runs all 40 Boards, abandoning runs only the couple
+    # already in flight. Asserting on elapsed time would be the same claim, measured flakily.
+    assert len(started) < 10, (
+        f"the queue drained instead of being abandoned ({len(started)})"
+    )

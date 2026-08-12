@@ -104,7 +104,7 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
     # `.get(... ) or 0` throughout, never direct indexing: a truncated report must not raise
     # here. The join's real job is unioning the run's job data, and losing that to a broken
     # telemetry file would be a far worse trade than losing one shard's numbers.
-    slowest = max(float(r.get("seconds") or 0) for r in reports)
+    slowest_seconds = max(float(r.get("seconds") or 0) for r in reports)
     worst_board = max(
         (float((r.get("board_seconds") or {}).get("max") or 0) for r in reports),
         default=0.0,
@@ -126,7 +126,7 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
     if errors:
         _log.warning(f"{errors} board errors across {len(reports)} shards")
     _log.info(
-        f"fan-out: {len(reports)} shards | slowest {slowest / 60:.1f} min "
+        f"fan-out: {len(reports)} shards | slowest {slowest_seconds / 60:.1f} min "
         f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"
         + (f" | actual/predicted {ratio_span}" if ratio_span else "")
     )
@@ -134,7 +134,7 @@ def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
         "Scrape fan-out",
         [
             f"- {lines:,} job lines across {ats_files} ATS files",
-            f"- {len(reports)} shards, slowest **{slowest / 60:.1f} min**, "
+            f"- {len(reports)} shards, slowest **{slowest_seconds / 60:.1f} min**, "
             f"worst single board **{worst_board:.0f}s**",
             f"- {errors} board errors, {sum(retries.values())} retries"
             + (

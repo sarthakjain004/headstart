@@ -51,7 +51,11 @@ which is precisely the population in question.
   board is submitted up front, so the plain `with ThreadPoolExecutor(...)` drained the entire
   remaining assignment on any exception — meaning a SIGTERM at 60 min would run past the
   66-min step timeout and be killed before reporting anything. Turning SIGTERM into
-  `SystemExit` only works because of this.
+  `SystemExit` only works because of this. Two limits are accepted rather than solved: a board
+  already *running* cannot be cancelled (no killing a Python thread), so shutdown still waits
+  on the slowest in-flight board — and a 2,237s straggler can outlast the 6 min of slack
+  between the budget and the step timeout, in which case the shard still dies unreported. Their
+  results are discarded regardless, because the loop that writes them has already exited.
 
 ## Options considered
 
@@ -76,5 +80,9 @@ which is precisely the population in question.
   runs (no cost ledger) omit it rather than writing fake minutes.
 - The retry counters in `http.py` are process-global. That is correct for one-stage-per-process
   and would need revisiting if a single process ever ran two stages.
+- `scrape_all` is shared with the curated-feed path (`python -m headstart`), so it now abandons
+  its queue on **any** exception, not only SIGTERM. That is the same partial-harvest trade the
+  feed already makes — `JobWriter` flushes per board — but it is a behaviour change for a caller
+  that never had a time budget.
 - A budget-killed shard now exits 0 having banked its fragment, and says what it deferred. The
   workflow's `|| echo` remains as the belt to that braces.
