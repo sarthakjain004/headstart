@@ -414,6 +414,97 @@ def test_presets_subscription_is_adopted_as_the_emailing_set(
     assert len(client.get("/sets", base_url=_HTTPS).json) == 1
 
 
+# ---- Saved jobs (ADR-0044) ----
+
+
+def _star_payload(job_id="greenhouse:acme:123", **over):
+    body = {
+        "id": job_id,
+        "title": "Backend Engineer",
+        "company": "acme",
+        "url": "https://boards.greenhouse.io/acme/jobs/123",
+        "location": "Bengaluru",
+        "remote": True,
+        "salary": "₹30L",
+    }
+    body.update(over)
+    return body
+
+
+def test_saved_flow_star_list_unstar(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post("/saved", json=_star_payload(), base_url=_HTTPS)
+    assert r.status_code == 200
+    starred = r.json
+    assert starred["job_id"] == "greenhouse:acme:123"
+    assert starred["open"] is True and starred["remote"] is True
+
+    # the list annotates each record against the live index
+    monkeypatch.setattr(
+        sets_app._searcher, "indexed", lambda ids: {"greenhouse:acme:123"}
+    )
+    assert [j["open"] for j in client.get("/saved", base_url=_HTTPS).json] == [True]
+
+    # evicted from the index → "closed", but the display copy still lists (ADR-0042)
+    monkeypatch.setattr(sets_app._searcher, "indexed", lambda ids: set())
+    listed = client.get("/saved", base_url=_HTTPS).json
+    assert listed[0]["open"] is False and listed[0]["title"] == "Backend Engineer"
+
+    assert client.delete(f"/saved/{starred['id']}", base_url=_HTTPS).status_code == 200
+    assert client.get("/saved", base_url=_HTTPS).json == []
+
+
+def test_restar_overwrites_and_refreshes_the_copy(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    client.post("/saved", json=_star_payload(title="Old"), base_url=_HTTPS)
+    client.post("/saved", json=_star_payload(title="New"), base_url=_HTTPS)
+    monkeypatch.setattr(sets_app._searcher, "indexed", lambda ids: set(ids))
+    assert [j["title"] for j in client.get("/saved", base_url=_HTTPS).json] == ["New"]
+
+
+def test_saved_are_capped_but_a_restar_never_hits_the_cap(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    for i in range(sets_app.MAX_SAVED):
+        r = client.post("/saved", json=_star_payload(f"a:b:{i}"), base_url=_HTTPS)
+        assert r.status_code == 200
+    r = client.post("/saved", json=_star_payload("one:too:many"), base_url=_HTTPS)
+    assert r.status_code == 400
+    # an already-starred job may still be re-starred (overwritten) at the cap
+    r = client.post("/saved", json=_star_payload("a:b:0"), base_url=_HTTPS)
+    assert r.status_code == 200
+
+
+def test_star_requires_id_and_title(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    assert (
+        client.post("/saved", json={"title": "x"}, base_url=_HTTPS).status_code == 400
+    )
+    assert (
+        client.post("/saved", json={"id": "a:b:1"}, base_url=_HTTPS).status_code == 400
+    )
+
+
+def test_unstar_unknown_record_is_404(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    assert client.delete("/saved/" + "a" * 16, base_url=_HTTPS).status_code == 404
+
+
+def test_saved_require_wall_and_storage(auth_app, monkeypatch):
+    # wall on but no SUBSCRIBERS storage: the endpoints answer 503, the tab stays "soon"
+    client = _signed_in(auth_app, monkeypatch)
+    assert client.get("/saved", base_url=_HTTPS).status_code == 503
+    assert b'data-tab="saved"' not in client.get("/", base_url=_HTTPS).data
+
+
+def test_saved_are_gated_by_the_wall(sets_app):
+    assert sets_app.app.test_client().get("/saved").status_code == 401
+
+
+def test_saved_tab_appears_when_configured(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    assert b'data-tab="saved"' in client.get("/", base_url=_HTTPS).data
+
+
 def test_sets_keep_seen_within_but_the_projection_drops_it(sets_app, hub, monkeypatch):
     import json as _json
 

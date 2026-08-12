@@ -29,7 +29,11 @@
       {% else %}
       <span class="nav-item soon" title="Coming soon">Matches<span class="chip-soon">soon</span></span>
       {% endif %}
+      {% if saved_on %}
+      <a class="nav-item" href="#saved" data-tab="saved" aria-current="false">Saved</a>
+      {% else %}
       <span class="nav-item soon" title="Coming soon">Saved<span class="chip-soon">soon</span></span>
+      {% endif %}
       {% if trends_on %}
       <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
       {% endif %}
@@ -40,6 +44,9 @@
       <section class="panel" id="panel-search">{% include "search.html" %}</section>
       {% if sets_on %}
       <section class="panel" id="panel-matches" hidden>{% include "matches.html" %}</section>
+      {% endif %}
+      {% if saved_on %}
+      <section class="panel" id="panel-saved" hidden>{% include "saved.html" %}</section>
       {% endif %}
       {% if trends_on %}
       <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>

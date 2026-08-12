@@ -24,6 +24,7 @@ function showTab(name){
     if (!mySets) loadSets();
     else if (activeSetId) runSet(activeSetId);   // re-run on every visit — never stale
   }
+  if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
 
@@ -169,6 +170,7 @@ function draw(rows, target){
     const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
     rows = rows.slice().sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
   }
+  rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   el(target || 'results').innerHTML = rows.map((r,i) => {
     const s = Number(r.score) || 0, c = tone(s), pct = matchPct(s);
     return `
@@ -178,6 +180,7 @@ function draw(rows, target){
           <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
+        ${starBtn(r.id)}
         <div class="match" title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
@@ -352,6 +355,126 @@ async function saveSearch(){
   }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 
+/* ---- Saved jobs (ADR-0042, ADR-0044): starring keeps a copy of the card's display
+   fields, so the Saved tab survives the index churn and marks evicted postings "closed".
+   Stars flip optimistically — an HF write is ~1s, too slow for a click — and revert with
+   a message if the server refuses. ---- */
+const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
+let mySaved = null;                        // server-truth list, newest star first
+const savedByJob = new Map();              // job id → saved record
+const drawnRows = new Map();               // job id → last drawn result row
+
+function starBtn(jobId, on){
+  if (!CAN_STAR || !jobId) return '';
+  const has = on != null ? on : savedByJob.has(jobId);
+  return `<button class="star${has?' on':''}" data-star="${esc(jobId)}" aria-pressed="${has}"
+    title="${has?'Remove from saved':'Save this job'}" aria-label="${has?'Remove this job from saved':'Save this job'}">${has?'★':'☆'}</button>`;
+}
+
+// The visible tab's status line — where star errors land, wherever the click happened.
+function starMsg(text){
+  const id = { search:'n', matches:'matches-msg', saved:'saved-msg' }[currentTab()];
+  if (id && el(id)) el(id).textContent = text;
+}
+
+async function loadSaved(){
+  try{
+    const r = await fetch('/saved');
+    if (!r.ok){ starMsg('Couldn\'t load your saved jobs.'); return; }
+    mySaved = await r.json();
+  }catch(e){ starMsg('Couldn\'t load your saved jobs.'); return; }
+  savedByJob.clear();
+  mySaved.forEach(j => savedByJob.set(j.job_id, j));
+  renderSaved();
+  paintStars();
+}
+
+// Repaint every star button in place — cheaper than redrawing three results lists.
+function paintStars(){
+  document.querySelectorAll('button[data-star]').forEach(b => {
+    const on = savedByJob.has(b.dataset.star);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    b.textContent = on ? '★' : '☆';
+  });
+}
+
+function renderSaved(){
+  const box = el('saved-results');
+  if (!box || mySaved == null) return;
+  if (!mySaved.length){
+    el('saved-msg').textContent = '';
+    box.innerHTML = '<div class="empty"><div class="big">Nothing saved yet</div>' +
+      'Hit the ☆ on any result to keep it here — the copy stays even after the posting closes.</div>';
+    return;
+  }
+  const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
+  el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
+  box.innerHTML = jobs.map((j,i) => `
+    <div class="card${j.open === false ? ' gone' : ''}" style="animation-delay:${Math.min(i,12)*35}ms">
+      <div class="hd">
+        <div style="flex:1; min-width:0">
+          <a class="title" href="${esc(safeUrl(j.url))}" target="_blank" rel="noopener">${esc(j.title)}</a>
+          <div class="org">${esc(j.company)}${j.location? ' <span>·</span> '+esc(j.location) : ''}</div>
+        </div>
+        ${starBtn(j.job_id, true)}
+      </div>
+      <div class="tags">
+        ${j.open === false ? '<span class="tag closed">closed</span>' : ''}
+        ${j.remote ? '<span class="tag rem">remote</span>' : ''}
+        ${j.salary ? '<span class="tag pay">'+esc(j.salary)+'</span>' : ''}
+        ${age(j.starred_at) ? '<span class="tag mono">saved '+age(j.starred_at)+'</span>' : ''}
+      </div>
+    </div>`).join('');
+}
+
+async function toggleStar(jobId){
+  const existing = savedByJob.get(jobId);
+  if (existing && !existing.id) return;   // a star still in flight — let it land first
+
+  if (existing){
+    // optimistic unstar; 404 means another tab already removed it, which is the same outcome
+    savedByJob.delete(jobId);
+    if (mySaved) mySaved = mySaved.filter(j => j.job_id !== jobId);
+    paintStars(); renderSaved();
+    let r = null;
+    try{ r = await fetch('/saved/' + encodeURIComponent(existing.id), { method: 'DELETE' }); }
+    catch(e){}
+    if (!r || (!r.ok && r.status !== 404)){
+      savedByJob.set(jobId, existing);
+      if (mySaved) mySaved.push(existing);
+      paintStars(); renderSaved();
+      starMsg('Couldn\'t remove that star — try again.');
+    }
+    return;
+  }
+
+  const row = drawnRows.get(jobId);
+  if (!row) return;
+  const copy = { title: row.title, company: row.company, url: row.url,
+                 location: row.location || '', remote: !!row.remote, salary: row.salary || '' };
+  // optimistic star: a placeholder record until the server answers with the real one
+  const local = { id: '', job_id: jobId, starred_at: new Date().toISOString(), open: true, ...copy };
+  savedByJob.set(jobId, local);
+  if (mySaved) mySaved.unshift(local);
+  paintStars(); renderSaved();
+  let r = null, d = null;
+  try{
+    r = await fetch('/saved', { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ id: jobId, ...copy }) });
+    d = await r.json().catch(() => null);
+  }catch(e){}
+  if (r && r.ok && d){
+    savedByJob.set(jobId, d);
+    if (mySaved) mySaved = mySaved.map(j => j.job_id === jobId ? d : j);
+  } else {
+    savedByJob.delete(jobId);
+    if (mySaved) mySaved = mySaved.filter(j => j.job_id !== jobId);
+    paintStars(); renderSaved();
+    starMsg((d && d.error) || 'Couldn\'t save that job — try again.');
+  }
+}
+
 // Résumé → Query: fills the search box for the user to edit, never searches on its own.
 // The password rides along when filled; the server remembers this IP after one success.
 async function readResume(){
@@ -489,6 +612,12 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
 });
+// Stars appear in three containers (Search, Matches, Saved); one document-level listener
+// survives every redraw of all of them.
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-star]');
+  if (b) toggleStar(b.dataset.star);
+});
 if (el('matches-controls')){
   const rerun = () => { if (activeSetId) runSet(activeSetId); };
   // sort is a client-side reorder; a range change re-queries — both go through runSet
@@ -515,3 +644,6 @@ if (el('matches-controls')){
 showIntro();
 whoAmI();
 showTab(currentTab());
+// Result cards need star states before the Saved tab is ever opened; landing ON the tab
+// already loads via showTab above.
+if (CAN_STAR && currentTab() !== 'saved') loadSaved();
