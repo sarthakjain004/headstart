@@ -106,9 +106,10 @@ def _reply_json(reply: str) -> dict[str, Any]:
     return data
 
 
-def _scrub_query(raw: str) -> str:
-    """The Query contract enforced in code, not hope: strip any years/salary phrasing the
-    prompt failed to suppress, then tidy the punctuation the removal leaves behind."""
+def scrub_query(raw: str) -> str:
+    """The Query contract enforced in code, not hope: strip any years/salary phrasing,
+    then tidy the punctuation the removal leaves behind. Public because the model's
+    sentence is not the only door — a hand-edited Profile save goes through this too."""
     query = _FORBIDDEN.sub("", raw.strip().strip("`\"'“”‘’ ").rstrip("."))
     query = re.sub(r"\s*,\s*(?:,\s*)+", ", ", query)
     query = re.sub(r"\s{2,}", " ", query).strip(" ,;-")
@@ -146,7 +147,7 @@ def extract(resume: str, ask: Callable[[str], str]) -> dict[str, Any]:
         )
 
     data = _reply_json(ask(_PROMPT.format(resume=text)))
-    query = _scrub_query(_fact(data.get("query")))
+    query = scrub_query(_fact(data.get("query")))
     if not query:
         raise EmptyExtraction(
             "couldn't derive a role from that text — fill the profile in by hand instead"

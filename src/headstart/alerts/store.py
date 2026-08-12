@@ -3,8 +3,8 @@
 `Store` is the whole interface — Subscriptions (`all`, `get`, `put`, `remove`, `invites`,
 `allowlist`), Saved sets (`sets_for`, `get_set`, `put_set`, `remove_set`), Saved jobs
 (`saved_for`, `saved_ids`, `get_saved`, `put_saved`, `remove_saved`) and Profiles
-(`get_profile`, `put_profile`). Behind it sit the repo layout, the JSON shapes, and the
-HF client.
+(`get_profile`, `put_profile`, `remove_profile`, plus the parse-cap counter `parses_used`
+/ `put_parses`). Behind it sit the repo layout, the JSON shapes, and the HF client.
 
 Two records, deliberately distinct. An **Invite** is what the owner writes by hand — an
 address, optionally the Query to run for it. A **Subscription** is the state that Invite
@@ -349,10 +349,10 @@ class Profile:
     """One Account's stored career extraction (ADR-0041): the role sentence that drives
     ranking plus the facts that pre-fill Search filters — never the Résumé itself.
 
-    ``parses_used`` rides in the same record but is not career data: deleting a Profile
-    goes through :meth:`blanked`, which clears every career field and keeps the counter,
-    so "delete my data" is honest while the lifetime parse cap survives deletion.
-    """
+    The parse counter is deliberately NOT a field here — it lives in its own sibling file
+    written only by the parse route (:meth:`Store.put_parses`), so a Save's stale
+    read-modify-write of this record can never regress the lifetime cap. Deleting a
+    Profile removes this record; the counter file stays."""
 
     account: str  # subscription_id(email) — one record per Account
     query: str = ""  # the Résumé query — a role sentence, never years/salary/location
@@ -362,7 +362,6 @@ class Profile:
     roles: str = ""
     education: str = ""
     location: str = ""
-    parses_used: int = 0
     updated_at: str = ""
 
     @classmethod
@@ -370,9 +369,10 @@ class Profile:
         return cls(account=subscription_id(email))
 
     def revised(self, fields: dict[str, Any], when: str | None = None) -> "Profile":
-        """This Profile with new career fields, bounded at the door. Identity and the
-        parse counter never come from the caller — a request body naming ``parses_used``
-        must not be able to refill its own cap."""
+        """This Profile with new career fields, bounded at the door; identity never comes
+        from the caller. The ``query`` sentence is scrubbed by the route before it gets
+        here (profile_extract.scrub_query — not importable from this package in the
+        Space image), so this only bounds it."""
         return replace(
             self,
             query=_profile_line(fields.get("query")),
@@ -384,11 +384,6 @@ class Profile:
             location=_profile_line(fields.get("location")),
             updated_at=when or now_iso(),
         )
-
-    def blanked(self, when: str | None = None) -> "Profile":
-        """Career data gone, the parse counter kept — deleting must not reset the
-        lifetime cap (ADR-0041), and a bare count is not personal data."""
-        return self.revised({}, when=when)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -695,6 +690,39 @@ class Store:
             self._repo,
             profile.path(),
             json.dumps(profile.to_dict(), indent=2).encode("utf-8"),
+            self._token,
+        )
+
+    def remove_profile(self, account: str) -> None:
+        """Delete the career record. The parse-counter file deliberately survives —
+        deleting must not reset the lifetime cap (ADR-0041)."""
+        if not _ID.fullmatch(account):
+            return
+        _delete(self._repo, f"{PROFILE_PREFIX}{account}.json", self._token)
+
+    def parses_used(self, account: str) -> int:
+        """How many Résumé reads this Account has spent — the ADR-0041 cap's state.
+
+        Fail-closed contract: an ABSENT file answers 0 (never parsed), but an unreadable
+        or corrupt one RAISES — collapsing a transient failure into 0, the way
+        :meth:`get_profile` collapses absent and unreadable, would silently reset the
+        cap. The routes answer 503 and the user just tries again."""
+        if not _ID.fullmatch(account):
+            return 0
+        path = f"{PROFILE_PREFIX}{account}.parses.json"
+        if path not in _list_files(self._repo, self._token):
+            return 0
+        return int(json.loads(_read(self._repo, path, self._token))["parses_used"])
+
+    def put_parses(self, account: str, used: int) -> None:
+        """Record the new spent-reads total. Only the parse route writes this file, so a
+        Save's stale read of the Profile record can never regress the count."""
+        if not _ID.fullmatch(account):
+            return
+        _write(
+            self._repo,
+            f"{PROFILE_PREFIX}{account}.parses.json",
+            json.dumps({"parses_used": int(used)}).encode("utf-8"),
             self._token,
         )
 

@@ -187,12 +187,24 @@ def search_jobs():
         return jsonify({"error": "invalid filter"}), 400
 
 
-def _profile_out(profile: Profile) -> dict:
-    """The record as the UI reads it, with the remaining-parses arithmetic done here so
+def _parses(store: Store, account: str) -> int | None:
+    """The spent-reads count, or None when it can't be known right now (the caller
+    answers 503). ``parses_used`` raises on an unreadable or corrupt counter file rather
+    than answering 0 — a transient failure must never reset the lifetime cap."""
+    try:
+        return store.parses_used(account)
+    except Exception as exc:  # noqa: BLE001 — fail closed, whatever the read broke on
+        print(f"[profile] parse counter unreadable for {account}: {exc}", flush=True)
+        return None
+
+
+def _profile_out(profile: Profile, used: int) -> dict:
+    """The record as the UI reads it, with the spent/remaining arithmetic done here so
     the client never needs to know MAX_PARSES."""
     return {
         **profile.to_dict(),
-        "parses_left": max(0, MAX_PARSES - profile.parses_used),
+        "parses_used": used,
+        "parses_left": max(0, MAX_PARSES - used),
     }
 
 
@@ -203,23 +215,34 @@ def get_profile():
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
-    profile = store.get_profile(subscription_id(email)) or Profile.blank(email)
-    return jsonify(_profile_out(profile))
+    account = subscription_id(email)
+    used = _parses(store, account)
+    if used is None:
+        return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
+    profile = store.get_profile(account) or Profile.blank(email)
+    return jsonify(_profile_out(profile, used))
 
 
 @app.route("/profile", methods=["POST"])
 def save_profile():
-    """Save hand-edited Profile fields. The parse counter never comes from the body —
-    ``revised`` copies only career fields, so nobody can refill their own cap."""
+    """Save hand-edited Profile fields. The query sentence is scrubbed here exactly like
+    the extracted one — the Query contract (CONTEXT.md) holds whichever door the sentence
+    came through — and the parse counter is not this route's to write at all: it lives in
+    its own file only the parse route touches, so a stale save cannot regress the cap."""
     gate = _account_gate()
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
+    account = subscription_id(email)
+    used = _parses(store, account)
+    if used is None:
+        return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
     body = request.get_json(silent=True) or {}
-    current = store.get_profile(subscription_id(email)) or Profile.blank(email)
+    body["query"] = profile_extract.scrub_query(str(body.get("query") or ""))
+    current = store.get_profile(account) or Profile.blank(email)
     updated = current.revised(body)
     store.put_profile(updated)
-    return jsonify(_profile_out(updated))
+    return jsonify(_profile_out(updated, used))
 
 
 @app.route("/profile/parse", methods=["POST"])
@@ -228,17 +251,22 @@ def parse_resume():
 
     The pasted text is used for this single call and never stored or logged; only the
     extraction is kept. Capped per Account for its lifetime: the cap bounds router spend,
-    so any attempt that reached the router counts, even one that extracted nothing."""
+    so any attempt that reached the router counts, even one that extracted nothing — and
+    the counter is written *before* the profile, so a crash between the two writes can
+    only over-count, never under-count."""
     gate = _account_gate()
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
-    body = request.get_json(silent=True) or {}
-    current = store.get_profile(subscription_id(email)) or Profile.blank(email)
-    if current.parses_used >= MAX_PARSES:
+    account = subscription_id(email)
+    used = _parses(store, account)
+    if used is None:
+        return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
+    if used >= MAX_PARSES:
         return jsonify(
             {"error": f"no résumé reads left — this account has used all {MAX_PARSES}"}
         ), 400
+    body = request.get_json(silent=True) or {}
     try:
         fields = profile_extract.extract(
             str(body.get("text") or ""), ask=llm_router.ask
@@ -247,7 +275,7 @@ def parse_resume():
         return jsonify({"error": str(exc)}), 413
     except profile_extract.EmptyExtraction as exc:
         # The router answered — the call was spent, so it counts against the cap.
-        store.put_profile(replace(current, parses_used=current.parses_used + 1))
+        store.put_parses(account, used + 1)
         return jsonify({"error": str(exc)}), 502
     except profile_extract.ResumeError as exc:  # EmptyResume: refused before the router
         return jsonify({"error": str(exc)}), 400
@@ -255,22 +283,23 @@ def parse_resume():
         # Detail stays in the container log's traceback-free world: the caller only needs
         # "temporarily off", and the reason may name internal hosts.
         return jsonify({"error": "résumé reading is temporarily unavailable"}), 503
-    updated = replace(current.revised(fields), parses_used=current.parses_used + 1)
+    store.put_parses(account, used + 1)
+    updated = (store.get_profile(account) or Profile.blank(email)).revised(fields)
     store.put_profile(updated)
-    return jsonify(_profile_out(updated))
+    return jsonify(_profile_out(updated, used + 1))
 
 
 @app.route("/profile", methods=["DELETE"])
 def delete_profile():
-    """Clear the Profile's career data. The record stays with its parse counter —
-    deleting must not reset the lifetime cap (ADR-0041)."""
+    """Remove the Profile's career record. The parse-counter file stays — deleting must
+    not reset the lifetime cap (ADR-0041)."""
     gate = _account_gate()
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
     email, store = gate
-    current = store.get_profile(subscription_id(email))
-    if current:
-        store.put_profile(current.blanked())
+    account = subscription_id(email)
+    if store.get_profile(account):
+        store.remove_profile(account)
     return jsonify({"ok": True})
 
 

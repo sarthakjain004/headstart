@@ -462,6 +462,34 @@ def test_profile_get_save_roundtrip_and_counter_discipline(sets_app, hub, monkey
     assert client.get("/profile", base_url=_HTTPS).json["skills"] == "Python, Go"
 
 
+def test_hand_saved_query_is_scrubbed_like_the_extracted_one(
+    sets_app, hub, monkeypatch
+):
+    # The Query contract holds whichever door the sentence came through (ADR-0041):
+    # a hand-edited save must not smuggle years/salary into the ranking sentence.
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/profile",
+        json={
+            "query": "backend engineer, 7+ years of experience, $200k salary, Python"
+        },
+        base_url=_HTTPS,
+    )
+    assert r.status_code == 200
+    assert r.json["query"] == "backend engineer, Python"
+
+
+def test_unreadable_counter_fails_closed_not_open(sets_app, hub, monkeypatch):
+    # A transient failure reading the counter must never look like "0 used" — that
+    # would reset the lifetime cap. The routes answer 503 instead.
+    client = _signed_in(sets_app, monkeypatch)
+    account = sets_app.subscription_id("dev@example.com")
+    hub[f"profiles/{account}.parses.json"] = b"not json"
+    assert client.get("/profile", base_url=_HTTPS).status_code == 503
+    r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    assert r.status_code == 503
+
+
 def test_parse_fills_the_profile_and_spends_a_read(sets_app, hub, monkeypatch):
     client = _signed_in(sets_app, monkeypatch)
     _router_answers(sets_app, monkeypatch)

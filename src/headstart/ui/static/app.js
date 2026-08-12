@@ -495,7 +495,7 @@ function fillProfileForm(p){
   for (const [key, cid] of Object.entries(PROFILE_FIELDS))
     el(cid).value = p[key] == null ? '' : p[key];
   el('pparses').textContent = p.parses_left > 0
-    ? `${p.parses_left} of 3 résumé reads left`
+    ? `${p.parses_left} of ${p.parses_left + p.parses_used} résumé reads left`
     : 'No résumé reads left — edit by hand below.';
   el('pparse').disabled = !(p.parses_left > 0);
 }
