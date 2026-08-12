@@ -11,8 +11,13 @@ live HTTP spot-checks on a sample of links.
 Streams per-check progress and writes a JSON report for analysis:
   data/eval/filter_checks/{UTC timestamp}.json
 
+The Space sits behind the sign-in wall (ADR-0042), so ``/search`` 401s an anonymous caller
+and every check would report the same meaningless error. The harness therefore runs as a
+signed-in user, presenting the Flask session cookie copied out of a browser — see
+:func:`_session_cookie`.
+
 Run:  python scripts/eval/verify_filters.py [--base https://... ] [--no-http]
-Exit: 0 clean, 1 when any check recorded violations.
+Exit: 0 clean, 1 when any check recorded violations, 2 when it could not sign in.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import json
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -30,6 +36,24 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_BASE = "https://imposeidon-headstart-search.hf.space"
 _REPORT_DIR = _ROOT / "data" / "eval" / "filter_checks"
+
+sys.path.insert(0, str(_ROOT / "src"))
+from headstart import geo  # noqa: E402 - after the sys.path insert above
+
+# Deliberately OUTSIDE the repo: this is a live credential for a real account, and a file
+# in the tree is one `git add` away from being published.
+_SESSION_FILE = Path.home() / ".headstart_session"
+# The page-size ceiling the serving path enforces (search.JobSearch's `max_k`), so a crafted
+# `k` can't dump the table. Asserted here, which means changing it there fails this run —
+# correct: a page-size change should be deliberate.
+_MAX_K = 100
+# Statuses that mean the posting is GONE, as opposed to a bot wall (403/429) or a transport
+# error — only these fail the run; see the summary's url_dead_links.
+_DEAD_STATUSES = frozenset({404, 410})
+# The signed-in session, set once by main(). Read ONLY by the calls that talk to our own
+# base; the per-ATS probes in run_url_checks build their own Request precisely so a live
+# session credential is never sent to a third-party job board.
+_COOKIE = ""
 
 QUERIES = (
     "backend engineer",
@@ -45,10 +69,24 @@ QUERIES = (
 # What each ATS's job-detail URL must look like. A link that matches the ATS but not the
 # shape is the darwinbox failure class: it resolves somewhere, just not at the job.
 URL_SHAPES = {
-    "greenhouse": r"https://(job-boards|boards)\.greenhouse\.io/.+/jobs/\d+",
+    # Two legitimate shapes. The second is the EMBED form: a tenant may configure its own
+    # board page, and then the API's `absolute_url` — and greenhouse's own canonical link —
+    # both point there with the job in `?gh_jid=`. Verified live 2026-08-12:
+    # job-boards.greenhouse.io/codeblack/jobs/4012421004 302s to
+    # codeblack.netlify.app/?gh_jid=4012421004, and the embed's job endpoint returns that
+    # posting. The page renders client-side, so `title_on_page` reads false on it — a limit
+    # of an HTTP probe, not a broken link.
+    "greenhouse": r"https://(?:(?:job-boards|boards)\.greenhouse\.io/.+/jobs/\d+|.+[?&]gh_jid=\d+)",
     "lever": r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}",
     "ashby": r"https://jobs\.ashbyhq\.com/[^/]+/[0-9a-f-]{36}",
-    "recruitee": r"https://.+/o/[^/]+",  # tenants use custom careers domains (careers_url)
+    # Was host-agnostic (`https://.+/o/[^/]+`) because tenants serve on custom careers
+    # domains — which is exactly how it passed 458 rows whose custom host was dead. Both the
+    # scraper and the serve-time rewrite now put every link on the tenant's own host, so the
+    # shape can assert that host and this check finally bites. Both of them keep a fallback
+    # for an offer with no slug to build from, and a row that took it would fail here — which
+    # is the point: it has never happened (0 of 772 served rows, 0 of 612 offers inspected),
+    # so if it ever does, that is news and not something to wave through.
+    "recruitee": r"https://[\w-]+\.recruitee\.com/o/[^/]+",
     "workable": r"https://apply\.workable\.com/(j/[A-Z0-9]+|[^/]+/j/[A-Z0-9]+)",
     "smartrecruiters": r"https://jobs\.smartrecruiters\.com/[^/]+/\d+",
     "zoho": r"https://[^/]+/jobs/Careers/\d+/.+",
@@ -86,10 +124,61 @@ URL_SHAPES = {
 }
 
 
-def _get(base: str, params: dict) -> list[dict]:
-    url = f"{base}/search?" + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=120) as resp:
+def _session_cookie(path: Path) -> str:
+    """The Flask session cookie copied out of a signed-in browser, or "".
+
+    The wall verifies Google once and then trusts this cookie for weeks (ADR-0042), so
+    presenting it is exactly what a real user's browser does — no bypass is added to the
+    app for the harness's benefit.
+    """
+    raw = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+    # tolerate a whole `session=<value>` pasted from the devtools Cookie header
+    return raw.split("session=", 1)[-1].strip().strip('";')
+
+
+def _request(url: str) -> urllib.request.Request:
+    req = urllib.request.Request(url)
+    if _COOKIE:
+        req.add_header("Cookie", f"session={_COOKIE}")
+    return req
+
+
+def _read(url: str) -> list[dict]:
+    with urllib.request.urlopen(_request(url), timeout=120) as resp:
         return json.load(resp)
+
+
+def _get(base: str, params: dict) -> list[dict]:
+    """One ``/search`` call as the signed-in user.
+
+    Retries once on a transport failure — the 2026-08-03 run logged two (a timeout and a
+    connection reset) as check errors, which read as findings when they were only the
+    network. A genuinely unreachable endpoint fails both attempts and still reports.
+    """
+    url = f"{base}/search?" + urllib.parse.urlencode(params)
+    try:
+        return _read(url)
+    except urllib.error.HTTPError:
+        raise  # an HTTP status is never retried: that IS the finding
+    except OSError:
+        time.sleep(3)
+        return _read(url)
+
+
+def _probe(base: str, path: str, params: dict) -> tuple[int, object]:
+    """``(status, decoded body)`` — for the checks whose expectation IS a status code.
+
+    ``HTTPError`` is itself a response, so a 400 is data here rather than an exception.
+    """
+    url = f"{base}{path}?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(_request(url), timeout=120) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as err:
+        try:
+            return err.status, json.load(err)
+        except Exception:  # noqa: BLE001 - a non-JSON error body is still a status
+            return err.status, None
 
 
 def _iso_within(posted_at: str | None, days: int) -> bool:
@@ -111,6 +200,57 @@ def _seen_within(first_seen: str | None, hours: int) -> bool:
     return first_seen >= cutoff
 
 
+def _day_between(value: str | None, start: str | None, end: str | None) -> bool:
+    """The row's ISO date part inside ``[start, end]``, BOTH ends inclusive.
+
+    Inclusive at the top end because that is what ``build_filter`` promises: a
+    ``posted_before`` compares strictly below the NEXT day, so a job posted on the bound
+    itself belongs in the results.
+    """
+    if not value or not re.match(r"^\d{4}-\d{2}-\d{2}", value):
+        return False
+    day = value[:10]
+    return (not start or day >= start) and (not end or day <= end)
+
+
+def _india_ok(place: str, location: str | None) -> bool:
+    """A place-filtered row must really name that place.
+
+    Checked against the gazetteer's alias DATA (``geo.CITIES``/``REGIONS``/``STATES``)
+    rather than by re-reading ``geo.where``'s SQL — a check built from the clause it is
+    checking would rubber-stamp a broken clause. Also asserts the gazetteer's own
+    documented traps stay out: Surat must not return Surat Thani, and country-level India
+    must not return Indiana.
+    """
+    loc = (location or "").lower()
+    if place == "india":
+        if (
+            "indiana" in loc
+        ):  # the carve-out geo.where spells out; the trap the filter must not fall into
+            return False
+        pools = [("india",), *geo.CITIES.values(), geo.STATES]
+    elif place in geo.REGIONS:
+        pools = [geo.CITIES[c] for c in geo.REGIONS[place]]
+    else:
+        pools = [geo.CITIES.get(place, (place,))]
+    if not any(alias in loc for pool in pools for alias in pool):
+        return False
+    return not any(bad in loc for bad in geo.EXCLUDE.get(place, ()))
+
+
+def _row_ok(row: dict) -> bool:
+    """Every served row must carry the fields the UI cannot render without.
+
+    ``id`` is the newest of them and the load-bearing one: it is the star identity
+    (``{ats}:{slug}:{native_id}``, models.py), so a null or malformed id silently breaks
+    saving a job rather than erroring anywhere visible.
+    """
+    job_id, ats = row.get("id") or "", row.get("ats") or ""
+    if not (job_id and ats and job_id.startswith(f"{ats}:") and job_id.count(":") >= 2):
+        return False
+    return bool(row.get("title") and row.get("company") and row.get("url"))
+
+
 def _etype_ok(value: str | None, canonical: str) -> bool:
     v = (value or "").lower()
     return {
@@ -121,11 +261,20 @@ def _etype_ok(value: str | None, canonical: str) -> bool:
     }[canonical]
 
 
+def _preflight(base: str) -> tuple[bool, str | None]:
+    """``(wall is on, who we are)`` — from ``/me``, which answers from the caller's own
+    cookie and is public precisely so it can tell you that."""
+    status, body = _probe(base, "/me", {})
+    if status != 200 or not isinstance(body, dict):
+        return True, None  # can't confirm an identity; treat as not signed in
+    return bool(body.get("auth")), body.get("email")
+
+
 def run_checks(base: str, atses: list[str]) -> list[dict]:
     """Every (query × filter) case with a per-row validator; returns check records."""
     cases: list[tuple[str, dict, callable, str]] = []
     for q in QUERIES:
-        cases.append((f"baseline [{q}]", {"q": q, "k": 30}, lambda r: True, q))
+        cases.append((f"row integrity [{q}]", {"q": q, "k": 30}, _row_ok, q))
         cases.append(
             (
                 f"remote [{q}]",
@@ -172,6 +321,90 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 "",
             )
         )
+    # Custom date ranges (ADR-0031's neighbours: both ends optional, both inclusive). These
+    # are the Matches tab's own recency controls and had no coverage at all — the window
+    # filters above exercise a different code path (a computed cutoff, not user-typed text).
+    today = datetime.now(timezone.utc).date()
+    d7 = (today - timedelta(days=7)).isoformat()
+    d30 = (today - timedelta(days=30)).isoformat()
+    d90 = (today - timedelta(days=90)).isoformat()
+    for name, params, start, end in (
+        ("posted_after", {"posted_after": d30}, d30, None),
+        ("posted_before", {"posted_before": d30}, None, d30),
+        ("posted range", {"posted_after": d90, "posted_before": d30}, d90, d30),
+    ):
+        cases.append(
+            (
+                f"{name} {params}",
+                {"q": "software engineer", **params, "k": 40},
+                lambda r, s=start, e=end: _day_between(r.get("posted_at"), s, e),
+                "",
+            )
+        )
+    for name, params, start, end in (
+        ("seen_after", {"seen_after": d7}, d7, None),
+        ("seen_before", {"seen_before": today.isoformat()}, None, today.isoformat()),
+        (
+            "seen range",
+            {"seen_after": d30, "seen_before": today.isoformat()},
+            d30,
+            today.isoformat(),
+        ),
+    ):
+        cases.append(
+            (
+                f"{name} {params}",
+                {"q": "software engineer", **params, "k": 40},
+                lambda r, s=start, e=end: _day_between(r.get("first_seen"), s, e),
+                "",
+            )
+        )
+    # The alerts Watermark cutoff (ADR-0035), and the only recency filter that is STRICTLY
+    # greater — a Digest that re-selected the row its Watermark came from would mail a
+    # duplicate, so equality here is a real defect, not an off-by-one nicety.
+    moment = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat(
+        timespec="seconds"
+    )
+    cases.append(
+        (
+            f"first_seen_after={moment}",
+            {"q": "software engineer", "first_seen_after": moment, "k": 40},
+            lambda r, m=moment: bool(r.get("first_seen")) and r["first_seen"] > m,
+            "",
+        )
+    )
+    # ...and in combination, because that is how a Digest actually queries: the Watermark
+    # cutoff never travels alone, it rides with the Subscription's own saved filters.
+    cases.append(
+        (
+            f"combo first_seen_after={moment}+remote+max_years=5",
+            {
+                "q": "software engineer",
+                "first_seen_after": moment,
+                "remote": "true",
+                "max_years": 5,
+                "k": 40,
+            },
+            lambda r, m=moment: (
+                bool(r.get("first_seen"))
+                and r["first_seen"] > m
+                and r.get("remote") is True
+                and (r.get("min_years") is None or r["min_years"] <= 5)
+            ),
+            "",
+        )
+    )
+    # The India gazetteer (ADR-0024) — a country, a region that expands to member cities,
+    # a plain city, and the city whose alias needs an exclusion to stay honest.
+    for place in ("india", "delhi ncr", "bengaluru", "surat"):
+        cases.append(
+            (
+                f"india={place}",
+                {"q": "software engineer", "india": place, "k": 30},
+                lambda r, p=place: _india_ok(p, r.get("location")),
+                "",
+            )
+        )
     for ats in atses:
         cases.append(
             (
@@ -208,8 +441,10 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 "",
             )
         )
-    for k in (5, 50, 100):
-        cases.append((f"k={k}", {"q": "engineer", "k": k}, lambda r: True, ""))
+    # 500 is over the serving cap: it must come back clamped, not as the whole table. The
+    # page-size assertion itself lives with the violations below.
+    for k in (5, 50, 100, 500):
+        cases.append((f"k={k}", {"q": "engineer", "k": k}, _row_ok, ""))
     # combos: several filters at once must all hold
     cases.append(
         (
@@ -244,6 +479,27 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             "",
         )
     )
+    # The new filters in combination — a date range narrows the same query a place filter
+    # does, and the two clauses are ANDed into one where, so a broken join shows here and
+    # nowhere else.
+    cases.append(
+        (
+            f"combo india=bengaluru+posted_after={d90}+remote",
+            {
+                "q": "backend engineer",
+                "india": "bengaluru",
+                "posted_after": d90,
+                "remote": "true",
+                "k": 30,
+            },
+            lambda r: (
+                _india_ok("bengaluru", r.get("location"))
+                and _day_between(r.get("posted_at"), d90, None)
+                and r.get("remote") is True
+            ),
+            "",
+        )
+    )
 
     checks = []
     for name, params, validator, _q in cases:
@@ -259,9 +515,10 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             )
             continue
         violations = [r for r in rows if not validator(r)]
-        k = int(params.get("k", 20))
-        if len(rows) > k:
-            violations.append({"_k_overflow": len(rows)})
+        # A page never exceeds what was asked for, nor the serving cap.
+        cap = min(int(params.get("k", 20)), _MAX_K)
+        if len(rows) > cap:
+            violations.append({"_k_overflow": len(rows), "_cap": cap})
         checks.append(
             {
                 "name": name,
@@ -277,6 +534,58 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             flush=True,
         )
     return checks
+
+
+def run_input_checks(base: str) -> list[dict]:
+    """Garbage in a filter must be REFUSED, not ignored.
+
+    Each custom date is re-serialized through ``date.fromisoformat`` on its way into the
+    where-clause, so an unparseable one raises and the route answers 400. The failure this
+    guards against is the quiet one: a filter the server drops on the floor returns
+    unfiltered results that the UI still labels as filtered.
+    """
+    bad = (
+        ("posted_after", "not-a-date"),
+        ("posted_before", "2026-13-45"),
+        ("seen_after", "yesterday"),
+        ("seen_before", "2026-99"),
+        ("first_seen_after", "soon"),
+        ("max_years", "three"),
+        ("k", "lots"),
+    )
+    out = []
+    for param, value in bad:
+        name = f"rejects {param}={value!r}"
+        params = {"q": "engineer", param: value}
+        status, body = _probe(base, "/search", params)
+        violations = [] if status == 400 else [{"expected": 400, "got": status}]
+        out.append(
+            {
+                "name": name,
+                "params": params,
+                "n_results": len(body) if isinstance(body, list) else 0,
+                "n_violations": len(violations),
+                "violations": violations,
+            }
+        )
+        print(f"[input] {name}: HTTP {status}", file=sys.stderr, flush=True)
+    return out
+
+
+def _gh_jid_matches_row(row: dict, url: str) -> bool:
+    """A greenhouse embed link's ``gh_jid`` names the job THIS row is for — vacuously true
+    of every other link, which identifies its job in the path.
+
+    The embed is the one form whose host can't be anchored: a tenant's board page may live
+    anywhere, which is exactly how recruitee's host-agnostic pattern waved through 458 dead
+    links. What the embed does carry is the job id, and so does the row
+    (``{ats}:{slug}:{native_id}``), so pin one to the other. Note this proves the link
+    *names* the job, never that its host serves it — only the HTTP probe can say that.
+    """
+    if "gh_jid=" not in url:
+        return True
+    jid = re.split(r"[&#]", url.split("gh_jid=", 1)[1])[0]
+    return jid == (row.get("id") or "").rsplit(":", 1)[-1]
 
 
 def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
@@ -300,6 +609,10 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
                 "title": r.get("title"),
                 "shape_ok": bool(pattern and re.match(pattern, url)),
                 "shape_known": pattern is not None,
+                # kept OUT of shape_ok: a wrong-job link and a wrong-shaped link are
+                # different diagnoses, and step 3 of the skill has the reader walk each
+                # shape_ok=false to a root cause. Both fail the run; they just say why.
+                "points_at_job": _gh_jid_matches_row(r, url),
             }
             if http and url.startswith("https://"):
                 try:
@@ -315,12 +628,20 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
                     rec["title_on_page"] = any(
                         w.lower() in body.lower() for w in title_words[:3]
                     )
+                except urllib.error.HTTPError as exc:
+                    # A 4xx/5xx RAISES here, so without this branch the status never
+                    # reaches the record and every dead link looks like a transport error.
+                    # That is not hypothetical: it is why the 2026-08-12T11:36 run reported
+                    # url_dead_links=0 while probing two 404s.
+                    rec["http_status"] = exc.status
+                    rec["http_error"] = str(exc)[:120]
                 except Exception as exc:  # noqa: BLE001
                     rec["http_error"] = str(exc)[:120]
                 time.sleep(0.5)  # politeness between cross-ATS probes
             out.append(rec)
             print(
                 f"[url] {ats}: shape_ok={rec['shape_ok']} "
+                f"right_job={rec['points_at_job']} "
                 f"status={rec.get('http_status', '-')} "
                 f"title_on_page={rec.get('title_on_page', '-')} {url[:70]}",
                 file=sys.stderr,
@@ -333,7 +654,35 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--base", default=_DEFAULT_BASE)
     ap.add_argument("--no-http", action="store_true", help="skip live URL probes")
+    ap.add_argument(
+        "--cookie-file",
+        default=str(_SESSION_FILE),
+        help="file holding the browser `session` cookie (see _session_cookie)",
+    )
     args = ap.parse_args()
+
+    global _COOKIE
+    _COOKIE = _session_cookie(Path(args.cookie_file))
+    # Establish the identity BEFORE any check runs: behind the wall an anonymous run turns
+    # every single check into the same 401, which reads like a broken deployment instead of
+    # a missing cookie. One actionable line beats eighty misleading findings.
+    auth_on, who = _preflight(args.base)
+    if auth_on and not who:
+        print(
+            "not signed in — the wall (ADR-0042) will 401 every check.\n"
+            f"  Sign in at {args.base}, copy the `session` cookie from devtools\n"
+            f"  (Application → Cookies), and save its value to {args.cookie_file}.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+    print(
+        f"[setup] signed in as {who}"
+        if who
+        else "[setup] wall off — running anonymous",
+        file=sys.stderr,
+        flush=True,
+    )
 
     # the ATSes actually present, straight from an unfiltered query sweep
     seen: set[str] = set()
@@ -349,17 +698,19 @@ def main() -> int:
     # measured absent from the 4-query sweep) must not evade the shape requirement by ranking
     # low. Per-ATS check/url cases still run only over the sampled set: an ATS with zero indexed
     # rows would produce meaningless cases (app.py's whitelist silently ignores unknown ats).
-    sys.path.insert(0, str(_ROOT / "src"))
-    from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS  # noqa: E402
+    from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 
     gate_atses = sorted(set(atses) | (set(SCRAPERS) - DISABLED_ATS))
 
-    checks = run_checks(args.base, atses)
+    checks = run_checks(args.base, atses) + run_input_checks(args.base)
     url_checks = run_url_checks(args.base, atses, http=not args.no_http)
 
     report = {
         "base": args.base,
         "ran_at": datetime.now(timezone.utc).isoformat(),
+        # who, deliberately not recorded: the report is a shareable artifact and the
+        # address behind the session is not part of what was verified
+        "signed_in": bool(who),
         "atses": atses,
         "checks": checks,
         "url_checks": url_checks,
@@ -371,11 +722,22 @@ def main() -> int:
             "url_shape_failures": sum(
                 1 for u in url_checks if u["shape_known"] and not u["shape_ok"]
             ),
+            # Every non-2xx, INCLUDING the ones that are somebody else's bot wall — advisory,
+            # because a 403 on a URL a browser opens fine is TLS fingerprinting and chasing
+            # it teaches the reader to ignore red runs.
             "url_http_failures": sum(
                 1
                 for u in url_checks
                 if u.get("http_error") or (u.get("http_status") or 200) >= 400
             ),
+            # ...but a link that is GONE is the whole point of this harness, and until now it
+            # counted for nothing: the 2026-08-12 run's two recruitee 404s left the exit code
+            # untouched — it was red only because a greenhouse shape failed. A dead link now
+            # fails the run on its own.
+            "url_dead_links": sum(
+                1 for u in url_checks if (u.get("http_status") or 0) in _DEAD_STATUSES
+            ),
+            "url_wrong_job": sum(1 for u in url_checks if not u["points_at_job"]),
             # A served ATS with no URL_SHAPES entry used to print shape_ok=False but count
             # nothing — three ATSes shipped unchecked that way (eightfold/freshteam/
             # successfactors, caught 2026-08-02 by a user-visible sandbox row). Coverage is
@@ -392,6 +754,8 @@ def main() -> int:
         report["summary"]["checks_with_violations"]
         + report["summary"]["check_errors"]
         + report["summary"]["url_shape_failures"]
+        + report["summary"]["url_dead_links"]
+        + report["summary"]["url_wrong_job"]
         + len(report["summary"]["atses_without_shape"])
     )
     return 1 if bad else 0

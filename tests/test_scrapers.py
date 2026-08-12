@@ -510,6 +510,28 @@ def test_trakstar_parse():
     assert j.posted_at == "2026-02-01"  # JSON-LD datePosted; the listing card has none
 
 
+def test_recruitee_url_ignores_the_customers_vanity_domain():
+    """The API's `careers_url` is whatever domain the customer configured, and a third of
+    those do not serve the board (transperfect.com/o/… 404s while the job is open). Build the
+    link on the tenant's own host instead, which always resolves."""
+    from headstart.scrapers.recruitee import _offer_url
+
+    offer = {
+        "slug": "software-engineer-net-c-1",
+        "careers_url": "https://transperfect.com/o/software-engineer-net-c-1",
+        "careers_apply_url": "https://transperfect.com/o/software-engineer-net-c-1/c/new",
+    }
+    assert (
+        _offer_url("transperfect", offer)
+        == "https://transperfect.recruitee.com/o/software-engineer-net-c-1"
+    )
+    # nothing to build from -> the API's own links, rather than a fabricated URL
+    assert _offer_url("transperfect", {"careers_url": "https://x.test/o/a"}) == (
+        "https://x.test/o/a"
+    )
+    assert _offer_url("transperfect", {}) == ""
+
+
 def test_recruitee_salary_formatting():
     from headstart.scrapers.recruitee import _salary
 

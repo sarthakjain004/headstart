@@ -13,6 +13,24 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 
+def _offer_url(tenant: str, offer: dict) -> str:
+    """The job link, built on the tenant's own Recruitee host.
+
+    NOT the API's ``careers_url``: that is whichever vanity domain the customer configured,
+    and it frequently is not serving the board at all. Measured 2026-08-12 against the live
+    index — 49% of served recruitee rows sat on a custom host, and 9 of 25 sampled hosts were
+    dead (``transperfect.com/o/…`` 404s while the same job answers 200 on
+    ``transperfect.recruitee.com``). The tenant host is the ATS's own and always resolves:
+    200 on 14/14 tenants sampled, including every one whose custom domain worked.
+
+    Falls back to the API's links only when an offer carries no slug to build from.
+    """
+    slug = offer.get("slug")
+    if not slug:
+        return offer.get("careers_url") or offer.get("careers_apply_url", "")
+    return f"https://{tenant}.recruitee.com/o/{slug}"
+
+
 def _salary(sal: dict | None) -> str | None:
     """Format Recruitee's structured salary, e.g. '50000-70000 EUR per year'. None if blank."""
     sal = sal or {}
@@ -46,7 +64,7 @@ class RecruiteeScraper(BaseScraper):
                     location=location,
                     remote=bool(o.get("remote")) or is_remote(location),
                     department=o.get("department"),
-                    url=o.get("careers_url") or o.get("careers_apply_url", ""),
+                    url=_offer_url(self.slug, o),
                     posted_at=o.get("published_at") or o.get("created_at"),
                     scraped_at=scraped_at,
                     # requirements is a separate field — dropping it starves experience
