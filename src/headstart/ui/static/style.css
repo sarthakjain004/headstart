@@ -303,6 +303,7 @@ textarea:focus{ border-color:var(--violet); }
   font-size:13.5px; background:var(--ground); color:var(--ink); border:1px solid var(--rule);
   outline:none; }
 .pfield input:focus{ border-color:var(--violet); }
+.profile-card .go{ padding:12px 24px; }  /* .go's height comes from the searchbar's flex elsewhere */
 .ghost.danger:hover{ border-color:var(--coral); color:var(--coral); }
 
 /* ---- role trends (ADR-0040), its own tab since the shell landed ---- */
