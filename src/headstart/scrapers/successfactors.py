@@ -36,9 +36,11 @@ from datetime import datetime
 from html import unescape
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+_log = log.get(__name__)
 
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 
@@ -165,10 +167,21 @@ class SuccessFactorsScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         kind, text = self._fetch_sitemap()
         listed = _job_urls_from(text, self.slug) if kind == "urlset" else []
+        surface = "sitemap-urlset" if listed else ""
         if not listed:
             listed = self._search_job_urls()
+            surface = "search-pages" if listed else surface
         if not listed and kind == "rss":
             listed = self._rss_job_urls()
+            surface = "rss-stream" if listed else surface
+        # Which of the three surfaces answered, and how much the detail pass will cost. This
+        # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
+        # resort — so without this line a board that takes 37 minutes for 7 jobs
+        # (cbscorporation.jobs, 2026-08-12) leaves no evidence of why.
+        _log.info(
+            f"{self.slug}: {surface or 'nothing'} via sitemap {kind or 'unknown'} "
+            f"-> {len(listed)} job pages to fetch"
+        )
         # Detail pass: every field comes from the job page, so fetch each one (bounded); a
         # failed fetch leaves fields None and parse drops just that job.
         if self.async_fanout_enabled():

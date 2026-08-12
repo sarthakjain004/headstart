@@ -17,10 +17,11 @@ Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, run_report
 
 _log = log.get(__name__, __spec__)
 
@@ -74,7 +75,82 @@ def main() -> int:
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
 
     _log.info(f"wrote {total} lines across {len(per_ats)} ATS files -> {out}")
+    _report_shards(shards_root, total, len(per_ats))
     return 0
+
+
+def _report_shards(shards_root: Path, lines: int, ats_files: int) -> None:
+    """The whole fan-out's story in one place — the view no single shard job can give.
+
+    A shard's numbers only ever existed in its own runner's log, so questions like "did any
+    shard run out of time, and how much work did it defer?" needed fifteen job logs opened by
+    hand. The reports ride the fragment artifacts here, so this is the first point where they
+    can be added up.
+    """
+    reports = run_report.read_shards(shards_root)
+    if not reports:
+        _log.info(
+            "no shard reports — nothing to aggregate (older shards, or a local run)"
+        )
+        return
+
+    killed = [r for r in reports if r.get("killed_by_budget")]
+    deferred = sum(int(r.get("undone") or 0) for r in reports)
+    errors = sum(len(r.get("errors") or {}) for r in reports)
+    retries: Counter[str] = Counter()
+    for r in reports:
+        retries.update(r.get("retries") or {})
+    slowest = max(reports, key=lambda r: float(r.get("seconds") or 0))
+    worst_board = max(
+        (float((r.get("board_seconds") or {}).get("max") or 0) for r in reports),
+        default=0.0,
+    )
+    ratios = [
+        float(r["seconds"]) / 60 / float(r["predicted_minutes"])
+        for r in reports
+        if r.get("predicted_minutes") and r.get("seconds")
+    ]
+
+    if killed:
+        # An annotation, not an info line: a shard that ran out of time silently deferred work,
+        # and that is the single fact most worth seeing on the run page.
+        _log.warning(
+            f"{len(killed)} shard(s) hit the time budget, deferring {deferred} boards: "
+            + ", ".join(str(r.get("shard", "?")) for r in killed)
+        )
+    if errors:
+        _log.warning(f"{errors} board errors across {len(reports)} shards")
+    _log.info(
+        f"fan-out: {len(reports)} shards | slowest {float(slowest['seconds']) / 60:.1f} min "
+        f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"
+        + (
+            f" | actual/predicted {min(ratios):.2f}-{max(ratios):.2f}x"
+            if ratios
+            else ""
+        )
+    )
+    run_report.summary(
+        "Scrape fan-out",
+        [
+            f"- {lines:,} job lines across {ats_files} ATS files",
+            f"- {len(reports)} shards, slowest **{float(slowest['seconds']) / 60:.1f} min**, "
+            f"worst single board **{worst_board:.0f}s**",
+            f"- {errors} board errors, {sum(retries.values())} retries"
+            + (
+                f" ({', '.join(f'{k} {v}' for k, v in sorted(retries.items()))})"
+                if retries
+                else ""
+            ),
+            f"- **{len(killed)} shard(s) hit the time budget**, deferring {deferred} boards"
+            if killed
+            else "- no shard hit its time budget",
+        ]
+        + (
+            [f"- actual/predicted **{min(ratios):.2f}-{max(ratios):.2f}x**"]
+            if ratios
+            else []
+        ),
+    )
 
 
 if __name__ == "__main__":

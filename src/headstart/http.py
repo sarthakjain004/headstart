@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from collections import Counter
 from typing import Any
 
 from curl_cffi import requests as _requests
@@ -56,8 +57,43 @@ def session() -> _requests.Session:
     return existing
 
 
+# Retries counted by reason, because at INFO they were previously invisible: a board that
+# settled only after five backoffs logged exactly like one that answered first time, so an ATS
+# starting to rate-limit or bot-wall us produced NO signal until boards failed outright. 403 is
+# the retryable status most worth watching for that reason. Counted, not per-board attributed —
+# a plain lock beats threading state through both the sync and the async fetch paths, and the
+# question these answer ("is a provider degrading?") is a per-run one.
+_retries: Counter[str] = Counter()
+_retries_lock = threading.Lock()
+
+
+def retry_stats() -> Counter[str]:
+    """A snapshot of retries by reason since the last reset."""
+    with _retries_lock:
+        return Counter(_retries)
+
+
+def reset_retry_stats() -> None:
+    """Zero the counters — a stage calls this once so its totals describe its own work."""
+    with _retries_lock:
+        _retries.clear()
+
+
+def _retry_reason(why: str) -> str:
+    """The coarse class a retry belongs to: what you would act on, not the exact message."""
+    if "403" in why:
+        return "403-wall"
+    if "429" in why:
+        return "429-ratelimit"
+    if any(code in why for code in ("500", "502", "503", "504")):
+        return "5xx"
+    return "network"
+
+
 def _note_retry(method: str, url: str, attempt: int, attempts: int, why: str) -> float:
-    """Log one retry decision at DEBUG and return the backoff delay for the caller to sleep."""
+    """Count one retry, log it at DEBUG, and return the backoff delay for the caller to sleep."""
+    with _retries_lock:
+        _retries[_retry_reason(why)] += 1
     delay = 1.5 * (attempt + 1)
     _log.debug(
         f"{method} {url} attempt {attempt + 1}/{attempts} {why}; "
