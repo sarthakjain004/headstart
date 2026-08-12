@@ -628,6 +628,13 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
                     rec["title_on_page"] = any(
                         w.lower() in body.lower() for w in title_words[:3]
                     )
+                except urllib.error.HTTPError as exc:
+                    # A 4xx/5xx RAISES here, so without this branch the status never
+                    # reaches the record and every dead link looks like a transport error.
+                    # That is not hypothetical: it is why the 2026-08-12T11:36 run reported
+                    # url_dead_links=0 while probing two 404s.
+                    rec["http_status"] = exc.status
+                    rec["http_error"] = str(exc)[:120]
                 except Exception as exc:  # noqa: BLE001
                     rec["http_error"] = str(exc)[:120]
                 time.sleep(0.5)  # politeness between cross-ATS probes
