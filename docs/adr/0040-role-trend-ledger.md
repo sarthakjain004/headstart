@@ -1,6 +1,8 @@
 # ADR-0040: Role-trend ledger — frozen embedding centroids × experience bands
 
-**Status:** accepted · **Date:** 2026-08-10
+**Status:** accepted · **Date:** 2026-08-10 · **Amended by:** [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md) — the ledger gains a `metric`
+axis (stock/new), the chart plots share of index rather than raw counts, and named roles can
+be watched by title pattern
 
 ## Context
 

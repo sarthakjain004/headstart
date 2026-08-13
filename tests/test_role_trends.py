@@ -29,15 +29,16 @@ _DIM = 4
 
 
 def _table(db_dir: Path, rows: list[dict]) -> None:
-    schema = pa.schema(
-        [
-            pa.field("id", pa.string()),
-            pa.field("title", pa.string()),
-            pa.field("employment_type", pa.string()),
-            pa.field("min_years", pa.int32()),
-            pa.field("vector", pa.list_(pa.float32(), _DIM)),
-        ]
-    )
+    fields = [
+        pa.field("id", pa.string()),
+        pa.field("title", pa.string()),
+        pa.field("employment_type", pa.string()),
+        pa.field("min_years", pa.int32()),
+        pa.field("vector", pa.list_(pa.float32(), _DIM)),
+    ]
+    if any("first_seen" in r for r in rows):
+        fields.append(pa.field("first_seen", pa.string()))
+    schema = pa.schema(fields)
     lancedb.connect(db_dir).create_table(
         PROD_TABLE, pa.Table.from_pylist(rows, schema=schema)
     )
@@ -87,6 +88,10 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             str(tmp_path / "families.json"),
             "--ledger",
             str(ledger),
+            # Pinned into tmp_path: it defaults to the repo's real config/role_watchlist.json,
+            # and these tests must control exactly which roles are watched.
+            "--watchlist",
+            str(tmp_path / "watchlist.json"),
         ],
     )
     assert role_trends.main() == 0
@@ -161,8 +166,10 @@ def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
     _run(tmp_path, monkeypatch)  # second run appends
 
     lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,family,band,count"
-    assert len(lines) == 5  # header + (one group + the non-tech diagnostic) per run
+    assert lines[0] == "ts,version,metric,family,band,count"
+    assert (
+        len(lines) == 5
+    )  # header + (one stock group + the non-tech diagnostic) per run
     assert sum(1 for line in lines if line.startswith("ts,")) == 1
 
 
@@ -269,3 +276,200 @@ def test_half_landed_centroid_store_degrades_to_noop(tmp_path, monkeypatch, capl
     ledger = _run(tmp_path, monkeypatch)
     assert not ledger.exists()
     assert any("centroids.f32" in r.getMessage() for r in caplog.records)
+
+
+def _watchlist(tmp_path: Path, roles_spec: list[dict]) -> None:
+    (tmp_path / "watchlist.json").write_text(
+        json.dumps({"roles": roles_spec}), encoding="utf-8"
+    )
+
+
+def test_new_metric_counts_only_rows_first_seen_inside_the_window(
+    tmp_path, monkeypatch
+):
+    """Stock answers "how big is this field"; new answers "is it hiring this week" (ADR-0051).
+    A row without a stamp (pre-ADR-0031) is stock but never new — absence of evidence."""
+    from datetime import datetime, timedelta, timezone
+
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    now = datetime.now(timezone.utc)
+    fresh = (now - timedelta(days=1)).isoformat(timespec="seconds")
+    stale = (now - timedelta(days=30)).isoformat(timespec="seconds")
+    x = [1.0, 0.0, 0.0, 0.0]
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+                "first_seen": fresh,
+            },
+            {
+                "id": "b",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+                "first_seen": stale,
+            },
+            {
+                "id": "c",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+                "first_seen": None,
+            },
+        ],
+    )
+    ledger = _run(tmp_path, monkeypatch)
+
+    rows = {
+        (r["metric"], r["family"], r["band"]): r["count"]
+        for r in csv.DictReader(ledger.open())
+    }
+    assert rows[("stock", "software-engineering", "mid")] == "3"
+    assert rows[("new", "software-engineering", "mid")] == "1"  # only the 1-day-old row
+
+
+def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch):
+    """The pattern is the definition (ADR-0051): an FDE posting counts under watch:fde even
+    when the embedding filed it in a general cluster — that smear across clusters is exactly
+    why a ~1% role needs a watchlist rather than a centroid of its own."""
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _watchlist(
+        tmp_path,
+        [
+            {
+                "name": "fde",
+                "label": "Forward Deployed Engineer",
+                "parent": "software-engineering",
+                "match": ["forward[ -]deployed", "\\bFDE\\b"],
+            }
+        ],
+    )
+    x = [1.0, 0.0, 0.0, 0.0]  # cluster 0 -> software-engineering
+    y = [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+    ]  # cluster 1 -> data-science: a "mis-filed" FDE still counts
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Forward Deployed Engineer",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+            },
+            {
+                "id": "b",
+                "title": "Senior FDE, Enterprise",
+                "employment_type": None,
+                "min_years": 6,
+                "vector": y,
+            },
+            {
+                "id": "c",
+                "title": "Backend Engineer",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+            },
+        ],
+    )
+    ledger = _run(tmp_path, monkeypatch)
+
+    rows = {
+        (r["metric"], r["family"], r["band"]): r["count"]
+        for r in csv.DictReader(ledger.open())
+    }
+    assert rows[("stock", "watch:fde", "mid")] == "1"
+    assert rows[("stock", "watch:fde", "senior")] == "1"
+    # the watched rows still count in their assigned families — the watchlist observes, never moves
+    assert rows[("stock", "software-engineering", "mid")] == "2"
+    assert rows[("stock", "data-science", "senior")] == "1"
+
+
+def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, caplog):
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _watchlist(
+        tmp_path,
+        [{"name": "fde", "parent": "no-such-family", "match": ["fde"]}],
+    )
+    x = [1.0, 0.0, 0.0, 0.0]
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+            }
+        ],
+    )
+    ledger = tmp_path / "role_trends.csv"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "role_trends",
+            "--db",
+            str(tmp_path / "db"),
+            "--centroids",
+            str(tmp_path / "rc"),
+            "--families",
+            str(tmp_path / "families.json"),
+            "--ledger",
+            str(ledger),
+            "--watchlist",
+            str(tmp_path / "watchlist.json"),
+        ],
+    )
+    assert (
+        role_trends.main() == 1
+    )  # visible error, non-fatal to the run (continue-on-error)
+    assert not ledger.exists()
+
+
+def test_old_ledger_is_migrated_in_place_before_the_first_append(tmp_path, monkeypatch):
+    """The ledger predates the metric column and is append-only on HF, so the migration happens
+    where the appends do — old rows become metric=stock exactly, never a guess."""
+    ledger = tmp_path / "role_trends.csv"
+    ledger.write_text(
+        "ts,version,family,band,count\n"
+        "2026-08-11T00:00:00+00:00,2,software-engineering,mid,10\n"
+        "2026-08-11T00:00:00+00:00,2,non-tech,all,3\n",
+        encoding="utf-8",
+    )
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    x = [1.0, 0.0, 0.0, 0.0]
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+            }
+        ],
+    )
+    _run(tmp_path, monkeypatch)
+
+    lines = ledger.read_text().splitlines()
+    assert lines[0] == "ts,version,metric,family,band,count"
+    assert lines[1] == "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,10"
+    assert sum(1 for line in lines if line.startswith("ts,")) == 1
+    # every row — migrated and appended alike — parses under the one header
+    rows = list(csv.DictReader(ledger.open()))
+    assert all(r["metric"] in ("stock", "new") and r["count"].isdigit() for r in rows)

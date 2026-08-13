@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -33,19 +33,47 @@ _log = log.get(__name__, __spec__)
 _DB = REPO_ROOT / "data" / "lancedb"
 _CENTROIDS = REPO_ROOT / "data" / "state" / "role_centroids"
 _FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0040)
+_WATCHLIST = REPO_ROOT / "config" / "role_watchlist.json"  # curated, in git (ADR-0051)
 _LEDGER = REPO_ROOT / "data" / "state" / "role_trends.csv"
 
-_COLUMNS = ("ts", "version", "family", "band", "count")
+_COLUMNS = ("ts", "version", "metric", "family", "band", "count")
+_OLD_COLUMNS = (
+    "ts",
+    "version",
+    "family",
+    "band",
+    "count",
+)  # pre-ADR-0051, migrated on write
+
+# The flow window (ADR-0051): a row is "new" when its `first_seen` is within this many days of
+# the measurement. A rolling week, not a per-run diff — the 2-hour cadence makes per-run deltas
+# pipeline noise, and "how many roles appeared this week" is the question a job hunter has.
+NEW_WINDOW_DAYS = 7
 
 
 def count_groups(
-    rows, centroids, families: dict[int, str | None]
-) -> tuple[dict[tuple[str, str], int], int]:
-    """Count served rows into ``(family, band)`` groups; non-tech rows are counted apart.
+    rows,
+    centroids,
+    families: dict[int, str | None],
+    watchlist: list[roles.WatchRole],
+    new_after: str,
+) -> tuple[dict[tuple[str, str, str], int], int]:
+    """Count served rows into ``(metric, family, band)`` groups; non-tech rows counted apart.
 
-    Returns ``(counts, non_tech)``. Rows whose cluster maps to None are the tech filter's
-    known creep (ADR-0017 is recall-biased on purpose) — kept out of the role groups, but
-    returned as one number so the ledger carries a filter-health series (ADR-0040)."""
+    Two metrics per group (ADR-0051): ``stock`` — every live row — and ``new`` — the subset
+    whose ``first_seen`` is at or after ``new_after``. Stock answers "how big is this field";
+    new answers "is it hiring this week", and the two disagree exactly where it matters (a
+    large family can be barely posting). ``first_seen`` survives an ADR-0050 re-embed, so an
+    upgraded vector does not read as a fresh opening; rows predating ADR-0031 carry no stamp
+    and are never "new", which under-counts the first week after that ADR and nothing after.
+
+    Watch roles (ADR-0051) are counted by title into the same structure under
+    ``watch:{name}``, independent of centroid assignment — a watched title counts even when
+    the embedding filed it elsewhere, because the pattern is the definition.
+
+    Rows whose cluster maps to None are the tech filter's known creep (ADR-0017 is
+    recall-biased on purpose) — kept out of the role groups, but returned as one number so the
+    ledger carries a filter-health series (ADR-0040)."""
     # to_numpy on the (possibly chunked) vector column yields one array per row; stacking is
     # row-aligned with the other columns' to_pylist across chunk boundaries.
     vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
@@ -53,42 +81,89 @@ def count_groups(
     min_years = rows["min_years"].to_pylist()
     titles = rows["title"].to_pylist()
     employment = rows["employment_type"].to_pylist()
+    # Absent when the table predates ADR-0031; those rows are stock, never new.
+    seen = (
+        rows["first_seen"].to_pylist()
+        if "first_seen" in rows.schema.names
+        else [None] * len(titles)
+    )
 
-    counts: dict[tuple[str, str], int] = {}
+    counts: dict[tuple[str, str, str], int] = {}
+
+    def bump(family: str, band: str, is_new: bool) -> None:
+        counts[("stock", family, band)] = counts.get(("stock", family, band), 0) + 1
+        if is_new:
+            counts[("new", family, band)] = counts.get(("new", family, band), 0) + 1
+
     non_tech = 0
-    for cluster, years, title, etype in zip(
-        clusters, min_years, titles, employment, strict=True
+    for cluster, years, title, etype, first in zip(
+        clusters, min_years, titles, employment, seen, strict=True
     ):
+        # ISO-8601 UTC on both sides, so string order is time order.
+        is_new = bool(first) and first >= new_after
+        band = roles.band(years, title, etype)
+        for role in watchlist:
+            if role.matches(title):
+                bump(roles.WATCH_PREFIX + role.name, band, is_new)
         family = families[int(cluster)]
         if family is None:
             non_tech += 1
             continue
-        key = (family, roles.band(years, title, etype))
-        counts[key] = counts.get(key, 0) + 1
+        bump(family, band, is_new)
     return counts, non_tech
+
+
+def _migrate_ledger(ledger: Path) -> None:
+    """Rewrite a pre-ADR-0051 ledger in place, inserting ``metric='stock'`` on every row.
+
+    The file is append-only and rides the HF state round trip, so the migration happens where
+    the appends do — once, idempotently, before the first six-column write. Every pre-ADR-0051
+    row was a stock measurement, so the backfill is exact, not a guess. The file is a few dozen
+    rows per run ("tiny forever", ADR-0040), so rewriting it whole is fine.
+    """
+    with ledger.open(encoding="utf-8", newline="") as fh:
+        reader = csv.reader(fh)
+        header = tuple(next(reader))
+        if header == _COLUMNS:
+            return
+        if header != _OLD_COLUMNS:
+            raise ValueError(f"{ledger}: unrecognized header {header}")
+        rows = [
+            [ts, version, "stock", family, band, count]
+            for ts, version, family, band, count in reader
+        ]
+    tmp = ledger.with_suffix(".csv.tmp")
+    with tmp.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(_COLUMNS)
+        writer.writerows(rows)
+    tmp.replace(ledger)
+    _log.info(f"migrated {ledger} to the six-column ADR-0051 schema ({len(rows)} rows)")
 
 
 def append_ledger(
     ledger: Path,
-    counts: dict[tuple[str, str], int],
+    counts: dict[tuple[str, str, str], int],
     non_tech: int,
     version: int,
     ts: str,
 ) -> int:
     """Append one row per non-empty group + the non-tech diagnostic. Header on first write.
 
-    The diagnostic rides the same file as ``(non-tech, all)`` — one number per run, unbanded
-    because a band on a Data Entry Clerk means nothing. The chart filters it out; its trend is
-    the tech filter's health over time. Returns rows written."""
+    The diagnostic rides the same file as ``(stock, non-tech, all)`` — one number per run,
+    unbanded because a band on a Data Entry Clerk means nothing. The chart filters it out; its
+    trend is the tech filter's health over time. Returns rows written."""
     fresh = not ledger.exists()
     ledger.parent.mkdir(parents=True, exist_ok=True)
+    if not fresh:
+        _migrate_ledger(ledger)
     with ledger.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         if fresh:
             writer.writerow(_COLUMNS)
-        for (family, band), n in sorted(counts.items()):
-            writer.writerow([ts, version, family, band, n])
-        writer.writerow([ts, version, roles.NON_TECH, "all", non_tech])
+        for (metric, family, band), n in sorted(counts.items()):
+            writer.writerow([ts, version, metric, family, band, n])
+        writer.writerow([ts, version, "stock", roles.NON_TECH, "all", non_tech])
         fh.flush()
     return len(counts) + 1
 
@@ -99,6 +174,7 @@ def main() -> int:
     ap.add_argument("--db", default=str(_DB))
     ap.add_argument("--centroids", type=Path, default=_CENTROIDS)
     ap.add_argument("--families", type=Path, default=_FAMILIES)
+    ap.add_argument("--watchlist", type=Path, default=_WATCHLIST)
     ap.add_argument("--ledger", type=Path, default=_LEDGER)
     args = ap.parse_args()
 
@@ -130,6 +206,9 @@ def main() -> int:
     try:
         centroids, manifest = roles.load(args.centroids)
         families = roles.load_families(args.families, manifest)
+        watchlist = roles.load_watchlist(
+            args.watchlist, {f for f in families.values() if f is not None}
+        )
     except ValueError as exc:
         # An unusable taxonomy is a real defect, not a missing prerequisite — most likely a
         # refit shipped without re-curating the map, which ADR-0040 treats as routine. The
@@ -150,20 +229,26 @@ def main() -> int:
         f"assigning {n} served rows to {named} families via {manifest['k']} clusters "
         f"(centroid version {manifest['version']})"
     )
-    rows = (
-        table.search()
-        .select(["vector", "min_years", "title", "employment_type"])
-        .limit(n)
-        .to_arrow()
-    )
+    # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
+    # column, so ask only for what exists and let count_groups treat absence as "never new".
+    columns = ["vector", "min_years", "title", "employment_type"]
+    if "first_seen" in table.schema.names:
+        columns.append("first_seen")
+    rows = table.search().select(columns).limit(n).to_arrow()
 
-    counts, non_tech = count_groups(rows, centroids, families)
-    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc)
+    ts = now.isoformat(timespec="seconds")
+    new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
+    counts, non_tech = count_groups(rows, centroids, families, watchlist, new_after)
     written = append_ledger(args.ledger, counts, non_tech, manifest["version"], ts)
-    top = sorted(counts.items(), key=lambda kv: -kv[1])[:5]
+    stock_top = sorted(
+        ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]
+    )[:5]
+    fresh_total = sum(c for k, c in counts.items() if k[0] == "new")
     _log.info(
         f"appended {written} rows @ {ts} -> {args.ledger} | top: "
-        + ", ".join(f"{family}/{band} {c}" for (family, band), c in top)
+        + ", ".join(f"{family}/{band} {c}" for (_, family, band), c in stock_top)
+        + f" | new in {NEW_WINDOW_DAYS}d: {fresh_total}"
     )
     _log.info(
         f"non-tech: {non_tech} of {n} served rows ({100 * non_tech / n:.1f}% — the "

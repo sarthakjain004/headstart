@@ -38,6 +38,7 @@ experiment/
 # taxonomy below must stay tracked (ADR-0040).
 config/*
 !config/role_families.json
+!config/role_watchlist.json
 
 # Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
 data/scratch/
@@ -85,6 +86,7 @@ deploy/hf-space/llm_router.py
 deploy/hf-space/profile_extract.py
 deploy/hf-space/search.py
 deploy/hf-space/role_families.json
+deploy/hf-space/role_watchlist.json
 deploy/hf-space/alerts/
 deploy/hf-space/templates/
 deploy/hf-space/static/

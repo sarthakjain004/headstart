@@ -1,0 +1,11 @@
+{
+  "_comment": "Curated watch roles for the trends ledger (ADR-0051): specific roles worth their own trend line that are too small to earn a centroid (~1% of the corpus each). Matched on TITLE patterns (case-insensitive regex), so membership is explainable per Job and survives a centroid refit. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. Keep patterns precise — a loose pattern quietly inflates a series forever.",
+  "roles": [
+    {
+      "name": "fde",
+      "label": "Forward Deployed Engineer",
+      "parent": "software-engineering",
+      "match": ["forward[ -]deployed", "\\bFDE\\b"]
+    }
+  ]
+}

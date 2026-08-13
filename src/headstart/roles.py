@@ -108,3 +108,59 @@ def band(min_years: int | None, title: str | None, employment_type: str | None) 
     if min_years <= 7:
         return "senior"
     return "staff"
+
+
+WATCH_PREFIX = "watch:"  # ledger namespace for watched roles, so they can never collide with a family
+
+
+class WatchRole:
+    """One curated role tracked by title pattern (ADR-0051) — compiled once, matched per row.
+
+    Title patterns rather than centroids, deliberately: a role this specific (~1% of the corpus)
+    does not earn its own cluster at any practical k, and a pattern is explainable — you can say
+    exactly why a Job counted — and survives a centroid refit unchanged.
+    """
+
+    __slots__ = ("name", "label", "parent", "_patterns")
+
+    def __init__(self, name: str, label: str, parent: str, patterns: list[str]) -> None:
+        self.name, self.label, self.parent = name, label, parent
+        self._patterns = [re.compile(p, re.IGNORECASE) for p in patterns]
+
+    def matches(self, title: str | None) -> bool:
+        return bool(title) and any(p.search(title) for p in self._patterns)
+
+
+def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
+    """The curated watchlist, validated hard — the same posture as :func:`load_families`,
+    because the failure modes are as silent: a bad parent orphans the role from every drill,
+    and a bad pattern would either crash the pipeline step or quietly count nothing.
+
+    Missing file is an empty list, not an error: the watchlist is optional by design.
+    """
+    if not path.exists():
+        return []
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    roles: list[WatchRole] = []
+    seen: set[str] = set()
+    for entry in spec["roles"]:
+        name = entry["name"]
+        if name in seen:
+            raise ValueError(f"{path}: watch role '{name}' defined twice")
+        seen.add(name)
+        if entry["parent"] not in family_names:
+            raise ValueError(
+                f"{path}: watch role '{name}' names parent '{entry['parent']}', which is not "
+                "a family in role_families.json — the drill it should appear under does not exist"
+            )
+        try:
+            roles.append(
+                WatchRole(
+                    name, entry.get("label", name), entry["parent"], entry["match"]
+                )
+            )
+        except re.error as exc:
+            raise ValueError(
+                f"{path}: watch role '{name}' has a bad pattern: {exc}"
+            ) from exc
+    return roles

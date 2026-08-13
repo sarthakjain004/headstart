@@ -58,3 +58,4 @@ supersedes it and note the supersession in both.
 | [0048](0048-skip-details-we-already-hold.md) | Do not re-fetch a detail we already hold | 2026-08-13 |
 | [0049](0049-match-boards-by-prefix-not-by-parsing.md) | Match a Job id to its Board by prefix, not by parsing | 2026-08-13 |
 | [0050](0050-persist-descriptions-across-runs.md) | Persist descriptions across runs; key the detail skip-list on holding them | 2026-08-13 |
+| [0051](0051-trends-as-share-flow-and-watched-roles.md) | Trends measure share and flow, and can watch a named role | 2026-08-13 |
