@@ -79,6 +79,9 @@ subscriptions/
 # public, so it must never be committed (ADR-0032). Lives locally only.
 docs/LLM_API.md
 
+# Discovery-technique ranking — local working notes on where to spend discovery effort next.
+docs/discovery/technique-ranking.md
+
 # deploy-space.yml sync artifacts — CI copies these beside the Space app; a stale local
 # copy would shadow the src/ originals via app.py's synced-first path check
 deploy/hf-space/geo.py
