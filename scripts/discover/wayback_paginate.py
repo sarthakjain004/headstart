@@ -16,21 +16,22 @@ Usage:  python scripts/discover/wayback_paginate.py zoho
         python scripts/discover/wayback_paginate.py eightfold --filter 'urlkey:ai,eightfold,.*'
 """
 
-import socket
-import ssl
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
-from wayback_feeder import WB, adopt_legacy_state, cli, extract, hosts_for, slug_sink
+from wayback_feeder import (
+    WB,
+    FetchError,
+    adopt_legacy_state,
+    cli,
+    extract,
+    fetch,
+    hosts_for,
+    slug_sink,
+)
 
 PAGE = 15000  # urls per CDX page
 SLEEP = 1.0  # politeness between pages (seconds)
-TIMEOUT = 120
-UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
-CTX = ssl._create_unverified_context()
-socket.setdefaulttimeout(TIMEOUT)
 
 
 def fetch_page(domain, resume, cdx_filter):
@@ -42,23 +43,19 @@ def fetch_page(domain, resume, cdx_filter):
         url += "&filter=" + urllib.parse.quote(cdx_filter, safe="")
     if resume:
         url += "&resumeKey=" + urllib.parse.quote(resume, safe="")
-    for attempt in range(1, 5):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=TIMEOUT, context=CTX) as r:
-                text = r.read().decode("utf-8", "replace")
-            lines = text.split("\n")
-            while lines and lines[-1] == "":
-                lines.pop()
-            nxt = None
-            if len(lines) >= 2 and lines[-2] == "":  # blank line then resume key
-                nxt = lines[-1].strip() or None
-                lines = lines[:-2]
-            return [ln for ln in lines if ln], nxt
-        except Exception as e:
-            print(f"  fetch attempt {attempt} failed: {e}", flush=True)
-            time.sleep(5 * attempt)
-    return None, resume  # failed; caller stops, state preserved
+    try:
+        text = fetch(url)
+    except FetchError as err:
+        print(f"  fetch gave up: {err}", flush=True)
+        return None, resume  # caller stops; the saved cursor is still valid
+    lines = text.split("\n")
+    while lines and lines[-1] == "":
+        lines.pop()
+    nxt = None
+    if len(lines) >= 2 and lines[-2] == "":  # blank line then resume key
+        nxt = lines[-1].strip() or None
+        lines = lines[:-2]
+    return [ln for ln in lines if ln], nxt
 
 
 def sweep(ats, domain, style, max_pages, cdx_filter, sink):
@@ -77,7 +74,9 @@ def sweep(ats, domain, style, max_pages, cdx_filter, sink):
         urls, nxt = fetch_page(domain, resume, cdx_filter)
         if urls is None:
             print(
-                "fetch failed repeatedly — cursor saved, re-run to resume", flush=True
+                f"{ats}/{domain}: STOPPED after {pages} page(s) — cursor saved, "
+                "re-run to resume",
+                flush=True,
             )
             return
         pages += 1

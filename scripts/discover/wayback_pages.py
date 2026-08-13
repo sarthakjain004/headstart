@@ -17,30 +17,20 @@ Usage:  python scripts/discover/wayback_pages.py zoho
         python scripts/discover/wayback_pages.py turbohire --domain turbohire.co --style sub
 """
 
-import socket
-import ssl
 import threading
 import urllib.parse
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from wayback_feeder import WB, adopt_legacy_state, cli, extract, hosts_for, slug_sink
-
-TIMEOUT = 120
-UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
-CTX = ssl._create_unverified_context()
-socket.setdefaulttimeout(TIMEOUT)
-
-
-def get(url):
-    for _ in range(4):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=TIMEOUT, context=CTX) as r:
-                return r.read().decode("utf-8", "replace")
-        except Exception:
-            pass
-    return None
+from wayback_feeder import (
+    WB,
+    FetchError,
+    adopt_legacy_state,
+    cli,
+    extract,
+    fetch,
+    hosts_for,
+    slug_sink,
+)
 
 
 def sweep(ats, domain, style, workers, sink):
@@ -48,9 +38,17 @@ def sweep(ats, domain, style, workers, sink):
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
     base = cdx + "&fl=original&collapse=urlkey"  # showNumPages needs the clean url
 
-    npages_txt = get(cdx + "&showNumPages=true")
-    if not npages_txt or not npages_txt.strip().isdigit():
-        print(f"{ats}/{domain}: could not get page count: {npages_txt!r}", flush=True)
+    try:
+        npages_txt = fetch(cdx + "&showNumPages=true")
+    except FetchError as err:
+        print(f"{ats}/{domain}: SKIPPED — page count unavailable: {err}", flush=True)
+        return
+    if not npages_txt.strip().isdigit():
+        print(
+            f"{ats}/{domain}: SKIPPED — page count was not a number: "
+            f"{npages_txt.strip()[:120]!r}",
+            flush=True,
+        )
         return
     npages = int(npages_txt.strip())
 
@@ -65,12 +63,18 @@ def sweep(ats, domain, style, workers, sink):
     )
 
     lock = threading.Lock()
-    counter = {"n": 0, "new": 0}
+    counter = {"n": 0, "new": 0, "failed": 0}
     with state.open("a", encoding="utf-8") as sf:
 
         def do(page):
-            text = get(f"{base}&page={page}")
-            if text is None:
+            try:
+                text = fetch(f"{base}&page={page}")
+            except FetchError as err:
+                # Deliberately not recorded in `pages_done`, so a re-run retries this page. Said
+                # out loud because a silently-dropped page looks exactly like an empty one.
+                with lock:
+                    counter["failed"] += 1
+                print(f"  {ats}/{domain} page {page} FAILED: {err}", flush=True)
                 return
             urls = [ln for ln in text.split("\n") if ln]
             with lock:
@@ -92,7 +96,13 @@ def sweep(ats, domain, style, workers, sink):
         with ThreadPoolExecutor(max_workers=workers) as ex:
             for fut in as_completed([ex.submit(do, p) for p in todo]):
                 fut.result()
-    print(f"{ats}/{domain}: done, +{counter['new']} new", flush=True)
+    done_note = f"{ats}/{domain}: done, +{counter['new']} new"
+    if counter["failed"]:
+        done_note += (
+            f" — {counter['failed']} of {len(todo)} pages FAILED and were left unmarked;"
+            " re-run to retry them"
+        )
+    print(done_note, flush=True)
 
 
 def main():

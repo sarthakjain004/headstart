@@ -17,14 +17,22 @@ CONTEXT.md retires the term but parks the code/data rename as a separate change.
 
 import argparse
 import csv
+import errno
 import re
+import socket
+import threading
+import ssl
+import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal, get_args
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
+socket.setdefaulttimeout(120)
 
 Style = Literal["sub", "host", "path", "workday"]
 # `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
@@ -103,6 +111,105 @@ FILE_SUFFIXES = (
     ".map",
     ".webmanifest",
 )
+
+
+TIMEOUT = 120
+UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
+_CTX = ssl._create_unverified_context()
+# The Archive throttles rather than refuses: these come back mid-sweep and clear on their own.
+_RETRYABLE = {408, 429, 500, 502, 503, 504}
+
+
+class FetchError(Exception):
+    """A CDX request that could not be completed, carrying why it was given up on."""
+
+
+# The Archive does not answer overload with 429 — it stops accepting TCP connections, which
+# surfaces as ECONNREFUSED/ECONNRESET. That is a whole-host condition, not a per-page one, so a
+# refusal parks *every* worker until this timestamp rather than letting each retry into the same
+# closed door. Guarded by its own lock because the harvesters call `fetch` from a thread pool.
+_REFUSED = {errno.ECONNREFUSED, errno.ECONNRESET, errno.EPIPE, errno.ETIMEDOUT}
+_COOLDOWN_LOCK = threading.Lock()
+_cooldown_until = 0.0
+
+
+def _park(seconds: float) -> None:
+    """Hold every worker off the host for ``seconds`` from now."""
+    global _cooldown_until
+    with _COOLDOWN_LOCK:
+        _cooldown_until = max(_cooldown_until, time.monotonic() + seconds)
+
+
+def _wait_out_cooldown() -> None:
+    while True:
+        with _COOLDOWN_LOCK:
+            remaining = _cooldown_until - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 5))
+
+
+def fetch(url: str, attempts: int = 6) -> str:
+    """GET ``url`` on a fresh connection, retrying what is worth retrying.
+
+    Every attempt builds its own opener and sends ``Connection: close``, so a refused or
+    half-dead socket is never reused — a retry is a genuinely new connection, which is the only
+    thing that helps once the Archive has stopped accepting the old ones.
+
+    Three failure classes, handled differently. A **connection refusal** is the host saying "too
+    many"; it parks all workers and backs off hardest. A **429/5xx** is throttling, backed off
+    exponentially and honouring ``Retry-After``. Anything else — 400, 403, 404 — is the server's
+    final answer, raised at once rather than retried five more times.
+
+    Never returns None. The first version swallowed every exception and returned None, which
+    cost a harvest run: 18 ATSes reported "could not get page count: None" and the reason had
+    been discarded at the one point it was known.
+    """
+    last = ""
+    for attempt in range(1, attempts + 1):
+        _wait_out_cooldown()
+        try:
+            request = urllib.request.Request(
+                url, headers={"User-Agent": UA, "Connection": "close"}
+            )
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=_CTX)
+            )
+            with opener.open(request, timeout=TIMEOUT) as response:
+                return response.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as err:
+            if err.code not in _RETRYABLE:
+                raise FetchError(f"HTTP {err.code} {err.reason}") from err
+            last = f"HTTP {err.code} {err.reason}"
+            delay = _retry_after(err) or 2**attempt
+        except (urllib.error.URLError, TimeoutError, OSError) as err:
+            last = f"{type(err).__name__}: {err}"
+            if _is_refusal(err):
+                delay = min(15 * attempt, 90)
+                _park(
+                    delay
+                )  # the host is closing the door on everyone, not just this page
+            else:
+                delay = 2**attempt
+        if attempt == attempts:
+            break
+        time.sleep(min(delay, 90))
+    raise FetchError(f"{last} (gave up after {attempts} attempts)")
+
+
+def _is_refusal(err: Exception) -> bool:
+    """Whether the host refused the connection itself, rather than answering it."""
+    inner = getattr(err, "reason", err)
+    code = getattr(inner, "errno", None)
+    return code in _REFUSED
+
+
+def _retry_after(err: urllib.error.HTTPError) -> float | None:
+    raw = err.headers.get("Retry-After") if err.headers else None
+    try:
+        return float(raw) if raw else None
+    except ValueError:
+        return None  # an HTTP-date; the exponential backoff is a fine substitute
 
 
 def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
