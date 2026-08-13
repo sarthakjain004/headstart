@@ -327,7 +327,11 @@ textarea:focus{ border-color:var(--violet); }
 .trends-legend li{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:8px;
   font-size:12.5px; cursor:pointer; }
 .trends-legend li:hover{ background:var(--raise-2); }
-.trends-legend li[aria-pressed="true"]{ background:var(--raise-2); }
+/* `.on` = charted, and the only rows that drill — real buttons, so the global :focus-visible
+   rule below reaches them. `.off` rows are listed for their number alone: dimmed, and not
+   interactive, so they must not keep the pointer cursor the base rule sets. */
+.trends-legend li.on{ background:var(--raise-2); }
+.trends-legend li.off{ opacity:.45; cursor:default; }
 .trends-legend .swatch{ width:9px; height:9px; border-radius:3px; flex:none; }
 .trends-legend .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Marks a category whose drill holds named roles — muted, so it reads as an affordance rather

@@ -35,3 +35,9 @@ jobs:
         run: ruff format --check .
       - name: Tests (pytest)
         run: pytest
+      # The UI is a plain browser script with no build step, so its tests run on the runner's
+      # preinstalled Node via the built-in runner — no package.json, no node_modules, no second
+      # package manager to pin. A glob, not a directory: `node --test <dir>` is not supported
+      # on every Node the runners ship.
+      - name: UI tests (node)
+        run: node --test tests/js/*.test.js
