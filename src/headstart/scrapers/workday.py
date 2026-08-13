@@ -300,6 +300,16 @@ class WorkdayScraper(BaseScraper):
         2,000 cap is hit and a fresh facet is available."""
         first = self._post(applied, offset=0)
         if not first:
+            if depth:
+                # A subdivided slice that 404s on its first page is dropped whole, while the
+                # Board still emits every posting its sibling slices found — so it stays in the
+                # eviction scope and sync reads the vanished slice as delistings (ADR-0053).
+                # Depth 0 needs no flag: nothing was absorbed, so the Board writes no lines and
+                # is outside that scope already.
+                self.mark_truncated(
+                    f"no first page for {_slice_label(applied)} — "
+                    "none of that slice's postings were read"
+                )
             return
         total = int(first.get("total", 0))
         absorb(first.get("jobPostings") or [])
@@ -312,10 +322,17 @@ class WorkdayScraper(BaseScraper):
             if capped and depth < _MAX_DEPTH
             else None
         )
-        if not capped or facet is None:
-            self._paginate(
-                applied, total, absorb
-            )  # not capped, or nothing left to split
+        if capped and facet is None:
+            # The reported total sticks at exactly 2,000 while the real one is higher, and with
+            # no facet left to split there is no second query to reach the rest — so this
+            # paginates 2,000 of a knowingly larger board. Eightfold's page ceiling in Workday
+            # form, and it must be reported the same way (ADR-0053).
+            self.mark_truncated(
+                f"{_slice_label(applied)} capped at {_QUERY_TOTAL_CAP} with no facet left "
+                "to split — postings past the cap were not read"
+            )
+        if facet is None:  # not capped, or capped with nothing left to split
+            self._paginate(applied, total, absorb)
             return
 
         param, values = facet
@@ -340,6 +357,11 @@ class WorkdayScraper(BaseScraper):
             _log.warning(
                 f"{self.board_key()}: {missing} page(s) 404ed mid-crawl — "
                 f"board partial ({total} listed)"
+            )
+            # The warning was the whole record until ADR-0053: `index sync` could not see it, so
+            # the pages this dropped were evicted as delistings. Now it travels with the Jobs.
+            self.mark_truncated(
+                f"{missing} page(s) 404ed mid-crawl of {total} listed postings"
             )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -388,6 +410,17 @@ def _posting_key(item: dict[str, Any]) -> str:
     if bullet:
         return str(bullet)
     return (item.get("externalPath") or "").rsplit("/", 1)[-1] or "unknown"
+
+
+def _slice_label(applied: dict[str, list[str]]) -> str:
+    """Name the filter combination a query stands for, so a truncation says *which* query
+    came up short — the crawl subdivides, and "the board was partial" alone does not locate it."""
+    return (
+        ", ".join(
+            f"{param}={'/'.join(values)}" for param, values in sorted(applied.items())
+        )
+        or "the unfiltered query"
+    )
 
 
 def _remote_from(remote_type: Any) -> bool | None:

@@ -77,6 +77,7 @@ from headstart.ingest.index_plan import (
     plan_prune,
     plan_sync,
     resolve_board,
+    read_unauthoritative_boards,
 )
 from headstart.search import PROD_TABLE
 
@@ -91,6 +92,9 @@ _DB = REPO_ROOT / "data" / "lancedb"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 # Written by embed_plan, consumed here and by embed_merge (ADR-0050).
 _UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+# Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
+# this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
+_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _MIN_KEEP_BOARDS = (
@@ -245,6 +249,22 @@ def sync(args: argparse.Namespace) -> int:
     live = boards_by_canon(live_keep_set(args.ledger))
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
     boards = _scraped_boards(args.scraped, corpus_ids, live)
+    # A Board whose scrape came back short emitted the pages it did get, so it looks scraped and
+    # its missing rows look delisted. Drop it from the scope entirely: eviction should follow a
+    # Board's scrape *outcome*, not the presence of a line (ADR-0053). The collapse guard in
+    # `plan_sync` stays as the backstop for a truncation that reported nothing at all.
+    # `excluded`, not "held": `SyncPlan.held` already names what the collapse guard withheld, and
+    # these are two different mechanisms.
+    unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
+    excluded = {b for b in boards if b.lower() in unauthoritative}
+    if excluded:
+        boards -= excluded
+        _log.warning(
+            f"scrape outcome: {len(excluded)} Board(s) returned a list that is not authoritative "
+            "(truncated, or the scrape raised) and are excluded from the eviction scope — their "
+            "missing rows are unscraped, not closed"
+        )
+        _log_ids("scope-excluded Board", sorted(excluded))
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
     _log.info(
@@ -446,6 +466,13 @@ def main() -> int:
         default=str(_SCRAPED),
         help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
         "(default: data/jobs); falls back to --source's Boards when it has no .jsonl files",
+    )
+    p_sync.add_argument(
+        "--unauthoritative-boards",
+        default=str(_UNAUTHORITATIVE),
+        help="JSON of Boards whose scraped list is not authoritative, written by scrape_join; "
+        "they are dropped from the eviction scope (ADR-0053). Missing file means no Board is "
+        "protected",
     )
     p_sync.add_argument(
         "--upgrades",

@@ -145,6 +145,25 @@ def test_report_survives_the_time_budget_and_still_writes_its_numbers(tmp_path, 
     assert report["board_seconds"]["max"] == 1.5
 
 
+def test_report_carries_short_lists_into_the_shard_report(tmp_path):
+    """The last hop before the join: a Board reported short by its scraper has to reach
+    ``_shard_report.json``, beside the errors, or the signal dies on this runner (ADR-0053).
+
+    Kept out of ``errors`` on purpose — the Board produced Jobs and did not fail, and counting
+    it as a failure would make every error total in the run read wrong.
+    """
+    short = "HTTP 429 on page 31 — got 300 of 850 postings"
+    progress = scrape_run._Progress(assigned=2)
+    progress.on_board("eightfold:jobs.nvidia.com", 300, None, 61.0, short)
+    progress.on_board("lever:acme", 5, None, 1.0)
+
+    scrape_run._report(progress, tmp_path, elapsed=62.0, predicted=None, killed=False)
+
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert report["truncated"] == {"eightfold:jobs.nvidia.com": short}
+    assert report["errors"] == {}
+
+
 def test_report_states_actual_against_the_planners_prediction(tmp_path, caplog):
     """The comparison nothing made: a cost model can drift by 3x in plain sight without it."""
     caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")

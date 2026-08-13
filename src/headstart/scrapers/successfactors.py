@@ -86,11 +86,16 @@ class SuccessFactorsScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}/sitemap.xml"
 
-    def _fetch_sitemap(self) -> tuple[str, str]:
-        """GET ``/sitemap.xml`` streamed. Returns ``(kind, text)`` with kind "urlset" | "rss" |
-        "other". A urlset is read to the end (compact); an RSS feed is abandoned right after
-        classification so the trickling generator never stalls the fetch. A torn urlset read
-        raises — a silent partial board would drop jobs."""
+    def _fetch_sitemap(self) -> tuple[str, str, str | None]:
+        """GET ``/sitemap.xml`` streamed. Returns ``(kind, text, cut_short)`` with kind "urlset" |
+        "rss" | "other". A urlset is read to the end (compact); an RSS feed is abandoned right
+        after classification so the trickling generator never stalls the fetch. A torn urlset read
+        raises — a silent partial board would drop jobs.
+
+        ``cut_short`` is why the read stopped early, or None when the document arrived whole: a
+        urlset cut at ``_SITEMAP_CAP`` lists only the jobs that fit. Reported, not recorded, for
+        the same reason :meth:`_search_job_urls` reports — ``fetch_raw`` decides which surface is
+        the Board's answer (ADR-0053)."""
         response = http.session().request(
             "GET",
             self.url(),
@@ -101,11 +106,13 @@ class SuccessFactorsScraper(BaseScraper):
         chunks: list[bytes] = []
         size = 0
         kind = ""
+        capped = False
         try:
             for chunk in response.iter_content():
                 chunks.append(chunk)
                 size += len(chunk)
                 if size >= _SITEMAP_CAP:
+                    capped = True
                     break
                 if not kind and size >= _CLASSIFY_BYTES:
                     kind = _sitemap_kind(b"".join(chunks).decode("utf-8", "replace"))
@@ -114,12 +121,22 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
-            return "other", ""
+            return "other", "", None
         text = b"".join(chunks).decode("utf-8", "replace")
-        return kind or _sitemap_kind(text), text
+        return (
+            kind or _sitemap_kind(text),
+            text,
+            _cap_reason("sitemap") if capped else None,
+        )
 
-    def _search_job_urls(self) -> list[tuple[str, str]]:
-        """Enumerate the board via the server-rendered ``/search/`` pages."""
+    def _search_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
+        """Enumerate the board via the server-rendered ``/search/`` pages.
+
+        Returns the pairs found and, when the walk was cut short rather than reaching the end,
+        why. Reported rather than recorded, because whether it matters is the caller's to decide:
+        this surface is only the Board's answer when it returns something, and a truncation on a
+        surface that lost the fallback race must not be attached to the list that won it
+        (ADR-0053)."""
         seen: dict[str, str] = {}  # id -> url, insertion-ordered
         startrow = 0
         for _ in range(_MAX_SEARCH_PAGES):
@@ -130,18 +147,29 @@ class SuccessFactorsScraper(BaseScraper):
                 timeout=30,
             )
             if response.status_code != 200:
-                break
+                # Unlike the empty-page exit below, this is the walk being cut short rather than
+                # reaching the end: whatever sits past this offset is unread, not absent
+                # (ADR-0053). No total to compare against here, so report the offset instead.
+                return [(u, i) for i, u in seen.items()], (
+                    f"HTTP {response.status_code} at startrow {startrow} — "
+                    f"{len(seen)} postings read before the walk stopped"
+                )
             found = _job_urls_from(response.text, self.slug)
             fresh = [(u, i) for u, i in found if i not in seen]
             if not fresh:
                 break
             seen.update({i: u for u, i in fresh})
             startrow += max(len(found), _SEARCH_STEP_FLOOR)
-        return [(u, i) for i, u in seen.items()]
+        return [(u, i) for i, u in seen.items()], None
 
-    def _rss_job_urls(self) -> list[tuple[str, str]]:
+    def _rss_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
         """Enumerate the board from the full RSS feed, patiently; keeps whatever arrived when
-        the tenant's generator aborts mid-feed."""
+        the tenant's generator aborts mid-feed.
+
+        Returns the pairs found and, when the stream ended early rather than completing, why —
+        an aborted feed and a feed cut at ``_SITEMAP_CAP`` both list a knowingly short board.
+        Reported rather than recorded for the same reason :meth:`_search_job_urls` reports
+        (ADR-0053)."""
         response = http.session().request(
             "GET",
             self.url(),
@@ -151,30 +179,53 @@ class SuccessFactorsScraper(BaseScraper):
         )
         chunks: list[bytes] = []
         size = 0
+        cut_short: str | None = None
         try:
             for chunk in response.iter_content():
                 chunks.append(chunk)
                 size += len(chunk)
                 if size >= _SITEMAP_CAP:
+                    cut_short = _cap_reason("RSS feed")
                     break
         except http.RequestsError:
-            pass  # server-side abort: scrape the links that did arrive
+            # Server-side abort: scrape the links that did arrive, and say so. No total to
+            # compare against in a feed, so report how far it got instead.
+            cut_short = (
+                f"the tenant's RSS feed aborted {size:,} bytes in — "
+                "postings past that point were not listed"
+            )
         finally:
             response.close()
         if response.status_code != 200:
-            return []
-        return _job_urls_from(b"".join(chunks).decode("utf-8", "replace"), self.slug)
+            return [], None
+        return (
+            _job_urls_from(b"".join(chunks).decode("utf-8", "replace"), self.slug),
+            cut_short,
+        )
 
     def fetch_raw(self) -> Any:
-        kind, text = self._fetch_sitemap()
+        # Each of the three surfaces hands back *why* its list came up short, and the truncation
+        # is recorded only in the branch where that surface is what the Board returns. A surface
+        # that lost the fallback race can list nothing at all (a search walk that 503s on its
+        # first page), and the surface that then answers may answer with the whole board — which
+        # must never inherit the loser's truncation (ADR-0053).
+        kind, text, sitemap_cut_short = self._fetch_sitemap()
         listed = _job_urls_from(text, self.slug) if kind == "urlset" else []
         surface = "sitemap-urlset" if listed else ""
+        if listed and sitemap_cut_short:
+            self.mark_truncated(sitemap_cut_short)
         if not listed:
-            listed = self._search_job_urls()
-            surface = "search-pages" if listed else surface
+            listed, search_cut_short = self._search_job_urls()
+            if listed:
+                surface = "search-pages"
+                if search_cut_short:
+                    self.mark_truncated(search_cut_short)
         if not listed and kind == "rss":
-            listed = self._rss_job_urls()
-            surface = "rss-stream" if listed else surface
+            listed, rss_cut_short = self._rss_job_urls()
+            if listed:
+                surface = "rss-stream"
+                if rss_cut_short:
+                    self.mark_truncated(rss_cut_short)
         # Which of the three surfaces answered, and how much the detail pass will cost. This
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs
@@ -246,6 +297,14 @@ class SuccessFactorsScraper(BaseScraper):
                 )
             )
         return jobs
+
+
+def _cap_reason(what: str) -> str:
+    """Why a stream that ran into ``_SITEMAP_CAP`` left the board short (ADR-0053)."""
+    return (
+        f"the {what} hit the {_SITEMAP_CAP // (1024 * 1024)} MB read cap — "
+        "postings past it were not listed"
+    )
 
 
 def _sitemap_kind(text: str) -> str:

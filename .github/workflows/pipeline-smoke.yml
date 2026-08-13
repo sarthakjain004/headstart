@@ -9,10 +9,10 @@ name: pipeline-smoke
 #     as the monolith, that the merged store syncs into a real LanceDB index, and that `prune` plus
 #     a re-`sync` then leave those rows exactly as they are (no add/evict ping-pong — PR #102).
 #   cycle 2 — a second scrape of the same two Boards in which one Job is genuinely delisted and the
-#     other Board **errored mid-scrape and returned a truncated list**. Eviction must follow the
-#     first and not the second. A single cycle against an empty table cannot express that at all,
-#     which is how the eightfold index flap (whole NVIDIA/Qualcomm Boards evicted one run and
-#     re-added the next, ~2 h invisible to users) shipped past this workflow.
+#     other Board **gave up mid-scrape and returned a truncated list, without raising**. Eviction
+#     must follow the first and not the second. A single cycle against an empty table cannot
+#     express that at all, which is how the eightfold index flap (whole NVIDIA/Qualcomm Boards
+#     evicted one run and re-added the next, ~2 h invisible to users) shipped past this workflow.
 #
 # Runs on demand and when the ingest path changes.
 on:
@@ -172,28 +172,35 @@ jobs:
       # ── Cycle 2 ─────────────────────────────────────────────────────────────────────────────
       # The bug this workflow exists to catch. Two Boards change in different ways, and only one of
       # the changes is a real delisting.
-      - name: Cycle 2 — one Job genuinely delisted, one Board errored mid-scrape
+      - name: Cycle 2 — one Job genuinely delisted, one Board's list truncated mid-scrape
         run: |
           python - <<'PY'
           import json, pathlib
           boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
           healthy, flaky = boards["healthy"], boards["flaky"]
 
-          def rewrite(k, board, lines, error=None):
+          def rewrite(k, board, lines, error=None, truncated=None):
               d = pathlib.Path(f"data/scrape/fragments/shard-{k}")
               path = d / f"{board['ats']}.jsonl"
               kept = path.read_text(encoding="utf-8").splitlines(keepends=True)
               path.write_text("".join(lines(kept)), encoding="utf-8")
               report = json.loads((d / "_shard_report.json").read_text())
-              report["errors"] = {f"{board['ats']}:{board['slug']}": error} if error else {}
+              key = f"{board['ats']}:{board['slug']}"
+              report["errors"] = {key: error} if error else {}
+              report["truncated"] = {key: truncated} if truncated else {}
               (d / "_shard_report.json").write_text(json.dumps(report), encoding="utf-8")
 
           # Healthy Board: a clean, complete scrape that legitimately no longer lists job :0.
           rewrite(0, healthy, lambda lines: lines[1:])
           # Flaky Board: page 1 came back, page 2 was rate-limited, and the scraper returned what it
           # had (eightfold's `_api_search` breaks out of its pagination loop on a non-200 —
-          # src/headstart/scrapers/eightfold.py:130-139 — so this is the routine case, not a rare one).
-          rewrite(1, flaky, lambda lines: lines[:1], error="RequestsError: HTTP 429 on page 2")
+          # src/headstart/scrapers/eightfold.py — so this is the routine case, not a rare one).
+          #
+          # Recorded under `truncated`, NOT `errors`: the scraper did not raise, and writing an
+          # error here would test a signal the production path cannot emit for this failure. That
+          # is what this fixture did before ADR-0053, and it made the test green on a fiction.
+          rewrite(1, flaky, lambda lines: lines[:1],
+                  truncated="HTTP 429 on page 2 — got 1 of 6 postings")
           print("cycle 2 snapshot: healthy Board -1 job, flaky Board truncated to 1 of 6")
           PY
       - name: Re-join and re-filter the second cycle's snapshot
@@ -223,17 +230,20 @@ jobs:
           # ...but the truncated Board's missing Jobs are still open; they were simply not returned.
           # Evicting them is the index flap: they vanish from search for one 2-hourly cycle and come
           # back in the next, over and over (whole NVIDIA/Qualcomm/Micron Boards, measured 5 runs
-          # running). "absent from this run's corpus" is not "closed" when the Board errored.
+          # running). "absent from this run's corpus" is not "closed" when the list was truncated.
           stranded = [fid(n) for n in range(1, 6) if fid(n) not in ids]
           assert not stranded, (
               f"INDEX FLAP: {len(stranded)} Jobs evicted from {flaky['ats']}:{flaky['slug']}, whose "
-              f"scrape errored and returned 1 of 6 postings — e.g. {stranded[:3]}. sync infers "
-              "'this Board was scraped' from the presence of any job line (index.py `_scraped_boards`) "
-              "and then evicts every indexed id the truncated list is missing. The Board's scrape "
-              "outcome is known — it is in the shard report's `errors` map — but nothing carries it "
-              "from the scrape to sync.")
+              f"scrape came back truncated at 1 of 6 postings — e.g. {stranded[:3]}. The Board's "
+              "outcome IS carried from the scrape to sync now (ADR-0053), so this failing means "
+              "that carrier broke, not that it is missing. Check, in order: did scrape_join write "
+              "data/state/unauthoritative_boards.json and does it name this Board; did the key "
+              "translation land it in `board_key()` space (a Workday slug is a URL and must become "
+              "`ats:company/site`); and did the shard write a `_shard_report.json` at all — a shard "
+              "hard-killed by the step timeout writes none, and only ADR-0046's ratio guard covers "
+              "that, which exempts Boards under COLLAPSE_FLOOR rows like this one.")
 
           expected = {hid(n) for n in range(1, 10)} | {fid(n) for n in range(6)}
           assert ids == expected, f"unexpected table contents: {ids ^ expected}"
-          print(f"OK: 1 delisted Job evicted, {len(ids)} rows kept; the errored Board was left alone")
+          print(f"OK: 1 delisted Job evicted, {len(ids)} rows kept; the truncated Board was left alone")
           PY

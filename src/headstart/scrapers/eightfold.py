@@ -125,7 +125,12 @@ class EightfoldScraper(BaseScraper):
 
     def _api_search(self, group_id: str) -> list[dict[str, Any]] | None:
         """Paginate ``/api/pcsx/search`` to the full position list. None signals "API unavailable"
-        (403/non-200 on the first page) so the caller falls back to the sitemap."""
+        (403/non-200 on the first page) so the caller falls back to the sitemap.
+
+        A crawl that gives up part-way keeps the positions it has and marks the Board truncated.
+        The API hands back ``data.count``, so how short the list is comes out *exactly* rather
+        than inferred — which is the whole point: ``index sync`` can then skip the Board instead
+        of reading the gap as delistings and evicting them (ADR-0053)."""
         first = self._get(self._search_url(group_id, 0))
         if first.status_code != 200:
             return None
@@ -140,13 +145,32 @@ class EightfoldScraper(BaseScraper):
         while len(positions) < total and pages < _MAX_PAGES:
             r = self._get(self._search_url(group_id, start))
             if r.status_code != 200:
+                self.mark_truncated(
+                    _short_reason(
+                        f"HTTP {r.status_code} on page {pages + 1}",
+                        len(positions),
+                        total,
+                    )
+                )
                 break
             batch = (r.json().get("data") or {}).get("positions") or []
             if not batch:
+                self.mark_truncated(
+                    _short_reason(f"empty page {pages + 1}", len(positions), total)
+                )
                 break
             positions.extend(batch)
             start += _PAGE
             pages += 1
+        else:
+            if (
+                len(positions) < total
+            ):  # loop ended on _MAX_PAGES, not on having them all
+                self.mark_truncated(
+                    _short_reason(
+                        f"hit the {_MAX_PAGES}-page ceiling", len(positions), total
+                    )
+                )
         return positions
 
     def _details_url(self, group_id: str, position_id: str) -> str:
@@ -324,6 +348,13 @@ class EightfoldScraper(BaseScraper):
                 )
             )
         return jobs
+
+
+def _short_reason(cause: str, got: int, total: int) -> str:
+    """Why the crawl stopped, with exactly how short it left the list (ADR-0053). ``data.count``
+    gives the board total, so every way ``_api_search`` can give up reports the same measured
+    shortfall rather than each phrasing it its own way."""
+    return f"{cause} — got {got} of {total} postings"
 
 
 def _dedupe(items: list[str]) -> list[str]:

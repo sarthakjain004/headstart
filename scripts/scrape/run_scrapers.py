@@ -262,7 +262,13 @@ def main() -> int:
     start = time.monotonic()
     counter = {"done": 0, "jobs": 0, "errors": 0}
 
-    def on_board(key: str, n_jobs: int, error: str | None, seconds: float) -> None:
+    def on_board(
+        key: str,
+        n_jobs: int,
+        error: str | None,
+        seconds: float,
+        truncated: str | None = None,
+    ) -> None:
         # called on scrape_all's main thread as each board finishes — safe to mutate/log here
         counter["done"] += 1
         if error:
@@ -277,13 +283,16 @@ def main() -> int:
             )
         else:
             counter["jobs"] += n_jobs
+            # A short list is the miss this script exists to show: without the suffix the board
+            # reads as a clean N-job scrape (ADR-0053).
             log.info(
-                "[%d/%d] %s -> %d jobs (%.1fs)",
+                "[%d/%d] %s -> %d jobs (%.1fs)%s",
                 counter["done"],
                 total,
                 key,
                 n_jobs,
                 seconds,
+                f" — partial: {truncated}" if truncated else "",
             )
         if counter["done"] % 25 == 0:
             el = time.monotonic() - start

@@ -25,15 +25,19 @@ docstring says why they must agree (ADR-0049).
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from headstart import log
 from headstart.config import load_active_companies
 from headstart.corpus import board_of
 from headstart.scrapers.registry import get_scraper
+
+_log = log.get(__name__, __spec__)
 
 
 # A Board losing more than this share of its indexed rows in one run is presumed truncated, not
@@ -81,9 +85,12 @@ def plan_sync(
     Boards that flapped sat at 35–82% — so the threshold separates them with room to spare.
     Boards under :data:`COLLAPSE_FLOOR` rows are exempt: there a large ratio is a handful of rows.
 
-    The guard is a stopgap for the blast radius, not the cause, and it is deliberately blunt: a
-    Board that genuinely sheds more than a quarter of its postings at once keeps those rows until
-    the scrape reports per-Board outcomes and the sync can scope on them instead.
+    The guard is now the **backstop**, not the only line: the scrape reports its per-Board outcomes
+    and ``index sync`` keeps the Boards :func:`read_unauthoritative_boards` names out of
+    ``scraped_boards`` altogether (ADR-0053). What is left to the ratio is a scraper that cannot
+    detect its own truncation and a shard killed before it writes a report. It stays deliberately
+    blunt: a Board that genuinely sheds more than a quarter of its postings at once keeps those
+    rows.
     """
     index = set(index_ids)
     fresh = set(fresh_ids)
@@ -188,6 +195,39 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     for board in sorted(keep):  # sorted so a caller's set order can't change the plan
         live.setdefault(board.lower(), board)
     return live
+
+
+def read_unauthoritative_boards(path: str | Path) -> set[str]:
+    """Boards whose scraped list is not authoritative this run — it came back truncated, or the
+    scrape raised — lowercased for matching (ADR-0053).
+
+    Written by ``scrape_join.write_unauthoritative_boards``; ``index sync`` drops these from the
+    eviction scope so a truncated scrape cannot read as a delisting. Lives here rather than beside
+    its caller so the scoping invariants stay unit-testable on CI's base-deps-only install.
+
+    Fails **open** — an unreadable or wrong-shaped file yields an empty set, restoring the old
+    infer-from-lines behaviour. Failing the other way would freeze eviction across the whole index
+    on a bad file. The shape check is not paranoia: JSON's top level may legally be a list or a
+    string, and iterating either yields items that are not Board keys — ``"abc"`` would quietly
+    protect Boards ``a``, ``b`` and ``c``, and ``[1, 2]`` would raise on ``.lower()``.
+    """
+    p = Path(path)
+    if not p.exists():
+        return set()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - telemetry must never stop the index updating
+        _log.warning(
+            f"unreadable {p}: {exc} — no Board is protected from eviction this run"
+        )
+        return set()
+    if not isinstance(data, dict):
+        _log.warning(
+            f"{p} holds {type(data).__name__}, expected an object of Board -> reason — "
+            "no Board is protected from eviction this run"
+        )
+        return set()
+    return {str(k).lower() for k in data}
 
 
 def resolve_board(job_id: str, live: dict[str, str]) -> str:

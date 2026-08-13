@@ -51,6 +51,25 @@ class BaseScraper(ABC):
     def __init__(self, slug: str, company: str | None = None) -> None:
         self.slug = slug
         self.company = company or slug
+        # Why this Board's list is incomplete, or None when it is whole (ADR-0053).
+        #
+        # A scraper that gives up mid-pagination and returns what it has is the flap's root cause:
+        # it looks to `harvest` exactly like a Board that finished, so `index sync` reads the
+        # missing postings as delisted and evicts them. Raising instead is not an option — the
+        # partial Jobs are real and worth keeping — so the truncation travels beside them:
+        # `scrape_all` reads this after a successful fetch and reports the Board as unfinished.
+        self.truncated: str | None = None
+
+    def mark_truncated(self, why: str) -> None:
+        """Record ``why`` this Board's list came back short, keeping the *first* reason.
+
+        A crawl that has already given up once tends to give up again, and the later reasons are
+        consequences of the first — so the thing that cut it short is the one worth reporting.
+        Every scraper that can detect its own truncation goes through here, so ``harvest`` reads
+        one attribute and never learns how many ways a crawl can end (ADR-0053).
+        """
+        if self.truncated is None:
+            self.truncated = why
 
     def needs_detail(self, native_id: str) -> bool:
         """Whether this Job still needs its per-job detail fetch (ADR-0048).

@@ -60,3 +60,4 @@ supersedes it and note the supersession in both.
 | [0050](0050-persist-descriptions-across-runs.md) | Persist descriptions across runs; key the detail skip-list on holding them | 2026-08-13 |
 | [0051](0051-trends-as-share-flow-and-watched-roles.md) | Trends measure share and flow, and can watch a named role | 2026-08-13 |
 | [0052](0052-watch-the-large-domain-roles-too.md) | Watch the large domain roles too, not only the small ones | 2026-08-13 |
+| [0053](0053-scope-eviction-on-scrape-outcome.md) | Scope eviction on a Board's scrape outcome, not on whether it emitted a line | 2026-08-13 |
