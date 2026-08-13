@@ -40,6 +40,10 @@ jobs:
         env:
           SUBSCRIBERS_REPO: ${{ vars.SUBSCRIBERS_REPO }}
           SUBSCRIBERS_TOKEN: ${{ secrets.SUBSCRIBERS_TOKEN }}
+          # The wall gates /search, and this run has no Google identity to offer, so it
+          # carries the shared secret the Space also holds (docs/email-alerts.md). Must
+          # match the Space's ALERTS_TOKEN exactly or every Digest 401s.
+          ALERTS_TOKEN: ${{ secrets.ALERTS_TOKEN }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERTS_SENDER: ${{ vars.ALERTS_SENDER }}
           # Each transport is optional: whichever secrets are set is what gets delivered,

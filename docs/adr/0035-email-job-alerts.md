@@ -209,7 +209,9 @@ well inside.
 ## Consequences
 
 Four new secrets join `HF_TOKEN`: `GOOGLE_CLIENT_ID`, `RESEND_API_KEY`, and a write-scoped
-`SUBSCRIBERS_TOKEN` in both the Space and Actions. The allowlist is deliberately *not* a secret —
+`SUBSCRIBERS_TOKEN` in both the Space and Actions. *(A fifth, `ALERTS_TOKEN`, was added
+2026-08-13: once ADR-0042 walled the Space, this run's `/search` call needed a credential of
+its own. See that ADR's amendment — without it every Digest 401s.)* The allowlist is deliberately *not* a secret —
 it is data in the Subscriptions repo, so it has one home and one edit path. Personal data enters the
 system for the first time, which is why the private repo, a `subscriptions/` `.gitignore` entry, and
 a rule that addresses are never printed to workflow logs are part of this decision rather than
