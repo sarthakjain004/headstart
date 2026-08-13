@@ -97,6 +97,12 @@ def main() -> int:
     ap.add_argument(
         "--out", default=str(_OUT), help="unioned snapshot dir (default: data/jobs)"
     )
+    ap.add_argument(
+        "--errors",
+        default=str(_ERRORS),
+        help="where to record the Boards whose scrape errored, for `index sync` to exclude "
+        "from the eviction scope (default: data/state/scrape_errors.json)",
+    )
     args = ap.parse_args()
 
     shards_root = Path(args.shards)
@@ -128,7 +134,7 @@ def main() -> int:
     reports = observability.read_shards(shards_root)
     # Written unconditionally, before the summary: an empty file is the honest record of "no Board
     # errored", and the summary below is telemetry that must never gate the eviction signal.
-    write_scrape_errors(reports, _ERRORS)
+    write_scrape_errors(reports, Path(args.errors))
     _report_shards(reports, total, len(per_ats))
     return 0
 
@@ -139,7 +145,7 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
     A shard's numbers only ever existed in its own runner's log, so questions like "did any
     shard run out of time, and how much work did it defer?" needed fifteen job logs opened by
     hand. The reports ride the fragment artifacts here, so this is the first point where they
-    can be added up.
+    can be added up; ``main`` reads them once and hands them to both consumers.
     """
     if not reports:
         _log.info(
