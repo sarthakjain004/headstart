@@ -50,6 +50,8 @@ _log = log.get(__name__, __spec__)
 _SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
 _PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
+# Rides to the merge stage inside the corpus-state artifact it already downloads (ADR-0050).
+_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 
 # Measured CPU seconds-per-Doc per Bucket, from the 2026-07-24 ubuntu-latest run recorded in
@@ -63,17 +65,40 @@ _TARGET_SECONDS = (
 )  # per-shard makespan target; sized so a big backlog saturates the lanes
 
 
-def _prior_ids(path: Path) -> set[str]:
-    """Ids already in the store (skip these) — empty on the first run (no meta.jsonl yet)."""
+def _detail_pass_atses() -> set[str]:
+    """ATSes whose ``description`` comes from a per-Job detail fetch, so it can go missing."""
+    from headstart.scrapers.registry import SCRAPERS
+
+    return {ats for ats, scraper in SCRAPERS.items() if scraper.has_detail_pass}
+
+
+def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
+    """``(embedded ids, ids whose vector was built without a description)`` — both empty on a
+    first run (no meta.jsonl yet).
+
+    The second set is what makes a title-only vector repairable (ADR-0050). ``has_description``
+    is read straight from the row where present. Where it is **absent** — every row written
+    before ADR-0050 — it is inferred: assume degraded on an ATS with a detail pass, and assume
+    fine on a listing-only one, whose description arrives with the listing and so cannot have
+    been lost. That inference bounds the migration to ~22k re-embeds instead of ~186k; without
+    it, repairing ~16,771 degraded vectors would re-encode the whole store.
+    """
     if not path.exists():
-        return set()
+        return set(), set()
+    detail_pass = _detail_pass_atses()
     ids: set[str] = set()
+    degraded: set[str] = set()
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
-            if line:
-                ids.add(json.loads(line)["id"])
-    return ids
+            if not line:
+                continue
+            row = json.loads(line)
+            ids.add(row["id"])
+            flag = row.get("has_description")
+            if flag is False or (flag is None and row.get("ats") in detail_pass):
+                degraded.add(row["id"])
+    return ids, degraded
 
 
 def _load_tokenizer():
@@ -130,6 +155,12 @@ def main() -> int:
         "--out-dir", default=str(_OUT), help="where to write shard-*.jsonl + plan.json"
     )
     ap.add_argument(
+        "--upgrades-out",
+        default=str(_UPGRADES),
+        help="where to list ids whose stale title-only row the merge stage must evict "
+        "before re-adding (ADR-0050)",
+    )
+    ap.add_argument(
         "--max-shards",
         type=int,
         default=_MAX_SHARDS,
@@ -149,22 +180,31 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    prior = _prior_ids(Path(args.prior_meta))
+    prior, degraded = _prior_rows(Path(args.prior_meta))
     scores = load_scores(Path(args.priority))
-    _log.info(f"prior store: {len(prior)} embedded ids")
+    _log.info(
+        f"prior store: {len(prior)} embedded ids ({len(degraded)} without a description)"
+    )
 
     # Collect the new English Docs — same gate/build/meta as embed_run, via the shared module.
     ids: list[str] = []
     docs: list[str] = []
     metas: list[dict] = []
     boards: list[str] = []
+    upgrades: list[str] = []
     scanned = already = dropped = 0
     for job in iter_jobs(args.source):
         scanned += 1
         jid = job.get("id") or ""
         if jid in prior:
-            already += 1
-            continue
+            # A Job already in the store is normally done. The exception is a vector built
+            # without a description whose description we now have — re-embed it, and record the
+            # id so the merge stage evicts the stale row first (ADR-0050). Nothing else can
+            # reach these: `embed_plan` skips by id, so they would stay title-only forever.
+            if not (jid in degraded and (job.get("description") or "").strip()):
+                already += 1
+                continue
+            upgrades.append(jid)
         if not is_english(job.get("title") or "", job.get("description") or ""):
             dropped += 1
             continue
@@ -173,8 +213,14 @@ def main() -> int:
         metas.append(to_meta(job))
         boards.append(board_of(jid))
     _log.info(
-        f"new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped})"
+        f"new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped}, "
+        f"upgraded {len(upgrades)})"
     )
+    # Always rewritten, empty included: a stale list from a prior run would have the merge stage
+    # evict rows nothing is re-embedding this time.
+    upgrades_path = Path(args.upgrades_out)
+    upgrades_path.parent.mkdir(parents=True, exist_ok=True)
+    upgrades_path.write_text("".join(f"{jid}\n" for jid in upgrades), encoding="utf-8")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

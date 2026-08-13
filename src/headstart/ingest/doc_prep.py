@@ -56,6 +56,13 @@ _META_FIELDS = (
 )
 
 
+# Meta keys that exist for the *planner* and must never reach the served table. `index sync`
+# builds each add-row straight from a meta dict, and LanceDB rejects a column its schema does not
+# declare — so anything added to `to_meta` without either landing in `index._schema()` or being
+# listed here breaks every add. Kept beside `to_meta` because that is where the temptation is.
+PLANNER_ONLY_FIELDS = ("has_description",)
+
+
 def bucket_for(n_tokens: int) -> int:
     """The smallest bucket that holds a doc of ``n_tokens`` (over-cap docs go to the top one)."""
     for bucket in _BUCKETS:
@@ -94,6 +101,11 @@ def to_meta(job: dict) -> dict:
     display-only until normalized (ADR-0019).
     """
     meta = {field: job.get(field) for field in _META_FIELDS}
+    # Whether the Doc we are about to embed actually carried a description (ADR-0050). Recorded
+    # because a vector built from a bare title is indistinguishable from a good one afterwards,
+    # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.
+    # Planner-only: see PLANNER_ONLY_FIELDS.
+    meta["has_description"] = bool((job.get("description") or "").strip())
     span = extract(job.get("experience"), job.get("description"), job.get("title"))
     meta["min_years"] = span.min_years if span else None
     meta["max_years"] = span.max_years if span else None

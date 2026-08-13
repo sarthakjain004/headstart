@@ -22,8 +22,6 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.ingest import EMBEDDED_IDS_PATH
-from headstart.ingest.embed_merge import write_embedded_ids
 from headstart.search import PROD_TABLE
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -63,15 +61,10 @@ def main() -> None:
     (_STORE / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"store: {len(kept_meta)} rows remain", flush=True)
 
-    # The scrape stage skips a Job's detail fetch when its id is on this list (ADR-0048), so an
-    # eviction that left the list stale would make the next scrape skip exactly the descriptions
-    # it just threw away — and they would re-embed from the title alone, permanently.
-    written = write_embedded_ids(_STORE / "meta.jsonl", EMBEDDED_IDS_PATH)
-    print(
-        f"detail skip-list: rewritten to {written} ids -> {EMBEDDED_IDS_PATH}",
-        flush=True,
-    )
-
+    # No skip-list rewrite here any more. The list is keyed on the description store, not on the
+    # embedding store (ADR-0050), so dropping a vector no longer discards the text behind it —
+    # the re-embed reads the stored description and needs no re-fetch at all. That removes
+    # ADR-0048's trap, where an eviction made the next scrape skip exactly what it just threw away.
     table = lancedb.connect(_DB).open_table(PROD_TABLE)
     before = table.count_rows()
     quoted = ", ".join(f"'{a}'" for a in sorted(evict))

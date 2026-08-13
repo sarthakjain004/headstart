@@ -42,7 +42,7 @@ from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
-from headstart.ingest import EMBEDDED_IDS_PATH, REPO_ROOT, observability
+from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
 
 _log = log.get(__name__, __spec__)
@@ -150,10 +150,10 @@ def main() -> int:
         help="~measured seconds per shard (sizes the fan-out once costs exist)",
     )
     ap.add_argument(
-        "--embedded-ids",
-        default=str(EMBEDDED_IDS_PATH),
-        help="embedded-id list to ship to the shards so they skip details they already hold "
-        "(ADR-0048); absent means every detail is fetched",
+        "--held-details",
+        default=str(HELD_DETAILS_PATH),
+        help="skip-list to ship to the shards so they skip details we already hold (ADR-0048, "
+        "re-keyed by ADR-0050); absent means every detail is fetched",
     )
     ap.add_argument(
         "--target-boards",
@@ -175,7 +175,7 @@ def main() -> int:
     for stale in out_dir.glob("shard-*.jsonl"):
         stale.unlink()  # a shorter plan must not leave a prior run's extra shards behind
     # Same reason: a re-plan with no source list must not ship the previous run's copy.
-    (out_dir / EMBEDDED_IDS_PATH.name).unlink(missing_ok=True)
+    (out_dir / HELD_DETAILS_PATH.name).unlink(missing_ok=True)
 
     if n == 0:
         _write_plan(out_dir, shards=[], count=0, per_shard=[])
@@ -243,19 +243,19 @@ def main() -> int:
     # would be a meaningless ratio, so they are omitted rather than written as fake minutes.
     per_shard_minutes = [loads[k] / 60 for k in range(m)] if measured else None
 
-    # Ship the embedded-id list inside the same artifact every shard already downloads, so the
-    # scrape stage can skip detail fetches for Jobs it already holds without a second download
-    # path (ADR-0048). Absent on a first run — the shards then fetch every detail, as before.
-    ids_src = Path(args.embedded_ids)
+    # Ship the skip-list inside the same artifact every shard already downloads, so the scrape
+    # stage can skip detail fetches for Jobs whose detail we already hold without a second
+    # download path (ADR-0048). Absent on a first run — the shards then fetch every detail.
+    ids_src = Path(args.held_details)
     if ids_src.exists():
-        # Always shipped under the canonical name whatever --embedded-ids was called: the shard looks
-        # for that exact name, so naming the copy after the source would break the link silently.
-        shutil.copyfile(ids_src, out_dir / EMBEDDED_IDS_PATH.name)
+        # Always shipped under the canonical name whatever --held-details was called: the shard
+        # looks for that exact name, so naming the copy after the source would break it silently.
+        shutil.copyfile(ids_src, out_dir / HELD_DETAILS_PATH.name)
         size_mb = ids_src.stat().st_size / 1e6
-        _log.info(f"shipped {EMBEDDED_IDS_PATH.name} ({size_mb:.1f} MB) to the shards")
+        _log.info(f"shipped {HELD_DETAILS_PATH.name} ({size_mb:.1f} MB) to the shards")
     else:
         _log.info(
-            f"no {EMBEDDED_IDS_PATH.name} yet — shards will fetch every job detail"
+            f"no {HELD_DETAILS_PATH.name} yet — shards will fetch every job detail"
         )
 
     _write_plan(

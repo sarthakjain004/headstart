@@ -34,6 +34,7 @@ _REMOTE = {
 
 class JoinScraper(BaseScraper):
     ats = "join"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://join.com/companies/{self.slug}"

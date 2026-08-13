@@ -1,6 +1,7 @@
 # ADR-0048: Don't re-fetch a detail we already hold
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0021
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0021 · **Amended by:** [ADR-0050](0050-persist-descriptions-across-runs.md) — the skip-list is re-keyed
+onto the description store, so it means *we hold this detail* rather than *we embedded this Job*
 
 ## Context
 

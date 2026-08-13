@@ -171,7 +171,7 @@ def test_read_have_details_returns_none_when_the_planner_shipped_nothing(tmp_pat
     """A first run, or any run where the embed store has not merged yet: fetch every detail."""
     from headstart.ingest import scrape_run as sr
 
-    assert sr._read_have_details(tmp_path / "embedded_ids.txt.gz") is None
+    assert sr._read_have_details(tmp_path / "held_details.txt.gz") is None
 
 
 def test_read_have_details_loads_the_shipped_list(tmp_path):
@@ -179,7 +179,7 @@ def test_read_have_details_loads_the_shipped_list(tmp_path):
 
     from headstart.ingest import scrape_run as sr
 
-    path = tmp_path / "embedded_ids.txt.gz"
+    path = tmp_path / "held_details.txt.gz"
     with gzip.open(path, "wt", encoding="utf-8") as fh:
         fh.write("eightfold:acme:1\n\neightfold:acme:2\n")
     assert sr._read_have_details(path) == {"eightfold:acme:1", "eightfold:acme:2"}

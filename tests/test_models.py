@@ -26,6 +26,7 @@ def test_job_round_trips_to_dict():
         "department",
         "url",
         "posted_at",
+        "detail_fetched",
         "scraped_at",
         "description",
         "experience",

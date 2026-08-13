@@ -4,6 +4,9 @@
 - Date: 2026-07-04
 - Amended by: [ADR-0048](0048-skip-details-we-already-hold.md) — the scrape stage skips a
   Job's detail fetch once it is embedded, so `evict_store.py` now rewrites the skip-list too
+- Amended by: [ADR-0050](0050-persist-descriptions-across-runs.md) — descriptions are persisted,
+  so a targeted re-embed no longer needs a re-scrape; `meta.jsonl` records `has_description`, a
+  narrow content-change detector short of the full hash deferred here
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (scrape-diff eviction) and
   [ADR-0019](0019-tech-corpus-search-index.md) (the id-keyed store + `--resume` semantics)
 
