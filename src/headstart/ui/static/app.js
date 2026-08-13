@@ -700,10 +700,8 @@ function drawTrends(){
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
     // Past CHART_MAX a row is listed but not charted, and `trendClick` will not drill it — so
-    // it is not interactive either. It used to carry `aria-pressed` on a bare <li>: announcing
-    // a toggle that never was one, and unreachable by keyboard. The button role goes on the
-    // inner `.row`, never on the <li> — overriding the li's implicit `listitem` would leave
-    // the <ul> a list owning no list items.
+    // it is not interactive either. The button role goes on the inner `.row`, never on the
+    // <li>: overriding the li's implicit `listitem` leaves the <ul> a list owning no items.
     const off = i >= CHART_MAX;
     const j = d.stamps.length - 1;
     const latest = s.latest == null ? null : trendValue(s.latest, j);
@@ -720,7 +718,7 @@ function drawTrends(){
     return `<li class="${off ? 'listed' : 'charted'}"><span class="row" data-name="${esc(s.name)}"${off ? '' : ' role="button" tabindex="0"'}
       ><span class="swatch" style="background:${off?'var(--ink-3)':c}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
-      ${hasRoles ? '<span class="drill" title="Named roles are tracked inside this category" aria-label="has tracked roles"><span aria-hidden="true">▸ roles</span></span>' : ''}
+      ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Named roles are tracked inside this category">▸ roles</span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
       <span class="dl ${cls}">${txt}</span></span></li>`;
   }).join('');
@@ -782,10 +780,8 @@ function drawTrends(){
 
 function trendClick(name){
   if (trendDrill) { trendSplit = 'bands'; loadTrends(null); return; }   // drilled in — go back up
-  // Only charted rows drill. The old `else` branch deleted from a `trendHidden` set nothing
-  // ever added to, so it redrew an identical chart — a click that looked live and did nothing.
-  // `< 0` as well as `>= CHART_MAX`: findIndex returns -1 for a name that is not in the series
-  // at all, and -1 passes a bare upper-bound check.
+  // Only charted rows drill. `< 0` as well as `>= CHART_MAX`: findIndex returns -1 for a name
+  // that is not in the series at all, and -1 passes a bare upper-bound check.
   const i = trendData.series.findIndex(x => x.name === name);
   if (i < 0 || i >= CHART_MAX) return;
   // Land on whichever split the row advertised. A row carrying the "▸ roles" marker that

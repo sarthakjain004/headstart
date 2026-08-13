@@ -36,10 +36,9 @@ jobs:
       - name: Tests (pytest)
         run: pytest
       # The UI is a plain browser script with no build step, so its tests run on the built-in
-      # Node runner — no package.json, no node_modules, no second package manager. The Node
-      # version is pinned like python-version above rather than inherited from whatever the
-      # runner image ships, because `node --test` has changed its argument handling across
-      # releases (a directory works on some, a glob on all).
+      # Node runner — no package.json, no node_modules, no second package manager. The version
+      # is pinned like python-version above for the same reason: the runner image's Node moves
+      # under us otherwise, and `node --test` has changed behaviour across releases.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"

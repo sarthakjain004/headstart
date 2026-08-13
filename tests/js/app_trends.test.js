@@ -136,12 +136,10 @@ test('charted rows are real buttons; listed-but-uncharted rows are not interacti
   assert.match(charted, /tabindex="0"/);
   assert.doesNotMatch(uncharted, /role="button"/);
   assert.doesNotMatch(uncharted, /tabindex/);
-  // The ARIA this replaced: aria-pressed announcing a toggle that never toggled. Scoped to
-  // these rows, not the whole legend — a future real toggle elsewhere must not fail this.
+  // Scoped to these rows, not the whole legend: a future real toggle must not fail this.
   assert.doesNotMatch(charted, /aria-pressed/);
   assert.doesNotMatch(uncharted, /aria-pressed/);
-  // The button role must sit on the inner .row, never on the <li>: overriding the li's
-  // implicit `listitem` would leave the <ul> a list owning no items.
+  // The role belongs on the inner .row so the <li> keeps its implicit `listitem`.
   assert.match(charted, /<span class="row"[^>]*role="button"/);
 });
 
@@ -166,9 +164,8 @@ test('the scope line names the drillable set when more rows are listed than char
   t.set(fixture(), null);
   t.draw();
   const scope = nodes['trends-scope'].textContent;
-  // Assert the SHAPE, not the copy: it must name the drillable count rather than imply every
-  // listed row drills. Hardcoding the wording (or the number 8) would fail on a harmless
-  // rewording or a CHART_MAX change, neither of which is a defect.
+  // Assert the shape, not the copy: it must name the drillable count rather than imply every
+  // listed row drills. CHART_MAX is read from the module so the two cannot drift.
   assert.match(scope, new RegExp(`top ${t.chartMax}\\b`));
   assert.doesNotMatch(scope, /click a category/);
 });
