@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from headstart import config
 from headstart.config import (
     EXCLUDED_BOARDS,
     PARKED_BOARDS,
@@ -111,19 +112,28 @@ def test_parked_board_is_dropped_across_hosts_and_casings(tmp_path):
     assert slugs == {"https://accenture.wd103.myworkdayjobs.com/avanadecareers"}
 
 
-def test_parked_board_is_absent_from_the_real_committed_ledger():
-    """Against the ledger production actually reads, not a fixture. The first cut of this park
-    passed a synthetic test while the committed ledger defeated it — a `wd3` row for the same
-    Board survived, so the change removed nothing at all."""
+def test_parked_boards_name_a_live_board_and_are_dropped(monkeypatch):
+    """Against the real ledger, not a fixture — and asserted from both sides, because either
+    half passes vacuously alone. The first cut of this park passed a synthetic test while the
+    real ledger defeated it (a `wd3` row for the same Board survived dedupe); conversely an
+    emptiness check alone stays green when a key is typo'd and parks nothing at all, which is
+    the "silent lost coverage" PARKED_BOARDS' own comment warns about."""
     ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
-    parked = {
-        key
-        for key in (
-            _board_identity(c).lower() for c in load_active_companies(ledger, 0)
-        )
-        if key in PARKED_BOARDS
+
+    selected = {
+        _board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
     }
-    assert not parked, f"parked Boards still selectable: {sorted(parked)}"
+    assert not (PARKED_BOARDS & selected), (
+        f"parked Boards still selectable: {sorted(PARKED_BOARDS & selected)}"
+    )
+
+    monkeypatch.setattr(config, "PARKED_BOARDS", frozenset())
+    unparked = {
+        _board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
+    }
+    assert PARKED_BOARDS <= unparked, (
+        f"parked keys naming no live Board: {sorted(PARKED_BOARDS - unparked)}"
+    )
 
 
 def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):

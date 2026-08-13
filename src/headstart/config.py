@@ -58,9 +58,9 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # that row and merely promote another instance's row to be `_dedupe_boards`' survivor: the Board
 # keeps being scraped while the entry looks effective.
 #
-# A parked Board also leaves `index_plan.live_keep_set`, so its already-indexed rows are evicted
-# as off-Board. That is the accepted cost here — a Board that cannot finish a scrape cannot keep
-# its rows fresh either.
+# A parked Board also leaves `index_plan.live_keep_set`, so whatever rows it holds in the index
+# are evicted as off-Board. Accepted either way: this Board has never finished a scrape, so it
+# has little or nothing indexed — and could not keep those rows fresh if it did.
 PARKED_BOARDS: frozenset[str] = frozenset(
     {
         # 48,369 jobs. Workday reports a query's total as at most 2,000, so the scraper
