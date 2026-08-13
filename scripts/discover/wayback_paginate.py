@@ -8,8 +8,8 @@ to be filtered server-side, via --filter.
 
 Sweeps every board host the ATS serves from (`wayback_feeder.ATS_HOSTS`), not just one.
 Resumable: the cursor is saved per host to data/wayback-ats/.{ats}_{host}_resume after each
-page, so you can stop (Ctrl+C) any time and re-run to continue. --max-pages is per host, so a
-provider with 8 hosts walks up to 8x that.
+page, so you can stop (Ctrl+C) any time and re-run to continue. --max-pages is per host, so an
+ATS with 8 hosts walks up to 8x that.
 
 Usage:  python scripts/discover/wayback_paginate.py zoho
         python scripts/discover/wayback_paginate.py zoho --max-pages 5   # 5 per host (test)
@@ -23,14 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from wayback_feeder import (
-    WB,
-    extract,
-    host_args,
-    hosts_for,
-    slug_sink,
-    warn_legacy_state,
-)
+from wayback_feeder import WB, adopt_legacy_state, cli, extract, hosts_for, slug_sink
 
 PAGE = 15000  # urls per CDX page
 SLEEP = 1.0  # politeness between pages (seconds)
@@ -120,7 +113,7 @@ def sweep(ats, domain, style, max_pages, cdx_filter, sink):
 
 
 def main():
-    ap = host_args(__doc__)
+    ap = cli(__doc__)
     ap.add_argument(
         "--max-pages", type=int, default=0, help="per host; 0 = walk to the end"
     )
@@ -131,7 +124,7 @@ def main():
         "subdomains (e.g. 'urlkey:ai,eightfold,.*')",
     )
     args = ap.parse_args()
-    warn_legacy_state(args.ats)
+    adopt_legacy_state(args.ats, "resume")
     with slug_sink(args.ats) as sink:
         for domain, style in hosts_for(args.ats, args.domain, args.style):
             sweep(args.ats, domain, style, args.max_pages, args.cdx_filter, sink)

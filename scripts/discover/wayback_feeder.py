@@ -25,8 +25,8 @@ from typing import Literal
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 
-Style = Literal["sub", "path", "workday"]
-STYLES: tuple[Style, ...] = ("sub", "path", "workday")
+Style = Literal["sub", "host", "path", "workday"]
+STYLES: tuple[Style, ...] = ("sub", "host", "path", "workday")
 
 # Subdomains and path segments that are the ATS's own furniture, not a Company.
 INFRA = {
@@ -89,7 +89,7 @@ FILE_SUFFIXES = (
 )
 
 
-def _at(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
+def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
     """Pair each host with the style that reads a slug out of it."""
     return tuple((h, style) for h in hosts)
 
@@ -101,48 +101,56 @@ def _at(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 # allocated per ATS rather than per host: across the ledgers, 0 of 8,197 Zoho slugs and 0 of
 # 4,561 Personio slugs appear on more than one of their ATS's hosts.
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
-    "ashby": _at("path", "jobs.ashbyhq.com"),
-    "darwinbox": _at("sub", "darwinbox.in", "darwinbox.com"),
-    # Misses the vanity tail (careers.qualcomm.com and kin), which has no host namespace.
-    "eightfold": _at("sub", "eightfold.ai"),
-    "freshteam": _at("sub", "freshteam.com"),
+    "ashby": _with_style("path", "jobs.ashbyhq.com"),
+    "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
+    # `host` style: this ATS's slug is the whole board host, not the label — `eightfold.py`
+    # builds `https://{slug}/careers`, and every one of the ledger's 109 live boards is stored
+    # that way (all 138 bare-label rows are dead). Misses the vanity tail (careers.qualcomm.com
+    # and kin), which has no host namespace to enumerate.
+    "eightfold": _with_style("host", "eightfold.ai"),
+    "freshteam": _with_style("sub", "freshteam.com"),
     # `*.us.greenhouse.io` resolves but 301/302s to the unprefixed host and holds no ledger rows
     # of its own — an alias, so sweeping it would only re-find what `boards` already has. The EU
     # pods are a real split: 824 rows, 497 live.
-    "greenhouse": _at(
+    "greenhouse": _with_style(
         "path",
         "job-boards.greenhouse.io",
         "boards.greenhouse.io",
         "job-boards.eu.greenhouse.io",
         "boards.eu.greenhouse.io",
     ),
-    "keka": _at("sub", "keka.com"),
-    "lever": _at("path", "jobs.lever.co", "jobs.eu.lever.co"),  # EU: 154 rows, 92 live
-    "personio": _at("sub", "jobs.personio.com", "jobs.personio.de"),
-    "recruitee": _at("sub", "recruitee.com"),
-    "ripplehire": _at("sub", "ripplehire.com"),
-    "rippling": _at("path", "ats.rippling.com"),
+    "keka": _with_style("sub", "keka.com"),
+    "lever": _with_style(
+        "path", "jobs.lever.co", "jobs.eu.lever.co"
+    ),  # EU: 154 rows, 92 live
+    "personio": _with_style("sub", "jobs.personio.com", "jobs.personio.de"),
+    "recruitee": _with_style("sub", "recruitee.com"),
+    "ripplehire": _with_style("sub", "ripplehire.com"),
+    "rippling": _with_style("path", "ats.rippling.com"),
     # Slugs are case-sensitive and mostly mixed-case (8,737 of 12,706 ledger slugs) — see
     # `extract`, which is why this ATS cannot use a lowercasing extractor.
-    "smartrecruiters": _at(
+    "smartrecruiters": _with_style(
         "path", "jobs.smartrecruiters.com", "careers.smartrecruiters.com"
     ),
-    # Partial by nature: the slug IS the customer's vanity host (`careers.wipro.com`), spread
+    # `host` style, and here the reason is in the scraper's own docstring: the slug IS the
+    # customer's vanity host, which is also why this sweep is
+    # partial by nature — `careers.wipro.com` and its kin are spread
     # over hundreds of apexes, so most of the ~2,100 live boards are unreachable by any domain
     # sweep. These two hosts are the enumerable part — ~66 live boards. The rest needs the
     # careers-page scan, not a wider sweep.
-    "successfactors": _at("sub", "jobs2web.com", "jobs.hr.cloud.sap"),
-    "teamtailor": _at("sub", "teamtailor.com"),
-    "trakstar": _at("sub", "hire.trakstar.com"),
+    "successfactors": _with_style("host", "jobs2web.com", "jobs.hr.cloud.sap"),
+    "teamtailor": _with_style("sub", "teamtailor.com"),
+    "trakstar": _with_style("sub", "hire.trakstar.com"),
     # Two shapes at once: 15,238 ledger rows are `apply.workable.com/{slug}`, 1,623 are
     # `{slug}.workable.com`. Sweeping only the first leaves those 1,623 unreachable. The `sub`
     # half has a dense apex that sorts ahead of the slugs in urlkey order, so its page 1 is all
     # `apply.`/`www.`; skip it with `--domain workable.com --filter …`, which scopes the filter
     # to that host so the `apply.` path walk is left alone.
-    "workable": _at("path", "apply.workable.com") + _at("sub", "workable.com"),
-    "workday": _at("workday", "myworkdayjobs.com"),
+    "workable": _with_style("path", "apply.workable.com")
+    + _with_style("sub", "workable.com"),
+    "workday": _with_style("workday", "myworkdayjobs.com"),
     # 8 TLDs; `.com` alone is 6,101 of 8,197 known slugs.
-    "zoho": _at(
+    "zoho": _with_style(
         "sub",
         "zohorecruit.com",
         "zohorecruit.eu",
@@ -221,33 +229,31 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
             # Greenhouse's board-widget route carries the real slug in `?for=`, so the archived
             # widget URL names a Company as surely as a board URL does. Dropping the whole route
             # cost 43 ledger rows, 10 of them live boards that appear under no other shape.
-            seg = _query_value(query, "for")
-            if not seg or not valid(seg, path_slug=True):
-                return None
-            return seg, f"https://{host}/{seg}"
+            # A widget URL with no `for=` names nobody, and falls out below as an empty segment.
+            # The rule is written for Greenhouse but applied to every path ATS, which trades a
+            # hypothetical Company slugged exactly "embed" for not threading the ATS in here.
+            seg = urllib.parse.parse_qs(query).get("for", [""])[0]
         if not valid(seg, path_slug=True):
             return None
         return seg, f"https://{host}/{seg}"
 
     if not seen_host.endswith("." + host):
         return None
-    label = seen_host[: -len("." + host)] if style == "sub" else seen_host.split(".")[0]
-    if style == "sub" and "." in label:
+    label = (
+        seen_host[: -len("." + host)] if style != "workday" else seen_host.split(".")[0]
+    )
+    if style != "workday" and "." in label:
         return None  # a deeper subdomain, not a slug
-    # Keep the whole host: for workday the datacenter is not derivable from the slug.
-    return (label, f"https://{seen_host}") if valid(label) else None
+    if not valid(label):
+        return None
+    # `host` ATSes are keyed by the whole board host, because that is what their scraper is
+    # handed as a slug; `sub` and `workday` are keyed by the label. Either way the URL is the
+    # host as seen — for workday the datacenter is not derivable from the slug.
+    slug = seen_host if style == "host" else label
+    return slug, f"https://{seen_host}"
 
 
-def _query_value(query: str, key: str) -> str | None:
-    """First value of ``key`` in a raw query string, percent-decoded, or None."""
-    for pair in query.split("&"):
-        name, sep, value = pair.partition("=")
-        if sep and name == key and value:
-            return urllib.parse.unquote_plus(value)
-    return None
-
-
-def host_args(doc: str) -> argparse.ArgumentParser:
+def cli(doc: str) -> argparse.ArgumentParser:
     """The CLI both harvesters share: which ATS, and optionally which single host."""
     ap = argparse.ArgumentParser(
         description=doc, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -292,22 +298,36 @@ def hosts_for(
     )
 
 
-def warn_legacy_state(ats: str) -> None:
-    """Point out a pre-per-host cursor, which the new state names can no longer find.
+def adopt_legacy_state(ats: str, suffix: str) -> None:
+    """Carry a pre-per-host cursor over to its new name, or say why it can't be.
 
-    State files gained the host in their name when a sweep became multi-host. An old
-    `.{ats}_pages_done` is therefore ignored rather than honoured, and the sweep silently starts
-    from scratch — cheap to say out loud, expensive to discover from a re-fetch.
+    State files gained the host in their name when a sweep became multi-host, so an old
+    `.{ats}_pages_done` is no longer found and the sweep silently restarts. Where the ATS serves
+    from exactly one host the old file can only have come from that host, so adopt it. Where it
+    serves from several there is no way to tell which, so say so rather than guess — re-walking
+    is merely slow, but crediting the wrong host would skip pages that were never read.
     """
-    for suffix in ("pages_done", "resume"):
-        legacy = WB / f".{ats}_{suffix}"
-        if legacy.exists():
+    legacy = WB / f".{ats}_{suffix}"
+    if not legacy.exists():
+        return
+    hosts = ATS_HOSTS.get(ats, ())
+    if len(hosts) == 1:
+        adopted = WB / f".{ats}_{hosts[0][0]}_{suffix}"
+        if adopted.exists():
             print(
-                f"note: {legacy.name} predates per-host state and will be ignored; "
-                f"this sweep restarts that host. Rename it to .{ats}_<host>_{suffix} "
-                f"(host being whichever one it was swept from) to keep the progress.",
+                f"note: {legacy.name} superseded by {adopted.name}; ignoring it",
                 flush=True,
             )
+            return
+        legacy.rename(adopted)
+        print(f"note: adopted {legacy.name} as {adopted.name}", flush=True)
+        return
+    print(
+        f"note: {legacy.name} predates per-host state and names no host, so it is ignored and "
+        f"this sweep restarts. Rename it to .{ats}_<host>_{suffix} for whichever of "
+        f"{', '.join(h for h, _ in hosts)} it was swept from to keep the progress.",
+        flush=True,
+    )
 
 
 @contextmanager

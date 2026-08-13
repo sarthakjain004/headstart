@@ -24,14 +24,7 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from wayback_feeder import (
-    WB,
-    extract,
-    host_args,
-    hosts_for,
-    slug_sink,
-    warn_legacy_state,
-)
+from wayback_feeder import WB, adopt_legacy_state, cli, extract, hosts_for, slug_sink
 
 TIMEOUT = 120
 UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
@@ -103,10 +96,10 @@ def sweep(ats, domain, style, workers, sink):
 
 
 def main():
-    ap = host_args(__doc__)
+    ap = cli(__doc__)
     ap.add_argument("--workers", type=int, default=10)
     args = ap.parse_args()
-    warn_legacy_state(args.ats)
+    adopt_legacy_state(args.ats, "pages_done")
     with slug_sink(args.ats) as sink:
         for domain, style in hosts_for(args.ats, args.domain, args.style):
             sweep(args.ats, domain, style, args.workers, sink)

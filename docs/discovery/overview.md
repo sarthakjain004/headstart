@@ -75,24 +75,24 @@ segment instead. Which hosts are worth sweeping lives in one table,
 `ATS_HOSTS` — 18 ATSes over 34 hosts, derived from the scrapers' own URL construction and
 cross-checked against `data/validate/liveness/{ats}.csv`. Both harvesters read it and sweep every
 host an ATS serves from, writing one `data/wayback-ats/{ats}.csv` each. That last part matters,
-because a provider is rarely one host: Zoho spreads 8,197 known tenants over 8 TLDs of which
+because an ATS is rarely one host: Zoho spreads 8,197 known slugs over 8 TLDs of which
 `zohorecruit.com` holds 6,101; Greenhouse's EU pods carry 824 rows (497 live); Lever's EU host 154
-(92 live); and Workable serves two *shapes* at once — 15,238 rows on `apply.workable.com/{tenant}`
-and 1,623 on `{tenant}.workable.com` — so style is per host, not per provider. It's a second
+(92 live); and Workable serves two *shapes* at once — 15,238 rows on `apply.workable.com/{slug}`
+and 1,623 on `{slug}.workable.com` — so style is per host, not per ATS. It's a second
 feeder beside the Common Crawl miner
 (the actual run is written up in [`common-crawl-mining.md`](./common-crawl-mining.md)): a
 different archive with different gaps (Wayback found ~2,210 Freshteam tenants vs the miner's
 ~1,925, only partly overlapping), so union the two. Output is candidate-grade — historical,
 so it includes dead boards and noise; validate before trusting.
 
-A flat capped fetch silently truncates dense providers — use page-based harvesting for those.
+A flat capped fetch silently truncates dense ATSes — use page-based harvesting for those.
 The original PowerShell implementation (`wayback_feeder.ps1`, retired 2026-08-13 and unrelated to
 today's `wayback_feeder.py`) capped each ATS at 50,000
 URLs, which only covers the first few CDX index pages. Providers Wayback crawled
 *deep-but-narrow* (thousands of archived pages per tenant) lose most of their tenants past the
 early alphabet. Detect it with `?showNumPages=true`:
 a large page count (Zoho had 1,372) means the flat harvest got only a sliver. The fix is
-[`scripts/discover/wayback_pages.py`](../scripts/discover/wayback_pages.py), which fetches every CDX page
+[`scripts/discover/wayback_pages.py`](../../scripts/discover/wayback_pages.py), which fetches every CDX page
 directly via `&page=N` (concurrent, resumable, deduping onto the existing CSV). Verified
 corrections: **zoho 13 → 5,262, recruitee 496 → 7,083, ripplehire 86 → 167** — while shallow
 providers with high page counts (freshteam, peoplestrong, greythr) were already complete, so
@@ -118,18 +118,26 @@ Widening the path rule means a file served from the board root (`ads.txt`, `mani
 longer distinguishable by shape, so those are rejected on a trailing file extension — a closed
 set, unlike the open set of their filenames.
 
+A fourth: **some ATSes are keyed by the whole host, not the label.** Eightfold and SuccessFactors
+hand their scraper the board host as its slug (`https://{slug}/careers`), so `10xgenomics` names a
+board their scraper cannot fetch while `10xgenomics.eightfold.ai` names one it can — every one of
+Eightfold's 109 live ledger boards is stored the second way, and all 138 bare-label rows are dead.
+That is the `host` style, and it is why style is a property of the host rather than of the sweep.
+
 How complete is the table? Replaying every liveness-ledger URL through `extract` reaches all but
 **198 live boards** outside the two known exclusions (`join`, 25,310, deliberately out; and
 SuccessFactors' ~2,100 vanity hosts, unsweepable by design). Ten of the eighteen ATSes have no live
 board out of reach at all: darwinbox, freshteam, keka, lever, personio, ripplehire, rippling,
-workable, workday, zoho.
+workable, workday, zoho. Two live Personio rows carry no URL at all and are counted neither way;
+they are the only reason that list says ten rather than nine.
 
-The 198 are worth naming, because "unreachable" means three different things.
+The 198 are worth naming, because "unreachable" means three different things — teamtailor 158,
+greenhouse 27, eightfold 5, smartrecruiters 4, recruitee 2, ashby 1, trakstar 1.
 Teamtailor's 158 are a ledger artifact rather than a gap: the ledger stores a referral link
 (`www.teamtailor.com/?utm_content=acme.teamtailor.com`) whose real board host,
-`{slug}.teamtailor.com`, is exactly what the sweep targets. Greenhouse's 27 and Ashby's,
-Trakstar's and SmartRecruiters' handful are the ledger's own noise — rows whose stored URL is an
-`api.greenhouse.io` endpoint or a bare `/home`, `/docs`, `/robots.txt`. Only Eightfold's 5 are a
+`{slug}.teamtailor.com`, is exactly what the sweep targets. Greenhouse's 27 and the handful from
+Ashby, Trakstar, SmartRecruiters and Recruitee are the ledger's own noise — rows whose stored URL
+is an `api.greenhouse.io` endpoint or a bare `/home`, `/docs`, `/robots.txt`. Only Eightfold's 5 are a
 true namespace gap: `careers.qualcomm.com`, `jobs.nvidia.com` and kin are vanity hosts that no
 domain sweep can enumerate, which is why that ATS's comment says so.
 
