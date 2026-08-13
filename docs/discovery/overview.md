@@ -88,8 +88,8 @@ so it includes dead boards and noise; validate before trusting.
 A flat capped fetch silently truncates dense ATSes — use page-based harvesting for those.
 The original PowerShell implementation (`wayback_feeder.ps1`, retired 2026-08-13 and unrelated to
 today's `wayback_feeder.py`) capped each ATS at 50,000
-URLs, which only covers the first few CDX index pages. Providers Wayback crawled
-*deep-but-narrow* (thousands of archived pages per tenant) lose most of their tenants past the
+URLs, which only covers the first few CDX index pages. An ATS Wayback crawled
+*deep-but-narrow* (thousands of archived pages per board) loses most of its slugs past the
 early alphabet. Detect it with `?showNumPages=true`:
 a large page count (Zoho had 1,372) means the flat harvest got only a sliver. The fix is
 [`scripts/discover/wayback_pages.py`](../../scripts/discover/wayback_pages.py), which fetches every CDX page

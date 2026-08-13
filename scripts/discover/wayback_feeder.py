@@ -406,6 +406,27 @@ def adopt_legacy_state(ats: str, suffix: str) -> None:
     )
 
 
+def _style_of(url: str, hosts: tuple[tuple[str, Style], ...]) -> Style:
+    """Which of the ATS's hosts a stored row came from, and so how to key it.
+
+    Matched by suffix as well as equality, because only a `path` row's host *is* the table host:
+    a `sub`, `host` or `workday` row sits underneath it (`acme.wd1.myworkdayjobs.com` under
+    `myworkdayjobs.com`). Comparing by equality alone silently mis-keyed every Workday row on
+    reload, so a resumed sweep re-wrote rows it already had.
+    """
+    seen_host = url.split("://")[-1].split("/")[0].lower()
+    for (
+        known,
+        style,
+    ) in hosts:  # exact first: `apply.workable.com` before `workable.com`
+        if seen_host == known:
+            return style
+    for known, style in hosts:
+        if seen_host.endswith("." + known):
+            return style
+    return "path" if "/" in url.split("://")[-1] else "sub"
+
+
 @contextmanager
 def slug_sink(ats: str):
     """Open `data/wayback-ats/{ats}.csv` for appending and yield the sink that writes to it.
@@ -417,18 +438,14 @@ def slug_sink(ats: str):
     WB.mkdir(parents=True, exist_ok=True)
     out = WB / f"{ats}.csv"
     # Preload with the same identity the sink will compute, so a re-run dedupes against earlier
-    # harvests. The style comes from the row's own host: a CSV can hold both of Workable's.
-    by_host = dict(ATS_HOSTS.get(ats, ()))
+    # harvests. The style comes from the row's own host, because one CSV can hold two of them —
+    # Workable's `apply.` path rows and its `{slug}.` sub rows.
     seen: set[str] = set()
     if out.exists():
         with out.open(encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 slug, url = row["tenant"], row["url"]
-                host = url.split("://")[-1].split("/")[0]
-                style = by_host.get(host) or (
-                    "path" if "/" in url.split("://")[-1] else "sub"
-                )
-                seen.add(dedupe_key(slug, url, style))
+                seen.add(dedupe_key(slug, url, _style_of(url, ATS_HOSTS.get(ats, ()))))
     else:
         out.write_text("ats,tenant,url\n", encoding="utf-8")
     with out.open("a", newline="", encoding="utf-8") as f:

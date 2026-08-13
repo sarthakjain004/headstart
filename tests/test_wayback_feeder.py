@@ -333,6 +333,39 @@ def test_the_sink_dedupes_case_insensitively_across_runs(tmp_path, monkeypatch):
     assert (tmp_path / "smartrecruiters.csv").read_text() == written
 
 
+@pytest.mark.parametrize(
+    "ats, row, style",
+    [
+        # the one that broke: a workday row's host sits *under* the table host, so matching the
+        # table by equality mis-keyed it on reload and every resumed sweep re-wrote the row
+        (
+            "workday",
+            (
+                "acme/External_Careers",
+                "https://acme.wd1.myworkdayjobs.com/External_Careers",
+            ),
+            "workday",
+        ),
+        ("zoho", ("acme", "https://acme.zohorecruit.eu"), "sub"),
+        ("eightfold", ("acme.eightfold.ai", "https://acme.eightfold.ai"), "host"),
+        ("greenhouse", ("acme", "https://boards.greenhouse.io/acme"), "path"),
+        # workable's CSV holds both of its styles at once
+        ("workable", ("acme", "https://apply.workable.com/acme"), "path"),
+        ("workable", ("beta", "https://beta.workable.com"), "sub"),
+    ],
+)
+def test_a_resumed_sweep_does_not_rewrite_rows_it_already_has(
+    tmp_path, monkeypatch, ats, row, style
+):
+    """`slug_sink` must preload the *same* identity `add` computes, or resuming duplicates."""
+    monkeypatch.setattr(wf, "WB", tmp_path)
+    for _ in range(3):
+        with wf.slug_sink(ats) as sink:
+            sink.add(row, style)
+    body = (tmp_path / f"{ats}.csv").read_text().strip().split("\n")
+    assert len(body) == 2, f"{ats}: {len(body) - 1} rows after three identical sweeps"
+
+
 def test_a_single_host_ats_adopts_its_pre_per_host_cursor(
     tmp_path, monkeypatch, capsys
 ):
