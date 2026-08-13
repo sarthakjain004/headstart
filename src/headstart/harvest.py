@@ -261,12 +261,14 @@ def scrape_all(
         # for every remaining Board, blow the step timeout, and take the runner down before
         # anything could be reported. cancel_futures drops what has not started.
         #
-        # Two honest limits. A Board already running cannot be cancelled — you cannot kill a
-        # Python thread — so shutdown still blocks on the slowest in-flight one, and against a
-        # 2,237s straggler that alone can outlast the 6 min of slack between the 60m budget and
-        # the 66m step timeout. And their results are discarded either way: the loop that would
-        # have written them has already exited, so `wait=True` buys clean teardown, not work.
-        executor.shutdown(wait=True, cancel_futures=True)
+        # A Board already running cannot be cancelled — you cannot kill a Python thread — so
+        # `wait=True` blocked on the slowest in-flight one, and a straggler could outlast the 6
+        # min of slack between the 60m budget and the 66m step timeout, taking the runner down
+        # before anything was reported (ADR-0053, amended). Not waiting is safe because those
+        # results are discarded either way: the loop that would have written them has already
+        # exited, and `JobWriter` is written only from that loop and flushed per Board, so no
+        # straggler is mid-write when we stop waiting.
+        executor.shutdown(wait=False, cancel_futures=True)
         writer.close()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done

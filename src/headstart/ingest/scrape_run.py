@@ -21,7 +21,9 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import signal
+import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -68,6 +70,12 @@ def _read_have_details(path: Path) -> set[str] | None:
 
 
 _SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler material
+
+# What `main` returns instead of 0 when the time budget ended the shard. The shard still
+# *succeeded* — banking a partial is the designed outcome, and the step must stay green — so
+# `__main__` turns this into exit 0. It exists only so the entrypoint knows to leave without
+# waiting on the pool's atexit join. Any other value is a real failure and exits as itself.
+_BUDGET_KILLED = 100
 
 
 class _Progress:
@@ -310,8 +318,28 @@ def main() -> int:
         killed = True
     finally:
         _report(progress, outdir, time.monotonic() - start, predicted, killed, shard)
-    return 0
+    return _BUDGET_KILLED if killed else 0
+
+
+def _exit_without_joining_stragglers() -> None:
+    """Leave the process now, without waiting on threads that are still fetching.
+
+    Everything durable is already written — the corpus is flushed per Board, and `_report` ran
+    in the `finally` above. What remains is a straggler thread parked on a socket, and
+    `ThreadPoolExecutor` registers an atexit hook that joins its threads, so an ordinary return
+    hands that straggler the process again and lets it burn the 6 min of slack to the step
+    timeout. That is what killed three shards on 2026-08-13. `os._exit` skips the join.
+
+    Called from `__main__` rather than `main`, so `main` keeps returning its status and stays
+    testable — a function that never returns cannot be asserted on.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    status = main()
+    if status == _BUDGET_KILLED:
+        _exit_without_joining_stragglers()
+    raise SystemExit(status)

@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -304,3 +305,55 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
     assert len(started) < 10, (
         f"the queue drained instead of being abandoned ({len(started)})"
     )
+
+
+def test_shutdown_does_not_wait_for_a_board_still_in_flight(monkeypatch, tmp_path):
+    """The straggler that killed three shards on 2026-08-13.
+
+    When the time budget fires, `scrape_all`'s `finally` used to call `shutdown(wait=True)`,
+    which blocks on any Board already running — you cannot cancel a Python thread. A
+    SuccessFactors board trickling its RSS feed under a 300s read timeout outlasted the 6 min of
+    slack between the 60m budget and the 66m step timeout, so the runner was killed before
+    anything was reported, and a shard that reports nothing takes the whole run's embed stage
+    with it. The in-flight result is discarded either way — the loop that would have written it
+    has already exited — so waiting bought teardown, not work.
+    """
+    import threading
+
+    blocked = threading.Event()
+    released = threading.Event()
+
+    class _Blocking:
+        truncated: str | None = None
+
+        def fetch(self):
+            blocked.set()
+            released.wait(
+                30
+            )  # never set until teardown; stands in for a hung socket read
+            return []
+
+    def fake_get(ats, slug, name=None, **_):
+        return FakeScraper([make_job("x:quick:1")]) if slug == "quick" else _Blocking()
+
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
+
+    def on_board(key, jobs, error, seconds, truncated=None):
+        if key.endswith(":quick"):
+            blocked.wait(10)  # make sure the other Board really is mid-fetch
+            raise SystemExit("time budget")
+
+    companies = [
+        CompanyRef(ats="x", slug="quick"),
+        CompanyRef(ats="x", slug="hangs"),
+    ]
+    try:
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            harvest.scrape_all(companies, jobs_dir=tmp_path, on_board=on_board)
+        elapsed = time.monotonic() - started
+    finally:
+        released.set()
+
+    # With wait=True this sits on the blocked Board for its full 30s. The bug is "waits at all".
+    assert elapsed < 5, f"shutdown blocked {elapsed:.1f}s on an in-flight Board"
