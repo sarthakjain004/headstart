@@ -48,6 +48,32 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
     }
 )
 
+# Real Boards withheld *for now* — kept apart from EXCLUDED_BOARDS above, whose every member is
+# not a genuine Board at all. Each entry says what un-parks it: a park that outlives its reason
+# is silent lost coverage, and this one costs a large employer.
+#
+# Keyed on the canonical lowercased ``board_key``, NOT on ``ats:slug`` like EXCLUDED_BOARDS. The
+# ledger carries one Workday Board under several hosts — Accenture sits on both `wd3` and `wd103`
+# — and `board_key` is what collapses them (ADR-0023). Keyed on one URL, the park would remove
+# that row and merely promote another instance's row to be `_dedupe_boards`' survivor: the Board
+# keeps being scraped while the entry looks effective.
+#
+# A parked Board also leaves `index_plan.live_keep_set`, so its already-indexed rows are evicted
+# as off-Board. That is the accepted cost here — a Board that cannot finish a scrape cannot keep
+# its rows fresh either.
+PARKED_BOARDS: frozenset[str] = frozenset(
+    {
+        # 48,369 jobs. Workday reports a query's total as at most 2,000, so the scraper
+        # subdivides by facet (depth 3 here) and pages each leaf 20 at a time — thousands of
+        # sequential requests against a Board no per-board budget bounds. It finished in none of
+        # the three runs of 2026-08-13 (03:36 / 06:53 / 08:48 UTC), and because a running thread
+        # cannot be cancelled, `scrape_all`'s shutdown then outlived the 6 min between the 60m
+        # inner budget and the 66m step timeout — failing the whole shard, not just this Board.
+        # Un-park once a per-board deadline bounds it.
+        "workday:accenture/accenturecareers",
+    }
+)
+
 
 def load_companies(path: str | Path) -> list[CompanyRef]:
     with open(path, "rb") as f:
@@ -67,9 +93,10 @@ def load_active_companies(
     whose last verdict is ``live`` with ``jobs >= min_jobs`` (default: drop boards with no open
     postings — the "currently hiring" subset). Each scraper turns a ``(tenant, url)`` into its
     own slug via ``slug_from``, so no per-ATS logic lives here. Rows for an ATS with no scraper
-    are skipped, as are the vendor test Boards in :data:`EXCLUDED_BOARDS`. This is the
-    production source for a full scrape; ``config/companies.toml`` remains the small curated
-    seed.
+    are skipped, as are the vendor test Boards in :data:`EXCLUDED_BOARDS` (matched on
+    ``ats:slug``) and the real-but-withheld ones in :data:`PARKED_BOARDS` (matched after the
+    dedupe, on the canonical ``board_key``). This is the production source for a full scrape;
+    ``config/companies.toml`` remains the small curated seed.
     """
     from headstart import liveness
     from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
@@ -87,7 +114,24 @@ def load_active_companies(
             if f"{scraper.ats}:{slug}".lower() in EXCLUDED_BOARDS:
                 continue
             companies.append(CompanyRef(ats=scraper.ats, slug=slug, name=v.tenant))
-    return _dedupe_boards(companies)
+    return _drop_parked(_dedupe_boards(companies))
+
+
+def _board_identity(company: CompanyRef) -> str:
+    """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
+    ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way."""
+    from headstart.scrapers.registry import SCRAPERS
+
+    try:
+        return SCRAPERS[company.ats](company.slug).board_key()
+    except Exception:  # noqa: BLE001 - a malformed slug falls back to the plain key
+        return f"{company.ats}:{company.slug}"
+
+
+def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:
+    """Drop :data:`PARKED_BOARDS`, matched on the same identity ``_dedupe_boards`` collapses on
+    so the two can never disagree about which Board an entry names."""
+    return [c for c in companies if _board_identity(c).lower() not in PARKED_BOARDS]
 
 
 def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
@@ -102,14 +146,9 @@ def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
     prune instead kept the lex-min casing *present in the index*, which is a different population —
     it includes casings that left the ledger — and the two disagreed permanently: ADR-0023's
     amendment.)"""
-    from headstart.scrapers.registry import SCRAPERS
-
     best: dict[str, tuple[str, CompanyRef]] = {}
     for company in companies:
-        try:
-            key = SCRAPERS[company.ats](company.slug).board_key()
-        except Exception:  # noqa: BLE001 - a malformed slug falls back to the plain key, never drops the Board
-            key = f"{company.ats}:{company.slug}"
+        key = _board_identity(company)
         canon = key.lower()
         current = best.get(canon)
         if current is None or key < current[0]:
