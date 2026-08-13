@@ -1,6 +1,13 @@
 from pathlib import Path
 
-from headstart.config import EXCLUDED_BOARDS, load_active_companies, load_companies
+from headstart import config
+from headstart.config import (
+    EXCLUDED_BOARDS,
+    PARKED_BOARDS,
+    _board_identity,
+    load_active_companies,
+    load_companies,
+)
 from headstart.scrapers.registry import SCRAPERS
 
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "companies.toml"
@@ -78,10 +85,55 @@ def test_load_active_companies_maps_slug_and_filters(tmp_path):
     assert by_ats["workday"].slug == "https://3m.wd1.myworkdayjobs.com/search"
 
 
-def test_excluded_board_keys_are_lowercase():
-    """The lookup lowercases the ledger's key, so an entry carrying a capital could never
+def test_skip_list_keys_are_lowercase():
+    """Both lookups lowercase the ledger's key, so an entry carrying a capital could never
     match — it would sit in the list looking effective while the Board kept being scraped."""
     assert all(key == key.lower() for key in EXCLUDED_BOARDS)
+    assert all(key == key.lower() for key in PARKED_BOARDS)
+
+
+def test_parked_board_is_dropped_across_hosts_and_casings(tmp_path):
+    """A park must survive every form the ledger carries the same Board in. Accenture sits on
+    BOTH `wd3` and `wd103` and in two casings; keyed on one URL the park removes that row and
+    merely promotes another instance's row to be `_dedupe_boards`' survivor, so the Board keeps
+    being scraped while the entry looks effective. `board_key` is what collapses them."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a1,https://accenture.wd103.myworkdayjobs.com/AccentureCareers,live,2000,2026-08-13",
+            "workday,a2,https://accenture.wd103.myworkdayjobs.com/accenturecareers,live,2000,2026-08-13",
+            "workday,a3,https://accenture.wd3.myworkdayjobs.com/accenturecareers,live,2000,2026-08-13",
+            "workday,a4,https://accenture.wd103.myworkdayjobs.com/avanadecareers,live,900,2026-08-13",
+        ],
+    )
+    slugs = {c.slug for c in load_active_companies(ledger)}
+    assert slugs == {"https://accenture.wd103.myworkdayjobs.com/avanadecareers"}
+
+
+def test_parked_boards_name_a_live_board_and_are_dropped(monkeypatch):
+    """Against the real ledger, not a fixture — and asserted from both sides, because either
+    half passes vacuously alone. The first cut of this park passed a synthetic test while the
+    real ledger defeated it (a `wd3` row for the same Board survived dedupe); conversely an
+    emptiness check alone stays green when a key is typo'd and parks nothing at all, which is
+    the "silent lost coverage" PARKED_BOARDS' own comment warns about."""
+    ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
+
+    selected = {
+        _board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
+    }
+    assert not (PARKED_BOARDS & selected), (
+        f"parked Boards still selectable: {sorted(PARKED_BOARDS & selected)}"
+    )
+
+    monkeypatch.setattr(config, "PARKED_BOARDS", frozenset())
+    unparked = {
+        _board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
+    }
+    assert PARKED_BOARDS <= unparked, (
+        f"parked keys naming no live Board: {sorted(PARKED_BOARDS - unparked)}"
+    )
 
 
 def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):
