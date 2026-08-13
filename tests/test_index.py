@@ -101,6 +101,9 @@ def _sync(
             # Pinned into tmp_path like every other output: it defaults to the repo's real
             # data/state/, and a test must never read or write there.
             upgrades=str(_upgrade_list(tmp_path, upgrades)),
+            # Same reason, and absent on purpose: every Board's list is authoritative, so the
+            # scope is the infer-from-lines one these tests were written against (ADR-0053).
+            unauthoritative_boards=str(tmp_path / "unauthoritative_boards.json"),
         )
     )
 

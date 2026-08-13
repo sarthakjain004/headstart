@@ -105,7 +105,11 @@ The embedded, deduped set of Jobs the semantic query runs against — the corpus
 _Avoid_: database, vector store — those name the storage, not the served set.
 
 **Eviction**:
-Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone — *unless* its whole Board would lose more than a quarter of its rows at once, which reads as a truncated scrape rather than a wave of closures and is **held** instead (ADR-0046). The freshness counterpart to embedding newly-seen Jobs.
+Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone — but only where that scrape is authoritative. An **Unauthoritative Board** is subtracted from the scope outright, so nothing on it is ever evicted that run (ADR-0053); of what remains, a Board that would lose more than a quarter of its rows at once reads as a silent truncation rather than a wave of closures and its evictions are **held** instead (ADR-0046). The freshness counterpart to embedding newly-seen Jobs.
+
+**Unauthoritative Board** (ADR-0053):
+A **Board** whose scraped list this run cannot be read as its complete set of openings — the scraper gave up mid-crawl and reported the list truncated, or the scrape raised. A property of the run, not of the Board: the same Board is authoritative again on the next scrape that finishes. This set is the one thing the scrape tells **Eviction**, written afresh every run to `data/state/unauthoritative_boards.json` (`scrape_join.write_unauthoritative_boards`, read back by `index_plan.read_unauthoritative_boards`) and subtracted from the eviction scope.
+_Avoid_: failed Board, partial Board — a truncated Board still returned real Jobs and they are still indexed; it is only the absences from its list that cannot be trusted.
 
 **Doc**:
 The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006).

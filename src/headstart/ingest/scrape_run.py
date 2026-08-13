@@ -84,11 +84,23 @@ class _Progress:
         self.assigned = assigned
         self.seconds: list[float] = []
         self.errors: dict[str, str] = {}
+        # Boards that returned a short list without raising (ADR-0053). Held here, like errors,
+        # so the numbers already exist when SIGTERM lands and the shutdown path only prints them.
+        self.truncated: dict[str, str] = {}
         self.jobs = 0
 
-    def on_board(self, key: str, jobs: int, error: str | None, seconds: float) -> None:
+    def on_board(
+        self,
+        key: str,
+        jobs: int,
+        error: str | None,
+        seconds: float,
+        truncated: str | None = None,
+    ) -> None:
         self.seconds.append(seconds)
         self.jobs += jobs
+        if truncated is not None:
+            self.truncated[key] = truncated
         if error is not None:
             self.errors[key] = error
             _log.info(f"{key} failed after {seconds:.0f}s: {error}")
@@ -218,6 +230,7 @@ def _report(
         # the full map, not the top-3 digest the log line carries: the join can only
         # aggregate error classes across shards if the classes survive the runner
         errors=progress.errors,
+        truncated=progress.truncated,
     )
 
 
