@@ -153,3 +153,13 @@ future cleanup should drop entries for ids no longer in any corpus.
 **Not attempted here.** Organic-edit detection (ADR-0021's hash) — the store now makes it possible
 to compare without a re-scrape, and the last-write-wins fragment order is already the update path
 it would need.
+
+**An upgrade is a replace, and both halves have to happen (amended 2026-08-13).** `embed_merge`
+dropped the stale rows for every id on the upgrade list before looking at what had arrived to
+replace them. That is fine on a normal run, where the embed shards' fragments carry the new
+vectors — but the `merge` job runs `if: always()`, so it also reaches the store on runs where
+`embed` was skipped or failed, with no fragments at all. There the drop stands alone and is simply
+a delete: the Jobs lose their vector and leave the served index until a later run happens to
+re-embed them. On 2026-08-13 a run whose `scrape (13)` shard failed took **10,144 vectors and
+11,083 served rows** out of the index this way, and uploaded the result. `embed_merge` now holds
+the upgrade list when there are no fragments; the ids stay on it and are retried next run.

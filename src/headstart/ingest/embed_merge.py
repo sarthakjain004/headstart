@@ -180,9 +180,22 @@ def main() -> int:
         stale = {
             line.strip() for line in upgrades.read_text().splitlines() if line.strip()
         }
-        dropped = evict_ids(meta_path, vec_path, dim, stale)
-        if stale:
-            _log.info(f"upgrades: dropped {dropped} stale rows for {len(stale)} ids")
+        # An upgrade is a *replace*: drop the stale vector, merge the fresh one. With no
+        # fragments arriving there is no second half, so the drop would just be a delete — and
+        # the Jobs leave the served index until some later run happens to re-embed them.
+        # `merge` runs `if: always()`, so it does reach here with nothing to merge whenever
+        # `embed` was skipped or failed. On 2026-08-13 that cost 10,144 vectors and 11,083
+        # served rows in one run, and the upgrade list survives to be retried next run anyway.
+        if not frags:
+            _log.info(
+                f"upgrades: holding {len(stale)} id(s) — no fragments to replace them with"
+            )
+        else:
+            dropped = evict_ids(meta_path, vec_path, dim, stale)
+            if stale:
+                _log.info(
+                    f"upgrades: dropped {dropped} stale rows for {len(stale)} ids"
+                )
 
     prior_rows = _reconcile_store(meta_path, vec_path, dim)
     _log.info(

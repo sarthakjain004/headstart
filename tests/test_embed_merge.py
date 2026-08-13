@@ -11,6 +11,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 import headstart.ingest.embed_merge as ms
 
 _DIM = 4
@@ -106,3 +108,60 @@ def test_merge_no_fragments_is_a_noop_reconcile(tmp_path):
     _run(store, frags)
 
     _assert_consistent(store, 2)
+
+
+def _run_with_upgrades(store: Path, fragments: Path, upgrades: Path) -> None:
+    old = sys.argv
+    sys.argv = [
+        "embed_merge",
+        "--store",
+        str(store),
+        "--fragments",
+        str(fragments),
+        "--evict-ids",
+        str(upgrades),
+    ]
+    try:
+        assert ms.main() == 0
+    finally:
+        sys.argv = old
+
+
+def test_an_upgrade_holds_its_stale_row_when_nothing_arrives_to_replace_it(tmp_path):
+    """An ADR-0050 upgrade is a *replace*. `merge` runs `if: always()`, so it reaches the store
+    with no fragments whenever `embed` was skipped or failed — and dropping the stale rows there
+    is a plain delete: the Jobs leave the served index until some later run re-embeds them. On
+    2026-08-13 one such run cost 10,144 vectors and 11,083 served rows.
+    """
+    store, frags = tmp_path / "store", tmp_path / "frags"
+    _write_store(store, ["a", "b", "c"])
+    frags.mkdir()  # embed was skipped, so no fragment dirs landed
+    upgrades = tmp_path / "pending_upgrades.txt"
+    upgrades.write_text("a\nb\n", encoding="utf-8")
+
+    _run_with_upgrades(store, frags, upgrades)
+
+    assert _store_ids(store) == ["a", "b", "c"]
+    _assert_consistent(store, 3)
+
+
+def test_an_upgrade_still_replaces_its_stale_row_when_a_fragment_does_arrive(tmp_path):
+    """The guard must not disarm the upgrade itself: with a fragment present, the stale rows go
+    and the fresh ones take their place.
+
+    Needs numpy, which CI's base-deps job does not install — `evict_ids` rewrites the vectors.
+    The held-rows test above deliberately does not, because the guard means it never gets there,
+    so the regression this file exists for stays visible in CI.
+    """
+    pytest.importorskip("numpy")
+    store, frags = tmp_path / "store", tmp_path / "frags"
+    _write_store(store, ["a", "b", "c"])
+    _write_store(frags / "embed-fragment-0", ["a", "b"])
+    upgrades = tmp_path / "pending_upgrades.txt"
+    upgrades.write_text("a\nb\n", encoding="utf-8")
+
+    _run_with_upgrades(store, frags, upgrades)
+
+    # c survives untouched; a and b were dropped and re-appended from the fragment
+    assert _store_ids(store) == ["c", "a", "b"]
+    _assert_consistent(store, 3)
