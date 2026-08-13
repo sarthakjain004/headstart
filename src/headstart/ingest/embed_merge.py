@@ -28,8 +28,6 @@ import argparse
 import json
 from pathlib import Path
 
-import numpy as np
-
 from headstart import log
 from headstart.ingest import REPO_ROOT
 from headstart.search import DOC_PREFIX, MODEL
@@ -113,6 +111,11 @@ def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
     """
     if not ids or not meta_path.exists():
         return 0
+    # Imported here, not at module scope: every other path in this module treats vectors as raw
+    # bytes, which is what keeps it importable on CI's base-deps-only install (no numpy). A
+    # top-level import broke collection of this module's own tests.
+    import numpy as np
+
     vectors = np.fromfile(vec_path, dtype="float32").reshape(-1, dim)
     kept_meta: list[str] = []
     kept_rows: list[int] = []
