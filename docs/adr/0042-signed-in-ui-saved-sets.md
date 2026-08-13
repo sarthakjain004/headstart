@@ -103,8 +103,9 @@ carries, because a wall must never break a link already delivered. What nobody n
 the run which *builds* those Digests is also a caller: ADR-0035 has it ask the deployed Space
 for each Subscription's new Jobs, precisely so a Digest's scores are the numbers the browser
 shows. That run has no Google identity to offer and never will. It 401'd on every Subscription
-for eight consecutive runs before anyone noticed, because the alerts workflow's own tests, and
-the wall's, both asserted the 401 as correct.
+for eight consecutive runs before anyone noticed. The wall's own test is why: it asserted
+`client.get("/search?q=x").status_code == 401` as *correct* behaviour, so the bug was locked in
+by a passing test. The alerts side had no test either way — it never modelled the wall at all.
 
 **So the wall accepts a second kind of credential: a shared secret, on `/search` alone.** It
 is the same shape `/unsubscribe` already uses — a token compared in constant time, no session

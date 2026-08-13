@@ -174,7 +174,9 @@ _PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
 # secret, compared in constant time exactly as the unsubscribe token is. Scoped to /search
 # alone — that is the whole of what the alerts run needs, so a leaked token buys a search
 # rather than a session. Unset admits nobody, as in alerts.access.
-_ALERTS_TOKEN = (os.environ.get("ALERTS_TOKEN") or "").strip().encode()
+_ALERTS_TOKEN = (
+    (os.environ.get("ALERTS_TOKEN") or "").strip().encode("latin-1", "replace")
+)
 _SERVICE_PATHS = {"/search"}
 
 
@@ -183,7 +185,9 @@ def _service_caller() -> bool:
         return False
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     # Bytes, not str: headers decode as latin-1, and compare_digest raises TypeError on a
-    # non-ASCII str — which would turn a rejected credential into a 500 from in here.
+    # non-ASCII str — which would turn a rejected credential into a 500 from in here. Both
+    # sides encode latin-1 so a token set identically really does compare equal; encoding
+    # the config as utf-8 instead would make any non-ASCII token 401 forever.
     return scheme == "Bearer" and hmac.compare_digest(
         token.strip().encode("latin-1", "replace"), _ALERTS_TOKEN
     )

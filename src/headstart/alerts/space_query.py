@@ -43,7 +43,7 @@ class SearchUnavailable(Exception):
 
 
 def auth_headers() -> dict[str, str]:
-    """The service credential the Space's wall accepts — pure, so it is testable.
+    """The service credential the Space's wall accepts — env-derived, so it is testable.
 
     This run has no Google identity, so it presents the shared secret instead — see the
     amendment to ADR-0042, which is where the wall's exception for it is recorded. Unset
@@ -94,7 +94,7 @@ def newly_seen(
     for attempt, wait in enumerate((*_WAITS, None), start=1):
         try:
             rows = call(url)
-        except Exception as exc:  # noqa: BLE001 — unreachable, timeout and 5xx retry alike
+        except Exception as exc:  # noqa: BLE001 — anything but _PERMANENT_HTTP retries
             if wait is None or _is_permanent_failure(exc):
                 raise SearchUnavailable(f"{type(exc).__name__}: {exc}") from exc
             print(
