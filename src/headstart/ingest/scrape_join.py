@@ -32,7 +32,7 @@ _SHARDS = (
 _OUT = REPO_ROOT / "data" / "jobs"
 # Under data/state because that is what rides the corpus-state artifact to the job running
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
-_ERRORS = REPO_ROOT / "data" / "state" / "scrape_errors.json"
+_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 
 
 def _fragment_dirs(root: Path) -> list[Path]:
@@ -40,15 +40,16 @@ def _fragment_dirs(root: Path) -> list[Path]:
     return sorted(d for d in root.iterdir() if d.is_dir() and any(d.glob("*.jsonl")))
 
 
-def write_scrape_errors(reports: list[dict], path: Path) -> dict[str, str]:
-    """Persist the Boards whose scrape errored, keyed the way the index keys Boards.
+def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, str]:
+    """Persist the Boards whose scraped list is not authoritative, keyed the way the index keys
+    Boards.
 
-    This is the hop ADR-0046 named as the honest fix and deferred. A Board that errored mid-scrape
-    still emits the pages it did get, so ``index sync`` — which infers "this Board was scraped"
-    from the presence of any job line — evicts everything the truncated list is missing. The
-    outcome was known all along: ``harvest.scrape_all`` records it per Board and the shard report
-    carries it here. Nothing carried it any further, and whole Boards flapped out of search for a
-    cycle at a time.
+    This is the hop ADR-0046 named as the honest fix and deferred. A Board whose scrape came back
+    short still emits the pages it did get, so ``index sync`` — which infers "this Board was
+    scraped" from the presence of any job line — evicts everything the truncated list is missing.
+    The outcome was known all along: ``harvest.scrape_all`` records it per Board and the shard
+    report carries it here. Nothing carried it any further, and whole Boards flapped out of search
+    for a cycle at a time.
 
     The shard reports key errors ``{ats}:{slug}`` — the *scrape* list's key — while eviction scope
     is keyed by ``board_key()`` (ADR-0049). Those differ wherever a slug is not the Board tail:
@@ -58,12 +59,12 @@ def write_scrape_errors(reports: list[dict], path: Path) -> dict[str, str]:
     like protection while providing none.
 
     Always writes, even with nothing to record: ``data/state`` round-trips through the HF dataset,
-    so a run that skipped the write would leave the *previous* run's errors in place and protect
+    so a run that skipped the write would leave the *previous* run's Boards in place and protect
     Boards that scraped cleanly this time.
     """
     from headstart.scrapers.registry import get_scraper
 
-    errored: dict[str, str] = {}
+    unauthoritative: dict[str, str] = {}
     unresolved: list[str] = []
     for report in reports:
         # `errors` (the Board raised) and `truncated` (it returned a list it knows is short) are
@@ -81,18 +82,20 @@ def write_scrape_errors(reports: list[dict], path: Path) -> dict[str, str]:
                     not sep or not slug
                 ):  # `get_scraper(ats, "")` yields a bogus `ats:` key
                     raise ValueError("not an ats:slug key")
-                errored[get_scraper(ats, slug).board_key()] = str(why)
+                unauthoritative[get_scraper(ats, slug).board_key()] = str(why)
             except Exception:  # noqa: BLE001 - a malformed key must not sink the join
                 unresolved.append(str(key))
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(errored, indent=1, sort_keys=True), encoding="utf-8")
+    path.write_text(
+        json.dumps(unauthoritative, indent=1, sort_keys=True), encoding="utf-8"
+    )
     if unresolved:
         _log.warning(
-            f"{len(unresolved)} errored Board(s) could not be resolved to a board_key and are NOT "
-            f"protected from eviction this run: {sorted(unresolved)[:10]}"
+            f"{len(unresolved)} unauthoritative Board(s) could not be resolved to a board_key and "
+            f"are NOT protected from eviction this run: {sorted(unresolved)[:10]}"
         )
-    _log.info(f"recorded {len(errored)} errored Board(s) -> {path}")
-    return errored
+    _log.info(f"recorded {len(unauthoritative)} unauthoritative Board(s) -> {path}")
+    return unauthoritative
 
 
 def main() -> int:
@@ -108,10 +111,11 @@ def main() -> int:
         "--out", default=str(_OUT), help="unioned snapshot dir (default: data/jobs)"
     )
     ap.add_argument(
-        "--errors",
-        default=str(_ERRORS),
-        help="where to record the Boards whose scrape errored, for `index sync` to exclude "
-        "from the eviction scope (default: data/state/scrape_errors.json)",
+        "--unauthoritative-boards",
+        default=str(_UNAUTHORITATIVE),
+        help="where to record the Boards whose scraped list is not authoritative, for `index "
+        "sync` to exclude from the eviction scope "
+        "(default: data/state/unauthoritative_boards.json)",
     )
     args = ap.parse_args()
 
@@ -142,9 +146,10 @@ def main() -> int:
 
     _log.info(f"wrote {total} lines across {len(per_ats)} ATS files -> {out}")
     reports = observability.read_shards(shards_root)
-    # Written unconditionally, before the summary: an empty file is the honest record of "no Board
-    # errored", and the summary below is telemetry that must never gate the eviction signal.
-    write_scrape_errors(reports, Path(args.errors))
+    # Written unconditionally, before the summary: an empty file is the honest record of "every
+    # Board's list is authoritative", and the summary below is telemetry that must never gate the
+    # eviction signal.
+    write_unauthoritative_boards(reports, Path(args.unauthoritative_boards))
     _report_shards(reports, total, len(per_ats))
     return 0
 

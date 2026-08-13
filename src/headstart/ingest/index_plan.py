@@ -85,9 +85,12 @@ def plan_sync(
     Boards that flapped sat at 35–82% — so the threshold separates them with room to spare.
     Boards under :data:`COLLAPSE_FLOOR` rows are exempt: there a large ratio is a handful of rows.
 
-    The guard is a stopgap for the blast radius, not the cause, and it is deliberately blunt: a
-    Board that genuinely sheds more than a quarter of its postings at once keeps those rows until
-    the scrape reports per-Board outcomes and the sync can scope on them instead.
+    The guard is now the **backstop**, not the only line: the scrape reports its per-Board outcomes
+    and ``index sync`` keeps the Boards :func:`unauthoritative_boards` names out of
+    ``scraped_boards`` altogether (ADR-0053). What is left to the ratio is a scraper that cannot
+    detect its own truncation and a shard killed before it writes a report. It stays deliberately
+    blunt: a Board that genuinely sheds more than a quarter of its postings at once keeps those
+    rows.
     """
     index = set(index_ids)
     fresh = set(fresh_ids)
@@ -194,12 +197,13 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     return live
 
 
-def errored_boards(path: str | Path) -> set[str]:
-    """Boards whose scrape errored this run, lowercased for matching (ADR-0053).
+def unauthoritative_boards(path: str | Path) -> set[str]:
+    """Boards whose scraped list is not authoritative this run — it came back truncated, or the
+    scrape raised — lowercased for matching (ADR-0053).
 
-    Written by ``scrape_join.write_scrape_errors``; ``index sync`` drops these from the eviction
-    scope so a truncated scrape cannot read as a delisting. Lives here rather than beside its
-    caller so the scoping invariants stay unit-testable on CI's base-deps-only install.
+    Written by ``scrape_join.write_unauthoritative_boards``; ``index sync`` drops these from the
+    eviction scope so a truncated scrape cannot read as a delisting. Lives here rather than beside
+    its caller so the scoping invariants stay unit-testable on CI's base-deps-only install.
 
     Fails **open** — an unreadable or wrong-shaped file yields an empty set, restoring the old
     infer-from-lines behaviour. Failing the other way would freeze eviction across the whole index
@@ -219,7 +223,7 @@ def errored_boards(path: str | Path) -> set[str]:
         return set()
     if not isinstance(data, dict):
         _log.warning(
-            f"{p} holds {type(data).__name__}, expected an object of Board -> error — "
+            f"{p} holds {type(data).__name__}, expected an object of Board -> reason — "
             "no Board is protected from eviction this run"
         )
         return set()

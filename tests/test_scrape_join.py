@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 import headstart.ingest.scrape_join as js
@@ -23,7 +22,17 @@ def _shard(frags: Path, k: int, files: dict[str, list[str]]) -> None:
 
 def _run(shards: Path, out: Path) -> None:
     old = sys.argv
-    sys.argv = ["scrape_join", "--shards", str(shards), "--out", str(out)]
+    # `--unauthoritative-boards` pinned under the test's dir: it defaults to the repo's real
+    # data/state/, and a test must never write there.
+    sys.argv = [
+        "scrape_join",
+        "--shards",
+        str(shards),
+        "--out",
+        str(out),
+        "--unauthoritative-boards",
+        str(out.parent / "unauthoritative_boards.json"),
+    ]
     try:
         assert js.main() == 0
     finally:
@@ -63,8 +72,8 @@ def test_join_no_shards_is_empty(tmp_path):
     assert list(out.glob("*.jsonl")) == []
 
 
-def test_scrape_errors_are_keyed_the_way_the_index_keys_boards(tmp_path):
-    """The shard reports key errors `{ats}:{slug}`, but eviction scope is keyed by `board_key()`
+def test_unauthoritative_boards_are_keyed_the_way_the_index_keys_boards(tmp_path):
+    """The shard reports key outcomes `{ats}:{slug}`, but eviction scope is keyed by `board_key()`
     (ADR-0049). Those are the same string for greenhouse and eightfold and NOT for workday, whose
     slug is the whole careers URL — so writing the raw key through would look like protection
     while never matching anything."""
@@ -77,8 +86,8 @@ def test_scrape_errors_are_keyed_the_way_the_index_keys_boards(tmp_path):
             }
         },
     ]
-    out = tmp_path / "scrape_errors.json"
-    written = js.write_scrape_errors(reports, out)
+    out = tmp_path / "unauthoritative_boards.json"
+    written = js.write_unauthoritative_boards(reports, out)
 
     assert written == {
         "greenhouse:acme": "HTTP 429",
@@ -88,47 +97,47 @@ def test_scrape_errors_are_keyed_the_way_the_index_keys_boards(tmp_path):
     assert json.loads(out.read_text(encoding="utf-8")) == written
 
 
-def test_scrape_errors_file_is_rewritten_even_when_nothing_errored(tmp_path):
+def test_the_file_is_rewritten_even_when_every_list_was_authoritative(tmp_path):
     """`data/state` round-trips through the HF dataset, so skipping the write on a clean run would
-    leave the PREVIOUS run's errors in place and protect Boards that scraped fine this time."""
-    out = tmp_path / "scrape_errors.json"
+    leave the PREVIOUS run's Boards in place and protect Boards that scraped fine this time."""
+    out = tmp_path / "unauthoritative_boards.json"
     out.write_text('{"greenhouse:stale": "from a previous run"}', encoding="utf-8")
 
-    assert js.write_scrape_errors([{"errors": {}}], out) == {}
+    assert js.write_unauthoritative_boards([{"errors": {}}], out) == {}
     assert json.loads(out.read_text(encoding="utf-8")) == {}
 
 
-def test_an_unresolvable_error_key_is_dropped_not_written_through(tmp_path):
+def test_an_unresolvable_key_is_dropped_not_written_through(tmp_path):
     """A key no scraper can turn into a board_key is dropped with a warning. Writing it through
     unconverted would sit in the file looking effective while matching no Board."""
-    out = tmp_path / "scrape_errors.json"
-    written = js.write_scrape_errors(
+    out = tmp_path / "unauthoritative_boards.json"
+    written = js.write_unauthoritative_boards(
         [{"errors": {"notanats:whatever": "boom", "greenhouse:real": "HTTP 500"}}], out
     )
     assert written == {"greenhouse:real": "HTTP 500"}
 
 
 def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
-    """The seam between the two halves: `write_scrape_errors` emits `board_key()` casing and
-    `errored_boards` lowercases, because `index sync` matches `board.lower() in errored`. Each
-    half is tested alone; this pins the contract BETWEEN them, which is where a rename or a
-    casing change would silently stop protecting anything."""
-    from headstart.ingest.index_plan import errored_boards
+    """The seam between the two halves: `write_unauthoritative_boards` emits `board_key()` casing
+    and `unauthoritative_boards` lowercases, because `index sync` matches
+    `board.lower() in unauthoritative`. Each half is tested alone; this pins the contract BETWEEN
+    them, which is where a rename or a casing change would silently stop protecting anything."""
+    from headstart.ingest.index_plan import unauthoritative_boards
 
-    out = tmp_path / "scrape_errors.json"
-    js.write_scrape_errors(
+    out = tmp_path / "unauthoritative_boards.json"
+    js.write_unauthoritative_boards(
         [{"errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"}}], out
     )
-    errored = errored_boards(out)
+    unauthoritative = unauthoritative_boards(out)
 
     # What `_scraped_boards` would produce for a Job id on that Board, via `board_key()`.
     scope_entry = "workday:x/Careers"
-    assert scope_entry.lower() in errored, (
-        f"{scope_entry} would NOT be protected: file holds {sorted(errored)}"
+    assert scope_entry.lower() in unauthoritative, (
+        f"{scope_entry} would NOT be protected: file holds {sorted(unauthoritative)}"
     )
 
 
-def test_a_scraper_that_truncates_without_raising_still_reaches_the_file():
+def test_a_scraper_that_truncates_without_raising_still_reaches_the_file(tmp_path):
     """The flap's actual shape, and the one an `errors`-only file could never catch.
 
     eightfold gives up mid-pagination and returns what it has, so `harvest` records no error and
@@ -141,7 +150,7 @@ def test_a_scraper_that_truncates_without_raising_still_reaches_the_file():
             "eightfold:nvidia.eightfold.ai": "HTTP 429 on page 4 — got 300 of 850"
         },
     }
-    written = js.write_scrape_errors([report], Path(tempfile.mkdtemp()) / "e.json")
+    written = js.write_unauthoritative_boards([report], tmp_path / "e.json")
     assert "eightfold:nvidia.eightfold.ai" in written
 
 
@@ -152,5 +161,5 @@ def test_a_raise_and_a_truncation_both_land(tmp_path):
         "errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"},
         "truncated": {"eightfold:nvidia.eightfold.ai": "cut short"},
     }
-    written = js.write_scrape_errors([report], tmp_path / "e.json")
+    written = js.write_unauthoritative_boards([report], tmp_path / "e.json")
     assert set(written) == {"workday:x/Careers", "eightfold:nvidia.eightfold.ai"}

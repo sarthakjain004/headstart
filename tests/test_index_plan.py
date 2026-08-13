@@ -10,7 +10,6 @@ import pytest
 
 from headstart.config import load_active_companies
 from headstart.ingest.index_plan import (
-    errored_boards,
     _live_board_end,
     apply_sync,
     boards_by_canon,
@@ -18,6 +17,7 @@ from headstart.ingest.index_plan import (
     plan_prune,
     plan_sync,
     resolve_board,
+    unauthoritative_boards,
 )
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -380,31 +380,33 @@ def test_sync_without_a_ledger_keeps_the_board_of_scoping():
     assert plan.delete == frozenset({"greenhouse:a:2"})
 
 
-def test_errored_boards_reads_the_file_lowercased(tmp_path):
-    p = tmp_path / "scrape_errors.json"
+def test_unauthoritative_boards_reads_the_file_lowercased(tmp_path):
+    p = tmp_path / "unauthoritative_boards.json"
     p.write_text('{"eightfold:NVIDIA.eightfold.ai": "HTTP 429"}', encoding="utf-8")
     # Lowercased because `resolve_board` returns a Board in the *id's* casing while the file is
     # written from `board_key()`, which carries the ledger's — the two need not agree.
-    assert errored_boards(p) == {"eightfold:nvidia.eightfold.ai"}
+    assert unauthoritative_boards(p) == {"eightfold:nvidia.eightfold.ai"}
 
 
-def test_errored_boards_is_empty_when_the_file_is_absent(tmp_path):
+def test_unauthoritative_boards_is_empty_when_the_file_is_absent(tmp_path):
     """A local sync, or a run predating the file: fall back to the old infer-from-lines scope
     rather than failing, since unreadable telemetry must not stop the index updating."""
-    assert errored_boards(tmp_path / "nope.json") == set()
+    assert unauthoritative_boards(tmp_path / "nope.json") == set()
 
 
 @pytest.mark.parametrize("body", ["[1, 2]", '"abc"', "null", "42"])
-def test_errored_boards_rejects_a_json_shape_that_is_not_an_object(tmp_path, body):
+def test_unauthoritative_boards_rejects_a_json_shape_that_is_not_an_object(
+    tmp_path, body
+):
     """JSON's top level may legally be a list or a string, and iterating either yields items that
     are not Board keys: `"abc"` would quietly protect Boards a, b and c, and `[1, 2]` would raise
     on `.lower()` and take sync down with it."""
-    p = tmp_path / "scrape_errors.json"
+    p = tmp_path / "unauthoritative_boards.json"
     p.write_text(body, encoding="utf-8")
-    assert errored_boards(p) == set()
+    assert unauthoritative_boards(p) == set()
 
 
-def test_errored_boards_survives_a_corrupt_file(tmp_path):
-    p = tmp_path / "scrape_errors.json"
+def test_unauthoritative_boards_survives_a_corrupt_file(tmp_path):
+    p = tmp_path / "unauthoritative_boards.json"
     p.write_text("{not json", encoding="utf-8")
-    assert errored_boards(p) == set()
+    assert unauthoritative_boards(p) == set()

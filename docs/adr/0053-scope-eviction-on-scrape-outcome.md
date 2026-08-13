@@ -55,10 +55,11 @@ postings did not "fail" and logging it as a failure would make every count read 
 unioned at `scrape_join`, where the only question is the one sync asks: **is this Board's list
 authoritative?**
 
-`scrape_join` distils the shard reports' error maps into `data/state/scrape_errors.json`, and
-`index sync` subtracts those Boards from the set `plan_sync` is allowed to evict from. An errored
-Board's missing rows are then untouchable regardless of how many it lost, because "absent from this
-run's corpus" is not "closed" when the Board errored.
+`scrape_join` distils the shard reports' two outcome maps into
+`data/state/unauthoritative_boards.json` — named for the question, not for either channel feeding
+it — and `index sync` subtracts those Boards from the set `plan_sync` is allowed to evict from.
+Such a Board's missing rows are then untouchable regardless of how many it lost, because "absent
+from this run's corpus" is not "closed" when the list was never authoritative.
 
 Two details are load-bearing.
 

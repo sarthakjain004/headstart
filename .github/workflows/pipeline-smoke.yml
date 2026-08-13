@@ -9,10 +9,10 @@ name: pipeline-smoke
 #     as the monolith, that the merged store syncs into a real LanceDB index, and that `prune` plus
 #     a re-`sync` then leave those rows exactly as they are (no add/evict ping-pong — PR #102).
 #   cycle 2 — a second scrape of the same two Boards in which one Job is genuinely delisted and the
-#     other Board **errored mid-scrape and returned a truncated list**. Eviction must follow the
-#     first and not the second. A single cycle against an empty table cannot express that at all,
-#     which is how the eightfold index flap (whole NVIDIA/Qualcomm Boards evicted one run and
-#     re-added the next, ~2 h invisible to users) shipped past this workflow.
+#     other Board **gave up mid-scrape and returned a truncated list, without raising**. Eviction
+#     must follow the first and not the second. A single cycle against an empty table cannot
+#     express that at all, which is how the eightfold index flap (whole NVIDIA/Qualcomm Boards
+#     evicted one run and re-added the next, ~2 h invisible to users) shipped past this workflow.
 #
 # Runs on demand and when the ingest path changes.
 on:
@@ -172,7 +172,7 @@ jobs:
       # ── Cycle 2 ─────────────────────────────────────────────────────────────────────────────
       # The bug this workflow exists to catch. Two Boards change in different ways, and only one of
       # the changes is a real delisting.
-      - name: Cycle 2 — one Job genuinely delisted, one Board errored mid-scrape
+      - name: Cycle 2 — one Job genuinely delisted, one Board's list truncated mid-scrape
         run: |
           python - <<'PY'
           import json, pathlib
@@ -230,20 +230,20 @@ jobs:
           # ...but the truncated Board's missing Jobs are still open; they were simply not returned.
           # Evicting them is the index flap: they vanish from search for one 2-hourly cycle and come
           # back in the next, over and over (whole NVIDIA/Qualcomm/Micron Boards, measured 5 runs
-          # running). "absent from this run's corpus" is not "closed" when the Board errored.
+          # running). "absent from this run's corpus" is not "closed" when the list was truncated.
           stranded = [fid(n) for n in range(1, 6) if fid(n) not in ids]
           assert not stranded, (
               f"INDEX FLAP: {len(stranded)} Jobs evicted from {flaky['ats']}:{flaky['slug']}, whose "
-              f"scrape errored and returned 1 of 6 postings — e.g. {stranded[:3]}. The Board's "
+              f"scrape came back truncated at 1 of 6 postings — e.g. {stranded[:3]}. The Board's "
               "outcome IS carried from the scrape to sync now (ADR-0053), so this failing means "
               "that carrier broke, not that it is missing. Check, in order: did scrape_join write "
-              "data/state/scrape_errors.json and does it name this Board; did the key translation "
-              "land it in `board_key()` space (a Workday slug is a URL and must become "
+              "data/state/unauthoritative_boards.json and does it name this Board; did the key "
+              "translation land it in `board_key()` space (a Workday slug is a URL and must become "
               "`ats:company/site`); and did the shard write a `_shard_report.json` at all — a shard "
               "hard-killed by the step timeout writes none, and only ADR-0046's ratio guard covers "
               "that, which exempts Boards under COLLAPSE_FLOOR rows like this one.")
 
           expected = {hid(n) for n in range(1, 10)} | {fid(n) for n in range(6)}
           assert ids == expected, f"unexpected table contents: {ids ^ expected}"
-          print(f"OK: 1 delisted Job evicted, {len(ids)} rows kept; the errored Board was left alone")
+          print(f"OK: 1 delisted Job evicted, {len(ids)} rows kept; the truncated Board was left alone")
           PY
