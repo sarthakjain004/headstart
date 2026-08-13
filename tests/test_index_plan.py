@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.config import CompanyRef, _dedupe_boards
+from headstart.config import load_active_companies
 from headstart.ingest.index_plan import (
     _live_board_end,
     apply_sync,
     boards_by_canon,
+    live_keep_set,
     plan_prune,
     plan_sync,
     resolve_board,
@@ -238,35 +239,35 @@ def test_prune_does_not_churn_the_freshly_scraped_row():
     assert index == {fresh}  # the fossil is gone and the live row survives
 
 
-def test_prune_keeps_the_casing_the_scrape_emits():
+_CASE_VARIANT_SITES = ("External", "external", "EXTERNAL")
+
+
+def test_prune_keeps_the_casing_the_scrape_emits(tmp_path):
     """The casing a scrape emits and the casing prune keeps must be the same one.
 
-    They agree structurally rather than by coincidence: ``config._dedupe_boards`` collapses a
+    They agree structurally rather than by coincidence: ``load_active_companies`` collapses a
     Board's case-variant ledger rows to one entry, and *both* consumers read that same deduped
     list — the scrape to decide what to fetch, ``live_keep_set`` to build the keep-set prune keeps
-    rows against. One choice, made once, consumed twice. This pins the join, because if the
-    keep-set ever carried a casing the scrape does not emit, every case-variant Board would loop:
-    sync adds the scraped row, prune deletes it as the other casing's duplicate, forever
-    (ADR-0023's amendment). The committed Workday ledger holds 1,943 case-variant URL groups, so
-    the population this protects is not hypothetical.
-
-    Mirrors ``live_keep_set``'s two-line derivation rather than writing a ledger to disk; these
-    planners are pure, and the CSV parsing it would add is covered by the config tests.
+    rows against. One choice, made once, consumed twice. This pins the join end to end, from ledger
+    rows to eviction, because if the keep-set ever carried a casing the scrape does not emit, every
+    case-variant Board would loop: sync adds the scraped row, prune deletes it as the other
+    casing's duplicate, forever (ADR-0023's amendment). The committed Workday ledger holds 1,943
+    case-variant URL groups, so the population this protects is not hypothetical.
     """
-    variants = [
-        f"https://acme.wd1.myworkdayjobs.com/{site}"
-        for site in ("External", "external", "EXTERNAL")
+    ledger = tmp_path / "liveness"
+    ledger.mkdir()
+    rows = ["ats,tenant,url,status,jobs,checked_at"] + [
+        f"workday,acme,https://acme.wd1.myworkdayjobs.com/{site},live,5,2026-08-13"
+        for site in _CASE_VARIANT_SITES
     ]
-    scraped = _dedupe_boards(
-        [CompanyRef(ats="workday", slug=url, name="Acme") for url in variants]
-    )
+    (ledger / "workday.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    scraped = load_active_companies(ledger, min_jobs=0)
     assert len(scraped) == 1  # one Board is fetched, not three
+    emitted = WorkdayScraper(scraped[0].slug).board_key()
 
-    keep = {WorkdayScraper(company.slug).board_key() for company in scraped}
-    emitted = next(iter(keep))
-    indexed = [f"{WorkdayScraper(url).board_key()}:R1" for url in variants]
-
-    off_board, duplicate = plan_prune(indexed, keep)
+    indexed = [f"workday:acme/{site}:R1" for site in _CASE_VARIANT_SITES]
+    off_board, duplicate = plan_prune(indexed, live_keep_set(ledger))
     assert off_board == []  # every casing resolves to the one live Board
     assert set(indexed) - set(duplicate) == {f"{emitted}:R1"}
 

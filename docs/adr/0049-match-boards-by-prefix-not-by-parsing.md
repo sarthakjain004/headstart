@@ -37,14 +37,23 @@ shared `resolve_board`: the longest Board in the keep-set that prefixes an id is
 owns it, falling back to `board_of` when none matches (an unlisted or disabled Board — and an
 empty ledger, which reproduces the prior rule exactly).
 
-Fixing prune alone would have been worse than the bug. Prune used to evict closed colon-native rows
-*by accident*, as off-Board; teaching it to match by prefix correctly stops that, but sync could not
-take over, because its scope was built from `board_of` and the phantom Board (`…:OT221`) is unique
-per requisition — no fresh sibling ever recreates it, so a closed posting became reachable by
-neither planner and would have been served forever as a dead link. Verified before fixing: with
-prune prefix-matching and sync unchanged, a closed `otis` row is evicted by neither. Resolving both
-sides through the same function puts the closed row and its live siblings on one real Board, so
-sync evicts it the run it closes. `keep` is the set of Boards that
+Fixing prune alone would have been worse than the bug, for one of the three id shapes. Prune used to
+evict closed colon-native rows *by accident*, as off-Board; teaching it to match by prefix correctly
+stops that, and whether sync can take over depends on where the last colon falls:
+
+| id | phantom `board_of` returns | shared by |
+|---|---|---|
+| `…/DMA:REQ: 228` | `…/DMA:REQ` | every `REQ: N` on the Board |
+| `…/marigold:https://…/job/R2454` | `…/marigold:https` | every URL-native row on the Board |
+| `…/REC_Ext_Gateway:OT221: GD - NEW YORK…` | `…:OT221` | **nothing — the req number precedes the colon** |
+
+For the first two, a live sibling keeps recreating the phantom, so it stays in sync's scope and sync
+would still evict a closed row. For the `otis` shape it does not: the phantom is unique per
+requisition, no fresh sibling ever recreates it, and a closed posting would have been reachable by
+neither planner and served forever as a dead link. Verified before fixing: with prune
+prefix-matching and sync unchanged, a closed `otis` row is evicted by neither. Resolving both sides
+through the same function puts the closed row and its live siblings on one real Board, so sync
+evicts it the run it closes — for every shape, rather than for two of three by luck. `keep` is the set of Boards that
 actually exist, so the answer is grounded in real keys rather than in an assumption about id shape:
 unambiguous against every Board key in use today, where no key nests inside another at a colon. The
 native id becomes whatever follows that prefix, which fixes the duplicate-grouping key for the same
@@ -107,11 +116,14 @@ LanceDB work around it. It now runs on the sync path too, not just prune. Sync a
 keep-set it did not previously build: 0.26 s to read the ledger into 60,691 Boards, plus 0.013 s to
 index them by canonical key. Both are noise beside the store download and the table write.
 
-Colon-bearing rows now group onto a **real** Board rather than a per-requisition phantom, which
-puts them under ADR-0046's collapse guard for the first time — as singleton phantoms they were
-always exempt, since the guard has a `COLLAPSE_FLOOR` of 20 rows. That is the intended direction
-(they are ordinary rows on a real Board and should be protected like any other), but it means a
-throttled Workday scrape can now withhold their eviction for a run, where before it could not.
+Colon-bearing rows now group onto a **real** Board rather than a phantom, which changes how
+ADR-0046's collapse guard sees them: they join their Board's full row count instead of forming
+their own small group. The observed phantoms were below the guard's `COLLAPSE_FLOOR` of 20 — the
+four `dmainc` rows shared one `…/DMA:REQ` phantom, the `otis` ones were singletons — so those were
+exempt and are now protected. It is not a blanket "protected for the first time": a Board with 20
+or more URL-native rows already exceeded the floor under its shared `…:https` phantom. Either way
+the direction is intended, they are ordinary rows on a real Board; the effect is that a throttled
+Workday scrape can now withhold their eviction along with the rest of the Board's.
 
 This does **not** re-key anything. The ambiguous ids stay ambiguous; the fix is that the places
 which compared a parsed key against a real one no longer parse.

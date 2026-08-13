@@ -19,10 +19,8 @@ evictions when it would lose more than a quarter of its rows at once.
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
 ``.../external``). These planners compute what to drop in those two cases.
 
-Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, which
-matches against the live keep-set by prefix rather than parsing the id (ADR-0049). They have to
-agree: sync scopes eviction by Board and prune classifies by Board, so when the two named the same
-id differently, a closed posting fell through both.
+Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, whose
+docstring says why they must agree (ADR-0049).
 """
 
 from __future__ import annotations
@@ -69,12 +67,10 @@ def plan_sync(
     a Board *not* in ``scraped_boards`` is never touched (the partial-harvest safety), and a re-seen
     id (present in both) is left as-is (id-only change detection).
 
-    ``live`` is the :func:`boards_by_canon` lookup both planners resolve ids through; pass an empty
-    dict when there is no ledger to read, which degrades to :func:`~headstart.corpus.board_of` — the
-    rule that applied before ADR-0049. It is required rather than defaulted because omitting it
-    silently restores the scoping that ADR-0049 records as *worse* than the bug it fixes: prune
-    matching by prefix while sync scopes on phantom Boards leaves a closed posting reachable by
-    neither.
+    ``live`` is the :func:`boards_by_canon` lookup ids resolve through; pass an empty dict when
+    there is no ledger to read, which degrades to :func:`~headstart.corpus.board_of`. Required
+    rather than defaulted: omitting it silently restores the scoping ADR-0049 records as *worse*
+    than the bug it fixes.
 
     **Collapse guard (ADR-0046).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
@@ -185,9 +181,8 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     The lex-min tie-break is defensive, not the decision: a production ``keep`` already holds one
     casing per Board, because ``live_keep_set`` reads the list ``config._dedupe_boards`` has
     collapsed — the same list the scrape works from, which is *why* the casing prune keeps is the
-    casing a scrape emits (``test_prune_keeps_the_casing_the_scrape_emits``). It matters only for a
-    caller assembling ``keep`` some other way, where an arbitrary set order must not be able to
-    change the plan.
+    casing a scrape emits. It matters only for a caller assembling ``keep`` some other way, where an
+    arbitrary set order must not be able to change the plan.
     """
     live: dict[str, str] = {}
     for board in sorted(keep):  # sorted so a caller's set order can't change the plan

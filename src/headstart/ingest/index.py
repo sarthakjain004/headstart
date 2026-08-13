@@ -18,10 +18,9 @@ overwrite-rebuild (ADR-0019). Corpus ids without a vector (non-English, or not y
 reported and skipped — run ``embed_run --resume`` first to close that gap. Each row added is
 stamped ``first_seen`` with the run's time, which is when *we* indexed it rather than the company's
 ``posted_at``; sync adds the column to a table that predates it before writing (ADR-0031). Sync
-reads the liveness ledger too (``--ledger``), but only to name Boards the same way prune does: ids
-resolve to a live Board by prefix rather than by parsing (ADR-0049). It has no keep-set guard of
-its own, because a broken or empty ledger degrades this to the pre-ADR-0049 ``board_of`` rule on
-both sides of every comparison rather than widening what sync may evict.
+reads the liveness ledger too (``--ledger``), but only to name Boards the same way prune does
+(ADR-0049). It needs no keep-set guard of its own: a broken ledger degrades resolution on both
+sides of its scope comparison at once, which narrows nothing and widens nothing.
 
 **prune** sweeps what the board-scoped sync structurally cannot reach:
 
@@ -169,9 +168,8 @@ def _scraped_boards(
     """The Boards this run actually scraped, read from the *full* scrape (``data/jobs/{ats}.jsonl``
     — a non-recursive glob, so the ``tech/`` subdir is not double-counted).
 
-    ``live`` is the :func:`boards_by_canon` lookup each id resolves through, so this scope is named
-    in the same key space ``plan_sync`` classifies indexed rows into (ADR-0049); an empty one
-    degrades both to ``board_of``.
+    ``live`` is the :func:`boards_by_canon` lookup each id resolves through, so this scope lands in
+    the same key space ``plan_sync`` classifies indexed rows into (ADR-0049).
 
     This is the eviction scope: a Board here but absent from the tech corpus was scraped and simply
     has no tech jobs now, so its stale tech rows are correctly evicted. Falls back to the corpus ids'
