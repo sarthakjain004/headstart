@@ -2,7 +2,10 @@
  *
  * Node's built-in runner (`node --test`) on purpose: this is a Python repo, and a UI assertion
  * is not worth an npm dependency tree, a lockfile, or a second package manager in CI. No
- * package.json, no node_modules — `node --test tests/js/` is the whole harness.
+ * package.json, no node_modules — `node --test tests/js/*.test.js` is the whole harness. A
+ * glob, not a directory: the directory form is not accepted by every Node the CI image ships,
+ * and CI pairs the glob with `shopt -s failglob` so a pattern matching nothing fails loudly
+ * instead of reporting `tests 0` and passing.
  *
  * app.js is a browser script, not a module: it declares top-level `const`/`let` and touches
  * `document`/`window` as it loads. So it is evaluated in a vm context with a stub DOM, and a
@@ -48,6 +51,7 @@ function loadApp() {
   ctx.globalThis = ctx;
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
+    + ' chartMax: CHART_MAX,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
   vm.runInNewContext(src, ctx);
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
@@ -82,7 +86,7 @@ function fixture() {
 
 /** The `<li>` for one series, from the rendered legend HTML. */
 function row(html, name) {
-  const rows = html.split('<li ').slice(1);
+  const rows = html.split(/<li[\s>]/).slice(1);
   return rows.find(r => r.includes(`data-name="${name}"`)) || '';
 }
 
@@ -132,9 +136,13 @@ test('charted rows are real buttons; listed-but-uncharted rows are not interacti
   assert.match(charted, /tabindex="0"/);
   assert.doesNotMatch(uncharted, /role="button"/);
   assert.doesNotMatch(uncharted, /tabindex/);
-  // The invalid ARIA this replaced: aria-pressed on a bare <li>, announcing a toggle that
-  // never toggled anything.
-  assert.doesNotMatch(html, /aria-pressed/);
+  // The ARIA this replaced: aria-pressed announcing a toggle that never toggled. Scoped to
+  // these rows, not the whole legend — a future real toggle elsewhere must not fail this.
+  assert.doesNotMatch(charted, /aria-pressed/);
+  assert.doesNotMatch(uncharted, /aria-pressed/);
+  // The button role must sit on the inner .row, never on the <li>: overriding the li's
+  // implicit `listitem` would leave the <ul> a list owning no items.
+  assert.match(charted, /<span class="row"[^>]*role="button"/);
 });
 
 test('an uncharted row is inert — clicking it issues no request', () => {
@@ -157,7 +165,12 @@ test('the scope line names the drillable set when more rows are listed than char
   const { t, nodes } = loadApp();
   t.set(fixture(), null);
   t.draw();
-  assert.match(nodes['trends-scope'].textContent, /click any of the top 8 to break it down/);
+  const scope = nodes['trends-scope'].textContent;
+  // Assert the SHAPE, not the copy: it must name the drillable count rather than imply every
+  // listed row drills. Hardcoding the wording (or the number 8) would fail on a harmless
+  // rewording or a CHART_MAX change, neither of which is a defect.
+  assert.match(scope, new RegExp(`top ${t.chartMax}\\b`));
+  assert.doesNotMatch(scope, /click a category/);
 });
 
 test('no marker is drawn inside a drill — its rows are bands or roles, not categories', () => {

@@ -700,9 +700,10 @@ function drawTrends(){
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
     // Past CHART_MAX a row is listed but not charted, and `trendClick` will not drill it — so
-    // it is not interactive either. It used to carry `aria-pressed` on a bare <li>: invalid
-    // ARIA (no button role), unreachable by keyboard, and announcing a toggle that never was
-    // one. Charted rows are real buttons; the rest are plain text that happens to be listed.
+    // it is not interactive either. It used to carry `aria-pressed` on a bare <li>: announcing
+    // a toggle that never was one, and unreachable by keyboard. The button role goes on the
+    // inner `.row`, never on the <li> — overriding the li's implicit `listitem` would leave
+    // the <ul> a list owning no list items.
     const off = i >= CHART_MAX;
     const j = d.stamps.length - 1;
     const latest = s.latest == null ? null : trendValue(s.latest, j);
@@ -716,12 +717,12 @@ function drawTrends(){
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
-    return `<li data-name="${esc(s.name)}" class="${off ? 'off' : 'on'}"${off ? '' : ' role="button" tabindex="0"'}
+    return `<li class="${off ? 'listed' : 'charted'}"><span class="row" data-name="${esc(s.name)}"${off ? '' : ' role="button" tabindex="0"'}
       ><span class="swatch" style="background:${off?'var(--ink-3)':c}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       ${hasRoles ? '<span class="drill" title="Named roles are tracked inside this category" aria-label="has tracked roles"><span aria-hidden="true">▸ roles</span></span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
-      <span class="dl ${cls}">${txt}</span></li>`;
+      <span class="dl ${cls}">${txt}</span></span></li>`;
   }).join('');
 
   const runs = d.stamps.length;
@@ -831,20 +832,24 @@ function initAlerts(){
   google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
 // One listener on the list itself — it survives every innerHTML redraw of its children.
-if (el('trends-legend')) el('trends-legend').addEventListener('click', e => {
-  const li = e.target.closest('li[data-name]');
-  if (li) trendClick(li.dataset.name);
-});
-// Charted rows are `role="button" tabindex="0"`, so they must answer the keyboard too — a
-// button reachable by Tab that does nothing on Enter is worse than one that was never focusable.
-// Space is prevented before acting: its default is to scroll the page.
-if (el('trends-legend')) el('trends-legend').addEventListener('keydown', e => {
-  if (e.key !== 'Enter' && e.key !== ' ') return;
-  const li = e.target.closest('li[data-name][role="button"]');
-  if (!li) return;
-  e.preventDefault();
-  trendClick(li.dataset.name);
-});
+if (el('trends-legend')) {
+  const legend = el('trends-legend');
+  legend.addEventListener('click', e => {
+    const row = e.target.closest('.row[data-name]');
+    if (row) trendClick(row.dataset.name);
+  });
+  // Charted rows are `role="button" tabindex="0"`, so they must answer the keyboard too — a
+  // button reachable by Tab that does nothing on Enter is worse than one never focusable.
+  // Space is prevented before acting (its default is to scroll), and `repeat` is ignored so a
+  // held key does not fire a drill per repeat tick.
+  legend.addEventListener('keydown', e => {
+    if (e.repeat || (e.key !== 'Enter' && e.key !== ' ')) return;
+    const row = e.target.closest('.row[data-name][role="button"]');
+    if (!row) return;
+    e.preventDefault();
+    trendClick(row.dataset.name);
+  });
+}
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
