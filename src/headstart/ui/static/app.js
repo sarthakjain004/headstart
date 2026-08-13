@@ -600,6 +600,8 @@ async function onGoogleCredential(resp){
    this draws a line per series and ranks them by how much they moved across the window. ---- */
 const TREND_COLOURS = ['#12D6B4','#8B5CF6','#F59E0B','#A3E635','#FB7185','#60A5FA','#F472B6','#34D399'];
 let trendData = null, trendDrill = null, trendHidden = new Set();
+const LEGEND_MAX = 12;   // rows listed; CHART_MAX of them are plotted
+const CHART_MAX = 8;     // distinct colours in TREND_COLOURS
 
 async function loadTrends(family){
   const r = await fetch('/trends' + (family ? '?family=' + encodeURIComponent(family) : ''));
@@ -621,7 +623,7 @@ function trendDelta(points){
 function drawTrends(){
   const d = trendData; if (!d) return;
   const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
-  const shown = d.series.filter(s => !trendHidden.has(s.name)).slice(0, 8);
+  const shown = d.series.filter(s => !trendHidden.has(s.name)).slice(0, CHART_MAX);
   const vals = shown.flatMap(s => s.points).filter(v => v != null);
   const lo = 0, hi = Math.max(1, ...vals);
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - 6) / (d.stamps.length - 1));
@@ -645,12 +647,12 @@ function drawTrends(){
   });
   el('trends-chart').innerHTML = svg;
 
-  el('trends-legend').innerHTML = d.series.slice(0, 12).map((s, i) => {
+  el('trends-legend').innerHTML = d.series.slice(0, LEGEND_MAX).map((s, i) => {
     const c = TREND_COLOURS[i % TREND_COLOURS.length];
     const dl = trendDelta(s.points);
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
-    const off = trendHidden.has(s.name) || i >= 8;
+    const off = trendHidden.has(s.name) || i >= CHART_MAX;
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
@@ -662,16 +664,24 @@ function drawTrends(){
   }).join('');
 
   const runs = d.stamps.length;
+  const hidden = d.series.slice(LEGEND_MAX);
+  const tail = hidden.reduce((n, s) => n + (s.latest || 0), 0);
   el('trends-scope').textContent = trendDrill
     ? 'by experience level — click to go back'
-    : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}`;
+    : hidden.length
+      // Say what is on screen, not just what exists. The list is capped, so quoting only the
+      // total invites adding the visible rows up against the indexed-jobs headline and finding
+      // tens of thousands unaccounted for — they are in the tail, reported in the footer.
+      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}`
+      : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}`;
   el('trends-empty').textContent = runs < 2
     ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
     : '';
   const nt = d.non_tech.filter(v => v != null).pop();
-  el('trends-foot').textContent = nt
-    ? `Counts are live openings in the index, re-measured every pipeline run. ${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`
-    : 'Counts are live openings in the index, re-measured every pipeline run.';
+  const parts = ['Counts are live openings in the index, re-measured every pipeline run.'];
+  if (tail) parts.push(`${hidden.length} smaller categories are not listed, holding ${tail.toLocaleString()} further openings.`);
+  if (nt) parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
+  el('trends-foot').textContent = parts.join(' ');
 }
 
 function trendClick(name){
