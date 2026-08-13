@@ -702,12 +702,20 @@ function drawTrends(){
     const off = trendHidden.has(s.name) || i >= CHART_MAX;
     const j = d.stamps.length - 1;
     const latest = s.latest == null ? null : trendValue(s.latest, j);
+    // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
+    // top level. Without it the split toggle only appears after drilling in, which means the
+    // one place that advertises the feature is the one place you reach by already knowing it
+    // exists. Only on rows that actually drill (`trendClick` ignores rows past CHART_MAX), so
+    // the marker never promises a click that does nothing.
+    const hasRoles = !trendDrill && i < CHART_MAX
+      && (d.watch_parents || []).includes(s.name);
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
     return `<li data-name="${esc(s.name)}" aria-pressed="${!off}"
       style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<CHART_MAX?c:'var(--ink-3)'}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
+      ${hasRoles ? '<span class="drill" title="Named roles are tracked inside this category"><span aria-hidden="true">▸</span> roles</span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
       <span class="dl ${cls}">${txt}</span></li>`;
   }).join('');
@@ -729,8 +737,9 @@ function drawTrends(){
       // Say what is on screen, not just what exists. The list is capped, so quoting only the
       // total invites adding the visible rows up against the indexed-jobs headline and finding
       // tens of thousands unaccounted for — they are in the tail, reported in the footer.
-      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span}`
-      : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span}`;
+      // The trailing hint is the only thing at this level that says the rows are clickable.
+      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span} — click a category to break it down`
+      : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span} — click a category to break it down`;
   el('trends-empty').textContent = runs < 2
     ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
     : (trendDrill && trendSplit === 'roles' && !d.series.length
