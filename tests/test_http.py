@@ -14,8 +14,9 @@ import headstart.http as http
 
 
 class _Resp:
-    def __init__(self, status_code):
+    def __init__(self, status_code, headers=None):
         self.status_code = status_code
+        self.headers = headers or {}
 
 
 def _err(code):
@@ -35,6 +36,8 @@ def _stub(monkeypatch, outcomes):
             calls.append((method, url))
             if isinstance(outcome, BaseException):
                 raise outcome
+            if isinstance(outcome, tuple):  # (status, headers)
+                return _Resp(*outcome)
             return _Resp(outcome)
 
     monkeypatch.setattr(http, "session", lambda: _Session())
@@ -58,6 +61,82 @@ def test_retries_403_as_transient(monkeypatch):
     calls = _stub(monkeypatch, [403, 200])  # bot-wall blip
     assert http.fetch("GET", "u").status_code == 200
     assert len(calls) == 2
+
+
+def test_retries_405_as_transient(monkeypatch):
+    # the shape Eightfold's edge returns once its per-origin budget is spent (ADR-0047); before
+    # this it settled on the first attempt and the description was dropped silently
+    calls = _stub(monkeypatch, [405, 200])
+    assert http.fetch("GET", "u").status_code == 200
+    assert len(calls) == 2
+
+
+def test_405_is_counted_apart_from_403(monkeypatch):
+    http.reset_retry_stats()
+    _stub(monkeypatch, [405, 403, 200])
+    http.fetch("GET", "u")
+    stats = http.retry_stats()
+    assert stats["405-wall"] == 1
+    assert stats["403-wall"] == 1
+
+
+def test_honours_retry_after_over_the_local_backoff(monkeypatch):
+    slept: list[float] = []
+    _stub(monkeypatch, [(429, {"Retry-After": "7"}), 200])
+    monkeypatch.setattr(http.time, "sleep", slept.append)
+    assert http.fetch("GET", "u").status_code == 200
+    assert slept == [7.0]  # the host's window, not the 1.5s the curve would have picked
+
+
+def test_retry_after_is_capped(monkeypatch):
+    # a host asking for ten minutes is asking for longer than the shard's whole budget
+    slept: list[float] = []
+    _stub(monkeypatch, [(429, {"Retry-After": "600"}), 200])
+    monkeypatch.setattr(http.time, "sleep", slept.append)
+    http.fetch("GET", "u")
+    assert slept == [http._MAX_RETRY_AFTER]
+
+
+def test_zero_retry_after_falls_back_to_the_backoff_curve(monkeypatch):
+    # taken literally, "0" means retry immediately — on a rate-limit wall that is three attempts
+    # back-to-back, the opposite of what honouring the header is for
+    slept: list[float] = []
+    _stub(monkeypatch, [(429, {"Retry-After": "0"}), 200])
+    monkeypatch.setattr(http.time, "sleep", slept.append)
+    http.fetch("GET", "u")
+    assert slept == [1.5]
+
+
+def test_http_date_retry_after_falls_back_to_the_backoff_curve(monkeypatch):
+    slept: list[float] = []
+    _stub(monkeypatch, [(503, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), 200])
+    monkeypatch.setattr(http.time, "sleep", slept.append)
+    http.fetch("GET", "u")
+    assert slept == [1.5]
+
+
+def test_async_path_retries_405_and_honours_retry_after(monkeypatch):
+    """The async path is the one this change exists for — Eightfold's detail pass runs on
+    ``fetch_async`` via ``fan_out_async``, not on ``fetch``."""
+    import asyncio
+
+    outcomes = [_Resp(405, {"Retry-After": "5"}), _Resp(200)]
+    calls: list[str] = []
+    slept: list[float] = []
+
+    class _AsyncSession:
+        async def request(self, method, url, **kwargs):
+            calls.append(url)
+            return outcomes[len(calls) - 1]
+
+    async def _sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(http.asyncio, "sleep", _sleep)
+    response = asyncio.run(http.fetch_async(_AsyncSession(), "GET", "u"))
+    assert response.status_code == 200
+    assert len(calls) == 2  # the 405 was retried rather than settled
+    assert slept == [5.0]  # and it waited the window the host asked for
 
 
 def test_settled_transient_is_returned_not_raised(monkeypatch):

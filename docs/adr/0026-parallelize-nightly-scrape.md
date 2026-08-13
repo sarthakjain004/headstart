@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-25
+- Amended by: [ADR-0047](0047-pace-against-the-origin.md) — the scrape pack caps how many
+  Boards of one ATS a shard may take, because a shard's egress IP is a rate-limit budget
 - Implements **Phase 2** of [ADR-0025](0025-parallelize-nightly-pipeline.md) (which sharded the
   *embed* stage and deferred *scrape* to "only if scrape is still the binding constraint"). Builds on
   ADR-0025's shape, its shared LPT bin-packer, and the `--assignment` shard pattern; on

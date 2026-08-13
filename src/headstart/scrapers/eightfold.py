@@ -38,6 +38,13 @@ from headstart.scrapers.base import BaseScraper
 
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
+# Async-path multiplexing width, below the shared default of 100 (ADR-0047). Eightfold's edge
+# meters per origin across *all* tenants; measured against a live board, 1500 details lost 78.6%
+# at width 100 and 59.2% at width 25, and the slice's ~3,400 Eightfold fetches per shard put
+# width 25 at ~7 min for a typical shard and ~11 min for the worst. Provisional: re-measure with
+# scripts/bench/probe_eightfold_throttle.py, and note those rates predate the 405 retry, which
+# trades wall-clock for recovered fetches in both directions.
+_DETAIL_STREAMS = 25
 _PAGE = 10  # PCSX search page size is fixed at 10 (num_items is ignored)
 _MAX_PAGES = 2000  # loop bound: 2000 x 10 = 20k jobs, above any real board
 _MAX_INDEX_CHILDREN = 50  # sitemap-fallback: child sitemaps to follow from an index
@@ -155,6 +162,7 @@ class EightfoldScraper(BaseScraper):
             descs = self.fan_out_async(
                 ids,
                 lambda session, pid: self._description_async(session, group_id, pid),
+                concurrency=_DETAIL_STREAMS,
             )
         else:
             descs = self.fan_out(
@@ -208,7 +216,9 @@ class EightfoldScraper(BaseScraper):
         listed = self._job_urls()
         if self.async_fanout_enabled():
             fields = self.fan_out_async(
-                listed, lambda session, u: self._jsonld_async(session, u)
+                listed,
+                lambda session, u: self._jsonld_async(session, u),
+                concurrency=_DETAIL_STREAMS,
             )
         else:
             fields = self.fan_out(
