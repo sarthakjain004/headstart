@@ -85,7 +85,7 @@ def sweep(ats, domain, style, max_pages, cdx_filter, sink):
         new = 0
         for u in urls:
             found = extract(u, domain, style)
-            if found and sink.add(found):
+            if found and sink.add(found, style):
                 new += 1
         sink.flush()
         print(
@@ -124,9 +124,12 @@ def main():
         "subdomains (e.g. 'urlkey:ai,eightfold,.*')",
     )
     args = ap.parse_args()
+    # Resolve first: both calls below touch the filesystem, and a bad argument should
+    # not leave a stray CSV or a renamed cursor behind before it is rejected.
+    targets = hosts_for(args.ats, args.domain, args.style)
     adopt_legacy_state(args.ats, "resume")
     with slug_sink(args.ats) as sink:
-        for domain, style in hosts_for(args.ats, args.domain, args.style):
+        for domain, style in targets:
             sweep(args.ats, domain, style, args.max_pages, args.cdx_filter, sink)
 
 

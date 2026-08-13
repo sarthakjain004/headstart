@@ -76,7 +76,7 @@ def sweep(ats, domain, style, workers, sink):
             with lock:
                 for u in urls:
                     found = extract(u, domain, style)
-                    if found and sink.add(found):
+                    if found and sink.add(found, style):
                         counter["new"] += 1
                 sink.flush()
                 sf.write(f"{page}\n")
@@ -99,9 +99,12 @@ def main():
     ap = cli(__doc__)
     ap.add_argument("--workers", type=int, default=10)
     args = ap.parse_args()
+    # Resolve first: both calls below touch the filesystem, and a bad argument should
+    # not leave a stray CSV or a renamed cursor behind before it is rejected.
+    targets = hosts_for(args.ats, args.domain, args.style)
     adopt_legacy_state(args.ats, "pages_done")
     with slug_sink(args.ats) as sink:
-        for domain, style in hosts_for(args.ats, args.domain, args.style):
+        for domain, style in targets:
             sweep(args.ats, domain, style, args.workers, sink)
 
 

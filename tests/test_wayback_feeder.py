@@ -30,12 +30,12 @@ import wayback_feeder as wf  # noqa: E402
         # path: the first segment is the slug
         ("https://apply.workable.com/acme/j/1", "apply.workable.com", "path", "acme"),
         ("https://ats.rippling.com/acme", "ats.rippling.com", "path", "acme"),
-        # workday: the label is the slug but the datacenter must survive in the URL
+        # workday: company/site, because that is what the scraper's slug must resolve to
         (
             "https://acme.wd1.myworkdayjobs.com/en-US/Careers",
             "myworkdayjobs.com",
             "workday",
-            "acme",
+            "acme/Careers",
         ),
     ],
 )
@@ -65,9 +65,12 @@ def test_extract_rejects_what_is_not_a_slug(url, host, style):
 def test_a_workday_url_keeps_its_datacenter():
     """`{slug}.{host}` cannot rebuild `acme.wd1.myworkdayjobs.com`, so the URL seen is kept."""
     slug, url = wf.extract(
-        "https://acme.wd1.myworkdayjobs.com/x", "myworkdayjobs.com", "workday"
+        "https://acme.wd1.myworkdayjobs.com/External_Careers",
+        "myworkdayjobs.com",
+        "workday",
     )
-    assert (slug, url) == ("acme", "https://acme.wd1.myworkdayjobs.com")
+    assert url == "https://acme.wd1.myworkdayjobs.com/External_Careers"
+    assert slug.startswith("acme/")
 
 
 def test_a_path_slug_keeps_the_case_the_ats_gave_it():
@@ -162,20 +165,128 @@ def test_non_ascii_is_not_a_slug():
     assert wf.valid("Acme-Corp")
 
 
-def test_every_table_host_is_reachable_by_its_own_style():
-    """A host paired with the wrong style silently harvests nothing, which no run would report."""
+def test_every_table_host_yields_the_slug_its_own_scraper_expects():
+    """Guards the bug class this table keeps hitting: a host whose style emits a slug the ATS's
+    scraper cannot use. The probe is built from the host, and the *expected slug* from what the
+    scraper wants, so flipping a style in the table fails here rather than in a silent harvest.
+    """
+    expected = {
+        "path": lambda host: "acme",  # the first path segment
+        "sub": lambda host: (
+            "acme"
+        ),  # the label; the scraper recovers the host from the URL
+        "host": lambda host: (
+            f"acme.{host}"
+        ),  # the scraper is handed the whole board host
+        "workday": lambda host: (
+            "acme/External_Careers"
+        ),  # company/site, per board_key()
+    }
     for ats, hosts in wf.ATS_HOSTS.items():
         for host, style in hosts:
-            probe = (
-                f"https://{host}/acme"
-                if style == "path"
-                else f"https://acme.wd1.{host}/x"
-                if style == "workday"
-                else f"https://acme.{host}/x"
+            probe = {
+                "path": f"https://{host}/acme/jobs/1",
+                "sub": f"https://acme.{host}/jobs",
+                "host": f"https://acme.{host}/careers",
+                "workday": f"https://acme.wd1.{host}/en-US/External_Careers/job/1",
+            }[style]
+            got = wf.extract(probe, host, style)
+            assert got, f"{ats}: {host} ({style}) reads nothing"
+            assert got[0] == expected[style](host), (
+                f"{ats}: {host} ({style}) emitted {got[0]}"
             )
-            assert wf.extract(probe, host, style), (
-                f"{ats}: {host} ({style}) reads nothing"
-            )
+
+
+def test_a_workday_slug_keeps_the_site_its_scraper_parses():
+    """`WorkdayScraper.slug_from` keeps the whole careers URL and `_URL_PATTERN` demands a site
+    segment, so a bare host would be a slug the scraper rejects outright."""
+    slug, url = wf.extract(
+        "https://2020companies.wd1.myworkdayjobs.com/en-US/External_Careers/job/x",
+        "myworkdayjobs.com",
+        "workday",
+    )
+    assert slug == "2020companies/External_Careers"
+    assert url == "https://2020companies.wd1.myworkdayjobs.com/External_Careers"
+    # no locale in the path is the commoner shape
+    assert (
+        wf.extract(
+            "https://acme.wd1.myworkdayjobs.com/External_Careers",
+            "myworkdayjobs.com",
+            "workday",
+        )[1]
+        == "https://acme.wd1.myworkdayjobs.com/External_Careers"
+    )
+    # a bare host names no board
+    assert (
+        wf.extract(
+            "https://acme.wd1.myworkdayjobs.com/", "myworkdayjobs.com", "workday"
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        # the CXS jobs endpoint is the one `/wday/` route that names a board
+        (
+            "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External_Careers/jobs",
+            "acme/External_Careers",
+        ),
+        # a two-letter site is a site, not a locale — `ac`, `au`, `hc` are real boards
+        ("https://acme.wd1.myworkdayjobs.com/ac", "acme/ac"),
+        # a locale only counts as one when a site follows it
+        ("https://acme.wd1.myworkdayjobs.com/en-US/Careers/job/1", "acme/Careers"),
+        # sites Workday allows that hostname rules would reject
+        ("https://acme.wd1.myworkdayjobs.com/1", "acme/1"),
+        ("https://acme.wd1.myworkdayjobs.com/_penn-careers", "acme/_penn-careers"),
+    ],
+)
+def test_workday_reads_the_site_shapes_that_really_occur(url, expected):
+    assert wf.extract(url, "myworkdayjobs.com", "workday")[0] == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # implementation/preview tenants: `WorkdayScraper._URL_PATTERN` wants `wd\\d+` and raises
+        # on these, so harvesting them would hand the scraper a slug it rejects
+        "https://acme.impl-wd10.myworkdayjobs.com/External_Careers",
+        # `/wday/` machinery that is not the jobs endpoint
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/videoLabels",
+        "https://acme.wd1.myworkdayjobs.com/wday/asset/x",
+        # routes under a board host that are not boards
+        "https://acme.wd1.myworkdayjobs.com/assets/x.png",
+        "https://acme.wd1.myworkdayjobs.com/refreshFacet",
+        "https://acme.wd1.myworkdayjobs.com/.well-known/y",
+        # a bare host names no board at all
+        "https://acme.wd1.myworkdayjobs.com/",
+    ],
+)
+def test_workday_rejects_what_its_scraper_would_raise_on(url):
+    assert wf.extract(url, "myworkdayjobs.com", "workday") is None
+
+
+def test_regional_pods_are_two_boards_but_aliased_hosts_are_one():
+    """Zoho's TLDs are separate pods — 62 labels exist on two of them, 14 with both live — so
+    keying on the label would silently drop the second. Greenhouse's hosts are aliases of one
+    board, so there the label is exactly the right identity."""
+    assert wf.dedupe_key(
+        "auray", "https://auray.zohorecruit.eu", "sub"
+    ) != wf.dedupe_key("auray", "https://auray.zohorecruit.com", "sub")
+    assert wf.dedupe_key(
+        "acme", "https://boards.greenhouse.io/acme", "path"
+    ) == wf.dedupe_key("acme", "https://job-boards.greenhouse.io/acme", "path")
+
+
+def test_the_sink_keeps_both_pods_of_a_split_ats(tmp_path, monkeypatch):
+    monkeypatch.setattr(wf, "WB", tmp_path)
+    with wf.slug_sink("zoho") as sink:
+        assert sink.add(("auray", "https://auray.zohorecruit.com"), "sub")
+        assert sink.add(("auray", "https://auray.zohorecruit.eu"), "sub")
+        assert not sink.add(("auray", "https://auray.zohorecruit.eu"), "sub")
+    rows = (tmp_path / "zoho.csv").read_text().strip().split("\n")
+    assert len(rows) == 3  # header + one row per pod
 
 
 def test_hosts_for_falls_back_to_the_table_and_can_be_overridden():
@@ -202,9 +313,11 @@ def test_the_sink_dedupes_case_insensitively_across_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(wf, "WB", tmp_path)
 
     with wf.slug_sink("smartrecruiters") as sink:
-        assert sink.add(("AcmeGmbH", "https://careers.smartrecruiters.com/AcmeGmbH"))
+        assert sink.add(
+            ("AcmeGmbH", "https://careers.smartrecruiters.com/AcmeGmbH"), "path"
+        )
         assert not sink.add(
-            ("acmegmbh", "https://careers.smartrecruiters.com/acmegmbh")
+            ("acmegmbh", "https://careers.smartrecruiters.com/acmegmbh"), "path"
         )
         sink.flush()
 
@@ -214,7 +327,7 @@ def test_the_sink_dedupes_case_insensitively_across_runs(tmp_path, monkeypatch):
 
     with wf.slug_sink("smartrecruiters") as sink:  # a later run reloads what is on disk
         assert not sink.add(
-            ("ACMEGMBH", "https://careers.smartrecruiters.com/ACMEGMBH")
+            ("ACMEGMBH", "https://careers.smartrecruiters.com/ACMEGMBH"), "path"
         )
 
     assert (tmp_path / "smartrecruiters.csv").read_text() == written

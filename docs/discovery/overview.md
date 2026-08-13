@@ -107,9 +107,10 @@ Three things the extractor gets right that are easy to get wrong. **A slug is no
 Hosts are case-insensitive, so the host half is lowered, but a path slug belongs to the ATS:
 8,737 of SmartRecruiters' 12,706 ledger slugs are mixed-case
 (`careers.smartrecruiters.com/RedBullGmbH`), and lowercasing them yields slugs that resolve to
-nothing — dedup uses a lowered key, the emitted slug keeps its casing. **A Workday board URL is
-not derivable from its slug**: the host carries a datacenter (`acme.wd1.myworkdayjobs.com`), so
-`extract` returns the URL it saw rather than rebuilding `{slug}.{host}`. **A path slug may contain
+nothing — the emitted slug keeps its casing, and dedup uses a lowered key. **A Workday board is a
+*site* on a host, not a host**: `WorkdayScraper.slug_from` keeps the whole careers URL and its
+`_URL_PATTERN` demands a site segment, so `extract` emits `{company}/{site}` and a URL that carries
+both — a bare host would be a slug the scraper raises on. **A path slug may contain
 a dot or an underscore** — Ashby and Lever let a Company use its domain as its slug
 (`jobs.ashbyhq.com/adept.ai`), Greenhouse and Rippling have underscored ones
 (`boards.greenhouse.io/edged_infrastructure`), and rejecting both cost 1,703 ledger rows and 199

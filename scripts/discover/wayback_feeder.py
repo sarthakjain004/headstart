@@ -17,16 +17,32 @@ CONTEXT.md retires the term but parks the code/data rename as a separate change.
 
 import argparse
 import csv
+import re
 import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 
 Style = Literal["sub", "host", "path", "workday"]
-STYLES: tuple[Style, ...] = ("sub", "host", "path", "workday")
+# `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
+_LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
+# The datacenter label of a *production* Workday host, per `WorkdayScraper._URL_PATTERN`.
+_WD_INSTANCE = re.compile(r"wd\d+")
+# Workday's own routes under a board host. Unlike `INFRA` these are not plausible board names —
+# a real site is never called `refreshFacet` — so rejecting them costs nothing and they were 26
+# of one sampled page's 96 harvested rows.
+_WD_NON_SITE = {
+    "assets",
+    "refreshfacet",
+    ".well-known",
+    "static",
+    "images",
+    "favicon.ico",
+}
+STYLES: tuple[Style, ...] = get_args(Style)
 
 # Subdomains and path segments that are the ATS's own furniture, not a Company.
 INFRA = {
@@ -97,9 +113,8 @@ def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 # Host counts in the comments are liveness-ledger rows on 2026-08-13; they say what a sweep is
 # worth, and are not targets.
 #
-# Callers dedupe an ATS's hosts against one shared slug set, which is safe because the label is
-# allocated per ATS rather than per host: across the ledgers, 0 of 8,197 Zoho slugs and 0 of
-# 4,561 Personio slugs appear on more than one of their ATS's hosts.
+# An ATS's hosts share one dedupe set, keyed by `dedupe_key` rather than by the slug — see there
+# for why the label alone is the wrong identity outside `path` styles.
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "ashby": _with_style("path", "jobs.ashbyhq.com"),
     "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
@@ -172,8 +187,8 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #   oracle, phenom, pyjamahr, zwayam — no enumerable host namespace (per-tenant pods, UUIDs, or
 #             boards that live on customer domains).
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
-#             ends (CLAUDE.md's provider TODO); the retired PowerShell feeder still swept qandle
-#             and beehive.
+#             ends (CLAUDE.md's ATS-expansion TODO); the retired PowerShell feeder still swept
+#             qandle and beehive.
 # An ATS with no scraper yet (turbohire, peoplestrong, jobsoid, …) can still be swept ad hoc:
 # `--domain HOST --style sub` bypasses this table.
 
@@ -239,18 +254,78 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
 
     if not seen_host.endswith("." + host):
         return None
-    label = (
-        seen_host[: -len("." + host)] if style != "workday" else seen_host.split(".")[0]
-    )
-    if style != "workday" and "." in label:
-        return None  # a deeper subdomain, not a slug
-    if not valid(label):
-        return None
+
+    if style == "workday":
+        # A Workday board is a *site* on a host, and `WorkdayScraper.slug_from` keeps the whole
+        # careers URL because `url()` rebuilds `/wday/cxs/{company}/{site}/jobs` from it. Emitting
+        # the bare host would hand the scraper a slug its own `_URL_PATTERN` rejects, so the site
+        # segment has to survive — past any locale Wayback archived the board under.
+        company, _, rest_host = seen_host.partition(".")
+        instance = rest_host.split(".")[0]
+        # Mirror `WorkdayScraper._URL_PATTERN`'s `wd\d+` exactly. Wayback has archived plenty of
+        # `impl-wdN` hosts — Workday's implementation/preview tenants — and harvesting them hands
+        # the scraper a slug it raises on, which a live round-trip caught and no replay could.
+        if not _WD_INSTANCE.fullmatch(instance) or not valid(company):
+            return None
+        site = _workday_site(path)
+        if not site:
+            return None
+        return f"{company}/{site}", f"https://{seen_host}/{site}"
+
+    label = seen_host[: -len("." + host)]
+    if "." in label or not valid(label):
+        return None  # a deeper subdomain, or furniture — not a slug
     # `host` ATSes are keyed by the whole board host, because that is what their scraper is
-    # handed as a slug; `sub` and `workday` are keyed by the label. Either way the URL is the
-    # host as seen — for workday the datacenter is not derivable from the slug.
-    slug = seen_host if style == "host" else label
-    return slug, f"https://{seen_host}"
+    # handed as a slug; a `sub` ATS is keyed by the label, and its scraper recovers the host
+    # from the URL emitted alongside it.
+    return (seen_host if style == "host" else label), f"https://{seen_host}"
+
+
+def _workday_site(path: str) -> str | None:
+    """The board's site segment, skipping any locale Wayback archived it under.
+
+    Deliberately not `valid()`: that rejects `INFRA` words, and a Workday site is very often
+    called exactly `Careers` or `External_Careers`. Here the segment is a board's real name, not
+    a label competing with the ATS's own furniture, so only shape and file-ness are checked.
+    """
+    segments = [s for s in path.split("/") if s]
+    if segments and segments[0].lower() == "wday":
+        # `/wday/` is Workday's own namespace, and exactly one route in it names a board: the CXS
+        # jobs endpoint, `/wday/cxs/{company}/{site}/jobs`. Reading that recovers real boards
+        # Wayback archived only in API form. Everything else under `/wday/` is machinery, and
+        # taking its first segment invented boards called `wday` and `videoLabels`.
+        lowered = [s.lower() for s in segments]
+        if lowered[:2] != ["wday", "cxs"] or len(segments) < 5 or lowered[4] != "jobs":
+            return None
+        segments = segments[3:4]
+    for i, seg in enumerate(segments):
+        if seg.lower() in _WD_NON_SITE:
+            return None
+        # A locale prefix only counts as one when something follows it to be the site. Workday
+        # sites are routinely two letters themselves (`ac`, `au`, `hc`, `da` — 83 live boards),
+        # so a trailing `xx` is the board, not a language.
+        if _LOCALE.fullmatch(seg) and i + 1 < len(segments):
+            continue
+        # Loose on purpose: real sites include `1`, `G`, `_penn-careers`, and a 70-character
+        # `ccd-denver-denvergov-…`. Hostname-label rules reject all of those, and did — 21 live
+        # boards' worth. A site is a path segment, so only shape and file-ness are checked.
+        if seg.lower().endswith(FILE_SUFFIXES) or len(seg) > 128:
+            return None
+        ok = all(c.isascii() and (c.isalnum() or c in "-._") for c in seg)
+        return seg if ok else None
+    return None
+
+
+def dedupe_key(slug: str, url: str, style: Style) -> str:
+    """What makes two harvested rows the same board.
+
+    Not always the slug. A `path` ATS serves one Company from aliased hosts — Greenhouse's
+    `boards.` and `job-boards.` are the same board — so the slug is the identity and the host is
+    noise. Every other style is the reverse: Zoho's TLDs are *regional pods*, not aliases, and 62
+    labels exist on two of them (14 with both sides live), so keying on the label alone would
+    drop a real second board and leave no trace it had been seen.
+    """
+    return slug.lower() if style == "path" else url.lower()
 
 
 def cli(doc: str) -> argparse.ArgumentParser:
@@ -322,10 +397,11 @@ def adopt_legacy_state(ats: str, suffix: str) -> None:
         legacy.rename(adopted)
         print(f"note: adopted {legacy.name} as {adopted.name}", flush=True)
         return
+    candidates = ", ".join(h for h, _ in hosts) or "the host it was swept from"
     print(
         f"note: {legacy.name} predates per-host state and names no host, so it is ignored and "
         f"this sweep restarts. Rename it to .{ats}_<host>_{suffix} for whichever of "
-        f"{', '.join(h for h, _ in hosts)} it was swept from to keep the progress.",
+        f"{candidates} it was swept from to keep the progress.",
         flush=True,
     )
 
@@ -340,11 +416,19 @@ def slug_sink(ats: str):
     """
     WB.mkdir(parents=True, exist_ok=True)
     out = WB / f"{ats}.csv"
+    # Preload with the same identity the sink will compute, so a re-run dedupes against earlier
+    # harvests. The style comes from the row's own host: a CSV can hold both of Workable's.
+    by_host = dict(ATS_HOSTS.get(ats, ()))
     seen: set[str] = set()
     if out.exists():
         with out.open(encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                seen.add(row["tenant"].lower())
+                slug, url = row["tenant"], row["url"]
+                host = url.split("://")[-1].split("/")[0]
+                style = by_host.get(host) or (
+                    "path" if "/" in url.split("://")[-1] else "sub"
+                )
+                seen.add(dedupe_key(slug, url, style))
     else:
         out.write_text("ats,tenant,url\n", encoding="utf-8")
     with out.open("a", newline="", encoding="utf-8") as f:
@@ -367,11 +451,12 @@ class _Sink:
     def __init__(self, ats, seen, writer, handle):
         self._ats, self._seen, self._writer, self._handle = ats, seen, writer, handle
 
-    def add(self, found: tuple[str, str]) -> bool:
+    def add(self, found: tuple[str, str], style: Style) -> bool:
         slug, url = found
-        if slug.lower() in self._seen:
+        key = dedupe_key(slug, url, style)
+        if key in self._seen:
             return False
-        self._seen.add(slug.lower())
+        self._seen.add(key)
         self._writer.writerow([self._ats, slug, url])
         return True
 
