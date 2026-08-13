@@ -77,7 +77,7 @@ from headstart.ingest.index_plan import (
     plan_prune,
     plan_sync,
     resolve_board,
-    unauthoritative_boards,
+    read_unauthoritative_boards,
 )
 from headstart.search import PROD_TABLE
 
@@ -255,7 +255,7 @@ def sync(args: argparse.Namespace) -> int:
     # `plan_sync` stays as the backstop for a truncation that reported nothing at all.
     # `excluded`, not "held": `SyncPlan.held` already names what the collapse guard withheld, and
     # these are two different mechanisms.
-    unauthoritative = unauthoritative_boards(args.unauthoritative_boards)
+    unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
     excluded = {b for b in boards if b.lower() in unauthoritative}
     if excluded:
         boards -= excluded

@@ -17,7 +17,7 @@ from headstart.ingest.index_plan import (
     plan_prune,
     plan_sync,
     resolve_board,
-    unauthoritative_boards,
+    read_unauthoritative_boards,
 )
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -380,22 +380,22 @@ def test_sync_without_a_ledger_keeps_the_board_of_scoping():
     assert plan.delete == frozenset({"greenhouse:a:2"})
 
 
-def test_unauthoritative_boards_reads_the_file_lowercased(tmp_path):
+def test_read_unauthoritative_boards_reads_the_file_lowercased(tmp_path):
     p = tmp_path / "unauthoritative_boards.json"
     p.write_text('{"eightfold:NVIDIA.eightfold.ai": "HTTP 429"}', encoding="utf-8")
     # Lowercased because `resolve_board` returns a Board in the *id's* casing while the file is
     # written from `board_key()`, which carries the ledger's — the two need not agree.
-    assert unauthoritative_boards(p) == {"eightfold:nvidia.eightfold.ai"}
+    assert read_unauthoritative_boards(p) == {"eightfold:nvidia.eightfold.ai"}
 
 
-def test_unauthoritative_boards_is_empty_when_the_file_is_absent(tmp_path):
+def test_read_unauthoritative_boards_is_empty_when_the_file_is_absent(tmp_path):
     """A local sync, or a run predating the file: fall back to the old infer-from-lines scope
     rather than failing, since unreadable telemetry must not stop the index updating."""
-    assert unauthoritative_boards(tmp_path / "nope.json") == set()
+    assert read_unauthoritative_boards(tmp_path / "nope.json") == set()
 
 
 @pytest.mark.parametrize("body", ["[1, 2]", '"abc"', "null", "42"])
-def test_unauthoritative_boards_rejects_a_json_shape_that_is_not_an_object(
+def test_read_unauthoritative_boards_rejects_a_json_shape_that_is_not_an_object(
     tmp_path, body
 ):
     """JSON's top level may legally be a list or a string, and iterating either yields items that
@@ -403,10 +403,10 @@ def test_unauthoritative_boards_rejects_a_json_shape_that_is_not_an_object(
     on `.lower()` and take sync down with it."""
     p = tmp_path / "unauthoritative_boards.json"
     p.write_text(body, encoding="utf-8")
-    assert unauthoritative_boards(p) == set()
+    assert read_unauthoritative_boards(p) == set()
 
 
-def test_unauthoritative_boards_survives_a_corrupt_file(tmp_path):
+def test_read_unauthoritative_boards_survives_a_corrupt_file(tmp_path):
     p = tmp_path / "unauthoritative_boards.json"
     p.write_text("{not json", encoding="utf-8")
-    assert unauthoritative_boards(p) == set()
+    assert read_unauthoritative_boards(p) == set()

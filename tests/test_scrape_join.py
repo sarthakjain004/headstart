@@ -119,16 +119,16 @@ def test_an_unresolvable_key_is_dropped_not_written_through(tmp_path):
 
 def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
     """The seam between the two halves: `write_unauthoritative_boards` emits `board_key()` casing
-    and `unauthoritative_boards` lowercases, because `index sync` matches
+    and `read_unauthoritative_boards` lowercases, because `index sync` matches
     `board.lower() in unauthoritative`. Each half is tested alone; this pins the contract BETWEEN
     them, which is where a rename or a casing change would silently stop protecting anything."""
-    from headstart.ingest.index_plan import unauthoritative_boards
+    from headstart.ingest.index_plan import read_unauthoritative_boards
 
     out = tmp_path / "unauthoritative_boards.json"
     js.write_unauthoritative_boards(
         [{"errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"}}], out
     )
-    unauthoritative = unauthoritative_boards(out)
+    unauthoritative = read_unauthoritative_boards(out)
 
     # What `_scraped_boards` would produce for a Job id on that Board, via `board_key()`.
     scope_entry = "workday:x/Careers"

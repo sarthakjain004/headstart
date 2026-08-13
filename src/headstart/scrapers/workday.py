@@ -322,19 +322,17 @@ class WorkdayScraper(BaseScraper):
             if capped and depth < _MAX_DEPTH
             else None
         )
-        if not capped or facet is None:
-            if capped:
-                # The reported total sticks at exactly 2,000 while the real one is higher, and
-                # with no facet left to split there is no second query to reach the rest — so
-                # this paginates 2,000 of a knowingly larger board. Eightfold's page ceiling in
-                # Workday form, and it must be reported the same way (ADR-0053).
-                self.mark_truncated(
-                    f"{_slice_label(applied)} capped at {_QUERY_TOTAL_CAP} with no facet left "
-                    "to split — postings past the cap were not read"
-                )
-            self._paginate(
-                applied, total, absorb
-            )  # not capped, or nothing left to split
+        if capped and facet is None:
+            # The reported total sticks at exactly 2,000 while the real one is higher, and with
+            # no facet left to split there is no second query to reach the rest — so this
+            # paginates 2,000 of a knowingly larger board. Eightfold's page ceiling in Workday
+            # form, and it must be reported the same way (ADR-0053).
+            self.mark_truncated(
+                f"{_slice_label(applied)} capped at {_QUERY_TOTAL_CAP} with no facet left "
+                "to split — postings past the cap were not read"
+            )
+        if facet is None:  # not capped, or capped with nothing left to split
+            self._paginate(applied, total, absorb)
             return
 
         param, values = facet

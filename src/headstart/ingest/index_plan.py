@@ -86,7 +86,7 @@ def plan_sync(
     Boards under :data:`COLLAPSE_FLOOR` rows are exempt: there a large ratio is a handful of rows.
 
     The guard is now the **backstop**, not the only line: the scrape reports its per-Board outcomes
-    and ``index sync`` keeps the Boards :func:`unauthoritative_boards` names out of
+    and ``index sync`` keeps the Boards :func:`read_unauthoritative_boards` names out of
     ``scraped_boards`` altogether (ADR-0053). What is left to the ratio is a scraper that cannot
     detect its own truncation and a shard killed before it writes a report. It stays deliberately
     blunt: a Board that genuinely sheds more than a quarter of its postings at once keeps those
@@ -197,7 +197,7 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     return live
 
 
-def unauthoritative_boards(path: str | Path) -> set[str]:
+def read_unauthoritative_boards(path: str | Path) -> set[str]:
     """Boards whose scraped list is not authoritative this run — it came back truncated, or the
     scrape raised — lowercased for matching (ADR-0053).
 

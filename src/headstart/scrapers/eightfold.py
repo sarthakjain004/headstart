@@ -146,14 +146,17 @@ class EightfoldScraper(BaseScraper):
             r = self._get(self._search_url(group_id, start))
             if r.status_code != 200:
                 self.mark_truncated(
-                    f"HTTP {r.status_code} on page {pages + 1} — "
-                    f"got {len(positions)} of {total} postings"
+                    _short_reason(
+                        f"HTTP {r.status_code} on page {pages + 1}",
+                        len(positions),
+                        total,
+                    )
                 )
                 break
             batch = (r.json().get("data") or {}).get("positions") or []
             if not batch:
                 self.mark_truncated(
-                    f"empty page {pages + 1} — got {len(positions)} of {total} postings"
+                    _short_reason(f"empty page {pages + 1}", len(positions), total)
                 )
                 break
             positions.extend(batch)
@@ -164,8 +167,9 @@ class EightfoldScraper(BaseScraper):
                 len(positions) < total
             ):  # loop ended on _MAX_PAGES, not on having them all
                 self.mark_truncated(
-                    f"hit the {_MAX_PAGES}-page ceiling — "
-                    f"got {len(positions)} of {total} postings"
+                    _short_reason(
+                        f"hit the {_MAX_PAGES}-page ceiling", len(positions), total
+                    )
                 )
         return positions
 
@@ -344,6 +348,13 @@ class EightfoldScraper(BaseScraper):
                 )
             )
         return jobs
+
+
+def _short_reason(cause: str, got: int, total: int) -> str:
+    """Why the crawl stopped, with exactly how short it left the list (ADR-0053). ``data.count``
+    gives the board total, so every way ``_api_search`` can give up reports the same measured
+    shortfall rather than each phrasing it its own way."""
+    return f"{cause} — got {got} of {total} postings"
 
 
 def _dedupe(items: list[str]) -> list[str]:

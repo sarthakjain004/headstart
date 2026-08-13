@@ -23,6 +23,7 @@ from pathlib import Path
 
 from headstart import log
 from headstart.ingest import REPO_ROOT, observability
+from headstart.scrapers.registry import get_scraper
 
 _log = log.get(__name__, __spec__)
 
@@ -62,8 +63,6 @@ def write_unauthoritative_boards(reports: list[dict], path: Path) -> dict[str, s
     so a run that skipped the write would leave the *previous* run's Boards in place and protect
     Boards that scraped cleanly this time.
     """
-    from headstart.scrapers.registry import get_scraper
-
     unauthoritative: dict[str, str] = {}
     unresolved: list[str] = []
     for report in reports:

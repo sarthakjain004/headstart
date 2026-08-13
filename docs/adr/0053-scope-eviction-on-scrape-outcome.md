@@ -46,9 +46,18 @@ The missing half is the signal. `BaseScraper` gains `truncated: str | None`; a s
 up mid-crawl sets it instead of staying quiet, and keeps returning the Jobs it did fetch, because
 those are real and worth indexing. `scrape_all` reads it after a successful fetch and reports the
 Board as unfinished beside the errors it already collects. Three scrapers set it today — eightfold
-on a non-200, empty page, or the page ceiling; workday on 404'd pages mid-crawl; successfactors on
-a non-200 in its search walk — and any scraper that learns to detect its own truncation joins them
-by setting one attribute.
+on a non-200, an empty page, or the page ceiling; workday on 404'd pages mid-crawl, on a subdivided
+slice whose first page is lost, and on a query capped at 2,000 with no facet left to split;
+successfactors on a non-200 in its search walk, on an RSS feed its tenant aborts mid-stream, and on
+a sitemap read that hits the 30 MB cap — and any scraper that learns to detect its own truncation
+joins them by setting one attribute.
+
+Where a scraper has more than one listing surface, the flag is set only once it is settled *which*
+surface is the Board's answer. SuccessFactors' three fall back in order, and a surface that came up
+short can lose that race outright — its `/search/` walk failing on the first page lists nothing, so
+the RSS stream answers, and it can answer with the whole board. Each surface therefore reports why
+it stopped and `fetch_raw` records it, so a truncation is never attached to a list that another
+surface produced whole.
 
 `errors` and `truncated` stay separate up to the join, because a Board that returned 300 of 850
 postings did not "fail" and logging it as a failure would make every count read wrong. They are
