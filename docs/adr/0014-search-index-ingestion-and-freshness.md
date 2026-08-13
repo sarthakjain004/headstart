@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-07-03
+- Amended by: [ADR-0046](0046-index-collapse-guard.md) — a collapse guard withholds a Board's
+  evictions when it would lose more than a quarter of its rows in one run, so scrape-diff eviction
+  is no longer unconditional
 
 ## Context
 

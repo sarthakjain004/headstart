@@ -53,3 +53,4 @@ supersedes it and note the supersession in both.
 | [0042](0042-signed-in-ui-saved-sets.md) | Sign-in-required UI: Accounts, Saved sets, Saved jobs on the per-record store | 2026-08-11 |
 | [0043](0043-saved-sets-subscription-projection.md) | Saved sets as per-record files; the Subscription is the emailing set's projection | 2026-08-12 |
 | [0044](0044-saved-jobs-display-copies.md) | Saved jobs as per-record display copies, keyed by the job id | 2026-08-12 |
+| [0046](0046-index-collapse-guard.md) | A collapse guard on index eviction | 2026-08-13 |

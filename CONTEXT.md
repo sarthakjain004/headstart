@@ -101,7 +101,7 @@ The embedded, deduped set of Jobs the semantic query runs against — the corpus
 _Avoid_: database, vector store — those name the storage, not the served set.
 
 **Eviction**:
-Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone. The freshness counterpart to embedding newly-seen Jobs.
+Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone — *unless* its whole Board would lose more than a quarter of its rows at once, which reads as a truncated scrape rather than a wave of closures and is **held** instead (ADR-0046). The freshness counterpart to embedding newly-seen Jobs.
 
 **Doc**:
 The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006).

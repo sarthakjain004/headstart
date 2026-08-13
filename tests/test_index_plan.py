@@ -47,14 +47,93 @@ def test_plan_id_only_leaves_reseen_ids():
     assert plan.delete == frozenset()
 
 
-def test_plan_dead_board_evicts_all_its_rows():
-    # a scraped board that yields nothing (dead) -> every one of its rows drops out
+def test_plan_dead_board_below_the_floor_evicts_all_its_rows():
+    # a scraped board that yields nothing (dead) -> every one of its rows drops out. Only below
+    # COLLAPSE_FLOOR: above it the collapse guard holds them
+    # (test_collapse_guard_holds_a_board_that_lost_every_tech_job).
     plan = plan_sync(
         index_ids=["greenhouse:a:1", "greenhouse:a:2"],
         fresh_ids=[],
         scraped_boards=["greenhouse:a"],
     )
     assert plan.delete == frozenset({"greenhouse:a:1", "greenhouse:a:2"})
+
+
+def _board(name: str, n: int) -> list[str]:
+    return [f"{name}:{i}" for i in range(n)]
+
+
+def test_collapse_guard_holds_a_board_that_loses_too_much_at_once():
+    # the flap: a throttled scrape re-emits 60 of 200 rows, so 140 live postings look delisted
+    indexed = _board("eightfold:nvidia.eightfold.ai", 200)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:60],
+        scraped_boards=["eightfold:nvidia.eightfold.ai"],
+    )
+    assert plan.delete == frozenset()
+    assert plan.held == (("eightfold:nvidia.eightfold.ai", 140),)
+
+
+def test_collapse_guard_allows_ordinary_delisting():
+    # 10% churn is normal posting turnover and must still evict
+    indexed = _board("greenhouse:a", 200)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:180],
+        scraped_boards=["greenhouse:a"],
+    )
+    assert plan.delete == frozenset(indexed[180:])
+    assert plan.held == ()
+
+
+def test_collapse_guard_ignores_small_boards():
+    # below the floor a large *ratio* is a handful of rows — genuine churn, not a collapse
+    indexed = _board("lever:tiny", 8)
+    plan = plan_sync(
+        index_ids=indexed, fresh_ids=indexed[:2], scraped_boards=["lever:tiny"]
+    )
+    assert plan.delete == frozenset(indexed[2:])
+    assert plan.held == ()
+
+
+def test_collapse_guard_is_per_board():
+    # one truncated board must not stop a healthy board's evictions in the same run
+    good, bad = _board("greenhouse:good", 100), _board("eightfold:bad", 100)
+    plan = plan_sync(
+        index_ids=good + bad,
+        fresh_ids=good[:95] + bad[:10],
+        scraped_boards=["greenhouse:good", "eightfold:bad"],
+    )
+    assert plan.delete == frozenset(good[95:])
+    assert plan.held == (("eightfold:bad", 90),)
+
+
+def test_collapse_guard_holds_a_board_that_lost_every_tech_job():
+    """The knowing regression against ADR-0014 (see ADR-0046 Consequences).
+
+    A live Board whose jobs are all non-tech now is in scope with *zero* fresh ids — ADR-0014 had
+    its stale rows fall out for free. Above the floor that is indistinguishable from a scrape
+    truncated to nothing, so the guard holds them instead. Pinned so the trade is deliberate.
+    """
+    indexed = _board("greenhouse:went-non-tech", 50)
+    plan = plan_sync(
+        index_ids=indexed, fresh_ids=[], scraped_boards=["greenhouse:went-non-tech"]
+    )
+    assert plan.delete == frozenset()
+    assert plan.held == (("greenhouse:went-non-tech", 50),)
+
+
+def test_collapse_guard_still_adds_the_rows_that_did_arrive():
+    # holding evictions must not hold additions — new postings from a truncated board still land
+    indexed = _board("eightfold:bad", 100)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:20] + ["eightfold:bad:new"],
+        scraped_boards=["eightfold:bad"],
+    )
+    assert plan.add == frozenset({"eightfold:bad:new"})
+    assert plan.delete == frozenset()
 
 
 def _ids(table) -> set[str]:
