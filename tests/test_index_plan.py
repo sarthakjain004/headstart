@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import pytest
 
+from headstart.config import CompanyRef, _dedupe_boards
 from headstart.ingest.index_plan import (
+    _live_board_end,
     apply_sync,
-    lowered_boards,
+    boards_by_canon,
     plan_prune,
     plan_sync,
     resolve_board,
@@ -26,6 +28,7 @@ def test_plan_add_and_evict_within_scraped_board():
         index_ids=["greenhouse:a:1", "greenhouse:a:2"],
         fresh_ids=["greenhouse:a:1", "greenhouse:a:3"],
         scraped_boards=["greenhouse:a"],
+        live={},
     )
     assert plan.add == frozenset({"greenhouse:a:3"})
     assert plan.delete == frozenset({"greenhouse:a:2"})
@@ -37,6 +40,7 @@ def test_plan_never_evicts_an_unscraped_board():
         index_ids=["greenhouse:a:1", "lever:b:9"],
         fresh_ids=["greenhouse:a:1"],
         scraped_boards=["greenhouse:a"],
+        live={},
     )
     assert plan.delete == frozenset()  # lever:b:9 protected
     assert plan.add == frozenset()
@@ -48,6 +52,7 @@ def test_plan_id_only_leaves_reseen_ids():
         index_ids=["greenhouse:a:1"],
         fresh_ids=["greenhouse:a:1"],
         scraped_boards=["greenhouse:a"],
+        live={},
     )
     assert plan.add == frozenset()
     assert plan.delete == frozenset()
@@ -61,6 +66,7 @@ def test_plan_dead_board_below_the_floor_evicts_all_its_rows():
         index_ids=["greenhouse:a:1", "greenhouse:a:2"],
         fresh_ids=[],
         scraped_boards=["greenhouse:a"],
+        live={},
     )
     assert plan.delete == frozenset({"greenhouse:a:1", "greenhouse:a:2"})
 
@@ -76,6 +82,7 @@ def test_collapse_guard_holds_a_board_that_loses_too_much_at_once():
         index_ids=indexed,
         fresh_ids=indexed[:60],
         scraped_boards=["eightfold:nvidia.eightfold.ai"],
+        live={},
     )
     assert plan.delete == frozenset()
     assert plan.held == (("eightfold:nvidia.eightfold.ai", 140),)
@@ -88,6 +95,7 @@ def test_collapse_guard_allows_ordinary_delisting():
         index_ids=indexed,
         fresh_ids=indexed[:180],
         scraped_boards=["greenhouse:a"],
+        live={},
     )
     assert plan.delete == frozenset(indexed[180:])
     assert plan.held == ()
@@ -97,7 +105,10 @@ def test_collapse_guard_ignores_small_boards():
     # below the floor a large *ratio* is a handful of rows — genuine churn, not a collapse
     indexed = _board("lever:tiny", 8)
     plan = plan_sync(
-        index_ids=indexed, fresh_ids=indexed[:2], scraped_boards=["lever:tiny"]
+        index_ids=indexed,
+        fresh_ids=indexed[:2],
+        scraped_boards=["lever:tiny"],
+        live={},
     )
     assert plan.delete == frozenset(indexed[2:])
     assert plan.held == ()
@@ -110,6 +121,7 @@ def test_collapse_guard_is_per_board():
         index_ids=good + bad,
         fresh_ids=good[:95] + bad[:10],
         scraped_boards=["greenhouse:good", "eightfold:bad"],
+        live={},
     )
     assert plan.delete == frozenset(good[95:])
     assert plan.held == (("eightfold:bad", 90),)
@@ -124,7 +136,10 @@ def test_collapse_guard_holds_a_board_that_lost_every_tech_job():
     """
     indexed = _board("greenhouse:went-non-tech", 50)
     plan = plan_sync(
-        index_ids=indexed, fresh_ids=[], scraped_boards=["greenhouse:went-non-tech"]
+        index_ids=indexed,
+        fresh_ids=[],
+        scraped_boards=["greenhouse:went-non-tech"],
+        live={},
     )
     assert plan.delete == frozenset()
     assert plan.held == (("greenhouse:went-non-tech", 50),)
@@ -137,6 +152,7 @@ def test_collapse_guard_still_adds_the_rows_that_did_arrive():
         index_ids=indexed,
         fresh_ids=indexed[:20] + ["eightfold:bad:new"],
         scraped_boards=["eightfold:bad"],
+        live={},
     )
     assert plan.add == frozenset({"eightfold:bad:new"})
     assert plan.delete == frozenset()
@@ -211,14 +227,48 @@ def test_dedup_falls_back_to_lexmin_when_no_row_has_the_live_casing():
 def test_prune_does_not_churn_the_freshly_scraped_row():
     # the regression that motivated the rule: sync re-adds what prune deleted, every run
     keep = {"workday:co/site"}
+    live = boards_by_canon(keep)  # as sync gets it in production, not an empty ledger
     fossil, fresh = "workday:co/Site:R1", "workday:co/site:R1"
     index = {fossil}
     for _ in range(3):
-        plan = plan_sync(index, {fresh}, {"workday:co/site"})
+        plan = plan_sync(index, {fresh}, {"workday:co/site"}, live)
         index = (index | set(plan.add)) - set(plan.delete)
         off, dup = plan_prune(index, keep)
         index -= set(off) | set(dup)
     assert index == {fresh}  # the fossil is gone and the live row survives
+
+
+def test_prune_keeps_the_casing_the_scrape_emits():
+    """The casing a scrape emits and the casing prune keeps must be the same one.
+
+    They agree structurally rather than by coincidence: ``config._dedupe_boards`` collapses a
+    Board's case-variant ledger rows to one entry, and *both* consumers read that same deduped
+    list — the scrape to decide what to fetch, ``live_keep_set`` to build the keep-set prune keeps
+    rows against. One choice, made once, consumed twice. This pins the join, because if the
+    keep-set ever carried a casing the scrape does not emit, every case-variant Board would loop:
+    sync adds the scraped row, prune deletes it as the other casing's duplicate, forever
+    (ADR-0023's amendment). The committed Workday ledger holds 1,943 case-variant URL groups, so
+    the population this protects is not hypothetical.
+
+    Mirrors ``live_keep_set``'s two-line derivation rather than writing a ledger to disk; these
+    planners are pure, and the CSV parsing it would add is covered by the config tests.
+    """
+    variants = [
+        f"https://acme.wd1.myworkdayjobs.com/{site}"
+        for site in ("External", "external", "EXTERNAL")
+    ]
+    scraped = _dedupe_boards(
+        [CompanyRef(ats="workday", slug=url, name="Acme") for url in variants]
+    )
+    assert len(scraped) == 1  # one Board is fetched, not three
+
+    keep = {WorkdayScraper(company.slug).board_key() for company in scraped}
+    emitted = next(iter(keep))
+    indexed = [f"{WorkdayScraper(url).board_key()}:R1" for url in variants]
+
+    off_board, duplicate = plan_prune(indexed, keep)
+    assert off_board == []  # every casing resolves to the one live Board
+    assert set(indexed) - set(duplicate) == {f"{emitted}:R1"}
 
 
 def test_board_key_default_is_ats_colon_slug():
@@ -273,8 +323,6 @@ def test_the_longest_nesting_board_owns_the_row():
     point can. If a Board key ever gains a colon, first-match would hand the longer Board's rows a
     native id carrying the rest of the Board key.
     """
-    from headstart.ingest.index_plan import _live_board_end
-
     live = {"ats:a": "ats:a", "ats:a:b": "ats:a:b"}
     assert _live_board_end("ats:a:b:R1", live) == 7  # "ats:a:b", not "ats:a" at 5
     assert _live_board_end("ats:a:zz", live) == 5
@@ -307,7 +355,7 @@ def test_sync_can_evict_a_closed_posting_whose_native_id_has_a_colon():
     requisition and so is never recreated by a fresh sibling. Resolving both sides against the
     live ledger puts the closed row and its live siblings on the same real Board, so sync sees it.
     """
-    live = lowered_boards({"workday:otis/REC_Ext_Gateway"})
+    live = boards_by_canon({"workday:otis/REC_Ext_Gateway"})
     closed = "workday:otis/REC_Ext_Gateway:OT221: GD - NEW YORK, NY One Penn Plaza"
     fresh = "workday:otis/REC_Ext_Gateway:OT999: SOMEWHERE ELSE"
 

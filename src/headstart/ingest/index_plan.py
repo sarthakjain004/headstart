@@ -18,6 +18,11 @@ evictions when it would lose more than a quarter of its rows at once.
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
 ``.../external``). These planners compute what to drop in those two cases.
+
+Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, which
+matches against the live keep-set by prefix rather than parsing the id (ADR-0049). They have to
+agree: sync scopes eviction by Board and prune classifies by Board, so when the two named the same
+id differently, a closed posting fell through both.
 """
 
 from __future__ import annotations
@@ -55,7 +60,7 @@ def plan_sync(
     index_ids: Iterable[str],
     fresh_ids: Iterable[str],
     scraped_boards: Iterable[str],
-    live: dict[str, str] | None = None,
+    live: dict[str, str],
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -63,6 +68,13 @@ def plan_sync(
     scraped this run yet are missing from ``fresh_ids`` — a posting that has closed. An indexed id on
     a Board *not* in ``scraped_boards`` is never touched (the partial-harvest safety), and a re-seen
     id (present in both) is left as-is (id-only change detection).
+
+    ``live`` is the :func:`boards_by_canon` lookup both planners resolve ids through; pass an empty
+    dict when there is no ledger to read, which degrades to :func:`~headstart.corpus.board_of` — the
+    rule that applied before ADR-0049. It is required rather than defaulted because omitting it
+    silently restores the scoping that ADR-0049 records as *worse* than the bug it fixes: prune
+    matching by prefix while sync scopes on phantom Boards leaves a closed posting reachable by
+    neither.
 
     **Collapse guard (ADR-0046).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
@@ -82,10 +94,9 @@ def plan_sync(
     boards = set(scraped_boards)
     add = fresh - index
 
-    resolved = live if live is not None else {}
     indexed_by_board: dict[str, set[str]] = defaultdict(set)
     for job_id in index:
-        board = resolve_board(job_id, resolved)
+        board = resolve_board(job_id, live)
         if board in boards:
             indexed_by_board[board].add(job_id)
 
@@ -130,9 +141,10 @@ def apply_sync(
 
 
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
-    """Board keys that should survive: every live ledger Board on an enabled ATS, in the index's
-    ``board_of`` key space (via ``board_key()``). ``load_active_companies`` already drops dead
-    Boards and ``DISABLED_ATS``; ``min_jobs=0`` keeps currently-empty live Boards.
+    """Board keys that should survive: every live ledger Board on an enabled ATS, each key exactly
+    as its scraper's ``board_key()`` builds it — the real keys ids carry, which is what makes
+    prefix-matching them exact (ADR-0049). ``load_active_companies`` already drops dead Boards and
+    ``DISABLED_ATS``; ``min_jobs=0`` keeps currently-empty live Boards.
 
     Kept in the ledger's **own casing**, not lowercased: :func:`plan_prune` matches Boards
     case-insensitively but needs the exact live casing to pick which duplicate row to keep."""
@@ -166,8 +178,17 @@ def _live_board_end(job_id: str, live: dict[str, str]) -> int | None:
     return best
 
 
-def lowered_boards(keep: Iterable[str]) -> dict[str, str]:
-    """``{lowercased Board: the live casing}`` — the lookup both planners match ids against."""
+def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
+    """``{canonical (lowercased) Board: the live casing}`` — the lookup both planners match ids
+    against.
+
+    The lex-min tie-break is defensive, not the decision: a production ``keep`` already holds one
+    casing per Board, because ``live_keep_set`` reads the list ``config._dedupe_boards`` has
+    collapsed — the same list the scrape works from, which is *why* the casing prune keeps is the
+    casing a scrape emits (``test_prune_keeps_the_casing_the_scrape_emits``). It matters only for a
+    caller assembling ``keep`` some other way, where an arbitrary set order must not be able to
+    change the plan.
+    """
     live: dict[str, str] = {}
     for board in sorted(keep):  # sorted so a caller's set order can't change the plan
         live.setdefault(board.lower(), board)
@@ -182,6 +203,13 @@ def resolve_board(job_id: str, live: dict[str, str]) -> str:
     prune classifies by Board, and when the two disagreed about a colon-bearing id, a *closed*
     posting became unreachable by both — prune saw it on a live Board and left it, while sync's
     scope only ever held the phantom Board, which no fresh sibling recreates once the req closes.
+
+    Returns the Board in the **id's own casing**, not the ledger's. Sync pairs indexed ids against
+    the Boards a scrape emitted, and a scrape emits the live casing, so a fossil-cased row resolves
+    to a Board absent from that scope and sync leaves it alone — which is the partial-harvest
+    protection :func:`plan_prune` documents and relies on. Canonicalising to ``live[canon]`` here
+    would fold fossils onto the live Board and let sync evict them as stale, quietly taking over
+    the job prune does under its own keep-set guard.
     """
     end = _live_board_end(job_id, live)
     return job_id[:end] if end is not None else board_of(job_id)
@@ -205,8 +233,10 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
     Ids are matched against ``keep`` by **prefix**, not by parsing (ADR-0049): a composite key is
     ``{ats}:{slug}:{native}`` and *both* the slug and the native id can contain ``:``, so splitting
     on the last colon attributes some rows to a Board that does not exist. ``keep`` is the set of
-    real Boards, so the longest member that prefixes an id is the answer, exactly."""
-    live = lowered_boards(keep)
+    real Boards, so the longest member that prefixes an id is the answer — unambiguous against
+    every Board key in use today, with longest-match as the documented tie-break should one Board
+    key ever nest inside another at a colon."""
+    live = boards_by_canon(keep)
     off_board: list[str] = []
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for jid in index_ids:

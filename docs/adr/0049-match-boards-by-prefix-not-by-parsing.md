@@ -25,9 +25,10 @@ not exist.
 That is only fatal where the result meets a *real* Board key. `plan_prune` compares it against
 `keep`, which is built from each scraper's `board_key()` and is correct, so the row is classified
 off-Board and evicted; the next sync re-adds it, because it is in fact on a live Board. `index
-sync` is unaffected, because it runs both the fresh id and the indexed id through the same
-function — the phantom Board is produced identically on both sides, so the scope check still pairs
-them. A consistent error that cancels, next to an inconsistent one that loops.
+sync`, **as it stood before this ADR**, was unaffected: it ran both the fresh id and the indexed id
+through the same function, so the phantom Board was produced identically on both sides and the
+scope check still paired them. A consistent error that cancels, next to an inconsistent one that
+loops. That symmetry is exactly what fixing prune alone would have broken — see the Decision.
 
 ## Decision
 
@@ -44,8 +45,16 @@ neither planner and would have been served forever as a dead link. Verified befo
 prune prefix-matching and sync unchanged, a closed `otis` row is evicted by neither. Resolving both
 sides through the same function puts the closed row and its live siblings on one real Board, so
 sync evicts it the run it closes. `keep` is the set of Boards that
-actually exist, so this is exact by construction rather than by assumption. The native id becomes
-whatever follows that prefix, which fixes the duplicate-grouping key for the same rows.
+actually exist, so the answer is grounded in real keys rather than in an assumption about id shape:
+unambiguous against every Board key in use today, where no key nests inside another at a colon. The
+native id becomes whatever follows that prefix, which fixes the duplicate-grouping key for the same
+rows.
+
+`index sync` therefore gains a `--ledger` (defaulting, like prune's, to `data/validate/liveness`)
+and reads the keep-set on every run. It gets **no** `_MIN_KEEP_BOARDS` guard of its own, unlike
+prune: a broken or empty ledger degrades resolution to `board_of` on *both* sides of sync's scope
+comparison, which is the pre-ADR-0049 rule and evicts no more than it did before. Prune's guard
+exists because there a small keep-set means mass eviction; here it means the old behaviour.
 
 Longest-match rather than first-match is **defence in depth, not a current need**: candidates
 form only at colons, and no two live Board keys nest at a colon today — Workday's `co/site` nests
@@ -54,6 +63,13 @@ every id in the table. Taking the longest keeps the answer right if a Board key 
 and the difference is pinned on the helper directly, since `plan_prune`'s output cannot currently
 tell the two apart.
 
+Note what that concedes. Should two live Board keys ever nest at a colon, an id on the shorter
+Board whose native part begins with the longer key's tail is **genuinely ambiguous** — the
+information to resolve it is not in the id. Longest-match is then a declared tie-break, not a
+recovered fact. It is the right default (the longer key is the more specific claim), and today it
+is unreachable; but "exact by construction" holds against the current keep-set, not for all
+possible ones.
+
 The scan returns a **position in the original id**, not the length of the matched key. `live`'s
 keys are lowercased and `str.lower()` is not length-preserving (`'İ'.lower()` is two characters),
 so slicing the original by the key's length would silently eat a character of the native id — and
@@ -61,8 +77,10 @@ on this path that means two distinct Jobs collapsing into one duplicate group an
 deleted. Unreachable with today's keep-set, which is all ASCII, and one line to make exact.
 
 `board_of` keeps its split-based implementation and gains a docstring that states the limit
-honestly and says where it is safe. Rewriting it to take a keep-set would change every caller for
-the benefit of one, and `index sync` genuinely does not need it.
+honestly and says where it is safe. Rewriting it to take a keep-set would change every caller —
+including the ones with no keep-set to give it — to serve the two that now resolve through
+`resolve_board` instead; the guess and the exact answer are better as two named functions than as
+one function with a mode.
 
 ## Consequences
 
@@ -85,11 +103,35 @@ priority order — so neither is urgent, and neither is fixed here.
 
 The scan walks the id once and does a slice plus a `lower()` per colon, against one `rsplit` for
 the old rule — measured at 0.16 s → 0.30 s over 300,000 ids, which is not measurable next to the
-LanceDB work around it. It now runs on the sync path too, not just prune.
+LanceDB work around it. It now runs on the sync path too, not just prune. Sync also pays for the
+keep-set it did not previously build: 0.26 s to read the ledger into 60,691 Boards, plus 0.013 s to
+index them by canonical key. Both are noise beside the store download and the table write.
 
-This does **not** re-key anything. The ambiguous ids stay ambiguous; the fix is that the one place
-which compared a parsed key against a real one no longer parses. Making ids unambiguous at the
-source — escaping `:` in the native id — would be the durable fix, and would also invalidate every
-id in the store and the served table, forcing a full re-embed. Not worth it for seven rows.
-**Revisit if a second consumer needs to parse ids**, because at that point the guess starts being
-made in more than one place.
+Colon-bearing rows now group onto a **real** Board rather than a per-requisition phantom, which
+puts them under ADR-0046's collapse guard for the first time — as singleton phantoms they were
+always exempt, since the guard has a `COLLAPSE_FLOOR` of 20 rows. That is the intended direction
+(they are ordinary rows on a real Board and should be protected like any other), but it means a
+throttled Workday scrape can now withhold their eviction for a run, where before it could not.
+
+This does **not** re-key anything. The ambiguous ids stay ambiguous; the fix is that the places
+which compared a parsed key against a real one no longer parse.
+
+The reason for not re-keying is **not** that it would force a full re-embed — an earlier draft of
+this ADR said so, and that is wrong. Escaping `:` in the native id changes only the ids that
+contain one; every other id stays byte-identical, and the embed skip-list is keyed by id, so only
+the affected rows would re-embed. The real cost is that an id is a join key across several surfaces
+at once — the skip-list, `first_seen` stamps, saved-set references, the served table — so re-keying
+is a coordinated migration over all of them, for a population this ADR has only ever observed at
+seven rows. Anyone revisiting it should count that population against the **served table**, not a
+local snapshot.
+
+The durable fix is better than either: **stamp the Board on the Job at scrape time**. The scraper
+composes the id out of `board_key()` and the native id in a single expression (`workday.py`'s
+`f"{ats}:{company}/{site}:{ats_id}"`), so it holds the exact answer and throws it away; everything
+downstream then reconstructs it by matching strings against mutable ledger state. A `board` field
+carried through to the index would make every consumer exact and permanent — including
+`board_priority.pick_boards` and `embed_run.order_by_priority`, named above as parsing and
+mis-scoring *today*. The cost is a schema change (`index._schema()`, the README's served-table
+section, the metas plumbing) plus a backfill, for which `resolve_board` is the right one-time tool.
+**Revisit when the next consumer needs to know an id's Board** — on the count above that trigger is
+arguably already met, and it is the migration cost, not the design, that defers it.

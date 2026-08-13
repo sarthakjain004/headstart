@@ -17,7 +17,11 @@ all-add; the identical path does true incremental add/evict on every later run �
 overwrite-rebuild (ADR-0019). Corpus ids without a vector (non-English, or not yet embedded) are
 reported and skipped — run ``embed_run --resume`` first to close that gap. Each row added is
 stamped ``first_seen`` with the run's time, which is when *we* indexed it rather than the company's
-``posted_at``; sync adds the column to a table that predates it before writing (ADR-0031).
+``posted_at``; sync adds the column to a table that predates it before writing (ADR-0031). Sync
+reads the liveness ledger too (``--ledger``), but only to name Boards the same way prune does: ids
+resolve to a live Board by prefix rather than by parsing (ADR-0049). It has no keep-set guard of
+its own, because a broken or empty ledger degrades this to the pre-ADR-0049 ``board_of`` rule on
+both sides of every comparison rather than widening what sync may evict.
 
 **prune** sweeps what the board-scoped sync structurally cannot reach:
 
@@ -29,8 +33,9 @@ stamped ``first_seen`` with the run's time, which is when *we* indexed it rather
      Board keys, hence two ids for one job. Same lowercased Board + native id → keep one, drop the rest.
 
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
-  The keep-set is the live ledger (enabled ATSes) mapped into the index's ``board_of`` key space via
-  each scraper's ``board_key()``. Dry-run by default; ``--apply`` deletes. Run after ``sync``.
+  The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's
+  ``board_key()`` builds it; ids are matched against it by prefix (ADR-0049), not by parsing them.
+  Dry-run by default; ``--apply`` deletes. Run after ``sync``.
   Refuses to apply if the keep-set looks too small to trust (a broken ledger must not evict the
   index) — that abort exits 1.
 
@@ -66,8 +71,8 @@ from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
+    boards_by_canon,
     live_keep_set,
-    lowered_boards,
     plan_prune,
     plan_sync,
     resolve_board,
@@ -161,8 +166,12 @@ def _all_ids(table: Any) -> list[str]:
 def _scraped_boards(
     scraped: str | Path, corpus_ids: set[str], live: dict[str, str]
 ) -> set[str]:
-    """The Boards this run actually scraped, in ``board_of`` key space, read from the *full* scrape
-    (``data/jobs/{ats}.jsonl`` — a non-recursive glob, so the ``tech/`` subdir is not double-counted).
+    """The Boards this run actually scraped, read from the *full* scrape (``data/jobs/{ats}.jsonl``
+    — a non-recursive glob, so the ``tech/`` subdir is not double-counted).
+
+    ``live`` is the :func:`boards_by_canon` lookup each id resolves through, so this scope is named
+    in the same key space ``plan_sync`` classifies indexed rows into (ADR-0049); an empty one
+    degrades both to ``board_of``.
 
     This is the eviction scope: a Board here but absent from the tech corpus was scraped and simply
     has no tech jobs now, so its stale tech rows are correctly evicted. Falls back to the corpus ids'
@@ -199,7 +208,7 @@ def sync(args: argparse.Namespace) -> int:
     # Resolved against the live ledger so a Board is named the same here as in prune: an id whose
     # native part carries a colon otherwise lands on a phantom Board, and a closed posting there is
     # reachable by neither planner (ADR-0049). Empty ledger degrades to board_of, the prior rule.
-    live = lowered_boards(live_keep_set(args.ledger))
+    live = boards_by_canon(live_keep_set(args.ledger))
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
     boards = _scraped_boards(args.scraped, corpus_ids, live)
     fresh = corpus_ids & row_of.keys()
