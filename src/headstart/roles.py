@@ -141,7 +141,7 @@ def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
     if not path.exists():
         return []
     spec = json.loads(path.read_text(encoding="utf-8"))
-    roles: list[WatchRole] = []
+    watched: list[WatchRole] = []
     seen: set[str] = set()
     for entry in spec["roles"]:
         name = entry["name"]
@@ -154,7 +154,7 @@ def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
                 "a family in role_families.json — the drill it should appear under does not exist"
             )
         try:
-            roles.append(
+            watched.append(
                 WatchRole(
                     name, entry.get("label", name), entry["parent"], entry["match"]
                 )
@@ -163,4 +163,4 @@ def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
             raise ValueError(
                 f"{path}: watch role '{name}' has a bad pattern: {exc}"
             ) from exc
-    return roles
+    return watched

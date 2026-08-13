@@ -100,6 +100,9 @@ def _family_labels(path: Path) -> dict[str, str]:
     return {f["name"]: f.get("label", f["name"]) for f in spec["families"]}
 
 
+_WATCH_PREFIX = "watch:"  # mirrors headstart.roles.WATCH_PREFIX (ADR-0051)
+
+
 def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
     """``{watch:name: {label, parent}}`` from the curated watchlist (ADR-0051), synced beside
     this app like the family map. Missing file means no watch roles — older deploys."""
@@ -115,7 +118,6 @@ def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
     }
 
 
-_WATCH_PREFIX = "watch:"  # ledger namespace for watched roles (ADR-0051)
 _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.csv")
 _WATCH = _watch_meta(Path(__file__).with_name("role_watchlist.json"))
 _FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
@@ -638,12 +640,22 @@ def unstar_job(saved_id: str):
 
 @app.route("/trends")
 def trends():
-    """Role-family counts over time (ADR-0040), or 503 until the ledger exists.
+    """Role counts over time (ADR-0040, ADR-0051), or 503 until the ledger exists.
 
-    Default: one series per family, each point the family's total across bands at that run.
-    ``?family=<name>``: that family's series split by seniority band instead. The reserved
-    ``non-tech`` family is never a chart series — it rides along as ``non_tech``, the
-    tech-filter health number, so the page can show it as a caveat rather than a role."""
+    ``?metric=stock`` (default) is live openings; ``?metric=new`` is those first seen inside
+    the ledger's flow window. Default view: one series per family, each point the family's
+    total across bands. ``?family=<name>`` splits that family by seniority band, and
+    ``&split=roles`` swaps the bands for the family's watched roles (ADR-0051) instead.
+
+    ``totals`` carries the whole served table per stamp so the caller can plot a **share** of
+    the index rather than a raw count — the count moves whenever our coverage does, the share
+    only when categories move relative to each other. Watched roles are left out of it: they
+    re-count Jobs already counted in their family, so adding them would inflate the
+    denominator. ``watch_parents`` names the families that have any, so a caller can offer the
+    roles split only where it leads somewhere.
+
+    The reserved ``non-tech`` family is never a chart series — it rides along as ``non_tech``,
+    the tech-filter health number, so the page can show it as a caveat rather than a role."""
     if not _TRENDS:
         return jsonify(error="no trend data yet"), 503
     metric = request.args.get("metric", "stock")
@@ -676,7 +688,18 @@ def trends():
         rows = [r for r in rows if not r["family"].startswith(_WATCH_PREFIX)]
         key = "family"
 
+    # Stamps where the `new` metric was recorded at all. `count_groups` writes only non-empty
+    # groups, so on such a stamp a series with no row genuinely saw zero fresh openings —
+    # whereas a stamp with no `new` rows anywhere is one this metric did not yet exist for.
+    # That second case is an inference from row presence, not a recorded fact: a run where
+    # nothing anywhere was new would read as unmeasured. At this corpus size that has never
+    # happened, and the honest alternative (a per-run marker row) costs more than it settles.
     measured = {r["ts"] for r in _TRENDS if r["metric"] == "new"}
+
+    def value_at(points: dict[str, int], ts: str) -> int | None:
+        """A series' value at one stamp — 0 where the metric ran and found none, else None."""
+        return points.get(ts, 0 if metric == "new" and ts in measured else None)
+
     series: dict[str, dict[str, int]] = {}
     for r in rows:  # sum over the other axis, so a family point is its total
         series.setdefault(r[key], {})
@@ -694,18 +717,8 @@ def trends():
             # where new WAS measured (any new row exists), a missing series row genuinely
             # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
             # and stays a gap.
-            "points": [
-                points.get(ts, 0 if metric == "new" and ts in measured else None)
-                for ts in stamps
-            ],
-            "latest": (
-                points.get(
-                    stamps[-1],
-                    0 if metric == "new" and stamps[-1] in measured else None,
-                )
-                if stamps
-                else None
-            ),
+            "points": [value_at(points, ts) for ts in stamps],
+            "latest": value_at(points, stamps[-1]) if stamps else None,
         }
         for name, points in series.items()
     ]

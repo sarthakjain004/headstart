@@ -473,3 +473,29 @@ def test_old_ledger_is_migrated_in_place_before_the_first_append(tmp_path, monke
     # every row — migrated and appended alike — parses under the one header
     rows = list(csv.DictReader(ledger.open()))
     assert all(r["metric"] in ("stock", "new") and r["count"].isdigit() for r in rows)
+
+
+def test_a_zero_byte_ledger_does_not_sink_the_run(tmp_path, monkeypatch):
+    """A run killed between `open("a")` and the first write leaves a 0-byte file. It has no
+    header to migrate, and `append_ledger` writes one only for a file that does not exist —
+    so without this the step raises StopIteration and the ledger never recovers."""
+    ledger = tmp_path / "role_trends.csv"
+    ledger.touch()
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    _run(tmp_path, monkeypatch)
+
+    lines = ledger.read_text().splitlines()
+    assert lines[0] == "ts,version,metric,family,band,count"
+    assert len(lines) == 3  # header + the one group + the non-tech diagnostic

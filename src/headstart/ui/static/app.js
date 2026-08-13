@@ -728,7 +728,7 @@ function drawTrends(){
   el('trends-empty').textContent = runs < 2
     ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
     : (trendDrill && trendSplit === 'roles' && !d.series.length
-      ? 'No watched roles under this category yet — they are curated in config/role_watchlist.json.'
+      ? 'No specific roles are tracked under this category yet.'
       : '');
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
@@ -763,17 +763,25 @@ function trendSeg(id, attr, apply){
     apply(b.dataset[attr]);
   });
 }
+// Share divides by the STOCK total, so it is meaningless against "new" — a share of new
+// openings over all live ones is a number with no reading. The unit segment is therefore
+// locked there. `disabled`, not just pointer-events: the latter stops the mouse and not the
+// keyboard, and a focused Space press would have plotted new counts over stock totals.
+function setUnit(value, locked){
+  trendUnit = value;
+  const seg = el('trends-unit'); if (!seg) return;
+  seg.style.opacity = locked ? .4 : '';
+  seg.querySelectorAll('button').forEach(b => {
+    b.disabled = locked;
+    b.setAttribute('aria-pressed', b.dataset.unit === value);
+  });
+}
 trendSeg('trends-metric', 'metric', v => {
   trendMetric = v;
-  // Share needs a stock denominator; "new" is inherently a count. Force and disable the
-  // unit toggle there rather than plotting a share of the wrong total.
-  const unitSeg = el('trends-unit');
-  if (v === 'new'){ trendUnit = 'count'; unitSeg.style.opacity = .4; unitSeg.style.pointerEvents = 'none'; }
-  else { unitSeg.style.opacity = ''; unitSeg.style.pointerEvents = ''; }
-  unitSeg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.dataset.unit === trendUnit));
+  setUnit(v === 'new' ? 'count' : 'share', v === 'new');
   loadTrends(trendDrill);
 });
-trendSeg('trends-unit', 'unit', v => { trendUnit = v; drawTrends(); });
+trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
 trendSeg('trends-split', 'split', v => { trendSplit = v; loadTrends(trendDrill); });
 
 function initAlerts(){

@@ -123,7 +123,13 @@ def _migrate_ledger(ledger: Path) -> None:
     """
     with ledger.open(encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh)
-        header = tuple(next(reader))
+        # A 0-byte ledger has no header at all — a run killed between `open("a")` and the
+        # first write leaves exactly that. Nothing to migrate, and the append below writes
+        # no header for a file that exists, so let it be rewritten from scratch.
+        header = tuple(next(reader, ()))
+        if not header:
+            ledger.unlink()
+            return
         if header == _COLUMNS:
             return
         if header != _OLD_COLUMNS:
@@ -153,10 +159,12 @@ def append_ledger(
     The diagnostic rides the same file as ``(stock, non-tech, all)`` — one number per run,
     unbanded because a band on a Data Entry Clerk means nothing. The chart filters it out; its
     trend is the tech filter's health over time. Returns rows written."""
-    fresh = not ledger.exists()
     ledger.parent.mkdir(parents=True, exist_ok=True)
-    if not fresh:
+    if ledger.exists():
         _migrate_ledger(ledger)
+    # Checked AFTER the migration, which discards a 0-byte ledger: a file that existed but
+    # held no header still needs one written here.
+    fresh = not ledger.exists()
     with ledger.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         if fresh:

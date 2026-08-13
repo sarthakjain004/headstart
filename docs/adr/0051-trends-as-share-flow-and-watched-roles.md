@@ -22,9 +22,10 @@ no way to tell whether the window was two hours or two years — plus a headline
 the single first and last points, which one noisy run swings. Someone timing a job hunt wants
 **flow** ("what appeared this week") and got only stock; a category can hold 70,000 stable openings
 while posting almost nothing new. And someone tracking a specific role — the motivating example was
-**Forward Deployed Engineer** — got nothing: it is ~1% of the corpus (761 of 75,166 titles in a
-July snapshot) against a 55-cluster fit, so it owns no centroid and is smeared across general
-software-engineering clusters.
+**Forward Deployed Engineer** — got nothing. 761 Jobs carry a forward-deployed title (370 distinct
+titles) in a July tech snapshot of 75,166, so ~1% of that snapshot and **0.17% of the 435,186
+vectors the fit clustered**. Against a K=72 fit that earns no centroid of its own, and the role is
+smeared across general software-engineering clusters.
 
 ## Decision
 
@@ -48,8 +49,8 @@ that now names the coverage caveat instead of implying there isn't one. `new` is
 because its meaning is the number itself.
 
 **Named roles are watched by title pattern**, curated in `config/role_watchlist.json` and counted
-into the same ledger under a reserved `watch:` family namespace. Patterns, not centroids: a ~1%
-role earns no cluster at any practical k, a pattern is explainable per Job, and it survives a
+into the same ledger under a reserved `watch:` family namespace. Patterns, not centroids: a role
+this small earns no cluster at any practical k, a pattern is explainable per Job, and it survives a
 centroid refit unchanged — whereas a refit re-bases every centroid-derived series. A watched role
 is counted **in addition to** its family, never instead of it, so family totals stay complete; the
 endpoint therefore excludes `watch:` rows from the top-level view and from the share denominator,
@@ -66,8 +67,8 @@ single runs.
   variants a title never spells out, but the threshold has no principled value, moving it moves the
   whole series, and it cannot explain per-Job why something counted.
 - **Refit at higher k so fine roles emerge** — most faithful to ADR-0040's design, but a refit
-  re-bases every series and cuts off all existing history, and a 1%-of-corpus role still very
-  likely earns no centroid.
+  re-bases every series and cuts off all existing history, and a role at 0.17% of the clustered
+  population would need a K far beyond the 72 the sweep already argued up to before it separated.
 - **Normalising by Board count rather than by index total** — closer to "per unit of coverage", but
   Boards differ hugely in size, so it trades a clean denominator for a noisy one.
 - **Per-run flow instead of a rolling week** — cheaper, but the run cadence is irregular by design,
