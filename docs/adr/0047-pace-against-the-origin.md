@@ -67,19 +67,20 @@ Replaying the planner's own selection, the slice carries 89 Eightfold Boards tot
 | width | loss | typical shard | worst shard |
 |---|---|---|---|
 | 100 | 78.6% | 0.9 min | 1.4 min |
-| 25 | 59.2% | 7.4 min | 11.0 min |
-| 8 | 58.7% | 20.2 min | 29.8 min |
-| 4 | 28.3% | 21.5 min | 31.7 min |
+| 25 | 49.9% | 6.6 min | 9.7 min |
+| 12 | 47.9% | 11.9 min | 17.6 min |
+| 4 | 24.9% | 20.7 min | 30.6 min |
 
-Width 4 halves the loss again but costs ~32 minutes on the worst shard, which does not fit beside
-everything else in a 60-minute budget. Width 25 costs ~11 minutes at worst for ~20 points of
-recovered descriptions, and that fits.
+Width 4 halves the loss again but costs ~31 minutes on the worst shard, which does not fit beside
+everything else in a 60-minute budget. Width 12 buys two points over width 25 for seven more
+minutes on the worst shard. Width 25 costs ~10 minutes at worst for ~29 points of recovered
+descriptions, and that fits.
 
-Two honest caveats on those arms. They ran concurrently against one Board, and the block is known
-to span tenants, so they may have contended — the likeliest reason width 8 reads no better than
-width 25, and a reason to treat the *ordering* as soft. And every rate above predates the 405
-retry, which spends wall-clock to recover fetches, so it moves both the loss and the timing. The
-width is therefore provisional, and one production run should be read before it is moved again.
+These arms were run sequentially with a six-minute cool-off between them, because an earlier
+concurrent matrix had them contending for the same per-origin budget and reading 8-19 points
+pessimistic (78.6/59.2/58.7/28.3 at widths 100/25/8/4). One caveat remains: every rate here
+predates the 405 retry, which spends wall-clock to recover fetches, so it moves both the loss and
+the timing. The width is provisional, and one production run should be read before moving it.
 
 ## Consequences
 
