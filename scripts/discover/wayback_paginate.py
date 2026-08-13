@@ -6,29 +6,25 @@ tenants to data/wayback-ats/{ats}.csv after every page. On dense domains `waybac
 faster (random access to every page, concurrently); this one earns its keep where the walk has
 to be filtered server-side, via --filter.
 
-Sweeps every board host the ATS serves from (`wayback_common.PROVIDERS`), not just one.
+Sweeps every board host the ATS serves from (`wayback_providers.PROVIDERS`), not just one.
 Resumable: the cursor is saved per host to data/wayback-ats/.{ats}_{host}_resume after each
-page, so you can stop (Ctrl+C) any time and re-run to continue.
+page, so you can stop (Ctrl+C) any time and re-run to continue. --max-pages is per host, so a
+provider with 8 hosts walks up to 8x that.
 
 Usage:  python scripts/discover/wayback_paginate.py zoho
-        python scripts/discover/wayback_paginate.py zoho --max-pages 5      # just 5 (test)
+        python scripts/discover/wayback_paginate.py zoho --max-pages 5   # 5 per host (test)
         python scripts/discover/wayback_paginate.py eightfold --filter 'urlkey:ai,eightfold,.*'
 """
 
-import argparse
-import csv
 import socket
 import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
-from wayback_common import PROVIDERS, extract, targets
+from wayback_providers import WB, extract, host_picker, picked_hosts, tenant_sink
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-WB = ROOT / "data" / "wayback-ats"
 PAGE = 15000  # urls per CDX page
 SLEEP = 1.0  # politeness between pages (seconds)
 TIMEOUT = 120
@@ -65,12 +61,12 @@ def fetch_page(domain, resume, cdx_filter):
     return None, resume  # failed; caller stops, state preserved
 
 
-def sweep(ats, domain, style, max_pages, cdx_filter, seen, writer, out_file):
+def sweep(ats, domain, style, max_pages, cdx_filter, sink):
     """Walk one host's CDX result set from its saved cursor to the end."""
     state = WB / f".{ats}_{domain}_resume"
     resume = state.read_text(encoding="utf-8").strip() if state.exists() else ""
     print(
-        f"start: {ats}/{domain} ({style}) | already have {len(seen)} tenants"
+        f"start: {ats}/{domain} ({style})"
         + (f" | filter={cdx_filter}" if cdx_filter else "")
         + (" | resuming" if resume else ""),
         flush=True,
@@ -89,14 +85,12 @@ def sweep(ats, domain, style, max_pages, cdx_filter, seen, writer, out_file):
         new = 0
         for u in urls:
             found = extract(u, domain, style)
-            if found and found[0].lower() not in seen:
-                seen.add(found[0].lower())
-                writer.writerow([ats, found[0], found[1]])
+            if found and sink.add(found):
                 new += 1
-        out_file.flush()
+        sink.flush()
         print(
             f"{ats}/{domain} page {pages}: scanned {len(urls)} urls, +{new} new "
-            f"(tenants={len(seen)}, urls_total={total})",
+            f"(urls_total={total})",
             flush=True,
         )
         if nxt and (max_pages == 0 or pages < max_pages):
@@ -119,10 +113,10 @@ def sweep(ats, domain, style, max_pages, cdx_filter, seen, writer, out_file):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("ats", help=f"one of: {', '.join(sorted(PROVIDERS))}")
-    ap.add_argument("--domain", help="sweep only this host instead of all of the ATS's")
-    ap.add_argument("--max-pages", type=int, default=0, help="0 = walk to the end")
+    ap = host_picker(__doc__)
+    ap.add_argument(
+        "--max-pages", type=int, default=0, help="per host; 0 = walk to the end"
+    )
     ap.add_argument(
         "--filter",
         dest="cdx_filter",
@@ -130,34 +124,9 @@ def main():
         "subdomains (e.g. 'urlkey:ai,eightfold,.*')",
     )
     args = ap.parse_args()
-
-    WB.mkdir(parents=True, exist_ok=True)
-    out = WB / f"{args.ats}.csv"
-    seen = set()
-    if out.exists():
-        with out.open(encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                seen.add(row["tenant"].lower())
-    else:
-        out.write_text("ats,tenant,url\n", encoding="utf-8")
-
-    with out.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        for domain, style in targets(args.ats, args.domain):
-            sweep(
-                args.ats,
-                domain,
-                style,
-                args.max_pages,
-                args.cdx_filter,
-                seen,
-                writer,
-                f,
-            )
-    print(
-        f"DONE: {len(seen)} unique {args.ats} tenants in data/wayback-ats/{args.ats}.csv",
-        flush=True,
-    )
+    with tenant_sink(args.ats) as (_seen, sink):
+        for domain, style in picked_hosts(args):
+            sweep(args.ats, domain, style, args.max_pages, args.cdx_filter, sink)
 
 
 if __name__ == "__main__":

@@ -71,13 +71,15 @@ archived, so one request per ATS host enumerates its tenants. For a subdomain AT
 returns archived URLs like `acme.freshteam.com/...` — take the subdomain → tenant. For
 path-based ATSes (Greenhouse/Lever/Ashby) query the board host and take the first path
 segment instead. Which hosts are worth sweeping lives in one table,
-[`scripts/discover/wayback_common.py`](../scripts/discover/wayback_common.py)'s `PROVIDERS` — 18
-providers over 33 hosts, derived from the scrapers' own URL construction and cross-checked
-against the row counts in `data/validate/liveness/{ats}.csv`. Both harvesters read it and sweep
-every host an ATS serves from, writing one `data/wayback-ats/{ats}.csv` each. That last part
-matters: a provider is rarely one host. Zoho spreads 8,197 known tenants over 8 TLDs and a
-`.com`-only sweep reaches 6,107 of them; Greenhouse has an EU pod with 824 live rows; Lever,
-Personio and Darwinbox each serve two. It's a second feeder beside the Common Crawl miner
+[`scripts/discover/wayback_providers.py`](../../scripts/discover/wayback_providers.py)'s
+`PROVIDERS` — 18 providers over 34 hosts, derived from the scrapers' own URL construction and
+cross-checked against `data/validate/liveness/{ats}.csv`. Both harvesters read it and sweep every
+host an ATS serves from, writing one `data/wayback-ats/{ats}.csv` each. That last part matters,
+because a provider is rarely one host: Zoho spreads 8,197 known tenants over 8 TLDs of which
+`zohorecruit.com` holds 6,101; Greenhouse's EU pods carry 824 rows (497 live); Lever's EU host 154
+(92 live); and Workable serves two *shapes* at once — 15,238 rows on `apply.workable.com/{tenant}`
+and 1,623 on `{tenant}.workable.com` — so style is per host, not per provider. It's a second
+feeder beside the Common Crawl miner
 (the actual run is written up in [`common-crawl-mining.md`](./common-crawl-mining.md)): a
 different archive with different gaps (Wayback found ~2,210 Freshteam tenants vs the miner's
 ~1,925, only partly overlapping), so union the two. Output is candidate-grade — historical,
@@ -97,16 +99,28 @@ providers with high page counts (freshteam, peoplestrong, greythr) were already 
 dense domains: CDX filters and `collapse=urlkey:N` both time out (they force a full server-side
 scan), and resume-key pagination works but grinds sequentially through the deep pages —
 page-based random access is the method.
-[`wayback_paginate.py`](../scripts/discover/wayback_paginate.py) keeps the resume-key walk for the
-one case that needs it: a `--filter` that skips a dense apex sorting ahead of the subdomains.
+[`wayback_paginate.py`](../../scripts/discover/wayback_paginate.py) keeps the resume-key walk for
+the one case that needs it: a `--filter` that skips a dense apex sorting ahead of the subdomains.
 
 Two things the extractor gets right that are easy to get wrong. **A slug is not lowercase.**
 Hosts are case-insensitive, so the host half is lowered, but a path slug belongs to the ATS:
-82% of SmartRecruiters tenants are mixed-case (`careers.smartrecruiters.com/RedBullGmbH`), and
-lowercasing them yields slugs that resolve to nothing — dedup uses a lowered key, the emitted
-tenant keeps its casing. **A Workday board URL is not derivable from its tenant**: the host
-carries a datacenter (`acme.wd1.myworkdayjobs.com`), so `extract` returns the URL it saw rather
-than rebuilding `{tenant}.{domain}`.
+8,737 of SmartRecruiters' 12,706 ledger tenants are mixed-case
+(`careers.smartrecruiters.com/RedBullGmbH`), and lowercasing them yields slugs that resolve to
+nothing — dedup uses a lowered key, the emitted tenant keeps its casing. **A Workday board URL is
+not derivable from its tenant**: the host carries a datacenter (`acme.wd1.myworkdayjobs.com`), so
+`extract` returns the URL it saw rather than rebuilding `{tenant}.{domain}`. A third: **a path
+slug may contain a dot** — Ashby and Lever let a company use its domain as its slug
+(`jobs.ashbyhq.com/adept.ai`), worth 372 ledger rows and 180 live boards — while a *subdomain*
+label with a dot is a deeper subdomain and never a tenant, so the two cases validate differently.
+
+How complete is the table? Replaying every liveness-ledger URL through `extract` reaches all but
+**228 live boards** outside the two known exclusions (`join`, 25,310, deliberately out; and
+SuccessFactors' ~2,100 vanity hosts, unsweepable by design). Eight providers are at 100%
+— darwinbox, freshteam, keka, personio, ripplehire, workable, workday, zoho. The largest remainder
+is Teamtailor's 158, and those are a ledger artifact rather than a gap: the ledger stores a
+referral link (`www.teamtailor.com/?utm_content=acme.teamtailor.com`) whose real board host,
+`{tenant}.teamtailor.com`, is exactly what the sweep targets. The rest are single-tenant vanity
+hosts and API endpoints that no domain sweep can enumerate.
 
 Then validate: [`scripts/validate/check_liveness.py`](../scripts/validate/check_liveness.py) checks each
 harvested board (the JSON feed for greenhouse/lever/ashby/recruitee, an HTTP liveness check
