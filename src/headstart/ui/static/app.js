@@ -604,7 +604,7 @@ async function onGoogleCredential(resp){
    and says nothing about the market; a share only moves when categories move RELATIVE to each
    other. "New" is charted as counts: its meaning ("312 fresh AI/ML roles") IS the number. ---- */
 const TREND_COLOURS = ['#12D6B4','#8B5CF6','#F59E0B','#A3E635','#FB7185','#60A5FA','#F472B6','#34D399'];
-let trendData = null, trendDrill = null, trendHidden = new Set();
+let trendData = null, trendDrill = null;
 let trendMetric = 'stock', trendUnit = 'share', trendSplit = 'bands';
 const LEGEND_MAX = 12;   // rows listed; CHART_MAX of them are plotted
 const CHART_MAX = 8;     // distinct colours in TREND_COLOURS
@@ -619,7 +619,7 @@ async function loadTrends(family){
   if (trendMetric !== 'stock') q.set('metric', trendMetric);
   const r = await fetch('/trends' + (q.size ? '?' + q : ''));
   if (!r.ok) { el('trends').style.display = 'none'; return; }
-  trendData = await r.json(); trendDrill = family || null; trendHidden = new Set();
+  trendData = await r.json(); trendDrill = family || null;
   drawTrends();
 }
 
@@ -661,7 +661,7 @@ function fmtValue(v){
 function drawTrends(){
   const d = trendData; if (!d) return;
   const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
-  const shown = d.series.filter(s => !trendHidden.has(s.name)).slice(0, CHART_MAX);
+  const shown = d.series.slice(0, CHART_MAX);
   const vals = shown.flatMap(s => s.points.map((v, j) => trendValue(v, j))).filter(v => v != null);
   const lo = 0, hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - 6) / (d.stamps.length - 1));
@@ -699,17 +699,28 @@ function drawTrends(){
     const dl = trendDelta(s.points);
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
-    const off = trendHidden.has(s.name) || i >= CHART_MAX;
+    // Past CHART_MAX a row is listed but not charted, and `trendClick` will not drill it — so
+    // it is not interactive either. The button role goes on the inner `.row`, never on the
+    // <li>: overriding the li's implicit `listitem` leaves the <ul> a list owning no items.
+    const off = i >= CHART_MAX;
     const j = d.stamps.length - 1;
     const latest = s.latest == null ? null : trendValue(s.latest, j);
+    // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
+    // top level. Without it the split toggle only appears after drilling in, which means the
+    // one place that advertises the feature is the one place you reach by already knowing it
+    // exists. Only on rows that actually drill (`trendClick` ignores rows past CHART_MAX), so
+    // the marker never promises a click that does nothing.
+    const hasRoles = !trendDrill && i < CHART_MAX
+      && (d.watch_parents || []).includes(s.name);
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
-    return `<li data-name="${esc(s.name)}" aria-pressed="${!off}"
-      style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<CHART_MAX?c:'var(--ink-3)'}"></span>
+    return `<li class="${off ? 'listed' : 'charted'}"><span class="row" data-name="${esc(s.name)}"${off ? '' : ' role="button" tabindex="0"'}
+      ><span class="swatch" style="background:${off?'var(--ink-3)':c}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
+      ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Named roles are tracked inside this category">▸ roles</span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
-      <span class="dl ${cls}">${txt}</span></li>`;
+      <span class="dl ${cls}">${txt}</span></span></li>`;
   }).join('');
 
   const runs = d.stamps.length;
@@ -721,20 +732,30 @@ function drawTrends(){
   const spanDays = spanMs / 864e5;
   const span = runs < 2 ? '' :
     spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
+  const measured = `${runs} measurement${runs===1?'':'s'}${span}`;
+  // The only thing at this level that says the rows are clickable — and it must not over-promise:
+  // the legend lists LEGEND_MAX rows but `trendClick` only drills the first CHART_MAX, so past
+  // that a click does nothing. Name the drillable set whenever the two differ.
+  const drillHint = d.series.length > CHART_MAX
+    ? ` — click any of the top ${CHART_MAX} to break it down`
+    : ' — click a category to break it down';
   el('trends-scope').textContent = trendDrill
     ? (trendSplit === 'roles'
-        ? `tracked roles · ${runs} measurement${runs===1?'':'s'}${span} — click any line to go back`
-        : `by experience level · ${runs} measurement${runs===1?'':'s'}${span} — click to go back`)
+        ? `tracked roles · ${measured} — click any line to go back`
+        : `by experience level · ${measured} — click to go back`)
     : hidden.length
       // Say what is on screen, not just what exists. The list is capped, so quoting only the
       // total invites adding the visible rows up against the indexed-jobs headline and finding
       // tens of thousands unaccounted for — they are in the tail, reported in the footer.
-      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span}`
-      : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span}`;
+      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${measured}${drillHint}`
+      : `${d.series.length} categories · ${measured}${drillHint}`;
   el('trends-empty').textContent = runs < 2
     ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
     : (trendDrill && trendSplit === 'roles' && !d.series.length
-      ? 'No specific roles are tracked under this category yet.'
+      // "not tracked" would be wrong and self-contradictory next to a marker that just said
+      // roles ARE tracked here: the watchlist is config, the rows are measurements, and between
+      // a deploy and the next pipeline run the first exists without the second.
+      ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : '');
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
@@ -759,9 +780,15 @@ function drawTrends(){
 
 function trendClick(name){
   if (trendDrill) { trendSplit = 'bands'; loadTrends(null); return; }   // drilled in — go back up
-  const s = trendData.series.find(x => x.name === name);
-  if (s && trendData.series.indexOf(s) < CHART_MAX) { loadTrends(name); return; }
-  trendHidden.delete(name); drawTrends();              // off-chart series: bring it into view
+  // Only charted rows drill. `< 0` as well as `>= CHART_MAX`: findIndex returns -1 for a name
+  // that is not in the series at all, and -1 passes a bare upper-bound check.
+  const i = trendData.series.findIndex(x => x.name === name);
+  if (i < 0 || i >= CHART_MAX) return;
+  // Land on whichever split the row advertised. A row carrying the "▸ roles" marker that
+  // opened on experience bands would make the one affordance naming roles the one that does
+  // not show them; the toggle is then the only way to the thing you just clicked for.
+  trendSplit = (trendData.watch_parents || []).includes(name) ? 'roles' : 'bands';
+  loadTrends(name);
 }
 
 // The three segmented toggles share one wiring: press -> update state -> refetch.
@@ -801,10 +828,24 @@ function initAlerts(){
   google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
 // One listener on the list itself — it survives every innerHTML redraw of its children.
-if (el('trends-legend')) el('trends-legend').addEventListener('click', e => {
-  const li = e.target.closest('li[data-name]');
-  if (li) trendClick(li.dataset.name);
-});
+if (el('trends-legend')) {
+  const legend = el('trends-legend');
+  legend.addEventListener('click', e => {
+    const row = e.target.closest('.row[data-name]');
+    if (row) trendClick(row.dataset.name);
+  });
+  // Charted rows are `role="button" tabindex="0"`, so they must answer the keyboard too — a
+  // button reachable by Tab that does nothing on Enter is worse than one never focusable.
+  // Space is prevented before acting (its default is to scroll), and `repeat` is ignored so a
+  // held key does not fire a drill per repeat tick.
+  legend.addEventListener('keydown', e => {
+    if (e.repeat || (e.key !== 'Enter' && e.key !== ' ')) return;
+    const row = e.target.closest('.row[data-name][role="button"]');
+    if (!row) return;
+    e.preventDefault();
+    trendClick(row.dataset.name);
+  });
+}
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);

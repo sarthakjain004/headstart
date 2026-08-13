@@ -119,11 +119,19 @@ WATCH_PREFIX = "watch:"  # ledger namespace for watched roles, so they can never
 
 
 class WatchRole:
-    """One curated role tracked by title pattern (ADR-0051) — compiled once, matched per row.
+    """One curated role tracked by title pattern (ADR-0051, amended by ADR-0052) — compiled once,
+    matched per row.
 
-    Title patterns rather than centroids, deliberately: a role this specific (under 0.2% of the rows the fit
-    clustered) does not earn its own cluster at any practical k, and a pattern is explainable — you can say
-    exactly why a Job counted — and survives a centroid refit unchanged.
+    Title patterns rather than centroids, deliberately, for two different reasons. A role like
+    Forward Deployed Engineer is too small (under 0.2% of the rows the fit clustered) to earn its
+    own cluster at any practical k. A domain role like Backend is the opposite — large, but still
+    unclusterable here, because k-means split the SWE catch-all by seniority and phrasing rather
+    than by domain (see role_families.json's note on `software-engineering`), so no cluster means
+    "backend". Either way a pattern is explainable — you can say exactly why a Job counted — and
+    survives a centroid refit unchanged.
+
+    A watch role is an overlay, never a partition: it re-counts Jobs already counted in their
+    family, and overlaps its siblings (a "Senior Backend QA Engineer" counts under both).
     """
 
     __slots__ = ("name", "label", "parent", "_patterns")

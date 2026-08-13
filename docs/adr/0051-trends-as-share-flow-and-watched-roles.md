@@ -1,6 +1,9 @@
 # ADR-0051: Trends measure share and flow, and can watch a named role
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0040
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0040 · **Amended by:**
+[ADR-0052](0052-watch-the-large-domain-roles-too.md) — the watchlist is no longer scoped to roles
+*too small* to earn a centroid; it covers any role the fit cannot express, including the large
+domain roles (Backend, Frontend, …) that k-means cannot separate at any practical k
 
 ## Context
 
