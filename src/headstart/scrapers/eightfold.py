@@ -32,9 +32,11 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+_log = log.get(__name__)
 
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
@@ -156,21 +158,36 @@ class EightfoldScraper(BaseScraper):
         self, group_id: str, positions: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """Merge search metadata with a per-job description from position_details (fanned out).
-        A failed detail only drops the description — the metadata already came from the search."""
-        ids = [str(p.get("id")) for p in positions]
+        A failed detail only drops the description — the metadata already came from the search.
+
+        Jobs whose details we already hold are skipped entirely (ADR-0048): their description was
+        read once, at embed time, and is never read again, so re-fetching it spends this
+        provider's per-origin rate budget for nothing."""
+        wanted = [
+            str(p.get("id")) for p in positions if self.needs_detail(str(p.get("id")))
+        ]
         if self.async_fanout_enabled():
-            descs = self.fan_out_async(
-                ids,
+            fetched = self.fan_out_async(
+                wanted,
                 lambda session, pid: self._description_async(session, group_id, pid),
                 concurrency=_DETAIL_STREAMS,
             )
         else:
-            descs = self.fan_out(
-                ids,
+            fetched = self.fan_out(
+                wanted,
                 lambda pid: self._description(group_id, pid),
                 workers=_DETAIL_WORKERS,
             )
-        self.report_detail_gaps(descs, "descriptions")
+        self.report_detail_gaps(fetched, "descriptions")
+        if len(wanted) < len(positions):
+            _log.info(
+                f"{self.board_key()}: fetched {len(wanted)}/{len(positions)} descriptions "
+                f"({len(positions) - len(wanted)} already held)"
+            )
+        # Re-align to `positions`: the fan-out covered only the subset still needing a detail, so
+        # zipping it against the full list would pair descriptions with the wrong Jobs.
+        by_id = dict(zip(wanted, fetched))
+        descs = [by_id.get(str(p.get("id"))) for p in positions]
         records = []
         for pos, desc in zip(positions, descs):
             position_id = str(pos.get("id"))

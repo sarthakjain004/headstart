@@ -866,3 +866,59 @@ def test_eightfold_sitemap_index_and_job_urls():
         "https://h/careers/job/1-a-pune-india?domain=x.com",
         "https://h/careers/job/2-b-remote?domain=x.com",
     ]
+
+
+def test_eightfold_skips_details_it_already_holds(monkeypatch):
+    """ADR-0048: a Job already covered gets no detail fetch, and the rest stay aligned.
+
+    Alignment is the trap — the fan-out now covers a *subset* of the positions, so pairing its
+    results back by index instead of by id would hang each description on the wrong Job.
+    """
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    scraper.have_details = {"eightfold:acme.eightfold.ai:1"}
+    positions = [
+        {"id": "1", "name": "Held Engineer"},
+        {"id": "2", "name": "Fresh Engineer"},
+    ]
+    fetched: list[str] = []
+
+    def fake_fan_out_async(items, fn, **kwargs):
+        fetched.extend(items)
+        return [f"desc-{i}" for i in items]
+
+    monkeypatch.setattr(scraper, "fan_out_async", fake_fan_out_async)
+    records = scraper._api_records("acme.com", positions)
+
+    assert fetched == ["2"]  # the held Job was never fetched
+    by_id = {r["id"]: r["fields"]["description"] for r in records}
+    assert by_id["2"] == "desc-2"  # the fetched description landed on the right Job
+    assert (
+        by_id["1"] is None
+    )  # and the held one carries no description, not someone else's
+
+
+def test_every_detail_is_needed_without_a_skip_list():
+    """The default for every caller outside the pipeline: no list means fetch everything, even
+    for a Job whose composite key another run would have covered."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    assert scraper.have_details is None
+    assert scraper.needs_detail("1") is True
+
+
+def test_needs_detail_uses_board_key_not_the_bare_slug():
+    """personio and workday override board_key, so composing ``{ats}:{slug}:{id}`` at a call site
+    would miss every entry on those Boards — silently, as "fetch everything" (ADR-0048)."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper(
+        "workday", "https://acme.wd3.myworkdayjobs.com/External", "Acme"
+    )
+    covered = f"{scraper.board_key()}:R-1"
+    assert covered != f"workday:{scraper.slug}:R-1"  # the override really does differ
+    scraper.have_details = {covered}
+    assert scraper.needs_detail("R-1") is False
+    assert scraper.needs_detail("R-2") is True

@@ -55,3 +55,4 @@ supersedes it and note the supersession in both.
 | [0044](0044-saved-jobs-display-copies.md) | Saved jobs as per-record display copies, keyed by the job id | 2026-08-12 |
 | [0046](0046-index-collapse-guard.md) | A collapse guard on index eviction | 2026-08-13 |
 | [0047](0047-pace-against-the-origin.md) | Retry the wall, spread the load — and why pacing cannot fix it | 2026-08-13 |
+| [0048](0048-skip-details-we-already-hold.md) | Do not re-fetch a detail we already hold | 2026-08-13 |

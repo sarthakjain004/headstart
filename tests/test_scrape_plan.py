@@ -93,3 +93,49 @@ def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch):
         "count": 0,
         "per_shard_boards": [],
     }
+
+
+def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
+    """The list rides inside the assignments artifact every shard already downloads (ADR-0048),
+    under the name the shard looks for — not the name it happened to have on disk."""
+    import gzip
+
+    from headstart.ingest import EMBEDDED_IDS_PATH
+
+    src = tmp_path / "named-something-else.txt.gz"
+    with gzip.open(src, "wt", encoding="utf-8") as fh:
+        fh.write("eightfold:acme:1\n")
+    out = tmp_path / "assignments"
+
+    monkeypatch.setattr(
+        ps,
+        "load_active_companies",
+        lambda ledger, min_jobs=0: [CompanyRef("lever", "a", "A")],
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--cost",
+            str(tmp_path / "nocost.csv"),
+            "--out-dir",
+            str(out),
+            "--embedded-ids",
+            str(src),
+            "--max-boards",
+            "0",
+            "--max-shards",
+            "1",
+            "--target-boards",
+            "1",
+        ],
+    )
+    assert ps.main() == 0
+
+    shipped = out / EMBEDDED_IDS_PATH.name
+    assert shipped.exists(), "the shard looks for this exact name"
+    with gzip.open(shipped, "rt", encoding="utf-8") as fh:
+        assert fh.read().strip() == "eightfold:acme:1"

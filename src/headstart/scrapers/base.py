@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Container, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -35,9 +35,27 @@ class BaseScraper(ABC):
 
     ats: str  # set by each subclass
 
+    #: Job ids whose per-job detail fetch can be skipped because we already hold it (ADR-0048).
+    #: ``None`` means fetch every detail. The pipeline's scrape stage sets this via
+    #: :func:`~headstart.scrapers.registry.get_scraper`; every other caller leaves it alone.
+    have_details: Container[str] | None = None
+
     def __init__(self, slug: str, company: str | None = None) -> None:
         self.slug = slug
         self.company = company or slug
+
+    def needs_detail(self, native_id: str) -> bool:
+        """Whether this Job still needs its per-job detail fetch (ADR-0048).
+
+        Takes the ATS's **native** id and composes the composite key with :meth:`board_key` —
+        ``personio`` and ``workday`` override that, so a caller building ``{ats}:{slug}:{id}``
+        itself would miss every entry on those Boards, and miss it *silently* as "fetch
+        everything". ``have_details`` is None for every caller outside the pipeline, which means
+        fetch everything; the scrape layer is never told *why* a Job is covered.
+        """
+        if self.have_details is None:
+            return True
+        return f"{self.board_key()}:{native_id}" not in self.have_details
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:

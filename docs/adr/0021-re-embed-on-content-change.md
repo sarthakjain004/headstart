@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-04
+- Amended by: [ADR-0048](0048-skip-details-we-already-hold.md) — the scrape stage skips a
+  Job's detail fetch once it is embedded, so `evict_store.py` now rewrites the skip-list too
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (scrape-diff eviction) and
   [ADR-0019](0019-tech-corpus-search-index.md) (the id-keyed store + `--resume` semantics)
 

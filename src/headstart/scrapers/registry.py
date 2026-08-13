@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Container
+
 from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
@@ -60,9 +62,19 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 DISABLED_ATS: frozenset[str] = frozenset({"join"})
 
 
-def get_scraper(ats: str, slug: str, company: str | None = None) -> BaseScraper:
+def get_scraper(
+    ats: str,
+    slug: str,
+    company: str | None = None,
+    *,
+    have_details: Container[str] | None = None,
+) -> BaseScraper:
     try:
         cls = SCRAPERS[ats]
     except KeyError:
         raise ValueError(f"unknown ats {ats!r}; known: {sorted(SCRAPERS)}") from None
-    return cls(slug, company)
+    scraper = cls(slug, company)
+    # Set after construction, not passed in: five scrapers override ``__init__`` and only one
+    # consults this, so widening all their signatures for it would be churn for nothing.
+    scraper.have_details = have_details
+    return scraper

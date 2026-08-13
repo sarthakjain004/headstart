@@ -39,7 +39,7 @@ class FakeScraper:
 def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
     job_a, job_a_dup, job_b = make_job("x:a:1"), make_job("x:a:1"), make_job("x:b:2")
 
-    def fake_get(ats, slug, name=None):
+    def fake_get(ats, slug, name=None, **_):
         return {
             "good": FakeScraper([job_a, job_b]),
             "dup": FakeScraper([job_a_dup]),
@@ -68,7 +68,7 @@ def test_scrape_all_dedupes_and_isolates_errors(monkeypatch, tmp_path):
 def test_build_and_write_feed(monkeypatch, tmp_path):
     """build_feed reads the streamed .jsonl back; errors are carried in from the run."""
 
-    def fake_get(ats, slug, name=None):
+    def fake_get(ats, slug, name=None, **_):
         if slug == "bad":
             return FakeScraper(error=RuntimeError("oops"))
         return FakeScraper([make_job("x:a:1")])
@@ -113,7 +113,7 @@ def test_scrape_all_streams_per_ats_jsonl(monkeypatch, tmp_path):
     gh2 = make_job("greenhouse:acme:2", ats="greenhouse")
     lev = make_job("lever:beta:9", ats="lever")
 
-    def fake_get(ats, slug, name=None):
+    def fake_get(ats, slug, name=None, **_):
         return {
             "acme": FakeScraper([gh1, gh2]),
             "beta": FakeScraper([lev]),
@@ -165,7 +165,7 @@ def test_scrape_all_resume_skips_completed_boards(monkeypatch, tmp_path):
     """A resume run skips boards already in .done and appends rather than re-scraping."""
     calls: list[str] = []
 
-    def fake_get(ats, slug, name=None):
+    def fake_get(ats, slug, name=None, **_):
         calls.append(slug)
         return FakeScraper([make_job(f"{ats}:{slug}:1", ats=ats)])
 
@@ -206,7 +206,7 @@ def test_records_measured_seconds_for_every_board_including_failures(
     (hidden files are skipped by default, which is why the `.done` journal never reaches the join).
     """
 
-    def fake_get(ats, slug, name=None):
+    def fake_get(ats, slug, name=None, **_):
         if slug == "bad":
             return FakeScraper(error=RuntimeError("boom"))
         return FakeScraper([make_job(f"x:{slug}:1")])
@@ -249,7 +249,7 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
 
     companies = [CompanyRef(ats="lever", slug=f"c{i}") for i in range(40)]
     monkeypatch.setattr(
-        "headstart.harvest.get_scraper", lambda ats, slug, name=None: _Slow(slug)
+        "headstart.harvest.get_scraper", lambda ats, slug, name=None, **_: _Slow(slug)
     )
 
     def stop_after_two(key, jobs, error, seconds):
