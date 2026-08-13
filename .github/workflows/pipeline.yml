@@ -288,7 +288,17 @@ jobs:
   # a fragment; the planner already deduped/bucketed, so shards are stateless.
   embed:
     needs: [scrape-plan, join]
-    if: needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0'
+    # `!cancelled()`, not a bare condition: a plain `if:` also inherits GitHub's skip propagation,
+    # so ONE failed `scrape` shard of fifteen skipped this whole job — all 15 embed shards — even
+    # though `join` itself survived on `always()` and had planned the work. That happened three
+    # times on 2026-08-13; the 14:35 run left 10,782 planned Docs unembedded, and `merge` then ran
+    # anyway and dropped the upgrade list with nothing to replace it. The gate below is unchanged
+    # in meaning: `join` must have genuinely succeeded and planned something. What changes is that
+    # a sibling shard's failure no longer decides it. A shard that died contributed no lines, so
+    # the corpus `join` planned from is simply smaller — never inconsistent.
+    if: >-
+      ${{ !cancelled() && needs.join.result == 'success'
+      && needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 198 # inner 180m -> step 188m -> job 198m; 10 min covers a cold pip cache
     strategy:

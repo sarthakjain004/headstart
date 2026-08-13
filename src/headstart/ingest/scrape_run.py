@@ -21,7 +21,9 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import signal
+import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -310,6 +312,17 @@ def main() -> int:
         killed = True
     finally:
         _report(progress, outdir, time.monotonic() - start, predicted, killed, shard)
+    if killed:
+        # Everything is on disk and flushed by now — the corpus per Board, the report just
+        # above. What is left is a straggler thread still waiting on a socket, and
+        # `ThreadPoolExecutor` registers an atexit hook that joins its threads, so returning
+        # normally would hand that straggler the process again and let it run out the 6 min of
+        # slack to the step timeout. That is what killed three shards on 2026-08-13, and a
+        # killed shard writes no report, so `index sync` cannot tell its Boards from delistings
+        # (ADR-0053's known gap). `os._exit` skips the join; there is nothing left to flush.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
     return 0
 
 
