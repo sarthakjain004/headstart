@@ -976,3 +976,173 @@ def test_eightfold_leaves_truncated_unset_on_a_complete_crawl():
 
     scraper._api_search("acme")
     assert scraper.truncated is None
+
+
+def test_mark_truncated_keeps_the_first_reason():
+    """A crawl that gave up once tends to give up again, and the reasons that follow are
+    consequences of the first — so the first one is the one worth reporting (ADR-0053)."""
+    scraper = get_scraper("greenhouse", "acme")
+    scraper.mark_truncated("HTTP 429 on page 2 — got 10 of 300 postings")
+    scraper.mark_truncated("empty page 3 — got 10 of 300 postings")
+    assert scraper.truncated == "HTTP 429 on page 2 — got 10 of 300 postings"
+
+
+def _successfactors_board(monkeypatch, *, search, rss):
+    """A SuccessFactors scraper whose three listing surfaces are stubbed: the sitemap classifies
+    as RSS (so the fallback chain runs in full), ``search`` is what the ``/search/`` walk returns
+    as ``(pairs, why-it-stopped)``, and ``rss`` is what the patient stream lists."""
+    from headstart.scrapers.successfactors import SuccessFactorsScraper
+
+    monkeypatch.setenv(
+        "HEADSTART_ASYNC_FANOUT", "0"
+    )  # keep the detail pass on the sync path
+    scraper = SuccessFactorsScraper("careers.voith.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("rss", ""))
+    monkeypatch.setattr(scraper, "_search_job_urls", lambda: search)
+    monkeypatch.setattr(scraper, "_rss_job_urls", lambda: rss)
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
+    return scraper
+
+
+class _SearchPage:
+    def __init__(self, status, text=""):
+        self.status_code = status
+        self.text = text
+
+
+def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_the_board(
+    monkeypatch,
+):
+    """The walk hands its truncation back rather than recording it, because whether the Board's
+    list is short depends on which surface ends up answering — and that is decided in
+    ``fetch_raw``, not here (ADR-0053)."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    pages = [_SearchPage(200, '<a href="/job/x/11/">a</a>'), _SearchPage(503)]
+    monkeypatch.setattr(sf.http, "fetch", lambda *a, **k: pages.pop(0))
+
+    found, why = scraper._search_job_urls()
+
+    assert [job_id for _url, job_id in found] == ["11"]
+    assert why and "503" in why and "startrow 25" in why
+    assert scraper.truncated is None  # the caller decides, not the walk
+
+
+def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):
+    """The bug this pins: the ``/search/`` walk 503s on its *first* page, so it lists nothing and
+    the RSS stream answers with the complete board. Carrying the walk's truncation onto that
+    complete list would exempt a healthy Board from eviction permanently — its closed postings
+    would then be served forever."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        search=([], "HTTP 503 at startrow 0 — 0 postings read before the walk stopped"),
+        rss=[("https://careers.voith.com/job/x/1/", "1")],
+    )
+
+    raw = scraper.fetch_raw()
+
+    assert [item["id"] for item in raw] == [
+        "1"
+    ]  # the RSS stream answered, and answered whole
+    assert scraper.truncated is None
+
+
+def test_successfactors_reports_a_short_search_walk_when_it_is_the_answer(monkeypatch):
+    """The other direction: when the walk *does* list the Board, its truncation is the Board's."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        search=(
+            [("https://careers.voith.com/job/x/1/", "1")],
+            "HTTP 503 at startrow 25 — 1 postings read before the walk stopped",
+        ),
+        rss=[("https://careers.voith.com/job/x/1/", "1")],
+    )
+
+    scraper.fetch_raw()
+
+    assert scraper.truncated == (
+        "HTTP 503 at startrow 25 — 1 postings read before the walk stopped"
+    )
+
+
+def _workday_scraper():
+    from headstart.scrapers.workday import WorkdayScraper
+
+    return WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+
+def test_workday_reports_a_subdivided_slice_that_lost_its_first_page(monkeypatch):
+    """A 404 on a subdivided facet's first page drops that whole slice, silently.
+
+    The Board is not empty afterwards — its sibling slices still land, so it emits lines, stays
+    in the eviction scope, and ``index sync`` reads the vanished slice as delistings (ADR-0053).
+    """
+    scraper = _workday_scraper()
+    root = {
+        "total": 2000,  # the reported cap: subdivide
+        "jobPostings": [{"bulletFields": ["R1"]}],
+        "facets": [
+            {
+                "facetParameter": "jobFamilyGroup",
+                "values": [{"id": "Eng", "count": 1500}, {"id": "Ops", "count": 600}],
+            }
+        ],
+    }
+
+    def post(applied, offset):
+        if not applied:
+            return root
+        if applied.get("jobFamilyGroup") == ["Eng"]:
+            return None  # 404 mid-crawl — this slice vanishes whole
+        return {"total": 1, "jobPostings": [{"bulletFields": ["R2"]}]}
+
+    monkeypatch.setattr(scraper, "_post", post)
+    absorbed: list[dict] = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert [p["bulletFields"][0] for p in absorbed] == [
+        "R1",
+        "R2",
+    ]  # siblings still land
+    assert scraper.truncated and "jobFamilyGroup=Eng" in scraper.truncated
+
+
+def test_workday_leaves_a_board_that_answered_nothing_unflagged(monkeypatch):
+    """A 404 on the *unfiltered* first page yields no postings at all, so the Board writes no
+    lines and eviction never reaches it. Flagging it would report a truncation nothing can act
+    on — and every dead Workday board would carry one."""
+    scraper = _workday_scraper()
+    monkeypatch.setattr(scraper, "_post", lambda applied, offset: None)
+    absorbed: list[dict] = []
+
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert absorbed == []
+    assert scraper.truncated is None
+
+
+def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
+    """``total`` stuck at exactly 2,000 means the real total is higher; with no facet left to
+    split there is no second query to reach the rest, so the crawl paginates 2,000 of a
+    knowingly larger board — eightfold's page ceiling in Workday form (ADR-0053)."""
+    scraper = _workday_scraper()
+    monkeypatch.setattr(
+        scraper,
+        "_post",
+        lambda applied, offset: {"total": 2000, "jobPostings": [], "facets": []},
+    )
+
+    scraper._exhaust({}, lambda batch: None, depth=0)
+
+    assert scraper.truncated and "2000" in scraper.truncated
+
+    # ...while a board whose total is under the cap paginates to the end and says nothing.
+    whole = _workday_scraper()
+    monkeypatch.setattr(
+        whole,
+        "_post",
+        lambda applied, offset: {"total": 40, "jobPostings": [], "facets": []},
+    )
+    whole._exhaust({}, lambda batch: None, depth=0)
+    assert whole.truncated is None

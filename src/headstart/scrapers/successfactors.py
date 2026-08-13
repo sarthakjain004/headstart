@@ -118,8 +118,14 @@ class SuccessFactorsScraper(BaseScraper):
         text = b"".join(chunks).decode("utf-8", "replace")
         return kind or _sitemap_kind(text), text
 
-    def _search_job_urls(self) -> list[tuple[str, str]]:
-        """Enumerate the board via the server-rendered ``/search/`` pages."""
+    def _search_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
+        """Enumerate the board via the server-rendered ``/search/`` pages.
+
+        Returns the pairs found and, when the walk was cut short rather than reaching the end,
+        why. Reported rather than recorded, because whether it matters is the caller's to decide:
+        this surface is only the Board's answer when it returns something, and a truncation on a
+        surface that lost the fallback race must not be attached to the list that won it
+        (ADR-0053)."""
         seen: dict[str, str] = {}  # id -> url, insertion-ordered
         startrow = 0
         for _ in range(_MAX_SEARCH_PAGES):
@@ -133,19 +139,17 @@ class SuccessFactorsScraper(BaseScraper):
                 # Unlike the empty-page exit below, this is the walk being cut short rather than
                 # reaching the end: whatever sits past this offset is unread, not absent
                 # (ADR-0053). No total to compare against here, so report the offset instead.
-                if self.truncated is None:
-                    self.truncated = (
-                        f"HTTP {response.status_code} at startrow {startrow} — "
-                        f"{len(seen)} postings read before the walk stopped"
-                    )
-                break
+                return [(u, i) for i, u in seen.items()], (
+                    f"HTTP {response.status_code} at startrow {startrow} — "
+                    f"{len(seen)} postings read before the walk stopped"
+                )
             found = _job_urls_from(response.text, self.slug)
             fresh = [(u, i) for u, i in found if i not in seen]
             if not fresh:
                 break
             seen.update({i: u for u, i in fresh})
             startrow += max(len(found), _SEARCH_STEP_FLOOR)
-        return [(u, i) for i, u in seen.items()]
+        return [(u, i) for i, u in seen.items()], None
 
     def _rss_job_urls(self) -> list[tuple[str, str]]:
         """Enumerate the board from the full RSS feed, patiently; keeps whatever arrived when
@@ -178,8 +182,15 @@ class SuccessFactorsScraper(BaseScraper):
         listed = _job_urls_from(text, self.slug) if kind == "urlset" else []
         surface = "sitemap-urlset" if listed else ""
         if not listed:
-            listed = self._search_job_urls()
-            surface = "search-pages" if listed else surface
+            listed, cut_short = self._search_job_urls()
+            if listed:
+                surface = "search-pages"
+                # Marked only here, where it is settled that the search pages are what this
+                # Board returns. A walk that stopped on its *first* page lists nothing, so the
+                # RSS stream below still answers — and it can answer with the whole board, which
+                # must not inherit the search walk's truncation (ADR-0053).
+                if cut_short:
+                    self.mark_truncated(cut_short)
         if not listed and kind == "rss":
             listed = self._rss_job_urls()
             surface = "rss-stream" if listed else surface

@@ -26,6 +26,10 @@ def make_job(job_id: str, ats: str = "x", description: str | None = None) -> Job
 
 
 class FakeScraper:
+    # Every real scraper inherits this from BaseScraper and scrape_all reads it unguarded, so a
+    # double without it is not a stand-in for a scraper (ADR-0053).
+    truncated: str | None = None
+
     def __init__(self, jobs=None, error=None):
         self._jobs = jobs or []
         self._error = error
@@ -222,6 +226,39 @@ def test_records_measured_seconds_for_every_board_including_failures(
     assert not harvest.COST_FILENAME.startswith(".")
 
 
+def test_scrape_all_carries_a_short_list_from_the_scraper_to_its_callers(
+    monkeypatch, tmp_path
+):
+    """The hop ADR-0053 turns on: a scraper's ``truncated`` must reach both the per-board
+    callback and the RunResult, or the signal dies one module short of the shard report.
+
+    The Board still writes its Jobs — which is exactly why it needs saying out loud. A partial
+    Board is indistinguishable from a complete one at the ``.jsonl``, so without this
+    ``index sync`` reads its unfetched postings as delistings and evicts them.
+    """
+    short = FakeScraper([make_job("x:short:1")])
+    short.truncated = "HTTP 429 on page 2 — got 1 of 50 postings"
+
+    def fake_get(ats, slug, name=None, **_):
+        return {"short": short, "whole": FakeScraper([make_job("x:whole:1")])}[slug]
+
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
+    reported: dict[str, str | None] = {}
+
+    result = scrape_all(
+        [CompanyRef("x", "short"), CompanyRef("x", "whole")],
+        jobs_dir=tmp_path,
+        on_board=lambda key, jobs, error, seconds, truncated: reported.update(
+            {key: truncated}
+        ),
+    )
+
+    assert result.truncated == {"x:short": short.truncated}
+    assert reported == {"x:short": short.truncated, "x:whole": None}
+    assert result.errors == {}  # a short list is not a failure — it produced Jobs
+    assert result.unique == 2  # and both Boards' Jobs were written
+
+
 def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
     tmp_path, monkeypatch
 ):
@@ -238,6 +275,7 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
 
     class _Slow:
         ats = "lever"
+        truncated = None  # BaseScraper's; scrape_all reads it on every board (ADR-0053)
 
         def __init__(self, slug):
             self.slug = slug

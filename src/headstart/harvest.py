@@ -181,9 +181,10 @@ def scrape_all(
     already hold it (ADR-0048); scrapers with a detail pass consult it via ``needs_detail``. None
     means fetch every detail, which is what every caller outside the pipeline wants.
 
-    ``on_board(key, n_new_jobs, error, seconds)``, if given, is called on the main thread as each
-    board completes (``error`` is None on success; ``seconds`` is the board's measured scrape
-    time, the same number the cost ledger records) — the hook for live per-board logging.
+    ``on_board(key, n_new_jobs, error, seconds, truncated)``, if given, is called on the main
+    thread as each board completes (``error`` is None on success; ``seconds`` is the board's
+    measured scrape time, the same number the cost ledger records; ``truncated`` is None unless
+    the scraper knows its list came back short, ADR-0053) — the hook for live per-board logging.
     """
     workers = max_workers if max_workers is not None else _default_workers()
 
@@ -207,12 +208,9 @@ def scrape_all(
         finally:
             elapsed[key] = time.monotonic() - start
             # Read after fetch, in `finally`: a scraper that truncated and *then* raised still
-            # reported something worth carrying. `getattr` because this reads whatever
-            # `get_scraper` returned — a scraper that never calls `BaseScraper.__init__` must not
-            # turn every Board on its ATS into an AttributeError.
-            why = getattr(scraper, "truncated", None)
-            if why:
-                truncated[key] = why
+            # reported something worth carrying.
+            if scraper.truncated:
+                truncated[key] = scraper.truncated
 
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
