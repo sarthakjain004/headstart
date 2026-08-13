@@ -91,6 +91,9 @@ _DB = REPO_ROOT / "data" / "lancedb"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 # Written by embed_plan, consumed here and by embed_merge (ADR-0050).
 _UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+# Written by scrape_join from the shard reports: the Boards whose scrape errored this run, which
+# must not be evicted from just because they emitted a partial list (ADR-0046).
+_SCRAPE_ERRORS = REPO_ROOT / "data" / "state" / "scrape_errors.json"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _MIN_KEEP_BOARDS = (
@@ -164,6 +167,24 @@ def _all_ids(table: Any) -> list[str]:
         .limit(max(table.count_rows(), 1))
         .to_list()
     ]
+
+
+def _errored_boards(path: str | Path) -> set[str]:
+    """Boards whose scrape errored this run, lowercased for matching (ADR-0046).
+
+    Written by ``scrape_join.write_scrape_errors``. Absent file is an empty set — a local sync, or
+    a run predating the file — which restores the old infer-from-lines behaviour rather than
+    failing, since being unable to read telemetry must not stop the index updating."""
+    p = Path(path)
+    if not p.exists():
+        return set()
+    try:
+        return {k.lower() for k in json.loads(p.read_text(encoding="utf-8"))}
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
+        _log.warning(
+            f"unreadable {p}: {exc} — no Board is protected from eviction this run"
+        )
+        return set()
 
 
 def _scraped_boards(
@@ -245,6 +266,20 @@ def sync(args: argparse.Namespace) -> int:
     live = boards_by_canon(live_keep_set(args.ledger))
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
     boards = _scraped_boards(args.scraped, corpus_ids, live)
+    # A Board that errored mid-scrape emitted the pages it did get, so it looks scraped and its
+    # missing rows look delisted. Drop it from the scope entirely: eviction should follow a Board's
+    # scrape *outcome*, not the presence of a line (ADR-0046). The collapse guard in `plan_sync`
+    # stays as the backstop for a truncation that reported no error at all.
+    errored = _errored_boards(args.scrape_errors)
+    if errored:
+        held_back = {b for b in boards if b.lower() in errored}
+        boards -= held_back
+        if held_back:
+            _log.warning(
+                f"[index] scrape outcome: {len(held_back)} Board(s) errored this run and are "
+                "excluded from the eviction scope — their missing rows are unscraped, not closed"
+            )
+            _log_ids("scope-excluded Board", sorted(held_back))
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
     _log.info(
@@ -446,6 +481,12 @@ def main() -> int:
         default=str(_SCRAPED),
         help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
         "(default: data/jobs); falls back to --source's Boards when it has no .jsonl files",
+    )
+    p_sync.add_argument(
+        "--scrape-errors",
+        default=str(_SCRAPE_ERRORS),
+        help="JSON of Boards whose scrape errored, written by scrape_join; they are dropped "
+        "from the eviction scope (ADR-0046). Missing file means no Board is protected",
     )
     p_sync.add_argument(
         "--upgrades",

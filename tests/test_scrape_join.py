@@ -6,6 +6,7 @@ sync sees the full scraped-Board set. Streaming concat; downstream dedups by id.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -59,3 +60,48 @@ def test_join_no_shards_is_empty(tmp_path):
     out = tmp_path / "jobs"
     _run(tmp_path / "absent", out)
     assert list(out.glob("*.jsonl")) == []
+
+
+def test_scrape_errors_are_keyed_the_way_the_index_keys_boards(tmp_path):
+    """The shard reports key errors `{ats}:{slug}`, but eviction scope is keyed by `board_key()`
+    (ADR-0049). Those are the same string for greenhouse and eightfold and NOT for workday, whose
+    slug is the whole careers URL — so writing the raw key through would look like protection
+    while never matching anything."""
+    reports = [
+        {"errors": {"greenhouse:acme": "HTTP 429"}},
+        {
+            "errors": {
+                "workday:https://x.wd1.myworkdayjobs.com/Careers": "RequestsError: 429",
+                "eightfold:nvidia.eightfold.ai": "HTTP 500",
+            }
+        },
+    ]
+    out = tmp_path / "scrape_errors.json"
+    written = js.write_scrape_errors(reports, out)
+
+    assert written == {
+        "greenhouse:acme": "HTTP 429",
+        "workday:x/Careers": "RequestsError: 429",
+        "eightfold:nvidia.eightfold.ai": "HTTP 500",
+    }
+    assert json.loads(out.read_text(encoding="utf-8")) == written
+
+
+def test_scrape_errors_file_is_rewritten_even_when_nothing_errored(tmp_path):
+    """`data/state` round-trips through the HF dataset, so skipping the write on a clean run would
+    leave the PREVIOUS run's errors in place and protect Boards that scraped fine this time."""
+    out = tmp_path / "scrape_errors.json"
+    out.write_text('{"greenhouse:stale": "from a previous run"}', encoding="utf-8")
+
+    assert js.write_scrape_errors([{"errors": {}}], out) == {}
+    assert json.loads(out.read_text(encoding="utf-8")) == {}
+
+
+def test_an_unresolvable_error_key_is_dropped_not_written_through(tmp_path):
+    """A key no scraper can turn into a board_key is dropped with a warning. Writing it through
+    unconverted would sit in the file looking effective while matching no Board."""
+    out = tmp_path / "scrape_errors.json"
+    written = js.write_scrape_errors(
+        [{"errors": {"notanats:whatever": "boom", "greenhouse:real": "HTTP 500"}}], out
+    )
+    assert written == {"greenhouse:real": "HTTP 500"}

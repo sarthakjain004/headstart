@@ -1,6 +1,9 @@
 # ADR-0046: A collapse guard on index eviction
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0014
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0014 · **Amended by:**
+[ADR-0053](0053-scope-eviction-on-scrape-outcome.md) — the deferred fix landed: a Board whose
+scrape errored now leaves the eviction scope outright, and this ratio guard becomes the
+backstop for truncations that report no error at all
 
 ## Context
 
