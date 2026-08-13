@@ -146,6 +146,12 @@ jobs:
   # abort the rest; the join takes whatever fragments completed.
   scrape:
     needs: scrape-plan
+    # `actions: read` for `gh run download`, the retry behind the board list below. Granted to
+    # this job alone rather than the workflow: `merge` holds HF_TOKEN and writes the dataset, and
+    # nothing there needs to read the Actions API.
+    permissions:
+      contents: read
+      actions: read
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 72 # inner 60m -> step 66m -> job 72m; 6 min covers setup + fragment upload
@@ -162,10 +168,44 @@ jobs:
           cache: pip
       - run: pip install -e .
       - name: Download this shard's board list
+        # Not fatal on its own — the step below retries and is the one that decides. The action
+        # has no retry, and one `ListArtifacts: ETIMEDOUT` here killed shard 13 on 2026-08-13
+        # (run 31710979574), which then skipped the whole run's embed stage.
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: scrape-assignments
           path: data/scrape/assignments
+      - name: Make sure this shard's board list actually arrived
+        # Runs even when the download reported success, because what matters is not "the artifact
+        # call returned" but "this shard's own file is on disk" — the scrape step below swallows
+        # its own failure with `|| echo`, so a missing list would otherwise bank an empty shard
+        # and look green. `gh run download` refetches through a different client, so a retry is a
+        # genuinely new attempt rather than the same one again.
+        #
+        # Existence, not size: `binpack.shard_count` clamps on cost, not item count, so a run of
+        # few expensive Boards legitimately packs empty shards and `scrape_plan` writes each one a
+        # zero-byte file. Those are green no-ops, and `-s` would fail them.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          list="data/scrape/assignments/shard-${{ matrix.shard }}.jsonl"
+          for attempt in 1 2 3 4; do
+            if [ -f "$list" ]; then
+              exit 0
+            fi
+            echo "board list missing (attempt ${attempt}/4) — refetching scrape-assignments"
+            gh run download "${{ github.run_id }}" --name scrape-assignments \
+              --dir data/scrape/assignments || true
+            if [ -f "$list" ]; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "::error::shard ${{ matrix.shard }} never got its board list"
+          exit 1
       - name: Scrape the shard (time-budgeted — a banked partial is safe, its boards re-plan next run)
         # 60m, down from the monolith's inherited 140m: at 20,000 Boards a balanced shard is ~13
         # min, so this is ~4.5x headroom and still caps the straggler (run 30131376268 had one
@@ -288,7 +328,17 @@ jobs:
   # a fragment; the planner already deduped/bucketed, so shards are stateless.
   embed:
     needs: [scrape-plan, join]
-    if: needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0'
+    # `!cancelled()`, not a bare condition: a plain `if:` also inherits GitHub's skip propagation,
+    # so ONE failed `scrape` shard of fifteen skipped this whole job — all 15 embed shards — even
+    # though `join` itself survived on `always()` and had planned the work. That happened three
+    # times on 2026-08-13; the 14:35 run left 10,782 planned Docs unembedded, and `merge` then ran
+    # anyway and dropped the upgrade list with nothing to replace it. The gate below is unchanged
+    # in meaning: `join` must have genuinely succeeded and planned something. What changes is that
+    # a sibling shard's failure no longer decides it. A shard that died contributed no lines, so
+    # the corpus `join` planned from is simply smaller — never inconsistent.
+    if: >-
+      ${{ !cancelled() && needs.join.result == 'success'
+      && needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 198 # inner 180m -> step 188m -> job 198m; 10 min covers a cold pip cache
     strategy:

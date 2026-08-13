@@ -311,3 +311,58 @@ def test_a_degraded_row_with_still_no_description_is_left_alone(tmp_path, monkey
     assert (
         upgrades.read_text() == ""
     )  # always rewritten, so a prior run's list can't linger
+
+
+def test_a_degraded_row_whose_new_description_is_not_english_is_not_listed(
+    tmp_path, monkeypatch
+):
+    """An upgrade is only listed once its Doc is genuinely planned.
+
+    The id is written for `embed_merge`, which drops the stale vector only when the replacement
+    arrives — so listing a Job the English gate then drops means listing one that no shard will
+    ever embed. It would be held on every run forever, and `index sync` would churn a
+    delete-and-re-add of its row each time. An English title over a non-English body is the
+    ordinary way to land here.
+    """
+    monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
+    tech = tmp_path / "tech"
+    tech.mkdir()
+    (tech / "eightfold.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "eightfold:acme:1",
+                "ats": "eightfold",
+                "title": "Backend Engineer",
+                "description": "Wir suchen eine Entwicklerin für unsere Plattform in München.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    meta = tmp_path / "meta.jsonl"
+    meta.write_text(
+        _meta_row("eightfold:acme:1", "eightfold", has_description=False),
+        encoding="utf-8",
+    )
+    upgrades = tmp_path / "pending_upgrades.txt"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "embed_plan",
+            "--source",
+            str(tech),
+            "--prior-meta",
+            str(meta),
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--out-dir",
+            str(tmp_path / "assignments"),
+            "--upgrades-out",
+            str(upgrades),
+        ],
+    )
+    assert pe.main() == 0
+
+    # dropped by the English gate, so it must not be promised to the merge as an incoming replacement
+    assert upgrades.read_text().strip() == ""

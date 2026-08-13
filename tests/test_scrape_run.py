@@ -202,3 +202,66 @@ def test_read_have_details_loads_the_shipped_list(tmp_path):
     with gzip.open(path, "wt", encoding="utf-8") as fh:
         fh.write("eightfold:acme:1\n\neightfold:acme:2\n")
     assert sr._read_have_details(path) == {"eightfold:acme:1", "eightfold:acme:2"}
+
+
+def _run_main(tmp_path, monkeypatch, scrape_all):
+    """Drive `main` over a one-Board assignment with `scrape_all` stubbed."""
+    monkeypatch.setattr(scrape_run, "scrape_all", scrape_all)
+    assignment = tmp_path / "shard-0.jsonl"
+    assignment.write_text(
+        json.dumps({"ats": "lever", "slug": "acme", "name": "Acme"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_run",
+            "--assignment",
+            str(assignment),
+            "--outdir",
+            str(tmp_path / "frag"),
+        ],
+    )
+    return scrape_run.main()
+
+
+def test_a_budget_kill_returns_the_sentinel_and_still_writes_its_report(
+    tmp_path, monkeypatch
+):
+    """The budget's SIGTERM arrives as `SystemExit`. The shard has still succeeded — banking a
+    partial is the designed outcome — so `main` says so with `_BUDGET_KILLED` rather than an
+    error, and the report is on disk before the entrypoint leaves.
+    """
+
+    def killed(*_a, **_k):
+        raise SystemExit("signal 15")
+
+    status = _run_main(tmp_path, monkeypatch, killed)
+
+    assert status == scrape_run._BUDGET_KILLED
+    report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
+    assert report["killed_by_budget"] is True
+
+
+def test_a_clean_finish_returns_zero(tmp_path, monkeypatch):
+    """The sentinel must not leak into the ordinary path."""
+
+    class _R:
+        errors: dict = {}
+        truncated: dict = {}
+        unique = 0
+        boards = 1
+
+    assert _run_main(tmp_path, monkeypatch, lambda *a, **k: _R()) == 0
+
+
+def test_the_entrypoint_turns_a_budget_kill_into_a_green_exit(monkeypatch):
+    """`_BUDGET_KILLED` is an in-band signal to the entrypoint, never an exit status: the step
+    must stay green, and the process must leave without the thread-pool's atexit join."""
+    codes = []
+    monkeypatch.setattr(scrape_run.os, "_exit", codes.append)
+
+    scrape_run._exit_without_joining_stragglers()
+
+    assert codes == [0]

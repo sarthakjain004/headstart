@@ -196,6 +196,7 @@ def main() -> int:
     for job in iter_jobs(args.source):
         scanned += 1
         jid = job.get("id") or ""
+        upgrading = False
         if jid in prior:
             # A Job already in the store is normally done. The exception is a vector built
             # without a description whose description we now have — re-embed it, and record the
@@ -204,10 +205,16 @@ def main() -> int:
             if not (jid in degraded and (job.get("description") or "").strip()):
                 already += 1
                 continue
-            upgrades.append(jid)
+            upgrading = True
         if not is_english(job.get("title") or "", job.get("description") or ""):
             dropped += 1
             continue
+        # Listed only now that the Doc is actually planned. Listing before the English gate put
+        # ids on the upgrade list that no shard would ever embed — an English title over a German
+        # body is common — and `embed_merge` holds any id whose replacement never arrives, so
+        # those would be held on every run forever while `index sync` churned their rows.
+        if upgrading:
+            upgrades.append(jid)
         ids.append(jid)
         docs.append(build_doc(job))
         metas.append(to_meta(job))

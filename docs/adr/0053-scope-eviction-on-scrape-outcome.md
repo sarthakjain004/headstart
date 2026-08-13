@@ -116,6 +116,28 @@ running liveness on a schedule so a dead Board leaves the ledger, or ageing rows
 that shard's partially-scraped Boards land in scope with no error recorded, and only the collapse
 guard covers them. This is the same class of gap the guard exists for, and why it stays.
 
+> **Amended 2026-08-14.** The paragraph above assumed the SIGTERM path reliably reached that
+> `finally`. It did not. `scrape_all`'s own `finally` ran first and called
+> `executor.shutdown(wait=True)`, which cannot cancel a running thread, so a straggler Board held
+> the process until the step timeout killed it — reaching neither `finally` nor a report. That is
+> how three shards died on 2026-08-13, each going silent mid-SuccessFactors, whose RSS feed
+> trickles under a 300s read timeout. Shutdown no longer waits, and the entrypoint leaves without
+> the pool's atexit join, so **a budget-killed shard now does report** and its errored and
+> truncated Boards reach `unauthoritative_boards.json`. Boards still in flight when it stopped do
+> not, and need not: they wrote no lines, so ADR-0014 already leaves them out of scope.
+>
+> Two ways to die still write no report. A shard killed by something the process cannot catch —
+> `SIGKILL`, the runner vanishing — is the case the collapse guard remains the only cover for. A
+> shard that dies *before* `scrape_run` starts is not a gap at all: its Boards emitted no lines,
+> so they never enter the eviction scope. That path is real — a fourth shard in the same incident
+> failed on `ListArtifacts: ETIMEDOUT` fetching its board list — and it now retries and then fails
+> loudly, because the scrape step's `|| echo` would otherwise have banked an empty shard and
+> reported it green.
+>
+> The same incident showed why any of this matters beyond eviction: a shard that fails takes the
+> whole run's `embed` stage with it through GitHub's skip propagation, which `embed`'s `if:` now
+> opts out of.
+
 **Unresolvable error keys fail open, not closed.** A malformed key is dropped and its Board keeps
 the old inferred behaviour. Failing the other way — protecting a Board we could not identify —
 would be a silent, unbounded eviction freeze.
