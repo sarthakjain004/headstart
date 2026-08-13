@@ -745,3 +745,106 @@ def test_sets_keep_seen_within_but_the_projection_drops_it(sets_app, hub, monkey
     client.post(f"/sets/{made['id']}/email", json={"on": True}, base_url=_HTTPS)
     sub_path = f"subscriptions/{sets_app.subscription_id('dev@example.com')}.json"
     assert _json.loads(hub[sub_path])["search_filters"] == {"remote": "true"}
+
+
+# ---- /trends (ADR-0040/0051): metrics, totals, and the watch drill ----------------------
+
+_T1, _T2, _T3 = (
+    "2026-08-11T01:00:00+00:00",  # pre-ADR-0051 run: stock only (migrated rows)
+    "2026-08-12T01:00:00+00:00",
+    "2026-08-13T01:00:00+00:00",
+)
+
+
+def _trends_csv(state: Path) -> None:
+    rows = [
+        "ts,version,metric,family,band,count",
+        f"{_T1},2,stock,software-engineering,mid,100",
+        f"{_T1},2,stock,ai-ml,mid,50",
+        f"{_T1},2,stock,non-tech,all,25",
+        f"{_T2},2,stock,software-engineering,mid,110",
+        f"{_T2},2,stock,ai-ml,mid,55",
+        f"{_T2},2,stock,watch:fde,mid,7",
+        f"{_T2},2,stock,non-tech,all,27",
+        f"{_T2},2,new,software-engineering,mid,12",
+        f"{_T2},2,new,watch:fde,mid,2",
+        f"{_T3},2,stock,software-engineering,mid,120",
+        f"{_T3},2,stock,ai-ml,mid,60",
+        f"{_T3},2,stock,watch:fde,mid,8",
+        f"{_T3},2,stock,non-tech,all,30",
+        f"{_T3},2,new,software-engineering,mid,9",
+        f"{_T3},2,new,ai-ml,mid,4",
+        f"{_T3},2,new,watch:fde,mid,1",
+    ]
+    out = state / "data" / "state" / "role_trends.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def trends_app(tmp_path_factory):
+    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so the CSV can't
+    ride the snapshot stub — instead the module's own loader is pointed at the fixture file
+    after import, which still exercises the real parsing (metric default included)."""
+    state = tmp_path_factory.mktemp("state")
+    _trends_csv(state)
+    # The wall pinned OFF explicitly ("" is falsy in _AUTH_ON): module-scoped fixtures from
+    # earlier in this file hold their env until teardown, so without this the trends app can
+    # inherit a live wall depending on test order and answer every request 401.
+    with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        module._TRENDS = module._load_trends(
+            state / "data" / "state" / "role_trends.csv"
+        )
+        module._WATCH = {
+            "watch:fde": {
+                "label": "Forward Deployed Engineer",
+                "parent": "software-engineering",
+            }
+        }
+        yield module
+
+
+def test_trends_default_view_excludes_watch_and_carries_totals(trends_app):
+    d = trends_app.app.test_client().get("/trends").get_json()
+    names = {s["name"] for s in d["series"]}
+    assert names == {"software-engineering", "ai-ml"}  # no watch:, no non-tech
+    # totals are the whole served table per stamp — families + non-tech, never watch rows,
+    # which re-count Jobs already counted in their family (ADR-0051's share denominator)
+    assert d["totals"] == [175, 192, 210]
+    assert d["watch_parents"] == ["software-engineering"]
+
+
+def test_trends_new_metric_distinguishes_zero_from_not_measured(trends_app):
+    d = trends_app.app.test_client().get("/trends?metric=new").get_json()
+    by_name = {s["name"]: s for s in d["series"]}
+    # T1 predates the metric: a gap, not a zero. T2 measured new but ai-ml had none: a true 0.
+    assert by_name["ai-ml"]["points"] == [None, 0, 4]
+    assert by_name["software-engineering"]["points"] == [None, 12, 9]
+
+
+def test_trends_roles_split_serves_the_watchlist(trends_app):
+    d = (
+        trends_app.app.test_client()
+        .get("/trends?family=software-engineering&split=roles")
+        .get_json()
+    )
+    assert [s["name"] for s in d["series"]] == ["watch:fde"]
+    assert d["series"][0]["label"] == "Forward Deployed Engineer"
+    assert d["series"][0]["points"] == [None, 7, 8]
+
+
+def test_trends_band_split_is_unchanged_by_the_watchlist(trends_app):
+    d = (
+        trends_app.app.test_client()
+        .get("/trends?family=software-engineering")
+        .get_json()
+    )
+    assert [s["name"] for s in d["series"]] == ["mid"]  # bands, as before ADR-0051
+
+
+def test_trends_rejects_unknown_metric_and_split(trends_app):
+    """Same axis, same posture — a silently-ignored `split` would answer a question nobody
+    asked and look like data, which is how the truncation bug read too."""
+    client = trends_app.app.test_client()
+    assert client.get("/trends?metric=x").status_code == 400
+    assert client.get("/trends?family=software-engineering&split=x").status_code == 400

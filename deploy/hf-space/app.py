@@ -80,6 +80,9 @@ def _load_trends(path: Path) -> list[dict]:
             {
                 "ts": r["ts"],
                 "version": int(r["version"]),
+                # Absent on a pre-ADR-0051 ledger the pipeline has not migrated yet; every
+                # such row was a stock measurement, so the default is exact.
+                "metric": r.get("metric") or "stock",
                 "family": r["family"],
                 "band": r["band"],
                 "count": int(r["count"]),
@@ -97,7 +100,26 @@ def _family_labels(path: Path) -> dict[str, str]:
     return {f["name"]: f.get("label", f["name"]) for f in spec["families"]}
 
 
+_WATCH_PREFIX = "watch:"  # mirrors headstart.roles.WATCH_PREFIX (ADR-0051)
+
+
+def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
+    """``{watch:name: {label, parent}}`` from the curated watchlist (ADR-0051), synced beside
+    this app like the family map. Missing file means no watch roles — older deploys."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        _WATCH_PREFIX + r["name"]: {
+            "label": r.get("label", r["name"]),
+            "parent": r["parent"],
+        }
+        for r in spec["roles"]
+    }
+
+
 _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.csv")
+_WATCH = _watch_meta(Path(__file__).with_name("role_watchlist.json"))
 _FAMILY_LABELS = _family_labels(Path(__file__).with_name("role_families.json"))
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
 # newest only. Older rows stay in the ledger, they just aren't charted.
@@ -618,47 +640,103 @@ def unstar_job(saved_id: str):
 
 @app.route("/trends")
 def trends():
-    """Role-family counts over time (ADR-0040), or 503 until the ledger exists.
+    """Role counts over time (ADR-0040, ADR-0051), or 503 until the ledger exists.
 
-    Default: one series per family, each point the family's total across bands at that run.
-    ``?family=<name>``: that family's series split by seniority band instead. The reserved
-    ``non-tech`` family is never a chart series — it rides along as ``non_tech``, the
-    tech-filter health number, so the page can show it as a caveat rather than a role."""
+    ``?metric=stock`` (default) is live openings; ``?metric=new`` is those first seen inside
+    the ledger's flow window. Default view: one series per family, each point the family's
+    total across bands. ``?family=<name>`` splits that family by seniority band, and
+    ``&split=roles`` swaps the bands for the family's watched roles (ADR-0051) instead.
+
+    ``totals`` carries the whole served table per stamp so the caller can plot a **share** of
+    the index rather than a raw count — the count moves whenever our coverage does, the share
+    only when categories move relative to each other. Watched roles are left out of it: they
+    re-count Jobs already counted in their family, so adding them would inflate the
+    denominator. ``watch_parents`` names the families that have any, so a caller can offer the
+    roles split only where it leads somewhere.
+
+    The reserved ``non-tech`` family is never a chart series — it rides along as ``non_tech``,
+    the tech-filter health number, so the page can show it as a caveat rather than a role."""
     if not _TRENDS:
         return jsonify(error="no trend data yet"), 503
-    band = request.args.get("family")
-    rows = [r for r in _TRENDS if r["family"] != _NON_TECH]
-    if band:
-        rows = [r for r in rows if r["family"] == band]
+    metric = request.args.get("metric", "stock")
+    if metric not in ("stock", "new"):
+        return jsonify(error="metric must be 'stock' or 'new'"), 400
+    family = request.args.get("family")
+    split = request.args.get("split", "bands")
+    if split not in ("bands", "roles"):
+        return jsonify(error="split must be 'bands' or 'roles'"), 400
+
+    # Stamps and the share denominator come from the FULL stock ledger, not the drilled
+    # subset: total(ts) is the whole served table (families + non-tech, since count_groups
+    # assigns every row exactly once), which is what makes share-of-index coverage-immune —
+    # an index that grew 1.5% overnight moves every count but no share (ADR-0051).
+    stock = [r for r in _TRENDS if r["metric"] == "stock"]
+    stamps = sorted({r["ts"] for r in stock})
+    totals: dict[str, int] = {}
+    for r in stock:
+        if not r["family"].startswith(_WATCH_PREFIX):  # watch rows re-count family rows
+            totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
+
+    rows = [r for r in _TRENDS if r["metric"] == metric and r["family"] != _NON_TECH]
+    if family and split == "roles":
+        # The family's watched sub-roles (ADR-0051), each its own series.
+        wanted = {n for n, meta in _WATCH.items() if meta["parent"] == family}
+        rows = [r for r in rows if r["family"] in wanted]
+        key = "family"
+    elif family:
+        rows = [r for r in rows if r["family"] == family]
         key = "band"
     else:
+        rows = [r for r in rows if not r["family"].startswith(_WATCH_PREFIX)]
         key = "family"
+
+    # Stamps where the `new` metric was recorded at all. `count_groups` writes only non-empty
+    # groups, so on such a stamp a series with no row genuinely saw zero fresh openings —
+    # whereas a stamp with no `new` rows anywhere is one this metric did not yet exist for.
+    # That second case is an inference from row presence, not a recorded fact: a run where
+    # nothing anywhere was new would read as unmeasured. At this corpus size that has never
+    # happened, and the honest alternative (a per-run marker row) costs more than it settles.
+    measured = {r["ts"] for r in _TRENDS if r["metric"] == "new"}
+
+    def value_at(points: dict[str, int], ts: str) -> int | None:
+        """A series' value at one stamp — 0 where the metric ran and found none, else None."""
+        return points.get(ts, 0 if metric == "new" and ts in measured else None)
 
     series: dict[str, dict[str, int]] = {}
     for r in rows:  # sum over the other axis, so a family point is its total
         series.setdefault(r[key], {})
         at = series[r[key]]
         at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
-    stamps = sorted({r["ts"] for r in rows})
     out = [
         {
             "name": name,
-            "label": _FAMILY_LABELS.get(name, name),
+            "label": _WATCH[name]["label"]
+            if name in _WATCH
+            else _FAMILY_LABELS.get(name, name),
             # None (not 0) where a run has no row for this series: a gap is "not measured",
-            # and plotting it as zero would invent a crash that never happened
-            "points": [points.get(ts) for ts in stamps],
-            "latest": points.get(stamps[-1]) if stamps else None,
+            # and plotting it as zero would invent a crash that never happened. The "new"
+            # metric refines that: count_groups writes only non-empty groups, so on a stamp
+            # where new WAS measured (any new row exists), a missing series row genuinely
+            # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
+            # and stays a gap.
+            "points": [value_at(points, ts) for ts in stamps],
+            "latest": value_at(points, stamps[-1]) if stamps else None,
         }
         for name, points in series.items()
     ]
     out.sort(key=lambda s: -(s["latest"] or 0))
-    non_tech = {r["ts"]: r["count"] for r in _TRENDS if r["family"] == _NON_TECH}
+    non_tech = {r["ts"]: r["count"] for r in stock if r["family"] == _NON_TECH}
+    # Which families have watched sub-roles, so the UI can offer the roles drill only there.
+    watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
         version=_TRENDS[-1]["version"],
+        metric=metric,
         stamps=stamps,
         series=out,
+        totals=[totals.get(ts) for ts in stamps],
         non_tech=[non_tech.get(ts) for ts in stamps],
         split_by=key,
+        watch_parents=watch_parents,
     )
 
 

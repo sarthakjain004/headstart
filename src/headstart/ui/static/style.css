@@ -306,7 +306,14 @@ textarea:focus{ border-color:var(--violet); }
 .profile-card .go{ padding:12px 24px; }  /* .go's height comes from the searchbar's flex elsewhere */
 .ghost.danger:hover{ border-color:var(--coral); color:var(--coral); }
 
-/* ---- role trends (ADR-0040), its own tab since the shell landed ---- */
+/* ---- role trends (ADR-0040/0051), its own tab since the shell landed ---- */
+.trends-toggles{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+.seg{ display:inline-flex; border:1px solid var(--rule); border-radius:9px; overflow:hidden; }
+.seg button{ appearance:none; border:0; background:none; color:var(--ink-2); font:inherit;
+  font-size:12px; padding:4px 10px; cursor:pointer; }
+.seg button + button{ border-left:1px solid var(--rule); }
+.seg button[aria-pressed="true"]{ background:var(--raise-2); color:var(--ink-1); }
+.seg button:disabled{ cursor:not-allowed; color:var(--ink-3); }
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-xl); }
 .trends-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px; }

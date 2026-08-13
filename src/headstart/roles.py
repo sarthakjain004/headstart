@@ -1,4 +1,5 @@
-"""Role-trend taxonomy seam (ADR-0040): frozen family centroids × experience bands.
+"""Role-trend taxonomy seam (ADR-0040, ADR-0051): frozen family centroids × experience bands,
+plus the watchlist of named roles tracked by title.
 
 The contract two very different callers must agree on, held once — mirroring
 ``ingest.doc_prep``: ``scripts/embed/cluster_roles.py`` (the one-off fit) writes the centroid
@@ -11,6 +12,10 @@ provenance.
 Bands come from the experience columns the table already carries (ADR-0009/0018) — banding
 stored numbers, never re-extracting — with intern detected from the title or
 ``employment_type`` since interns rarely carry a years figure.
+
+The **watchlist** (ADR-0051) is the one axis here that is deliberately *not* centroid-derived:
+roles too small to earn a cluster, matched on title patterns instead, so membership is
+explainable per Job and survives a refit that re-bases every centroid.
 """
 
 from __future__ import annotations
@@ -108,3 +113,59 @@ def band(min_years: int | None, title: str | None, employment_type: str | None) 
     if min_years <= 7:
         return "senior"
     return "staff"
+
+
+WATCH_PREFIX = "watch:"  # ledger namespace for watched roles, so they can never collide with a family
+
+
+class WatchRole:
+    """One curated role tracked by title pattern (ADR-0051) — compiled once, matched per row.
+
+    Title patterns rather than centroids, deliberately: a role this specific (under 0.2% of the rows the fit
+    clustered) does not earn its own cluster at any practical k, and a pattern is explainable — you can say
+    exactly why a Job counted — and survives a centroid refit unchanged.
+    """
+
+    __slots__ = ("name", "label", "parent", "_patterns")
+
+    def __init__(self, name: str, label: str, parent: str, patterns: list[str]) -> None:
+        self.name, self.label, self.parent = name, label, parent
+        self._patterns = [re.compile(p, re.IGNORECASE) for p in patterns]
+
+    def matches(self, title: str | None) -> bool:
+        return bool(title) and any(p.search(title) for p in self._patterns)
+
+
+def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
+    """The curated watchlist, validated hard — the same posture as :func:`load_families`,
+    because the failure modes are as silent: a bad parent orphans the role from every drill,
+    and a bad pattern would either crash the pipeline step or quietly count nothing.
+
+    Missing file is an empty list, not an error: the watchlist is optional by design.
+    """
+    if not path.exists():
+        return []
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    watched: list[WatchRole] = []
+    seen: set[str] = set()
+    for entry in spec["roles"]:
+        name = entry["name"]
+        if name in seen:
+            raise ValueError(f"{path}: watch role '{name}' defined twice")
+        seen.add(name)
+        if entry["parent"] not in family_names:
+            raise ValueError(
+                f"{path}: watch role '{name}' names parent '{entry['parent']}', which is not "
+                "a family in role_families.json — the drill it should appear under does not exist"
+            )
+        try:
+            watched.append(
+                WatchRole(
+                    name, entry.get("label", name), entry["parent"], entry["match"]
+                )
+            )
+        except re.error as exc:
+            raise ValueError(
+                f"{path}: watch role '{name}' has a bad pattern: {exc}"
+            ) from exc
+    return watched
