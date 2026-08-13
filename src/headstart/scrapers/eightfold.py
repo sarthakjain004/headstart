@@ -39,9 +39,9 @@ from headstart.scrapers.base import BaseScraper
 _USER_AGENT = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # Async-path multiplexing width, below the shared default of 100 (ADR-0047). Eightfold's edge
-# meters per origin across *all* tenants; measured against a live board, 1500 details lost 78.6%
-# at width 100 and 59.2% at width 25, and the slice's ~3,400 Eightfold fetches per shard put
-# width 25 at ~7 min for a typical shard and ~11 min for the worst. Provisional: re-measure with
+# meters per origin across *all* tenants; measured against a live board, details lost 78.6% at
+# width 100 and 49.9% at width 25, and the slice's ~3,400 Eightfold fetches per shard put width 25
+# at ~7 min for a typical shard and ~10 min for the worst. Provisional: re-measure with
 # scripts/bench/probe_eightfold_throttle.py, and note those rates predate the 405 retry, which
 # trades wall-clock for recovered fetches in both directions.
 _DETAIL_STREAMS = 25
