@@ -33,7 +33,19 @@ def board_of(job_id: str) -> str:
     """The Board an id belongs to: the ``{ats}:{slug}`` prefix of ``{ats}:{slug}:{native_id}``.
 
     Split off only the *last* segment, so a slug that itself contains ``:`` (Workday's URL slugs)
-    is preserved — this is exact as long as the ATS native id carries no colon, which holds.
+    is preserved. **This is a guess, not an exact answer** (ADR-0049): the native id can carry
+    colons too — real Workday ids include ``REQ: 228``, a postal address and an entire URL — and
+    for those this returns a Board that does not exist.
+
+    Safe only where both sides of a comparison run through this same function, so a phantom Board
+    is produced identically on each and they still pair. Not safe where the result meets a **real**
+    Board key: that mismatch is what ADR-0049 fixed. Both index planners now resolve ids against
+    the live keep-set by prefix (``index_plan.resolve_board``) and call this only as the fallback
+    for an id on no known Board, which is the self-comparing case again.
+
+    Callers that still compare a guess against a real key, unfixed and named in ADR-0049:
+    ``board_priority.pick_boards`` and ``embed_run.order_by_priority``. Both mis-*score* a
+    colon-bearing Board rather than evicting anything.
     """
     return job_id.rsplit(":", 1)[0]
 

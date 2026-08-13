@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-17
+- Amended by: [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) — the prune sweep
+  matches ids to Boards by prefix, because parsing mis-attributed ids whose native id has a colon
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (board-scoped incremental
   sync) and [ADR-0020](0020-free-tier-deployment.md) (the state round-trip the Space serves)
 

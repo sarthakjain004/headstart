@@ -56,3 +56,4 @@ supersedes it and note the supersession in both.
 | [0046](0046-index-collapse-guard.md) | A collapse guard on index eviction | 2026-08-13 |
 | [0047](0047-pace-against-the-origin.md) | Retry the wall, spread the load — and why pacing cannot fix it | 2026-08-13 |
 | [0048](0048-skip-details-we-already-hold.md) | Do not re-fetch a detail we already hold | 2026-08-13 |
+| [0049](0049-match-boards-by-prefix-not-by-parsing.md) | Match a Job id to its Board by prefix, not by parsing | 2026-08-13 |

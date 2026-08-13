@@ -5,6 +5,8 @@
 - Amended by: [ADR-0046](0046-index-collapse-guard.md) — a collapse guard withholds a Board's
   evictions when it would lose more than a quarter of its rows in one run, so scrape-diff eviction
   is no longer unconditional
+- Amended by: [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) — sync resolves ids to
+  live Boards by prefix, so a colon-bearing native id is scoped to its real Board
 
 ## Context
 
