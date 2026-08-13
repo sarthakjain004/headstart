@@ -384,13 +384,13 @@ jobs:
         with:
           pattern: embed-fragment-*
           path: data/embeddings/fragments
-      - name: Merge shard fragments into the store
-        if: needs.scrape-plan.outputs.run == 'true'
-        run: python -m headstart.ingest.embed_merge
       - name: Evict rows being re-embedded with a description (ADR-0050)
-        # `plan_sync` computes add = fresh - index, so an id still in the table is never re-added
-        # and its improved vector would sit unused in the store. Dropping the stale row first is
-        # what makes the upgrade land. No-op when the planner found nothing to upgrade.
+        # Must run BEFORE embed_merge, not after. `embed_merge` appends without deduping by id, so
+        # an upgraded Job would briefly hold two store rows — and this drops *every* row matching
+        # the id, including the one just merged. The Job would then leave the store entirely, be
+        # deleted from the table, and not be in `fresh` to re-add: gone from the index for a run.
+        # Evicting first leaves the merge to reinstate it, and `index sync` then adds it back
+        # because add = fresh - index finally includes it.
         if: needs.scrape-plan.outputs.run == 'true'
         run: |
           ids=data/state/pending_upgrades.txt
@@ -399,6 +399,9 @@ jobs:
           else
             echo "no pending upgrades"
           fi
+      - name: Merge shard fragments into the store
+        if: needs.scrape-plan.outputs.run == 'true'
+        run: python -m headstart.ingest.embed_merge
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index sync

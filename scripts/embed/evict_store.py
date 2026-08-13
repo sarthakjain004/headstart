@@ -11,7 +11,7 @@ row N), so eviction rewrites both in lockstep to temp files and swaps them in; t
 manifest count is updated last, mirroring the store's own commit-marker convention.
 
 Run:  python scripts/embed/evict_store.py --ats lever,recruitee
-      python scripts/embed/evict_store.py --ids data/embeddings/assignments/upgrade_ids.txt
+      python scripts/embed/evict_store.py --ids data/state/pending_upgrades.txt
 """
 
 from __future__ import annotations
@@ -35,13 +35,11 @@ def _quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def _predicates(atses: set[str], ids: set[str]) -> list[str]:
-    """Delete predicates for the table — one per ATS set, and chunked batches for an id list."""
-    if atses:
-        return [f"ats IN ({', '.join(_quote(a) for a in sorted(atses))})"]
-    ordered = sorted(ids)
+def _predicates(column: str, values: set[str]) -> list[str]:
+    """Delete predicates for the table, chunked so one `IN (...)` cannot grow unbounded."""
+    ordered = sorted(values)
     return [
-        f"id IN ({', '.join(_quote(i) for i in ordered[start : start + _ID_CHUNK])})"
+        f"{column} IN ({', '.join(_quote(v) for v in ordered[start : start + _ID_CHUNK])})"
         for start in range(0, len(ordered), _ID_CHUNK)
     ]
 
@@ -104,7 +102,7 @@ def main() -> None:
     # ADR-0048's trap, where an eviction made the next scrape skip exactly what it just threw away.
     table = lancedb.connect(_DB).open_table(PROD_TABLE)
     before = table.count_rows()
-    for predicate in _predicates(evict, evict_ids):
+    for predicate in _predicates(*(("ats", evict) if evict else ("id", evict_ids))):
         table.delete(predicate)
     print(
         f"table '{PROD_TABLE}': {before} -> {table.count_rows()} rows",

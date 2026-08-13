@@ -59,11 +59,21 @@ The distinction rides in on `Job.detail_fetched`, set by the scraper, which is t
 knows whether a fetch completed. Without it, a genuinely description-less posting is re-fetched
 every run for the rest of its life.
 
+**Only `eightfold` sets it today**, because only `eightfold` consults the skip-list — for every
+other scraper the detail pass runs unconditionally, so the flag would change nothing and setting it
+would be speculative. The obligation transfers with the skip-list: **a scraper that starts
+consulting `have_details` must also set `detail_fetched`**, or its description-less postings are
+retried forever. Zoho would be the worst of them at 53.8% description-less.
+
 **`meta.jsonl` gains `has_description`** — whether the Doc we embedded actually carried one — and
 `embed_plan` re-embeds a Job whose stored vector lacks a description once the corpus has one. The
-stale row is evicted first via `evict_store.py --ids`, in the merge job **before `index sync`**:
-`plan_sync` computes `add = fresh - index`, so an id still in the table is never re-added and its
-improved vector would sit unused in the store.
+stale row is evicted first via `evict_store.py --ids`, in the merge job **before `embed_merge`**.
+Two constraints pin it there, and only that slot satisfies both. It must precede `index sync`,
+because `plan_sync` computes `add = fresh - index` and an id still in the table is never re-added.
+And it must precede `embed_merge`, because that appends without deduping by id: run afterwards, the
+eviction would drop *every* row for the id — including the vector just merged — taking the Job out
+of the store, out of the table, and out of `fresh`, so it would vanish from the index for a run and
+re-embed from scratch on the next one.
 
 **Writes are append-only.** Each run adds a small `{seq}.jsonl.gz` per ATS holding only what
 changed (~430 KB); readers take base-then-fragments with last-write-wins, and `--compact` folds
@@ -79,7 +89,11 @@ history is squashed weekly, so the doubled rebuild churn stays ~5.3 GB/week.
   *whether* we hold a description takes one bit, not 3.6 KB. ~1.3 GB of transport for nothing.
 - **Store only detail-pass ATSes** — covers 100% of the risk at a tenth the size, since a
   listing-only ATS re-supplies its description every scrape. Rejected for uniformity: it needs a
-  marker that, if forgotten on a new detail pass, silently withdraws the protection.
+  marker that, if forgotten on a new detail pass, silently withdraws the protection. Note the
+  marker (`has_detail_pass`) turned out to be needed anyway, for the migration rule below — and it
+  was indeed missed on two scrapers in first review, which is the failure this reasoning predicted.
+  The consolation is that a missing marker now costs a Board's degraded vectors going unrepaired,
+  not its descriptions going unstored.
 - **Never embed a Job with no description** — no store, no trigger, no upgrade path, and a
   title-only vector becomes impossible. Rejected on coverage: 14.4% of tech Jobs would leave the
   index entirely.

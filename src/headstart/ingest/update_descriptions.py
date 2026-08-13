@@ -65,8 +65,17 @@ def _fragments(ats_dir: Path) -> list[Path]:
     if not ats_dir.is_dir():
         return []
     base = ats_dir / _BASE
-    rest = sorted(p for p in ats_dir.glob("*.jsonl.gz") if p.name != _BASE)
+    rest = sorted(
+        (p for p in ats_dir.glob("*.jsonl.gz") if p.name != _BASE), key=_sequence
+    )
     return ([base] if base.exists() else []) + rest
+
+
+def _sequence(path: Path) -> int:
+    """A fragment's ordinal. Sorted on numerically, not lexicographically: zero-padding only
+    orders correctly while the width holds, and a stalled compaction (its workflow step is
+    `continue-on-error`) is exactly the case where it would not."""
+    return int(path.name.split(".", 1)[0])
 
 
 def read_store(ats_dir: Path) -> dict[str, str | None]:
@@ -88,7 +97,11 @@ def read_store(ats_dir: Path) -> dict[str, str | None]:
 def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     """Append one run's changes as the next numbered fragment. Never touches existing files."""
     ats_dir.mkdir(parents=True, exist_ok=True)
-    used = [int(p.name[:4]) for p in ats_dir.glob("*.jsonl.gz") if p.name[:4].isdigit()]
+    used = [
+        _sequence(p)
+        for p in ats_dir.glob("*.jsonl.gz")
+        if p.name.split(".", 1)[0].isdigit()
+    ]
     out = ats_dir / f"{max(used, default=0) + 1:04d}.jsonl.gz"
     with gzip.open(out, "wt", encoding="utf-8") as fh:
         for record in records:
@@ -106,8 +119,10 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
     learned: list[dict] = []
     filled = settled = 0
 
-    rows: list[str] = []
-    with jobs_path.open(encoding="utf-8") as fh:
+    # Streamed through a temp file and swapped in, rather than buffered: ashby's corpus alone is
+    # ~100 MB of text and this runs per ATS on a shared CI box.
+    tmp = jobs_path.with_suffix(".jsonl.tmp")
+    with jobs_path.open(encoding="utf-8") as fh, tmp.open("w", encoding="utf-8") as out:
         for line in fh:
             line = line.strip()
             if not line:
@@ -132,11 +147,11 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
                     # re-fetched on every run for the rest of its life.
                     learned.append({"id": job_id, "description": None})
                     settled += 1
-            rows.append(json.dumps(job, ensure_ascii=False))
+            out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
     if learned:
         _write_fragment(ats_dir, learned)
-    jobs_path.write_text("\n".join(rows) + "\n" if rows else "", encoding="utf-8")
+    tmp.replace(jobs_path)
     return filled, len(learned) - settled, settled
 
 

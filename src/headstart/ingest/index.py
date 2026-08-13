@@ -66,6 +66,7 @@ import pyarrow as pa
 
 from headstart import log
 from headstart.corpus import iter_jobs
+from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
@@ -264,6 +265,10 @@ def sync(args: argparse.Namespace) -> int:
         rows = []
         for job_id in chunk:
             row = dict(metas[row_of[job_id]])
+            for field in PLANNER_ONLY_FIELDS:
+                row.pop(
+                    field, None
+                )  # store-only meta; the table's schema has no column for it
             row["vector"] = vectors[row_of[job_id]].tolist()
             row[_FIRST_SEEN_FIELD.name] = stamp
             rows.append(row)

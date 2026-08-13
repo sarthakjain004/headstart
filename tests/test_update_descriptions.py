@@ -166,3 +166,31 @@ def test_nothing_learned_writes_no_fragment(tmp_path):
     ud.reconcile(jobs, store)
 
     assert sorted(p.name for p in store.glob("*.jsonl.gz")) == before
+
+
+def test_fragments_are_ordered_numerically_not_lexicographically(tmp_path):
+    """Zero-padding only orders correctly while the width holds. Compaction is the thing that
+    keeps the count low, and its workflow step is `continue-on-error` — so the case where the
+    width is exceeded is exactly the case where compaction has been silently failing."""
+    store = tmp_path / "eightfold"
+    store.mkdir(parents=True)
+    for name, text in (
+        ("0009", "ninth"),
+        ("0010", "tenth"),
+        ("10000", "ten-thousandth"),
+    ):
+        with gzip.open(store / f"{name}.jsonl.gz", "wt", encoding="utf-8") as fh:
+            fh.write(json.dumps({"id": "eightfold:acme:1", "description": text}) + "\n")
+
+    assert ud.read_store(store)["eightfold:acme:1"] == "ten-thousandth"
+
+
+def test_the_next_fragment_follows_the_highest_sequence(tmp_path):
+    store = tmp_path / "eightfold"
+    store.mkdir(parents=True)
+    with gzip.open(store / "10000.jsonl.gz", "wt", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "eightfold:acme:1", "description": "x"}) + "\n")
+
+    out = ud._write_fragment(store, [{"id": "eightfold:acme:2", "description": "y"}])
+
+    assert out.name == "10001.jsonl.gz"

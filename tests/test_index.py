@@ -51,6 +51,9 @@ def _write_store(store: Path, ids: list[str]) -> None:
                     "department": None,
                     "url": f"https://example.test/{job_id}",
                     "posted_at": None,
+                    # Planner-only state (ADR-0050): it belongs in the store's meta, never in the
+                    # served table, whose schema would reject the unknown column.
+                    "has_description": True,
                 }
             )
             + "\n"
