@@ -17,6 +17,7 @@ on:
         "src/headstart/ui/**",
         # shipped into the image too — a reworded label must reach the Space
         "config/role_families.json",
+        "config/role_watchlist.json",
       ]
   workflow_dispatch: {}
 
@@ -51,6 +52,7 @@ jobs:
           # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
           # these labels. Same single-source-of-truth reason as the modules above.
           cp config/role_families.json deploy/hf-space/role_families.json
+          cp config/role_watchlist.json deploy/hf-space/role_watchlist.json
           # A package, not a flat file: its members import each other relatively, so the same
           # directory works as `headstart.alerts` in the repo and as top-level `alerts` here.
           rm -rf deploy/hf-space/alerts

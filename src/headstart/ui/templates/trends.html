@@ -2,6 +2,20 @@
   <div class="trends-head">
     <h2>Which tech roles are growing</h2>
     <span class="note" id="trends-scope"></span>
+    <span class="trends-toggles">
+      <span class="seg" id="trends-metric" role="group" aria-label="Measure">
+        <button data-metric="stock" aria-pressed="true">All openings</button>
+        <button data-metric="new" aria-pressed="false">New this week</button>
+      </span>
+      <span class="seg" id="trends-unit" role="group" aria-label="Unit">
+        <button data-unit="share" aria-pressed="true">Share</button>
+        <button data-unit="count" aria-pressed="false">Count</button>
+      </span>
+      <span class="seg" id="trends-split" role="group" aria-label="Drill" hidden>
+        <button data-split="bands" aria-pressed="true">By level</button>
+        <button data-split="roles" aria-pressed="false">By role</button>
+      </span>
+    </span>
   </div>
   <div class="trends-note" id="trends-empty"></div>
   <div class="trends-grid">

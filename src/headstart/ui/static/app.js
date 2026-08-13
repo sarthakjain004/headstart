@@ -596,34 +596,74 @@ async function onGoogleCredential(resp){
                            : (data.error || ('Failed (' + r.status + ')'));
   } catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
-/* ---- role trends (ADR-0040). The ledger is one count per (family, band) per pipeline run;
-   this draws a line per series and ranks them by how much they moved across the window. ---- */
+/* ---- role trends (ADR-0040/0051). The ledger is one count per (metric, family, band) per
+   pipeline run; this draws a line per series and ranks them by size. Two measures ("All
+   openings" = live stock, "New this week" = rows first seen inside the flow window) and two
+   units (share of the index, absolute count). Share is the default on stock because raw stock
+   counts move with our coverage — a night the index grows 1.5% lifts every category ~1.5%
+   and says nothing about the market; a share only moves when categories move RELATIVE to each
+   other. "New" is charted as counts: its meaning ("312 fresh AI/ML roles") IS the number. ---- */
 const TREND_COLOURS = ['#12D6B4','#8B5CF6','#F59E0B','#A3E635','#FB7185','#60A5FA','#F472B6','#34D399'];
 let trendData = null, trendDrill = null, trendHidden = new Set();
+let trendMetric = 'stock', trendUnit = 'share', trendSplit = 'bands';
+const LEGEND_MAX = 12;   // rows listed; CHART_MAX of them are plotted
+const CHART_MAX = 8;     // distinct colours in TREND_COLOURS
 
 async function loadTrends(family){
-  const r = await fetch('/trends' + (family ? '?family=' + encodeURIComponent(family) : ''));
+  const q = new URLSearchParams();
+  // The roles split only exists for families that HAVE watched roles. Carrying a sticky
+  // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
+  // to click, nothing to go back from, and only a reload escapes.
+  if (family && !(trendData?.watch_parents || []).includes(family)) trendSplit = 'bands';
+  if (family) { q.set('family', family); q.set('split', trendSplit); }
+  if (trendMetric !== 'stock') q.set('metric', trendMetric);
+  const r = await fetch('/trends' + (q.size ? '?' + q : ''));
   if (!r.ok) { el('trends').style.display = 'none'; return; }
   trendData = await r.json(); trendDrill = family || null; trendHidden = new Set();
   drawTrends();
 }
 
-// A series' movement across the window. Uses its first and last MEASURED points, so a run that
-// skipped a family doesn't read as a crash to zero.
+// A series' value in the displayed unit: share of the index for stock, else the raw count.
+// Share divides by that stamp's WHOLE table (families + non-tech), so index growth cancels.
+function trendValue(v, j){
+  if (v == null) return null;
+  if (trendUnit !== 'share') return v;
+  const t = trendData.totals[j];
+  return t ? v / t * 100 : null;
+}
+
+// A series' movement across the window, in the displayed unit. Averages the first and last
+// up-to-3 measured points rather than comparing two single runs — one noisy measurement at
+// either end must not swing the headline number.
 function trendDelta(points){
-  const seen = points.filter(p => p != null);
+  const seen = points.map((v, j) => trendValue(v, j)).filter(v => v != null);
   if (seen.length < 2) return null;
-  const first = seen[0], last = seen[seen.length-1];
-  if (!first) return null;
-  return (last - first) / first * 100;
+  const k = Math.min(3, Math.floor(seen.length / 2)) || 1;
+  const head = seen.slice(0, k).reduce((a, b) => a + b) / k;
+  const tail = seen.slice(-k).reduce((a, b) => a + b) / k;
+  if (!head) return null;
+  return (tail - head) / head * 100;
+}
+
+// "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function stampLabel(ts){
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+}
+
+function fmtValue(v){
+  if (trendUnit === 'share') return v >= 10 ? v.toFixed(0) + '%' : v.toFixed(1) + '%';
+  return Math.round(v).toLocaleString();
 }
 
 function drawTrends(){
   const d = trendData; if (!d) return;
   const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
-  const shown = d.series.filter(s => !trendHidden.has(s.name)).slice(0, 8);
-  const vals = shown.flatMap(s => s.points).filter(v => v != null);
-  const lo = 0, hi = Math.max(1, ...vals);
+  const shown = d.series.filter(s => !trendHidden.has(s.name)).slice(0, CHART_MAX);
+  const vals = shown.flatMap(s => s.points.map((v, j) => trendValue(v, j))).filter(v => v != null);
+  const lo = 0, hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - 6) / (d.stamps.length - 1));
   const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
 
@@ -631,55 +671,129 @@ function drawTrends(){
   for (let g = 0; g <= 4; g++){                       // horizontal gridlines + y labels
     const v = hi * g / 4, yy = y(v);
     svg += `<line class="gridline" x1="${PAD_L}" y1="${yy}" x2="${W}" y2="${yy}"/>`;
-    svg += `<text class="axis-label" x="0" y="${yy+3}">${Math.round(v).toLocaleString()}</text>`;
+    svg += `<text class="axis-label" x="0" y="${yy+3}">${fmtValue(v)}</text>`;
+  }
+  // Time axis: first / middle / last measurement, so the window is visible on the chart
+  // itself rather than inferred. Sparse on purpose — 19 two-hourly stamps don't need 19 ticks.
+  if (d.stamps.length > 1){
+    const ticks = [0, Math.floor((d.stamps.length - 1) / 2), d.stamps.length - 1];
+    for (const [ti, anchor] of [[ticks[0],'start'],[ticks[1],'middle'],[ticks[2],'end']]){
+      svg += `<text class="axis-label" x="${x(ti).toFixed(1)}" y="${H-4}"
+               text-anchor="${anchor}">${stampLabel(d.stamps[ti])}</text>`;
+    }
   }
   shown.forEach((s, i) => {
     const c = TREND_COLOURS[i % TREND_COLOURS.length];
     // break the path at gaps rather than bridging them — an unmeasured run is not a value
     let path = '', pen = 'M';
-    s.points.forEach((v, j) => { if (v == null) { pen = 'M'; return; } path += `${pen}${x(j).toFixed(1)},${y(v).toFixed(1)} `; pen = 'L'; });
+    s.points.forEach((v, j) => { const u = trendValue(v, j); if (u == null) { pen = 'M'; return; } path += `${pen}${x(j).toFixed(1)},${y(u).toFixed(1)} `; pen = 'L'; });
     svg += `<path d="${path.trim()}" fill="none" stroke="${c}" stroke-width="2"
              stroke-linejoin="round" stroke-linecap="round"/>`;
-    const last = s.points.map((v,j)=>[v,j]).filter(([v])=>v!=null).pop();
+    const last = s.points.map((v,j)=>[trendValue(v,j),j]).filter(([v])=>v!=null).pop();
     if (last) svg += `<circle cx="${x(last[1]).toFixed(1)}" cy="${y(last[0]).toFixed(1)}" r="3" fill="${c}"/>`;
   });
   el('trends-chart').innerHTML = svg;
 
-  el('trends-legend').innerHTML = d.series.slice(0, 12).map((s, i) => {
+  el('trends-legend').innerHTML = d.series.slice(0, LEGEND_MAX).map((s, i) => {
     const c = TREND_COLOURS[i % TREND_COLOURS.length];
     const dl = trendDelta(s.points);
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
-    const off = trendHidden.has(s.name) || i >= 8;
+    const off = trendHidden.has(s.name) || i >= CHART_MAX;
+    const j = d.stamps.length - 1;
+    const latest = s.latest == null ? null : trendValue(s.latest, j);
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
     return `<li data-name="${esc(s.name)}" aria-pressed="${!off}"
-      style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<8?c:'var(--ink-3)'}"></span>
+      style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<CHART_MAX?c:'var(--ink-3)'}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
-      <span class="ct">${(s.latest||0).toLocaleString()}</span>
+      <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
       <span class="dl ${cls}">${txt}</span></li>`;
   }).join('');
 
   const runs = d.stamps.length;
+  const hidden = d.series.slice(LEGEND_MAX);
+  const tail = hidden.reduce((n, s) => n + (s.latest || 0), 0);
+  // The measurement window, stated on the page: "19 measurements" alone could be two hours
+  // or two years, and every judgement about a trend depends on which.
+  const spanMs = runs > 1 ? new Date(d.stamps[runs-1]) - new Date(d.stamps[0]) : 0;
+  const spanDays = spanMs / 864e5;
+  const span = runs < 2 ? '' :
+    spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
   el('trends-scope').textContent = trendDrill
-    ? 'by experience level — click to go back'
-    : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}`;
+    ? (trendSplit === 'roles'
+        ? `tracked roles · ${runs} measurement${runs===1?'':'s'}${span} — click any line to go back`
+        : `by experience level · ${runs} measurement${runs===1?'':'s'}${span} — click to go back`)
+    : hidden.length
+      // Say what is on screen, not just what exists. The list is capped, so quoting only the
+      // total invites adding the visible rows up against the indexed-jobs headline and finding
+      // tens of thousands unaccounted for — they are in the tail, reported in the footer.
+      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span}`
+      : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span}`;
   el('trends-empty').textContent = runs < 2
     ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
-    : '';
+    : (trendDrill && trendSplit === 'roles' && !d.series.length
+      ? 'No specific roles are tracked under this category yet.'
+      : '');
   const nt = d.non_tech.filter(v => v != null).pop();
-  el('trends-foot').textContent = nt
-    ? `Counts are live openings in the index, re-measured every pipeline run. ${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`
-    : 'Counts are live openings in the index, re-measured every pipeline run.';
+  const parts = [];
+  // "7 days" mirrors role_trends.NEW_WINDOW_DAYS — change one and this sentence starts lying.
+  parts.push(trendMetric === 'new'
+    ? 'Openings first seen in the last 7 days, re-measured every pipeline run.'
+    : (trendUnit === 'share'
+      ? 'Each line is a category\u2019s share of all live openings in the index \u2014 immune to the index itself growing or shrinking.'
+      : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
+  if (tail) parts.push(`${hidden.length} smaller categories are not listed, holding ${tail.toLocaleString()} further ${trendMetric === 'new' ? 'new openings' : 'openings'}.`);
+  if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
+  el('trends-foot').textContent = parts.join(' ');
+
+  // The by-level / by-role toggle only exists inside a family that has watched roles.
+  const seg = el('trends-split');
+  if (seg) {
+    seg.hidden = !(trendDrill && (d.watch_parents || []).includes(trendDrill));
+    seg.querySelectorAll('button').forEach(b =>
+      b.setAttribute('aria-pressed', b.dataset.split === trendSplit));
+  }
 }
 
 function trendClick(name){
-  if (trendDrill) { loadTrends(null); return; }        // already drilled in — go back up
+  if (trendDrill) { trendSplit = 'bands'; loadTrends(null); return; }   // drilled in — go back up
   const s = trendData.series.find(x => x.name === name);
-  if (s && trendData.series.indexOf(s) < 8) { loadTrends(name); return; }
+  if (s && trendData.series.indexOf(s) < CHART_MAX) { loadTrends(name); return; }
   trendHidden.delete(name); drawTrends();              // off-chart series: bring it into view
 }
+
+// The three segmented toggles share one wiring: press -> update state -> refetch.
+function trendSeg(id, attr, apply){
+  const seg = el(id); if (!seg) return;
+  seg.addEventListener('click', e => {
+    const b = e.target.closest(`button[data-${attr}]`);
+    if (!b || b.getAttribute('aria-pressed') === 'true') return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    apply(b.dataset[attr]);
+  });
+}
+// Share divides by the STOCK total, so it is meaningless against "new" — a share of new
+// openings over all live ones is a number with no reading. The unit segment is therefore
+// locked there. `disabled`, not just pointer-events: the latter stops the mouse and not the
+// keyboard, and a focused Space press would have plotted new counts over stock totals.
+function setUnit(value, locked){
+  trendUnit = value;
+  const seg = el('trends-unit'); if (!seg) return;
+  seg.style.opacity = locked ? .4 : '';
+  seg.querySelectorAll('button').forEach(b => {
+    b.disabled = locked;
+    b.setAttribute('aria-pressed', b.dataset.unit === value);
+  });
+}
+trendSeg('trends-metric', 'metric', v => {
+  trendMetric = v;
+  setUnit(v === 'new' ? 'count' : 'share', v === 'new');
+  loadTrends(trendDrill);
+});
+trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
+trendSeg('trends-split', 'split', v => { trendSplit = v; loadTrends(trendDrill); });
 
 function initAlerts(){
   if (!window.google || !CFG.google_client_id) return;
