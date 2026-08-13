@@ -62,10 +62,22 @@ written and its failure message named this fix. The alternative, lowering the fl
 have passed the test while weakening a deliberate exemption and making small live Boards that
 genuinely stop hiring stop draining. Green for the wrong reason.
 
-**A Board that errors every run is never pruned by sync.** That is the intended trade, and it is
-already bounded elsewhere: `index prune` evicts rows whose Board is not live in the ledger, and a
-Board erroring persistently eventually leaves the ledger through liveness. Sync's job is not to
-garbage-collect Boards it never successfully read.
+**A Board that errors every run is never pruned by sync, and nothing else will reach it either.**
+`index prune` only evicts rows whose Board is not *live in the ledger*, and nothing demotes a
+persistently-erroring Board: `scripts/validate/check_liveness.py` is run by hand, not by any
+workflow. So a Board that fails every scrape while staying `live` keeps its rows indefinitely.
+
+That is the deliberate trade — serving a stale row beats blanking a live employer out of search
+every other run — but it is unbounded, and it was previously bounded by accident, because the
+ratio guard released as soon as a Board's loss dropped under a quarter. Two things would close it:
+running liveness on a schedule so a dead Board leaves the ledger, or ageing rows out on
+`first_seen`. Neither is in this change.
+
+**A shard killed outright still slips through.** `_shard_report.json` is written in `scrape_run`'s
+`finally`, reached when the inner time budget's SIGTERM becomes `SystemExit` — but not when the
+66-minute *step* timeout hard-kills the process. The fragment still uploads (`if: always()`), so
+that shard's partially-scraped Boards land in scope with no error recorded, and only the collapse
+guard covers them. This is the same class of gap the guard exists for, and why it stays.
 
 **Unresolvable error keys fail open, not closed.** A malformed key is dropped and its Board keeps
 the old inferred behaviour. Failing the other way — protecting a Board we could not identify —

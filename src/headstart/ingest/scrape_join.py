@@ -31,7 +31,7 @@ _SHARDS = (
 )  # outside data/jobs, so the joined snapshot stays clean
 _OUT = REPO_ROOT / "data" / "jobs"
 # Under data/state because that is what rides the corpus-state artifact to the job running
-# `index sync` — the shard fragments themselves stop at this stage (ADR-0046).
+# `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
 _ERRORS = REPO_ROOT / "data" / "state" / "scrape_errors.json"
 
 

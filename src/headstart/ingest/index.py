@@ -470,7 +470,7 @@ def main() -> int:
         "--scrape-errors",
         default=str(_SCRAPE_ERRORS),
         help="JSON of Boards whose scrape errored, written by scrape_join; they are dropped "
-        "from the eviction scope (ADR-0046). Missing file means no Board is protected",
+        "from the eviction scope (ADR-0053). Missing file means no Board is protected",
     )
     p_sync.add_argument(
         "--upgrades",
