@@ -1,4 +1,5 @@
-"""Role-trend taxonomy seam (ADR-0040): frozen family centroids × experience bands.
+"""Role-trend taxonomy seam (ADR-0040, ADR-0051): frozen family centroids × experience bands,
+plus the watchlist of named roles tracked by title.
 
 The contract two very different callers must agree on, held once — mirroring
 ``ingest.doc_prep``: ``scripts/embed/cluster_roles.py`` (the one-off fit) writes the centroid
@@ -11,6 +12,10 @@ provenance.
 Bands come from the experience columns the table already carries (ADR-0009/0018) — banding
 stored numbers, never re-extracting — with intern detected from the title or
 ``employment_type`` since interns rarely carry a years figure.
+
+The **watchlist** (ADR-0051) is the one axis here that is deliberately *not* centroid-derived:
+roles too small to earn a cluster, matched on title patterns instead, so membership is
+explainable per Job and survives a refit that re-bases every centroid.
 """
 
 from __future__ import annotations
@@ -116,8 +121,8 @@ WATCH_PREFIX = "watch:"  # ledger namespace for watched roles, so they can never
 class WatchRole:
     """One curated role tracked by title pattern (ADR-0051) — compiled once, matched per row.
 
-    Title patterns rather than centroids, deliberately: a role this specific (~1% of the corpus)
-    does not earn its own cluster at any practical k, and a pattern is explainable — you can say
+    Title patterns rather than centroids, deliberately: a role this specific (under 0.2% of the rows the fit
+    clustered) does not earn its own cluster at any practical k, and a pattern is explainable — you can say
     exactly why a Job counted — and survives a centroid refit unchanged.
     """
 

@@ -23,8 +23,8 @@ the single first and last points, which one noisy run swings. Someone timing a j
 **flow** ("what appeared this week") and got only stock; a category can hold 70,000 stable openings
 while posting almost nothing new. And someone tracking a specific role — the motivating example was
 **Forward Deployed Engineer** — got nothing. 761 Jobs carry a forward-deployed title (370 distinct
-titles) in a July tech snapshot of 75,166, so ~1% of that snapshot and **0.17% of the 435,186
-vectors the fit clustered**. Against a K=72 fit that earns no centroid of its own, and the role is
+titles) in a July tech snapshot of 75,166, so ~1% of that snapshot and **0.17% of the 438,424 rows
+the live K=72 fit clustered**. At that share it earns no centroid of its own, and the role is
 smeared across general software-engineering clusters.
 
 ## Decision
@@ -68,7 +68,8 @@ single runs.
   whole series, and it cannot explain per-Job why something counted.
 - **Refit at higher k so fine roles emerge** — most faithful to ADR-0040's design, but a refit
   re-bases every series and cuts off all existing history, and a role at 0.17% of the clustered
-  population would need a K far beyond the 72 the sweep already argued up to before it separated.
+  population would need a K far above the 72 the version-2 fit already raised it to (itself a
+  deliberate step up from the sweep's K=40) before it separated out.
 - **Normalising by Board count rather than by index total** — closer to "per unit of coverage", but
   Boards differ hugely in size, so it trades a clean denominator for a noisy one.
 - **Per-run flow instead of a rolling week** — cheaper, but the run cadence is irregular by design,

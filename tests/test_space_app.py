@@ -842,5 +842,9 @@ def test_trends_band_split_is_unchanged_by_the_watchlist(trends_app):
     assert [s["name"] for s in d["series"]] == ["mid"]  # bands, as before ADR-0051
 
 
-def test_trends_rejects_an_unknown_metric(trends_app):
-    assert trends_app.app.test_client().get("/trends?metric=x").status_code == 400
+def test_trends_rejects_unknown_metric_and_split(trends_app):
+    """Same axis, same posture — a silently-ignored `split` would answer a question nobody
+    asked and look like data, which is how the truncation bug read too."""
+    client = trends_app.app.test_client()
+    assert client.get("/trends?metric=x").status_code == 400
+    assert client.get("/trends?family=software-engineering&split=x").status_code == 400

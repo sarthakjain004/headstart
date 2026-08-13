@@ -60,6 +60,8 @@ def count_groups(
 ) -> tuple[dict[tuple[str, str, str], int], int]:
     """Count served rows into ``(metric, family, band)`` groups; non-tech rows counted apart.
 
+    Returns ``(counts, non_tech)``.
+
     Two metrics per group (ADR-0051): ``stock`` — every live row — and ``new`` — the subset
     whose ``first_seen`` is at or after ``new_after``. Stock answers "how big is this field";
     new answers "is it hiring this week", and the two disagree exactly where it matters (a

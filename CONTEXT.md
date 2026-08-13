@@ -174,7 +174,7 @@ The second fetch a scraper makes per **Job**, after the listing endpoint — the
 _Avoid_: "enrichment" — the detail pass fetches primary fields, it does not derive them.
 
 **Role watchlist**:
-A curated set of specific roles tracked as their own trend lines, matched on **Job** title patterns rather than by embedding (ADR-0051). It exists for roles too small to earn a cluster of their own — a Forward Deployed Engineer is around 1% of the corpus, so the fit smears it across general software clusters — and a pattern buys two things a centroid cannot: you can say exactly why a Job counted, and a centroid refit leaves it untouched. A watched role is counted *in addition to* the family it belongs to, never instead of it.
+A curated set of specific roles tracked as their own trend lines, matched on **Job** title patterns rather than by embedding (ADR-0051). It exists for roles too small to earn a cluster of their own — a Forward Deployed Engineer is under 0.2% of the rows the fit clustered, so it smears across general software clusters — and a pattern buys two things a centroid cannot: you can say exactly why a Job counted, and a centroid refit leaves it untouched. A watched role is counted *in addition to* the family it belongs to, never instead of it.
 _Avoid_: calling a watched role a **Role family** — a family partitions the corpus and sums to it; a watched role is an observation laid over the top and deliberately overlaps.
 
 **Description store**:

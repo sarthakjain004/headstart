@@ -42,8 +42,7 @@ the centroid `version` per row so a chart never silently splices two bases.
 partial by design (shard budgets, board rotation), so its counts would swing for pipeline
 reasons. The merge stage — after `index sync` and `index prune` — reads `vector, min_years,
 title, employment_type` from the served table, assigns, bands, and appends
-`(ts, version, family, band, count)` rows to `data/state/role_trends.csv` (ADR-0051 inserts a
-`metric` column after `version`), which rides the
+`(ts, version, family, band, count)` rows to `data/state/role_trends.csv`, which rides the
 existing state upload (a few dozen rows per run, tiny forever).
 
 **Surface: the Space.** A `/trends` endpoint serves the ledger; the UI charts families with

@@ -1,9 +1,11 @@
-"""Tests for the trends-ledger step (headstart.ingest.role_trends, ADR-0040).
+"""Tests for the trends-ledger step (headstart.ingest.role_trends, ADR-0040/ADR-0051).
 
-Contracts: served rows are counted into (family, band) groups with non-tech held apart; the
-ledger appends run over run with one header; and every degenerate input (missing centroids,
-missing family map, empty table) exits 0 without writing — trends must never sink a run that
-already scraped and embedded, nor silently look healthy while accruing nothing.
+Contracts: served rows are counted into (metric, family, band) groups with non-tech held
+apart; `new` counts only rows first seen inside the flow window; watched roles are counted by
+title in addition to their family; a pre-ADR-0051 ledger migrates in place; the ledger appends
+run over run with one header; and every degenerate input (missing centroids, missing family
+map, empty table, zero-byte ledger) exits without writing garbage — trends must never sink a
+run that already scraped and embedded, nor silently look healthy while accruing nothing.
 """
 
 from __future__ import annotations

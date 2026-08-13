@@ -663,6 +663,8 @@ def trends():
         return jsonify(error="metric must be 'stock' or 'new'"), 400
     family = request.args.get("family")
     split = request.args.get("split", "bands")
+    if split not in ("bands", "roles"):
+        return jsonify(error="split must be 'bands' or 'roles'"), 400
 
     # Stamps and the share denominator come from the FULL stock ledger, not the drilled
     # subset: total(ts) is the whole served table (families + non-tech, since count_groups

@@ -611,6 +611,10 @@ const CHART_MAX = 8;     // distinct colours in TREND_COLOURS
 
 async function loadTrends(family){
   const q = new URLSearchParams();
+  // The roles split only exists for families that HAVE watched roles. Carrying a sticky
+  // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
+  // to click, nothing to go back from, and only a reload escapes.
+  if (family && !(trendData?.watch_parents || []).includes(family)) trendSplit = 'bands';
   if (family) { q.set('family', family); q.set('split', trendSplit); }
   if (trendMetric !== 'stock') q.set('metric', trendMetric);
   const r = await fetch('/trends' + (q.size ? '?' + q : ''));
@@ -642,11 +646,11 @@ function trendDelta(points){
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
-const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function stampLabel(ts){
   const d = new Date(ts);
   if (isNaN(d)) return '';
-  return `${_MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 
 function fmtValue(v){
@@ -718,7 +722,9 @@ function drawTrends(){
   const span = runs < 2 ? '' :
     spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
   el('trends-scope').textContent = trendDrill
-    ? (trendSplit === 'roles' ? 'watched roles — click any line to go back' : 'by experience level — click to go back')
+    ? (trendSplit === 'roles'
+        ? `tracked roles · ${runs} measurement${runs===1?'':'s'}${span} — click any line to go back`
+        : `by experience level · ${runs} measurement${runs===1?'':'s'}${span} — click to go back`)
     : hidden.length
       // Say what is on screen, not just what exists. The list is capped, so quoting only the
       // total invites adding the visible rows up against the indexed-jobs headline and finding
@@ -732,22 +738,27 @@ function drawTrends(){
       : '');
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
+  // "7 days" mirrors role_trends.NEW_WINDOW_DAYS — change one and this sentence starts lying.
   parts.push(trendMetric === 'new'
     ? 'Openings first seen in the last 7 days, re-measured every pipeline run.'
     : (trendUnit === 'share'
       ? 'Each line is a category\u2019s share of all live openings in the index \u2014 immune to the index itself growing or shrinking.'
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
-  if (tail) parts.push(`${hidden.length} smaller categories are not listed, holding ${tail.toLocaleString()} further openings.`);
+  if (tail) parts.push(`${hidden.length} smaller categories are not listed, holding ${tail.toLocaleString()} further ${trendMetric === 'new' ? 'new openings' : 'openings'}.`);
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
 
   // The by-level / by-role toggle only exists inside a family that has watched roles.
   const seg = el('trends-split');
-  if (seg) seg.hidden = !(trendDrill && (d.watch_parents || []).includes(trendDrill));
+  if (seg) {
+    seg.hidden = !(trendDrill && (d.watch_parents || []).includes(trendDrill));
+    seg.querySelectorAll('button').forEach(b =>
+      b.setAttribute('aria-pressed', b.dataset.split === trendSplit));
+  }
 }
 
 function trendClick(name){
-  if (trendDrill) { loadTrends(null); return; }        // already drilled in — go back up
+  if (trendDrill) { trendSplit = 'bands'; loadTrends(null); return; }   // drilled in — go back up
   const s = trendData.series.find(x => x.name === name);
   if (s && trendData.series.indexOf(s) < CHART_MAX) { loadTrends(name); return; }
   trendHidden.delete(name); drawTrends();              // off-chart series: bring it into view
