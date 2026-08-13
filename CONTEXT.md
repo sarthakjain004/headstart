@@ -169,6 +169,10 @@ _Avoid_: conflating with **Bucket** — a Bucket is a token-length class for one
 **LPT (Longest Processing Time first)**:
 The greedy heuristic the planners bin-pack with: sort the items by descending cost, then hand each next item to whichever shard is currently least-loaded. Chosen over hashing or round-robin because per-item cost is heavy-tailed — embed cost spans ~20× from the ≤512 to the ≤4096 **Bucket** — so a cost-blind split reliably saddles one shard with the heavy items and it straggles while the rest idle (ADR-0025).
 
+**Detail pass**:
+The second fetch a scraper makes per **Job**, after the listing endpoint — the one that fills fields the listing omits, usually `description`. It is what makes an ATS expensive: one request per Job rather than one per **Board**, which is how a single provider comes to spend a whole **Origin budget**. A Job whose detail we already hold is skipped (ADR-0048); the scrape layer is told only *that* we hold it, never that it is embedded, so scrapers never depend on the embedding stage.
+_Avoid_: "enrichment" — the detail pass fetches primary fields, it does not derive them.
+
 **Origin budget**:
 How much an ATS's edge will serve one network origin before it starts refusing — first 429, then, on Eightfold, a hard 405. It is a *rate*, not a fixed quota, and it is metered per origin across **all** of that ATS's tenants, so hammering one Board spends the allowance for every other Board on the same provider. Because each **GitHub VM** has its own IP, a fan-out run holds one budget per shard; spreading an ATS's Boards across shards spends all of them, while clustering wastes all but a few (ADR-0047).
 _Avoid_: calling it a quota or a limit per Board — both suggest a fixed per-tenant count, and it is neither.

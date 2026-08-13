@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Container
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -157,6 +157,7 @@ def scrape_all(
     progress_every: int = 0,
     resume: bool = False,
     on_board: Callable[[str, int, str | None, float], None] | None = None,
+    have_details: Container[str] | None = None,
 ) -> RunResult:
     """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
 
@@ -172,6 +173,10 @@ def scrape_all(
     skips boards already recorded in its ``.done`` journal, so an interrupted harvest continues
     instead of restarting.
 
+    ``have_details`` is the set of Job ids whose per-job detail fetch can be skipped because we
+    already hold it (ADR-0048); scrapers with a detail pass consult it via ``needs_detail``. None
+    means fetch every detail, which is what every caller outside the pipeline wants.
+
     ``on_board(key, n_new_jobs, error, seconds)``, if given, is called on the main thread as each
     board completes (``error`` is None on success; ``seconds`` is the board's measured scrape
     time, the same number the cost ledger records) — the hook for live per-board logging.
@@ -186,7 +191,9 @@ def scrape_all(
     def run_one(company: CompanyRef) -> list[Job]:
         start = time.monotonic()
         try:
-            return get_scraper(company.ats, company.slug, company.name).fetch()
+            return get_scraper(
+                company.ats, company.slug, company.name, have_details=have_details
+            ).fetch()
         finally:
             elapsed[f"{company.ats}:{company.slug}"] = time.monotonic() - start
 

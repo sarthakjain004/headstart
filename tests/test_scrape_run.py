@@ -26,7 +26,7 @@ class _Result:
 def test_assignment_scrapes_exactly_the_listed_boards(tmp_path, monkeypatch):
     captured: dict = {}
 
-    def fake_scrape_all(companies, jobs_dir, progress_every=200, on_board=None):
+    def fake_scrape_all(companies, jobs_dir, progress_every=200, on_board=None, **_):
         captured["companies"] = list(companies)
         captured["jobs_dir"] = jobs_dir
         captured["on_board"] = on_board
@@ -165,3 +165,21 @@ def test_predicted_minutes_reads_the_shards_own_entry(tmp_path):
     (tmp_path / "plan.json").write_text(json.dumps({"count": 3}), encoding="utf-8")
     assert scrape_run._predicted_minutes(str(tmp_path / "shard-1.jsonl")) is None
     assert scrape_run._predicted_minutes(None) is None
+
+
+def test_read_have_details_returns_none_when_the_planner_shipped_nothing(tmp_path):
+    """A first run, or any run where the embed store has not merged yet: fetch every detail."""
+    from headstart.ingest import scrape_run as sr
+
+    assert sr._read_have_details(tmp_path / "embedded_ids.txt.gz") is None
+
+
+def test_read_have_details_loads_the_shipped_list(tmp_path):
+    import gzip
+
+    from headstart.ingest import scrape_run as sr
+
+    path = tmp_path / "embedded_ids.txt.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write("eightfold:acme:1\n\neightfold:acme:2\n")
+    assert sr._read_have_details(path) == {"eightfold:acme:1", "eightfold:acme:2"}
