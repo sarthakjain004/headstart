@@ -64,22 +64,26 @@ def write_scrape_errors(reports: list[dict], path: Path) -> dict[str, str]:
     from headstart.scrapers.registry import get_scraper
 
     errored: dict[str, str] = {}
-    unresolved = 0
+    unresolved: list[str] = []
     for report in reports:
         for key, why in (report.get("errors") or {}).items():
-            ats, _, slug = str(key).partition(
+            ats, sep, slug = str(key).partition(
                 ":"
             )  # partition: a Workday slug holds colons
             try:
+                if (
+                    not sep or not slug
+                ):  # `get_scraper(ats, "")` yields a bogus `ats:` key
+                    raise ValueError("not an ats:slug key")
                 errored[get_scraper(ats, slug).board_key()] = str(why)
             except Exception:  # noqa: BLE001 - a malformed key must not sink the join
-                unresolved += 1
+                unresolved.append(str(key))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(errored, indent=1, sort_keys=True), encoding="utf-8")
     if unresolved:
         _log.warning(
-            f"{unresolved} errored Board(s) could not be resolved to a board_key and are NOT "
-            "protected from eviction this run"
+            f"{len(unresolved)} errored Board(s) could not be resolved to a board_key and are NOT "
+            f"protected from eviction this run: {sorted(unresolved)[:10]}"
         )
     _log.info(f"recorded {len(errored)} errored Board(s) -> {path}")
     return errored

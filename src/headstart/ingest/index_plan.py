@@ -32,11 +32,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from headstart import log
 from headstart.config import load_active_companies
 from headstart.corpus import board_of
 from headstart.scrapers.registry import get_scraper
-
-from headstart import log
 
 _log = log.get(__name__, __spec__)
 

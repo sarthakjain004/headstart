@@ -227,11 +227,14 @@ jobs:
           stranded = [fid(n) for n in range(1, 6) if fid(n) not in ids]
           assert not stranded, (
               f"INDEX FLAP: {len(stranded)} Jobs evicted from {flaky['ats']}:{flaky['slug']}, whose "
-              f"scrape errored and returned 1 of 6 postings — e.g. {stranded[:3]}. sync infers "
-              "'this Board was scraped' from the presence of any job line (index.py `_scraped_boards`) "
-              "and then evicts every indexed id the truncated list is missing. The Board's scrape "
-              "outcome is known — it is in the shard report's `errors` map — but nothing carries it "
-              "from the scrape to sync.")
+              f"scrape errored and returned 1 of 6 postings — e.g. {stranded[:3]}. The Board's "
+              "outcome IS carried from the scrape to sync now (ADR-0053), so this failing means "
+              "that carrier broke, not that it is missing. Check, in order: did scrape_join write "
+              "data/state/scrape_errors.json and does it name this Board; did the key translation "
+              "land it in `board_key()` space (a Workday slug is a URL and must become "
+              "`ats:company/site`); and did the shard write a `_shard_report.json` at all — a shard "
+              "hard-killed by the step timeout writes none, and only ADR-0046's ratio guard covers "
+              "that, which exempts Boards under COLLAPSE_FLOOR rows like this one.")
 
           expected = {hid(n) for n in range(1, 10)} | {fid(n) for n in range(6)}
           assert ids == expected, f"unexpected table contents: {ids ^ expected}"

@@ -105,3 +105,23 @@ def test_an_unresolvable_error_key_is_dropped_not_written_through(tmp_path):
         [{"errors": {"notanats:whatever": "boom", "greenhouse:real": "HTTP 500"}}], out
     )
     assert written == {"greenhouse:real": "HTTP 500"}
+
+
+def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
+    """The seam between the two halves: `write_scrape_errors` emits `board_key()` casing and
+    `errored_boards` lowercases, because `index sync` matches `board.lower() in errored`. Each
+    half is tested alone; this pins the contract BETWEEN them, which is where a rename or a
+    casing change would silently stop protecting anything."""
+    from headstart.ingest.index_plan import errored_boards
+
+    out = tmp_path / "scrape_errors.json"
+    js.write_scrape_errors(
+        [{"errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"}}], out
+    )
+    errored = errored_boards(out)
+
+    # What `_scraped_boards` would produce for a Job id on that Board, via `board_key()`.
+    scope_entry = "workday:x/Careers"
+    assert scope_entry.lower() in errored, (
+        f"{scope_entry} would NOT be protected: file holds {sorted(errored)}"
+    )
