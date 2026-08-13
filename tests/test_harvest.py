@@ -252,7 +252,7 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
         "headstart.harvest.get_scraper", lambda ats, slug, name=None, **_: _Slow(slug)
     )
 
-    def stop_after_two(key, jobs, error, seconds):
+    def stop_after_two(key, jobs, error, seconds, truncated=None):
         if len(started) >= 2:
             raise SystemExit("signal 15")
 

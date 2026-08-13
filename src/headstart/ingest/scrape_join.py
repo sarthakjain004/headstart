@@ -66,7 +66,13 @@ def write_scrape_errors(reports: list[dict], path: Path) -> dict[str, str]:
     errored: dict[str, str] = {}
     unresolved: list[str] = []
     for report in reports:
-        for key, why in (report.get("errors") or {}).items():
+        # `errors` (the Board raised) and `truncated` (it returned a list it knows is short) are
+        # kept apart upstream because they read differently in a log — but they mean one thing
+        # here: this Board's list is not authoritative, so sync must not evict against it. The
+        # truncations are the ones that actually flap; a raising Board writes no lines at all and
+        # was never in the eviction scope to begin with.
+        outcomes = {**(report.get("errors") or {}), **(report.get("truncated") or {})}
+        for key, why in outcomes.items():
             ats, sep, slug = str(key).partition(
                 ":"
             )  # partition: a Workday slug holds colons

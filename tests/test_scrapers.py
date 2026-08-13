@@ -922,3 +922,57 @@ def test_needs_detail_uses_board_key_not_the_bare_slug():
     scraper.have_details = {covered}
     assert scraper.needs_detail("R-1") is False
     assert scraper.needs_detail("R-2") is True
+
+
+def test_eightfold_reports_a_rate_limited_page_as_a_truncated_board():
+    """The index flap's root cause, pinned at the scraper (ADR-0053).
+
+    `_api_search` gives up mid-pagination on a non-200 and returns what it has. That is the right
+    call — the postings it did fetch are real — but until this signal existed the Board looked
+    fully scraped to `harvest`, so `index sync` read the unread postings as delistings and evicted
+    them. Whole NVIDIA/Qualcomm Boards left search for a cycle at a time on exactly this path.
+    """
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        def __init__(self, status, positions=(), count=0):
+            self.status_code = status
+            self._body = {"data": {"positions": list(positions), "count": count}}
+
+        def json(self):
+            return self._body
+
+    pages = [
+        _Resp(200, [{"id": n} for n in range(10)], count=30),  # page 1 of 3
+        _Resp(429),  # rate-limited partway
+    ]
+    scraper = EightfoldScraper("nvidia.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("nvidia")
+
+    assert len(got) == 10, "the postings it did fetch must still be returned"
+    assert scraper.truncated, (
+        "a Board cut short must say so, or sync evicts the rest as closed"
+    )
+    assert "429" in scraper.truncated and "30" in scraper.truncated
+
+
+def test_eightfold_leaves_truncated_unset_on_a_complete_crawl():
+    """The other half: a Board that really did list everything must NOT be protected, or eviction
+    stops working and closed postings are served forever."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        def __init__(self, positions, count):
+            self.status_code = 200
+            self._body = {"data": {"positions": list(positions), "count": count}}
+
+        def json(self):
+            return self._body
+
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: _Resp([{"id": 1}], count=1)
+
+    scraper._api_search("acme")
+    assert scraper.truncated is None

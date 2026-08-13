@@ -179,21 +179,28 @@ jobs:
           boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
           healthy, flaky = boards["healthy"], boards["flaky"]
 
-          def rewrite(k, board, lines, error=None):
+          def rewrite(k, board, lines, error=None, truncated=None):
               d = pathlib.Path(f"data/scrape/fragments/shard-{k}")
               path = d / f"{board['ats']}.jsonl"
               kept = path.read_text(encoding="utf-8").splitlines(keepends=True)
               path.write_text("".join(lines(kept)), encoding="utf-8")
               report = json.loads((d / "_shard_report.json").read_text())
-              report["errors"] = {f"{board['ats']}:{board['slug']}": error} if error else {}
+              key = f"{board['ats']}:{board['slug']}"
+              report["errors"] = {key: error} if error else {}
+              report["truncated"] = {key: truncated} if truncated else {}
               (d / "_shard_report.json").write_text(json.dumps(report), encoding="utf-8")
 
           # Healthy Board: a clean, complete scrape that legitimately no longer lists job :0.
           rewrite(0, healthy, lambda lines: lines[1:])
           # Flaky Board: page 1 came back, page 2 was rate-limited, and the scraper returned what it
           # had (eightfold's `_api_search` breaks out of its pagination loop on a non-200 —
-          # src/headstart/scrapers/eightfold.py:130-139 — so this is the routine case, not a rare one).
-          rewrite(1, flaky, lambda lines: lines[:1], error="RequestsError: HTTP 429 on page 2")
+          # src/headstart/scrapers/eightfold.py — so this is the routine case, not a rare one).
+          #
+          # Recorded under `truncated`, NOT `errors`: the scraper did not raise, and writing an
+          # error here would test a signal the production path cannot emit for this failure. That
+          # is what this fixture did before ADR-0053, and it made the test green on a fiction.
+          rewrite(1, flaky, lambda lines: lines[:1],
+                  truncated="HTTP 429 on page 2 — got 1 of 6 postings")
           print("cycle 2 snapshot: healthy Board -1 job, flaky Board truncated to 1 of 6")
           PY
       - name: Re-join and re-filter the second cycle's snapshot

@@ -140,14 +140,36 @@ class EightfoldScraper(BaseScraper):
         while len(positions) < total and pages < _MAX_PAGES:
             r = self._get(self._search_url(group_id, start))
             if r.status_code != 200:
+                self._truncate(
+                    f"HTTP {r.status_code} on page {pages + 1}", len(positions), total
+                )
                 break
             batch = (r.json().get("data") or {}).get("positions") or []
             if not batch:
+                self._truncate(f"empty page {pages + 1}", len(positions), total)
                 break
             positions.extend(batch)
             start += _PAGE
             pages += 1
+        else:
+            if (
+                len(positions) < total
+            ):  # loop ended on _MAX_PAGES, not on having them all
+                self._truncate(
+                    f"hit the {_MAX_PAGES}-page ceiling", len(positions), total
+                )
         return positions
+
+    def _truncate(self, why: str, got: int, total: int) -> None:
+        """Record that this Board's list is short, and by how much.
+
+        The API hands back ``data.count``, so truncation here is *exactly* detectable rather than
+        inferred — which is the whole point: `index sync` can then skip the Board instead of
+        reading the gap as delistings and evicting them (ADR-0053). Keeps the first reason: the
+        first thing that cut the crawl short is the one worth reporting.
+        """
+        if self.truncated is None:
+            self.truncated = f"{why} — got {got} of {total} postings"
 
     def _details_url(self, group_id: str, position_id: str) -> str:
         q = urllib.parse.urlencode(

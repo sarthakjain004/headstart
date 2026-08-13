@@ -52,6 +52,10 @@ def _default_workers() -> int:
 @dataclass
 class RunResult:
     errors: dict[str, str] = field(default_factory=dict)  # "ats:slug" -> message
+    # Boards that returned a SHORT list without raising — kept apart from `errors` because they
+    # did produce Jobs, and calling that a failure would make every log and count read wrong.
+    # Both mean the same thing downstream: this Board's list is not authoritative (ADR-0053).
+    truncated: dict[str, str] = field(default_factory=dict)  # "ats:slug" -> why
     unique: int = 0  # distinct job ids seen (all streamed to the .jsonl)
     boards: int = 0  # boards completed, including those that errored
 
@@ -156,7 +160,7 @@ def scrape_all(
     max_workers: int | None = None,
     progress_every: int = 0,
     resume: bool = False,
-    on_board: Callable[[str, int, str | None, float], None] | None = None,
+    on_board: Callable[[str, int, str | None, float, str | None], None] | None = None,
     have_details: Container[str] | None = None,
 ) -> RunResult:
     """Scrape every company concurrently, streaming Jobs to ``{jobs_dir}/{ats}.jsonl``.
@@ -188,14 +192,27 @@ def scrape_all(
     # board that hangs 30s before raising costs 30s, and the packer must know that.
     elapsed: dict[str, float] = {}
 
+    # Boards that returned a list they know is short: "ats:slug" -> why. Filled beside `elapsed`
+    # rather than raised, because the partial Jobs are real and must still be written (ADR-0053).
+    truncated: dict[str, str] = {}
+
     def run_one(company: CompanyRef) -> list[Job]:
         start = time.monotonic()
+        key = f"{company.ats}:{company.slug}"
+        scraper = get_scraper(
+            company.ats, company.slug, company.name, have_details=have_details
+        )
         try:
-            return get_scraper(
-                company.ats, company.slug, company.name, have_details=have_details
-            ).fetch()
+            return scraper.fetch()
         finally:
-            elapsed[f"{company.ats}:{company.slug}"] = time.monotonic() - start
+            elapsed[key] = time.monotonic() - start
+            # Read after fetch, in `finally`: a scraper that truncated and *then* raised still
+            # reported something worth carrying. `getattr` because this reads whatever
+            # `get_scraper` returned — a scraper that never calls `BaseScraper.__init__` must not
+            # turn every Board on its ATS into an AttributeError.
+            why = getattr(scraper, "truncated", None)
+            if why:
+                truncated[key] = why
 
     writer = JobWriter(jobs_dir, {c.ats for c in companies}, resume=resume)
     if writer.done:
@@ -236,7 +253,7 @@ def scrape_all(
             seconds = elapsed.pop(key, 0.0)
             writer.record_cost(key, seconds, n_fresh)
             if on_board is not None:
-                on_board(key, n_fresh, errors.get(key), seconds)
+                on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
             if progress_every and done % progress_every == 0:
                 _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
@@ -253,7 +270,9 @@ def scrape_all(
         # have written them has already exited, so `wait=True` buys clean teardown, not work.
         executor.shutdown(wait=True, cancel_futures=True)
         writer.close()
-    return RunResult(errors=errors, unique=len(seen_ids), boards=done)
+    return RunResult(
+        errors=errors, truncated=truncated, unique=len(seen_ids), boards=done
+    )
 
 
 def build_feed(jobs_dir: str | Path, errors: dict[str, str]) -> dict[str, Any]:

@@ -130,6 +130,14 @@ class SuccessFactorsScraper(BaseScraper):
                 timeout=30,
             )
             if response.status_code != 200:
+                # Unlike the empty-page exit below, this is the walk being cut short rather than
+                # reaching the end: whatever sits past this offset is unread, not absent
+                # (ADR-0053). No total to compare against here, so report the offset instead.
+                if self.truncated is None:
+                    self.truncated = (
+                        f"HTTP {response.status_code} at startrow {startrow} — "
+                        f"{len(seen)} postings read before the walk stopped"
+                    )
                 break
             found = _job_urls_from(response.text, self.slug)
             fresh = [(u, i) for u, i in found if i not in seen]

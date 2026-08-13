@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import headstart.ingest.scrape_join as js
@@ -125,3 +126,31 @@ def test_the_written_keys_are_what_the_index_actually_looks_up(tmp_path):
     assert scope_entry.lower() in errored, (
         f"{scope_entry} would NOT be protected: file holds {sorted(errored)}"
     )
+
+
+def test_a_scraper_that_truncates_without_raising_still_reaches_the_file():
+    """The flap's actual shape, and the one an `errors`-only file could never catch.
+
+    eightfold gives up mid-pagination and returns what it has, so `harvest` records no error and
+    the Board emits job lines — it looks fully scraped. Before ADR-0053 that made its missing
+    postings indistinguishable from delistings. `truncated` is the channel that carries it, and
+    the join folds both into the one question sync asks: is this Board's list authoritative?"""
+    report = {
+        "errors": {},
+        "truncated": {
+            "eightfold:nvidia.eightfold.ai": "HTTP 429 on page 4 — got 300 of 850"
+        },
+    }
+    written = js.write_scrape_errors([report], Path(tempfile.mkdtemp()) / "e.json")
+    assert "eightfold:nvidia.eightfold.ai" in written
+
+
+def test_a_raise_and_a_truncation_both_land(tmp_path):
+    """Both mean 'do not evict against this list'. A Board that raised writes no lines and was
+    already out of scope; the truncated one is the case that actually flapped."""
+    report = {
+        "errors": {"workday:https://x.wd1.myworkdayjobs.com/Careers": "429"},
+        "truncated": {"eightfold:nvidia.eightfold.ai": "cut short"},
+    }
+    written = js.write_scrape_errors([report], tmp_path / "e.json")
+    assert set(written) == {"workday:x/Careers", "eightfold:nvidia.eightfold.ai"}

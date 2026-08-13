@@ -341,6 +341,12 @@ class WorkdayScraper(BaseScraper):
                 f"{self.board_key()}: {missing} page(s) 404ed mid-crawl — "
                 f"board partial ({total} listed)"
             )
+            # The warning was the whole record until ADR-0053: `index sync` could not see it, so
+            # the pages this dropped were evicted as delistings. Now it travels with the Jobs.
+            if self.truncated is None:
+                self.truncated = (
+                    f"{missing} page(s) 404ed mid-crawl of {total} listed postings"
+                )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, site = self._parts()
