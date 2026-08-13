@@ -69,10 +69,6 @@ on:
 
 permissions:
   contents: read
-  # `gh run download`, the retry behind the shards' board list — the artifact service ETIMEDOUTs
-  # under load and `actions/download-artifact` has no retry of its own. Read-only, and only over
-  # this repository's own runs.
-  actions: read
 
 concurrency:
   group: nightly-pipeline # never let two runs race on the dataset state
@@ -150,6 +146,12 @@ jobs:
   # abort the rest; the join takes whatever fragments completed.
   scrape:
     needs: scrape-plan
+    # `actions: read` for `gh run download`, the retry behind the board list below. Granted to
+    # this job alone rather than the workflow: `merge` holds HF_TOKEN and writes the dataset, and
+    # nothing there needs to read the Actions API.
+    permissions:
+      contents: read
+      actions: read
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 72 # inner 60m -> step 66m -> job 72m; 6 min covers setup + fragment upload
@@ -166,7 +168,6 @@ jobs:
           cache: pip
       - run: pip install -e .
       - name: Download this shard's board list
-        id: board-list
         # Not fatal on its own — the step below retries and is the one that decides. The action
         # has no retry, and one `ListArtifacts: ETIMEDOUT` here killed shard 13 on 2026-08-13
         # (run 31710979574), which then skipped the whole run's embed stage.
@@ -181,23 +182,30 @@ jobs:
         # its own failure with `|| echo`, so a missing list would otherwise bank an empty shard
         # and look green. `gh run download` refetches through a different client, so a retry is a
         # genuinely new attempt rather than the same one again.
+        #
+        # Existence, not size: `binpack.shard_count` clamps on cost, not item count, so a run of
+        # few expensive Boards legitimately packs empty shards and `scrape_plan` writes each one a
+        # zero-byte file. Those are green no-ops, and `-s` would fail them.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           list="data/scrape/assignments/shard-${{ matrix.shard }}.jsonl"
           for attempt in 1 2 3 4; do
-            if [ -s "$list" ]; then
+            if [ -f "$list" ]; then
               exit 0
             fi
             echo "board list missing (attempt ${attempt}/4) — refetching scrape-assignments"
             gh run download "${{ github.run_id }}" --name scrape-assignments \
               --dir data/scrape/assignments || true
-            sleep $((attempt * 15))
+            if [ -f "$list" ]; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              sleep $((attempt * 15))
+            fi
           done
-          [ -s "$list" ] || {
-            echo "::error::shard ${{ matrix.shard }} never got its board list"
-            exit 1
-          }
+          echo "::error::shard ${{ matrix.shard }} never got its board list"
+          exit 1
       - name: Scrape the shard (time-budgeted — a banked partial is safe, its boards re-plan next run)
         # 60m, down from the monolith's inherited 140m: at 20,000 Boards a balanced shard is ~13
         # min, so this is ~4.5x headroom and still caps the straggler (run 30131376268 had one

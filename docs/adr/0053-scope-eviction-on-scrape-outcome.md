@@ -124,9 +124,17 @@ guard covers them. This is the same class of gap the guard exists for, and why i
 > trickles under a 300s read timeout. Shutdown no longer waits, and the entrypoint leaves without
 > the pool's atexit join, so **a budget-killed shard now does report** and its errored and
 > truncated Boards reach `unauthoritative_boards.json`. Boards still in flight when it stopped do
-> not, and need not: they wrote no lines, so ADR-0014 already leaves them out of scope. The gap narrows to shards killed by something the process cannot
-> catch at all — `SIGKILL`, the runner vanishing — for which the collapse guard is still the only
-> cover. The same incident showed why that matters beyond eviction: a shard that fails takes the
+> not, and need not: they wrote no lines, so ADR-0014 already leaves them out of scope.
+>
+> Two ways to die still write no report. A shard killed by something the process cannot catch —
+> `SIGKILL`, the runner vanishing — is the case the collapse guard remains the only cover for. A
+> shard that dies *before* `scrape_run` starts is not a gap at all: its Boards emitted no lines,
+> so they never enter the eviction scope. That path is real — a fourth shard in the same incident
+> failed on `ListArtifacts: ETIMEDOUT` fetching its board list — and it now retries and then fails
+> loudly, because the scrape step's `|| echo` would otherwise have banked an empty shard and
+> reported it green.
+>
+> The same incident showed why any of this matters beyond eviction: a shard that fails takes the
 > whole run's `embed` stage with it through GitHub's skip propagation, which `embed`'s `if:` now
 > opts out of.
 
