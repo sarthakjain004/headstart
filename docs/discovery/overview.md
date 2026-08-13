@@ -70,20 +70,24 @@ archived, so one request per ATS host enumerates its tenants. For a subdomain AT
 `https://web.archive.org/cdx/search/cdx?url=freshteam.com&matchType=domain&fl=original&collapse=urlkey&output=text`
 returns archived URLs like `acme.freshteam.com/...` — take the subdomain → tenant. For
 path-based ATSes (Greenhouse/Lever/Ashby) query the board host and take the first path
-segment instead. [`scripts/discover/wayback_feeder.ps1`](../scripts/discover/wayback_feeder.ps1) does this for
-every provider the project targets — the four built scrapers (greenhouse, lever, ashby,
-workday) plus the India tier (zoho, freshteam, darwinbox, keka, greythr, peoplestrong,
-jobsoid, ripplehire, turbohire, qandle, beehive, workable, recruitee) — writing one
-`data/wayback-ats/{ats}.csv` each. It's a second feeder beside the Common Crawl miner
+segment instead. Which hosts are worth sweeping lives in one table,
+[`scripts/discover/wayback_common.py`](../scripts/discover/wayback_common.py)'s `PROVIDERS` — 18
+providers over 33 hosts, derived from the scrapers' own URL construction and cross-checked
+against the row counts in `data/validate/liveness/{ats}.csv`. Both harvesters read it and sweep
+every host an ATS serves from, writing one `data/wayback-ats/{ats}.csv` each. That last part
+matters: a provider is rarely one host. Zoho spreads 8,197 known tenants over 8 TLDs and a
+`.com`-only sweep reaches 6,107 of them; Greenhouse has an EU pod with 824 live rows; Lever,
+Personio and Darwinbox each serve two. It's a second feeder beside the Common Crawl miner
 (the actual run is written up in [`common-crawl-mining.md`](./common-crawl-mining.md)): a
 different archive with different gaps (Wayback found ~2,210 Freshteam tenants vs the miner's
 ~1,925, only partly overlapping), so union the two. Output is candidate-grade — historical,
 so it includes dead boards and noise; validate before trusting.
 
-The flat feeder silently truncates dense providers — use page-based harvesting for those.
-`wayback_feeder.ps1` caps each provider at 50,000 URLs, which only covers the first few CDX
-index pages. Providers Wayback crawled *deep-but-narrow* (thousands of archived pages per
-tenant) lose most of their tenants past the early alphabet. Detect it with `?showNumPages=true`:
+A flat capped fetch silently truncates dense providers — use page-based harvesting for those.
+The original feeder (`wayback_feeder.ps1`, retired 2026-08-13) capped each provider at 50,000
+URLs, which only covers the first few CDX index pages. Providers Wayback crawled
+*deep-but-narrow* (thousands of archived pages per tenant) lose most of their tenants past the
+early alphabet. Detect it with `?showNumPages=true`:
 a large page count (Zoho had 1,372) means the flat harvest got only a sliver. The fix is
 [`scripts/discover/wayback_pages.py`](../scripts/discover/wayback_pages.py), which fetches every CDX page
 directly via `&page=N` (concurrent, resumable, deduping onto the existing CSV). Verified
@@ -93,6 +97,16 @@ providers with high page counts (freshteam, peoplestrong, greythr) were already 
 dense domains: CDX filters and `collapse=urlkey:N` both time out (they force a full server-side
 scan), and resume-key pagination works but grinds sequentially through the deep pages —
 page-based random access is the method.
+[`wayback_paginate.py`](../scripts/discover/wayback_paginate.py) keeps the resume-key walk for the
+one case that needs it: a `--filter` that skips a dense apex sorting ahead of the subdomains.
+
+Two things the extractor gets right that are easy to get wrong. **A slug is not lowercase.**
+Hosts are case-insensitive, so the host half is lowered, but a path slug belongs to the ATS:
+82% of SmartRecruiters tenants are mixed-case (`careers.smartrecruiters.com/RedBullGmbH`), and
+lowercasing them yields slugs that resolve to nothing — dedup uses a lowered key, the emitted
+tenant keeps its casing. **A Workday board URL is not derivable from its tenant**: the host
+carries a datacenter (`acme.wd1.myworkdayjobs.com`), so `extract` returns the URL it saw rather
+than rebuilding `{tenant}.{domain}`.
 
 Then validate: [`scripts/validate/check_liveness.py`](../scripts/validate/check_liveness.py) checks each
 harvested board (the JSON feed for greenhouse/lever/ashby/recruitee, an HTTP liveness check
