@@ -152,6 +152,20 @@ def auth_app(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def service_app(tmp_path_factory):
+    """Wall on AND a service token set — the Digest generator's way in (ADR-0035)."""
+    with _space_app(
+        tmp_path_factory.mktemp("state"),
+        env={
+            "SECRET_KEY": "test-secret",
+            "GOOGLE_CLIENT_ID": "client-id.example",
+            "ALERTS_TOKEN": "service-token",
+        },
+    ) as module:
+        yield module
+
+
+@pytest.fixture(scope="module")
 def sets_app(tmp_path_factory):
     """Wall on AND per-Account storage configured — Saved sets live (ADR-0043)."""
     with _space_app(
@@ -250,6 +264,50 @@ def test_unsubscribe_stays_reachable_signed_out(auth_app):
     # The wall must never break a mailed link: /unsubscribe answers its own 503 here
     # (alerts unconfigured in this fixture), not the wall's 401.
     assert auth_app.app.test_client().get("/unsubscribe").status_code == 503
+
+
+def test_digest_generator_reaches_search_through_the_wall(service_app):
+    """The sibling of the test above, and the one that was missing.
+
+    A mailed Digest's link must survive the wall — and so must the run that *generates*
+    the Digest, which calls /search for every Subscription (ADR-0035). It is a machine
+    with no Google identity to offer, so it carries the service token instead, exactly as
+    /unsubscribe carries its own. Without this the alerts workflow 401s on every run.
+    """
+    client = service_app.app.test_client()
+    assert client.get("/search?q=x").status_code == 401  # still shut to the anonymous
+    ok = client.get("/search?q=", headers={"Authorization": "Bearer service-token"})
+    assert ok.status_code == 200 and ok.json == []
+
+
+def test_the_service_token_buys_search_and_nothing_else(service_app):
+    # Scoped deliberately: the alerts run needs /search and only /search, so a leaked
+    # token is not a session. Widening this is a decision, not an accident.
+    client = service_app.app.test_client()
+    bearer = {"Authorization": "Bearer service-token"}
+    assert client.get("/trends", headers=bearer).status_code == 401
+    assert client.post("/subscribe", json={}, headers=bearer).status_code == 401
+
+
+def test_a_near_miss_token_is_not_a_match(service_app):
+    client = service_app.app.test_client()
+    for bad in (
+        "Bearer service-toke",
+        "Bearer service-tokenX",
+        "service-token",
+        "Bearer",
+    ):
+        r = client.get("/search?q=", headers={"Authorization": bad})
+        assert r.status_code == 401, f"{bad!r} got in"
+
+
+def test_an_unconfigured_service_token_admits_nobody(auth_app):
+    # Deny-by-default, as in alerts.access: "no token set" must mean the door is shut,
+    # never that an empty or absent credential compares equal to the empty config.
+    client = auth_app.app.test_client()
+    for header in ("Bearer ", "Bearer x", ""):
+        r = client.get("/search?q=", headers={"Authorization": header})
+        assert r.status_code == 401, f"{header!r} got in with no ALERTS_TOKEN set"
 
 
 # ---- Saved sets (ADR-0043) ----

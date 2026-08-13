@@ -45,13 +45,23 @@ dark-until-configured shape as the Telegram bot and the résumé feature.
    | Space | `GOOGLE_CLIENT_ID` | secret | the OAuth client id |
    | Space | `SUBSCRIBERS_REPO` | secret | `imPoseidon/headstart-subscribers` |
    | Space | `SUBSCRIBERS_TOKEN` | secret | the write-scoped token |
+   | Space | `ALERTS_TOKEN` | secret | any long random string — see below |
    | Actions | `SUBSCRIBERS_TOKEN` | secret | the same token |
+   | Actions | `ALERTS_TOKEN` | secret | the same random string |
    | Actions | `RESEND_API_KEY` | secret | the Resend key |
    | Actions | `SUBSCRIBERS_REPO` | variable | `imPoseidon/headstart-subscribers` |
    | Actions | `ALERTS_SENDER` | variable | e.g. `alerts@yourdomain.com` |
    | Actions | `SPACE_URL` | variable | the Space base URL (optional; defaults to it) |
 
    Adding a Space secret auto-restarts the Space, which is what makes the panel appear.
+
+   `ALERTS_TOKEN` is how the alerts run gets past the sign-in wall. The run has no Google
+   identity to offer, but it must call `/search` to build every Digest, so it presents this
+   shared secret instead — the same trick the unsubscribe link uses. It must be **identical**
+   on both sides; the Space compares it in constant time and admits nobody when it is unset,
+   so a mismatch shows up as `HTTP Error 401: UNAUTHORIZED` on every Subscription. Generate
+   one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. It buys `/search`
+   and nothing else.
 
 ## Adding and removing people
 
