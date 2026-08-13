@@ -163,14 +163,18 @@ The per-Board _measured_ scrape wall time in `data/state/board_cost.csv`, the co
 _Avoid_: confusing it with the **Board-priority ledger** — priority is a product question (which Boards deserve the slice), cost is an operational one (how to balance the shards). They decay differently and are read by different stages.
 
 **Bin-packing**:
-Splitting work items of uneven cost across a fixed number of parallel shards so each shard's total cost — its *makespan* — is as even as possible, since a fan-out run is only as fast as its slowest shard. The nightly-pipeline planners bin-pack Boards (weighted by the **Board-cost ledger**'s measured seconds) across scrape shards and **Docs** (weighted by per-**Bucket** embed cost) across embed shards (ADR-0025, ADR-0027).
+Splitting work items of uneven cost across a fixed number of parallel shards so each shard's total cost — its *makespan* — is as even as possible, since a fan-out run is only as fast as its slowest shard. The nightly-pipeline planners bin-pack Boards (weighted by the **Board-cost ledger**'s measured seconds) across scrape shards and **Docs** (weighted by per-**Bucket** embed cost) across embed shards (ADR-0025, ADR-0027). The scrape pack balances cost *subject to* a ceiling on how many Boards of one ATS a single shard may take, so no shard exhausts one ATS's **Origin budget** while other shards leave theirs unspent (ADR-0047).
 _Avoid_: conflating with **Bucket** — a Bucket is a token-length class for one Doc; bin-packing distributes many items across shards, and one shard mixes Docs from several Buckets.
 
 **LPT (Longest Processing Time first)**:
 The greedy heuristic the planners bin-pack with: sort the items by descending cost, then hand each next item to whichever shard is currently least-loaded. Chosen over hashing or round-robin because per-item cost is heavy-tailed — embed cost spans ~20× from the ≤512 to the ≤4096 **Bucket** — so a cost-blind split reliably saddles one shard with the heavy items and it straggles while the rest idle (ADR-0025).
 
+**Origin budget**:
+How much an ATS's edge will serve one network origin before it starts refusing — first 429, then, on Eightfold, a hard 405. It is a *rate*, not a fixed quota, and it is metered per origin across **all** of that ATS's tenants, so hammering one Board spends the allowance for every other Board on the same provider. Because each **GitHub VM** has its own IP, a fan-out run holds one budget per shard; spreading an ATS's Boards across shards spends all of them, while clustering wastes all but a few (ADR-0047).
+_Avoid_: calling it a quota or a limit per Board — both suggest a fixed per-tenant count, and it is neither.
+
 **GitHub VM**:
-The term for the GitHub Actions jobs a matrix fan-out spreads across separate machines — the scrape and embed shards of ADR-0025/ADR-0026 each run on their own GitHub VM. Say "GitHub VM" whenever the point is the _machine_: its own IP (why per-host scrape politeness is unchanged), its own cold filesystem (why every shard re-runs checkout, `pip install`, and a model download), and its own memory and disk (why shard state moves as artifacts, never shared storage).
+The term for the GitHub Actions jobs a matrix fan-out spreads across separate machines — the scrape and embed shards of ADR-0025/ADR-0026 each run on their own GitHub VM. Say "GitHub VM" whenever the point is the _machine_: its own IP (which is both why per-host scrape politeness is unchanged and, per **Origin budget**, a rate-limit allowance the planner now spends deliberately), its own cold filesystem (why every shard re-runs checkout, `pip install`, and a model download), and its own memory and disk (why shard state moves as artifacts, never shared storage).
 _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns — one shard runs on one GitHub VM, but the shard is the board list or Doc list, not the machine.
 
 ## Relationships

@@ -9,7 +9,9 @@ Runs once, before the scrape matrix. It selects this run's board slice exactly a
   (``board_cost.csv``, ADR-0027), so the shards' wall times balance. A Board with no measurement
   yet is estimated from its ATS's median. Until the ledger exists at all, this falls back to the
   ADR-0026 heuristic (tech-job EWMA × a detail-ATS weight) — which measurement showed carries no
-  signal: it rated 14 shards identical and they ran 60 s to 1,222 s.
+  signal: it rated 14 shards identical and they ran 60 s to 1,222 s. The pack is **grouped by
+  ATS** (ADR-0047): shards are distinct network origins, so an ATS's Boards are spread across them
+  rather than clustered, which spends every shard's rate-limit budget instead of a few.
 - **Shard count** follows the same unit: ~``--target-seconds`` of measured work per shard, clamped
   to ``--max-shards``. A full slice saturates the lanes, a small one collapses to a single shard.
   (Cold start has no seconds, so it sizes by ``--target-boards`` instead.)
@@ -38,7 +40,7 @@ from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
 from headstart.ingest import REPO_ROOT, observability
-from headstart.ingest.binpack import lpt_pack, shard_count
+from headstart.ingest.binpack import lpt_pack_capped, shard_count
 
 _log = log.get(__name__, __spec__)
 
@@ -194,7 +196,10 @@ def main() -> int:
 
     total_cost = sum(costs)
     m = shard_count(sizing_total, n, args.max_shards, sizing_target)
-    assign, loads = lpt_pack(costs, m)
+    # Grouped by ATS, not cost alone: parallel shards get distinct egress IPs, so an ATS that
+    # rate-limits per origin gets one budget per shard — spreading its Boards spends all of them
+    # rather than a few (ADR-0047).
+    assign, loads = lpt_pack_capped(costs, [c.ats for c in companies], m)
 
     shard_boards: list[list[int]] = [[] for _ in range(m)]
     for i, k in enumerate(assign):
