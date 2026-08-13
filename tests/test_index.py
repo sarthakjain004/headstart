@@ -75,8 +75,17 @@ def _sync(tmp_path: Path, monkeypatch, ids: list[str]) -> int:
     _write_store(store, ids)
     _write_corpus(source, ids)
     monkeypatch.setattr(idx, "_STORE", store)
+    # An empty ledger dir: no live Boards, so board resolution falls back to `board_of` — the
+    # rule these tests were written against, and what a first run genuinely sees.
+    ledger = tmp_path / "ledger"
+    ledger.mkdir(exist_ok=True)
     return idx.sync(
-        argparse.Namespace(source=str(source), scraped=str(source), db=str(db))
+        argparse.Namespace(
+            source=str(source),
+            scraped=str(source),
+            db=str(db),
+            ledger=str(ledger),
+        )
     )
 
 

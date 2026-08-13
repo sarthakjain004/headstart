@@ -33,7 +33,14 @@ def board_of(job_id: str) -> str:
     """The Board an id belongs to: the ``{ats}:{slug}`` prefix of ``{ats}:{slug}:{native_id}``.
 
     Split off only the *last* segment, so a slug that itself contains ``:`` (Workday's URL slugs)
-    is preserved — this is exact as long as the ATS native id carries no colon, which holds.
+    is preserved. **This is a guess, not an exact answer** (ADR-0049): the native id can carry
+    colons too — real Workday ids include ``REQ: 228``, a postal address and an entire URL — and
+    for those this returns a Board that does not exist.
+
+    Safe where both sides of a comparison run through this same function, which is how ``index
+    sync`` uses it: a phantom Board is produced identically for the fresh id and the indexed one,
+    so the scope check still pairs them. Not safe where the result is compared against real Board
+    keys — ``plan_prune`` does that, and matches ids against the live keep-set by prefix instead.
     """
     return job_id.rsplit(":", 1)[0]
 

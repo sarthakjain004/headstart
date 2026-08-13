@@ -61,14 +61,16 @@ import numpy as np
 import pyarrow as pa
 
 from headstart import log
-from headstart.corpus import board_of, iter_jobs
+from headstart.corpus import iter_jobs
 from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
     live_keep_set,
+    lowered_boards,
     plan_prune,
     plan_sync,
+    resolve_board,
 )
 from headstart.search import PROD_TABLE
 
@@ -156,7 +158,9 @@ def _all_ids(table: Any) -> list[str]:
     ]
 
 
-def _scraped_boards(scraped: str | Path, corpus_ids: set[str]) -> set[str]:
+def _scraped_boards(
+    scraped: str | Path, corpus_ids: set[str], live: dict[str, str]
+) -> set[str]:
     """The Boards this run actually scraped, in ``board_of`` key space, read from the *full* scrape
     (``data/jobs/{ats}.jsonl`` — a non-recursive glob, so the ``tech/`` subdir is not double-counted).
 
@@ -167,8 +171,8 @@ def _scraped_boards(scraped: str | Path, corpus_ids: set[str]) -> set[str]:
     covered here — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)"""
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):
-        return {board_of(job["id"]) for job in iter_jobs(path)}
-    return {board_of(job_id) for job_id in corpus_ids}
+        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
+    return {resolve_board(job_id, live) for job_id in corpus_ids}
 
 
 _IDS_PER_LINE = 100  # batched id logging: skimmable lines, any single id still greps
@@ -192,8 +196,12 @@ def sync(args: argparse.Namespace) -> int:
     dim = vectors.shape[1]
     _log.info(f"store: {len(metas)} embedded Jobs (dim {dim})")
 
+    # Resolved against the live ledger so a Board is named the same here as in prune: an id whose
+    # native part carries a colon otherwise lands on a phantom Board, and a closed posting there is
+    # reachable by neither planner (ADR-0049). Empty ledger degrades to board_of, the prior rule.
+    live = lowered_boards(live_keep_set(args.ledger))
     corpus_ids = {job["id"] for job in iter_jobs(args.source)}
-    boards = _scraped_boards(args.scraped, corpus_ids)
+    boards = _scraped_boards(args.scraped, corpus_ids, live)
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
     _log.info(
@@ -222,7 +230,7 @@ def sync(args: argparse.Namespace) -> int:
         _log.info(f"adding '{_FIRST_SEEN_FIELD.name}' to the existing table")
         table.add_columns(_FIRST_SEEN_FIELD)
 
-    plan = plan_sync(index_ids, fresh, boards)
+    plan = plan_sync(index_ids, fresh, boards, live)
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
     withheld = sum(count for _, count in plan.held)
     if plan.held:
@@ -380,6 +388,11 @@ def main() -> int:
         default=str(_SCRAPED),
         help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
         "(default: data/jobs); falls back to --source's Boards when it has no .jsonl files",
+    )
+    p_sync.add_argument(
+        "--ledger",
+        default=str(_LEDGER),
+        help="liveness ledger dir, for resolving ids to live Boards (default: data/validate/liveness)",
     )
     p_sync.set_defaults(fn=sync)
 

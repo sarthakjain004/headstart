@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.ingest.index_plan import apply_sync, plan_prune, plan_sync
+from headstart.ingest.index_plan import (
+    apply_sync,
+    lowered_boards,
+    plan_prune,
+    plan_sync,
+    resolve_board,
+)
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.workday import WorkdayScraper
@@ -239,3 +245,86 @@ def test_prune_keeps_rows_whose_board_is_live():
     off, dup = plan_prune(["personio:ailylabs:2036107"], keep)
     assert off == []
     assert dup == []
+
+
+def test_prune_keeps_rows_whose_native_id_contains_a_colon():
+    """ADR-0049: real Workday native ids carry colons — `REQ: 228`, a postal address, a whole URL.
+    Splitting the composite key on the last colon attributed these to a Board that does not exist,
+    so prune called them off-Board and evicted them; sync re-added them next run, forever. The same
+    seven rows were pruned in three of five production runs."""
+    keep = {"workday:dmainc/DMA", "workday:otis/REC_Ext_Gateway"}
+    ids = [
+        "workday:dmainc/DMA:REQ: 228",
+        "workday:otis/REC_Ext_Gateway:OT221: GD - NEW YORK, NY One Penn Plaza, NY, 10119",
+        "workday:campaignmonitor/marigold:https://x.wd5.myworkdayjobs.com/marigold/job/R2454",
+    ]
+    off_board, duplicate = plan_prune(ids, keep)
+    assert off_board == [
+        ids[2]
+    ]  # not in this test's keep-set, so correctly off-Board here
+    assert duplicate == []
+
+
+def test_the_longest_nesting_board_owns_the_row():
+    """Defence in depth, asserted on the helper because no live Board key nests at a colon today.
+
+    Workday's ``co/site`` tenants nest at a *slash*, which is never a candidate position, so
+    ``plan_prune``'s output cannot currently tell first-match from longest-match — only the split
+    point can. If a Board key ever gains a colon, first-match would hand the longer Board's rows a
+    native id carrying the rest of the Board key.
+    """
+    from headstart.ingest.index_plan import _live_board_end
+
+    live = {"ats:a": "ats:a", "ats:a:b": "ats:a:b"}
+    assert _live_board_end("ats:a:b:R1", live) == 7  # "ats:a:b", not "ats:a" at 5
+    assert _live_board_end("ats:a:zz", live) == 5
+    assert _live_board_end("other:x:1", live) is None
+
+
+def test_prune_slices_the_native_id_from_the_original_casing():
+    # `live` is lowercased and str.lower() is not length-preserving, so slicing by the lowercased
+    # key's *length* would eat a character of the native id and collide two distinct Jobs
+    keep = {"workday:\u0130nc/Site"}
+    off_board, duplicate = plan_prune(
+        ["workday:\u0130nc/Site:R1", "workday:\u0130nc/Site:X1"], keep
+    )
+    assert off_board == []
+    assert duplicate == []  # R1 and X1 stay distinct
+
+
+def test_prune_still_dedupes_case_variants_with_a_colon_in_the_native_id():
+    keep = {"workday:co/site"}
+    ids = ["workday:co/Site:REQ: 9", "workday:co/site:REQ: 9"]
+    off_board, duplicate = plan_prune(ids, keep)
+    assert off_board == []
+    assert duplicate == ["workday:co/Site:REQ: 9"]  # the fossil casing goes
+
+
+def test_sync_can_evict_a_closed_posting_whose_native_id_has_a_colon():
+    """The half-fix trap (ADR-0049). Teaching prune to match by prefix stops it evicting these
+    rows — correct while they are live, but it also removed the only reach anything had on them
+    once closed, because sync's scope held a *phantom* Board (`…:OT221`) that is unique per
+    requisition and so is never recreated by a fresh sibling. Resolving both sides against the
+    live ledger puts the closed row and its live siblings on the same real Board, so sync sees it.
+    """
+    live = lowered_boards({"workday:otis/REC_Ext_Gateway"})
+    closed = "workday:otis/REC_Ext_Gateway:OT221: GD - NEW YORK, NY One Penn Plaza"
+    fresh = "workday:otis/REC_Ext_Gateway:OT999: SOMEWHERE ELSE"
+
+    scope = {resolve_board(fresh, live)}
+    assert scope == {
+        "workday:otis/REC_Ext_Gateway"
+    }  # a real Board, not a per-req phantom
+    plan = plan_sync([closed], [fresh], scope, live)
+    assert plan.delete == frozenset({closed})
+
+    # ...and prune still leaves it alone while it is live, which is the loop this ADR closes
+    assert plan_prune([closed], {"workday:otis/REC_Ext_Gateway"}) == ([], [])
+
+
+def test_sync_without_a_ledger_keeps_the_board_of_scoping():
+    # empty keep-set -> resolve_board falls back to board_of, the pre-ADR-0049 rule
+    plan = plan_sync(
+        ["greenhouse:a:1", "greenhouse:a:2"], ["greenhouse:a:1"], {"greenhouse:a"}, {}
+    )
+    assert plan.delete == frozenset({"greenhouse:a:2"})

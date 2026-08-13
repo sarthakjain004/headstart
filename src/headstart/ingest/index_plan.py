@@ -55,6 +55,7 @@ def plan_sync(
     index_ids: Iterable[str],
     fresh_ids: Iterable[str],
     scraped_boards: Iterable[str],
+    live: dict[str, str] | None = None,
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -81,9 +82,10 @@ def plan_sync(
     boards = set(scraped_boards)
     add = fresh - index
 
+    resolved = live if live is not None else {}
     indexed_by_board: dict[str, set[str]] = defaultdict(set)
     for job_id in index:
-        board = board_of(job_id)
+        board = resolve_board(job_id, resolved)
         if board in boards:
             indexed_by_board[board].add(job_id)
 
@@ -143,6 +145,48 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     return keep
 
 
+def _live_board_end(job_id: str, live: dict[str, str]) -> int | None:
+    """Index of the colon separating a live Board prefix from the native id, or None if the id is
+    on no live Board.
+
+    Returns a **position in the original string**, not a length: ``live``'s keys are lowercased and
+    ``str.lower()`` is not length-preserving for every character (``'İ'.lower()`` is two chars), so
+    slicing the original id by the lowercased key's length would silently eat a character of the
+    native id — on the eviction path, that is a live row deleted as someone else's duplicate.
+
+    Longest match wins as defence in depth rather than because anything needs it today: no two live
+    Board keys currently nest at a colon, so first-match would give the same answer. (Workday's
+    ``co/site`` tenants nest at a *slash*, which is never a candidate position.) Taking the longest
+    keeps the answer right if a Board key ever gains a colon.
+    """
+    best: int | None = None
+    for pos, char in enumerate(job_id):
+        if char == ":" and job_id[:pos].lower() in live:
+            best = pos
+    return best
+
+
+def lowered_boards(keep: Iterable[str]) -> dict[str, str]:
+    """``{lowercased Board: the live casing}`` — the lookup both planners match ids against."""
+    live: dict[str, str] = {}
+    for board in sorted(keep):  # sorted so a caller's set order can't change the plan
+        live.setdefault(board.lower(), board)
+    return live
+
+
+def resolve_board(job_id: str, live: dict[str, str]) -> str:
+    """The live Board that owns ``job_id``, falling back to :func:`board_of`'s guess when none
+    matches (an id on a Board the ledger doesn't list — a fresh discovery, or a disabled ATS).
+
+    Both planners resolve through this so they agree. They must: sync scopes eviction by Board and
+    prune classifies by Board, and when the two disagreed about a colon-bearing id, a *closed*
+    posting became unreachable by both — prune saw it on a live Board and left it, while sync's
+    scope only ever held the phantom Board, which no fresh sibling recreates once the req closes.
+    """
+    end = _live_board_end(job_id, live)
+    return job_id[:end] if end is not None else board_of(job_id)
+
+
 def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], list[str]]:
     """Split index ids into ``(evict_off_board, evict_duplicate)``.
 
@@ -156,22 +200,27 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
     under a casing nothing scrapes any more. Sync cannot evict a fossil (its Board is absent from
     ``scraped_boards``, so the partial-harvest guard protects it), so the fresh row was deleted as
     the fossil's duplicate on every run, forever, while the fossil itself went stale and immortal.
-    Falls back to lex-min when no row carries the live casing (the group is all fossils)."""
-    live: dict[str, str] = {}
-    for board in sorted(keep):  # sorted so a caller's set order can't change the plan
-        live.setdefault(board.lower(), board)
+    Falls back to lex-min when no row carries the live casing (the group is all fossils).
+
+    Ids are matched against ``keep`` by **prefix**, not by parsing (ADR-0049): a composite key is
+    ``{ats}:{slug}:{native}`` and *both* the slug and the native id can contain ``:``, so splitting
+    on the last colon attributes some rows to a Board that does not exist. ``keep`` is the set of
+    real Boards, so the longest member that prefixes an id is the answer, exactly."""
+    live = lowered_boards(keep)
     off_board: list[str] = []
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for jid in index_ids:
-        canon = board_of(jid).lower()
-        if canon not in live:
+        end = _live_board_end(jid, live)
+        if end is None:
             off_board.append(jid)
             continue
-        native = jid.rsplit(":", 1)[1]
+        canon, native = jid[:end].lower(), jid[end + 1 :]
         groups[(canon, native)].append(jid)
     duplicate: list[str] = []
     for (canon, _), ids in groups.items():
         if len(ids) > 1:
-            kept = next((i for i in ids if board_of(i) == live[canon]), sorted(ids)[0])
+            kept = next(
+                (i for i in ids if i.startswith(live[canon] + ":")), sorted(ids)[0]
+            )
             duplicate.extend(i for i in ids if i != kept)
     return off_board, duplicate
