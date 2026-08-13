@@ -72,7 +72,17 @@ def _write_corpus(source: Path, ids: list[str]) -> None:
     )
 
 
-def _sync(tmp_path: Path, monkeypatch, ids: list[str]) -> int:
+def _upgrade_list(tmp_path: Path, ids: list[str] | None) -> Path:
+    """The ADR-0050 upgrade list, always pinned into tmp_path — it defaults to the repo's real
+    data/state/, and a test must never read or write there."""
+    path = tmp_path / "pending_upgrades.txt"
+    path.write_text("".join(f"{i}\n" for i in ids or []), encoding="utf-8")
+    return path
+
+
+def _sync(
+    tmp_path: Path, monkeypatch, ids: list[str], upgrades: list[str] | None = None
+) -> int:
     """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree."""
     store, source, db = tmp_path / "store", tmp_path / "corpus", tmp_path / "db"
     _write_store(store, ids)
@@ -88,6 +98,9 @@ def _sync(tmp_path: Path, monkeypatch, ids: list[str]) -> int:
             scraped=str(source),
             db=str(db),
             ledger=str(ledger),
+            # Pinned into tmp_path like every other output: it defaults to the repo's real
+            # data/state/, and a test must never read or write there.
+            upgrades=str(_upgrade_list(tmp_path, upgrades)),
         )
     )
 
@@ -205,3 +218,31 @@ def test_log_ids_silent_on_empty(caplog):
     caplog.set_level(logging.INFO, logger="headstart.ingest.index")
     idx._log_ids("add", [])
     assert not caplog.records
+
+
+def test_an_upgraded_row_keeps_its_original_first_seen(tmp_path, monkeypatch):
+    """ADR-0050 re-embeds a vector built without a description, which means deleting the row so
+    `add = fresh - index` can re-add it. The Job never left the corpus though — only its vector
+    improved — so re-stamping it would surface an old listing as new. `first_seen` is served and
+    filterable (`seen_within`, and the alerts watermark), so on the first run that would re-notify
+    subscribers about tens of thousands of jobs they have already seen."""
+    monkeypatch.setattr(
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc))
+    )
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+
+    monkeypatch.setattr(
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc))
+    )
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ["greenhouse:a:1", "greenhouse:a:2"],
+        upgrades=["greenhouse:a:1"],
+    )
+
+    stamps = _rows(tmp_path)
+    assert (
+        stamps["greenhouse:a:1"] == "2026-01-01T09:00:00+00:00"
+    )  # replaced, not re-dated
+    assert stamps["greenhouse:a:2"] == "2026-01-01T09:00:00+00:00"  # untouched

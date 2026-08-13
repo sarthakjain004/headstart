@@ -67,13 +67,23 @@ retried forever. Zoho would be the worst of them at 53.8% description-less.
 
 **`meta.jsonl` gains `has_description`** — whether the Doc we embedded actually carried one — and
 `embed_plan` re-embeds a Job whose stored vector lacks a description once the corpus has one. The
-stale row is evicted first via `evict_store.py --ids`, in the merge job **before `embed_merge`**.
-Two constraints pin it there, and only that slot satisfies both. It must precede `index sync`,
-because `plan_sync` computes `add = fresh - index` and an id still in the table is never re-added.
-And it must precede `embed_merge`, because that appends without deduping by id: run afterwards, the
-eviction would drop *every* row for the id — including the vector just merged — taking the Job out
-of the store, out of the table, and out of `fresh`, so it would vanish from the index for a run and
-re-embed from scratch on the next one.
+the replacement happens in two places, because the store and the table need different things.
+
+`embed_merge --evict-ids` drops the stale row from the **store** before appending the new vector.
+It has to be before: the merge appends without deduping by id, so a later eviction would take out
+the vector it had just written. Leaving the old row instead is not an option either — `row_of` is
+last-wins and would pick the good vector, but `embed_plan._prior_rows` scans every line, so the old
+`has_description: false` row would keep marking the Job degraded and it would re-embed forever.
+
+`index sync --upgrades` replaces the row in the **table**, and does so *before* planning, since
+`plan_sync` computes `add = fresh - index` and an id still listed there is excluded from the adds.
+It carries the row's **`first_seen` across the replacement**. That column is served and filterable
+(`seen_within`, and the alerts watermark), and an upgraded Job is not a new listing — it never left
+the corpus, only its vector improved. Re-stamping would announce tens of thousands of old postings
+as new on the first run. This is the one place ADR-0031's "evicted and later reappears is stamped
+afresh" does not apply, because nothing about the posting reappeared.
+
+Neither step lives in `scripts/`: the ingest run is `src/headstart/ingest/` only (ADR-0028).
 
 **Writes are append-only.** Each run adds a small `{seq}.jsonl.gz` per ATS holding only what
 changed (~430 KB); readers take base-then-fragments with last-write-wins, and `--compact` folds
@@ -115,9 +125,15 @@ description leaves the retry set after one successful fetch.
 
 **A pre-ADR-0050 `meta.jsonl` row carries no flag**, and is read as degraded only on an ATS with a
 detail pass (`BaseScraper.has_detail_pass`). Reading absence as degraded everywhere would re-embed
-~186k Docs — roughly 78 CPU-hours, ~8 runs of saturated embedding — to repair ~16,771. The
-carve-out bounds it to ~22k, about one saturated run, at the cost of re-embedding the ~18% of
-Eightfold rows that were already fine. The rule retires itself as rows turn over.
+~186k Docs — roughly 78 CPU-hours, ~8 runs of saturated embedding — to repair ~16,771.
+
+Nine ATSes carry a detail pass, not just Eightfold, so the carve-out bounds day 0 to roughly
+**28.5k re-embeds**, not the ~22k an Eightfold-only reading suggests: ~22,125 Eightfold rows plus
+~6,400 across zoho, smartrecruiters and trakstar. A degraded row only re-embeds once the corpus
+actually has text for it, which is why ripplehire contributes nothing despite 4,596 marked rows —
+it never carries a description at all. Call it one to one-and-a-half saturated runs, at the cost of
+re-encoding the rows on those ATSes that were already fine. The rule retires itself as rows turn
+over and carry the flag.
 
 **ADR-0048's eviction trap is gone.** That ADR had to make `evict_store.py` rewrite the skip-list,
 because an eviction otherwise made the next scrape skip exactly the descriptions it had just

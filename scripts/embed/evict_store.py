@@ -11,7 +11,6 @@ row N), so eviction rewrites both in lockstep to temp files and swaps them in; t
 manifest count is updated last, mirroring the store's own commit-marker convention.
 
 Run:  python scripts/embed/evict_store.py --ats lever,recruitee
-      python scripts/embed/evict_store.py --ids data/state/pending_upgrades.txt
 """
 
 from __future__ import annotations
@@ -28,46 +27,13 @@ from headstart.search import PROD_TABLE
 _ROOT = Path(__file__).resolve().parents[2]
 _STORE = _ROOT / "data" / "embeddings" / "jobs"
 _DB = _ROOT / "data" / "lancedb"
-_ID_CHUNK = 512  # same ceiling index_plan.apply_sync uses, so one predicate can't grow unbounded
-
-
-def _quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _predicates(column: str, values: set[str]) -> list[str]:
-    """Delete predicates for the table, chunked so one `IN (...)` cannot grow unbounded."""
-    ordered = sorted(values)
-    return [
-        f"{column} IN ({', '.join(_quote(v) for v in ordered[start : start + _ID_CHUNK])})"
-        for start in range(0, len(ordered), _ID_CHUNK)
-    ]
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument("--ats", help="comma-separated ATSes to evict")
-    group.add_argument(
-        "--ids",
-        help="file of Job ids to evict, one per line — the targeted form the embed planner's "
-        "upgrade list feeds (ADR-0050)",
-    )
+    ap.add_argument("--ats", required=True, help="comma-separated ATSes to evict")
     args = ap.parse_args()
-    evict = {a.strip() for a in args.ats.split(",") if a.strip()} if args.ats else set()
-    evict_ids = (
-        {
-            line.strip()
-            for line in Path(args.ids).read_text().splitlines()
-            if line.strip()
-        }
-        if args.ids
-        else set()
-    )
-    print(
-        f"evicting {'ATSes ' + ', '.join(sorted(evict)) if evict else f'{len(evict_ids)} ids'}",
-        flush=True,
-    )
+    evict = {a.strip() for a in args.ats.split(",") if a.strip()}
 
     manifest = json.loads((_STORE / "manifest.json").read_text())
     dim = manifest["dim"]
@@ -78,8 +44,7 @@ def main() -> None:
     dropped = 0
     with (_STORE / "meta.jsonl").open(encoding="utf-8") as f:
         for row, line in enumerate(f):
-            record = json.loads(line)
-            if record["ats"] in evict or record["id"] in evict_ids:
+            if json.loads(line)["ats"] in evict:
                 dropped += 1
             else:
                 kept_meta.append(line)
@@ -102,8 +67,8 @@ def main() -> None:
     # ADR-0048's trap, where an eviction made the next scrape skip exactly what it just threw away.
     table = lancedb.connect(_DB).open_table(PROD_TABLE)
     before = table.count_rows()
-    for predicate in _predicates(*(("ats", evict) if evict else ("id", evict_ids))):
-        table.delete(predicate)
+    quoted = ", ".join(f"'{a}'" for a in sorted(evict))
+    table.delete(f"ats IN ({quoted})")
     print(
         f"table '{PROD_TABLE}': {before} -> {table.count_rows()} rows",
         flush=True,

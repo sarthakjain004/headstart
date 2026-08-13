@@ -65,10 +65,17 @@ def _fragments(ats_dir: Path) -> list[Path]:
     if not ats_dir.is_dir():
         return []
     base = ats_dir / _BASE
-    rest = sorted(
-        (p for p in ats_dir.glob("*.jsonl.gz") if p.name != _BASE), key=_sequence
-    )
-    return ([base] if base.exists() else []) + rest
+    return ([base] if base.exists() else []) + sorted(_numbered(ats_dir), key=_sequence)
+
+
+def _numbered(ats_dir: Path) -> list[Path]:
+    """The ATS's fragment files. One filter for readers and writers alike — when only the writer
+    screened for a numeric name, a stray file made every *read* raise while writes kept working."""
+    return [
+        p
+        for p in ats_dir.glob("*.jsonl.gz")
+        if p.name != _BASE and p.name.split(".", 1)[0].isdigit()
+    ]
 
 
 def _sequence(path: Path) -> int:
@@ -97,11 +104,7 @@ def read_store(ats_dir: Path) -> dict[str, str | None]:
 def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     """Append one run's changes as the next numbered fragment. Never touches existing files."""
     ats_dir.mkdir(parents=True, exist_ok=True)
-    used = [
-        _sequence(p)
-        for p in ats_dir.glob("*.jsonl.gz")
-        if p.name.split(".", 1)[0].isdigit()
-    ]
+    used = [_sequence(p) for p in _numbered(ats_dir)]
     out = ats_dir / f"{max(used, default=0) + 1:04d}.jsonl.gz"
     with gzip.open(out, "wt", encoding="utf-8") as fh:
         for record in records:
@@ -119,8 +122,10 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
     learned: list[dict] = []
     filled = settled = 0
 
-    # Streamed through a temp file and swapped in, rather than buffered: ashby's corpus alone is
-    # ~100 MB of text and this runs per ATS on a shared CI box.
+    # The rewrite streams through a temp file rather than buffering the corpus a second time —
+    # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
+    # this avoids. `.jsonl.tmp` is deliberately outside the `*.jsonl` glob every corpus reader
+    # uses, so a crash mid-write leaves an orphan file rather than a half-written corpus.
     tmp = jobs_path.with_suffix(".jsonl.tmp")
     with jobs_path.open(encoding="utf-8") as fh, tmp.open("w", encoding="utf-8") as out:
         for line in fh:
@@ -165,9 +170,19 @@ def write_held_details(store_root: Path, out_path: Path) -> int:
     written = 0
     with gzip.open(out_path, "wt", encoding="utf-8") as dst:
         for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
-            for job_id in read_store(ats_dir):
+            # Ids only — reading through `read_store` would materialise every description (~1 GB
+            # of text) to emit the keys. Duplicates across fragments are collapsed per ATS, which
+            # is all the dedupe this needs; the values never matter here.
+            seen: set[str] = set()
+            for path in _fragments(ats_dir):
+                with gzip.open(path, "rt", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line:
+                            seen.add(json.loads(line)["id"])
+            for job_id in seen:
                 dst.write(job_id + "\n")
-                written += 1
+            written += len(seen)
     return written
 
 

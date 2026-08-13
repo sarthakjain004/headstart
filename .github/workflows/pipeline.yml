@@ -384,23 +384,13 @@ jobs:
         with:
           pattern: embed-fragment-*
           path: data/embeddings/fragments
-      - name: Evict rows being re-embedded with a description (ADR-0050)
-        # Must run BEFORE embed_merge, not after. `embed_merge` appends without deduping by id, so
-        # an upgraded Job would briefly hold two store rows — and this drops *every* row matching
-        # the id, including the one just merged. The Job would then leave the store entirely, be
-        # deleted from the table, and not be in `fresh` to re-add: gone from the index for a run.
-        # Evicting first leaves the merge to reinstate it, and `index sync` then adds it back
-        # because add = fresh - index finally includes it.
-        if: needs.scrape-plan.outputs.run == 'true'
-        run: |
-          ids=data/state/pending_upgrades.txt
-          if [ -s "$ids" ]; then
-            python scripts/embed/evict_store.py --ids "$ids"
-          else
-            echo "no pending upgrades"
-          fi
       - name: Merge shard fragments into the store
         if: needs.scrape-plan.outputs.run == 'true'
+        # `--evict-ids` drops the stale row of any Job being re-embedded with a description it
+        # previously lacked, before the new vector is appended (ADR-0050). It has to happen here
+        # rather than after: this merge appends without deduping by id, so a later eviction would
+        # take out the vector it had just written. `index sync` then replaces the table row and
+        # carries its `first_seen` across.
         run: python -m headstart.ingest.embed_merge
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'

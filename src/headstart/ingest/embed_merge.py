@@ -28,6 +28,8 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
+
 from headstart import log
 from headstart.ingest import REPO_ROOT
 from headstart.search import DOC_PREFIX, MODEL
@@ -36,6 +38,8 @@ _log = log.get(__name__, __spec__)
 
 _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _FRAGMENTS = REPO_ROOT / "data" / "embeddings" / "fragments"
+# Written by embed_plan; consumed here and by `index sync` (ADR-0050).
+_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 _FLOAT_BYTES = 4  # float32
 
 
@@ -98,6 +102,40 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     return n
 
 
+def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
+    """Drop ``ids`` from the store, rewriting meta and vectors in lockstep. Returns rows dropped.
+
+    Runs before the merge so an upgraded Job (ADR-0050) ends the run with exactly one row. Leaving
+    the stale one in place would be worse than untidy: ``index._load_store`` keys ``row_of`` last
+    -wins and would pick the good vector, but ``embed_plan._prior_rows`` scans every line, so the
+    old ``has_description: false`` row would keep marking the Job degraded and it would re-embed on
+    every run forever.
+    """
+    if not ids or not meta_path.exists():
+        return 0
+    vectors = np.fromfile(vec_path, dtype="float32").reshape(-1, dim)
+    kept_meta: list[str] = []
+    kept_rows: list[int] = []
+    with meta_path.open(encoding="utf-8") as fh:
+        for row, line in enumerate(fh):
+            if json.loads(line)["id"] in ids:
+                continue
+            kept_meta.append(line)
+            kept_rows.append(row)
+    dropped = len(vectors) - len(kept_rows)
+    if not dropped:
+        return 0
+    tmp_vec, tmp_meta = (
+        vec_path.with_suffix(".f32.tmp"),
+        meta_path.with_suffix(".jsonl.tmp"),
+    )
+    vectors[kept_rows].tofile(tmp_vec)
+    tmp_meta.write_text("".join(kept_meta), encoding="utf-8")
+    tmp_vec.replace(vec_path)
+    tmp_meta.replace(meta_path)
+    return dropped
+
+
 def main() -> int:
     log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -110,6 +148,12 @@ def main() -> int:
         "--fragments",
         default=str(_FRAGMENTS),
         help="dir of shard fragment dirs (default: data/embeddings/fragments)",
+    )
+    ap.add_argument(
+        "--evict-ids",
+        default=str(_UPGRADES),
+        help="file of Job ids whose stale row to drop before merging — the embed planner's "
+        "upgrade list (ADR-0050); missing or empty is a no-op",
     )
     args = ap.parse_args()
 
@@ -127,6 +171,15 @@ def main() -> int:
         if dim is not None:
             break
         dim = _dim_from_manifest(f)
+
+    upgrades = Path(args.evict_ids)
+    if dim is not None and upgrades.exists():
+        stale = {
+            line.strip() for line in upgrades.read_text().splitlines() if line.strip()
+        }
+        dropped = evict_ids(meta_path, vec_path, dim, stale)
+        if stale:
+            _log.info(f"upgrades: dropped {dropped} stale rows for {len(stale)} ids")
 
     prior_rows = _reconcile_store(meta_path, vec_path, dim)
     _log.info(
