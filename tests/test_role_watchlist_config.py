@@ -49,6 +49,23 @@ def test_names_are_unique():
     assert len(names) == len(set(names)), f"duplicate watch-role names in {names}"
 
 
+def test_no_watch_role_name_collides_with_a_family_name():
+    """A watch role and a Role family are different populations — the family partitions the
+    corpus by centroid, the watch role counts corpus-wide by title — so one name meaning both
+    is the near-synonym failure CLAUDE.md Rule 3 names, and CONTEXT.md's `_Avoid_` line for
+    Role watchlist calls out directly. Four roles carry a `-by-title` suffix for exactly this
+    reason (`qa-test`, `security-engineering`, `devops`, `sre-platform` are all families).
+    `WATCH_PREFIX` keeps the ledger keys apart; it does nothing for the vocabulary."""
+    families = {
+        f["name"] for f in json.loads(FAMILIES.read_text(encoding="utf-8"))["families"]
+    }
+    collisions = sorted({r["name"] for r in _roles()} & families)
+    assert not collisions, (
+        f"watch-role names that are also family names: {collisions} — "
+        "rename the watch role (e.g. a `-by-title` suffix)"
+    )
+
+
 def test_no_parent_exceeds_the_chart_colour_budget():
     """The by-role drill plots `CHART_MAX` distinct colours and greys the rest, so a parent
     carrying more roles than that ships a series nobody can read. Read from app.js rather than

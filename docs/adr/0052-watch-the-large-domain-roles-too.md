@@ -33,14 +33,29 @@ split the `software-engineering` catch-all "by seniority and phrasing rather tha
 Twenty clusters map to that one family and not one of them means "backend". Size was never the
 operative property; **inexpressibility in the current fit** is.
 
-Fifteen roles ship: eight under `software-engineering` (Full Stack, Backend, DevOps / SRE,
-QA & Test, Frontend, Security, Platform, and the existing Forward Deployed Engineer) and seven
-under `ai-ml` (AI Engineer, ML Engineer, Research Engineer, LLM / GenAI, Research Scientist,
-Computer Vision, MLOps).
+Fifteen roles ship: eight under `software-engineering` (Full Stack, Backend, Frontend,
+DevOps / SRE (by title), QA (by title), Security (by title), Platform (by title), and the
+existing Forward Deployed Engineer) and seven under `ai-ml` (AI Engineer, ML Engineer, Research
+Engineer, LLM / GenAI, Research Scientist, Computer Vision, MLOps).
 
 Two properties of ADR-0051 are unchanged and load-bearing: a watch role is an **overlay, never a
 partition** (it re-counts Jobs already counted in their family), and watch rows stay **out of the
 share denominator**, so adding fifteen of them cannot move any family's share.
+
+**Four of the eight SWE roles name a concept that is *also* a top-level family** — `qa-test`,
+`security-engineering`, `devops` and `sre-platform` all exist in `role_families.json`. They are
+kept, because a reader drilling into Software Engineering wants to see QA and Security among the
+SWE titles, but they are **renamed with a `-by-title` suffix** (`qa-by-title`, "QA (by title)")
+rather than left to share a name.
+
+Sharing one would be the exact failure CLAUDE.md Rule 3 warns about — a near-synonym for a
+different thing — because the two count **different populations**: `count_groups` matches watch
+roles corpus-wide by title *before* centroid assignment, so the drill's "QA (by title)" line
+includes QA jobs that the family map files under `qa-test`, `data-engineering`, or anywhere else.
+The two numbers will legitimately disagree, and the name has to admit that. `WATCH_PREFIX` keeps
+the ledger keys apart; it does nothing for the vocabulary a reader sees. The suffix is applied
+only where a family of the same concept exists — disambiguation where there is ambiguity, not a
+uniform tax on every label.
 
 ## Consequences
 
