@@ -191,7 +191,7 @@ def main() -> int:
 
     upgrades = Path(args.evict_ids)
     if dim is not None and upgrades.exists():
-        listed = {
+        upgrade_ids = {
             line.strip() for line in upgrades.read_text().splitlines() if line.strip()
         }
         # An upgrade is a *replace*: drop the stale vector, merge the fresh one. Only the ids
@@ -206,8 +206,8 @@ def main() -> int:
         # And `embed` is `fail-fast: false` with a `continue-on-error` download, so 14 of 15
         # fragments is an ordinary outcome that would leak the same bug at a fifteenth the scale.
         # An id held back keeps its old vector and stays on the next run's upgrade list.
-        stale = listed & _fragment_ids(frags)
-        held = len(listed) - len(stale)
+        stale = upgrade_ids & _fragment_ids(frags)
+        held = len(upgrade_ids) - len(stale)
         if stale:
             dropped = evict_ids(meta_path, vec_path, dim, stale)
             _log.info(f"upgrades: dropped {dropped} stale rows for {len(stale)} ids")
