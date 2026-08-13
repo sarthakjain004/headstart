@@ -1,11 +1,146 @@
 {
-  "_comment": "Curated watch roles for the trends ledger (ADR-0051): specific roles worth their own trend line that are too small to earn a centroid (well under 1% of the clustered corpus each). Matched on TITLE patterns (case-insensitive regex), so membership is explainable per Job and survives a centroid refit. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. Keep patterns precise — a loose pattern quietly inflates a series forever.",
+  "_comment": "Curated watch roles for the trends ledger (ADR-0051, amended by ADR-0052): roles worth their own trend line inside a family's drill. Matched on TITLE patterns (case-insensitive regex, so \\bSRE\\b-style capitals are cosmetic), so membership is explainable per Job and survives a centroid refit. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. ADR-0051 scoped this to roles too small to earn a centroid; ADR-0052 widened it to the large domain roles too (backend, frontend, ...), which k-means cannot separate at any practical k because it splits SWE by seniority and phrasing rather than by domain. Watch roles RE-COUNT Jobs already counted in their family, corpus-wide by title rather than within the parent family - they are an overlay, never a partition, and are excluded from the share denominator. The `-by-title` suffix disambiguates the four roles whose concept ALSO exists as a top-level family (qa-test, security-engineering, devops, sre-platform): same idea, different population, so they must not share a name. Keep patterns precise: a loose pattern quietly inflates a series forever. Keep each parent within app.js's CHART_MAX (8) - beyond it a role greys out instead of plotting; tests/test_role_watchlist_config.py reads that constant so the two cannot drift.",
   "roles": [
+    {
+      "name": "fullstack",
+      "label": "Full Stack",
+      "parent": "software-engineering",
+      "match": [
+        "\\bfull[\\s-]?stack\\b"
+      ]
+    },
+    {
+      "name": "backend",
+      "label": "Backend",
+      "parent": "software-engineering",
+      "match": [
+        "\\bback[\\s-]?end\\b"
+      ]
+    },
+    {
+      "name": "devops-by-title",
+      "label": "DevOps / SRE (by title)",
+      "parent": "software-engineering",
+      "match": [
+        "\\bdevops\\b",
+        "\\bsite reliability\\b",
+        "\\bSRE\\b"
+      ]
+    },
+    {
+      "name": "qa-by-title",
+      "label": "QA (by title)",
+      "parent": "software-engineering",
+      "match": [
+        "\\bQA\\b",
+        "\\bSDET\\b",
+        "\\bquality assurance\\b",
+        "\\bsoftware test",
+        "\\btest automation\\b",
+        "\\bautomation test"
+      ]
+    },
+    {
+      "name": "frontend",
+      "label": "Frontend",
+      "parent": "software-engineering",
+      "match": [
+        "\\bfront[\\s-]?end\\b"
+      ]
+    },
+    {
+      "name": "security-by-title",
+      "label": "Security (by title)",
+      "parent": "software-engineering",
+      "match": [
+        "\\bsecurity engineer",
+        "\\bappsec\\b",
+        "\\bapplication security\\b",
+        "\\bproduct security\\b"
+      ]
+    },
+    {
+      "name": "platform-by-title",
+      "label": "Platform (by title)",
+      "parent": "software-engineering",
+      "match": [
+        "\\bplatform engineer",
+        "\\bplatform developer"
+      ]
+    },
     {
       "name": "fde",
       "label": "Forward Deployed Engineer",
       "parent": "software-engineering",
-      "match": ["forward[ -]deployed", "\\bFDE\\b"]
+      "match": [
+        "forward[ -]deployed",
+        "\\bFDE\\b"
+      ]
+    },
+    {
+      "name": "ai-engineer",
+      "label": "AI Engineer",
+      "parent": "ai-ml",
+      "match": [
+        "\\bAI engineer\\b",
+        "\\bapplied AI\\b"
+      ]
+    },
+    {
+      "name": "ml-engineer",
+      "label": "ML Engineer",
+      "parent": "ai-ml",
+      "match": [
+        "\\bmachine learning engineer\\b",
+        "\\bML engineer\\b"
+      ]
+    },
+    {
+      "name": "research-engineer",
+      "label": "Research Engineer",
+      "parent": "ai-ml",
+      "match": [
+        "\\bresearch engineer\\b"
+      ]
+    },
+    {
+      "name": "llm-genai",
+      "label": "LLM / GenAI",
+      "parent": "ai-ml",
+      "match": [
+        "\\bLLM\\b",
+        "\\bgenerative AI\\b",
+        "\\bGenAI\\b",
+        "\\bfoundation model"
+      ]
+    },
+    {
+      "name": "research-scientist",
+      "label": "Research Scientist",
+      "parent": "ai-ml",
+      "match": [
+        "\\bresearch scientist\\b",
+        "\\bapplied scientist\\b"
+      ]
+    },
+    {
+      "name": "computer-vision",
+      "label": "Computer Vision",
+      "parent": "ai-ml",
+      "match": [
+        "\\bcomputer vision\\b"
+      ]
+    },
+    {
+      "name": "mlops",
+      "label": "MLOps",
+      "parent": "ai-ml",
+      "match": [
+        "\\bMLOps\\b",
+        "\\bLLMOps\\b",
+        "\\bML platform\\b",
+        "\\bML infrastructure\\b"
+      ]
     }
   ]
 }

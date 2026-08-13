@@ -324,12 +324,22 @@ textarea:focus{ border-color:var(--violet); }
 #trends-chart{ width:100%; height:260px; overflow:visible; }
 .trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;
   max-height:260px; overflow-y:auto; }
-.trends-legend li{ display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:8px;
-  font-size:12.5px; cursor:pointer; }
-.trends-legend li:hover{ background:var(--raise-2); }
-.trends-legend li[aria-pressed="true"]{ background:var(--raise-2); }
+/* The row's box lives on the inner `.row`, not the <li>: only `.row` carries role="button", so
+   the <li> keeps its implicit `listitem` and the <ul> stays a list for assistive tech. */
+.trends-legend li{ display:flex; }
+.trends-legend .row{ display:flex; align-items:center; gap:8px; padding:4px 6px; width:100%;
+  border-radius:8px; font-size:12.5px; }
+/* `.charted` rows are the only ones that drill; `.listed` rows are here for their number alone,
+   so they get neither the pointer nor the hover lift — cues for a click that does nothing. */
+.trends-legend .charted .row{ background:var(--raise-2); cursor:pointer; }
+.trends-legend .charted .row:hover{ background:var(--rule); }
+.trends-legend .listed{ opacity:.45; }
 .trends-legend .swatch{ width:9px; height:9px; border-radius:3px; flex:none; }
 .trends-legend .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Marks a category whose drill holds named roles — muted, so it reads as an affordance rather
+   than competing with the number beside it. flex:none so it never steals width from .nm. */
+.trends-legend .drill{ flex:none; color:var(--ink-3); font-size:11px; letter-spacing:.02em; }
+.trends-legend .charted .row:hover .drill{ color:var(--ink-2); }
 .trends-legend .ct{ color:var(--ink-2); font-variant-numeric:tabular-nums; }
 .trends-legend .dl{ font-variant-numeric:tabular-nums; font-size:11.5px; min-width:44px;
   text-align:right; }

@@ -120,8 +120,12 @@ def _migrate_ledger(ledger: Path) -> None:
 
     The file is append-only and rides the HF state round trip, so the migration happens where
     the appends do — once, idempotently, before the first six-column write. Every pre-ADR-0051
-    row was a stock measurement, so the backfill is exact, not a guess. The file is a few dozen
-    rows per run ("tiny forever", ADR-0040), so rewriting it whole is fine.
+    row was a stock measurement, so the backfill is exact, not a guess.
+
+    Rewriting the file whole is fine because this runs **once** — the next append sees the
+    six-column header and returns immediately. It is not sized by ADR-0040's "a few dozen rows
+    per run", which ADR-0052's fifteen watched roles took to several hundred; if a retention or
+    rollup policy ever lands, this is the function that has to care.
     """
     with ledger.open(encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh)
