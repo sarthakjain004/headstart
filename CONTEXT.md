@@ -64,6 +64,10 @@ A Board still **Unknown** after every Liveness pass — surfaced for review, nev
 **Active list**:
 The Live Boards — the Companies whose Board answered **Live**, read as the `status == live` rows of the Liveness ledger (`data/validate/liveness/{ats}.csv`, ADR-0012; supersedes the old `active/{ats}.csv`). "Currently hiring" is the further subset whose job count is above zero.
 
+**Parked**:
+A real, Live Board deliberately withheld from the scrape for now, because scraping it costs more than the run can afford (`config.PARKED_BOARDS`). Distinct from **Excluded** (`config.EXCLUDED_BOARDS`), which names Boards that are not genuine Boards at all — vendor test and sandbox tenants. A Park is temporary and carries the condition that lifts it; an Exclusion is permanent.
+_Avoid_: disabled (that names a whole ATS, `registry.DISABLED_ATS`), blocked, banned.
+
 **Feed**:
 The assembled `docs/jobs.json` the dashboard consumes. It is *derived* — built by reading the per-board `{ats}.jsonl` (the source of truth) back and deduping by Slug-aware id — and is the small **served curated subset**: the millions-scale harvest produces only the `.jsonl`, never a single feed.
 

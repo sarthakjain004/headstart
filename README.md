@@ -110,7 +110,7 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 93,688 live boards reduce to 60,545 a run can even consider:
+that matters. The 93,688 live boards reduce to 60,544 a run can even consider:
 
 | | boards | |
 | --- | ---: | --- |
@@ -118,9 +118,10 @@ that matters. The 93,688 live boards reduce to 60,545 a run can even consider:
 | − `registry.DISABLED_ATS` | −24,900 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
 | − case-variant dedupe | −8,231 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.EXCLUDED_BOARDS` | −12 | vendor test/sandbox boards, confirmed by reading their postings |
-| = selectable | **60,545** | |
+| − `config.PARKED_BOARDS` | −1 | real boards withheld for now — Accenture's 48,369-job Workday board outruns any shard budget |
+| = selectable | **60,544** | |
 
-Of those, **45,686 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+Of those, **45,685 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
 the 14,859 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
