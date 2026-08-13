@@ -12,30 +12,62 @@ each tab early-exits on the first ATS hit. The rendered DOM is the primary signa
 embed shows up there); the network-request URLs are a secondary signal (a direct runtime XHR to
 an ATS host). Pages that contact no known ATS host are genuinely in-house — not a render gap.
 
-Usage:  python scripts/resolve/fingerprint_headless.py [n]   # first n companies from seed_india.csv
+Writes the same name,domain,hits,status schema as fingerprint.py, resumable by domain, so a
+crashed browser pass costs only its in-flight companies and the output can be fed straight to
+scripts/merge/merge_fingerprint_into_tenants.py --src.
+
+Usage:  python scripts/resolve/fingerprint_headless.py [n] [--seed CSV] [--out CSV]
+        python scripts/resolve/fingerprint_headless.py --seed config/seed_global.csv
+Set HEADSTART_CHROME if Chrome isn't in a standard location for your platform.
 """
 
+import argparse
 import asyncio
-import csv
+import os
 import re
 import sys
 import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import SEED, detect  # noqa: E402
+from fingerprint import SEED, detect, load_seed, open_results  # noqa: E402
 from pydoll.browser import Chrome  # noqa: E402
 from pydoll.browser.options import ChromiumOptions  # noqa: E402
 
-CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-CONCURRENCY = 4
+ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_OUT = ROOT / "data" / "resolve" / "fingerprint_headless_results.csv"
+CONCURRENCY = 10
 NAV_TIMEOUT = 22
 SETTLE = 4  # seconds to let late XHRs fire after load
+# Where Chrome lives, per platform. This was a single hardcoded Windows path, which made the
+# whole headless pass unrunnable anywhere else — and the headless pass is the half that matters,
+# since ~79% of fingerprinted hosts are opaque to no-JS curl. Override with HEADSTART_CHROME.
+CHROME_CANDIDATES = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+)
+
+
+def chrome_binary() -> str:
+    env = os.environ.get("HEADSTART_CHROME")
+    if env:
+        return env
+    for p in CHROME_CANDIDATES:
+        if Path(p).exists():
+            return p
+    raise SystemExit(
+        "no Chrome/Chromium found in the usual places; set HEADSTART_CHROME to its path"
+    )
 
 
 def opts():
     o = ChromiumOptions()
-    o.binary_location = CHROME
+    o.binary_location = chrome_binary()
     o.headless = True
     for a in (
         "--no-sandbox",
@@ -101,6 +133,7 @@ async def fingerprint_company(browser, sem, row):
         try:
             base = f"https://{domain}/"
             hits, home_dom, tried = set(), "", set()
+            seen_dom = False
             for i, u in enumerate(
                 (base, f"https://{domain}/careers", f"https://{domain}/jobs")
             ):
@@ -108,6 +141,7 @@ async def fingerprint_company(browser, sem, row):
                     continue
                 tried.add(u)
                 h, dom = await scan_page(tab, u)
+                seen_dom = seen_dom or bool(dom)
                 if i == 0:
                     home_dom = dom
                 hits |= h
@@ -122,7 +156,7 @@ async def fingerprint_company(browser, sem, row):
                     hits |= h
                     if hits:
                         break
-            return name, domain, hits
+            return name, domain, hits, "ok" if seen_dom else "unreachable"
         finally:
             try:
                 await tab.close()
@@ -131,26 +165,56 @@ async def fingerprint_company(browser, sem, row):
 
 
 async def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 18
-    rows = list(csv.DictReader(SEED.open(encoding="utf-8")))[:n]
+    ap = argparse.ArgumentParser(
+        description="Headless (JS-rendered) ATS fingerprinter."
+    )
+    ap.add_argument(
+        "n", nargs="?", type=int, help="only the first n seed rows (default: all)"
+    )
+    ap.add_argument(
+        "--seed", type=Path, default=SEED, help="seed CSV with name,domain columns"
+    )
+    ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help="results CSV")
+    ap.add_argument(
+        "--restart", action="store_true", help="truncate the output instead of resuming"
+    )
+    args = ap.parse_args()
+
+    rows = load_seed(args.seed, args.n)
+    cw, cf, already = open_results(args.out, args.restart)
+    pending = [r for r in rows if r["domain"] not in already]
+    print(
+        f"{len(rows)} seed rows | {len(already)} already done | {len(pending)} to scan",
+        flush=True,
+    )
+    if not pending:
+        cf.close()
+        return
+
     sem = asyncio.Semaphore(CONCURRENCY)
+    hit = done = 0
     async with Chrome(options=opts()) as browser:
         await browser.start()
-        results = await asyncio.gather(
-            *[fingerprint_company(browser, sem, r) for r in rows]
-        )
-    hit = 0
-    for name, domain, hits in results:
-        if hits:
-            hit += 1
-            print(
-                f"  {name} ({domain}): "
-                + ", ".join(f"{a}:{t}" for a, t in sorted(hits)),
-                flush=True,
+        # as_completed + flush per company: a browser pass is slow and crash-prone, so results
+        # must land on disk as they happen rather than in one gather at the end.
+        for fut in asyncio.as_completed(
+            [fingerprint_company(browser, sem, r) for r in pending]
+        ):
+            name, domain, hits, status = await fut
+            done += 1
+            cw.writerow(
+                [name, domain, ";".join(f"{a}:{t}" for a, t in sorted(hits)), status]
             )
-        else:
-            print(f"  {name} ({domain}): -", flush=True)
-    print(f"\n{hit}/{len(results)} companies fingerprinted (headless)", flush=True)
+            cf.flush()
+            if hits:
+                hit += 1
+            shown = ", ".join(f"{a}:{t}" for a, t in sorted(hits)) if hits else "-"
+            print(f"  [{done}/{len(pending)}] {name} ({domain}): {shown}", flush=True)
+    cf.close()
+    print(
+        f"\n{hit}/{len(pending)} companies fingerprinted (headless) -> {args.out}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

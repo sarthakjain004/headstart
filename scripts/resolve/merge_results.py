@@ -71,7 +71,15 @@ def main():
         e = companies.setdefault(r["domain"], {"name": r["name"], "hits": set()})
         for ats, slug in parse_hits(r["hits"]):
             e["hits"].add((ats, slug, "main"))
-    for r in csv.DictReader(VERIFY.open(encoding="utf-8")):
+    # The verify pass is optional — verify_misses.py may not have run yet. Its absence used to
+    # crash this script with FileNotFoundError, which severed the whole resolve chain (nothing
+    # could reach coverage.csv) for a file that only ever adds recoveries.
+    verify_rows = (
+        csv.DictReader(VERIFY.open(encoding="utf-8")) if VERIFY.exists() else []
+    )
+    if not VERIFY.exists():
+        print(f"note: {VERIFY.name} absent — merging main run only", flush=True)
+    for r in verify_rows:
         e = companies.setdefault(r["domain"], {"name": r["name"], "hits": set()})
         for ats, slug in parse_hits(r.get("found", "")):
             if (ats, slug, "main") not in e["hits"]:

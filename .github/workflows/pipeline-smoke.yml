@@ -1,10 +1,20 @@
 name: pipeline-smoke
 
-# End-to-end smoke for the sharded embed path (ADR-0025 Phase 1), on a tiny synthetic corpus with
-# the real encoder — no HF_TOKEN, no production state. It proves the two things unit tests can't:
-#   1. the sharded path (plan → embed --assignment → merge) yields the SAME vectors as the monolith;
-#   2. the merged store syncs into a real LanceDB index.
-# Runs on demand and when the sharded path changes.
+# End-to-end smoke for the ingest path (ADR-0025 Phase 1), on a tiny synthetic corpus with the real
+# encoder — no HF_TOKEN, no production state. It runs the stages the way the pipeline does (shard
+# fragments -> join -> tech filter -> embed -> merge -> sync -> prune) over **two cycles**, because
+# the failures worth catching only exist *between* runs:
+#
+#   cycle 1 — proves the sharded path (plan -> embed --assignment -> merge) yields the SAME vectors
+#     as the monolith, that the merged store syncs into a real LanceDB index, and that `prune` plus
+#     a re-`sync` then leave those rows exactly as they are (no add/evict ping-pong — PR #102).
+#   cycle 2 — a second scrape of the same two Boards in which one Job is genuinely delisted and the
+#     other Board **errored mid-scrape and returned a truncated list**. Eviction must follow the
+#     first and not the second. A single cycle against an empty table cannot express that at all,
+#     which is how the eightfold index flap (whole NVIDIA/Qualcomm Boards evicted one run and
+#     re-added the next, ~2 h invisible to users) shipped past this workflow.
+#
+# Runs on demand and when the ingest path changes.
 on:
   workflow_dispatch:
   push:
@@ -31,27 +41,66 @@ jobs:
         with:
           path: ~/.cache/huggingface/hub
           key: hf-model-nomic-embed-text-v1.5
-      - name: Build a tiny synthetic tech corpus (varied lengths → several buckets)
+
+      # ── Cycle 1 ─────────────────────────────────────────────────────────────────────────────
+      - name: Cycle 1 — a healthy two-Board scrape, written as shard fragments
         run: |
           python - <<'PY'
           import json, pathlib
+          from headstart.config import load_active_companies
+
+          # Real Boards taken from the committed liveness ledger, not invented slugs: `index prune`
+          # evicts every row whose Board is not live in the ledger, so a made-up slug would be
+          # pruned away and the prune assertion below would pass for the wrong reason. eightfold is
+          # the ATS the flap was measured on (its slug is a host, so it also exercises `board_key()`
+          # mapping); lever is the cheap control.
+          first = {}
+          for c in load_active_companies("data/validate/liveness", min_jobs=0):
+              first.setdefault(c.ats, c)
+          healthy, flaky = first["lever"], first["eightfold"]
           base = "We build and operate large scale distributed backend systems in Python and Go. "
-          jobs = []
-          for i in range(10):
-              reps = 1 if i < 6 else (40 if i < 8 else 120)  # short / medium / long descriptions
-              jobs.append({
-                  "id": f"lever:acme:{i}", "ats": "lever", "company": "Acme",
-                  "title": f"Senior Software Engineer {i}", "location": "Remote", "remote": True,
+
+          def job(board, n, title, reps):
+              return {
+                  "id": f"{board.ats}:{board.slug}:{n}", "ats": board.ats, "company": board.name,
+                  "title": f"{title} {n}", "location": "Remote", "remote": True,
                   "employment_type": "full-time", "experience": None, "salary": None,
-                  "department": "Engineering", "url": f"https://jobs.lever.co/acme/{i}",
+                  "department": "Engineering", "url": f"https://example.test/{board.ats}/{n}",
                   "posted_at": "2026-07-01", "description": base * reps,
-              })
-          body = "\n".join(json.dumps(j) for j in jobs) + "\n"
-          for p in ("data/jobs/tech/lever.jsonl", "data/jobs/lever.jsonl"):
-              path = pathlib.Path(p); path.parent.mkdir(parents=True, exist_ok=True)
-              path.write_text(body, encoding="utf-8")
-          print("wrote 10 synthetic jobs")
+              }
+
+          def write_shard(k, ats, slug, jobs, error=None):
+              d = pathlib.Path(f"data/scrape/fragments/shard-{k}")
+              d.mkdir(parents=True, exist_ok=True)
+              (d / f"{ats}.jsonl").write_text(
+                  "".join(json.dumps(j) + "\n" for j in jobs), encoding="utf-8")
+              # The shape `headstart.ingest.observability.write_shard` emits — today the only place
+              # a Board's scrape *outcome* is recorded, and the input any fix for the flap needs.
+              (d / "_shard_report.json").write_text(json.dumps({
+                  "shard": str(k), "assigned": 1, "done": 1, "undone": 0, "jobs": len(jobs),
+                  "killed_by_budget": False,
+                  "errors": {f"{ats}:{slug}": error} if error else {},
+              }), encoding="utf-8")
+
+          # Varied description lengths -> several token buckets, so the fan-out really splits.
+          write_shard(0, healthy.ats, healthy.slug, [
+              job(healthy, n, "Senior Software Engineer", 1 if n < 6 else (40 if n < 8 else 120))
+              for n in range(10)])
+          write_shard(1, flaky.ats, flaky.slug, [
+              job(flaky, n, "Backend Engineer", 1) for n in range(6)])
+          pathlib.Path("data/scrape/boards.json").write_text(json.dumps({
+              "healthy": {"ats": healthy.ats, "slug": healthy.slug},
+              "flaky": {"ats": flaky.ats, "slug": flaky.slug},
+          }), encoding="utf-8")
+          print(f"wrote 10 jobs on {healthy.ats}:{healthy.slug}, 6 on {flaky.ats}:{flaky.slug}")
           PY
+      # The snapshot in data/jobs is what defines the eviction scope (ADR-0014), and it is the join
+      # that builds it — hand-writing data/jobs would skip the stage that decides which Boards sync
+      # is even allowed to evict from.
+      - name: Union the fragments, then tech-filter them into the corpus
+        run: |
+          python -m headstart.ingest.scrape_join
+          python -m headstart.ingest.filter_tech
       - name: Monolith embed (the baseline to match)
         run: python -m headstart.ingest.embed_run --source data/jobs/tech --outdir data/embeddings/mono
       - name: Plan the fan-out (no prior store → all new; forced multi-shard)
@@ -81,7 +130,7 @@ jobs:
 
           mono = load("data/embeddings/mono")
           shard = load("data/embeddings/jobs")
-          assert len(mono) == 10, f"monolith embedded {len(mono)}, expected 10"
+          assert len(mono) == 16, f"monolith embedded {len(mono)}, expected 16"
           assert set(mono) == set(shard), f"id set differs: {set(mono) ^ set(shard)}"
           for k in mono:
               assert np.allclose(mono[k], shard[k], atol=1e-4), f"vector differs for {k}"
@@ -96,6 +145,95 @@ jobs:
           from headstart.search import PROD_TABLE
           t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
           n = t.count_rows()
-          assert n == 10, f"index has {n} rows, expected 10"
+          assert n == 16, f"index has {n} rows, expected 16"
           print(f"OK: index synced with {n} rows")
+          PY
+      # The churn class PR #102 chased: prune deletes a row sync just wrote, the next sync re-adds
+      # it, forever. `first_seen` is the detector — sync stamps a row afresh whenever it *re-*adds
+      # it (ADR-0031), so an unchanged stamp map is proof no row left and came back.
+      - name: Assert prune + a re-sync churn nothing
+        run: |
+          cat > "$RUNNER_TEMP/stamps.py" <<'PY'
+          import json, lancedb
+          from headstart.search import PROD_TABLE
+          t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
+          rows = t.search().limit(max(t.count_rows(), 1)).to_list()
+          print(json.dumps({r["id"]: r["first_seen"] for r in rows}, sort_keys=True, indent=1))
+          PY
+          python "$RUNNER_TEMP/stamps.py" > "$RUNNER_TEMP/before.json"
+          python -m headstart.ingest.index prune --apply
+          python -m headstart.ingest.index sync
+          python "$RUNNER_TEMP/stamps.py" > "$RUNNER_TEMP/after.json"
+          diff "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" && echo "OK: prune + re-sync left every row alone" || {
+            echo "::error::prune/sync churned rows they should have left alone — a Board live in the ledger lost or re-acquired rows on a no-op cycle"
+            exit 1
+          }
+
+      # ── Cycle 2 ─────────────────────────────────────────────────────────────────────────────
+      # The bug this workflow exists to catch. Two Boards change in different ways, and only one of
+      # the changes is a real delisting.
+      - name: Cycle 2 — one Job genuinely delisted, one Board errored mid-scrape
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
+          healthy, flaky = boards["healthy"], boards["flaky"]
+
+          def rewrite(k, board, lines, error=None):
+              d = pathlib.Path(f"data/scrape/fragments/shard-{k}")
+              path = d / f"{board['ats']}.jsonl"
+              kept = path.read_text(encoding="utf-8").splitlines(keepends=True)
+              path.write_text("".join(lines(kept)), encoding="utf-8")
+              report = json.loads((d / "_shard_report.json").read_text())
+              report["errors"] = {f"{board['ats']}:{board['slug']}": error} if error else {}
+              (d / "_shard_report.json").write_text(json.dumps(report), encoding="utf-8")
+
+          # Healthy Board: a clean, complete scrape that legitimately no longer lists job :0.
+          rewrite(0, healthy, lambda lines: lines[1:])
+          # Flaky Board: page 1 came back, page 2 was rate-limited, and the scraper returned what it
+          # had (eightfold's `_api_search` breaks out of its pagination loop on a non-200 —
+          # src/headstart/scrapers/eightfold.py:130-139 — so this is the routine case, not a rare one).
+          rewrite(1, flaky, lambda lines: lines[:1], error="RequestsError: HTTP 429 on page 2")
+          print("cycle 2 snapshot: healthy Board -1 job, flaky Board truncated to 1 of 6")
+          PY
+      - name: Re-join and re-filter the second cycle's snapshot
+        run: |
+          python -m headstart.ingest.scrape_join
+          python -m headstart.ingest.filter_tech
+      - name: Sync the second cycle
+        run: python -m headstart.ingest.index sync
+      - name: Assert eviction follows delisting, not scrape failure
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          import lancedb
+          from headstart.search import PROD_TABLE
+
+          boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
+          healthy, flaky = boards["healthy"], boards["flaky"]
+          hid = lambda n: f"{healthy['ats']}:{healthy['slug']}:{n}"
+          fid = lambda n: f"{flaky['ats']}:{flaky['slug']}:{n}"
+
+          t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
+          ids = {r["id"] for r in t.search().select(["id"]).limit(max(t.count_rows(), 1)).to_list()}
+
+          # A real delisting still evicts — the guard must not become "never evict anything".
+          assert hid(0) not in ids, (
+              f"{hid(0)} was delisted by a complete scrape and should have been evicted")
+          # ...but the truncated Board's missing Jobs are still open; they were simply not returned.
+          # Evicting them is the index flap: they vanish from search for one 2-hourly cycle and come
+          # back in the next, over and over (whole NVIDIA/Qualcomm/Micron Boards, measured 5 runs
+          # running). "absent from this run's corpus" is not "closed" when the Board errored.
+          stranded = [fid(n) for n in range(1, 6) if fid(n) not in ids]
+          assert not stranded, (
+              f"INDEX FLAP: {len(stranded)} Jobs evicted from {flaky['ats']}:{flaky['slug']}, whose "
+              f"scrape errored and returned 1 of 6 postings — e.g. {stranded[:3]}. sync infers "
+              "'this Board was scraped' from the presence of any job line (index.py `_scraped_boards`) "
+              "and then evicts every indexed id the truncated list is missing. The Board's scrape "
+              "outcome is known — it is in the shard report's `errors` map — but nothing carries it "
+              "from the scrape to sync.")
+
+          expected = {hid(n) for n in range(1, 10)} | {fid(n) for n in range(6)}
+          assert ids == expected, f"unexpected table contents: {ids ^ expected}"
+          print(f"OK: 1 delisted Job evicted, {len(ids)} rows kept; the errored Board was left alone")
           PY
