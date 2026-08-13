@@ -100,6 +100,20 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     return n
 
 
+def _fragment_ids(frags: list[Path]) -> set[str]:
+    """Every id carried by the fragments that arrived — the ids a drop can safely be paired with.
+
+    Reads only up to each fragment's last fully-parseable meta line, the same truncation the
+    merge itself applies, so an id in a shard's half-written tail is not counted as having
+    arrived when its vector will not be appended.
+    """
+    return {
+        json.loads(line)["id"]
+        for f in frags
+        for line in _good_meta_lines(f / "meta.jsonl")
+    }
+
+
 def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
     """Drop ``ids`` from the store, rewriting meta and vectors in lockstep. Returns rows dropped.
 
@@ -177,25 +191,31 @@ def main() -> int:
 
     upgrades = Path(args.evict_ids)
     if dim is not None and upgrades.exists():
-        stale = {
+        listed = {
             line.strip() for line in upgrades.read_text().splitlines() if line.strip()
         }
-        # An upgrade is a *replace*: drop the stale vector, merge the fresh one. With no
-        # fragments arriving there is no second half, so the drop would just be a delete — and
-        # the Jobs leave the served index until some later run happens to re-embed them.
-        # `merge` runs `if: always()`, so it does reach here with nothing to merge whenever
-        # `embed` was skipped or failed. On 2026-08-13 that cost 10,144 vectors and 11,083
-        # served rows in one run, and the upgrade list survives to be retried next run anyway.
-        if not frags:
-            _log.info(
-                f"upgrades: holding {len(stale)} id(s) — no fragments to replace them with"
-            )
-        else:
+        # An upgrade is a *replace*: drop the stale vector, merge the fresh one. Only the ids
+        # that actually arrived get dropped, because the drop is only safe once its replacement
+        # is in hand. Evicting the whole list instead is a delete for every id that did not come
+        # back, and the Job then leaves the served index — `index._take_upgrades` removes its row
+        # regardless, and `plan_sync` cannot re-add a Job with no vector.
+        #
+        # Both halves of that are reachable. `merge` runs `if: always()`, so it gets here with no
+        # fragments at all whenever `embed` was skipped — which one failed scrape shard used to
+        # cause, and on 2026-08-13 that cost 10,144 vectors and 11,083 served rows in one run.
+        # And `embed` is `fail-fast: false` with a `continue-on-error` download, so 14 of 15
+        # fragments is an ordinary outcome that would leak the same bug at a fifteenth the scale.
+        # An id held back keeps its old vector and stays on the next run's upgrade list.
+        stale = listed & _fragment_ids(frags)
+        held = len(listed) - len(stale)
+        if stale:
             dropped = evict_ids(meta_path, vec_path, dim, stale)
-            if stale:
-                _log.info(
-                    f"upgrades: dropped {dropped} stale rows for {len(stale)} ids"
-                )
+            _log.info(f"upgrades: dropped {dropped} stale rows for {len(stale)} ids")
+        if held:
+            _log.info(
+                f"upgrades: holding {held} id(s) whose replacement did not arrive"
+                f"{' (no fragments at all)' if not frags else ''}"
+            )
 
     prior_rows = _reconcile_store(meta_path, vec_path, dim)
     _log.info(

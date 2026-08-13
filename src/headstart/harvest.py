@@ -262,16 +262,12 @@ def scrape_all(
         # anything could be reported. cancel_futures drops what has not started.
         #
         # A Board already running cannot be cancelled — you cannot kill a Python thread — so
-        # `wait=True` blocked on the slowest in-flight one, and a straggler outlasting the 6 min
-        # of slack between the 60m budget and the 66m step timeout took the runner down before
-        # anything was reported. That is how three shards died on 2026-08-13, each going silent
-        # mid-SuccessFactors (its RSS feed trickles under a 300s read timeout) and each killing
-        # the whole run's embed stage with it.
-        #
-        # `wait=False` is safe precisely because those results are discarded anyway: the loop
-        # that would have written them has already exited. Nothing is lost that `wait=True` kept
-        # — it bought clean teardown, not work — and `JobWriter` is written only from this main
-        # loop and flushed per Board, so no straggler is mid-write when we stop waiting.
+        # `wait=True` blocked on the slowest in-flight one, and a straggler could outlast the 6
+        # min of slack between the 60m budget and the 66m step timeout, taking the runner down
+        # before anything was reported (ADR-0053, amended). Not waiting is safe because those
+        # results are discarded either way: the loop that would have written them has already
+        # exited, and `JobWriter` is written only from that loop and flushed per Board, so no
+        # straggler is mid-write when we stop waiting.
         executor.shutdown(wait=False, cancel_futures=True)
         writer.close()
     return RunResult(

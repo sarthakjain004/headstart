@@ -145,6 +145,28 @@ def test_an_upgrade_holds_its_stale_row_when_nothing_arrives_to_replace_it(tmp_p
     _assert_consistent(store, 3)
 
 
+def test_an_upgrade_drops_only_the_ids_whose_replacement_arrived(tmp_path):
+    """`embed` is `fail-fast: false` and its download is `continue-on-error`, so 14 of 15
+    fragments is an ordinary outcome — not just the all-or-nothing skip. Evicting the whole
+    upgrade list there deletes the vectors of every id the missing shard held, and
+    `index._take_upgrades` drops their rows regardless, so `plan_sync` cannot re-add them.
+    """
+    pytest.importorskip("numpy")
+    store, frags = tmp_path / "store", tmp_path / "frags"
+    _write_store(store, ["arrived", "missing", "untouched"])
+    _write_store(
+        frags / "embed-fragment-0", ["arrived"]
+    )  # the other shard never uploaded
+    upgrades = tmp_path / "pending_upgrades.txt"
+    upgrades.write_text("arrived\nmissing\n", encoding="utf-8")
+
+    _run_with_upgrades(store, frags, upgrades)
+
+    # `missing` keeps its old vector rather than losing it; `arrived` was replaced.
+    assert _store_ids(store) == ["missing", "untouched", "arrived"]
+    _assert_consistent(store, 3)
+
+
 def test_an_upgrade_still_replaces_its_stale_row_when_a_fragment_does_arrive(tmp_path):
     """The guard must not disarm the upgrade itself: with a fragment present, the stale rows go
     and the fresh ones take their place.
