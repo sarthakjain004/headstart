@@ -123,6 +123,10 @@ def test_main_partitions_new_english_docs(tmp_path, monkeypatch):
             str(tmp_path / "none.csv"),
             "--out-dir",
             str(out),
+            # Pinned into tmp_path: it defaults to the repo's real data/state/, and a test run
+            # must never write there.
+            "--upgrades-out",
+            str(tmp_path / "pending_upgrades.txt"),
             "--max-shards",
             "3",
             "--target-seconds",
@@ -167,8 +171,143 @@ def test_main_empty_plan_when_nothing_new(tmp_path, monkeypatch):
             str(tmp_path / "none.csv"),
             "--out-dir",
             str(out),
+            # Pinned into tmp_path: it defaults to the repo's real data/state/, and a test run
+            # must never write there.
+            "--upgrades-out",
+            str(tmp_path / "pending_upgrades.txt"),
         ],
     )
     assert pe.main() == 0
     plan = json.loads((out / "plan.json").read_text())
     assert plan == {"shards": [], "count": 0, "makespan_s": 0.0, "per_shard_s": []}
+
+
+def _meta_row(job_id: str, ats: str, **extra) -> str:
+    return json.dumps({"id": job_id, "ats": ats, "title": "Engineer", **extra}) + "\n"
+
+
+def test_prior_rows_reads_the_flag_where_it_exists(tmp_path):
+    """ADR-0050: a vector recorded as built without a description is the repairable population."""
+    meta = tmp_path / "meta.jsonl"
+    meta.write_text(
+        _meta_row("eightfold:acme:1", "eightfold", has_description=True)
+        + _meta_row("eightfold:acme:2", "eightfold", has_description=False),
+        encoding="utf-8",
+    )
+    embedded, degraded = pe._prior_rows(meta)
+    assert embedded == {"eightfold:acme:1", "eightfold:acme:2"}
+    assert degraded == {"eightfold:acme:2"}
+
+
+def test_prior_rows_infers_the_flag_only_for_detail_pass_atses(tmp_path):
+    """Rows written before ADR-0050 carry no flag. Inferring 'degraded' for all of them would
+    re-embed ~186k Docs to repair ~16,771; a listing-only ATS re-supplies its description on
+    every scrape and so cannot have lost one, which bounds the migration to ~22k."""
+    meta = tmp_path / "meta.jsonl"
+    meta.write_text(
+        _meta_row("eightfold:acme:1", "eightfold")  # detail pass -> assume degraded
+        + _meta_row("greenhouse:acme:2", "greenhouse"),  # listing-only -> assume fine
+        encoding="utf-8",
+    )
+    _, degraded = pe._prior_rows(meta)
+    assert degraded == {"eightfold:acme:1"}
+
+
+def test_a_degraded_row_is_re_embedded_once_its_description_arrives(
+    tmp_path, monkeypatch
+):
+    """The upgrade the store makes possible. `embed_plan` skips by id, so without this the
+    title-only vector survives every future run no matter how good the scrape gets."""
+    monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
+    tech = tmp_path / "tech"
+    tech.mkdir()
+    (tech / "eightfold.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "eightfold:acme:1",
+                "ats": "eightfold",
+                "title": "Backend Engineer",
+                "description": "We are hiring a backend engineer to build systems.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    meta = tmp_path / "meta.jsonl"
+    meta.write_text(
+        _meta_row("eightfold:acme:1", "eightfold", has_description=False),
+        encoding="utf-8",
+    )
+    out = tmp_path / "assignments"
+    upgrades = tmp_path / "pending_upgrades.txt"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "embed_plan",
+            "--source",
+            str(tech),
+            "--prior-meta",
+            str(meta),
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--out-dir",
+            str(out),
+            "--upgrades-out",
+            str(upgrades),
+        ],
+    )
+    assert pe.main() == 0
+
+    assert json.loads((out / "plan.json").read_text())["count"] == 1
+    # The merge stage evicts these before `index sync`, or add = fresh - index never re-adds them
+    assert upgrades.read_text().split() == ["eightfold:acme:1"]
+
+
+def test_a_degraded_row_with_still_no_description_is_left_alone(tmp_path, monkeypatch):
+    """Re-embedding it would produce the same title-only vector and spend the budget twice."""
+    monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
+    tech = tmp_path / "tech"
+    tech.mkdir()
+    (tech / "eightfold.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "eightfold:acme:1",
+                "ats": "eightfold",
+                "title": "Backend Engineer",
+                "description": None,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    meta = tmp_path / "meta.jsonl"
+    meta.write_text(
+        _meta_row("eightfold:acme:1", "eightfold", has_description=False),
+        encoding="utf-8",
+    )
+    out = tmp_path / "assignments"
+    upgrades = tmp_path / "pending_upgrades.txt"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "embed_plan",
+            "--source",
+            str(tech),
+            "--prior-meta",
+            str(meta),
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--out-dir",
+            str(out),
+            "--upgrades-out",
+            str(upgrades),
+        ],
+    )
+    assert pe.main() == 0
+
+    assert json.loads((out / "plan.json").read_text())["count"] == 0
+    assert (
+        upgrades.read_text() == ""
+    )  # always rewritten, so a prior run's list can't linger

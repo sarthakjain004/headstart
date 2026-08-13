@@ -25,12 +25,11 @@ Run: python -m headstart.ingest.embed_merge [--store DIR] [--fragments DIR]
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import EMBEDDED_IDS_PATH, REPO_ROOT
+from headstart.ingest import REPO_ROOT
 from headstart.search import DOC_PREFIX, MODEL
 
 _log = log.get(__name__, __spec__)
@@ -99,28 +98,6 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     return n
 
 
-def write_embedded_ids(meta_path: Path, out_path: Path) -> int:
-    """Publish the store's Job ids as one gzipped id per line, and return how many.
-
-    The store's own ``meta.jsonl`` is ~226 MB, far too heavy for a stage that only needs to ask
-    "have we embedded this Job?". This is the same question at ~3% of the size, which is what lets
-    the scrape stage carry the answer to the Boards it scrapes (ADR-0048).
-    """
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    with (
-        meta_path.open(encoding="utf-8") as src,
-        gzip.open(out_path, "wt", encoding="utf-8") as dst,
-    ):
-        for line in src:
-            line = line.strip()
-            if not line:
-                continue
-            dst.write(json.loads(line)["id"] + "\n")
-            written += 1
-    return written
-
-
 def main() -> int:
     log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -133,11 +110,6 @@ def main() -> int:
         "--fragments",
         default=str(_FRAGMENTS),
         help="dir of shard fragment dirs (default: data/embeddings/fragments)",
-    )
-    ap.add_argument(
-        "--ids-out",
-        default=str(EMBEDDED_IDS_PATH),
-        help="where to publish the embedded-id list the scrape stage reads (ADR-0048)",
     )
     args = ap.parse_args()
 
@@ -216,8 +188,6 @@ def main() -> int:
     _log.info(
         f"merged {appended} new vectors — store now holds {total} (dim {dim}) -> {store}"
     )
-    written = write_embedded_ids(meta_path, Path(args.ids_out))
-    _log.info(f"published {written} embedded Job ids -> {args.ids_out}")
     return 0
 
 

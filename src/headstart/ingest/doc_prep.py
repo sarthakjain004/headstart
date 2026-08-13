@@ -94,6 +94,10 @@ def to_meta(job: dict) -> dict:
     display-only until normalized (ADR-0019).
     """
     meta = {field: job.get(field) for field in _META_FIELDS}
+    # Whether the Doc we are about to embed actually carried a description (ADR-0050). Recorded
+    # because a vector built from a bare title is indistinguishable from a good one afterwards,
+    # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.
+    meta["has_description"] = bool((job.get("description") or "").strip())
     span = extract(job.get("experience"), job.get("description"), job.get("title"))
     meta["min_years"] = span.min_years if span else None
     meta["max_years"] = span.max_years if span else None

@@ -101,6 +101,7 @@ class WorkdayScraper(BaseScraper):
     """Workday scraper — `slug` must be the full careers URL."""
 
     ats = "workday"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         super().__init__(slug, company)

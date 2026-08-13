@@ -7,6 +7,8 @@ The run is two symmetric halves — **plan → run → gather** — so each modu
     scrape_run      stage 2  (matrix) scrape one shard's boards into a fragment
     scrape_join     stage 3  union the scrape fragments into one snapshot
     filter_tech     stage 3  keep the tech subset (ADR-0017)
+    update_descriptions
+                    stage 3  persist fetched descriptions, repair the ones the scrape lost
     update_ledgers  stage 3  blend this run's measurements into the priority/cost ledgers
     embed_plan      stage 3  diff, tokenize, bin-pack the new Docs into embed shards
     embed_run       stage 4  (matrix) embed one shard's Docs into a fragment
@@ -44,9 +46,11 @@ from pathlib import Path
 # stage previously carried its own `Path(__file__).resolve().parents[2]`.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The detail skip-list (ADR-0048): Job ids already embedded, so the scrape stage can skip their
-# per-job detail fetch. Lives here rather than in either stage because four modules across three
-# packages move this one file — `embed_merge` writes it, `scrape_plan` ships it to the shards,
-# `scrape_run` reads it, `scripts/embed/evict_store.py` rewrites it after an eviction — and a
-# stage-owned constant would make the scrape stage import from the embed stage to find it.
-EMBEDDED_IDS_PATH = REPO_ROOT / "data" / "state" / "embedded_ids.txt.gz"
+# The detail skip-list (ADR-0048, re-keyed by ADR-0050): Job ids whose detail the description
+# store has settled — we hold the text, or we know the posting has none — so the scrape stage can
+# skip their per-job detail fetch. It was keyed on *being embedded*, which is a different set: a
+# Job embedded without a description was skipped forever and could never be repaired.
+# Lives here rather than in either stage because three modules across two packages move this one
+# file — `update_descriptions` writes it, `scrape_plan` ships it to the shards, `scrape_run` reads
+# it — and a stage-owned constant would put it inside one of them.
+HELD_DETAILS_PATH = REPO_ROOT / "data" / "state" / "held_details.txt.gz"

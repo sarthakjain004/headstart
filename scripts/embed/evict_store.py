@@ -11,6 +11,7 @@ row N), so eviction rewrites both in lockstep to temp files and swaps them in; t
 manifest count is updated last, mirroring the store's own commit-marker convention.
 
 Run:  python scripts/embed/evict_store.py --ats lever,recruitee
+      python scripts/embed/evict_store.py --ids data/embeddings/assignments/upgrade_ids.txt
 """
 
 from __future__ import annotations
@@ -22,20 +23,53 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.ingest import EMBEDDED_IDS_PATH
-from headstart.ingest.embed_merge import write_embedded_ids
 from headstart.search import PROD_TABLE
 
 _ROOT = Path(__file__).resolve().parents[2]
 _STORE = _ROOT / "data" / "embeddings" / "jobs"
 _DB = _ROOT / "data" / "lancedb"
+_ID_CHUNK = 512  # same ceiling index_plan.apply_sync uses, so one predicate can't grow unbounded
+
+
+def _quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _predicates(atses: set[str], ids: set[str]) -> list[str]:
+    """Delete predicates for the table — one per ATS set, and chunked batches for an id list."""
+    if atses:
+        return [f"ats IN ({', '.join(_quote(a) for a in sorted(atses))})"]
+    ordered = sorted(ids)
+    return [
+        f"id IN ({', '.join(_quote(i) for i in ordered[start : start + _ID_CHUNK])})"
+        for start in range(0, len(ordered), _ID_CHUNK)
+    ]
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ats", required=True, help="comma-separated ATSes to evict")
+    group = ap.add_mutually_exclusive_group(required=True)
+    group.add_argument("--ats", help="comma-separated ATSes to evict")
+    group.add_argument(
+        "--ids",
+        help="file of Job ids to evict, one per line — the targeted form the embed planner's "
+        "upgrade list feeds (ADR-0050)",
+    )
     args = ap.parse_args()
-    evict = {a.strip() for a in args.ats.split(",") if a.strip()}
+    evict = {a.strip() for a in args.ats.split(",") if a.strip()} if args.ats else set()
+    evict_ids = (
+        {
+            line.strip()
+            for line in Path(args.ids).read_text().splitlines()
+            if line.strip()
+        }
+        if args.ids
+        else set()
+    )
+    print(
+        f"evicting {'ATSes ' + ', '.join(sorted(evict)) if evict else f'{len(evict_ids)} ids'}",
+        flush=True,
+    )
 
     manifest = json.loads((_STORE / "manifest.json").read_text())
     dim = manifest["dim"]
@@ -46,7 +80,8 @@ def main() -> None:
     dropped = 0
     with (_STORE / "meta.jsonl").open(encoding="utf-8") as f:
         for row, line in enumerate(f):
-            if json.loads(line)["ats"] in evict:
+            record = json.loads(line)
+            if record["ats"] in evict or record["id"] in evict_ids:
                 dropped += 1
             else:
                 kept_meta.append(line)
@@ -63,19 +98,14 @@ def main() -> None:
     (_STORE / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"store: {len(kept_meta)} rows remain", flush=True)
 
-    # The scrape stage skips a Job's detail fetch when its id is on this list (ADR-0048), so an
-    # eviction that left the list stale would make the next scrape skip exactly the descriptions
-    # it just threw away — and they would re-embed from the title alone, permanently.
-    written = write_embedded_ids(_STORE / "meta.jsonl", EMBEDDED_IDS_PATH)
-    print(
-        f"detail skip-list: rewritten to {written} ids -> {EMBEDDED_IDS_PATH}",
-        flush=True,
-    )
-
+    # No skip-list rewrite here any more. The list is keyed on the description store, not on the
+    # embedding store (ADR-0050), so dropping a vector no longer discards the text behind it —
+    # the re-embed reads the stored description and needs no re-fetch at all. That removes
+    # ADR-0048's trap, where an eviction made the next scrape skip exactly what it just threw away.
     table = lancedb.connect(_DB).open_table(PROD_TABLE)
     before = table.count_rows()
-    quoted = ", ".join(f"'{a}'" for a in sorted(evict))
-    table.delete(f"ats IN ({quoted})")
+    for predicate in _predicates(evict, evict_ids):
+        table.delete(predicate)
     print(
         f"table '{PROD_TABLE}': {before} -> {table.count_rows()} rows",
         flush=True,

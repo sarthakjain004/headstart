@@ -222,7 +222,14 @@ jobs:
       - name: Download meta + priority state (light — the embed diff + ledger blend)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python -m headstart.ingest.state_fetch 'data/embeddings/jobs/meta.jsonl' 'data/state/*'
+        run: |
+          python -m headstart.ingest.state_fetch 'data/embeddings/jobs/meta.jsonl' 'data/state/*'
+          # The description store (ADR-0050). Fetched only here: this is the one job that both
+          # writes it (update_descriptions) and reads it (embed_plan, via the repaired corpus).
+          # Deliberately NOT under data/state/, whose glob scrape-plan also pulls — that would
+          # ship ~174 MB toward a planner that has no use for it.
+          python -m headstart.ingest.state_fetch 'data/descriptions/*' || \
+            echo "::warning::no description store yet — first run after ADR-0050"
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
@@ -237,6 +244,11 @@ jobs:
         run: python -m headstart.ingest.scrape_join
       - name: Tech filter
         run: python -m headstart.ingest.filter_tech
+      - name: Reconcile descriptions with the store (ADR-0050)
+        # Both directions: persist what this run fetched, and repair corpus rows the scrape left
+        # empty. Must run BEFORE embed_plan — it is what stops a Job whose detail fetch failed
+        # from being embedded title-only, which is permanent once it lands.
+        run: python -m headstart.ingest.update_descriptions
       - name: Update board priority ledger
         run: python -m headstart.ingest.update_ledgers priority
       - name: Update board cost ledger (measured scrape seconds — ADR-0027)
@@ -269,6 +281,7 @@ jobs:
           path: |
             data/jobs
             data/state
+            data/descriptions
           retention-days: 1
 
   # ── Stage 4: the embed fan-out (unchanged from Phase 1). Each shard embeds its assigned Docs into
@@ -374,6 +387,18 @@ jobs:
       - name: Merge shard fragments into the store
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.embed_merge
+      - name: Evict rows being re-embedded with a description (ADR-0050)
+        # `plan_sync` computes add = fresh - index, so an id still in the table is never re-added
+        # and its improved vector would sit unused in the store. Dropping the stale row first is
+        # what makes the upgrade land. No-op when the planner found nothing to upgrade.
+        if: needs.scrape-plan.outputs.run == 'true'
+        run: |
+          ids=data/state/pending_upgrades.txt
+          if [ -s "$ids" ]; then
+            python scripts/embed/evict_store.py --ids "$ids"
+          else
+            echo "no pending upgrades"
+          fi
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index sync
@@ -419,6 +444,11 @@ jobs:
             --repo-type dataset --commit-message "nightly: lancedb index"
           up "$HF_DATASET" data/state data/state \
             --repo-type dataset --commit-message "nightly: board priority"
+          # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
+          # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
+          # `cleanup-index` folds the fragments into the bases with --delete.
+          up "$HF_DATASET" data/descriptions data/descriptions \
+            --repo-type dataset --commit-message "nightly: description store"
       - name: Restart the Space to pick up the new index
         if: needs.scrape-plan.outputs.run == 'true'
         env:

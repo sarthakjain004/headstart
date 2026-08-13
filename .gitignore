@@ -57,6 +57,8 @@ data/embeddings/
 data/lancedb/
 # CI round-trip state (board-priority ledger, ADR-0022) — lives in the HF dataset, not git
 data/state/
+# persisted Job descriptions (ADR-0050) — ~174 MB gzipped, lives in the HF dataset, not git
+data/descriptions/
 # enrichment outputs (extracted experience, etc.) — regenerable from scripts/enrich/
 data/enrich/
 # harvested external ATS company lists — large and regenerable from the merge scripts
@@ -75,6 +77,9 @@ subscriptions/
 # llm-router ops runbook — names private infrastructure (box address, key paths); this repo is
 # public, so it must never be committed (ADR-0032). Lives locally only.
 docs/LLM_API.md
+
+# Discovery-technique ranking — local working notes on where to spend discovery effort next.
+docs/discovery/technique-ranking.md
 
 # deploy-space.yml sync artifacts — CI copies these beside the Space app; a stale local
 # copy would shadow the src/ originals via app.py's synced-first path check
