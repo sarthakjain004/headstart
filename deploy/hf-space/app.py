@@ -168,10 +168,36 @@ app.config.update(
 # from the caller's own cookie, so it can only tell you what you sent.
 _PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
 
+# The Digest generator is the one caller with no Google identity to offer: it is a
+# scheduled run, not a person, and it must reach /search for every Subscription
+# (ADR-0035; ADR-0042's amendment records why the wall admits it). So it carries a shared
+# secret, compared in constant time exactly as the unsubscribe token is. Scoped to /search
+# alone — that is the whole of what the alerts run needs, so a leaked token buys a search
+# rather than a session. Unset admits nobody, as in alerts.access.
+_ALERTS_TOKEN = (
+    (os.environ.get("ALERTS_TOKEN") or "").strip().encode("latin-1", "replace")
+)
+_SERVICE_PATHS = {"/search"}
+
+
+def _service_caller() -> bool:
+    if not _ALERTS_TOKEN or request.path not in _SERVICE_PATHS:
+        return False
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    # Bytes, not str: headers decode as latin-1, and compare_digest raises TypeError on a
+    # non-ASCII str — which would turn a rejected credential into a 500 from in here. Both
+    # sides encode latin-1 so a token set identically really does compare equal; encoding
+    # the config as utf-8 instead would make any non-ASCII token 401 forever.
+    return scheme == "Bearer" and hmac.compare_digest(
+        token.strip().encode("latin-1", "replace"), _ALERTS_TOKEN
+    )
+
 
 @app.before_request
 def _require_sign_in():
     if not _AUTH_ON or request.path in _PUBLIC_PATHS:
+        return None
+    if _service_caller():
         return None
     if not session.get("email"):
         return jsonify({"error": "sign in first"}), 401

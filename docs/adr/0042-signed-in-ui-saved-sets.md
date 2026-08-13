@@ -91,3 +91,36 @@ Profile one PR each.
   outgrown: people track more than one kind of role at once.
 - **Per-set independent email schedules** — each needs its own Watermark; the most
   duplicate-prone corner of the alerts code, deferred until wanted.
+
+## Amendment (2026-08-13): the wall admits one machine, on one path
+
+**Status:** accepted. "The whole app sits behind Google sign-in" (above) is now false in one
+narrow, deliberate place, and this records why.
+
+The decision above put every path outside `_PUBLIC_PATHS` behind a session. `_PUBLIC_PATHS`
+was reasoned out from the human's side — the door, and the unsubscribe link a mailed Digest
+carries, because a wall must never break a link already delivered. What nobody named is that
+the run which *builds* those Digests is also a caller: ADR-0035 has it ask the deployed Space
+for each Subscription's new Jobs, precisely so a Digest's scores are the numbers the browser
+shows. That run has no Google identity to offer and never will. It 401'd on every Subscription
+for eight consecutive runs before anyone noticed. The wall's own test is why: it asserted
+`client.get("/search?q=x").status_code == 401` as *correct* behaviour, so the bug was locked in
+by a passing test. The alerts side had no test either way — it never modelled the wall at all.
+
+**So the wall accepts a second kind of credential: a shared secret, on `/search` alone.** It
+is the same shape `/unsubscribe` already uses — a token compared in constant time, no session
+involved — and it is bounded on three sides. Scoped: `/trends`, `/subscribe` and everything
+else still refuse it, so a leaked token buys a search rather than an account. Deny-by-default:
+unset admits nobody, as in `alerts.access`, rather than degrading to "any token works".
+Compared as bytes, because headers decode as latin-1 and `hmac.compare_digest` raises on a
+non-ASCII `str` — which would turn a rejected credential into an unauthenticated 500.
+
+**Options rejected.** *Make `/search` public again* — one line, no new secret, and defensible
+given sign-up is open to any Google address; rejected because it silently un-ships the part of
+this ADR with the widest blast radius, and the anonymous JSON API is the thing the wall most
+changed. *Rank locally in the alerts run instead of calling the Space* — reverses ADR-0035's
+central choice and would put ranking rules in two places.
+
+**The cost, stated plainly:** `ALERTS_TOKEN` must be set identically in the Space's secrets
+and in Actions', neither of which CI can reach, so merging this changes nothing on its own.
+`docs/email-alerts.md` carries the setup and a curl that verifies it.
