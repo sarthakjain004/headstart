@@ -55,13 +55,26 @@ dark-until-configured shape as the Telegram bot and the résumé feature.
 
    Adding a Space secret auto-restarts the Space, which is what makes the panel appear.
 
-   `ALERTS_TOKEN` is how the alerts run gets past the sign-in wall. The run has no Google
-   identity to offer, but it must call `/search` to build every Digest, so it presents this
-   shared secret instead — the same trick the unsubscribe link uses. It must be **identical**
-   on both sides; the Space compares it in constant time and admits nobody when it is unset,
-   so a mismatch shows up as `HTTP Error 401: UNAUTHORIZED` on every Subscription. Generate
-   one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. It buys `/search`
-   and nothing else.
+   `ALERTS_TOKEN` is how the alerts run gets past the sign-in wall (ADR-0042's amendment).
+   The run has no Google identity to offer, but it must call `/search` to build every Digest,
+   so it presents this shared secret instead — the same trick the unsubscribe link uses. It
+   must be **identical** on both sides; the Space compares it in constant time and admits
+   nobody when it is unset, so a mismatch shows up as `HTTP Error 401: UNAUTHORIZED` on every
+   Subscription. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   It buys `/search` and nothing else.
+
+   Verify it without waiting for the next pipeline run — 200 means set correctly on both
+   sides, 401 means it is not:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer $ALERTS_TOKEN" \
+     "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=1"
+   ```
+
+   **Rotate Space-first.** The Space reads `ALERTS_TOKEN` once at import, so setting it there
+   restarts the Space onto the new value; update Actions second. Doing it the other way round
+   leaves every Digest 401ing until the Space restarts.
 
 ## Adding and removing people
 

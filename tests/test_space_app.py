@@ -296,6 +296,10 @@ def test_a_near_miss_token_is_not_a_match(service_app):
         "Bearer service-tokenX",
         "service-token",
         "Bearer",
+        # Headers decode as latin-1, and hmac.compare_digest raises TypeError on a
+        # non-ASCII str — which would turn a rejected credential into an unauthenticated
+        # 500 from inside before_request. Compare bytes, and this is a plain 401.
+        "Bearer café",
     ):
         r = client.get("/search?q=", headers={"Authorization": bad})
         assert r.status_code == 401, f"{bad!r} got in"

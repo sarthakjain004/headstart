@@ -31,8 +31,11 @@ from .store import Subscription
 K = 100  # the Space's page cap (JobSearch.max_k)
 _TIMEOUT = 120  # a cold Space reloads the index and the encoder before it answers
 _WAITS = (15, 30, 60)  # three retries, sized to a Space cold start
-# The only two 4xx a later attempt can still turn into rows; the rest are permanent.
-_TRANSIENT_HTTP = {408, 429}
+# The Space's own permanent answers: 401 from the sign-in wall, 400 from an invalid
+# filter. Waiting turns neither into rows. Deliberately an allowlist rather than "all 4xx"
+# — what HF's edge returns while the Space is still waking is not something this side gets
+# to assume, and anything unlisted keeps the full cold-start budget.
+_PERMANENT_HTTP = {400, 401}
 
 
 class SearchUnavailable(Exception):
@@ -42,25 +45,23 @@ class SearchUnavailable(Exception):
 def auth_headers() -> dict[str, str]:
     """The service credential the Space's wall accepts — pure, so it is testable.
 
-    This run has no Google identity, so it presents the shared secret instead (ADR-0042).
-    Unset sends no header at all rather than an empty bearer: absent reads as anonymous,
-    where ``Bearer `` reads as a malformed credential.
+    This run has no Google identity, so it presents the shared secret instead — see the
+    amendment to ADR-0042, which is where the wall's exception for it is recorded. Unset
+    sends no header at all rather than an empty bearer: absent reads as anonymous, where
+    ``Bearer `` reads as a malformed credential.
     """
     token = os.environ.get("ALERTS_TOKEN", "").strip()
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
-def _permanent(exc: Exception) -> bool:
-    """A failure that waiting cannot fix — a rejected credential, an invalid filter.
+def _is_permanent_failure(exc: Exception) -> bool:
+    """Whether waiting cannot fix this — a rejected credential, an invalid filter.
 
-    The retry ladder is sized to a Space cold start, so spending it on these only delays
-    the same failure: one wrong credential cost 105s per Subscription for eight runs.
+    The retry ladder is sized to a Space cold start (ADR-0033), so spending it on these
+    only delays the same failure: one wrong credential cost 105s per Subscription, on
+    every Subscription, for eight consecutive runs.
     """
-    return (
-        isinstance(exc, urllib.error.HTTPError)
-        and 400 <= exc.code < 500
-        and exc.code not in _TRANSIENT_HTTP
-    )
+    return isinstance(exc, urllib.error.HTTPError) and exc.code in _PERMANENT_HTTP
 
 
 def _fetch(url: str) -> list[dict[str, Any]]:
@@ -94,7 +95,7 @@ def newly_seen(
         try:
             rows = call(url)
         except Exception as exc:  # noqa: BLE001 — unreachable, timeout and 5xx retry alike
-            if wait is None or _permanent(exc):
+            if wait is None or _is_permanent_failure(exc):
                 raise SearchUnavailable(f"{type(exc).__name__}: {exc}") from exc
             print(
                 f"[alerts] search attempt {attempt} failed ({type(exc).__name__}); "

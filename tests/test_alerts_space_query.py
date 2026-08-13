@@ -86,9 +86,11 @@ def test_a_permanent_auth_failure_is_not_retried():
 
 
 def test_a_cold_or_throttled_space_still_gets_the_full_budget():
-    # The converse: 429 and 408 are transient by definition, and 5xx is what a cold Space
-    # returns while it reloads. Narrowing the no-retry rule to permanent 4xx keeps these.
-    for code in (408, 429, 500, 503):
+    # The converse, and why the no-retry rule is an allowlist of two rather than "all
+    # 4xx": 408 and 429 are transient by definition, 5xx is what a waking Space returns,
+    # and 403/404 are what an edge in front of a sleeping Space may return — which this
+    # side does not get to assume. Anything unlisted must keep the cold-start budget.
+    for code in (403, 404, 408, 429, 500, 503):
         waited = []
 
         def flaky(url, code=code):
