@@ -56,6 +56,7 @@ import argparse
 import json
 import shutil
 from collections import Counter
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -66,6 +67,7 @@ import pyarrow as pa
 
 from headstart import log
 from headstart.corpus import iter_jobs
+from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
@@ -87,6 +89,8 @@ _SCRAPED = (
 )  # full (pre-tech-filter) scrape — the true scraped-Board set
 _DB = REPO_ROOT / "data" / "lancedb"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
+# Written by embed_plan, consumed here and by embed_merge (ADR-0050).
+_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _MIN_KEEP_BOARDS = (
@@ -197,6 +201,38 @@ def _log_ids(label: str, ids: list[str]) -> None:
         )
 
 
+def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
+    """Delete the rows for ids being re-embedded, returning the ``first_seen`` each one carried.
+
+    ``plan_sync`` computes ``add = fresh - index``, so an upgraded Job is only re-added once its
+    old row is gone — but it is not a new listing, so its stamp has to survive the round trip
+    (ADR-0050). Ids absent from the table (a first run, or a Job the prune already took) simply
+    return no stamp and are stamped with the run's time like any other add.
+    """
+    if not path.exists():
+        return {}
+    ids = {line.strip() for line in path.read_text().splitlines() if line.strip()}
+    if not ids:
+        return {}
+    # Safe to name the column: sync adds it to a pre-ADR-0031 table before reaching here.
+    rows = (
+        table.search()
+        .where(_in_predicate("id", ids))
+        .select(["id", _FIRST_SEEN_FIELD.name])
+        .to_list()
+    )
+    taken = {r["id"]: r.get(_FIRST_SEEN_FIELD.name) for r in rows}
+    apply_sync(table, [], list(taken))
+    kept = sum(1 for v in taken.values() if v)
+    _log.info(f"upgrades: replacing {len(taken)} rows, {kept} keeping first_seen")
+    return taken
+
+
+def _in_predicate(column: str, values: Iterable[str]) -> str:
+    quoted = ", ".join("'" + v.replace("'", "''") + "'" for v in sorted(values))
+    return f"{column} IN ({quoted})"
+
+
 def sync(args: argparse.Namespace) -> int:
     metas, vectors = _load_store()
     row_of = {meta["id"]: i for i, meta in enumerate(metas)}
@@ -237,6 +273,16 @@ def sync(args: argparse.Namespace) -> int:
         _log.info(f"adding '{_FIRST_SEEN_FIELD.name}' to the existing table")
         table.add_columns(_FIRST_SEEN_FIELD)
 
+    # Replace the rows of Jobs being re-embedded with a description they previously lacked
+    # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id
+    # still listed in `index_ids` is excluded from the adds; deleting its row afterwards would take
+    # the Job out of the table with nothing to put back. Their `first_seen` returns with them: the
+    # Job never left the corpus, only its vector improved, and that column is served and filterable
+    # (`seen_within`, and the alerts watermark), so re-stamping would surface every upgrade as a
+    # new listing and re-notify subscribers — tens of thousands of them on the first run.
+    taken = _take_upgrades(table, Path(args.upgrades))
+    index_ids = [job_id for job_id in index_ids if job_id not in taken]
+
     plan = plan_sync(index_ids, fresh, boards, live)
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
     withheld = sum(count for _, count in plan.held)
@@ -253,6 +299,7 @@ def sync(args: argparse.Namespace) -> int:
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
+
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
     # `sync` is the only place rows are ever added, so each row is stamped exactly once. A Job that
     # is evicted and later reappears is stamped afresh — it is newly visible again (ADR-0031).
@@ -264,8 +311,12 @@ def sync(args: argparse.Namespace) -> int:
         rows = []
         for job_id in chunk:
             row = dict(metas[row_of[job_id]])
+            for field in PLANNER_ONLY_FIELDS:
+                row.pop(
+                    field, None
+                )  # store-only meta; the table's schema has no column for it
             row["vector"] = vectors[row_of[job_id]].tolist()
-            row[_FIRST_SEEN_FIELD.name] = stamp
+            row[_FIRST_SEEN_FIELD.name] = taken.get(job_id) or stamp
             rows.append(row)
         apply_sync(table, rows, ())
         _log.info(f"added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}")
@@ -395,6 +446,12 @@ def main() -> int:
         default=str(_SCRAPED),
         help="full-scrape {ats}.jsonl dir defining the scraped-Board eviction scope "
         "(default: data/jobs); falls back to --source's Boards when it has no .jsonl files",
+    )
+    p_sync.add_argument(
+        "--upgrades",
+        default=str(_UPGRADES),
+        help="file of Job ids re-embedded with a newly-available description; their rows are "
+        "replaced and their first_seen preserved (ADR-0050)",
     )
     p_sync.add_argument(
         "--ledger",

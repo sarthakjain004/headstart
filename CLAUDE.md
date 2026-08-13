@@ -190,7 +190,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 ## Repo Conventions
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
   One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
-  `scrape`, `scrape_join`, `filter_tech`, `update_ledgers` (`priority`/`cost` subcommands),
+  `scrape`, `scrape_join`, `filter_tech`, `update_descriptions` (the ADR-0050 description store,
+  after the tech filter and before `embed_plan`), `update_ledgers` (`priority`/`cost` subcommands),
   `embed_plan`, `embed_run`, `embed_merge`, `index` (`sync`/`prune`/`compact` subcommands),
   `role_trends` (the ADR-0040 trends ledger, after prune).
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`

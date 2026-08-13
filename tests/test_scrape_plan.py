@@ -96,11 +96,11 @@ def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch):
 
 
 def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
-    """The list rides inside the assignments artifact every shard already downloads (ADR-0048),
+    """The list rides inside the assignments artifact every shard already downloads (ADR-0048/0050),
     under the name the shard looks for — not the name it happened to have on disk."""
     import gzip
 
-    from headstart.ingest import EMBEDDED_IDS_PATH
+    from headstart.ingest import HELD_DETAILS_PATH
 
     src = tmp_path / "named-something-else.txt.gz"
     with gzip.open(src, "wt", encoding="utf-8") as fh:
@@ -123,7 +123,7 @@ def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
             str(tmp_path / "nocost.csv"),
             "--out-dir",
             str(out),
-            "--embedded-ids",
+            "--held-details",
             str(src),
             "--max-boards",
             "0",
@@ -135,7 +135,7 @@ def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
     )
     assert ps.main() == 0
 
-    shipped = out / EMBEDDED_IDS_PATH.name
+    shipped = out / HELD_DETAILS_PATH.name
     assert shipped.exists(), "the shard looks for this exact name"
     with gzip.open(shipped, "rt", encoding="utf-8") as fh:
         assert fh.read().strip() == "eightfold:acme:1"

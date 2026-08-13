@@ -121,6 +121,10 @@ assumed.
 re-embed once descriptions are reliably fetched, which is deliberately not in this change: doing it
 before the gap closes would just re-embed them title-only again.
 
+> Delivered by [ADR-0050](0050-persist-descriptions-across-runs.md): descriptions are now
+> persisted across runs, and a vector recorded as built without one is re-embedded when its text
+> arrives — so the repair is the pipeline's steady state rather than a one-off.
+
 **The next change is required, not optional: cache descriptions across runs.** A job's description
 does not change, so most of the ~42,600 detail fetches per run are re-fetches of text already
 scraped once. It is the only lever that gets *under* the origin budget rather than spreading the

@@ -57,6 +57,8 @@ data/embeddings/
 data/lancedb/
 # CI round-trip state (board-priority ledger, ADR-0022) — lives in the HF dataset, not git
 data/state/
+# persisted Job descriptions (ADR-0050) — ~174 MB gzipped, lives in the HF dataset, not git
+data/descriptions/
 # enrichment outputs (extracted experience, etc.) — regenerable from scripts/enrich/
 data/enrich/
 # harvested external ATS company lists — large and regenerable from the merge scripts

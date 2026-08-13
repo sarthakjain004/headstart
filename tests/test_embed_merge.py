@@ -46,17 +46,7 @@ def _store_ids(d: Path) -> list[str]:
 
 def _run(store: Path, fragments: Path) -> None:
     old = sys.argv
-    # --ids-out is pinned into the tmp store: it defaults to the repo's real
-    # data/state/embedded_ids.txt.gz, and a test run must never overwrite the developer's.
-    sys.argv = [
-        "embed_merge",
-        "--store",
-        str(store),
-        "--fragments",
-        str(fragments),
-        "--ids-out",
-        str(store / "embedded_ids.txt.gz"),
-    ]
+    sys.argv = ["embed_merge", "--store", str(store), "--fragments", str(fragments)]
     try:
         assert ms.main() == 0
     finally:
@@ -116,30 +106,3 @@ def test_merge_no_fragments_is_a_noop_reconcile(tmp_path):
     _run(store, frags)
 
     _assert_consistent(store, 2)
-
-
-def test_write_embedded_ids_publishes_one_id_per_line(tmp_path):
-    """The scrape stage asks only "have we embedded this Job?", so it gets ids, not the 226 MB
-    of metadata that answers the same question (ADR-0048)."""
-    import gzip
-    import json as _json
-
-    from headstart.ingest.embed_merge import write_embedded_ids
-
-    meta = tmp_path / "meta.jsonl"
-    meta.write_text(
-        "".join(
-            _json.dumps({"id": f"eightfold:acme:{i}", "title": "x" * 500}) + "\n"
-            for i in range(3)
-        ),
-        encoding="utf-8",
-    )
-    out = tmp_path / "state" / "embedded_ids.txt.gz"
-    assert write_embedded_ids(meta, out) == 3
-    with gzip.open(out, "rt", encoding="utf-8") as fh:
-        assert [line.strip() for line in fh] == [
-            "eightfold:acme:0",
-            "eightfold:acme:1",
-            "eightfold:acme:2",
-        ]
-    assert out.stat().st_size < meta.stat().st_size  # the whole point: far smaller

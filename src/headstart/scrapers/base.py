@@ -35,9 +35,17 @@ class BaseScraper(ABC):
 
     ats: str  # set by each subclass
 
-    #: Job ids whose per-job detail fetch can be skipped because we already hold it (ADR-0048).
-    #: ``None`` means fetch every detail. The pipeline's scrape stage sets this via
-    #: :func:`~headstart.scrapers.registry.get_scraper`; every other caller leaves it alone.
+    #: Whether this scraper makes a per-Job **detail pass** — a second fetch after the listing,
+    #: usually for ``description``. False means every field a Job carries came from the listing
+    #: response, so its description can never go missing; True means it can (ADR-0050). Read by
+    #: the embed planner to decide whether a pre-ADR-0050 vector might have been built without
+    #: one. Set it when you add a detail pass, or that ATS's degraded vectors go unrepaired.
+    has_detail_pass: bool = False
+
+    #: Job ids whose per-job detail fetch can be skipped because we already hold it (ADR-0048;
+    #: re-keyed onto the description store by ADR-0050). ``None`` means fetch every detail. The
+    #: pipeline's scrape stage sets this via :func:`~headstart.scrapers.registry.get_scraper`;
+    #: every other caller leaves it alone.
     have_details: Container[str] | None = None
 
     def __init__(self, slug: str, company: str | None = None) -> None:

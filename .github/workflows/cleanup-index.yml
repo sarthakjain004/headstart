@@ -10,12 +10,18 @@ name: cleanup-index
 # Lance simply appends: `sync`/`prune` write small new fragments and leave the existing file alone,
 # so a run uploads ~10% of the table instead of all of it.
 #
-# Every 2 days, not weekly: Lance's own guidance is to optimize after ~20 data-modification
-# operations, and the pipeline does several per run. Fragments accumulating between compactions is
-# the deliberate trade — more files to open per query, reclaimed here.
+# Daily, not weekly: Lance's own guidance is to optimize after ~20 data-modification operations,
+# and the pipeline does several per run. Fragments accumulating between compactions is the
+# deliberate trade — more files to open per query, reclaimed here. It also compacts the ADR-0050
+# description store, whose per-run fragments accumulate on the same principle.
+#
+# Was every 2 days. Daily doubles the ~755 MB rebuild's blob churn, which the Sunday history squash
+# still bounds to a week (~5.3 GB against a 100 GB quota). The real cost is contention: this job
+# shares the pipeline's concurrency group and can run 90 minutes, so a pipeline run queues behind
+# it once more per two days.
 on:
   schedule:
-    - cron: "0 6 */2 * *" # 06:00 UTC, clear of the pipeline's :30 slots and the Sunday 04:00 squash
+    - cron: "0 6 * * *" # 06:00 UTC, clear of the pipeline's :30 slots and the Sunday 04:00 squash
   workflow_dispatch:
 
 permissions:
@@ -56,6 +62,18 @@ jobs:
         run: python -m headstart.ingest.index prune --apply
       - name: Rebuild fresh (reclaim orphan fragments)
         run: python -m headstart.ingest.index compact
+      - name: Compact the description store (ADR-0050)
+        # Folds each ATS's per-run fragments into its base file. Never fatal: a failure here only
+        # leaves more fragments to read next run, and must not sink the index cleanup.
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m headstart.ingest.state_fetch 'data/descriptions/*' || exit 0
+          python -m headstart.ingest.update_descriptions --compact
+          hf upload "$HF_DATASET" data/descriptions data/descriptions \
+            --repo-type dataset --delete "*" \
+            --commit-message "cleanup: compact the description store (ADR-0050)"
       - name: Upload the cleaned index
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

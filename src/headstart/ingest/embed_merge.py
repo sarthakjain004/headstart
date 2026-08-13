@@ -25,18 +25,19 @@ Run: python -m headstart.ingest.embed_merge [--store DIR] [--fragments DIR]
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import EMBEDDED_IDS_PATH, REPO_ROOT
+from headstart.ingest import REPO_ROOT
 from headstart.search import DOC_PREFIX, MODEL
 
 _log = log.get(__name__, __spec__)
 
 _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _FRAGMENTS = REPO_ROOT / "data" / "embeddings" / "fragments"
+# Written by embed_plan; consumed here and by `index sync` (ADR-0050).
+_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 _FLOAT_BYTES = 4  # float32
 
 
@@ -99,26 +100,43 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     return n
 
 
-def write_embedded_ids(meta_path: Path, out_path: Path) -> int:
-    """Publish the store's Job ids as one gzipped id per line, and return how many.
+def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
+    """Drop ``ids`` from the store, rewriting meta and vectors in lockstep. Returns rows dropped.
 
-    The store's own ``meta.jsonl`` is ~226 MB, far too heavy for a stage that only needs to ask
-    "have we embedded this Job?". This is the same question at ~3% of the size, which is what lets
-    the scrape stage carry the answer to the Boards it scrapes (ADR-0048).
+    Runs before the merge so an upgraded Job (ADR-0050) ends the run with exactly one row. Leaving
+    the stale one in place would be worse than untidy: ``index._load_store`` keys ``row_of`` last
+    -wins and would pick the good vector, but ``embed_plan._prior_rows`` scans every line, so the
+    old ``has_description: false`` row would keep marking the Job degraded and it would re-embed on
+    every run forever.
     """
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    with (
-        meta_path.open(encoding="utf-8") as src,
-        gzip.open(out_path, "wt", encoding="utf-8") as dst,
-    ):
-        for line in src:
-            line = line.strip()
-            if not line:
+    if not ids or not meta_path.exists():
+        return 0
+    # Imported here, not at module scope: every other path in this module treats vectors as raw
+    # bytes, which is what keeps it importable on CI's base-deps-only install (no numpy). A
+    # top-level import broke collection of this module's own tests.
+    import numpy as np
+
+    vectors = np.fromfile(vec_path, dtype="float32").reshape(-1, dim)
+    kept_meta: list[str] = []
+    kept_rows: list[int] = []
+    with meta_path.open(encoding="utf-8") as fh:
+        for row, line in enumerate(fh):
+            if json.loads(line)["id"] in ids:
                 continue
-            dst.write(json.loads(line)["id"] + "\n")
-            written += 1
-    return written
+            kept_meta.append(line)
+            kept_rows.append(row)
+    dropped = len(vectors) - len(kept_rows)
+    if not dropped:
+        return 0
+    tmp_vec, tmp_meta = (
+        vec_path.with_suffix(".f32.tmp"),
+        meta_path.with_suffix(".jsonl.tmp"),
+    )
+    vectors[kept_rows].tofile(tmp_vec)
+    tmp_meta.write_text("".join(kept_meta), encoding="utf-8")
+    tmp_vec.replace(vec_path)
+    tmp_meta.replace(meta_path)
+    return dropped
 
 
 def main() -> int:
@@ -135,9 +153,10 @@ def main() -> int:
         help="dir of shard fragment dirs (default: data/embeddings/fragments)",
     )
     ap.add_argument(
-        "--ids-out",
-        default=str(EMBEDDED_IDS_PATH),
-        help="where to publish the embedded-id list the scrape stage reads (ADR-0048)",
+        "--evict-ids",
+        default=str(_UPGRADES),
+        help="file of Job ids whose stale row to drop before merging — the embed planner's "
+        "upgrade list (ADR-0050); missing or empty is a no-op",
     )
     args = ap.parse_args()
 
@@ -155,6 +174,15 @@ def main() -> int:
         if dim is not None:
             break
         dim = _dim_from_manifest(f)
+
+    upgrades = Path(args.evict_ids)
+    if dim is not None and upgrades.exists():
+        stale = {
+            line.strip() for line in upgrades.read_text().splitlines() if line.strip()
+        }
+        dropped = evict_ids(meta_path, vec_path, dim, stale)
+        if stale:
+            _log.info(f"upgrades: dropped {dropped} stale rows for {len(stale)} ids")
 
     prior_rows = _reconcile_store(meta_path, vec_path, dim)
     _log.info(
@@ -216,8 +244,6 @@ def main() -> int:
     _log.info(
         f"merged {appended} new vectors — store now holds {total} (dim {dim}) -> {store}"
     )
-    written = write_embedded_ids(meta_path, Path(args.ids_out))
-    _log.info(f"published {written} embedded Job ids -> {args.ids_out}")
     return 0
 
 

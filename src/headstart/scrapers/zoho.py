@@ -40,6 +40,7 @@ def _js_unescape(s: str) -> str:
 
 class ZohoScraper(BaseScraper):
     ats = "zoho"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:

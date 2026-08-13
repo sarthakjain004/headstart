@@ -24,6 +24,7 @@ _DETAIL_WORKERS = 8
 
 class SmartRecruitersScraper(BaseScraper):
     ats = "smartrecruiters"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings?limit=100"

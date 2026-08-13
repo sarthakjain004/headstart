@@ -75,6 +75,7 @@ class EightfoldScraper(BaseScraper):
     """Eightfold AI scraper — ``slug`` is the board host."""
 
     ats = "eightfold"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://{self.slug}/careers/sitemap.xml"
@@ -198,9 +199,13 @@ class EightfoldScraper(BaseScraper):
                     "url": f"https://{self.slug}{path}"
                     if path.startswith("/")
                     else path,
+                    # `desc` is None when the detail was skipped or failed, "" when it answered
+                    # with no description — which the store records as authoritative absence so
+                    # the Job stops being re-fetched every run (ADR-0050).
+                    "detail_fetched": desc is not None,
                     "fields": {
                         "title": pos.get("name"),
-                        "description": desc,
+                        "description": desc or None,
                         "location": _first_location(pos.get("locations")),
                         "posted_at": _ts_to_iso(pos.get("postedTs")),
                         "employment_type": None,  # not exposed by the PCSX API
@@ -243,7 +248,14 @@ class EightfoldScraper(BaseScraper):
             )
         self.report_detail_gaps(fields, "detail fields")
         return [
-            {"id": _sitemap_position_id(u), "url": u, "fields": f}
+            # The per-job page *is* this path's detail fetch, so reaching it settles whether a
+            # description exists — same two-state rule as the API path (ADR-0050).
+            {
+                "id": _sitemap_position_id(u),
+                "url": u,
+                "fields": f,
+                "detail_fetched": f is not None,
+            }
             for u, f in zip(listed, fields)
         ]
 
@@ -308,6 +320,7 @@ class EightfoldScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
+                    detail_fetched=bool(item.get("detail_fetched")),
                 )
             )
         return jobs
@@ -343,11 +356,18 @@ def _remote_from(option: Any) -> bool | None:
 
 
 def _description_of(response: Any) -> str | None:
+    """The posting's description, ``""`` when the detail answered but carries none, ``None`` when
+    it could not be read at all.
+
+    The empty string is load-bearing (ADR-0050): it is the difference between *this posting has no
+    description* — authoritative, record it and stop re-fetching forever — and *we failed to find
+    out*, which must be retried. An unparseable body is the second kind, not the first.
+    """
     try:
         data = response.json().get("data") or {}
     except ValueError:
         return None
-    return data.get("jobDescription") or None
+    return data.get("jobDescription") or ""
 
 
 def _sitemap_position_id(url: str) -> str | None:

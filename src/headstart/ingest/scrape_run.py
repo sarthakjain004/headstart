@@ -30,7 +30,7 @@ from headstart import http, log
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, load_active_companies
 from headstart.harvest import scrape_all
-from headstart.ingest import EMBEDDED_IDS_PATH, REPO_ROOT, observability
+from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"
@@ -250,10 +250,10 @@ def main() -> int:
         companies = _read_assignment(Path(args.assignment))
         _log.info(f"harvest: {len(companies)} boards from {args.assignment} (shard)")
         have_details = _read_have_details(
-            Path(args.assignment).parent / EMBEDDED_IDS_PATH.name
+            Path(args.assignment).parent / HELD_DETAILS_PATH.name
         )
         _log.info(
-            f"detail skip-list: {len(have_details):,} Job ids already held"
+            f"detail skip-list: {len(have_details):,} Job details already held"
             if have_details is not None
             else "detail skip-list: absent — every detail will be fetched"
         )

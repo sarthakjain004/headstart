@@ -32,6 +32,7 @@ _UA = "headstart/0.1 (job-board reader)"
 
 class RippleHireScraper(BaseScraper):
     ats = "ripplehire"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
