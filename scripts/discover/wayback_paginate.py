@@ -2,11 +2,11 @@
 """Resume-key Wayback harvester for one ATS — the patient alternative to page-based sweeping.
 
 Walks the ENTIRE CDX result set with resume-key pagination and appends newly-found unique
-tenants to data/wayback-ats/{ats}.csv after every page. On dense domains `wayback_pages.py` is
+slugs to data/wayback-ats/{ats}.csv after every page. On dense domains `wayback_pages.py` is
 faster (random access to every page, concurrently); this one earns its keep where the walk has
 to be filtered server-side, via --filter.
 
-Sweeps every board host the ATS serves from (`wayback_providers.PROVIDERS`), not just one.
+Sweeps every board host the ATS serves from (`wayback_feeder.ATS_HOSTS`), not just one.
 Resumable: the cursor is saved per host to data/wayback-ats/.{ats}_{host}_resume after each
 page, so you can stop (Ctrl+C) any time and re-run to continue. --max-pages is per host, so a
 provider with 8 hosts walks up to 8x that.
@@ -23,7 +23,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from wayback_providers import WB, extract, host_picker, picked_hosts, tenant_sink
+from wayback_feeder import (
+    WB,
+    extract,
+    host_args,
+    hosts_for,
+    slug_sink,
+    warn_legacy_state,
+)
 
 PAGE = 15000  # urls per CDX page
 SLEEP = 1.0  # politeness between pages (seconds)
@@ -113,7 +120,7 @@ def sweep(ats, domain, style, max_pages, cdx_filter, sink):
 
 
 def main():
-    ap = host_picker(__doc__)
+    ap = host_args(__doc__)
     ap.add_argument(
         "--max-pages", type=int, default=0, help="per host; 0 = walk to the end"
     )
@@ -124,8 +131,9 @@ def main():
         "subdomains (e.g. 'urlkey:ai,eightfold,.*')",
     )
     args = ap.parse_args()
-    with tenant_sink(args.ats) as (_seen, sink):
-        for domain, style in picked_hosts(args):
+    warn_legacy_state(args.ats)
+    with slug_sink(args.ats) as sink:
+        for domain, style in hosts_for(args.ats, args.domain, args.style):
             sweep(args.ats, domain, style, args.max_pages, args.cdx_filter, sink)
 
 

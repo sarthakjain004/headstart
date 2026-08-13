@@ -2,12 +2,12 @@
 """Page-based Wayback harvester for one ATS — the method for dense domains.
 
 The CDX index is split into N pages (see ?showNumPages=true). Unlike the flat limit (stuck on
-early tenants) or filters/host-collapse (which time out), every page is directly addressable
-with &page=K, so we fetch ALL pages CONCURRENTLY, extract hosts, and dedup to the full tenant
+early slugs) or filters/host-collapse (which time out), every page is directly addressable
+with &page=K, so we fetch ALL pages CONCURRENTLY, extract hosts, and dedup to the full slug
 set in one bounded pass.
 
-Sweeps every board host the ATS serves from (`wayback_providers.PROVIDERS`), not just one: Zoho
-alone spreads 8,197 known tenants over 8 TLDs. Writes new tenants to data/wayback-ats/{ats}.csv
+Sweeps every board host the ATS serves from (`wayback_feeder.ATS_HOSTS`), not just one: Zoho
+alone spreads 8,197 known slugs over 8 TLDs. Writes new slugs to data/wayback-ats/{ats}.csv
 as pages complete. Resumable: completed page numbers are recorded per host in
 data/wayback-ats/.{ats}_{host}_pages_done, so re-running skips finished pages.
 
@@ -24,7 +24,14 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from wayback_providers import WB, extract, host_picker, picked_hosts, tenant_sink
+from wayback_feeder import (
+    WB,
+    extract,
+    host_args,
+    hosts_for,
+    slug_sink,
+    warn_legacy_state,
+)
 
 TIMEOUT = 120
 UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
@@ -44,7 +51,7 @@ def get(url):
 
 
 def sweep(ats, domain, style, workers, sink):
-    """Harvest every CDX page for one host, appending new tenants as pages land."""
+    """Harvest every CDX page for one host, appending new slugs as pages land."""
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
     base = cdx + "&fl=original&collapse=urlkey"  # showNumPages needs the clean url
 
@@ -96,11 +103,12 @@ def sweep(ats, domain, style, workers, sink):
 
 
 def main():
-    ap = host_picker(__doc__)
+    ap = host_args(__doc__)
     ap.add_argument("--workers", type=int, default=10)
     args = ap.parse_args()
-    with tenant_sink(args.ats) as (_seen, sink):
-        for domain, style in picked_hosts(args):
+    warn_legacy_state(args.ats)
+    with slug_sink(args.ats) as sink:
+        for domain, style in hosts_for(args.ats, args.domain, args.style):
             sweep(args.ats, domain, style, args.workers, sink)
 
 
