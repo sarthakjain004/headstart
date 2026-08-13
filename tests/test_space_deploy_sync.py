@@ -1,4 +1,4 @@
-"""Every file deploy-space.yml syncs into the Space must also be COPYed into the image.
+"""Every flat file deploy-space.yml syncs into the Space must also be COPYed into the image.
 
 This pairing has broken twice. #115 fixed it for `role_families.json` — the workflow synced it
 to the Space repo but the Dockerfile never copied it in, so `_family_labels` read a missing path
@@ -20,10 +20,11 @@ REPO = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO / ".github" / "workflows" / "deploy-space.yml"
 DOCKERFILE = REPO / "deploy" / "hf-space" / "Dockerfile"
 
-# `cp <src> deploy/hf-space/<dest>` — flat files only. Directories (alerts/, templates/,
-# static/) ride their own `COPY <dir> ./<dir>` lines and are matched separately below.
+# `cp <src> deploy/hf-space/<dest>` — flat files only. `\S+` for the source eats a `-r` flag
+# before it reaches `deploy/hf-space/`, so the synced DIRECTORIES (alerts/, templates/, static/)
+# never match here and are not checked; they ride their own `COPY <dir> ./<dir>` lines, and
+# their failure mode is louder — a missing package breaks the import, not one silent feature.
 _SYNCED_FILE = re.compile(r"^\s*cp\s+\S+\s+deploy/hf-space/([\w.-]+)\s*$", re.M)
-_SYNCED_DIR = re.compile(r"^\s*cp\s+-r\s+\S+\s+deploy/hf-space/([\w.-]+)\s*$", re.M)
 
 
 def _copied_into_image() -> set[str]:
@@ -39,7 +40,7 @@ def _copied_into_image() -> set[str]:
 
 def test_every_synced_file_is_copied_into_the_image():
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    synced = set(_SYNCED_FILE.findall(workflow)) - set(_SYNCED_DIR.findall(workflow))
+    synced = set(_SYNCED_FILE.findall(workflow))
     assert synced, (
         "no `cp … deploy/hf-space/<file>` lines found — did the sync step move?"
     )

@@ -715,7 +715,7 @@ function drawTrends(){
     return `<li data-name="${esc(s.name)}" aria-pressed="${!off}"
       style="${off?'opacity:.45':''}"><span class="swatch" style="background:${i<CHART_MAX?c:'var(--ink-3)'}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
-      ${hasRoles ? '<span class="drill" title="Named roles are tracked inside this category"><span aria-hidden="true">▸</span> roles</span>' : ''}
+      ${hasRoles ? '<span class="drill" title="Named roles are tracked inside this category" aria-label="has tracked roles"><span aria-hidden="true">▸ roles</span></span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
       <span class="dl ${cls}">${txt}</span></li>`;
   }).join('');
@@ -729,21 +729,30 @@ function drawTrends(){
   const spanDays = spanMs / 864e5;
   const span = runs < 2 ? '' :
     spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
+  const measured = `${runs} measurement${runs===1?'':'s'}${span}`;
+  // The only thing at this level that says the rows are clickable — and it must not over-promise:
+  // the legend lists LEGEND_MAX rows but `trendClick` only drills the first CHART_MAX, so past
+  // that a click does nothing. Name the drillable set whenever the two differ.
+  const drillHint = d.series.length > CHART_MAX
+    ? ` — click any of the top ${CHART_MAX} to break it down`
+    : ' — click a category to break it down';
   el('trends-scope').textContent = trendDrill
     ? (trendSplit === 'roles'
-        ? `tracked roles · ${runs} measurement${runs===1?'':'s'}${span} — click any line to go back`
-        : `by experience level · ${runs} measurement${runs===1?'':'s'}${span} — click to go back`)
+        ? `tracked roles · ${measured} — click any line to go back`
+        : `by experience level · ${measured} — click to go back`)
     : hidden.length
       // Say what is on screen, not just what exists. The list is capped, so quoting only the
       // total invites adding the visible rows up against the indexed-jobs headline and finding
       // tens of thousands unaccounted for — they are in the tail, reported in the footer.
-      // The trailing hint is the only thing at this level that says the rows are clickable.
-      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span} — click a category to break it down`
-      : `${d.series.length} categories · ${runs} measurement${runs===1?'':'s'}${span} — click a category to break it down`;
+      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${measured}${drillHint}`
+      : `${d.series.length} categories · ${measured}${drillHint}`;
   el('trends-empty').textContent = runs < 2
     ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
     : (trendDrill && trendSplit === 'roles' && !d.series.length
-      ? 'No specific roles are tracked under this category yet.'
+      // "not tracked" would be wrong and self-contradictory next to a marker that just said
+      // roles ARE tracked here: the watchlist is config, the rows are measurements, and between
+      // a deploy and the next pipeline run the first exists without the second.
+      ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : '');
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
@@ -769,7 +778,13 @@ function drawTrends(){
 function trendClick(name){
   if (trendDrill) { trendSplit = 'bands'; loadTrends(null); return; }   // drilled in — go back up
   const s = trendData.series.find(x => x.name === name);
-  if (s && trendData.series.indexOf(s) < CHART_MAX) { loadTrends(name); return; }
+  if (s && trendData.series.indexOf(s) < CHART_MAX) {
+    // Land on whichever split the row advertised. A row carrying the "▸ roles" marker that
+    // opened on experience bands would make the one affordance naming roles the one that does
+    // not show them; the toggle is then the only way to the thing you just clicked for.
+    trendSplit = (trendData.watch_parents || []).includes(name) ? 'roles' : 'bands';
+    loadTrends(name); return;
+  }
   trendHidden.delete(name); drawTrends();              // off-chart series: bring it into view
 }
 
