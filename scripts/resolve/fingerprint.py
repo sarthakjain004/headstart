@@ -6,29 +6,40 @@ embedded ATS fingerprint (an embed script, a board link, or an API call) -> (ats
 This catches boards that URL-crawling misses because the company embeds the board on its own
 site or uses a custom domain (the Greenhouse address never appears as a crawlable URL).
 
-Usage:  python scripts/resolve/fingerprint.py [n]   # first n companies from config/seed_india.csv
+Resumable: the output is keyed by domain and re-running skips companies already recorded, so
+a run killed part-way costs only its in-flight companies. Pass --restart to start clean.
+
+Usage:  python scripts/resolve/fingerprint.py [n] [--seed CSV] [--out CSV]
+        python scripts/resolve/fingerprint.py --seed config/seed_global.csv     # all rows
+        python scripts/resolve/fingerprint.py 500 --seed config/seed_global.csv # first 500
 """
 
+import argparse
 import asyncio
 import csv
 import json
 import re
-import sys
 from pathlib import Path
 
 from curl_cffi.requests import AsyncSession
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SEED = ROOT / "config" / "seed_india.csv"
+DEFAULT_OUT = ROOT / "data" / "resolve" / "fingerprint_results.csv"
+FIELDS = ["name", "domain", "hits", "status"]
 FETCH_DEADLINE = 10  # hard wall-clock cap per request
 COMPANY_BUDGET = (
     60  # hard cap per company (asyncio.wait_for), so nothing stalls the batch
 )
-# Keep concurrency modest: each in-flight company also fetches its own (often heavy SPA) domain,
-# so too many at once saturates the link and slows every request until companies blow the budget
-# and get cancelled (empty). HTTP/2 multiplexes the shared ATS-API hosts; the unique company
-# domains are the bottleneck, so ~10 is the sweet spot (24 regressed 86 -> 60 hits).
-CONCURRENCY = 10
+# HTTP/2 multiplexes the shared ATS-API hosts, so the unique company domains are the bottleneck.
+# This was 10, on an earlier finding that 24 regressed hits 86 -> 60. That finding did not
+# survive the backtracking fix: it was the blocked event loop, not link saturation. With a
+# catastrophically-backtracking detect() running inline, more concurrent heavy pages meant more
+# loop-blocking, so companies blew COMPANY_BUDGET and returned empty — which read as "too much
+# concurrency". Re-measured mid-run on the same seed after the fix: 24 gives 108 companies/min
+# vs 82 at 10 (+32%), with timeouts flat at zero and hit rate not degraded. Note the hit-rate
+# comparison is across different seed rows, so treat it as "no regression", not as a gain.
+CONCURRENCY = 24
 # curl_cffi impersonates a real browser's TLS/JA3 + HTTP/2 fingerprint, so Cloudflare/Akamai bot
 # walls that 403 plain urllib (meesho.com, lenskart.com — block persists even with browser
 # headers, since it's TLS-fingerprint based) are passed as a normal browser would. One shared
@@ -119,6 +130,44 @@ PROVIDER_DOMAINS = {
     "qandle": {"qandle.com"},
     "ripplehire": {"ripplehire.com"},
     "turbohire": {"turbohire.co"},
+    "smartrecruiters": {"smartrecruiters.com"},
+    "teamtailor": {"teamtailor.com"},
+    "freshteam": {"freshteam.com", "freshworks.com"},
+    "trakstar": {"trakstar.com"},
+    "sensehq": {"sensehq.com"},
+    "rippling": {"rippling.com"},
+    "personio": {"personio.de", "personio.com"},
+    "eightfold": {"eightfold.ai"},
+}
+
+# Legal-entity suffixes a registry carries but a board slug never does ("Infosys Limited" ->
+# infosys, "SAP SE" -> sap). Stripped to make an EXTRA candidate slug, never to replace the
+# full one — so a company whose slug really does end in a suffix word is still probed.
+LEGAL_SUFFIXES = {
+    "inc",
+    "llc",
+    "ltd",
+    "limited",
+    "pvt",
+    "private",
+    "plc",
+    "corp",
+    "corporation",
+    "gmbh",
+    "ag",
+    "se",
+    "sa",
+    "nv",
+    "bv",
+    "ab",
+    "oy",
+    "as",
+    "srl",
+    "spa",
+    "kk",
+    "pte",
+    "holdings",
+    "company",
 }
 
 
@@ -128,9 +177,20 @@ def reg_domain(domain):
     return ".".join(parts[-2:]) if len(parts) >= 2 else domain.lower()
 
 
+# Every subdomain-style pattern MUST start with this. Without it a pattern like
+# `([a-z0-9][a-z0-9-]*)\.recruitee\.com` starts a match attempt at every offset inside a long
+# run of hostname-legal characters — minified JS and base64 blobs are full of them — consuming
+# the whole run before failing on the literal suffix, then retrying one character later. That is
+# O(n^2) on a 900KB page: measured >120s for a single 520KB blob, which froze the whole run
+# (detect() is synchronous, so it blocks the event loop and COMPANY_BUDGET's wait_for can never
+# fire). The lookbehind makes the engine reject a mid-run offset in one step.
+HOST = r"(?<![a-z0-9.-])"
+
 PATTERNS = {
     "greenhouse": [
-        r'(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/embed/job_board[^"\'\s]*?[?&]for=([a-zA-Z0-9_-]+)',
+        # bounded {0,200}: an unbounded lazy [^"'\s]*? has the same quadratic blow-up when the
+        # literal prefix matches but no `for=` follows before the next quote.
+        r'(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/embed/job_board[^"\'\s]{0,200}?[?&]for=([a-zA-Z0-9_-]+)',
         r"boards-api(?:-eu)?\.greenhouse\.io/v1/boards/([a-zA-Z0-9_-]+)",
         r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/([a-zA-Z0-9_-]+)",
     ],
@@ -142,19 +202,65 @@ PATTERNS = {
         r"api\.ashbyhq\.com/posting-api/job-board/([a-zA-Z0-9_-]+)",
         r"jobs\.ashbyhq\.com/([a-zA-Z0-9_-]+)",
     ],
-    "zoho": [r"([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)"],
-    "recruitee": [r"([a-z0-9][a-z0-9-]*)\.recruitee\.com"],
+    "zoho": [HOST + r"([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)"],
+    "recruitee": [HOST + r"([a-z0-9][a-z0-9-]*)\.recruitee\.com"],
     "workable": [r"apply\.workable\.com/([a-zA-Z0-9_-]+)"],
+    # Supported scrapers that had no HTML signature — an embedded board on any of these was
+    # invisible to the page scan and only ever found if the slug probe happened to guess it.
+    # Shapes derived from each scraper's own url() construction in src/headstart/scrapers/.
+    "smartrecruiters": [
+        r"api\.smartrecruiters\.com/v1/companies/([a-zA-Z0-9_-]+)",
+        r"(?:careers|jobs)\.smartrecruiters\.com/([a-zA-Z0-9_-]+)",
+    ],
+    "teamtailor": [HOST + r"([a-z0-9][a-z0-9-]*)\.teamtailor\.com"],
+    "freshteam": [HOST + r"([a-z0-9][a-z0-9-]*)\.freshteam\.com"],
+    "trakstar": [HOST + r"([a-z0-9][a-z0-9-]*)\.hire\.trakstar\.com"],
+    "sensehq": [HOST + r"([a-z0-9][a-z0-9-]*)\.sensehq\.com"],
+    "rippling": [r"ats\.rippling\.com/([a-zA-Z0-9_-]+)"],
+    # personio and eightfold key on the FULL careers host, not a bare label (personio's
+    # slug_from returns "{tenant}.jobs.personio.de"; eightfold's url() is "https://{slug}/careers"),
+    # so these capture the whole host.
+    "personio": [HOST + r"([a-z0-9][a-z0-9-]*\.jobs\.personio\.(?:de|com))"],
+    "eightfold": [HOST + r"([a-z0-9][a-z0-9-]*\.eightfold\.ai)"],
     # India subdomain tier — same providers the CC/Wayback miners cover; tenant = subdomain
-    "darwinbox": [r"([a-z0-9][a-z0-9-]*)\.darwinbox\.(?:in|com)"],
-    "keka": [r"([a-z0-9][a-z0-9-]*)\.keka\.com"],
-    "qandle": [r"([a-z0-9][a-z0-9-]*)\.qandle\.com"],
-    "ripplehire": [r"([a-z0-9][a-z0-9-]*)\.ripplehire\.com"],
-    "turbohire": [r"([a-z0-9][a-z0-9-]*)\.turbohire\.co"],
+    "darwinbox": [HOST + r"([a-z0-9][a-z0-9-]*)\.darwinbox\.(?:in|com)"],
+    "keka": [HOST + r"([a-z0-9][a-z0-9-]*)\.keka\.com"],
+    "qandle": [HOST + r"([a-z0-9][a-z0-9-]*)\.qandle\.com"],
+    "ripplehire": [HOST + r"([a-z0-9][a-z0-9-]*)\.ripplehire\.com"],
+    "turbohire": [HOST + r"([a-z0-9][a-z0-9-]*)\.turbohire\.co"],
 }
+# re.I matters: real Workday URLs carry an uppercase region ("/en-US/AcmeCareers"). Without it
+# the locale group (lowercase-only) failed to match, the optional group matched empty, and the
+# site capture swallowed "en-US" — so every localed board resolved to .../en-US instead of its
+# real site. LOCALE re-checks the capture for the same reason, for URL shapes that put the
+# locale somewhere this pattern doesn't model.
 WORKDAY = re.compile(
-    r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[a-z]{2}/)?([a-zA-Z0-9_-]+)"
+    HOST
+    + r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?([a-zA-Z0-9_-]+)",
+    re.I,
 )
+# Both locale shapes Workday serves: "en-US" and the bare "es". Matching only the hyphenated
+# form let /es/ through, and the site capture swallowed the language code — e.g. Rappi's boards
+# were recorded as .../es instead of their real site.
+# The bare form is an explicit language list, NOT any two letters: real site names are two
+# letters too (Knight Frank's board is .../KF), and rejecting those would drop live boards.
+LOCALE = re.compile(
+    r"^(?:[a-z]{2}-[a-z]{2}|en|es|fr|de|pt|it|ja|zh|ko|nl|ru|ar|pl|tr|sv|da|fi|cs|hu|th|vi|id)$",
+    re.I,
+)
+
+# ATSes whose board id keeps its capitals. The SmartRecruiters postings API itself is
+# case-INSENSITIVE (Zomato1 and zomato1 both 200), so this is not about the fetch — it is about
+# matching the ledger, where 8,736 of 12,644 smartrecruiters tenants carry capitals. Lower-casing
+# here would mint a second, non-matching row for a board we already hold. Every other supported
+# ATS keys on a lower-case slug.
+CASE_SENSITIVE = {"smartrecruiters"}
+
+# Careers paths worth fetching per company. Tested wider: over two 40-company miss diagnoses
+# (80 sites x 10 paths), every ATS signal reachable from /jobs, /careers/, /company/careers,
+# /about/careers or /en/careers ALSO appeared on / or /careers. Adding /jobs cost a third more
+# page fetches and changed the hit count by zero on both cohorts, so it stays out.
+CAREERS_PATHS = ("/", "/careers")
 
 
 def detect(html):
@@ -162,14 +268,24 @@ def detect(html):
     for ats, pats in PATTERNS.items():
         for p in pats:
             for m in re.finditer(p, html, re.I):
-                tok = m.group(1)
+                raw = m.group(1) or ""
+                tok = raw if ats in CASE_SENSITIVE else raw.lower()
                 # require len 3-60: a 1-2 char token is almost always garbage from a minified
                 # JS path (e.g. a stray `apply.workable.com/j` -> "j"), not a real board slug.
-                if tok and tok.lower() not in BLOCK and 3 <= len(tok) <= 60:
-                    hits.add((ats, tok.lower()))
+                # The split() check also screens host-shaped tokens (personio/eightfold), where
+                # the blocked word is the leading label: "www.eightfold.ai" is not a tenant.
+                lo = tok.lower()
+                if tok and 3 <= len(tok) <= 60:
+                    if lo not in BLOCK and lo.split(".")[0] not in BLOCK:
+                        hits.add((ats, tok))
     for m in WORKDAY.finditer(html):
-        if m.group(3).lower() not in BLOCK:
-            hits.add(("workday", f"{m.group(1).lower()}/{m.group(3)}"))
+        # The Workday scraper's slug IS the full board URL — src/headstart/scrapers/workday.py
+        # slug_from() returns url.rstrip("/") and validates against
+        # ^https://{co}.wdN.myworkdayjobs.com/{site}. Emitting "{co}/{site}" dropped the wdN
+        # data-centre and the scheme, so every Workday hit was unusable downstream.
+        co, pod, site = m.group(1).lower(), m.group(2).lower(), m.group(3)
+        if site.lower() not in BLOCK and not LOCALE.match(site):
+            hits.add(("workday", f"https://{co}.{pod}.myworkdayjobs.com/{site}"))
     return hits
 
 
@@ -189,13 +305,17 @@ async def fetch(session, url, cap=900000, retries=0):
             )
             if r.status_code >= 400:
                 if r.status_code == 429 or r.status_code >= 500:
-                    continue  # transient — retry
+                    # transient — back off before retrying. An immediate re-hit of a 429 just
+                    # spends the next token bucket too and reads as another failure.
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
                 return ""  # definitive (404/403/...) — don't retry
             ct = r.headers.get("content-type", "")
             if not any(x in ct for x in ("html", "text", "javascript", "json", "xml")):
                 return ""
             return r.content[:cap].decode("utf-8", "replace")
         except Exception:
+            await asyncio.sleep(0.5 * (attempt + 1))
             continue  # transient (timeout, conn) — retry
     return ""
 
@@ -206,11 +326,10 @@ async def careers_html(session, domain):
     may redirect to a custom careers.* host). Both fetches fire concurrently (multiplexed); each
     is bounded by FETCH_DEADLINE. Skipping /careers was silently dropping boards whose link lives
     only there (e.g. BigBasket -> careers.bigbasket.com)."""
-    home, careers = await asyncio.gather(
-        fetch(session, f"https://{domain}/"),
-        fetch(session, f"https://{domain}/careers"),
+    pages = await asyncio.gather(
+        *[fetch(session, f"https://{domain}{p}", retries=1) for p in CAREERS_PATHS]
     )
-    return home + "\n" + careers
+    return "\n".join(pages)
 
 
 # Slug-probe (discovery method 4): hit the clean-JSON ATS APIs with candidate slugs derived
@@ -251,9 +370,16 @@ def candidate_slugs(name, domain):
     label = domain.split("//")[-1].split("/")[0].split(".")[0].lower()
     if label and label != "www":
         cands.add(label)  # phonepe.com -> phonepe
-    norm = re.sub(r"[^a-z0-9]", "", name.lower())
-    if norm:
-        cands.add(norm)  # "Pine Labs" -> pinelabs; "slice" -> slice
+    words = re.findall(r"[a-z0-9]+", name.lower())
+    if words:
+        cands.add("".join(words))  # "Pine Labs" -> pinelabs; "slice" -> slice
+    # Registry-sourced seeds (Wikidata, company registers) carry a legal suffix the board slug
+    # never has. Add the trimmed variant alongside the full one, never instead of it.
+    trimmed = list(words)
+    while len(trimmed) > 1 and trimmed[-1] in LEGAL_SUFFIXES:
+        trimmed.pop()
+    if trimmed and trimmed != words:
+        cands.add("".join(trimmed))  # "Infosys Limited" -> infosys
     # min length 3: a 2-char slug (e.g. "fi" from fi.money) is too generic and collides with
     # unrelated namesakes (lever/fi is a US firm, not the Indian Fi Money) — false positives.
     return {c for c in cands if len(c) >= 3 and c not in BLOCK}
@@ -298,48 +424,114 @@ async def run(session, row):
     ch, ps = await asyncio.gather(
         careers_html(session, domain), probe_slugs(session, name, domain)
     )
-    hits = detect(ch) | ps
+    # detect() off the loop: it is pure CPU over up to 1.8MB, and run inline a slow page stalls
+    # every other in-flight company AND stops COMPANY_BUDGET's wait_for from firing, since a
+    # timeout needs the loop to run. `re` doesn't release the GIL so this doesn't parallelise the
+    # work — it just keeps the loop responsive, which is what makes the per-company cap real.
+    hits = await asyncio.to_thread(detect, ch) | ps
     # drop self-references: a company that IS an ATS provider (keka.com, darwinbox.com) matches
     # its own infra subdomains; that's not a tenant board.
     rd = reg_domain(domain)
     hits = {(a, t) for (a, t) in hits if rd not in PROVIDER_DOMAINS.get(a, set())}
-    return name, domain, hits
+    # A company whose pages never loaded is not the same as one scanned and found clean — the
+    # first is worth re-probing (dead/parked/blocked host), the second is settled. Recording
+    # them identically as "" was hiding that, which matters most on derived-domain seed rows.
+    return name, domain, hits, "ok" if ch.strip() else "unreachable"
+
+
+def load_seed(path: Path, n: int | None = None) -> list[dict]:
+    """Seed rows from a name,domain CSV — the first n, or all of them."""
+    if not path.exists():
+        raise SystemExit(f"seed not found: {path}")
+    rows = list(csv.DictReader(path.open(encoding="utf-8")))
+    lacks = {"name", "domain"} - set(rows[0]) if rows else set()
+    if lacks:
+        raise SystemExit(f"{path} lacks column(s): {', '.join(sorted(lacks))}")
+    return rows[:n] if n else rows
+
+
+def open_results(path: Path, restart: bool):
+    """(writer, handle, domains already recorded) for a resumable results CSV.
+
+    Refuses to append onto an older layout rather than writing rows the reader will
+    mis-key. Shared with fingerprint_headless.py so both passes write one schema.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fresh = restart or not path.exists()
+    already: set[str] = set()
+    if not fresh:
+        with path.open(encoding="utf-8") as fh:
+            prev = csv.DictReader(fh)
+            if prev.fieldnames != FIELDS:
+                raise SystemExit(
+                    f"{path} has an older layout {prev.fieldnames}; re-run with "
+                    f"--restart to rewrite it as {FIELDS}"
+                )
+            already = {r["domain"] for r in prev if r.get("domain")}
+    handle = path.open("w" if fresh else "a", newline="", encoding="utf-8")
+    writer = csv.writer(handle)
+    if fresh:
+        writer.writerow(FIELDS)  # hits = "ats:slug;ats:slug" or "" if none
+    return writer, handle, already
 
 
 async def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 20
-    rows = list(csv.DictReader(SEED.open(encoding="utf-8")))[:n]
-    out = ROOT / "data" / "resolve" / "fingerprint_results.csv"
-    cf = out.open("w", newline="", encoding="utf-8")
-    cw = csv.writer(cf)
-    cw.writerow(["name", "domain", "hits"])  # hits = "ats:slug;ats:slug" or "" if none
+    ap = argparse.ArgumentParser(description="Embed / custom-domain ATS fingerprinter.")
+    ap.add_argument(
+        "n", nargs="?", type=int, help="only the first n seed rows (default: all)"
+    )
+    ap.add_argument(
+        "--seed", type=Path, default=SEED, help="seed CSV with name,domain columns"
+    )
+    ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help="results CSV")
+    ap.add_argument(
+        "--restart", action="store_true", help="truncate the output instead of resuming"
+    )
+    args = ap.parse_args()
+
+    rows = load_seed(args.seed, args.n)
+    cw, cf, already = open_results(args.out, args.restart)
+    pending = [r for r in rows if r["domain"] not in already]
+    print(
+        f"{len(rows)} seed rows | {len(already)} already done | {len(pending)} to scan",
+        flush=True,
+    )
+    if not pending:
+        cf.close()
+        return
+
     sem = asyncio.Semaphore(CONCURRENCY)
     hit = done = 0
+    states = {}
 
     async def worker(row):
         async with sem:
             try:
                 return await asyncio.wait_for(run(session, row), COMPANY_BUDGET)
+            except asyncio.TimeoutError:
+                return row["name"], row["domain"], set(), "timeout"
             except Exception:
-                return row["name"], row["domain"], set()
+                return row["name"], row["domain"], set(), "error"
 
     async with AsyncSession() as session:
         # flush per company as it finishes: one slow site can't stall the batch, results file
-        # is usable mid-run.
-        for fut in asyncio.as_completed([worker(r) for r in rows]):
-            name, domain, hits = await fut
+        # is usable mid-run and a kill costs only the in-flight companies.
+        for fut in asyncio.as_completed([worker(r) for r in pending]):
+            name, domain, hits, status = await fut
             done += 1
+            states[status] = states.get(status, 0) + 1
             label = ";".join(f"{a}:{t}" for a, t in sorted(hits))
-            cw.writerow([name, domain, label])
+            cw.writerow([name, domain, label, status])
             cf.flush()
             shown = ", ".join(f"{a}:{t}" for a, t in sorted(hits)) if hits else "-"
             if hits:
                 hit += 1
-            print(f"  [{done}/{len(rows)}] {name} ({domain}): {shown}", flush=True)
+            print(f"  [{done}/{len(pending)}] {name} ({domain}): {shown}", flush=True)
     cf.close()
+    breakdown = ", ".join(f"{k} {v}" for k, v in sorted(states.items()))
     print(
-        f"\n{hit}/{len(rows)} companies fingerprinted to an ATS "
-        f"-> {out.relative_to(ROOT)}",
+        f"\n{hit}/{len(pending)} companies fingerprinted to an ATS ({breakdown})"
+        f" -> {args.out}",
         flush=True,
     )
 
