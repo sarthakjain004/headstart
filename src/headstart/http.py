@@ -11,11 +11,12 @@ scrapers run under thread pools (the pipeline per company, the detail passes per
 each worker thread transparently gets and reuses its own pooled session.
 
 ``fetch`` is the reliable request. It retries transient failures — connection timeouts/resets
-and 403/429/5xx responses — with backoff, but it does *not* retry a DNS failure (the host
-doesn't exist; that's definitive). It returns whatever response finally settles, **including a
-4xx/5xx**, so the caller classifies the outcome (lever branches on 404, the detail-fetchers map
-non-200 to None, etc.). It raises ``RequestsError`` only when a transient network failure never
-settles, or immediately on DNS. Retry lives here once; classification stays with the callers.
+and 403/405/429/5xx responses — with backoff, honouring a ``Retry-After`` when the host sends one.
+It does *not* retry a DNS failure (the host doesn't exist; that's definitive). It returns whatever
+response finally settles, **including a 4xx/5xx**, so the caller classifies the outcome (lever
+branches on 404, the detail-fetchers map non-200 to None, etc.). It raises ``RequestsError`` only
+when a transient network failure never settles, or immediately on DNS. Retry lives here once;
+classification stays with the callers.
 """
 
 from __future__ import annotations
@@ -38,13 +39,17 @@ _log = log.get(__name__)
 _local = threading.local()
 _TRANSIENT = {
     403,
+    405,
     429,
     500,
     502,
     503,
     504,
-}  # retryable HTTP statuses (403 = bot-wall blip)
+}  # retryable HTTP statuses (403/405 = bot-wall blips, see ADR-0047)
 _ATTEMPTS = 3
+# Cap on an honoured Retry-After: past this, waiting costs more than the request buys, and a
+# shard's whole budget is 60 minutes.
+_MAX_RETRY_AFTER = 30.0
 _DNS = 6  # curl CURLE_COULDNT_RESOLVE_HOST — host doesn't exist, never retried
 
 
@@ -59,9 +64,9 @@ def session() -> _requests.Session:
 
 # Retries counted by reason, because at INFO they were previously invisible: a board that
 # settled only after five backoffs logged exactly like one that answered first time, so an ATS
-# starting to rate-limit or bot-wall us produced NO signal until boards failed outright. 403 is
-# the retryable status most worth watching for that reason. Counted, not per-board attributed —
-# a plain lock beats threading state through both the sync and the async fetch paths, and the
+# starting to rate-limit or bot-wall us produced NO signal until boards failed outright. The wall
+# statuses (403/405) and 429 are the ones most worth watching for that reason. Counted, not
+# per-board attributed — a plain lock beats threading state through both fetch paths, and the
 # question these answer ("is a provider degrading?") is a per-run one.
 _retries: Counter[str] = Counter()
 _retries_lock = threading.Lock()
@@ -83,6 +88,8 @@ def _retry_reason(why: str) -> str:
     """The coarse class a retry belongs to: what you would act on, not the exact message."""
     if "403" in why:
         return "403-wall"
+    if "405" in why:
+        return "405-wall"  # kept apart from 403: this is the shape Eightfold's edge returns
     if "429" in why:
         return "429-ratelimit"
     if any(code in why for code in ("500", "502", "503", "504")):
@@ -90,11 +97,45 @@ def _retry_reason(why: str) -> str:
     return "network"
 
 
-def _note_retry(method: str, url: str, attempt: int, attempts: int, why: str) -> float:
-    """Count one retry, log it at DEBUG, and return the backoff delay for the caller to sleep."""
+def _retry_after(response: Any) -> float | None:
+    """The response's ``Retry-After`` in seconds, when it gives one as a delta and it is sane.
+
+    Only the delta-seconds form is read: the HTTP-date form is rare in practice and parsing it
+    buys nothing a capped backoff doesn't already give. Clamped to :data:`_MAX_RETRY_AFTER`,
+    because a host asking for several minutes is asking for longer than the shard's whole budget.
+
+    ``isdecimal`` rather than ``isdigit``: the latter is true for characters like ``²`` that
+    ``float()`` then rejects, which would raise out of ``fetch`` on a malformed header.
+
+    A literal ``0`` falls back to the local curve rather than being honoured. Taken at face value
+    it means "retry immediately", which on a rate-limit wall is three attempts back-to-back — the
+    opposite of what reading the header is for.
+    """
+    raw = (response.headers.get("Retry-After") or "").strip()
+    if not raw.isdecimal():
+        return None
+    seconds = float(raw)
+    if seconds <= 0:
+        return None
+    return min(seconds, _MAX_RETRY_AFTER)
+
+
+def _note_retry(
+    method: str,
+    url: str,
+    attempt: int,
+    attempts: int,
+    why: str,
+    retry_after: float | None,
+) -> float:
+    """Count one retry, log it at DEBUG, and return the backoff delay for the caller to sleep.
+
+    A rate-limited host that says how long to wait is believed over the local backoff curve — it
+    knows its own window, and guessing shorter just burns another attempt against the wall.
+    """
     with _retries_lock:
         _retries[_retry_reason(why)] += 1
-    delay = 1.5 * (attempt + 1)
+    delay = retry_after if retry_after is not None else 1.5 * (attempt + 1)
     _log.debug(
         f"{method} {url} attempt {attempt + 1}/{attempts} {why}; "
         f"retrying in {delay:.1f}s"
@@ -106,9 +147,9 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
     """Make a request over the pooled session, retrying transient failures with backoff.
 
     Returns the settled response — any status, including 4xx/5xx — for the caller to classify.
-    Retries 403/429/5xx and transient network errors (timeout, connection reset); does *not*
-    retry a DNS failure. Raises ``RequestsError`` if a transient network error never settles
-    (or immediately on DNS).
+    Retries 403/405/429/5xx and transient network errors (timeout, connection reset), honouring a
+    ``Retry-After`` delta over the local backoff curve; does *not* retry a DNS failure. Raises
+    ``RequestsError`` if a transient network error never settles (or immediately on DNS).
     """
     for attempt in range(attempts):
         try:
@@ -116,12 +157,19 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
-            time.sleep(_note_retry(method, url, attempt, attempts, f"failed ({exc})"))
+            time.sleep(
+                _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
+            )
             continue
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
             time.sleep(
                 _note_retry(
-                    method, url, attempt, attempts, f"-> {response.status_code}"
+                    method,
+                    url,
+                    attempt,
+                    attempts,
+                    f"-> {response.status_code}",
+                    _retry_after(response),
                 )
             )
             continue
@@ -136,8 +184,9 @@ async def fetch_async(
 ):
     """Async counterpart to :func:`fetch`: the same retry policy over a caller-supplied
     ``AsyncSession``, so concurrent same-host requests ride as multiplexed HTTP/2 streams on one
-    connection. Returns the settled response for the caller to classify; retries 403/429/5xx and
-    transient network errors with backoff; raises ``RequestsError`` on DNS or if it never settles.
+    connection. Returns the settled response for the caller to classify; retries 403/405/429/5xx
+    and transient network errors with backoff (honouring ``Retry-After``); raises
+    ``RequestsError`` on DNS or if it never settles.
     """
     for attempt in range(attempts):
         try:
@@ -146,13 +195,18 @@ async def fetch_async(
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
             await asyncio.sleep(
-                _note_retry(method, url, attempt, attempts, f"failed ({exc})")
+                _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
             )
             continue
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
             await asyncio.sleep(
                 _note_retry(
-                    method, url, attempt, attempts, f"-> {response.status_code}"
+                    method,
+                    url,
+                    attempt,
+                    attempts,
+                    f"-> {response.status_code}",
+                    _retry_after(response),
                 )
             )
             continue
