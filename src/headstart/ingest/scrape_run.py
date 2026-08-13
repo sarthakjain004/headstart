@@ -19,6 +19,7 @@ Run:  python -m headstart.ingest.scrape_run --max-boards 8000
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import signal
 import time
@@ -29,7 +30,7 @@ from headstart import http, log
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, load_active_companies
 from headstart.harvest import scrape_all
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import EMBEDDED_IDS_PATH, REPO_ROOT, observability
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"
@@ -51,6 +52,19 @@ def _read_assignment(path: Path) -> list[CompanyRef]:
                 CompanyRef(ats=r["ats"], slug=r["slug"], name=r.get("name"))
             )
     return companies
+
+
+def _read_have_details(path: Path) -> set[str] | None:
+    """Job ids whose per-job detail we already hold, shipped beside the board list (ADR-0048).
+
+    Absent, ``None`` — every detail is fetched, which is the pre-ADR-0048 behaviour and the right
+    default whenever the planner could not publish the list (a first run, or an embed store that
+    has not merged yet). Never a partial read: a truncated file would silently re-fetch details
+    for the ids past the tear, which is only a cost, not a correctness problem."""
+    if not path.exists():
+        return None
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        return {line.strip() for line in fh if line.strip()}
 
 
 _SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler material
@@ -229,11 +243,20 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    have_details: set[str] | None = None
     if (
         args.assignment
     ):  # ADR-0026 scrape-shard mode — the planner already selected these boards
         companies = _read_assignment(Path(args.assignment))
         _log.info(f"harvest: {len(companies)} boards from {args.assignment} (shard)")
+        have_details = _read_have_details(
+            Path(args.assignment).parent / EMBEDDED_IDS_PATH.name
+        )
+        _log.info(
+            f"detail skip-list: {len(have_details):,} Job ids already held"
+            if have_details is not None
+            else "detail skip-list: absent — every detail will be fetched"
+        )
     else:
         companies = load_active_companies(_LEDGER, min_jobs=0)
         scores = load_scores(_PRIORITY)
@@ -268,6 +291,7 @@ def main() -> int:
             jobs_dir=outdir,
             progress_every=200,
             on_board=progress.on_board,
+            have_details=have_details,
         )
     except SystemExit:
         killed = True

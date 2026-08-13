@@ -43,3 +43,10 @@ from pathlib import Path
 # workflows do) guarantees. Defined once here because the depth is easy to get wrong: each
 # stage previously carried its own `Path(__file__).resolve().parents[2]`.
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# The detail skip-list (ADR-0048): Job ids already embedded, so the scrape stage can skip their
+# per-job detail fetch. Lives here rather than in either stage because four modules across three
+# packages move this one file — `embed_merge` writes it, `scrape_plan` ships it to the shards,
+# `scrape_run` reads it, `scripts/embed/evict_store.py` rewrites it after an eviction — and a
+# stage-owned constant would make the scrape stage import from the embed stage to find it.
+EMBEDDED_IDS_PATH = REPO_ROOT / "data" / "state" / "embedded_ids.txt.gz"

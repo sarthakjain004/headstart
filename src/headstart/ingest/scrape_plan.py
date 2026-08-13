@@ -23,7 +23,9 @@ planner does not touch ``HEADSTART_WORKERS``) makes every ATS host see a shard a
 monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanced, per-IP safety").
 
 Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board, priority-desc so a time-boxed shard
-scrapes its best boards first) + a ``plan.json`` (``shards`` matrix + board ``count``) the workflow reads.
+scrapes its best boards first), a ``plan.json`` (``shards`` matrix + board ``count``) the workflow
+reads, and a copy of the detail skip-list (ADR-0048) so each shard can avoid re-fetching details for
+Jobs already embedded — all three ride the one artifact the shards download.
 
 Run: python -m headstart.ingest.scrape_plan [--max-boards 20000] [--max-shards 15]
 """
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 from headstart import log
@@ -39,7 +42,7 @@ from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import EMBEDDED_IDS_PATH, REPO_ROOT, observability
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
 
 _log = log.get(__name__, __spec__)
@@ -51,6 +54,7 @@ _BUDGET_MIN = 60.0
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST = REPO_ROOT / "data" / "state" / "board_cost.csv"
+
 _OUT = REPO_ROOT / "data" / "scrape" / "assignments"
 
 # Legacy heuristic, kept only as the cold-start path: before the cost ledger has any rows (a fresh
@@ -146,6 +150,12 @@ def main() -> int:
         help="~measured seconds per shard (sizes the fan-out once costs exist)",
     )
     ap.add_argument(
+        "--embedded-ids",
+        default=str(EMBEDDED_IDS_PATH),
+        help="embedded-id list to ship to the shards so they skip details they already hold "
+        "(ADR-0048); absent means every detail is fetched",
+    )
+    ap.add_argument(
         "--target-boards",
         type=int,
         default=_TARGET_BOARDS,
@@ -164,6 +174,8 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     for stale in out_dir.glob("shard-*.jsonl"):
         stale.unlink()  # a shorter plan must not leave a prior run's extra shards behind
+    # Same reason: a re-plan with no source list must not ship the previous run's copy.
+    (out_dir / EMBEDDED_IDS_PATH.name).unlink(missing_ok=True)
 
     if n == 0:
         _write_plan(out_dir, shards=[], count=0, per_shard=[])
@@ -230,6 +242,22 @@ def main() -> int:
     # shows up. Minutes only when the ledger has measured seconds — cold-start cost units
     # would be a meaningless ratio, so they are omitted rather than written as fake minutes.
     per_shard_minutes = [loads[k] / 60 for k in range(m)] if measured else None
+
+    # Ship the embedded-id list inside the same artifact every shard already downloads, so the
+    # scrape stage can skip detail fetches for Jobs it already holds without a second download
+    # path (ADR-0048). Absent on a first run — the shards then fetch every detail, as before.
+    ids_src = Path(args.embedded_ids)
+    if ids_src.exists():
+        # Always shipped under the canonical name whatever --embedded-ids was called: the shard looks
+        # for that exact name, so naming the copy after the source would break the link silently.
+        shutil.copyfile(ids_src, out_dir / EMBEDDED_IDS_PATH.name)
+        size_mb = ids_src.stat().st_size / 1e6
+        _log.info(f"shipped {EMBEDDED_IDS_PATH.name} ({size_mb:.1f} MB) to the shards")
+    else:
+        _log.info(
+            f"no {EMBEDDED_IDS_PATH.name} yet — shards will fetch every job detail"
+        )
+
     _write_plan(
         out_dir,
         shards=list(range(m)),
