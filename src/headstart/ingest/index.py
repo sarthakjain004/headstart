@@ -64,6 +64,7 @@ from headstart import log
 from headstart.corpus import board_of, iter_jobs
 from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.index_plan import (
+    COLLAPSE_RATIO,
     apply_sync,
     live_keep_set,
     plan_prune,
@@ -223,6 +224,17 @@ def sync(args: argparse.Namespace) -> int:
 
     plan = plan_sync(index_ids, fresh, boards)
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
+    withheld = sum(count for _, count in plan.held)
+    if plan.held:
+        # Loud on purpose: every held Board is a scrape that came back short, and the guard only
+        # hides the symptom. Silence here would turn a broken scrape into a quiet no-op.
+        _log.warning(
+            f"collapse guard: withheld {withheld} evictions across {len(plan.held)} Boards that "
+            f"each lost >{COLLAPSE_RATIO:.0%} of their rows in one run — that is a truncated "
+            "scrape, not a delisting (ADR-0046)"
+        )
+        for board, count in plan.held:
+            _log.warning(f"  withheld {count} evictions on {board}")
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
@@ -250,7 +262,15 @@ def sync(args: argparse.Namespace) -> int:
         [
             f"- added **{len(plan.add):,}**, evicted **{len(plan.delete):,}**",
             f"- served table now holds **{final:,}** rows",
-        ],
+        ]
+        + (
+            [
+                f"- collapse guard withheld **{withheld:,}** evictions across "
+                f"**{len(plan.held)}** Boards that came back short"
+            ]
+            if plan.held
+            else []
+        ),
     )
     return 0
 

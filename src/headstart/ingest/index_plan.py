@@ -11,7 +11,9 @@ Two layers, because they reach different rows:
 run but its id is absent from the fresh output. New ids are added; re-seen ids are left untouched
 (id-only, v1). Crucially the delete is *scoped to the Boards actually scraped*, so a partial harvest
 never evicts Boards it didn't touch — and a dead Board (scraped, yields nothing) has all its rows
-drop out for free.
+drop out for free. That scope is per-Board but all-or-nothing, so a Board whose scrape came back
+*truncated* still looks fully covered; the **collapse guard** (ADR-0046) withholds a Board's
+evictions when it would lose more than a quarter of its rows at once.
 
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
@@ -31,12 +33,22 @@ from headstart.corpus import board_of
 from headstart.scrapers.registry import get_scraper
 
 
+# A Board losing more than this share of its indexed rows in one run is presumed truncated, not
+# delisted; below the floor a large ratio is a handful of rows, which is ordinary churn.
+COLLAPSE_RATIO = 0.25
+COLLAPSE_FLOOR = 20
+
+
 @dataclass(frozen=True, slots=True)
 class SyncPlan:
-    """Ids to add to the index and ids to evict from it."""
+    """Ids to add to the index and ids to evict from it, plus the Boards the guard held back.
+
+    ``held`` pairs a Board key with the number of evictions withheld from it — not its row count.
+    """
 
     add: frozenset[str]
     delete: frozenset[str]
+    held: tuple[tuple[str, int], ...] = ()
 
 
 def plan_sync(
@@ -50,13 +62,43 @@ def plan_sync(
     scraped this run yet are missing from ``fresh_ids`` — a posting that has closed. An indexed id on
     a Board *not* in ``scraped_boards`` is never touched (the partial-harvest safety), and a re-seen
     id (present in both) is left as-is (id-only change detection).
+
+    **Collapse guard (ADR-0046).** The board-scope check above is all-or-nothing at the *line*
+    level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
+    rate-limit looks exactly like a Board that delisted everything it didn't re-emit. When a Board
+    would lose more than :data:`COLLAPSE_RATIO` of its indexed rows in a single run, this refuses
+    the whole Board's evictions and reports it in ``held`` for the caller to log. Measured over
+    five production runs, ordinary turnover is under 10% for 754 of 817 board-runs, while the
+    Boards that flapped sat at 35–82% — so the threshold separates them with room to spare.
+    Boards under :data:`COLLAPSE_FLOOR` rows are exempt: there a large ratio is a handful of rows.
+
+    The guard is a stopgap for the blast radius, not the cause, and it is deliberately blunt: a
+    Board that genuinely sheds more than a quarter of its postings at once keeps those rows until
+    the scrape reports per-Board outcomes and the sync can scope on them instead.
     """
     index = set(index_ids)
     fresh = set(fresh_ids)
     boards = set(scraped_boards)
     add = fresh - index
-    delete = {i for i in index if i not in fresh and board_of(i) in boards}
-    return SyncPlan(add=frozenset(add), delete=frozenset(delete))
+
+    indexed_by_board: dict[str, set[str]] = defaultdict(set)
+    for job_id in index:
+        board = board_of(job_id)
+        if board in boards:
+            indexed_by_board[board].add(job_id)
+
+    delete: set[str] = set()
+    held: list[tuple[str, int]] = []
+    for board, ids in indexed_by_board.items():
+        missing = {i for i in ids if i not in fresh}
+        if len(ids) >= COLLAPSE_FLOOR and len(missing) > COLLAPSE_RATIO * len(ids):
+            held.append((board, len(missing)))
+            continue
+        delete |= missing
+
+    return SyncPlan(
+        add=frozenset(add), delete=frozenset(delete), held=tuple(sorted(held))
+    )
 
 
 def _quote(value: str) -> str:
