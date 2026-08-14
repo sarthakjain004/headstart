@@ -1,0 +1,102 @@
+<!-- Provenance: adversarial audit run 2026-08-14. 24 agents across 8 attack lenses
+     (product thesis, competition, data quality, retrieval/AI, reliability/cost, legal/privacy,
+     engineering quality, go-to-market), each followed by a skeptic pass that tried to refute its
+     findings, plus two defence agents, a completeness critic and four gap hunters.
+     73 raw findings -> 25 CONFIRMED, 43 PARTIALLY_TRUE, 5 REFUTED. No finding survived as "fatal";
+     every one was downgraded to major or below by the skeptic pass. -->
+
+# Adversarial audit — HeadStart vs. "get people hired"
+
+**Date:** 2026-08-14 · **Method:** 8 adversarial lenses + per-lens skeptic refutation + defence +
+gap hunt · **Scope:** the whole project, judged against the stated goal *"make job applying very
+easy and make it so people get more interviews and get hired more easily."*
+
+> **Read the roadmap next:** [2026-08-14_twelve-week-roadmap.md](2026-08-14_twelve-week-roadmap.md)
+
+## Findings refuted by the skeptic pass — do not act on these
+
+Recorded because they were asserted confidently and are wrong; anyone re-reading the raw findings
+will meet them again.
+
+- **ADR-0047 does implement pacing.** `Retry-After` honoured to 30s, a `1.5*(attempt+1)` backoff
+  slept in all four fetch paths, Eightfold's detail width cut 4x at a deliberate 10-minute cost.
+- **Chrome TLS impersonation is not only bot-wall evasion.** ADR-0015 records that it is what
+  negotiates HTTP/2, which the async multiplexed detail-fetch path (8 scrapers) depends on.
+- **The scrape is not being rate-limited into the ground.** It completed 100% of its 20,000-board
+  slice, all 15 shards finishing, slowest 26.9 min against a 60-min budget, 2.7% board-error rate.
+- **The portfolio doc is not the spec being executed.** It is 46 days stale and its two headline
+  features (LLM query-parser, LLM re-ranker) were explicitly declined on product grounds.
+- **"78% of the corpus comes from easy scrapers" is numerically wrong.** The real split is 50.3%
+  from the eight public-JSON scrapers, 34.6% from the three hard ones.
+
+---
+
+## 1. The verdict
+
+HeadStart is an excellent, genuinely rare **job-market data asset and ingestion system** — 94,348 verified-live ATS boards, a 5-stage sharded pipeline that has run ~10×/day unattended at 86% success, and 52 ADRs whose epistemics are better than most professional engineering orgs — wearing the costume of a job-seeking product it has not built. The owner says he wants people to "get more interviews and get hired more easily"; the repo implements exactly one link of that chain (find a listing), and I verified that even that link is currently unreachable: the only product URL in the README (`README.md:18`) returns **404** because GitHub Pages was never enabled, and `/search` on the live Space returns **401** to everyone. The private subscriber dataset holds **1 subscription, 1 saved set, and 0 profiles** — after 177 commits and ~40k LOC. The gap is bridgeable, but not by more engineering of the kind that produced this repo: the missing pieces are a public front door, one conversion feature, and one outcome number, and all three are days of work, not months. What is *not* bridgeable without a decision is the tension between the two goals, because the portfolio goal has quietly won every allocation argument and is now failing on its own terms too — a recruiter who opens this repo clicks the demo link and gets a GitHub 404.
+
+## 2. The strong points
+
+**Impressive to engineers — and genuinely rare.** The epistemic habits are the standout, and I checked them by reading, not counting. ADR-0026 has a `## Measured outcome` section that destroys its own decision ("planner costed 14 shards identical to five significant figures… actual wall times ran 60 s to 1,222 s, a 20× spread"). ADR-0047 kills three plausible causes of an Eightfold rate-limit with control arms, *re-runs the benchmark because the first arms were contended*, and publishes both sets. ADR-0046 fits a threshold to an 817-point production histogram and then documents the regime where its own calibration stops applying. ADR-0030 is a real incident forensic — run `30304173982`, a step that "exited 0 in 1 second against 20 s and 14 s in the runs either side" — that traces why every downstream guard was structurally blind. ADR-0011 calls its own nDCG "self-referential and optimistic." Writing down that your model carried no signal, under your own decision, is a thing I almost never see.
+
+Backed by real engineering: 839 hermetic tests in ~5 seconds, possible only because the network seam was drawn deliberately (`scrapers/base.py:29-34`) and the index planners kept pure of LanceDB (`ingest/index_plan.py:3-5`). `tests/test_readme_schema.py` mechanically enforces prose against `_schema()`. `scrape_run.py:281-284` converts SIGTERM to SystemExit so a budget-killed shard still banks partial work — a free-tier constraint that forced genuinely interruptible design. `workday.py` defeats Workday's undocumented 2,000-result cap by recursive facet subdivision across an 18-datacenter instance map found by DNS sweep. Lead interviews with ADR-0030, ADR-0047, and `workday.py`. Not with nDCG.
+
+**Valuable to users — a much shorter list.** The liveness ledger: 149,647 git-tracked rows, 69,038 usable live boards, 4.17M visible job slots, median 5 jobs/board. That long tail *is* the thesis — small employers who never syndicate. Second: freshness. Reading the ATS ~10×/day at source is the one causal lever between this asset and an interview, because application-to-response rate collapses with queue position. Third: the semantic search works acceptably when you can reach it. That is the entire user-value list. Everything else in the repo is infrastructure for it.
+
+## 3. Fatal and major weaknesses, ranked by how much they block "more interviews, more hires"
+
+**1. Nobody can reach the product (fatal; verified myself, twice).** `curl` on `https://sarthakjain004.github.io/headstart/` → 404; `gh api repos/.../pages` → Not Found. `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"` → 401, enforced by `_require_sign_in` (`deploy/hf-space/app.py:218-226`). The Space URL appears nowhere in the README. The public feed `docs/jobs.json` was last regenerated **2026-06-22** — 53 days — and no workflow rebuilds it (`grep -rn jobs.json .github/workflows/` → nothing). Repo traffic: 72 views, **2 unique visitors** in 14 days, 0 stars. Even the sign-in door fails silently when Google's GSI script is blocked (`signin.html:92` has no `onerror`; `initSignin()` returns silently at `:85`). Every other finding in this report is downstream of this one. Zero reachable users means zero interviews, definitionally.
+
+**2. The product stops at a URL** (skeptic downgraded fatal → **major**, correctly: the README scopes itself as discovery, so this is a goal/scope gap, not a broken promise). `grep` for applied/cover-letter/referral/recruiter/follow-up/interview across `src/` and `deploy/` returns zero product hits — I re-ran it. `SavedJob` (`alerts/store.py:269-287`) has no `applied` field. The last field `search.py:352` emits is `url`. The Profile — the only place a user's own material enters the system — is spent entirely on auto-filling the search box (`ui/static/app.js:559-569`), and its `max_years` hand-off *shrinks* the funnel by filtering out stretch roles. `docs/AI_Integration/resume-matching-options.md` designs the fix (skill-coverage: "you meet 7 of 9 stated requirements") and still says "**Status:** decision brief, nothing built."
+
+**3. No outcome instrumentation of any kind** (skeptic: **major**, confirmed; noting star events *are* captured, just never analysed). No click log, no query log, no analytics, no response tracking. Consequence: "more interviews" is unfalsifiable, not merely unproven — and the project therefore optimises the only axis it can see, pipeline latency. The tell is ADR-0050: a defect that left ~16,771 rows embedded from titles alone was found by reading pipeline logs, and the ADR says users met it as "search is bad for NVIDIA and Qualcomm, never as a failure."
+
+**4. Link quality — the fastest way to lose a user you finally got.** Measured, matched samples from the same snapshot: 150 random Greenhouse custom-host URLs → **29% non-200**; 150 `greenhouse.io` URLs → **4%**. 23% of Greenhouse tech rows sit on 24 customer-controlled hosts (`greenhouse.py:38` takes `absolute_url` verbatim). The identical bug was diagnosed and fixed for Recruitee in `#117` and never generalised. Every RippleHire row links to one of **37 board-level landing pages** (`ripplehire.py:119`), and the harness *codifies* that as passing (`verify_filters.py:97`, "known gap"). The harness itself is a 63-row (21 ATS × 3) manual spot check with seven host-agnostic regexes, not wired into CI — and CLAUDE.md sells it as the gate.
+
+**5. Stale rows cannot be evicted on age** (skeptic downgraded fatal → **major**: `index prune` *can* reach a zero-yield board, but only after a manual liveness re-probe, and 127,755 of 149,647 ledger rows were last probed a month ago). ADR-0023 deferred the `last_seen` TTL; `_schema()` has no such column. Meanwhile Darwinbox returned 13, 107, 13, 12 lines across four consecutive runs against ~2,550 expected — 99.5% short — and nothing detected it. Applying to a closed req is the single worst user experience this product can produce.
+
+**6. The English gate silently deletes real jobs.** Controlled experiment: 600 rows whose `title + description[:500]` detects as English, re-run through the *same gate* on title alone → **142 (23.7%) flip to non-English**. `Golang Developer` → "no". `iOS Developer` → "nl". 22% of the local corpus has an empty description, and `DetectorFactory.seed = 0` makes the rejection permanent and repeatable. Both call sites record only a counter — no ids, so nothing is auditable or recoverable.
+
+**7. Workable is 97% unresolved and has never converged** — 16,347 of 16,861 rows `unknown` across five probe runs over six weeks (net progress: +16 live), held there by a Cloudflare breaker that trips in 75 seconds at 4 req/s. A 300-board sample resolved **88% live**, extrapolating to ~14,454 live boards, ~126,000 postings — a **+24% coverage win**, larger than every item on CLAUDE.md's ATS-expansion TODO combined. Nobody noticed because README:171 reports 17,421 `unknown` as one undifferentiated bucket, of which Workable is 92%.
+
+**8. Operations: one bad Friday from a stalled index.** I queried HF live: `used_storage` is now **94.77 GB of 100**, up from 93.11 GB earlier in this audit, against 2.8 GB of live files — 92 GB of dead LFS revisions. Reclaim is cron'd Sundays only (`squash-dataset-history.yml:20`) and shares a concurrency group with the runs filling the quota. `pipeline.yml:44` documents the failure mode itself: "a full quota fails the push mid-run and leaves the dataset half-written." And there is **zero failure alerting** across eleven workflows — a 13.7-hour total outage of the digest system on 2026-08-12 (`SearchUnavailable: HTTP 401`) was discovered by opening the Actions tab.
+
+**9. Security and legal, both mostly portfolio-side but real.** `deploy/hf-space/Dockerfile:22` and `app.py:62` load `nomic-ai/nomic-embed-text-v1.5` with `trust_remote_code=True` at `main`, unpinned (`grep -c "revision=" → 0`), as root, in the one process holding `SUBSCRIBERS_TOKEN`, `SECRET_KEY`, `LITELLM_MASTER_KEY` (the router's *admin* credential) and an SSH key to the Oracle box; that `main` moved on 2026-04-07. Separately, a public repo under the owner's real name ships a DataDome challenge-solver plus a 298-line bypass cookbook naming proxy and CAPTCHA vendors — while `docs/discovery/crawler-design.md:150-153` declares "never circumvent anti-bot protections… no challenge-solvers" as non-negotiable. The skeptic correctly notes the solver never actually worked and Wellfound is eval-only, so the CFAA theory is weak — but the reputational fact does not require the tool to work.
+
+**10. Two smaller ones that cost real applications.** `min_years` is a hard *excluding* filter, and 24.9% of its values are guessed from a title word (`experience.py:123-179`, "senior"→5); the `experience_source` column exists in the schema and is stripped one layer before the screen (`search.py:337-356`). And the Match ring (`app.js:82`) is a hand-tuned linear rescale of raw cosine — the exact thing `docs/learnings.md:104-127` argues cannot exist — where the ~0.04 noise gap between rank 1 and rank 20 renders as **16 percentage points**.
+
+## 4. The structural critique
+
+**You have been optimising the measurable half of the problem, and the measurable half is the half that was already abundant.** Supply-side code (scrapers, ingest, discovery, merge, validate, resolve) is **21,121 LOC** by my count; everything a user touches (ui, alerts, search, profile, Space app) is **4,727** — a 4.5:1 split, matched by 40 of 52 ADRs on the pipeline and **zero** on applying. But a user can never see more than 100 rows of 283,767 (`search.py:287,333`), and defaults to 20. Row 100,001 is worth exactly zero to any individual. Meanwhile the 2026 bottleneck is employer *response*, not listing supply. Every hour on bin-packing bought a number that moved; every hour on conversion would have bought a number that doesn't exist yet. Nature abhors an un-instrumented goal, so the goal drifted to whatever the dashboard showed.
+
+**The portfolio goal has won every allocation decision, invisibly, because both goals produce the same artifact type.** The project's proudest number — nDCG@10 = 0.90 — impresses an interviewer and tells a job seeker nothing. It is computed on 10 queries against a 6,462-row *Wellfound* table (`search.py:41-42`: `EVAL_TABLE = "wellfound"`) sharing 3.5% of its companies with production; no code path has ever evaluated `PROD_TABLE`; a random shuffle of the same pool scores ~0.80 and the worst possible ordering ~0.73, so 0.90 sits about halfway between garbage and perfect; and it is in no CI workflow. That is a resume artifact, and it is a fragile one — a competent ML interviewer dismantles it in ninety seconds by asking for the random baseline. The bitter irony is that the portfolio goal is *also* failing on its own terms right now, and for the product's reason: the demo is a 404.
+
+**Supply-side engineering has become a substitute for the demand-side risk you haven't taken.** The founding thesis — "LinkedIn is not a comprehensive mirror" (README:22) — appears in four documents and is measured in **none**. There is no overlap study anywhere in the repo. Building scraper #22 is comfortable and verifiable; asking 100 strangers to use the thing and discovering they don't care is not. Every item on CLAUDE.md's TODO (PyjamaHR, TurboHire, Zwayam, Phenom…) is a way to keep doing the comfortable thing. And the competitive facts make it worse: hiring.cafe ships the same thesis free at 3.5M jobs across 46 ATSes; Fantastic.jobs will sell you 200,000+ ATS boards at $1 per 1,000 jobs, so your entire served table costs ~$281 to buy at better coverage and hourly refresh. Subtract every ATS a commercial API already covers and the real coverage moat is Darwinbox, Keka, RippleHire — 9.4% of the corpus, one of which your own log review calls "effectively not working."
+
+## 5. What to do
+
+**The evidence says this repo is currently optimised for the portfolio goal** — 4.5:1 LOC, 40/52 ADRs, nDCG as the headline, zero outcome metrics, an unfalsifiable product claim — while delivering on neither. Pick one, in writing, as ADR-0053.
+
+**If the goal is genuinely to get people hired** (ordered; the first four are one week):
+
+1. **Make `/search` anonymous** at reduced `k`; gate only per-account writes. Put the live Space URL at the top of the README with a screenshot. Delete or fix the Pages 404. This is the single highest-leverage day in the repo.
+2. **Instrument the goal.** Log `(hashed_account, query, filters, n_results, top_score)` per search, wrap apply links in a click redirect, add a `status` field to SavedJob (`saved|applied|screen|interview|offer`), and ask subscribers by reply after 7 days. Within a month you have apply-per-search and response-per-apply. Until this exists, delete "get more interviews" from every description of the project.
+3. **Test the thesis.** 200 jobs stratified by ATS, checked against LinkedIn / Google Jobs / Naukri; report miss rate and median lead time in hours. If LinkedIn has 90% within four hours, you need to know that before writing another scraper.
+4. **Ship recency as the product.** A no-login Telegram/email alert: role keyword + location + years band, new postings within ~6 hours of `first_seen`, direct apply URL. `search.build_filter` already has `seen_after`. This is packaging, not engineering — and it is the *only* conversion lever the ATS-direct architecture uniquely earns. Backfill `first_seen` (77% null) in one CI job first, or the lever fires on a quarter of the table.
+5. **Fix the links before anyone clicks them.** Canonical Greenhouse URLs + a serve-time rehost in `_canonical_url` (the seam exists and already carries two stopgaps); drop or deep-link RippleHire; promote `title_on_page: false` to a harness failure; run the shape check over every row at join time, not 3 API results.
+6. **Then, and only then, coverage:** Workable's 14,454 boards — after porting `_HostGate` and the breaker from `check_liveness.py` into `src/headstart/http.py`, or 15 runner IPs get Cloudflare-banned.
+
+**If the real goal is to get the owner hired:** the moves are mostly the same, which is the good news. A working public demo beats 52 ADRs. "I shipped it, N people use it, here is the measured response-rate lift" is a category above any offline metric. Add: pin the encoder revision and lock the Space's 65 unpinned packages *before* a security-minded reviewer finds `trust_remote_code=True` at `main` as root next to an SSH key; delete the DataDome solver and the two bypass cookbooks from history; add a LICENSE; rewrite the portfolio bullet to what exists (no query-parser, no re-ranker, no ablation, 280k rows not 3.3M) — an interviewer who checks will find all three missing, and one overstated bullet costs more than the whole project earns. Lead with ADR-0030 and ADR-0047. And fix the HF squash trigger today: 94.8 GB of 100, reclaim not scheduled until Sunday.
+
+## 6. What to kill
+
+- **The Google sign-in wall on `/search`** (`app.py:218-226`) and the 1-entry allowlist. It costs you 100% of the funnel to protect the cheapest path in the app.
+- **`docs/index.html` + `docs/jobs.json` + the `python -m headstart` harvest branch.** 5.1 MB of 53-day-old data from 3 of 21 ATSes, no workflow refreshing it, advertised as live in README:18 and :107. Two serving paths that can disagree is a bug generator; this one has disagreed for two months.
+- **The Profile / résumé parse** (`profile_extract.py`, ADR-0041, four routes) *unless* step 5 of the plan makes it do matching. Today it has **0 stored records**, feeds nothing in `search.py`, and ships up to 20,000 characters of un-redacted résumé to unnamed commercial LLM providers with no privacy policy anywhere in the repo — and "delete my profile" is an HF git commit that leaves every prior revision fetchable.
+- **Role trends** (ADR-0040/0051/0052, `/trends`, `ingest/role_trends.py`). Market analytics for zero users, on a ledger that crosses HF's LFS threshold ~2026-09-12 and already parses into ~1 GB RSS at one-year scale on every one of ~11 daily boots.
+- **The entire ATS-expansion TODO in CLAUDE.md** — PyjamaHR, Eightfold expansion, TurboHire, Zwayam, Phenom, PeopleStrong, Jobsoid, eight single-company unlocks. Freeze discovery. You have 4.17M job slots you are serving to one person.
+- **The `join` scraper and its 25,310 live ledger rows** — disabled, ~1 tech job in 10,000, 27% of your headline "live boards" number and 32% of every liveness run's cost.
+- **`scripts/scrape/datadome_slider.py`, `wellfound_recon.py`, `docs/wellfound/*-bypass.md`** — from history, not just HEAD.
+- **"nDCG@10 = 0.90" as a headline.** Keep `scripts/eval/` — it is good craft. Delete the claim until it runs on the served table with a random baseline printed beside it.
+
+The asset is real and rare. The product is not built, and the demo is broken. Both are one week of unglamorous work away from being false.

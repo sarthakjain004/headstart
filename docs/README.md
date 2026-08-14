@@ -2,6 +2,10 @@
 
 Start here — docs are grouped by area.
 
+## Product & strategy — what this is for, and whether it does it
+- [product/2026-08-14_adversarial-audit.md](product/2026-08-14_adversarial-audit.md) — adversarial audit of the whole project against the goal of getting people hired; what is strong, what blocks it, and the five claims the skeptic pass refuted.
+- [product/2026-08-14_twelve-week-roadmap.md](product/2026-08-14_twelve-week-roadmap.md) — the plan that came out of it: one strategy, one conversion feature, and the decision gates that say continue or stop.
+
 ## Wellfound — scraping a DataDome/Cloudflare-gated board
 - [wellfound/traffic-analysis.md](wellfound/traffic-analysis.md) — how Wellfound serves its job data and what gates it (HAR reverse-engineering).
 - [wellfound/target-roles.md](wellfound/target-roles.md) — the role × {india, remote} boards to scrape, and how to run / resume the sweep.
