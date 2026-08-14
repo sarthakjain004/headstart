@@ -109,12 +109,20 @@ class _HostGate:
             return time.monotonic() < self._banned_until
 
     def trip(self, seconds, why):
-        """Open the breaker for `seconds`. Never shortens a ban already in force."""
+        """Open the breaker for `seconds`. A no-op while already banned.
+
+        Comparing against a freshly-computed deadline (`now + seconds <= banned_until`) looks
+        equivalent but is not: wall-clock time keeps advancing between concurrent calls, so a
+        later call's candidate deadline is almost always slightly larger than an earlier call's —
+        every 429 that lands while the ban is live would then pass the check, re-print, and push
+        the ban forward again. Live in production 2026-08-14: one host under sustained refusal
+        printed dozens of "banned us" lines in the same second. Checking current status instead
+        of comparing candidate deadlines is what makes concurrent calls collapse to one trip.
+        """
         with self._lock:
-            until = time.monotonic() + seconds
-            if until <= self._banned_until:
-                return  # a longer ban is already running — and don't re-announce it
-            self._banned_until = until
+            if time.monotonic() < self._banned_until:
+                return
+            self._banned_until = time.monotonic() + seconds
         print(
             f"  [gate] {self.key} banned us ({why}) — every board behind it "
             f"short-circuits to UNKNOWN for {seconds}s",
