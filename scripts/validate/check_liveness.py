@@ -109,25 +109,41 @@ class _HostGate:
             return time.monotonic() < self._banned_until
 
     def trip(self, seconds, why):
-        """Open the breaker for `seconds`. A no-op while already banned.
+        """Open the breaker for at least `seconds`. Prints only on the unbanned -> banned edge.
 
-        Comparing against a freshly-computed deadline (`now + seconds <= banned_until`) looks
-        equivalent but is not: wall-clock time keeps advancing between concurrent calls, so a
-        later call's candidate deadline is almost always slightly larger than an earlier call's —
-        every 429 that lands while the ban is live would then pass the check, re-print, and push
-        the ban forward again. Live in production 2026-08-14: one host under sustained refusal
-        printed dozens of "banned us" lines in the same second. Checking current status instead
-        of comparing candidate deadlines is what makes concurrent calls collapse to one trip.
+        Two earlier versions of this each fixed one failure mode and broke the other:
+
+        - Comparing a freshly-computed deadline (`now + seconds` vs the stored one) lets the
+          longer of two *concurrent* candidates win regardless of arrival order — but wall-clock
+          time keeps advancing between calls, so a *repeated* trip with the SAME duration always
+          computes a slightly later deadline too. Every 429 landing while a ban was already live
+          re-printed and re-extended it — one host under sustained refusal logged dozens of
+          "banned us" lines in the same second (2026-08-14).
+        - Checking only current status (`now < banned_until`) fixed that flood, but a short ban
+          and a long ban racing from the SAME unbanned instant are then resolved by "whichever
+          thread wins the lock", not by duration — a 5s `Retry-After` trip and a concurrent 1800s
+          challenge trip on the same host could settle on 5s, silently dropping the 1800s signal.
+
+        Correct because it does both at once: `until > self._banned_until` always keeps the max
+        of every candidate seen (fixes the race — order never matters, only magnitude), while
+        `was_banned` gates the print to once per ban *episode* rather than once per call (fixes
+        the flood — a repeat trip while already banned can still extend silently, but never
+        re-announces). A gate stays banned only as long as real failures keep arriving: nothing
+        new triggers `trip` once `blocked()` is short-circuiting requests before they're sent.
         """
         with self._lock:
-            if time.monotonic() < self._banned_until:
-                return
-            self._banned_until = time.monotonic() + seconds
-        print(
-            f"  [gate] {self.key} banned us ({why}) — every board behind it "
-            f"short-circuits to UNKNOWN for {seconds}s",
-            flush=True,
-        )
+            now = time.monotonic()
+            was_banned = now < self._banned_until
+            until = now + seconds
+            if until > self._banned_until:
+                self._banned_until = until
+            first = not was_banned
+        if first:
+            print(
+                f"  [gate] {self.key} banned us ({why}) — every board behind it "
+                f"short-circuits to UNKNOWN for {seconds}s",
+                flush=True,
+            )
 
     def ease(self):
         """Halve the request rate. Returns False when already at the floor.
