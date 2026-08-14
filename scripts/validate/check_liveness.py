@@ -13,13 +13,19 @@ data/validate/liveness/{ats}.csv (ats,tenant,url,status,jobs,checked_at) — the
 truth. The Active list is just its status==live rows (config.load_active_companies); dead is
 status==dead; still-unknown is status==unknown.
 
-Incremental + fresh: a board is re-probed only when it's new, unknown, or past its per-status TTL
-(live 7d / dead 90d, env-tunable via HEADSTART_LIVE_TTL_DAYS / HEADSTART_DEAD_TTL_DAYS or the
-flags below) — so adding companies to the pool never re-checks the whole thing, yet settled boards
-still refresh on a cadence (catching a live-but-empty board that opens roles, or a live board that
-has since died). UNKNOWN is re-probed across increasingly patient passes; whatever is still unknown
-after the last pass is recorded as status=unknown (re-probed next run), never silently dropped. The
-ledger is rewritten after each pass, so a crash keeps the verdicts already settled.
+Incremental + fresh: a board is re-probed only when it's new or past its per-status TTL (live 7d /
+dead 90d / unknown 3d, env-tunable via HEADSTART_LIVE_TTL_DAYS / HEADSTART_DEAD_TTL_DAYS /
+HEADSTART_UNKNOWN_TTL_DAYS or the flags below) — so adding companies to the pool never re-checks
+the whole thing, yet settled boards still refresh on a cadence (catching a live-but-empty board
+that opens roles, or a live board that has since died). UNKNOWN is re-probed across increasingly
+patient passes within a run; whatever is still unknown after the last pass is recorded as
+status=unknown and re-probed after its (short) TTL, never silently dropped. The ledger is
+rewritten after each pass, so a crash keeps the verdicts already settled.
+
+Every non-settling outcome records *why* (timeout, connect-refused, http-429, bot-wall challenge,
+body-unparseable, ...), reported per ATS at the end of each pass — see the failure-accounting
+block below. Without it UNKNOWN is a black hole, and the responses differ completely: a 429 means
+back off, a parse failure means the probe itself is wrong, a timeout means retry more patiently.
 
 Run:   python scripts/validate/check_liveness.py                       # all ATSes, respect TTLs
        python scripts/validate/check_liveness.py zoho workday          # only these ATSes
@@ -35,6 +41,7 @@ import sys
 import threading
 import time
 import urllib.parse
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from itertools import zip_longest
@@ -79,9 +86,10 @@ PASSES = [(12, _W), (25, _W), (45, _W), (70, _W)]
 #            short-circuit to a transient failure (-> UNKNOWN, re-probed a later run) instead of
 #            re-extending the ban with thousands more requests. Never DEAD, by construction.
 class _HostGate:
-    def __init__(self, cap, spacing):
+    def __init__(self, cap, spacing, key=""):
         self.sem = threading.BoundedSemaphore(cap)
         self.spacing = spacing  # min seconds between request *starts*
+        self.key = key  # what this gate governs — a shared host, or one tenant's host
         self._lock = threading.Lock()
         self._next = 0.0
         self.banned_until = (
@@ -97,26 +105,111 @@ class _HostGate:
         if delay > 0:
             time.sleep(delay)
 
-    def trip(self, seconds, netloc, why):
+    def trip(self, seconds, why):
         if time.monotonic() < self.banned_until:
             return
         self.banned_until = time.monotonic() + seconds
         print(
-            f"  [gate] {netloc} banned us ({why}) — its remaining probes "
-            f"short-circuit to UNKNOWN for {seconds}s",
+            f"  [gate] {self.key} banned us ({why}) — every board behind it "
+            f"short-circuits to UNKNOWN for {seconds}s",
             flush=True,
         )
 
+    def slow_down(self):
+        """Halve the request rate, to a floor. A hand-tuned cap can only be right for the load it
+        was measured at; letting the host's own 429s widen the spacing means we settle at its real
+        ceiling instead of either crawling or earning a ban."""
+        with self._lock:
+            if self.spacing >= _MAX_SPACING:
+                return
+            self.spacing = min(_MAX_SPACING, max(_MIN_SPACING, self.spacing * 2))
+            now = self.spacing
+        print(f"  [gate] {self.key} 429 — easing to {1 / now:.1f} req/s", flush=True)
 
+
+# A gate governs whatever shares one rate limit. Two shapes, and conflating them is a real hazard:
+#
+#   shared host   every tenant is served by ONE host (apply.workable.com) or sits under a domain
+#                 the vendor rate-limits as a whole ({t}.recruitee.com, {t}.jobs.personio.de).
+#                 The gate must span them, or each tenant keeps its own strike counter and the
+#                 breaker can never trip — measured 2026-08-14, personio answered 429 on all four
+#                 passes and never once backed off.
+#   per-tenant    the subdomain IS a separate customer instance, as with Workday's
+#                 {tenant}.wdN.myworkdayjobs.com. One tenant's 429 says nothing about the others.
+#
+# So the SPANNING keys are an explicit, evidence-backed list, never inferred. An auto-gate (below)
+# always keys on the exact netloc. Inferring the span by stripping a label looked tidy and was
+# briefly live: it made one tenant's bot-wall 429 ban an entire Workday datacenter — `interoute`
+# alone took out wd10, wd102, wd103, wd109, wd115, wd117, wd503 and wd504 in a single pass, which
+# would have turned thousands of unrelated live boards UNKNOWN.
+_SPANNING = (
+    "recruitee.com",  # 44 429s in one measured pass, ungated
+    "jobs.personio.de",
+    "jobs.personio.com",
+)
 _GATES = {
-    # netloc: (max in-flight, seconds between request starts)
-    "apply.workable.com": _HostGate(
-        8, 0.25
-    ),  # Cloudflare per-IP ban at run concurrency
-    "api.lever.co": _HostGate(16, 0.0),  # p50 1.6s->9.2s at 8->120 workers; no 429s
-    "api.eu.lever.co": _HostGate(16, 0.0),
-    "join.com": _HostGate(16, 0.0),
+    # host: (max in-flight, seconds between request starts)
+    "apply.workable.com": _HostGate(8, 0.25, "apply.workable.com"),  # CF per-IP ban
+    "api.lever.co": _HostGate(
+        16, 0.0, "api.lever.co"
+    ),  # p50 1.6s->9.2s at 8->120 workers
+    "api.eu.lever.co": _HostGate(16, 0.0, "api.eu.lever.co"),
+    "join.com": _HostGate(16, 0.05, "join.com"),  # 56 429s in one measured pass at 0.0
+    "recruitee.com": _HostGate(16, 0.05, "recruitee.com"),
+    # Personio's boards sit behind Vercel's bot wall, which answers 429 with a "Security
+    # Checkpoint" interstitial and no Retry-After. Verified 2026-08-14 that it still fires at ONE
+    # request every 3 seconds, so this pacing is about staying out of the wall's reputation
+    # window, not about throughput — the wall is not a request-rate limit we can simply out-wait.
+    "jobs.personio.de": _HostGate(16, 0.05, "jobs.personio.de"),
+    "jobs.personio.com": _HostGate(16, 0.05, "jobs.personio.com"),
 }
+_gates_lock = threading.Lock()
+# Auto-gate defaults for a host that starts refusing without a seeded entry, and the bounds
+# slow_down() moves between (50 req/s down to 1 req/s).
+_AUTO_CAP, _AUTO_SPACING = 16, 0.1
+_MIN_SPACING, _MAX_SPACING = 0.02, 1.0
+
+
+def _spanning_key(netloc):
+    """The listed domain this host sits under, if any — never inferred, only matched."""
+    return next(
+        (d for d in _SPANNING if netloc == d or netloc.endswith("." + d)),
+        None,
+    )
+
+
+def _gate_for(netloc):
+    """The gate governing this host, or None if it has never pushed back."""
+    with _gates_lock:
+        gate = _GATES.get(netloc)
+        if gate is None:
+            span = _spanning_key(netloc)
+            gate = _GATES.get(span) if span else None
+        return gate
+
+
+def _ensure_gate(netloc):
+    """A host that answers 429 with no gate gets one, keyed on the exact host.
+
+    Deliberately never widened to a parent domain: an unlisted host might be one tenant among
+    thousands on a shared suffix (Workday), and throttling — or worse, banning — all of them off
+    one tenant's 429 costs far more coverage than the extra requests ever save.
+    """
+    with _gates_lock:
+        gate = _GATES.get(netloc)
+        if gate is None:
+            span = _spanning_key(netloc)
+            gate = _GATES.get(span) if span else None
+        if gate is None:
+            gate = _GATES[netloc] = _HostGate(_AUTO_CAP, _AUTO_SPACING, netloc)
+            print(
+                f"  [gate] {netloc} answered 429 unprompted — throttling it to "
+                f"{1 / _AUTO_SPACING:.0f} req/s for the rest of the run",
+                flush=True,
+            )
+        return gate
+
+
 _BAN_RETRY_AFTER_S = (
     60  # a Retry-After beyond this is a ban, not per-request throttling
 )
@@ -126,6 +219,59 @@ _BAN_RETRY_AFTER_S = (
 # fixed cooldown rather than burn the rest of the run's requests re-signalling the mitigation.
 _STRIKES_TO_TRIP = 20
 _CHALLENGE_COOLDOWN_S = 1800
+
+
+# --- why a probe didn't settle -------------------------------------------------------------------
+# UNKNOWN is the checker's catch-all, and it was a black hole: a timeout, a 429, a bot-wall 403 and
+# a JSON parse failure all landed in the same bucket, so a run that came back 81% unknown gave no
+# clue which. The responses differ completely — a 429 means back off, a parse failure means the
+# probe itself is wrong, a timeout means retry more patiently — so every non-settling outcome now
+# records a reason, reported per ATS at the end of each pass.
+_ctx = threading.local()  # the ATS the calling worker is probing
+_reasons = Counter()  # (ats, reason) -> count
+_reasons_lock = threading.Lock()
+
+# curl error codes worth telling apart (libcurl's own numbering).
+_CURL = {
+    6: "dns",
+    7: "connect-refused",
+    28: "timeout",
+    35: "tls-error",
+    52: "empty-reply",
+    56: "recv-error",
+    60: "tls-cert",
+}
+
+
+def _note(reason):
+    """Record why a probe didn't settle, against the ATS the worker is on."""
+    with _reasons_lock:
+        _reasons[(getattr(_ctx, "ats", "?"), reason)] += 1
+
+
+def _net_reason(exc):
+    code = getattr(exc, "code", None)
+    return _CURL.get(code, f"curl-{code}" if code else f"exc-{type(exc).__name__}")
+
+
+def _report_reasons(header):
+    """Print the pass's non-settling outcomes, worst ATS first — empty when everything settled."""
+    with _reasons_lock:
+        snapshot = dict(_reasons)
+        _reasons.clear()
+    if not snapshot:
+        return
+    per_ats = Counter()
+    for (ats, _), n in snapshot.items():
+        per_ats[ats] += n
+    print(f"  {header}", flush=True)
+    for ats, total in per_ats.most_common():
+        detail = ", ".join(
+            f"{reason}={n}"
+            for (a, reason), n in sorted(snapshot.items(), key=lambda kv: -kv[1])
+            if a == ats
+        )
+        print(f"    {ats:<16} {total:>6}  {detail}", flush=True)
 
 
 def _retry_after_s(value):
@@ -145,33 +291,64 @@ def _retry_after_s(value):
 
 
 def _fetch(method, url, **kw):
-    """One request through the shared-host gate. Returns the response, or None when the host's
-    circuit breaker is open (callers treat None as a transient failure -> UNKNOWN)."""
-    gate = _GATES.get(urllib.parse.urlsplit(url).netloc)
+    """One request, paced by its host's gate. Returns the response, or None when the host's
+    circuit breaker is open (callers treat None as a transient failure -> UNKNOWN).
+
+    An ungated host still runs at full concurrency — but its 429, if one comes, now reaches the
+    gate logic and creates a gate, so the limit is discovered rather than hand-maintained.
+    """
+    netloc = urllib.parse.urlsplit(url).netloc
+    gate = _gate_for(netloc)
     if gate is None:
-        return http.fetch(
-            method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
-        )
-    if time.monotonic() < gate.banned_until:
-        return None
-    with gate.sem:
-        gate.wait_turn()
         r = http.fetch(
             method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
         )
-    netloc = urllib.parse.urlsplit(url).netloc
-    if r.status_code == 429:
-        gate.strikes += 1
-        retry = _retry_after_s(r.headers.get("Retry-After"))
-        if retry and retry > _BAN_RETRY_AFTER_S:
-            gate.trip(retry, netloc, f"429, retry-after {retry}s")
-        elif r.headers.get("cf-mitigated") == "challenge":
-            gate.trip(_CHALLENGE_COOLDOWN_S, netloc, "429, Cloudflare challenge")
-        elif gate.strikes >= _STRIKES_TO_TRIP:
-            gate.trip(_CHALLENGE_COOLDOWN_S, netloc, f"{gate.strikes} consecutive 429s")
     else:
+        if time.monotonic() < gate.banned_until:
+            return None
+        with gate.sem:
+            gate.wait_turn()
+            r = http.fetch(
+                method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
+            )
+    if r.status_code == 429:
+        _on_429(gate or _ensure_gate(netloc), r, netloc)
+    elif gate is not None:
         gate.strikes = 0
     return r
+
+
+# A bot wall's interstitial, served as 429. Cloudflare labels its own with a header; Vercel's
+# "Security Checkpoint" (which fronts every personio board) carries no header at all, so the page
+# body is the only signal. Verified 2026-08-14 that it still fires at one request per 3 seconds —
+# a wall is not a rate limit, so easing the pace never clears it. Trip straight to a cooldown
+# instead of spending five halvings and a few hundred requests learning that.
+_CHALLENGE_BODIES = (
+    b"Vercel Security Checkpoint",
+    b"Just a moment...",
+    b"cf-browser-verification",
+)
+
+
+def _is_challenge(r):
+    if r.headers.get("cf-mitigated") == "challenge":
+        return True
+    body = r.content[:4096] if r.content else b""
+    return any(m in body for m in _CHALLENGE_BODIES)
+
+
+def _on_429(gate, r, netloc):
+    """Back off this host: ban outright when it tells us to, else ease the rate and keep going."""
+    gate.strikes += 1
+    retry = _retry_after_s(r.headers.get("Retry-After"))
+    if retry and retry > _BAN_RETRY_AFTER_S:
+        gate.trip(retry, f"429, retry-after {retry}s")
+    elif _is_challenge(r):
+        gate.trip(_CHALLENGE_COOLDOWN_S, "429, bot-wall challenge")
+    elif gate.strikes >= _STRIKES_TO_TRIP:
+        gate.trip(_CHALLENGE_COOLDOWN_S, f"{gate.strikes} consecutive 429s")
+    else:
+        gate.slow_down()
 
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
@@ -224,9 +401,15 @@ def _get(url, headers=None):
     try:
         r = _fetch("GET", url, headers=h)
     except http.RequestsError as e:
-        return ("dns", b"") if _is_dns(e) else (None, b"")
-    if r is None:  # circuit breaker open -> transient
+        if _is_dns(e):
+            return "dns", b""
+        _note(_net_reason(e))
         return None, b""
+    if r is None:  # circuit breaker open -> transient
+        _note("breaker-open")
+        return None, b""
+    if r.status_code not in (200, 404, 410):  # 404/410 settle as DEAD, not a failure
+        _note(f"http-{r.status_code}")
     return r.status_code, r.content
 
 
@@ -236,14 +419,24 @@ def _post(url, json_body, headers):
     try:
         r = _fetch("POST", url, json=json_body, headers=headers)
     except http.RequestsError as e:
-        return ("dns", None) if _is_dns(e) else (None, None)
+        if _is_dns(e):
+            return "dns", None
+        _note(_net_reason(e))
+        return None, None
     if r is None:  # circuit breaker open -> transient
+        _note("breaker-open")
         return None, None
     if r.status_code == 200:
         try:
             return 200, r.json()
         except Exception:
+            _note("json-parse-fail")
             return None, None  # 200 but unparseable -> treat as transient
+    # Only ``p_workday`` posts, and its conclusive "not here" set is _WD_GONE (404/410/422) — those
+    # settle the board, so they are not failures. 422 is the bulk of them: it is what a live
+    # datacenter answers for a tenant/site it doesn't host, once per DC in the sweep.
+    if r.status_code not in _WD_GONE:
+        _note(f"http-{r.status_code}")
     return r.status_code, None
 
 
@@ -252,7 +445,10 @@ def _verdict(status, jobs):
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status == 200:
-        return (LIVE, jobs) if jobs is not None else (UNKNOWN, None)
+        if jobs is not None:
+            return LIVE, jobs
+        _note("body-unparseable")  # 200, but the count parser couldn't read it
+        return UNKNOWN, None
     return UNKNOWN, None  # timeout / 5xx / 403 / 429-exhausted / other -> retry
 
 
@@ -813,6 +1009,7 @@ def _parse_args(args):
     ledger_dir = liveness.dir_for(ROOT)
     limit = 0
     live_ttl, dead_ttl = liveness.LIVE_TTL_DAYS, liveness.DEAD_TTL_DAYS
+    unknown_ttl = liveness.UNKNOWN_TTL_DAYS
     force = False
     rest = []
     i = 0
@@ -833,18 +1030,21 @@ def _parse_args(args):
         elif a == "--dead-ttl":
             dead_ttl = int(args[i + 1])
             i += 2
+        elif a == "--unknown-ttl":
+            unknown_ttl = int(args[i + 1])
+            i += 2
         elif a == "--force":
             force = True
             i += 1
         else:
             rest.append(a)
             i += 1
-    return indir, ledger_dir, limit, live_ttl, dead_ttl, force, set(rest)
+    return indir, ledger_dir, limit, live_ttl, dead_ttl, unknown_ttl, force, set(rest)
 
 
 def main():
-    indir, ledger_dir, limit, live_ttl, dead_ttl, force, filt = _parse_args(
-        sys.argv[1:]
+    indir, ledger_dir, limit, live_ttl, dead_ttl, unknown_ttl, force, filt = (
+        _parse_args(sys.argv[1:])
     )
     ledger_dir.mkdir(parents=True, exist_ok=True)
     today = date.today()
@@ -866,7 +1066,11 @@ def main():
             for r in rows
             if force
             or liveness.needs_probe(
-                ledger.get(r["tenant"]), today, live_ttl=live_ttl, dead_ttl=dead_ttl
+                ledger.get(r["tenant"]),
+                today,
+                live_ttl=live_ttl,
+                dead_ttl=dead_ttl,
+                unknown_ttl=unknown_ttl,
             )
         ]
         if limit:
@@ -877,7 +1081,8 @@ def main():
     items = [x for row in zip_longest(*buckets.values()) for x in row if x is not None]
     print(
         f"to probe: {len(items)} of {sum(len(v) for v in verdicts.values())} known "
-        f"(live_ttl={live_ttl}d, dead_ttl={dead_ttl}d{', force' if force else ''})",
+        f"(live_ttl={live_ttl}d, dead_ttl={dead_ttl}d, unknown_ttl={unknown_ttl}d"
+        f"{', force' if force else ''})",
         flush=True,
     )
     lock = threading.Lock()
@@ -896,6 +1101,9 @@ def main():
         def do(item):
             nonlocal probed
             ats, tenant, url = item
+            _ctx.ats = (
+                ats  # so _note attributes this worker's failures to the right ATS
+            )
             if is_nonprod(
                 tenant, url
             ):  # dead by convention — no probe spent (ADR-0034)
@@ -903,7 +1111,8 @@ def main():
             else:
                 try:
                     verdict, jobs = PROBES[ats](tenant, url)
-                except Exception:
+                except Exception as e:
+                    _note(f"probe-raised-{type(e).__name__}")
                     verdict, jobs = UNKNOWN, None
             if verdict == UNKNOWN:
                 with ulock:
@@ -944,6 +1153,7 @@ def main():
             f"  pass done in {elapsed:.1f}s ({len(work) / elapsed:.0f} boards/s)",
             flush=True,
         )
+        _report_reasons(f"why {len(unknowns)} did not settle:")
         return unknowns
 
     for n, (timeout, cap) in enumerate(PASSES, 1):
