@@ -39,7 +39,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>93,688 live of 148,553<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>100,572 live of 176,733<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -110,19 +110,19 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 93,688 live boards reduce to 60,544 a run can even consider:
+that matters. The 100,572 live boards reduce to 66,751 a run can even consider:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 93,688 | |
-| − `registry.DISABLED_ATS` | −24,900 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
-| − case-variant dedupe | −8,231 | `company/External` and `company/external` are one board (ADR-0023) |
-| − `config.EXCLUDED_BOARDS` | −12 | vendor test/sandbox boards, confirmed by reading their postings |
+| live rows in the ledger | 100,572 | |
+| − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
+| − case-variant dedupe | −8,391 | `company/External` and `company/external` are one board (ADR-0023) |
+| − `config.EXCLUDED_BOARDS` | −13 | vendor test/sandbox boards, confirmed by reading their postings |
 | − `config.PARKED_BOARDS` | −1 | real boards withheld for now — Accenture's 48,369-job Workday board outruns any shard budget |
-| = selectable | **60,544** | |
+| = selectable | **66,751** | |
 
-Of those, **45,685 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
-the 14,859 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
+Of those, **49,628 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+the 17,123 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
@@ -168,7 +168,7 @@ than scraped. Its scraper class and tests stay intact; re-enable by removing it 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **148,553 boards**: 93,688 live, 37,444 dead, 17,421 unknown. Of the
+liveness pipeline has probed **176,733 boards**: 100,572 live, 47,801 dead, 28,360 unknown. Of the
 21 scrapers, 18 currently have rows in the served table — `join` is disabled, and `oracle` and
 `sensehq` are single-company unlocks with nothing indexed yet.
 
