@@ -1,29 +1,45 @@
-# Darwinbox: the Cloudflare wall on datacentre egress
+# Darwinbox: the Cloudflare wall on non-browser clients
 
-**Status (2026-08-14): open.** Darwinbox yields ~0–5% of its Boards on CI and has done for at
-least five days. The cause is diagnosed and reproducible; the fix is not chosen. One contributing
-defect — a reporting bug that hid the wall in the logs — is fixed
-(`_wall_or_last` in `src/headstart/scrapers/darwinbox.py`).
+**Status (2026-08-15): a fix is identified, not yet shipped.** Darwinbox yields ~0–5% of its
+Boards on CI and has done for over five days. A real Chrome driven over CDP (pydoll) reads the
+Boards fine from the *same* GitHub Actions IP that gets 403s from `curl_cffi` — so the fix is a
+browser-driven scrape, pending a volume test. One contributing defect — a reporting bug that hid
+the wall in the logs — is already fixed (`_wall_or_last` in `src/headstart/scrapers/darwinbox.py`).
+
+> **Correction (2026-08-15).** An earlier version of this document concluded the wall had an
+> unbeatable datacentre-IP gate. That was wrong, and the error is instructive: every arm that
+> failed happened to be a non-browser client, so "datacentre IP" and "not a real browser" were
+> perfectly confounded. Only a same-runner control separated them. The section below is rewritten;
+> the falsified claim is kept visible rather than quietly deleted.
 
 ## What is happening
 
-Darwinbox's Cloudflare edge answers the careers API with a 403 error page when the request comes
-from a datacentre IP. The pipeline runs on GitHub Actions, so every scrape shard is a datacentre
-IP, and ~150 of the ~155 darwinbox Boards in a run's slice fail. The surviving handful is what
-reaches `data/jobs/darwinbox.jsonl`.
+Darwinbox's Cloudflare edge answers the careers API with a 403 error page when the request does
+not look like a real browser — and from a datacentre IP it holds that line strictly enough that
+`curl_cffi`'s Chrome impersonation, which suffices from a residential connection, no longer
+passes. The pipeline runs on GitHub Actions, so ~150 of the ~155 darwinbox Boards in a run's slice
+fail. The surviving handful is what reaches `data/jobs/darwinbox.jsonl`.
 
-The wall has **two independent gates**, and a request must clear both:
+**What actually discriminates is the client, not the egress.** The decisive measurement is a
+same-runner control (run `31828850489`, job `94859502521`, egress `20.163.39.232`): curl_cffi and
+cloudscraper took 403 on all six Boards, and minutes later, *on that same IP and the same
+Cloudflare colo*, a real Chrome read all six.
 
-| Egress | TLS fingerprint | Result |
+| Egress | Client | Result |
 |---|---|---|
-| Residential | browser (`curl_cffi impersonate="chrome"`) | 200 |
-| Residential | non-browser (curl_cffi default) | 403 |
-| GitHub Actions | browser | 403 |
-| GitHub Actions | browser, via cloudscraper | 403 |
-| Oracle box (datacentre) | non-browser curl | 403 |
+| GitHub Actions `20.163.39.232` | `curl_cffi impersonate="chrome"` | 403 |
+| GitHub Actions `20.163.39.232` | cloudscraper | 403 |
+| GitHub Actions `20.163.39.232` | **real Chrome (pydoll)** | **200, all 6 Boards** |
+| Residential | `curl_cffi impersonate="chrome"` | 200 |
+| Residential | curl_cffi default TLS | 403 |
+| Oracle box (datacentre) | plain curl | 403 |
 
-The scraper already clears the TLS gate — that is why it uses `curl_cffi` (see the module
-docstring). It cannot clear the IP gate from a hosted runner.
+Across two runs: 12/12 browser Board reads passed; 24/24 curl_cffi/cloudscraper attempts on the
+same Boards took 403. So a datacentre IP is an *input* to Cloudflare's score, not a veto — what
+curl_cffi can no longer satisfy at darwinbox's current setting is the full client fingerprint
+(genuine TLS/HTTP2, client hints, a JS runtime). No challenge is ever presented: the document
+returns 200 to a browser on the first request, which is also why cloudscraper is useless here —
+there is nothing for it to solve.
 
 ## This is not a recent regression — a correction
 
@@ -83,10 +99,9 @@ pacing it is cheap to try and does not need new infrastructure.
 
 ## What does not work
 
-**cloudscraper.** It solves Cloudflare's JS/managed challenges. There is no challenge here — the
-first request returns a static error page with no `cf-mitigated` header, i.e. a firewall block.
-Verified 0/6 from GitHub Actions (run `31823159547`) against 6/6 from residential. Adding it
-would change nothing on CI.
+**cloudscraper.** It solves Cloudflare's JS/managed challenges. No challenge is presented here, so
+it has nothing to solve. Verified 0/6 from GitHub Actions (run `31823159547`) against 6/6 from
+residential. Adding it would change nothing on CI.
 
 **Cloudflare WARP.** Better than direct but nowhere near a fix: as the first arm it passed 6/40
 (15%). WARP egress is a shared Cloudflare range, which the repo's own resilience notes already
@@ -123,12 +138,32 @@ that is the point):
 To reproduce the wall you need a datacentre IP: push them to a branch running the temporary
 `probe-darwinbox-wall` workflow, which installs WARP in proxy mode and runs both.
 
-## Open decision
+## The fix, and what is still unproven
+
+**Drive a real browser.** `scripts/bench/probe_darwinbox_pydoll.py` navigates the careers page,
+clicks the "Open Jobs" CTA, and reads the Board. Two details matter for a production scraper:
+
+- `/ms/candidate/careers` redirects to `/careers/home`, which fires only `getLandingPage` and
+  `companyinfo` — **`alljobs` is never requested**. A fetch-only probe would answer a different
+  question; the click through to `/careers/allJobs` is what triggers it.
+- The SPA's own XHR returns only the first 10 for a large Board. A page-context `fetch` carrying
+  our own `limit=100` body returned the full set and also passed, so the shape is navigate once,
+  then paginate via in-page fetch on the warmed tab.
+
+Cost measured at 20.6 s/Board serial including two fixed sleeps and a redundant arm — ~3.5 min per
+shard at ~10 Boards/shard, against a 60-minute budget. `ubuntu-latest` already ships Chrome.
+
+**Unproven, and it is the thing most likely to sink this:** only 6 Boards were tested, twice. This
+wall demonstrably escalates *within* a run — 40 requests tightened it against the next 40 — and
+nothing here shows 155 browser-driven Boards behave like 12. Concurrency across tabs is untested,
+and headless is untested (headful under xvfb passed).
+
+## Still-open alternatives, if the volume test fails
 
 1. **Pace and concentrate** — exempt darwinbox from the ATS-spreading cap, put it on one shard,
-   pace it. Cheapest, tests the strongest hypothesis, no new infrastructure.
-2. **Residential proxy** — the only option that certainly clears the IP gate. Needs a paid
-   provider and a per-ATS proxy hook.
+   pace it. Cheapest, no new infrastructure.
+2. **Residential proxy** — needs a paid provider and a per-ATS proxy hook. Now looks like
+   over-engineering unless volume proves the browser path cannot hold.
 3. **Park it** — `config.PARKED_BOARDS` until one of the above lands. Darwinbox currently spends
    ~155 Boards of scrape budget and its share of the run's retries every two hours for near-zero
    yield, and its truncated scrapes feed the ADR-0046 collapse guard. Note the cost: a parked

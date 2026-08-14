@@ -61,7 +61,7 @@ def _wall_or_last(errors: list[Exception]) -> Exception:
 
     Only one TLD hosts a given tenant; the other answers 500 "Invalid subdomain". Reporting
     the *last* error therefore let that expected 500 bury a 403 from the tenant's real host,
-    so a blocked Board was logged as a dead one. A 403 wins: it is never the wrong-TLD
+    so a walled Board was logged as a dead one. A 403 wins: it is never the wrong-TLD
     answer, and it is the one failure a re-scrape can't clear on its own.
 
     The status comes off ``exc.response``, not off ``exc.code`` — ``curl_cffi`` raises
