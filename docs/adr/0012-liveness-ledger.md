@@ -40,12 +40,13 @@ is the CONTEXT.md three-state (`live` | `dead` | `unknown`) now persisted for *e
 `jobs` is the count at the last Live probe; `checked_at` (ISO date) is the freshness key that makes
 everything else work.
 
-**Re-probe policy (TTL).** A board is probed this run iff it is new to the ledger, `unknown`, or
-its `checked_at` is older than a per-status TTL:
+**Re-probe policy (TTL).** A board is probed this run iff it is new to the ledger or its
+`checked_at` is older than a per-status TTL:
 
 | ledger state | TTL (env-tunable) |
 | --- | --- |
-| absent / `unknown` | always probe |
+| absent | always probe |
+| `unknown` | `HEADSTART_UNKNOWN_TTL_DAYS` (default **3**) — see the amendment below |
 | `live` | `HEADSTART_LIVE_TTL_DAYS` (default **7**) — refresh counts, catch Live→Dead |
 | `dead` | `HEADSTART_DEAD_TTL_DAYS` (default **90**) — 404/NXDOMAIN rarely reverses |
 
@@ -80,3 +81,29 @@ superseded (left in place for now as the migration source and safety net; remova
 network). The freshness refresh re-probes the whole Live set at once when the TTL lapses; scoping
 that to the served/scraped subset is a future refinement. `sensehq` has a scraper but no liveness
 probe yet, so it has no ledger — a pre-existing gap, unchanged here.
+
+## Amendment (2026-08-14): `unknown` gets a TTL instead of "always probe"
+
+The table above originally read **`absent / unknown` | always probe**. `unknown` now has its own
+TTL, `HEADSTART_UNKNOWN_TTL_DAYS`, defaulting to **3 days**.
+
+"Always probe" was the right instinct — we genuinely do not know, and a board that timed out today
+may answer tomorrow — but it assumed every `unknown` is *transient*. Some are structural. A
+Workday board answering `403` is outside the conclusive `_WD_GONE` set (`404`/`410`/`422`), so no
+datacenter in the sweep can ever settle it; it survives all four escalating passes and is retried
+in full on the very next run, forever. The same holds for a SmartRecruiters slug answering `400`
+and for hosts that simply never respond. Measured on a 120-per-ATS sample (2026-08-14): ~140 such
+boards, each costing the full four-pass escalation to learn nothing that changed.
+
+Three days keeps the meaning intact. `unknown` still means "ask again soon" — the board is
+re-probed roughly twice a week, and it is still never allowed to settle into a false `dead`, which
+is the invariant this ADR exists to protect. What changes is only that we stop paying the entire
+retry cascade on every run for a board whose answer has not moved in months. The floor matters:
+this must stay far below `dead`'s 90 days, or `unknown` quietly becomes a verdict rather than the
+absence of one. `tests/test_liveness.py::test_unknown_ttl_is_far_shorter_than_dead` pins that.
+
+The alternative considered and rejected was widening the conclusive sets — treating Workday `401`
+/`403` and SmartRecruiters `400` as definitive `dead`. That settles them permanently and costs
+nothing, but a `403` is frequently a bot wall rather than an absent board (this same change added
+bot-wall detection precisely because walls masquerade as refusals), so it manufactures exactly the
+false-dead this ADR was written to prevent — and a false `dead` hides a real company for 90 days.

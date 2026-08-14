@@ -32,6 +32,14 @@ FIELDS = ("ats", "tenant", "url", "status", "jobs", "checked_at")
 # often to update job counts and catch a board that has since died.
 LIVE_TTL_DAYS = int(os.environ.get("HEADSTART_LIVE_TTL_DAYS") or 7)
 DEAD_TTL_DAYS = int(os.environ.get("HEADSTART_DEAD_TTL_DAYS") or 90)
+# ``unknown`` used to be re-probed on every single run. That is the right instinct — we genuinely
+# do not know, and boards do come back — but some fail *identically* every time: a Workday board
+# answering 403 is outside the conclusive _WD_GONE set, so it survives all four escalating passes
+# and is retried in full on the next run, forever. Measured 2026-08-14 on a 120-per-ATS sample:
+# ~140 boards in that state, the whole four-pass cost spent to learn nothing new. A short TTL
+# keeps the semantics (still rechecked twice a week, never a false verdict) without paying it
+# every run. Short on purpose — this is "ask again soon", not "settled".
+UNKNOWN_TTL_DAYS = int(os.environ.get("HEADSTART_UNKNOWN_TTL_DAYS") or 3)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,11 +116,13 @@ def needs_probe(
     *,
     live_ttl: int = LIVE_TTL_DAYS,
     dead_ttl: int = DEAD_TTL_DAYS,
+    unknown_ttl: int = UNKNOWN_TTL_DAYS,
 ) -> bool:
-    """Should this board be probed this run? New, ``unknown``, or past its per-status TTL."""
-    if verdict is None or verdict.status == UNKNOWN:
+    """Should this board be probed this run? New, or past its per-status TTL."""
+    if verdict is None:
         return True
     age = _age_days(verdict.checked_at, today)
     if age is None:
         return True
-    return age >= (live_ttl if verdict.status == LIVE else dead_ttl)
+    ttl = {LIVE: live_ttl, DEAD: dead_ttl}.get(verdict.status, unknown_ttl)
+    return age >= ttl

@@ -183,8 +183,8 @@ class _Resp:
         self.content = content
 
 
-def _fresh_workable_gate():
-    gate = cl._HostGate(8, 0.0)
+def _fresh_workable_gate(spacing=0.0):
+    gate = cl._HostGate(8, spacing, "apply.workable.com")
     cl._GATES["apply.workable.com"] = gate
     return gate
 
@@ -211,12 +211,12 @@ def test_short_retry_after_does_not_trip(monkeypatch):
         cl.http, "fetch", lambda m, u, **kw: _Resp(429, {"Retry-After": "2"})
     )
     assert cl.p_workable("acme", "") == (cl.UNKNOWN, None)
-    assert gate.banned_until == 0.0  # per-request throttling, not a ban
+    assert not gate.blocked()  # per-request throttling, not a ban
 
 
 def test_ungated_host_bypasses_open_breaker(monkeypatch):
     gate = _fresh_workable_gate()
-    gate.banned_until = float("inf")  # workable is banned...
+    gate.trip(10_000, "test")  # workable is banned...
     monkeypatch.setattr(cl.http, "fetch", lambda m, u, **kw: _Resp(200, {}, b"[]"))
     # ...but greenhouse (ungated) still probes normally
     assert cl.p_greenhouse("acme", "") == (cl.LIVE, 0)
@@ -244,21 +244,31 @@ def test_cf_challenge_trips_breaker_without_retry_after(monkeypatch):
     assert calls["n"] == 1
 
 
-def test_plain_429_streak_trips_breaker(monkeypatch):
-    gate = _fresh_workable_gate()
+def test_headerless_429s_ease_the_rate_then_trip_at_the_floor(monkeypatch):
+    """A bare 429 — no Retry-After, no challenge markers — must still stop us eventually.
+
+    This replaces a consecutive-strikes counter. That could not work on a gate many boards share:
+    any one of hundreds of threads getting a 200 reset it, so reaching the threshold was luck —
+    measured, 1,800 rejections across 2,000 requests left the counter at 5. Easing to the floor is
+    the honest signal instead, and it cannot be reset by a neighbour's success.
+    """
+    gate = _fresh_workable_gate(spacing=cl._MIN_SPACING)
     monkeypatch.setattr(cl.http, "fetch", lambda m, u, **kw: _Resp(429, {}))
-    for _ in range(cl._STRIKES_TO_TRIP):
+    while gate.spacing < cl._MAX_SPACING:  # each 429 halves the rate
         assert cl.p_workable("acme", "") == (cl.UNKNOWN, None)
-    assert gate.banned_until > 0  # streak tripped it even with no headers at all
+        assert not gate.blocked(), "must keep trying while easing can still help"
+    cl.p_workable("acme", "")  # refused at the floor -> nothing left to try
+    assert gate.blocked()
 
 
-def test_success_resets_the_429_streak(monkeypatch):
-    gate = _fresh_workable_gate()
-    responses = [_Resp(429, {})] * (cl._STRIKES_TO_TRIP - 1) + [
-        _Resp(200, {}, b'{"jobs": []}')
-    ]
+def test_a_neighbours_success_cannot_undo_the_easing(monkeypatch):
+    """The old streak counter reset on any 200, which is why it never fired on a shared gate."""
+    gate = _fresh_workable_gate(spacing=cl._MIN_SPACING)
+    responses = [_Resp(429, {}), _Resp(200, {}, b'{"jobs": []}'), _Resp(429, {})]
     monkeypatch.setattr(cl.http, "fetch", lambda m, u, **kw: responses.pop(0))
-    for _ in range(cl._STRIKES_TO_TRIP - 1):
-        cl.p_workable("acme", "")
-    assert cl.p_workable("acme", "") == (cl.LIVE, 0)
-    assert gate.strikes == 0 and gate.banned_until == 0.0
+    cl.p_workable("acme", "")
+    eased_to = gate.spacing
+    assert cl.p_workable("other", "") == (cl.LIVE, 0)
+    assert gate.spacing == eased_to, "a success must not speed the gate back up"
+    cl.p_workable("third", "")
+    assert gate.spacing > eased_to, "and the next 429 keeps easing from where it was"
