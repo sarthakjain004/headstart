@@ -135,6 +135,35 @@ def test_a_longer_ban_is_never_shortened_by_a_later_one(cl):
     assert gate._banned_until > cl.time.monotonic() + 60
 
 
+def test_a_short_ban_arriving_first_does_not_win_over_a_concurrent_long_one(cl):
+    """The regression a review round caught in an earlier version of trip(): comparing only
+    current status ("am I banned right now?") resolves two candidates racing from the same
+    unbanned instant by "whichever thread wins the lock" rather than by magnitude — a 5s
+    Retry-After trip and a concurrent 1800s challenge trip on the same host could settle on 5s,
+    silently dropping the stronger signal. Order must never matter, only magnitude."""
+    gate = cl._HostGate(4, 0.05, "t.example")
+    gate.trip(5, "short")  # arrives first this time — the reverse of the test above
+    gate.trip(1800, "long")
+    assert gate._banned_until > cl.time.monotonic() + 60, (
+        "the long ban must win regardless of which one the lock let through first"
+    )
+
+
+def test_trip_prints_once_per_ban_episode_not_once_per_call(cl, capsys):
+    """A gate already banned still absorbs further same-strength trips (real traffic: requests
+    already in flight before the gate existed all land around the same moment) without
+    re-announcing each one — that flood was the original bug this method was rewritten to fix."""
+    gate = cl._HostGate(4, 0.05, "t.example")
+    for _ in range(50):
+        gate.trip(1800, "429")
+    assert capsys.readouterr().out.count("banned us") == 1
+
+    # once the episode ends, a fresh trip is a new episode and does announce again
+    gate._banned_until = cl.time.monotonic() - 1
+    gate.trip(1800, "429")
+    assert capsys.readouterr().out.count("banned us") == 1
+
+
 def test_a_bot_wall_behind_403_is_recognised(cl):
     """Cloudflare serves "Just a moment..." behind 403 and 503, and only its 429s carry the
     cf-mitigated header — so a 429-only check misses two of the three markers."""
