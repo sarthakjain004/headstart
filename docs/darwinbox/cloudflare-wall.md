@@ -1,16 +1,23 @@
 # Darwinbox: the Cloudflare wall on non-browser clients
 
-**Status (2026-08-15): a fix is identified, not yet shipped.** Darwinbox yields ~0–5% of its
+**Status (2026-08-15): the fix is measured and ready to build.** Darwinbox yields ~0–5% of its
 Boards on CI and has done for over five days. A real Chrome driven over CDP (pydoll) reads the
-Boards fine from the *same* GitHub Actions IP that gets 403s from `curl_cffi` — so the fix is a
-browser-driven scrape, pending a volume test. One contributing defect — a reporting bug that hid
+Boards fine from the *same* GitHub Actions IP that gets 403s from `curl_cffi`, at 153/155 Boards
+and 0.38 s/Board — so the fix is a browser-driven scrape, and the volume test that was the last
+open question has passed. One contributing defect — a reporting bug that hid
 the wall in the logs — is already fixed (`_wall_or_last` in `src/headstart/scrapers/darwinbox.py`).
 
-> **Correction (2026-08-15).** An earlier version of this document concluded the wall had an
-> unbeatable datacentre-IP gate. That was wrong, and the error is instructive: every arm that
-> failed happened to be a non-browser client, so "datacentre IP" and "not a real browser" were
-> perfectly confounded. Only a same-runner control separated them. The section below is rewritten;
-> the falsified claim is kept visible rather than quietly deleted.
+> **Two corrections (2026-08-15), both kept visible rather than quietly deleted.**
+>
+> 1. An earlier version concluded the wall had an unbeatable datacentre-IP gate. Wrong, and
+>    instructively so: every arm that failed happened also to be a non-browser client, so
+>    "datacentre IP" and "not a real browser" were perfectly confounded. Only a same-runner
+>    control separated them.
+> 2. It then called volume escalation "the strongest lead", from four near-zero samples that were
+>    all simply blocked. Measuring 155 Boards bucketed by position shows no escalation at all.
+>
+> Both errors share a shape: a pattern inferred from failures that had a simpler common cause.
+> The fix in each case was a control that varied one thing.
 
 ## What is happening
 
@@ -72,30 +79,31 @@ Two things follow. The wall predates every commit in the 2026-08-13 window, so n
 caused it. And any future measurement of a darwinbox fix must be read against a **0–181 baseline
 with occasional spikes**, not against 2540 — a single good run proves nothing here.
 
-## The strongest lead: the wall escalates within a run
+## The wall does not escalate with volume — a second correction
 
-The 40-Board yield probe (`scripts/bench/probe_darwinbox_warp_yield.py`) was run twice on one
-runner with the arm order flipped. Whichever arm ran **second** did dramatically worse:
+An earlier version of this document called escalation "the strongest lead", from a 40-Board probe
+run twice with the arm order flipped, where whichever arm ran **second** scored worse:
 
 | Arm order | First arm | Second arm |
 |---|---|---|
-| direct → warp | direct 5/40 (27 jobs) | warp 3/40 (92 jobs) |
-| warp → direct | warp 6/40 (318 jobs) | direct **0/40** (0 jobs) |
+| direct → warp | direct 5/40 | warp 3/40 |
+| warp → direct | warp 6/40 | direct **0/40** |
 
-Forty requests are enough to tighten the wall against the *next* forty, on a different egress IP.
-So darwinbox is not merely filtering by IP reputation — it responds to request volume, and it
-does so fast.
+**That reading was wrong.** All four numbers are near zero — that is a walled client producing
+noise, not an escalation curve. A pattern was read into four samples that were all simply
+"blocked". Measuring it properly settles it: 155 real Boards, bucketed by dispatch position, over
+four independent runs on four different egress IPs.
 
-That reframes the problem. A run currently asks darwinbox for ~155 Boards from 15 shards inside a
-~4-minute burst at shard start (every shard log shows ~10 darwinbox failures, all clustered
-there). That burst is plausibly what keeps the wall up. Note `lpt_pack_capped` (ADR-0047, #121)
-deliberately *spreads* each ATS across all 15 shards so each gets its own per-origin budget —
-correct for Eightfold, which throttles per origin, but for darwinbox it may simply present 15
-IPs to a range-level reputation system. This is a hypothesis, not a measured result: the
-timeline above rules #121 out as the *cause*, but not as an aggravator.
+| Bucket | 1-25 | 26-50 | 51-100 | 101-155 |
+|---|---|---|---|---|
+| Pass rate | 100% | 96% | 98% | **100%** |
 
-**Pacing, not egress, is the next thing to test.** Concentrating darwinbox on one shard and
-pacing it is cheap to try and does not need new infrastructure.
+The final bucket is 100% in *every* run. The two failures are the **same two Boards every time**,
+at the same dispatch positions: `tokopedia` answering 500 (the wrong TLD is recorded in the
+ledger — a data bug, not a wall) and one genuine 403 on `academy`. That is **one real block in
+155**, reproducible and position-independent — a property of that tenant, not of request volume.
+
+So neither pacing nor egress is the lever. The client is.
 
 ## What does not work
 
@@ -150,13 +158,33 @@ clicks the "Open Jobs" CTA, and reads the Board. Two details matter for a produc
   our own `limit=100` body returned the full set and also passed, so the shape is navigate once,
   then paginate via in-page fetch on the warmed tab.
 
-Cost measured at 20.6 s/Board serial including two fixed sleeps and a redundant arm — ~3.5 min per
-shard at ~10 Boards/shard, against a 60-minute budget. `ubuntu-latest` already ships Chrome.
+**Recommended production shape**, measured: one **headful** Chrome under `xvfb-run` per shard,
+reused across Boards; a fresh tab per Board with heavy subresource blocking (media *and* all JS,
+Turnstile included); navigate, then one page-context `fetch` of `alljobs`; concurrency width 4-6.
+That is **0.38 s/Board** at 155 Boards, and 18-21 s for a 10-Board shard including browser
+startup, against a 60-minute budget. `ubuntu-latest` already ships Chrome.
 
-**Unproven, and it is the thing most likely to sink this:** only 6 Boards were tested, twice. This
-wall demonstrably escalates *within* a run — 40 requests tightened it against the next 40 — and
-nothing here shows 155 browser-driven Boards behave like 12. Concurrency across tabs is untested,
-and headless is untested (headful under xvfb passed).
+A cross-origin variant that never navigates at all is equally fast (0.39 s/Board), but it depends
+on darwinbox serving permissive CORS, which they can revoke without warning for a 0.01 s/Board
+saving. Keep it as the documented fallback, not the default.
+
+**Now measured at production scale.** 155 Boards, four runs, no escalation (above); ~10 Boards on
+one runner — the real per-shard shape — passed 10/10 twice in 18-21 s including Chrome startup.
+Concurrency holds to width 6 with no pass-rate loss.
+
+Two findings change the implementation:
+
+* **Headless is a flat block, not a raised challenge rate.** One leg fell back to headless and
+  took 403 on all six Boards while headful on a sibling runner read all six. ADR-0037's note
+  understates this: production must be headful under `xvfb-run`.
+* **The click is an Angular-router requirement, not a Cloudflare one.** It genuinely fires the
+  XHR, but dropping it costs nothing against the wall — and blocking every subresource including
+  Cloudflare's own Turnstile `api.js` also costs nothing, which is what takes a Board from 20.6 s
+  to **0.38 s**. Cloudflare is not requiring the page's JS to run.
+
+Two operational caveats: Chrome startup under xvfb is flaky (2 of 9 probe legs died reporting
+nothing, which reads exactly like a wall result — production needs a retry), and the probe fetches
+only page 1, so a real scrape must paginate.
 
 ## Still-open alternatives, if the volume test fails
 
