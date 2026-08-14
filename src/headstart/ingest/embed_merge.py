@@ -148,8 +148,16 @@ def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
     )
     vectors[kept_rows].tofile(tmp_vec)
     tmp_meta.write_text("".join(kept_meta), encoding="utf-8")
-    tmp_vec.replace(vec_path)
+    # Meta first, then vectors — the same order the store is *appended* in, inverted, and for the
+    # same reason. `EmbeddingStore` writes vectors before their metadata so the vector file is
+    # always at least as long as meta; shrinking has to shorten meta first to preserve that. The
+    # other order leaves a window where vectors are short and meta is long, and a SIGTERM there
+    # (merge has a 48 min job timeout) is exactly the state `_reconcile_store` refuses to open —
+    # every later run's merge would die on "prior store corrupt" until a human repaired it.
+    # Crashing between these two replaces now costs only re-dropping the vector rows, which
+    # `EmbeddingStore`'s resume truncation already does.
     tmp_meta.replace(meta_path)
+    tmp_vec.replace(vec_path)
     return dropped
 
 

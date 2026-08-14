@@ -62,3 +62,4 @@ supersedes it and note the supersession in both.
 | [0052](0052-watch-the-large-domain-roles-too.md) | Watch the large domain roles too, not only the small ones | 2026-08-13 |
 | [0053](0053-scope-eviction-on-scrape-outcome.md) | Scope eviction on a Board's scrape outcome, not on whether it emitted a line | 2026-08-13 |
 | [0054](0054-learned-fan-out-speedup.md) | Predict the scrape makespan from a learned fan-out speedup | 2026-08-14 |
+| [0055](0055-bound-the-collapse-guards-hold.md) | Bound the collapse guard's hold so held rows drain instead of ratcheting | 2026-08-14 |

@@ -175,6 +175,25 @@ def _all_ids(table: Any) -> list[str]:
     ]
 
 
+def _first_seen_stamps(table: Any) -> dict[str, str]:
+    """``{id: first_seen}`` for the whole table, ordering the collapse guard's drain (ADR-0055).
+
+    Two string columns, never the vector, so this is a cheap read next to `_all_ids` rather than
+    a second scan of the store. Rows predating the column carry null and are simply absent, which
+    is what sorts them first — they are the oldest rows there are.
+    """
+    if _FIRST_SEEN_FIELD.name not in table.schema.names:
+        return {}
+    return {
+        r["id"]: r[_FIRST_SEEN_FIELD.name]
+        for r in table.search()
+        .select(["id", _FIRST_SEEN_FIELD.name])
+        .limit(max(table.count_rows(), 1))
+        .to_list()
+        if r.get(_FIRST_SEEN_FIELD.name)
+    }
+
+
 def _scraped_boards(
     scraped: str | Path, corpus_ids: set[str], live: dict[str, str]
 ) -> set[str]:
@@ -301,7 +320,7 @@ def sync(args: argparse.Namespace) -> int:
     taken = _take_upgrades(table, Path(args.upgrades))
     index_ids = [job_id for job_id in index_ids if job_id not in taken]
 
-    plan = plan_sync(index_ids, fresh, boards, live)
+    plan = plan_sync(index_ids, fresh, boards, live, _first_seen_stamps(table))
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
     withheld = sum(count for _, count in plan.held)
     if plan.held:
@@ -310,7 +329,8 @@ def sync(args: argparse.Namespace) -> int:
         _log.warning(
             f"collapse guard: withheld {withheld} evictions across {len(plan.held)} Boards that "
             f"each lost >{COLLAPSE_RATIO:.0%} of their rows in one run — that is a truncated "
-            "scrape, not a delisting (ADR-0046)"
+            f"scrape, not a delisting (ADR-0046); each drained up to {COLLAPSE_RATIO:.0%} of its "
+            "rows this run and will drain the rest over later runs (ADR-0055)"
         )
         for board, count in plan.held:
             _log.warning(f"  withheld {count} evictions on {board}")
