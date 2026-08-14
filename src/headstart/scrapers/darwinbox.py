@@ -56,6 +56,25 @@ def _iso_date(raw: str | int | float | None) -> str | None:
         return raw
 
 
+def _wall_or_last(errors: list[Exception]) -> Exception:
+    """The 403 among both TLD attempts if one walled us, else the last error.
+
+    Only one TLD hosts a given tenant; the other answers 500 "Invalid subdomain". Reporting
+    the *last* error therefore let that expected 500 bury a 403 from the tenant's real host,
+    so a blocked Board was logged as a dead one. A 403 wins: it is never the wrong-TLD
+    answer, and it is the one failure a re-scrape can't clear on its own.
+
+    The status comes off ``exc.response``, not off ``exc.code`` — ``curl_cffi`` raises
+    ``HTTPError(msg, 0, response)``, where that 0 is a curl errno, not the HTTP status.
+    """
+    walled = (
+        e
+        for e in errors
+        if getattr(getattr(e, "response", None), "status_code", None) == 403
+    )
+    return next(walled, errors[-1])
+
+
 class DarwinboxScraper(BaseScraper):
     ats = "darwinbox"
 
@@ -101,7 +120,7 @@ class DarwinboxScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         # data-center TLD varies per tenant; resolve it on the first page, then paginate.
-        last_error: Exception | None = None
+        errors: list[Exception] = []
         host = batch = None
         for tld in _TLDS:
             candidate = f"https://{self.slug}.darwinbox.{tld}"
@@ -110,9 +129,9 @@ class DarwinboxScraper(BaseScraper):
                 host = candidate
                 break
             except Exception as exc:  # noqa: BLE001 - wrong-TLD host: try the other one
-                last_error = exc
+                errors.append(exc)
         if host is None:
-            raise last_error
+            raise _wall_or_last(errors)
         self._host = host
         self._new_careers = self._portal_is_v2(host)
         jobs = list(batch)
