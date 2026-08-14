@@ -17,7 +17,14 @@ name: squash-dataset-history
 # `usedStorage` can lag the squash by a couple of hours. Don't read a flat number as a failure.
 on:
   schedule:
-    - cron: "0 4 * * 0" # Sundays 04:00 UTC — an even hour, clear of the pipeline's :30 odd-hour slots
+    # Daily 04:00 UTC — an even hour, clear of the pipeline's :30 odd-hour slots and of
+    # `cleanup-index` at 06:00. Weekly until 2026-08-14, when it stopped being survivable: the
+    # 2-hourly cadence writes ~16 GB/day of revisions, so a week accumulates ~113 GB against a
+    # 100 GB quota. The dataset hit 86.7 GB with 2.63 GB of live files — 84 GB of dead revisions
+    # — five days after a squash, and would have blown the quota before the next Sunday fired.
+    # A push against a full quota fails mid-run and leaves the dataset half-written, so the
+    # reclaim has to outpace the writes rather than merely follow them.
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 permissions:

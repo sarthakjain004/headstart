@@ -41,7 +41,7 @@ The served table held 244,173 rows; this run was about to replace it with 11,555
 was **the same rate limit**: `up()` exhausted its three attempts on the first upload and `bash -e`
 aborted the step. Nothing landed (zero dataset commits between 20:05Z and 23:40Z). Had the 429
 cleared one attempt sooner, recovery would have cost ~260 CPU-hours of re-embedding, recoverable
-from HF revision history only until the next Sunday `super_squash_history` discarded it — and every
+from HF revision history only until the next daily `super_squash_history` discarded it — and every
 later run would have appended ~15k rows onto the stump and exited **green** while serving a
 95%-empty index.
 

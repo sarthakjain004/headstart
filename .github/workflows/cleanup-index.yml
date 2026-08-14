@@ -15,13 +15,13 @@ name: cleanup-index
 # deliberate trade — more files to open per query, reclaimed here. It also compacts the ADR-0050
 # description store, whose per-run fragments accumulate on the same principle.
 #
-# Was every 2 days. Daily doubles the ~755 MB rebuild's blob churn, which the Sunday history squash
+# Was every 2 days. Daily doubles the ~755 MB rebuild's blob churn, which the daily history squash
 # still bounds to a week (~5.3 GB against a 100 GB quota). The real cost is contention: this job
 # shares the pipeline's concurrency group and can run 90 minutes, so a pipeline run queues behind
 # it once more per two days.
 on:
   schedule:
-    - cron: "0 6 * * *" # 06:00 UTC, clear of the pipeline's :30 slots and the Sunday 04:00 squash
+    - cron: "0 6 * * *" # 06:00 UTC, clear of the pipeline's :30 slots and the 04:00 squash
   workflow_dispatch:
 
 permissions:
