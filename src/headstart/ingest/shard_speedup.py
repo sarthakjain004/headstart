@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-FIELDS = ("speedup", "samples", "updated_at")
+FIELDS = ("speedup", "shards", "updated_at")
 CURRENT_WEIGHT = 0.5  # EWMA weight on this run (the rest on history)
 # Used until the ledger has a measurement. 1.0 reproduces the old serial prediction exactly, so a
 # cold start is no worse than the behavior this replaces and never *under*-predicts on no evidence.
@@ -57,10 +57,15 @@ MIN_RATIO = 1.0
 
 @dataclass(frozen=True, slots=True)
 class Speedup:
-    """The learned fan-out speedup and how much evidence stands behind it."""
+    """The learned fan-out speedup, and the run that last moved it.
+
+    ``shards`` and ``updated_at`` are not read by the planner — they are there so a human reading
+    the ledger can tell a one-run estimate from a settled one, the same way ``board_priority``
+    carries ``last_tech_jobs`` beside its score.
+    """
 
     ratio: float
-    samples: int
+    shards: int
     updated_at: str  # ISO date of the last run that contributed
 
 
@@ -75,7 +80,7 @@ def load(path: str | Path) -> Speedup:
             row = next(iter(csv.DictReader(handle)))
         return Speedup(
             max(MIN_RATIO, float(row["speedup"])),
-            int(row["samples"]),
+            int(row["shards"]),
             row["updated_at"],
         )
     except (KeyError, ValueError, StopIteration, OSError):
@@ -115,7 +120,7 @@ def blend(previous: float, ratios: list[float]) -> float:
     return CURRENT_WEIGHT * current + (1 - CURRENT_WEIGHT) * previous
 
 
-def save(path: str | Path, ratio: float, samples: int) -> None:
+def save(path: str | Path, ratio: float, shards: int) -> None:
     """Write the one-row ledger, creating the parent directory."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +130,7 @@ def save(path: str | Path, ratio: float, samples: int) -> None:
         writer.writerow(
             {
                 "speedup": f"{ratio:.4f}",
-                "samples": samples,
+                "shards": shards,
                 "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             }
         )

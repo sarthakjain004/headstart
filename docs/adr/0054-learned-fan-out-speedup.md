@@ -1,9 +1,8 @@
 # ADR-0054: Predict the scrape makespan from a learned fan-out speedup
 
-- Status: Accepted
-- Date: 2026-08-14
-- Amends: [ADR-0027](0027-measured-scrape-cost-ledger.md) — the per-Board seconds it measures are
-  correct; what the planner *did with them* was not.
+**Status:** accepted · **Date:** 2026-08-14 · **Amends:**
+[ADR-0027](0027-measured-scrape-cost-ledger.md) — the per-Board seconds it measures are correct;
+what the planner *did with them* was not
 
 ## Context
 

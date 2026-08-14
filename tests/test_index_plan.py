@@ -10,6 +10,7 @@ import pytest
 
 from headstart.config import load_active_companies
 from headstart.ingest.index_plan import (
+    COLLAPSE_FLOOR,
     _live_board_end,
     apply_sync,
     boards_by_canon,
@@ -481,3 +482,22 @@ def test_read_unauthoritative_boards_survives_a_corrupt_file(tmp_path):
     p = tmp_path / "unauthoritative_boards.json"
     p.write_text("{not json", encoding="utf-8")
     assert read_unauthoritative_boards(p) == set()
+
+
+def test_the_drain_always_takes_at_least_one_row():
+    """The cap must never round to zero, or the hold is a ratchet again (ADR-0055).
+
+    Safe today only because COLLAPSE_FLOOR (20) keeps `int(0.25 * len(ids))` at 5 or more, and
+    those two constants are declared far apart with nothing coupling them. Pinned at the smallest
+    Board the guard can reach, and against a hypothetical tiny one.
+    """
+    board = "greenhouse:at-the-floor"
+    indexed = _board(board, COLLAPSE_FLOOR)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=[],  # everything missing: the worst case for the guard
+        scraped_boards=[board],
+        live={},
+    )
+    assert len(plan.delete) >= 1
+    assert dict(plan.held)[board] == COLLAPSE_FLOOR - len(plan.delete)

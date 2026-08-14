@@ -177,7 +177,7 @@ def _update_speedup(reports: list[dict], path: Path) -> None:
             return
         stored = shard_speedup.load(path)
         blended = shard_speedup.blend(stored.ratio, ratios)
-        shard_speedup.save(path, blended, stored.samples + len(ratios))
+        shard_speedup.save(path, blended, len(ratios))
         _log.info(
             f"fan-out speedup: {blended:.2f}x "
             f"(was {stored.ratio:.2f}x, {len(ratios)} shard(s) this run)"

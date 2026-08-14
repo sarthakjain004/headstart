@@ -1,9 +1,8 @@
 # ADR-0055: Bound the collapse guard's hold
 
-- Status: Accepted
-- Date: 2026-08-14
-- Amends: [ADR-0046](0046-index-collapse-guard.md) — the guard's threshold and intent stand; what
-  it *does* on a trip changes from refusing to rate-limiting.
+**Status:** accepted · **Date:** 2026-08-14 · **Amends:**
+[ADR-0046](0046-index-collapse-guard.md) — the guard's threshold and intent stand; what it *does*
+on a trip changes from refusing to rate-limiting
 
 ## Context
 

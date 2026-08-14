@@ -200,8 +200,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `doc_prep`, `index_plan`); logic the curated-feed path
-  (`python -m headstart` → `headstart.harvest`) also reaches stays in `headstart` proper
+  live there too (`binpack`, `doc_prep`, `index_plan`, `observability`, `shard_speedup`); logic
+  the curated-feed path (`python -m headstart` → `headstart.harvest`) also reaches stays in
+  `headstart` proper
   (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
   organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`

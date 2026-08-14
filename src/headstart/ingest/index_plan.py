@@ -131,7 +131,11 @@ def plan_sync(
             # been able to confirm for longest is the likeliest to be genuinely closed. A
             # missing stamp sorts first — those rows predate the column, so they are the oldest
             # of all — and the id breaks ties so the plan is deterministic.
-            cap = int(COLLAPSE_RATIO * len(ids))
+            # max(1, ...) binds the invariant rather than leaving it to arithmetic: the drain
+            # must always take at least one row, or a Board would hold forever again — the exact
+            # ratchet this replaces. Unreachable while COLLAPSE_FLOOR is 20 (cap >= 5), but the
+            # two constants are declared far apart and nothing else couples them.
+            cap = max(1, int(COLLAPSE_RATIO * len(ids)))
             drain = sorted(missing, key=lambda i: (stamps.get(i) or "", i))[:cap]
             delete |= set(drain)
             held.append((board, len(missing) - len(drain)))

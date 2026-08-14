@@ -163,35 +163,36 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     return metas, vectors.reshape(-1, dim)
 
 
+def _scan(table: Any, columns: list[str]) -> list[dict]:
+    """Every row's ``columns``, never the vector, so a whole-table read stays cheap.
+
+    ``limit`` defaults to 10 in LanceDB, so it must be set explicitly — and to at least 1, since
+    ``limit(0)`` is rejected on an empty table.
+    """
+    return table.search().select(columns).limit(max(table.count_rows(), 1)).to_list()
+
+
 def _all_ids(table: Any) -> list[str]:
-    """Every id in the table. ``limit`` defaults to 10 in LanceDB, so it must be set explicitly —
-    and to at least 1, since ``limit(0)`` is rejected on an empty table."""
-    return [
-        r["id"]
-        for r in table.search()
-        .select(["id"])
-        .limit(max(table.count_rows(), 1))
-        .to_list()
-    ]
+    """Every id in the table."""
+    return [r["id"] for r in _scan(table, ["id"])]
 
 
-def _first_seen_stamps(table: Any) -> dict[str, str]:
-    """``{id: first_seen}`` for the whole table, ordering the collapse guard's drain (ADR-0055).
+def _ids_and_stamps(table: Any) -> tuple[list[str], dict[str, str]]:
+    """Every id, and the ``first_seen`` stamps that order the collapse guard's drain (ADR-0055).
 
-    Two string columns, never the vector, so this is a cheap read next to `_all_ids` rather than
-    a second scan of the store. Rows predating the column carry null and are simply absent, which
-    is what sorts them first — they are the oldest rows there are.
+    One scan yielding both, not two — they are columns of the same row and the planner needs them
+    together. A row predating the ``first_seen`` column carries null and is simply absent from the
+    mapping, which is what sorts it first in the drain: those are the oldest rows there are.
     """
     if _FIRST_SEEN_FIELD.name not in table.schema.names:
-        return {}
-    return {
+        return _all_ids(table), {}
+    rows = _scan(table, ["id", _FIRST_SEEN_FIELD.name])
+    stamps = {
         r["id"]: r[_FIRST_SEEN_FIELD.name]
-        for r in table.search()
-        .select(["id", _FIRST_SEEN_FIELD.name])
-        .limit(max(table.count_rows(), 1))
-        .to_list()
+        for r in rows
         if r.get(_FIRST_SEEN_FIELD.name)
     }
+    return [r["id"] for r in rows], stamps
 
 
 def _scraped_boards(
@@ -296,10 +297,10 @@ def sync(args: argparse.Namespace) -> int:
     db = lancedb.connect(args.db)
     if PROD_TABLE in db.list_tables().tables:
         table = db.open_table(PROD_TABLE)
-        index_ids = _all_ids(table)
+        index_ids, stamps = _ids_and_stamps(table)
     else:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
-        index_ids = []
+        index_ids, stamps = [], {}
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
@@ -320,7 +321,7 @@ def sync(args: argparse.Namespace) -> int:
     taken = _take_upgrades(table, Path(args.upgrades))
     index_ids = [job_id for job_id in index_ids if job_id not in taken]
 
-    plan = plan_sync(index_ids, fresh, boards, live, _first_seen_stamps(table))
+    plan = plan_sync(index_ids, fresh, boards, live, stamps)
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
     withheld = sum(count for _, count in plan.held)
     if plan.held:

@@ -10,15 +10,15 @@ def test_load_missing_file_is_the_serial_default(tmp_path):
 
 def test_load_corrupt_file_degrades_instead_of_raising(tmp_path):
     path = tmp_path / "shard_speedup.csv"
-    path.write_text("speedup,samples,updated_at\nnot-a-number,3,2026-08-14\n")
+    path.write_text("speedup,shards,updated_at\nnot-a-number,3,2026-08-14\n")
     assert shard_speedup.load(path).ratio == shard_speedup.DEFAULT
 
 
 def test_save_then_load_round_trips(tmp_path):
     path = tmp_path / "state" / "shard_speedup.csv"
-    shard_speedup.save(path, 2.8, samples=15)
+    shard_speedup.save(path, 2.8, shards=15)
     loaded = shard_speedup.load(path)
-    assert (loaded.ratio, loaded.samples) == (2.8, 15)
+    assert (loaded.ratio, loaded.shards) == (2.8, 15)
 
 
 def test_blend_moves_halfway_on_the_default_weight():
@@ -99,7 +99,7 @@ def test_repeated_blending_converges_on_the_true_speedup(tmp_path):
         blended = shard_speedup.blend(
             stored.ratio, shard_speedup.ratios_from_reports(reports)
         )
-        shard_speedup.save(path, blended, stored.samples + len(reports))
+        shard_speedup.save(path, blended, len(reports))
     assert shard_speedup.load(path).ratio == pytest.approx(true_ratio, abs=0.01)
 
 
