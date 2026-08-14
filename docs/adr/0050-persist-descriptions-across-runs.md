@@ -90,7 +90,8 @@ changed (~430 KB); readers take base-then-fragments with last-write-wins, and `-
 them into `base.jsonl.gz`. Rewriting the store every run would mint ~174 MB of fresh blobs per run
 — at ~10 runs/day that is the 100 GB quota in ~57 days, the exact mistake `data/lancedb` was moved
 away from. Compaction rides `cleanup-index`, whose cron moves from every 2 days to **daily**;
-history is squashed weekly, so the doubled rebuild churn stays ~5.3 GB/week.
+history is squashed daily (weekly until 2026-08-14, when the 2-hourly cadence's ~16 GB/day of
+revisions outgrew it), so the doubled rebuild churn is reclaimed within a day.
 
 ### Rejected alternatives
 
