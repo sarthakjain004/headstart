@@ -56,7 +56,6 @@ import argparse
 import json
 import shutil
 from collections import Counter
-from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -68,11 +67,17 @@ import pyarrow as pa
 from headstart import log
 from headstart.corpus import iter_jobs
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import (
+    PENDING_UPGRADES_PATH,
+    REPO_ROOT,
+    observability,
+    read_id_list,
+)
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
     boards_by_canon,
+    in_predicate,
     live_keep_set,
     plan_prune,
     plan_sync,
@@ -91,7 +96,7 @@ _SCRAPED = (
 _DB = REPO_ROOT / "data" / "lancedb"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 # Written by embed_plan, consumed here and by embed_merge (ADR-0050).
-_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+_UPGRADES = PENDING_UPGRADES_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
@@ -213,15 +218,13 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     (ADR-0050). Ids absent from the table (a first run, or a Job the prune already took) simply
     return no stamp and are stamped with the run's time like any other add.
     """
-    if not path.exists():
-        return {}
-    ids = {line.strip() for line in path.read_text().splitlines() if line.strip()}
+    ids = read_id_list(path)
     if not ids:
         return {}
     # Safe to name the column: sync adds it to a pre-ADR-0031 table before reaching here.
     rows = (
         table.search()
-        .where(_in_predicate("id", ids))
+        .where(in_predicate("id", ids))
         .select(["id", _FIRST_SEEN_FIELD.name])
         .to_list()
     )
@@ -230,11 +233,6 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     kept = sum(1 for v in taken.values() if v)
     _log.info(f"upgrades: replacing {len(taken)} rows, {kept} keeping first_seen")
     return taken
-
-
-def _in_predicate(column: str, values: Iterable[str]) -> str:
-    quoted = ", ".join("'" + v.replace("'", "''") + "'" for v in sorted(values))
-    return f"{column} IN ({quoted})"
 
 
 def sync(args: argparse.Namespace) -> int:

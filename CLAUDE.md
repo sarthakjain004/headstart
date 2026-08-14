@@ -190,10 +190,14 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 ## Repo Conventions
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
   One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
-  `scrape`, `scrape_join`, `filter_tech`, `update_descriptions` (the ADR-0050 description store,
-  after the tech filter and before `embed_plan`), `update_ledgers` (`priority`/`cost` subcommands),
-  `embed_plan`, `embed_run`, `embed_merge`, `index` (`sync`/`prune`/`compact` subcommands),
-  `role_trends` (the ADR-0040 trends ledger, after prune).
+  `scrape_run`, `scrape_join`, `filter_tech`, `update_descriptions` (the ADR-0050 description
+  store, after the tech filter and before `embed_plan`), `update_ledgers` (`priority`/`cost`
+  subcommands), `embed_plan`, `embed_run`, `embed_merge`, `index` (`sync` then `prune --apply`),
+  `role_trends` (the ADR-0040 trends ledger, after prune). `index compact` is a subcommand of the
+  same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
+  rewriting the whole table every two hours is what the storage budget cannot afford.
+  One more entry point is not a stage but opens three of them: `state_fetch` (ADR-0030) pulls each
+  stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `doc_prep`, `index_plan`); logic the curated-feed path

@@ -123,6 +123,15 @@ def _quote(value: str) -> str:
     )  # SQL string literal for the delete predicate
 
 
+def in_predicate(column: str, values: Iterable[str]) -> str:
+    """``column IN ('a', 'b')`` over quoted literals, sorted so the predicate is stable.
+
+    Lives here beside :func:`_quote`, which it uses, rather than being rebuilt by each caller —
+    the escaping is the part worth having exactly one of.
+    """
+    return f"{column} IN ({', '.join(_quote(v) for v in sorted(values))})"
+
+
 def apply_sync(
     table: Any,
     add_rows: list[dict],
@@ -138,7 +147,7 @@ def apply_sync(
     ids = list(delete_ids)
     for start in range(0, len(ids), chunk):
         batch = ids[start : start + chunk]
-        table.delete(f"id IN ({', '.join(_quote(i) for i in batch)})")
+        table.delete(in_predicate("id", batch))
     if add_rows:
         table.add(add_rows)
 

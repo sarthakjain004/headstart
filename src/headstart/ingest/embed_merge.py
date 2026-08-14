@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, read_id_list
 from headstart.search import DOC_PREFIX, MODEL
 
 _log = log.get(__name__, __spec__)
@@ -37,7 +37,7 @@ _log = log.get(__name__, __spec__)
 _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _FRAGMENTS = REPO_ROOT / "data" / "embeddings" / "fragments"
 # Written by embed_plan; consumed here and by `index sync` (ADR-0050).
-_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+_UPGRADES = PENDING_UPGRADES_PATH
 _FLOAT_BYTES = 4  # float32
 
 
@@ -191,9 +191,7 @@ def main() -> int:
 
     upgrades = Path(args.evict_ids)
     if dim is not None and upgrades.exists():
-        upgrade_ids = {
-            line.strip() for line in upgrades.read_text().splitlines() if line.strip()
-        }
+        upgrade_ids = read_id_list(upgrades)
         # An upgrade is a *replace*: drop the stale vector, merge the fresh one. Only the ids
         # that actually arrived get dropped, because the drop is only safe once its replacement
         # is in hand. Evicting the whole list instead is a delete for every id that did not come
