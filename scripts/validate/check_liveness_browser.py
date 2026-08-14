@@ -30,10 +30,13 @@ worth doing once with a real browser rather than assuming.
 
 Two limits of reading a rendered page rather than an API, both load-bearing:
 
-* **Job counts are a floor, not a total.** The browser counts what the first page rendered, and
-  Workday paginates at 20 — a 500-job board reports 20. The HTTP probe reads the API's own
-  ``total`` and is authoritative for counts; prefer it whenever it can settle the row at all.
-  What the browser is good for is the *status*, not the number.
+* **Read a stated total, never the rendered card count.** Pagination makes the visible cards a
+  floor — Workday renders 20 at a time, so counting them reported 20 for a 282-job board. It
+  states the real figure on page one ("282 JOBS FOUND", "1 - 20 of 282 jobs"), and reading that
+  is one lookup, exact, and costs no extra requests against a host that rate-limits. Verified
+  against the JSON API's own ``total``: 17/282/25, exact on all three. Where an ATS states no
+  total the card count is used and *is* a floor — a Board that renders jobs is still Live, just
+  under-counted.
 * **Personio's "board missing" and "throttled" look alike.** A tenant with no public board
   redirects to Personio's marketing site — but so, apparently, can a request that would have been
   429'd, and the sampled rows 429 over HTTP right now. Since the two are indistinguishable from
@@ -127,16 +130,28 @@ _ATS: dict[str, dict] = {
         "url": lambda t, u: (u or "").rstrip("/") + "/",
         "ready": "[data-automation-id='jobResults'], [data-automation-id='searchResults'], body",
         "count_js": """
-            const items = document.querySelectorAll("[data-automation-id='jobTitle']");
-            if (items.length) return items.length;
-            const total = document.querySelector("[data-automation-id='jobFoundText']");
-            if (total) {
-                const m = (total.innerText || "").match(/([\\d,]+)/);
+            // The stated total FIRST, never the rendered card count. Workday paginates at 20,
+            // so counting cards reports 20 for a 282-job board — and it says the real number
+            // right there: "282 JOBS FOUND" / "1 - 20 of 282 jobs". Reading it is one lookup and
+            // exact, where walking the pages would be a dozen round trips against a host that
+            // already rate-limits us.
+            const found = document.querySelector("[data-automation-id='jobFoundText']");
+            if (found) {
+                const m = (found.innerText || "").match(/([\\d,]+)\\s*JOBS?\\s*FOUND/i);
+                if (m) return parseInt(m[1].replace(/,/g, ""), 10);
+            }
+            const outOf = document.querySelector("[data-automation-id='jobOutOfText']");
+            if (outOf) {
+                const m = (outOf.innerText || "").match(/of\\s+([\\d,]+)/i);
                 if (m) return parseInt(m[1].replace(/,/g, ""), 10);
             }
             const t = document.body.innerText || "";
             if (/(no jobs found|0 jobs)/i.test(t)) return 0;
             if (/(page not found|no longer available)/i.test(t)) return -1;
+            // Only now the rendered cards, and only as a floor: a board that renders jobs but
+            // states no total is still Live, just under-counted.
+            const items = document.querySelectorAll("[data-automation-id='jobTitle']");
+            if (items.length) return items.length;
             return null;
         """,
     },
