@@ -17,6 +17,7 @@ ripplehire,axisbank,https://axisbank.ripplehire.com,live,8024,2026-07-27
 ripplehire,axisbank-cp,https://axisbank-cp.ripplehire.com,dead,,2026-07-27
 ripplehire,axiscapital,https://axiscapital.ripplehire.com,live,0,2026-07-27
 ripplehire,axisdemo,https://axisdemo.ripplehire.com,dead,,2026-07-27
+ripplehire,axisdev,https://axisdev.ripplehire.com,live,0,2026-08-14
 ripplehire,axisfinance,https://axisfinance.ripplehire.com,live,234,2026-07-27
 ripplehire,axisfl-uat,https://axisfl-uat.ripplehire.com,dead,,2026-08-02
 ripplehire,axissecurities,https://axissecurities.ripplehire.com,live,78,2026-07-27
@@ -125,6 +126,7 @@ ripplehire,persistent,https://persistent.ripplehire.com,dead,,2026-07-27
 ripplehire,photon,https://photon.ripplehire.com,live,0,2026-07-27
 ripplehire,prodapt,https://prodapt.ripplehire.com,live,5,2026-07-27
 ripplehire,prodtest,https://prodtest.ripplehire.com,live,863,2026-07-27
+ripplehire,qa,https://qa.ripplehire.com,dead,,2026-08-14
 ripplehire,qa1-acl-app,https://qa1-acl-app.ripplehire.com,dead,,2026-07-27
 ripplehire,qa1-atsl-app,https://qa1-atsl-app.ripplehire.com,dead,,2026-07-27
 ripplehire,qa1-tataaia,https://qa1-tataaia.ripplehire.com,live,209,2026-07-27
@@ -166,6 +168,7 @@ ripplehire,tatatechnologiesapp,https://tatatechnologiesapp.ripplehire.com,dead,,
 ripplehire,tavant,https://tavant.ripplehire.com,live,0,2026-07-27
 ripplehire,temp,https://temp.ripplehire.com,dead,,2026-07-27
 ripplehire,tenant1,https://tenant1.ripplehire.com,live,0,2026-07-27
+ripplehire,tenant1-demo,https://tenant1-demo.ripplehire.com,dead,,2026-08-14
 ripplehire,tenant1-lti,https://tenant1-lti.ripplehire.com,dead,,2026-07-27
 ripplehire,tenant1-mdt,https://tenant1-mdt.ripplehire.com,dead,,2026-07-27
 ripplehire,tenant1-mph,https://tenant1-mph.ripplehire.com,live,502,2026-07-27
@@ -179,6 +182,7 @@ ripplehire,togglehead,https://togglehead.ripplehire.com,dead,,2026-07-27
 ripplehire,trampolinetech,https://trampolinetech.ripplehire.com,live,15,2026-07-27
 ripplehire,treasure,https://treasure.ripplehire.com,dead,,2026-07-27
 ripplehire,tredence,https://tredence.ripplehire.com,live,84,2026-07-27
+ripplehire,tresvista,https://tresvista.ripplehire.com,live,114,2026-08-14
 ripplehire,tsci,https://tsci.ripplehire.com,dead,,2026-07-27
 ripplehire,tsl,https://tsl.ripplehire.com,dead,,2026-07-27
 ripplehire,ttpl,https://ttpl.ripplehire.com,dead,,2026-07-27
