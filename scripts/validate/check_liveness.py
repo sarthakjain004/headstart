@@ -92,10 +92,9 @@ class _HostGate:
         self.key = key  # what this gate governs — a shared host, or one tenant's host
         self._lock = threading.Lock()
         self._next = 0.0
-        self.banned_until = (
-            0.0  # time.monotonic(); breaker open while now < banned_until
-        )
-        self.strikes = 0  # consecutive 429s — a headerless mitigation still trips
+        # time.monotonic() deadline; breaker open while now < banned_until. Every read and write
+        # of it goes through _lock — hundreds of threads share one gate.
+        self._banned_until = 0.0
 
     def wait_turn(self):
         with self._lock:
@@ -105,35 +104,47 @@ class _HostGate:
         if delay > 0:
             time.sleep(delay)
 
+    def blocked(self):
+        with self._lock:
+            return time.monotonic() < self._banned_until
+
     def trip(self, seconds, why):
-        if time.monotonic() < self.banned_until:
-            return
-        self.banned_until = time.monotonic() + seconds
+        """Open the breaker for `seconds`. Never shortens a ban already in force."""
+        with self._lock:
+            until = time.monotonic() + seconds
+            if until <= self._banned_until:
+                return  # a longer ban is already running — and don't re-announce it
+            self._banned_until = until
         print(
             f"  [gate] {self.key} banned us ({why}) — every board behind it "
             f"short-circuits to UNKNOWN for {seconds}s",
             flush=True,
         )
 
-    def slow_down(self):
-        """Halve the request rate, to a floor. A hand-tuned cap can only be right for the load it
-        was measured at; letting the host's own 429s widen the spacing means we settle at its real
-        ceiling instead of either crawling or earning a ban."""
+    def ease(self):
+        """Halve the request rate. Returns False when already at the floor.
+
+        A hand-tuned cap can only be right for the load it was measured at; letting the host's own
+        429s widen the spacing means we settle at its real ceiling. The return value is what tells
+        the caller easing has stopped helping — see _on_429.
+        """
         with self._lock:
             if self.spacing >= _MAX_SPACING:
-                return
+                return False
             self.spacing = min(_MAX_SPACING, max(_MIN_SPACING, self.spacing * 2))
-            now = self.spacing
-        print(f"  [gate] {self.key} 429 — easing to {1 / now:.1f} req/s", flush=True)
+            rate = 1 / self.spacing
+            # Printed under the lock so concurrent easings can't report out of order.
+            print(f"  [gate] {self.key} 429 — easing to {rate:.1f} req/s", flush=True)
+        return True
 
 
 # A gate governs whatever shares one rate limit. Two shapes, and conflating them is a real hazard:
 #
 #   shared host   every tenant is served by ONE host (apply.workable.com) or sits under a domain
 #                 the vendor rate-limits as a whole ({t}.recruitee.com, {t}.jobs.personio.de).
-#                 The gate must span them, or each tenant keeps its own strike counter and the
-#                 breaker can never trip — measured 2026-08-14, personio answered 429 on all four
-#                 passes and never once backed off.
+#                 The gate must span them, or each board backs off alone and the shared limit is
+#                 never actually respected — measured 2026-08-14, personio answered 429 on all
+#                 four passes and never once backed off.
 #   per-tenant    the subdomain IS a separate customer instance, as with Workday's
 #                 {tenant}.wdN.myworkdayjobs.com. One tenant's 429 says nothing about the others.
 #
@@ -165,7 +176,7 @@ _GATES = {
 }
 _gates_lock = threading.Lock()
 # Auto-gate defaults for a host that starts refusing without a seeded entry, and the bounds
-# slow_down() moves between (50 req/s down to 1 req/s).
+# ease() moves between (50 req/s down to 1 req/s, where it stops easing and trips instead).
 _AUTO_CAP, _AUTO_SPACING = 16, 0.1
 _MIN_SPACING, _MAX_SPACING = 0.02, 1.0
 
@@ -188,12 +199,12 @@ def _gate_for(netloc):
         return gate
 
 
-def _ensure_gate(netloc):
-    """A host that answers 429 with no gate gets one, keyed on the exact host.
+def _ensure_gate(netloc, why):
+    """A host that starts refusing with no gate gets one, keyed on the exact host.
 
     Deliberately never widened to a parent domain: an unlisted host might be one tenant among
     thousands on a shared suffix (Workday), and throttling — or worse, banning — all of them off
-    one tenant's 429 costs far more coverage than the extra requests ever save.
+    one tenant's refusal costs far more coverage than the extra requests ever save.
     """
     with _gates_lock:
         gate = _GATES.get(netloc)
@@ -203,7 +214,7 @@ def _ensure_gate(netloc):
         if gate is None:
             gate = _GATES[netloc] = _HostGate(_AUTO_CAP, _AUTO_SPACING, netloc)
             print(
-                f"  [gate] {netloc} answered 429 unprompted — throttling it to "
+                f"  [gate] {netloc} answered {why} unprompted — throttling it to "
                 f"{1 / _AUTO_SPACING:.0f} req/s for the rest of the run",
                 flush=True,
             )
@@ -213,12 +224,12 @@ def _ensure_gate(netloc):
 _BAN_RETRY_AFTER_S = (
     60  # a Retry-After beyond this is a ban, not per-request throttling
 )
-# Cloudflare's rate mitigation can also answer 429 with NO Retry-After — either tagged
-# cf-mitigated: challenge (a JS challenge our client can't solve; observed on workable after a
-# few sustained minutes at 4 req/s) or as a plain 429 streak. Both mean "stop now": trip for a
-# fixed cooldown rather than burn the rest of the run's requests re-signalling the mitigation.
-_STRIKES_TO_TRIP = 20
 _CHALLENGE_COOLDOWN_S = 1800
+# A bot wall does not only speak 429. Cloudflare serves "Just a moment..." behind 403 and 503, and
+# only its 429s carry the cf-mitigated header — so a status-429-only check would miss two of the
+# three markers we look for and file the response as a plain http-403. These are the statuses worth
+# reading the body of; a wall behind any of them means stop, not retry.
+_CHALLENGE_STATUSES = (403, 429, 503)
 
 
 # --- why a probe didn't settle -------------------------------------------------------------------
@@ -254,8 +265,14 @@ def _net_reason(exc):
     return _CURL.get(code, f"curl-{code}" if code else f"exc-{type(exc).__name__}")
 
 
-def _report_reasons(header):
-    """Print the pass's non-settling outcomes, worst ATS first — empty when everything settled."""
+def _report_reasons(unknown_boards):
+    """Print the pass's failed *requests*, worst ATS first — empty when nothing failed.
+
+    These count requests, not boards, and the two differ a lot: ``p_workday`` sweeps every
+    datacenter, so one board can contribute ~30 notes, and a board that settles LIVE on its
+    fourth DC still notes the three that refused. So the totals here routinely exceed the number
+    of boards left unknown, and the header says which is which rather than implying they match.
+    """
     with _reasons_lock:
         snapshot = dict(_reasons)
         _reasons.clear()
@@ -264,7 +281,10 @@ def _report_reasons(header):
     per_ats = Counter()
     for (ats, _), n in snapshot.items():
         per_ats[ats] += n
-    print(f"  {header}", flush=True)
+    print(
+        f"  failed requests this pass ({unknown_boards} boards ended unknown):",
+        flush=True,
+    )
     for ats, total in per_ats.most_common():
         detail = ", ".join(
             f"{reason}={n}"
@@ -304,7 +324,7 @@ def _fetch(method, url, **kw):
             method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
         )
     else:
-        if time.monotonic() < gate.banned_until:
+        if gate.blocked():
             return None
         with gate.sem:
             gate.wait_turn()
@@ -312,9 +332,12 @@ def _fetch(method, url, **kw):
                 method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
             )
     if r.status_code == 429:
-        _on_429(gate or _ensure_gate(netloc), r, netloc)
-    elif gate is not None:
-        gate.strikes = 0
+        _on_429(gate or _ensure_gate(netloc, "429"), r)
+    elif r.status_code in _CHALLENGE_STATUSES and _is_challenge(r):
+        _note(f"challenge-{r.status_code}")
+        (gate or _ensure_gate(netloc, str(r.status_code))).trip(
+            _CHALLENGE_COOLDOWN_S, f"{r.status_code}, bot-wall challenge"
+        )
     return r
 
 
@@ -337,18 +360,24 @@ def _is_challenge(r):
     return any(m in body for m in _CHALLENGE_BODIES)
 
 
-def _on_429(gate, r, netloc):
-    """Back off this host: ban outright when it tells us to, else ease the rate and keep going."""
-    gate.strikes += 1
+def _on_429(gate, r):
+    """Back off this host: ban outright when it tells us to, else ease the rate and keep going.
+
+    The last branch used to trip on a run of *consecutive* 429s. That cannot work on a gate many
+    boards share: any one of hundreds of threads getting a 200 reset the counter, so reaching the
+    threshold depended on luck — measured, 1,800 rejections in 2,000 requests left the counter at
+    5. Easing to the floor is the honest signal instead: if we are already as slow as this gate
+    goes and the host still refuses, slowing further cannot help, so stop asking.
+    """
     retry = _retry_after_s(r.headers.get("Retry-After"))
     if retry and retry > _BAN_RETRY_AFTER_S:
         gate.trip(retry, f"429, retry-after {retry}s")
     elif _is_challenge(r):
         gate.trip(_CHALLENGE_COOLDOWN_S, "429, bot-wall challenge")
-    elif gate.strikes >= _STRIKES_TO_TRIP:
-        gate.trip(_CHALLENGE_COOLDOWN_S, f"{gate.strikes} consecutive 429s")
-    else:
-        gate.slow_down()
+    elif not gate.ease():
+        gate.trip(
+            _CHALLENGE_COOLDOWN_S, f"still refusing at {1 / _MAX_SPACING:.1f} req/s"
+        )
 
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
@@ -1153,7 +1182,7 @@ def main():
             f"  pass done in {elapsed:.1f}s ({len(work) / elapsed:.0f} boards/s)",
             flush=True,
         )
-        _report_reasons(f"why {len(unknowns)} did not settle:")
+        _report_reasons(len(unknowns))
         return unknowns
 
     for n, (timeout, cap) in enumerate(PASSES, 1):

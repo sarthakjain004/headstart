@@ -39,21 +39,26 @@ def board_url(u: str) -> str:
     return (u or "").strip().lower().split("://", 1)[-1].rstrip("/")
 
 
-def key(ats: str, tenant: str, url: str) -> str:
-    """The dedupe key for one row. Workday keys on the board URL; everything else on the slug."""
+def pool_key(ats: str, tenant: str, url: str) -> str:
+    """What identifies one Board in the pool. Workday goes by board URL, the rest by Slug.
+
+    Empty when a Workday row carries no URL — such a row has no identity here, and callers must
+    skip it rather than let every url-less row collide on ``""``. The pool holds 398 of them.
+    """
     if ats == "workday":
         return board_url(url)
     return tenant.strip().lower()
 
 
 def load_harvest(path: Path) -> dict[str, tuple[str, str]]:
-    """``canonical_key -> (tenant, url)`` for one ATS; first capture per key wins."""
+    """``pool_key -> (tenant, url)`` for one ATS; first capture per key wins."""
     out: dict[str, tuple[str, str]] = {}
     with path.open(encoding="utf-8") as f:
         for r in csv.DictReader(f):
             tenant, url = (r.get("tenant") or "").strip(), (r.get("url") or "").strip()
-            if tenant:
-                out.setdefault(key(path.stem, tenant, url), (tenant, url))
+            k = pool_key(path.stem, tenant, url)
+            if tenant and k:
+                out.setdefault(k, (tenant, url))
     return out
 
 
@@ -62,7 +67,10 @@ def main() -> int:
         raise SystemExit(f"no wayback harvest at {WAYBACK}")
     MERGED.mkdir(parents=True, exist_ok=True)
 
-    print(f"{'ATS':<18}{'existing':>9}{'re-tagged':>10}{'+new':>7}{'total':>8}  note")
+    print(
+        f"{'ATS':<18}{'existing':>9}{'re-tagged':>10}{'+new':>7}{'total':>8}  note",
+        flush=True,
+    )
     added_total = retagged_total = new_files = 0
     for src in sorted(WAYBACK.glob("*.csv")):
         ats = src.stem
@@ -79,11 +87,15 @@ def main() -> int:
                     [r.get("tenant", ""), r.get("url", ""), r.get("source", "")]
                     for r in csv.DictReader(f)
                 ]
-        existing = {key(ats, t, u) for t, u, _ in rows}
+        existing = {k for t, u, _ in rows if (k := pool_key(ats, t, u))}
 
         retagged = 0
         for row in rows:
-            if key(ats, row[0], row[1]) in harvest and TAG not in row[2].split("+"):
+            # A url-less Workday row has no key, so it can never be "confirmed" by the harvest.
+            # Without the falsy guard all 398 of them would match a single url-less harvest row
+            # and take a `+wayback2026` tag this harvest never earned.
+            k = pool_key(ats, row[0], row[1])
+            if k and k in harvest and TAG not in row[2].split("+"):
                 row[2] = f"{row[2]}+{TAG}" if row[2] else TAG
                 retagged += 1
 
@@ -105,7 +117,8 @@ def main() -> int:
             else ("deduped on board url" if ats == "workday" else "")
         )
         print(
-            f"{ats:<18}{len(rows) - added:>9}{retagged:>10}{added:>7}{len(rows):>8}  {note}"
+            f"{ats:<18}{len(rows) - added:>9}{retagged:>10}{added:>7}{len(rows):>8}  {note}",
+            flush=True,
         )
         added_total += added
         retagged_total += retagged

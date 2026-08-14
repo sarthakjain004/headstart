@@ -61,46 +61,86 @@ def test_is_nonprod(cl, tenant, url, nonprod):
 # on 2026-08-14, and the wide one is far more expensive — it turns live boards UNKNOWN.
 
 
-def test_a_listed_shared_domain_gates_every_tenant_under_it(cl):
-    """Personio rate-limits the whole domain, so all its tenants must share one gate — otherwise
-    strikes spread one-per-host and _STRIKES_TO_TRIP is never reached."""
+class _Resp:
+    """Just enough of a response for the gate code."""
+
+    def __init__(self, code, headers=None, content=b""):
+        self.status_code, self.headers, self.content = code, headers or {}, content
+
+
+def test_a_listed_shared_domain_gates_every_board_under_it(cl):
+    """Personio rate-limits the whole domain, so every board on it must share one gate —
+    otherwise each backs off alone and the shared limit is never actually respected."""
     a = cl._gate_for("acme.jobs.personio.de")
     b = cl._gate_for("other.jobs.personio.de")
     assert a is not None and a is b
 
 
-def test_one_workday_tenant_never_gates_another(cl):
+def test_one_workday_board_never_gates_another(cl):
     """The regression: `{tenant}.wdN.myworkdayjobs.com` is a per-customer instance, so inferring
-    a shared domain by stripping the tenant label let one tenant's bot-wall 429 ban an entire
+    a shared domain by stripping the leading label let one board's bot-wall 429 ban an entire
     datacenter — `interoute` alone took out wd10, wd102, wd103, wd109, wd115, wd117, wd503, wd504.
     """
     victim = "innocent.wd10.myworkdayjobs.com"
     assert cl._gate_for(victim) is None, "must start ungated"
 
-    offender = cl._ensure_gate("interoute.wd10.myworkdayjobs.com")
+    offender = cl._ensure_gate("interoute.wd10.myworkdayjobs.com", "429")
     offender.trip(1800, "429, bot-wall challenge")
 
-    assert cl._gate_for(victim) is None, "one tenant's 429 must not gate its neighbours"
+    assert cl._gate_for(victim) is None, "one board's 429 must not gate its neighbours"
     assert cl._gate_for("interoute.wd10.myworkdayjobs.com") is offender
 
 
 def test_an_auto_gate_keys_on_the_exact_host(cl):
-    gate = cl._ensure_gate("surprise.example.com")
+    gate = cl._ensure_gate("surprise.example.com", "429")
     assert gate.key == "surprise.example.com"
     assert cl._gate_for("sibling.example.com") is None
 
 
-def test_slow_down_halves_the_rate_and_stops_at_the_floor(cl):
+def test_ease_halves_the_rate_and_reports_when_it_hits_the_floor(cl):
     gate = cl._HostGate(4, 0.05, "t.example")
-    gate.slow_down()
+    assert gate.ease() is True
     assert gate.spacing == pytest.approx(0.1)
     for _ in range(20):
-        gate.slow_down()
+        gate.ease()
     assert gate.spacing == cl._MAX_SPACING, "must not ease indefinitely toward a stall"
+    assert gate.ease() is False, (
+        "at the floor it must say so, so _on_429 can trip instead"
+    )
 
 
-def test_slow_down_lifts_a_zero_spacing_gate_off_zero(cl):
+def test_ease_lifts_a_zero_spacing_gate_off_zero(cl):
     """lever/join start at 0.0; doubling zero is zero, so the floor has to catch it."""
     gate = cl._HostGate(4, 0.0, "t.example")
-    gate.slow_down()
+    gate.ease()
     assert gate.spacing >= cl._MIN_SPACING
+
+
+def test_a_gate_refusing_at_the_floor_trips_instead_of_easing_forever(cl):
+    """Replaces the consecutive-strikes trip, which could not work on a shared gate: any one of
+    hundreds of threads getting a 200 reset the counter, so 1,800 rejections in 2,000 requests
+    left it at 5. Easing to the floor is the signal that slowing down has stopped helping."""
+    gate = cl._HostGate(4, cl._MAX_SPACING, "t.example")
+    assert not gate.blocked()
+    cl._on_429(gate, _Resp(429))
+    assert gate.blocked(), "already as slow as it goes and still refused -> stop asking"
+
+
+def test_a_longer_ban_is_never_shortened_by_a_later_one(cl):
+    gate = cl._HostGate(4, 0.05, "t.example")
+    gate.trip(1800, "long")
+    gate.trip(5, "short")
+    assert gate.blocked()
+    # the 5s ban must not have replaced the 1800s one
+    assert gate._banned_until > cl.time.monotonic() + 60
+
+
+def test_a_bot_wall_behind_403_is_recognised(cl):
+    """Cloudflare serves "Just a moment..." behind 403 and 503, and only its 429s carry the
+    cf-mitigated header — so a 429-only check misses two of the three markers."""
+    assert cl._is_challenge(
+        _Resp(403, content=b"<html><title>Just a moment...</title>")
+    )
+    assert cl._is_challenge(_Resp(429, headers={"cf-mitigated": "challenge"}))
+    assert cl._is_challenge(_Resp(429, content=b"...Vercel Security Checkpoint..."))
+    assert not cl._is_challenge(_Resp(403, content=b'{"error":"forbidden"}'))

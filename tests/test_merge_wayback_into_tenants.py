@@ -203,7 +203,7 @@ def test_a_header_only_harvest_leaves_the_pool_alone(tmp_path, monkeypatch):
     assert out == {"acme": ("https://acme.turbohire.co", "wayback")}
 
 
-def test_a_provider_the_pool_lacks_gets_a_new_file(tmp_path, monkeypatch):
+def test_an_ats_the_pool_lacks_gets_a_new_file(tmp_path, monkeypatch):
     out = run(
         tmp_path,
         monkeypatch,
@@ -212,3 +212,42 @@ def test_a_provider_the_pool_lacks_gets_a_new_file(tmp_path, monkeypatch):
         pool=None,
     )
     assert out == {"acme": ("https://acme.teamtailor.com", "wayback2026")}
+
+
+def test_url_less_workday_rows_are_not_falsely_confirmed(tmp_path, monkeypatch):
+    """A Workday row with no URL has no identity, so it can never be "re-confirmed".
+
+    `pool_key` returns "" for such a row, and the pool holds 398 of them. Without a falsy guard
+    every one of those would match a single url-less harvest row and take a `+wayback2026` tag
+    this harvest never earned — 398 rows of invented provenance.
+    """
+    out = run(
+        tmp_path,
+        monkeypatch,
+        ats="workday",
+        harvest=[["workday", "ghost", ""]],  # a harvest row with no URL
+        pool=[
+            ["workday", "amd", "", "harvest"],
+            ["workday", "ibm", "", "harvest"],
+            ["workday", "real", "https://real.wd1.myworkdayjobs.com/careers", "cc"],
+        ],
+    )
+    assert out["amd"] == ("", "harvest"), "must not gain a tag it never earned"
+    assert out["ibm"] == ("", "harvest")
+    assert len(out) == 3, "the url-less harvest row has no identity and must be skipped"
+
+
+def test_url_less_pool_rows_all_survive(tmp_path, monkeypatch):
+    """They collide on the empty key, so a set-based dedupe would collapse them into one."""
+    out = run(
+        tmp_path,
+        monkeypatch,
+        ats="workday",
+        harvest=[
+            ["workday", "acme/Careers", "https://acme.wd1.myworkdayjobs.com/Careers"]
+        ],
+        pool=[["workday", n, "", "harvest"] for n in ("amd", "ibm", "intuit", "okta")],
+    )
+    assert {"amd", "ibm", "intuit", "okta"} <= set(out), (
+        "no url-less row may be dropped"
+    )
