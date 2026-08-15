@@ -212,6 +212,27 @@ _NAV_TIMEOUT_S = 25
 _RENDER_SETTLE_MS = 1200
 
 
+def _absolute(url: str | None) -> str | None:
+    """The board address as something ``go_to`` can actually navigate to, or None if the row
+    holds nothing navigable.
+
+    The ledger does not normalise scheme: 3,292 of personio's 9,411 rows store a bare host
+    (``foo.jobs.personio.com``), as do 1,287 workable and 225 recruitee rows — 4,809 across the
+    four ATSes here, and 1,196 of them are exactly the UNKNOWN backlog this script targets.
+    ``go_to`` raises on a scheme-less URL, ``_probe`` maps that to UNKNOWN, and a whole run reads
+    as a wall rather than as a URL that was never valid. Measured 2026-08-15: every one of 103
+    errors in a 300-board sample was a bare host, and every one of the 197 that carried a scheme
+    returned a verdict.
+
+    Returns None for a row with no usable address at all — workday's ``url`` lambda yields ``"/"``
+    when the ledger stores no URL, and there is no host to derive from a workday tenant.
+    """
+    url = (url or "").strip()
+    if url in ("", "/"):
+        return None
+    return url if url.startswith(("http://", "https://")) else f"https://{url}"
+
+
 def _script_value(response):
     """The JS return value out of CDP's ``Runtime.evaluate`` envelope.
 
@@ -235,8 +256,11 @@ async def _probe(tab, spec: dict, tenant: str, url: str) -> tuple[str, int | Non
     Never raises: a browser failure is exactly the "couldn't tell" case the three-state model
     exists for, so it settles UNKNOWN and the row is re-probed on its TTL like any other.
     """
+    target = _absolute(spec["url"](tenant, url))
+    if target is None:
+        return UNKNOWN, None  # nothing navigable in the ledger row
     try:
-        await tab.go_to(spec["url"](tenant, url), timeout=_NAV_TIMEOUT_S)
+        await tab.go_to(target, timeout=_NAV_TIMEOUT_S)
         try:
             await tab.find(css_selector=spec["ready"], timeout=8, raise_exc=False)
         except Exception:  # noqa: BLE001 - a missing anchor is not a verdict
