@@ -1,13 +1,16 @@
 """Tests for the browser liveness escalation (scripts/validate/check_liveness_browser.py).
 
-Covers ``_absolute``, which exists because the ledger does not normalise scheme: 4,809 rows
-across the four supported ATSes store a bare host rather than a URL. ``go_to`` raises on those,
-``_probe`` maps the raise to UNKNOWN, and the run then reads as a wall rather than as an address
-that was never navigable. Every string here is a real ledger shape, not an invented one.
+Covers ``_nav_url`` and the one call site that matters. The counts and the reasoning live in
+``_nav_url``'s own docstring; they are deliberately not restated here, so there is one place to
+update when the ledger moves.
+
+The load-bearing test is ``test_probe_navigates_a_bare_host_row``: it fails if the normalisation
+is removed from ``_probe``, which the unit cases alone do not.
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 from pathlib import Path
 
@@ -29,42 +32,87 @@ def clb():
     return mod
 
 
+class _FakeTab:
+    """Enough tab to drive ``_probe``, and it raises on a scheme-less URL exactly as pydoll does."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.navigated: str | None = None
+
+    async def go_to(self, url: str, timeout: int | None = None) -> None:
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(f"not a navigable URL: {url!r}")
+        self.navigated = url
+
+    async def find(self, **_kwargs):
+        return None
+
+    async def execute_script(self, _js: str):
+        return {"result": {"result": {"type": "number", "value": self.count}}}
+
+    async def close(self) -> None:
+        return None
+
+
 @pytest.mark.parametrize(
-    "stored,expected",
+    "built,expected",
     [
-        # The defect: bare hosts, as 3,292 personio / 1,287 workable / 225 recruitee rows store.
+        # The defect: a bare host, which is what three of the four builders can emit.
         ("foo.jobs.personio.com", "https://foo.jobs.personio.com"),
         ("advancis.jobs.personio.com/", "https://advancis.jobs.personio.com/"),
         ("acme.recruitee.com/", "https://acme.recruitee.com/"),
-        # Already absolute: left exactly alone, including scheme and trailing slash.
+        # Already absolute: left exactly alone, scheme and trailing slash included.
         ("https://1qhealth.jobs.personio.de/", "https://1qhealth.jobs.personio.de/"),
         ("http://legacy.example.com/", "http://legacy.example.com/"),
     ],
 )
-def test_absolute_normalises_only_when_scheme_is_missing(clb, stored, expected):
-    assert clb._absolute(stored) == expected
+def test_nav_url_normalises_only_when_scheme_is_missing(clb, built, expected):
+    assert clb._nav_url(built) == expected
 
 
-@pytest.mark.parametrize("stored", ["", "   ", None, "/"])
-def test_absolute_returns_none_when_nothing_is_navigable(clb, stored):
-    """A row with no usable address must not become ``https:///`` or a bare ``/``.
-
-    Workday's ``url`` lambda yields ``"/"`` when the ledger stores no URL, and a workday tenant
-    has no derivable host — so the only honest answer is "couldn't tell", not a bogus navigation.
-    """
-    assert clb._absolute(stored) is None
+def test_nav_url_returns_none_when_nothing_is_navigable(clb):
+    """Workday's builder yields ``"/"`` for a row with no stored URL, and a workday tenant has no
+    host to derive one from — so the honest answer is "couldn't tell", not a bogus navigation."""
+    assert clb._nav_url("/") is None
+    assert clb._nav_url(clb._PAGE_PROBES["workday"]["url"]("some-tenant", "")) is None
 
 
-def test_workday_row_without_a_url_is_not_navigable(clb):
-    """The end-to-end shape of the None case, through the real per-ATS url builder."""
-    built = clb._PAGE_PROBES["workday"]["url"]("some-tenant", "")
-    assert clb._absolute(built) is None
-
-
-def test_personio_bare_host_survives_the_url_builder(clb):
-    """The builder appends a slash but cannot add a scheme; ``_absolute`` is what rescues it."""
+def test_personio_builder_cannot_add_a_scheme(clb):
+    """The builder appends a slash but leaves a bare host bare; ``_nav_url`` is what rescues it."""
     built = clb._PAGE_PROBES["personio"]["url"](
         "advancis", "advancis.jobs.personio.com"
     )
     assert not built.startswith("http")
-    assert clb._absolute(built) == "https://advancis.jobs.personio.com/"
+    assert clb._nav_url(built) == "https://advancis.jobs.personio.com/"
+
+
+def test_workable_builder_ignores_the_stored_url(clb):
+    """Why workable is unaffected by the bug at any row count: it derives from the tenant.
+
+    Pinning this stops the fix's documented reach from silently growing to include workable.
+    """
+    built = clb._PAGE_PROBES["workable"]["url"]("acme", "acme.workable.com")
+    assert built == "https://apply.workable.com/acme/"
+
+
+def test_probe_navigates_a_bare_host_row(clb, monkeypatch):
+    """The regression: before the fix this raised and settled UNKNOWN."""
+    monkeypatch.setattr(clb, "_RENDER_SETTLE_MS", 0)
+    tab = _FakeTab(count=3)
+    status, jobs = asyncio.run(
+        clb._probe(
+            tab, clb._PAGE_PROBES["personio"], "advancis", "advancis.jobs.personio.com"
+        )
+    )
+    assert tab.navigated == "https://advancis.jobs.personio.com/"
+    assert (status, jobs) == (clb.LIVE, 3)
+
+
+def test_probe_does_not_navigate_a_row_with_no_url(clb, monkeypatch):
+    monkeypatch.setattr(clb, "_RENDER_SETTLE_MS", 0)
+    tab = _FakeTab(count=1)
+    status, jobs = asyncio.run(
+        clb._probe(tab, clb._PAGE_PROBES["workday"], "some-tenant", "")
+    )
+    assert tab.navigated is None
+    assert (status, jobs) == (clb.UNKNOWN, None)

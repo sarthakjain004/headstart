@@ -212,23 +212,27 @@ _NAV_TIMEOUT_S = 25
 _RENDER_SETTLE_MS = 1200
 
 
-def _absolute(url: str | None) -> str | None:
-    """The board address as something ``go_to`` can actually navigate to, or None if the row
-    holds nothing navigable.
+def _nav_url(built: str) -> str | None:
+    """A built board address as something ``go_to`` can navigate to, or None if there is nothing
+    navigable in the row.
 
-    The ledger does not normalise scheme: 3,292 of personio's 9,411 rows store a bare host
-    (``foo.jobs.personio.com``), as do 1,287 workable and 225 recruitee rows — 4,809 across the
-    four ATSes here, and 1,196 of them are exactly the UNKNOWN backlog this script targets.
-    ``go_to`` raises on a scheme-less URL, ``_probe`` maps that to UNKNOWN, and a whole run reads
-    as a wall rather than as a URL that was never valid. Measured 2026-08-15: every one of 103
-    errors in a 300-board sample was a bare host, and every one of the 197 that carried a scheme
-    returned a verdict.
+    The ledger does not normalise scheme, so a row can hold a bare host
+    (``foo.jobs.personio.com``). ``go_to`` raises on those, ``_probe`` maps the raise to UNKNOWN,
+    and a whole run then reads as a wall rather than as an address that was never valid — the
+    failure mode this module warns about twice elsewhere. Measured 2026-08-15: of a 300-board
+    sample, all 103 errors were bare hosts and all 197 rows carrying a scheme returned a verdict.
 
-    Returns None for a row with no usable address at all — workday's ``url`` lambda yields ``"/"``
-    when the ledger stores no URL, and there is no host to derive from a workday tenant.
+    Counted through the per-ATS builders rather than off the raw column, because only three of the
+    four pass the stored URL through: **personio 3,292, recruitee 225, workday 5 — 3,522 rows**.
+    workable is unaffected at any count, since its builder derives the address from the tenant and
+    ignores the stored URL entirely. Of the 3,522, only 30 are ``unknown``; the rest are ``live``
+    (2,507) or ``dead`` (985), so this mostly unblocks *re-verifying* boards, not the backlog.
+
+    Returns None for a row with no usable address — workday's builder yields ``"/"`` when the
+    ledger stores no URL, and a workday tenant has no host to derive one from.
     """
-    url = (url or "").strip()
-    if url in ("", "/"):
+    url = built.strip()
+    if url == "/":
         return None
     return url if url.startswith(("http://", "https://")) else f"https://{url}"
 
@@ -256,7 +260,7 @@ async def _probe(tab, spec: dict, tenant: str, url: str) -> tuple[str, int | Non
     Never raises: a browser failure is exactly the "couldn't tell" case the three-state model
     exists for, so it settles UNKNOWN and the row is re-probed on its TTL like any other.
     """
-    target = _absolute(spec["url"](tenant, url))
+    target = _nav_url(spec["url"](tenant, url))
     if target is None:
         return UNKNOWN, None  # nothing navigable in the ledger row
     try:
