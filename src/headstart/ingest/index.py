@@ -56,7 +56,6 @@ import argparse
 import json
 import shutil
 from collections import Counter
-from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -68,11 +67,17 @@ import pyarrow as pa
 from headstart import log
 from headstart.corpus import iter_jobs
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import (
+    PENDING_UPGRADES_PATH,
+    REPO_ROOT,
+    observability,
+    read_id_list,
+)
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
     boards_by_canon,
+    in_predicate,
     live_keep_set,
     plan_prune,
     plan_sync,
@@ -91,7 +96,7 @@ _SCRAPED = (
 _DB = REPO_ROOT / "data" / "lancedb"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 # Written by embed_plan, consumed here and by embed_merge (ADR-0050).
-_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+_UPGRADES = PENDING_UPGRADES_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
@@ -158,16 +163,36 @@ def _load_store() -> tuple[list[dict], np.ndarray]:
     return metas, vectors.reshape(-1, dim)
 
 
+def _scan(table: Any, columns: list[str]) -> list[dict]:
+    """Every row's ``columns``, never the vector, so a whole-table read stays cheap.
+
+    ``limit`` defaults to 10 in LanceDB, so it must be set explicitly — and to at least 1, since
+    ``limit(0)`` is rejected on an empty table.
+    """
+    return table.search().select(columns).limit(max(table.count_rows(), 1)).to_list()
+
+
 def _all_ids(table: Any) -> list[str]:
-    """Every id in the table. ``limit`` defaults to 10 in LanceDB, so it must be set explicitly —
-    and to at least 1, since ``limit(0)`` is rejected on an empty table."""
-    return [
-        r["id"]
-        for r in table.search()
-        .select(["id"])
-        .limit(max(table.count_rows(), 1))
-        .to_list()
-    ]
+    """Every id in the table."""
+    return [r["id"] for r in _scan(table, ["id"])]
+
+
+def _ids_and_stamps(table: Any) -> tuple[list[str], dict[str, str]]:
+    """Every id, and the ``first_seen`` stamps that order the collapse guard's drain (ADR-0055).
+
+    One scan yielding both, not two — they are columns of the same row and the planner needs them
+    together. A row predating the ``first_seen`` column carries null and is simply absent from the
+    mapping, which is what sorts it first in the drain: those are the oldest rows there are.
+    """
+    if _FIRST_SEEN_FIELD.name not in table.schema.names:
+        return _all_ids(table), {}
+    rows = _scan(table, ["id", _FIRST_SEEN_FIELD.name])
+    stamps = {
+        r["id"]: r[_FIRST_SEEN_FIELD.name]
+        for r in rows
+        if r.get(_FIRST_SEEN_FIELD.name)
+    }
+    return [r["id"] for r in rows], stamps
 
 
 def _scraped_boards(
@@ -213,15 +238,13 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     (ADR-0050). Ids absent from the table (a first run, or a Job the prune already took) simply
     return no stamp and are stamped with the run's time like any other add.
     """
-    if not path.exists():
-        return {}
-    ids = {line.strip() for line in path.read_text().splitlines() if line.strip()}
+    ids = read_id_list(path)
     if not ids:
         return {}
     # Safe to name the column: sync adds it to a pre-ADR-0031 table before reaching here.
     rows = (
         table.search()
-        .where(_in_predicate("id", ids))
+        .where(in_predicate("id", ids))
         .select(["id", _FIRST_SEEN_FIELD.name])
         .to_list()
     )
@@ -230,11 +253,6 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     kept = sum(1 for v in taken.values() if v)
     _log.info(f"upgrades: replacing {len(taken)} rows, {kept} keeping first_seen")
     return taken
-
-
-def _in_predicate(column: str, values: Iterable[str]) -> str:
-    quoted = ", ".join("'" + v.replace("'", "''") + "'" for v in sorted(values))
-    return f"{column} IN ({quoted})"
 
 
 def sync(args: argparse.Namespace) -> int:
@@ -279,10 +297,10 @@ def sync(args: argparse.Namespace) -> int:
     db = lancedb.connect(args.db)
     if PROD_TABLE in db.list_tables().tables:
         table = db.open_table(PROD_TABLE)
-        index_ids = _all_ids(table)
+        index_ids, stamps = _ids_and_stamps(table)
     else:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
-        index_ids = []
+        index_ids, stamps = [], {}
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
@@ -303,7 +321,7 @@ def sync(args: argparse.Namespace) -> int:
     taken = _take_upgrades(table, Path(args.upgrades))
     index_ids = [job_id for job_id in index_ids if job_id not in taken]
 
-    plan = plan_sync(index_ids, fresh, boards, live)
+    plan = plan_sync(index_ids, fresh, boards, live, stamps)
     _log.info(f"plan: add {len(plan.add)}, evict {len(plan.delete)}")
     withheld = sum(count for _, count in plan.held)
     if plan.held:
@@ -312,7 +330,8 @@ def sync(args: argparse.Namespace) -> int:
         _log.warning(
             f"collapse guard: withheld {withheld} evictions across {len(plan.held)} Boards that "
             f"each lost >{COLLAPSE_RATIO:.0%} of their rows in one run — that is a truncated "
-            "scrape, not a delisting (ADR-0046)"
+            f"scrape, not a delisting (ADR-0046); each drained up to {COLLAPSE_RATIO:.0%} of its "
+            "rows this run and will drain the rest over later runs (ADR-0055)"
         )
         for board, count in plan.held:
             _log.warning(f"  withheld {count} evictions on {board}")

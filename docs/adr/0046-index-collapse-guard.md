@@ -3,7 +3,10 @@
 **Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0014 · **Amended by:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) — the deferred fix landed: a Board whose
 scrape errored now leaves the eviction scope outright, and this ratio guard becomes the
-backstop for truncations that report no error at all
+backstop for truncations that report no error at all · **Amended by:**
+[ADR-0055](0055-bound-the-collapse-guards-hold.md) — refusing a tripped Board's evictions made
+the guard a ratchet no other path could reach, so the hold is now capped at this ADR's own
+ratio and the remainder drains over later runs
 
 ## Context
 

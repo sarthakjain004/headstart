@@ -22,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest import REPO_ROOT, observability, shard_speedup
 from headstart.scrapers.registry import get_scraper
 
 _log = log.get(__name__, __spec__)
@@ -34,6 +34,7 @@ _OUT = REPO_ROOT / "data" / "jobs"
 # Under data/state because that is what rides the corpus-state artifact to the job running
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
+_SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
 
 
 def _fragment_dirs(root: Path) -> list[Path]:
@@ -116,6 +117,11 @@ def main() -> int:
         "sync` to exclude from the eviction scope "
         "(default: data/state/unauthoritative_boards.json)",
     )
+    ap.add_argument(
+        "--speedup-ledger",
+        default=str(_SPEEDUP),
+        help="shard_speedup.csv to blend this run's measured fan-out speedup into (ADR-0054)",
+    )
     args = ap.parse_args()
 
     shards_root = Path(args.shards)
@@ -149,8 +155,35 @@ def main() -> int:
     # Board's list is authoritative", and the summary below is telemetry that must never gate the
     # eviction signal.
     write_unauthoritative_boards(reports, Path(args.unauthoritative_boards))
+    _update_speedup(reports, Path(args.speedup_ledger))
     _report_shards(reports, total, len(per_ats))
     return 0
+
+
+def _update_speedup(reports: list[dict], path: Path) -> None:
+    """Blend this run's measured fan-out speedup into the ledger the next plan divides by.
+
+    Written here rather than in ``update_ledgers`` because the shard reports are read here and
+    nowhere else. Never fatal: a missing speedup costs one run of prediction accuracy, and the
+    join is un-bankable — losing the run's scrape to a telemetry write would be a far worse
+    trade (the same reasoning as the ``.get(...)`` discipline in :func:`_report_shards`).
+    """
+    try:
+        ratios = shard_speedup.ratios_from_reports(reports)
+        if not ratios:
+            _log.info(
+                "no usable shard timings — leaving the speedup ledger as it stands"
+            )
+            return
+        stored = shard_speedup.load(path)
+        blended = shard_speedup.blend(stored.ratio, ratios)
+        shard_speedup.save(path, blended, len(ratios))
+        _log.info(
+            f"fan-out speedup: {blended:.2f}x "
+            f"(was {stored.ratio:.2f}x, {len(ratios)} shard(s) this run)"
+        )
+    except Exception as exc:  # noqa: BLE001 - telemetry must never sink the join
+        _log.warning(f"could not update the speedup ledger: {exc}")
 
 
 def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
