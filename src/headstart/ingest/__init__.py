@@ -22,14 +22,16 @@ One more entry point is not a stage but opens three of them (and ``cleanup-index
 
 Each is run as ``python -m headstart.ingest.<module>``. They live here rather than under
 ``scripts/`` because they are the product's pipeline, not one-off tooling: being importable
-makes them unit-testable without ``importlib`` path-loading, and keeps the run's 14 entry
+makes them unit-testable without ``importlib`` path-loading, and keeps the run's twelve entry
 points from being scattered across five ``scripts/`` subdirs mixed in with R&D scripts.
 
-Alongside them, the three helper modules with no consumer outside this package::
+Alongside them, the helper modules with no consumer outside this package::
 
-    binpack     LPT packing + shard sizing, shared by both planners
-    doc_prep    Doc build / English gate / typed metadata, shared by embed_run and embed_plan
-    index_plan  Pure add-evict and prune planners for the jobs table (no LanceDB import)
+    binpack        LPT packing + shard sizing, shared by both planners
+    doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
+    index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
+    observability  Run context, step summaries, and the shard-report round trip
+    shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
 
 Genuinely shared logic stays in ``headstart`` proper — ``harvest`` (the scrape engine),
 ``board_cost``, ``board_priority``, ``corpus`` — because ``python -m headstart``'s curated-feed
@@ -54,3 +56,24 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # file — `update_descriptions` writes it, `scrape_plan` ships it to the shards, `scrape_run` reads
 # it — and a stage-owned constant would put it inside one of them.
 HELD_DETAILS_PATH = REPO_ROOT / "data" / "state" / "held_details.txt.gz"
+
+# The ADR-0050 upgrade list: Job ids whose vector must be replaced because their description
+# arrived after they were first embedded. Here for the same reason as HELD_DETAILS_PATH — three
+# modules move this one file (`embed_plan` writes it, `embed_merge` holds ids back until their
+# replacement lands, `index` re-adds the rows) and each previously declared the path itself.
+PENDING_UPGRADES_PATH = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+
+
+def read_id_list(path: Path) -> set[str]:
+    """The non-blank lines of a newline-delimited id file; empty when it does not exist.
+
+    Both readers of PENDING_UPGRADES_PATH parsed this identically; the shape is the file format,
+    so it lives with the path rather than being spelled out at each end.
+    """
+    if not path.exists():
+        return set()
+    return {
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }

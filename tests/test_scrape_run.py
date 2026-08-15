@@ -133,7 +133,13 @@ def test_report_survives_the_time_budget_and_still_writes_its_numbers(tmp_path, 
         progress.on_board(f"lever:{i}", 2, None, 1.5)
 
     scrape_run._report(
-        progress, tmp_path, elapsed=3600.0, predicted=30.0, killed=True, shard="7"
+        progress,
+        tmp_path,
+        elapsed=3600.0,
+        predicted=30.0,
+        serial=90.0,
+        killed=True,
+        shard="7",
     )
 
     messages = [r.getMessage() for r in caplog.records]
@@ -157,7 +163,9 @@ def test_report_carries_short_lists_into_the_shard_report(tmp_path):
     progress.on_board("eightfold:jobs.nvidia.com", 300, None, 61.0, short)
     progress.on_board("lever:acme", 5, None, 1.0)
 
-    scrape_run._report(progress, tmp_path, elapsed=62.0, predicted=None, killed=False)
+    scrape_run._report(
+        progress, tmp_path, elapsed=62.0, predicted=None, serial=None, killed=False
+    )
 
     report = json.loads((tmp_path / "_shard_report.json").read_text())
     assert report["truncated"] == {"eightfold:jobs.nvidia.com": short}
@@ -170,20 +178,32 @@ def test_report_states_actual_against_the_planners_prediction(tmp_path, caplog):
     progress = scrape_run._Progress(assigned=1)
     progress.on_board("lever:a", 1, None, 2.0)
 
-    scrape_run._report(progress, tmp_path, elapsed=1200.0, predicted=40.0, killed=False)
+    scrape_run._report(
+        progress, tmp_path, elapsed=1200.0, predicted=40.0, serial=120.0, killed=False
+    )
 
     assert any("actual/predicted 0.50x" in r.getMessage() for r in caplog.records)
 
 
-def test_predicted_minutes_reads_the_shards_own_entry(tmp_path):
+def test_plan_minutes_reads_the_shards_own_entry(tmp_path):
     (tmp_path / "plan.json").write_text(
-        json.dumps({"per_shard_minutes": [10.0, 20.5, 30.0]}), encoding="utf-8"
+        json.dumps(
+            {
+                "per_shard_minutes": [10.0, 20.5, 30.0],
+                "per_shard_serial_minutes": [40.0, 60.5, 90.0],
+            }
+        ),
+        encoding="utf-8",
     )
-    assert scrape_run._predicted_minutes(str(tmp_path / "shard-1.jsonl")) == 20.5
+    shard = str(tmp_path / "shard-1.jsonl")
+    assert scrape_run._plan_minutes(shard, "per_shard_minutes") == 20.5
+    # the serial sum is read from its own field: the join measures the fan-out's speedup against
+    # it, and against the prediction the estimate would chase its own tail (ADR-0054)
+    assert scrape_run._plan_minutes(shard, "per_shard_serial_minutes") == 60.5
     # an older plan without the field is absence, not an error — the shard just can't compare
     (tmp_path / "plan.json").write_text(json.dumps({"count": 3}), encoding="utf-8")
-    assert scrape_run._predicted_minutes(str(tmp_path / "shard-1.jsonl")) is None
-    assert scrape_run._predicted_minutes(None) is None
+    assert scrape_run._plan_minutes(shard, "per_shard_minutes") is None
+    assert scrape_run._plan_minutes(None, "per_shard_minutes") is None
 
 
 def test_read_have_details_returns_none_when_the_planner_shipped_nothing(tmp_path):

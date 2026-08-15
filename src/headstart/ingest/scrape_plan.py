@@ -24,8 +24,8 @@ monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanc
 
 Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board, priority-desc so a time-boxed shard
 scrapes its best boards first), a ``plan.json`` (``shards`` matrix + board ``count``) the workflow
-reads, and a copy of the detail skip-list (ADR-0048) so each shard can avoid re-fetching details for
-Jobs already embedded — all three ride the one artifact the shards download.
+reads, and a copy of the detail skip-list (ADR-0048, re-keyed by ADR-0050) so each shard can skip
+re-fetching details we already **hold** — all three ride the one artifact the shards download.
 
 Run: python -m headstart.ingest.scrape_plan [--max-boards 20000] [--max-shards 15]
 """
@@ -42,7 +42,12 @@ from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import load_active_companies
-from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability
+from headstart.ingest import (
+    HELD_DETAILS_PATH,
+    REPO_ROOT,
+    observability,
+    shard_speedup,
+)
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
 
 _log = log.get(__name__, __spec__)
@@ -54,6 +59,7 @@ _BUDGET_MIN = 60.0
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST = REPO_ROOT / "data" / "state" / "board_cost.csv"
+_SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
 
 _OUT = REPO_ROOT / "data" / "scrape" / "assignments"
 
@@ -96,6 +102,7 @@ def _write_plan(
     count: int,
     per_shard: list[int],
     per_shard_minutes: list[float] | None = None,
+    per_shard_serial_minutes: list[float] | None = None,
 ) -> None:
     plan: dict[str, object] = {
         "shards": shards,
@@ -104,6 +111,14 @@ def _write_plan(
     }
     if per_shard_minutes is not None:
         plan["per_shard_minutes"] = [round(m, 2) for m in per_shard_minutes]
+    if per_shard_serial_minutes is not None:
+        # The packed sum, shipped *beside* the prediction rather than instead of it. The join
+        # measures the fan-out's speedup against this; measuring against per_shard_minutes —
+        # which is derived from the speedup — would make the estimate chase its own tail
+        # (ADR-0054).
+        plan["per_shard_serial_minutes"] = [
+            round(m, 2) for m in per_shard_serial_minutes
+        ]
     (out_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     print(json.dumps({"shards": shards, "count": count}), flush=True)
 
@@ -142,6 +157,12 @@ def main() -> int:
         default=str(_COST),
         help="board_cost.csv of measured scrape seconds (ADR-0027); "
         "absent/empty falls back to the ADR-0026 heuristic",
+    )
+    ap.add_argument(
+        "--speedup-ledger",
+        default=str(_SPEEDUP),
+        help="shard_speedup.csv, the measured fan-out speedup the makespan divides by "
+        "(ADR-0054); absent predicts serial, as before",
     )
     ap.add_argument(
         "--target-seconds",
@@ -241,7 +262,25 @@ def main() -> int:
     # actually cost against what it was promised, which is the only way a drifting cost model
     # shows up. Minutes only when the ledger has measured seconds — cold-start cost units
     # would be a meaningless ratio, so they are omitted rather than written as fake minutes.
-    per_shard_minutes = [loads[k] / 60 for k in range(m)] if measured else None
+    # Serial: what the pack sums to. Wall clock: that divided by the fan-out's measured speedup,
+    # floored at the shard's OWN slowest Board — a global floor would over-predict every shard
+    # that doesn't hold it (ADR-0054).
+    per_shard_serial_minutes = [loads[k] / 60 for k in range(m)] if measured else None
+    speedup = shard_speedup.load(args.speedup_ledger)
+    per_shard_minutes = (
+        [
+            shard_speedup.predict_minutes(
+                serial,
+                floor_minutes=max(
+                    (costs[i] / 60 for i in shard_boards[k]), default=0.0
+                ),
+                ratio=speedup.ratio,
+            )
+            for k, serial in enumerate(per_shard_serial_minutes)
+        ]
+        if per_shard_serial_minutes is not None
+        else None
+    )
 
     # Ship the skip-list inside the same artifact every shard already downloads, so the scrape
     # stage can skip detail fetches for Jobs whose detail we already hold without a second
@@ -264,8 +303,9 @@ def main() -> int:
         count=n,
         per_shard=per_shard,
         per_shard_minutes=per_shard_minutes,
+        per_shard_serial_minutes=per_shard_serial_minutes,
     )
-    makespan = max(loads) / 60 if measured else 0.0
+    makespan = max(per_shard_minutes) if per_shard_minutes else 0.0
     tail = (
         f"; predicted makespan ~{makespan:.1f} min "
         f"(total work Σ {total_cost / 60:.1f} min)"

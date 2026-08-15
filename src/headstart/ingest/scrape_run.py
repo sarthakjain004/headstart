@@ -141,17 +141,25 @@ def _shard_id(assignment: str | None) -> str | None:
     return Path(assignment).stem.rsplit("-", 1)[-1] if assignment else None
 
 
-def _predicted_minutes(assignment: str | None) -> float | None:
-    """What the planner said this shard would cost, read from the plan it shipped beside the
-    assignment. Without it nothing ever compares prediction to outcome, and a cost model can
-    drift by a factor of three in plain sight (it has: ~109 min predicted vs ~40 actual)."""
+def _plan_minutes(assignment: str | None, field: str) -> float | None:
+    """This shard's entry in one of the plan's per-shard minute lists.
+
+    The plan ships two, and they answer different questions: ``per_shard_minutes`` is the
+    predicted wall clock (what the shard should take) and ``per_shard_serial_minutes`` is the
+    packed sum (what its Boards cost run end to end). Reporting both is what lets the join
+    measure the fan-out's speedup against the *serial* figure rather than against the
+    prediction, which is derived from that speedup and would chase its own tail (ADR-0054).
+
+    Without any of this nothing ever compares prediction to outcome, and a cost model can drift
+    by a factor of three in plain sight (it has: ~109 min predicted vs ~40 actual).
+    """
     if not assignment:
         return None
     path = Path(assignment)
     shard = path.stem.rsplit("-", 1)[-1]
     plan = path.parent / "plan.json"
     try:
-        minutes = json.loads(plan.read_text(encoding="utf-8"))["per_shard_minutes"]
+        minutes = json.loads(plan.read_text(encoding="utf-8"))[field]
         return float(minutes[int(shard)])
     except (OSError, json.JSONDecodeError, KeyError, IndexError, ValueError):
         return None  # an older plan, or a non-shard run: absence is not an error
@@ -187,6 +195,7 @@ def _report(
     outdir: Path,
     elapsed: float,
     predicted: float | None,
+    serial: float | None,
     killed: bool,
     shard: str | None = None,
 ) -> None:
@@ -232,6 +241,7 @@ def _report(
         jobs=progress.jobs,
         seconds=round(elapsed, 1),
         predicted_minutes=predicted,
+        serial_minutes=serial,
         killed_by_budget=killed,
         board_seconds=spread,
         retries=dict(retries),
@@ -292,7 +302,8 @@ def main() -> int:
 
     outdir = Path(args.outdir)
     shard = _shard_id(args.assignment)
-    predicted = _predicted_minutes(args.assignment)
+    predicted = _plan_minutes(args.assignment, "per_shard_minutes")
+    serial = _plan_minutes(args.assignment, "per_shard_serial_minutes")
     _log.info(f"shard mix: {_ats_mix(companies)}")
     if predicted is not None:
         _log.info(f"planner predicted ~{predicted:.1f} min for this shard")
@@ -317,7 +328,9 @@ def main() -> int:
     except SystemExit:
         killed = True
     finally:
-        _report(progress, outdir, time.monotonic() - start, predicted, killed, shard)
+        _report(
+            progress, outdir, time.monotonic() - start, predicted, serial, killed, shard
+        )
     return _BUDGET_KILLED if killed else 0
 
 

@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-07-25
+- Amended by [ADR-0054](0054-learned-fan-out-speedup.md) — the measured seconds here are right,
+  but the planner read the packed sum as a makespan; it now divides that sum by a measured
+  fan-out speedup.
 - Replaces the cost model of [ADR-0026](0026-parallelize-nightly-scrape.md) (which kept the
   plan → fan-out → join *shape* — only the per-Board cost estimate changes). Reuses the ledger
   pattern of [ADR-0022](0022-tech-priority-board-ordering.md) and the shared LPT packer of

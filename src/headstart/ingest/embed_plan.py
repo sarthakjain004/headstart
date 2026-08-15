@@ -31,7 +31,7 @@ from pathlib import Path
 from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT
 from headstart.ingest.binpack import (  # noqa: F401 (lpt_pack re-exported for tests)
     lpt_pack,
     shard_count,
@@ -51,7 +51,7 @@ _SOURCE = REPO_ROOT / "data" / "jobs" / "tech"
 _PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 # Rides to the merge stage inside the corpus-state artifact it already downloads (ADR-0050).
-_UPGRADES = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
+_UPGRADES = PENDING_UPGRADES_PATH
 _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 
 # Measured CPU seconds-per-Doc per Bucket, from the 2026-07-24 ubuntu-latest run recorded in

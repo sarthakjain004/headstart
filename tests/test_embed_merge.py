@@ -187,3 +187,44 @@ def test_an_upgrade_still_replaces_its_stale_row_when_a_fragment_does_arrive(tmp
     # c survives untouched; a and b were dropped and re-appended from the fragment
     assert _store_ids(store) == ["c", "a", "b"]
     _assert_consistent(store, 3)
+
+
+def test_eviction_shrinks_meta_before_vectors_so_a_crash_leaves_a_readable_store(
+    tmp_path, monkeypatch
+):
+    """A SIGTERM between the two `replace()` calls must not corrupt the store.
+
+    `EmbeddingStore`'s invariant is that vectors are always at least as long as meta — it appends
+    vectors first for exactly that reason, and `_reconcile_store` refuses to open the inverse.
+    Replacing vectors first inverted it: a kill in that window (merge carries a 48 min job
+    timeout) left vectors short against a long meta, and every later run's merge died on "prior
+    store corrupt" until a human repaired it.
+
+    Simulated by making the *second* replace raise, which is what a kill in the window looks like
+    to the file system, then asserting the surviving state satisfies the invariant.
+    """
+    pytest.importorskip("numpy")
+    store = tmp_path / "store"
+    _write_store(store, ["a", "b", "c", "d"])
+
+    real_replace = Path.replace
+    calls: list[str] = []
+
+    def _replace(self, target):
+        calls.append(Path(target).name)
+        if len(calls) == 2:  # the crash: first rename landed, second never runs
+            raise KeyboardInterrupt("SIGTERM between the two replaces")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", _replace)
+    with pytest.raises(KeyboardInterrupt):
+        ms.evict_ids(store / "meta.jsonl", store / "embeddings.f32", _DIM, {"b", "c"})
+
+    # meta.jsonl is the authority, so it is the file that must have shrunk first
+    assert calls[0] == "meta.jsonl"
+    meta_rows = len(_store_ids(store))
+    vec_rows = (store / "embeddings.f32").stat().st_size // (_DIM * 4)
+    assert vec_rows >= meta_rows, (
+        f"store left corrupt: {vec_rows} vector rows against {meta_rows} meta rows — "
+        "EmbeddingStore requires vectors >= meta"
+    )

@@ -12,8 +12,9 @@ run but its id is absent from the fresh output. New ids are added; re-seen ids a
 (id-only, v1). Crucially the delete is *scoped to the Boards actually scraped*, so a partial harvest
 never evicts Boards it didn't touch — and a dead Board (scraped, yields nothing) has all its rows
 drop out for free. That scope is per-Board but all-or-nothing, so a Board whose scrape came back
-*truncated* still looks fully covered; the **collapse guard** (ADR-0046) withholds a Board's
-evictions when it would lose more than a quarter of its rows at once.
+*truncated* still looks fully covered; the **collapse guard** (ADR-0046, bounded by ADR-0055)
+caps what a Board may lose in one run at a quarter of its rows, so a truncation cannot collapse it
+and a persistently missing row still drains.
 
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,7 @@ def plan_sync(
     fresh_ids: Iterable[str],
     scraped_boards: Iterable[str],
     live: dict[str, str],
+    first_seen: Mapping[str, str] | None = None,
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -79,8 +81,8 @@ def plan_sync(
     **Collapse guard (ADR-0046).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
     rate-limit looks exactly like a Board that delisted everything it didn't re-emit. When a Board
-    would lose more than :data:`COLLAPSE_RATIO` of its indexed rows in a single run, this refuses
-    the whole Board's evictions and reports it in ``held`` for the caller to log. Measured over
+    would lose more than :data:`COLLAPSE_RATIO` of its indexed rows in a single run, this caps what
+    it may lose and reports the remainder in ``held`` for the caller to log. Measured over
     five production runs, ordinary turnover is under 10% for 754 of 817 board-runs, while the
     Boards that flapped sat at 35–82% — so the threshold separates them with room to spare.
     Boards under :data:`COLLAPSE_FLOOR` rows are exempt: there a large ratio is a handful of rows.
@@ -89,8 +91,20 @@ def plan_sync(
     and ``index sync`` keeps the Boards :func:`read_unauthoritative_boards` names out of
     ``scraped_boards`` altogether (ADR-0053). What is left to the ratio is a scraper that cannot
     detect its own truncation and a shard killed before it writes a report. It stays deliberately
-    blunt: a Board that genuinely sheds more than a quarter of its postings at once keeps those
-    rows.
+    blunt: a Board that genuinely sheds more than a quarter of its postings at once sheds them
+    over several runs instead of one.
+
+    **The hold is bounded (ADR-0055).** Refusing a tripped Board's evictions outright made the
+    guard a ratchet: nothing else can reach those rows — ``prune`` only evicts ids whose Board is
+    absent from the ledger, and a held Board is still Live — so a Board the scrape can never fully
+    re-fetch accreted rows forever (production went 267 to 953 withheld across 22 hours, with
+    three Boards withholding an identical count every run). A tripped Board now drains its oldest
+    missing rows up to :data:`COLLAPSE_RATIO` of its size, so it still cannot collapse in one run
+    but the backlog is not permanent. ``held`` reports what was *withheld*, not what was missing.
+
+    ``first_seen`` maps id to its ISO stamp and orders that drain; pass ``None`` and the drain
+    falls back to id order, which is stable but carries no age signal. It is a plain mapping so
+    this module stays free of any table dependency.
     """
     index = set(index_ids)
     fresh = set(fresh_ids)
@@ -103,12 +117,28 @@ def plan_sync(
         if board in boards:
             indexed_by_board[board].add(job_id)
 
+    stamps = first_seen or {}
     delete: set[str] = set()
     held: list[tuple[str, int]] = []
     for board, ids in indexed_by_board.items():
         missing = {i for i in ids if i not in fresh}
         if len(ids) >= COLLAPSE_FLOOR and len(missing) > COLLAPSE_RATIO * len(ids):
-            held.append((board, len(missing)))
+            # Drain at the guard's own threshold rather than refusing outright (ADR-0055). A
+            # Board still cannot collapse in one run — which is all ADR-0046 set out to stop —
+            # but a row that stays missing does eventually leave, so a Board the scrape can
+            # never fully re-fetch stops accreting rows nothing will ever evict.
+            # Oldest first, by the `first_seen` the table already carries: a row we have not
+            # been able to confirm for longest is the likeliest to be genuinely closed. A
+            # missing stamp sorts first — those rows predate the column, so they are the oldest
+            # of all — and the id breaks ties so the plan is deterministic.
+            # max(1, ...) binds the invariant rather than leaving it to arithmetic: the drain
+            # must always take at least one row, or a Board would hold forever again — the exact
+            # ratchet this replaces. Unreachable while COLLAPSE_FLOOR is 20 (cap >= 5), but the
+            # two constants are declared far apart and nothing else couples them.
+            cap = max(1, int(COLLAPSE_RATIO * len(ids)))
+            drain = sorted(missing, key=lambda i: (stamps.get(i) or "", i))[:cap]
+            delete |= set(drain)
+            held.append((board, len(missing) - len(drain)))
             continue
         delete |= missing
 
@@ -121,6 +151,15 @@ def _quote(value: str) -> str:
     return (
         "'" + value.replace("'", "''") + "'"
     )  # SQL string literal for the delete predicate
+
+
+def in_predicate(column: str, values: Iterable[str]) -> str:
+    """``column IN ('a', 'b')`` over quoted literals, sorted so the predicate is stable.
+
+    Lives here beside :func:`_quote`, which it uses, rather than being rebuilt by each caller —
+    the escaping is the part worth having exactly one of.
+    """
+    return f"{column} IN ({', '.join(_quote(v) for v in sorted(values))})"
 
 
 def apply_sync(
@@ -138,7 +177,7 @@ def apply_sync(
     ids = list(delete_ids)
     for start in range(0, len(ids), chunk):
         batch = ids[start : start + chunk]
-        table.delete(f"id IN ({', '.join(_quote(i) for i in batch)})")
+        table.delete(in_predicate("id", batch))
     if add_rows:
         table.add(add_rows)
 
