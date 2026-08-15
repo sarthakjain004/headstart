@@ -331,22 +331,16 @@ def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
     assert sum("candidatejobdetail" in u for u in calls) == 1
 
 
-def test_darwinbox_tld_fallback_surfaces_the_block_not_the_wrong_tld_500(monkeypatch):
-    """A wall on the tenant's real TLD must not be reported as the other TLD's 500.
+def _darwinbox_curl_wall(monkeypatch):
+    """Stub `http.fetch` so `.in` answers Cloudflare's 403 and `.com` the wrong-TLD 500.
 
-    `.in` tenants answer `.com` with 500 "Invalid subdomain". Keeping only the *last* error
-    meant a 403 on `.in` was overwritten by that 500, so a blocked Board logged as a dead
-    one — which is how a fleet-wide 403 wall on CI read as 99 scattered 500s for 20 hours
-    (pipeline runs 31738892152 onward).
-
-    `http.fetch` *returns* a non-2xx response and `_alljobs` raises via `raise_for_status`,
-    so the fake returns real ``curl_cffi`` Responses and lets the library build the
-    exception. Stubbing `fetch` to raise instead would hand the scraper a `urllib` error,
-    whose ``.code`` is the HTTP status — ``curl_cffi``'s is a curl errno, always 0 here —
-    and the test would pass against a predicate that never fires in production.
+    The fakes are real ``curl_cffi`` Responses and `_alljobs` raises via `raise_for_status`,
+    so the library builds the exception. Stubbing `fetch` to *raise* instead would hand the
+    scraper a `urllib` error, whose ``.code`` is the HTTP status — ``curl_cffi``'s is a curl
+    errno, always 0 — and the tests would pass against a predicate that never fires in
+    production (the no-op-fix bug the #137 review caught).
     """
     from curl_cffi.requests import models
-    from curl_cffi.requests.exceptions import HTTPError
 
     import headstart.scrapers.darwinbox as db
 
@@ -361,9 +355,98 @@ def test_darwinbox_tld_fallback_surfaces_the_block_not_the_wrong_tld_500(monkeyp
         return _response(500, "Internal Server Error")  # wrong TLD: "Invalid subdomain"
 
     monkeypatch.setattr(db.http, "fetch", _fetch)
+
+
+class _FakeDarwinboxPage:
+    """browser_http._Page's surface, answering the darwinbox API from canned pages."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.posted = []
+
+    def post_json(self, path, body):
+        self.posted.append(body)
+        return {"data": self.pages[body["page"] - 1]}
+
+    def get_json(self, path):
+        return {"message": {"company": {"new_careers": True}}}
+
+
+def test_darwinbox_wall_routes_to_the_browser_on_the_walled_tld(monkeypatch):
+    """A persistent 403 escalates to the browser transport on the tenant's real host.
+
+    The wall admits a genuine Chrome and nothing else (ADR-0056), so a walled board must not
+    surface an error — and must navigate the TLD that 403'd (`.in` here), because the wrong
+    TLD's 500 is darwinbox itself answering, not Cloudflare.
+    """
+    from contextlib import contextmanager
+
+    import headstart.browser_http as bh
+
+    _darwinbox_curl_wall(monkeypatch)
+    listing = _load("darwinbox_licious.json")
+    navigated = []
+
+    @contextmanager
+    def _origin(page_url):
+        navigated.append(page_url)
+        yield _FakeDarwinboxPage([listing])
+
+    monkeypatch.setattr(bh, "origin", _origin)
+    scraper = get_scraper("darwinbox", "licious", "Licious")
+    raw = scraper.fetch_raw()
+
+    assert navigated == ["https://licious.darwinbox.in/ms/candidate/careers"]
+    jobs = scraper.parse(raw, SCRAPED_AT)  # same JSON in -> parse untouched
+    assert [j.id for j in jobs] == [
+        "darwinbox:licious:5ebea18409d3e",
+        "darwinbox:licious:a6610fb2a780ac",
+    ]
+    assert jobs[0].url == (
+        "https://licious.darwinbox.in/ms/candidatev2/main/careers/jobDetails/5ebea18409d3e"
+    )
+
+
+def test_darwinbox_browser_route_paginates_full_pages(monkeypatch):
+    """A full first page keeps fetching until a short batch, exactly like the curl path."""
+    from contextlib import contextmanager
+
+    import headstart.browser_http as bh
+    import headstart.scrapers.darwinbox as db
+
+    _darwinbox_curl_wall(monkeypatch)
+    full = [{"id": f"a{i}"} for i in range(db._PAGE_SIZE)]
+    fake = _FakeDarwinboxPage([full, [{"id": "last"}]])
+
+    @contextmanager
+    def _origin(page_url):
+        yield fake
+
+    monkeypatch.setattr(bh, "origin", _origin)
+    raw = get_scraper("darwinbox", "licious", "Licious").fetch_raw()
+    assert len(raw) == db._PAGE_SIZE + 1
+    assert [b["page"] for b in fake.posted] == [1, 2]
+
+
+def test_darwinbox_no_wall_no_browser_raises_the_last_error(monkeypatch):
+    """Without a 403 there is nothing to escalate: the last real error surfaces."""
+    from curl_cffi.requests.exceptions import HTTPError
+
+    import headstart.scrapers.darwinbox as db
+
+    from curl_cffi.requests import models
+
+    def _response(status, reason):
+        r = models.Response()
+        r.status_code, r.ok, r.reason = status, False, reason
+        return r
+
+    monkeypatch.setattr(
+        db.http, "fetch", lambda m, u, **k: _response(500, "Internal Server Error")
+    )
     with pytest.raises(HTTPError) as excinfo:
         get_scraper("darwinbox", "licious", "Licious").fetch_raw()
-    assert excinfo.value.response.status_code == 403
+    assert excinfo.value.response.status_code == 500
 
 
 def test_oracle_parse():

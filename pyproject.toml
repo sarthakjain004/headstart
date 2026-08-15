@@ -19,6 +19,10 @@ dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerpr
 # and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All three
 # are small and pure-Python — this does not pull the ML stack into the quality job.
 dev = ["pytest", "ruff==0.15.22", "flask", "xlsxwriter", "openpyxl"]
+# The scrape fan-out's browser escalation (ADR-0056): darwinbox's Cloudflare wall admits a real
+# Chrome and nothing else, so the shards need pydoll. Imported lazily (browser_http) — only a
+# board that actually hits the wall starts a browser; the quality job never installs this.
+scrape = ["pydoll-python"]
 # Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
 # scikit-learn arrives transitively via sentence-transformers; named because

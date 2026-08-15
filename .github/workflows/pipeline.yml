@@ -166,7 +166,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e .
+        # [scrape]: pydoll, for the darwinbox browser escalation (ADR-0056). The browser starts
+        # lazily — only a board that actually hits the wall pays for it.
+      - run: pip install -e ".[scrape]"
       - name: Download this shard's board list
         # Not fatal on its own — the step below retries and is the one that decides. The action
         # has no retry, and one `ListArtifacts: ETIMEDOUT` here killed shard 13 on 2026-08-13
@@ -213,8 +215,12 @@ jobs:
         # Partial harvests are safe by design: `JobWriter` flushes per Board, eviction only touches
         # Boards present in the join (ADR-0014), and `|| echo` banks what finished so the step
         # still exits 0 and the upload below runs.
+        # xvfb-run: darwinbox's browser escalation must be HEADFUL — headless Chrome is a flat
+        # block there (ADR-0056) — so the whole scrape gets a virtual display. Free for every
+        # other ATS: nothing opens a window unless a darwinbox board hits the wall.
         run: |
-          timeout 60m python -m headstart.ingest.scrape_run \
+          command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
+          timeout 60m xvfb-run -a python -m headstart.ingest.scrape_run \
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
             || echo "scrape time budget reached — banking partial fragment"
