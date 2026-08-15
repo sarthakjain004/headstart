@@ -9,18 +9,23 @@ careers SPA itself does not):
        -> {"status":"success","data":[ ...jobs... ]}
 
 Two wrinkles drive the shape of this scraper:
-  * Cloudflare TLS-fingerprints the edge, intermittently 403-ing a plain urllib client,
-    so this is the one scraper that fetches via curl_cffi (impersonate="chrome"). The 403
-    is transient, hence it's in the retry set alongside 429/5xx.
+  * Cloudflare fingerprints the edge, so this is the one scraper that fetches via curl_cffi
+    (impersonate="chrome"). Its 403 was originally an intermittent blip, hence its place in
+    the retry set alongside 429/5xx — see below for what that 403 means now.
   * The server caps each page at 100 regardless of `limit`, so we page until a short batch.
     The data-center TLD varies (~77% .in, ~23% .com); we resolve it on the first page.
 
-Since ~2026-08-09 the wall is no longer transient: Cloudflare 403s every non-browser client —
+Since ~2026-08-09 that 403 is no longer a blip: Cloudflare blocks every non-browser client —
 any TLS fingerprint, any IP — while admitting a real Chrome from the same address
-(`docs/darwinbox/cloudflare-wall.md`, ADR-0056). So a persistent wall on the resolved host
-routes the board through `browser_http`: navigate the careers page once to clear the wall, then
+(`docs/darwinbox/cloudflare-wall.md`, ADR-0056). So when the TLD probe finds *neither* host
+serving page 1 and one of them answered 403, that 403 is the wall on the tenant's real host, and
+the Board routes through `browser_http`: navigate the careers page once to clear the wall, then
 call the same `alljobs` API via an in-page fetch on the warmed tab. Same JSON, same `parse`;
-curl stays primary so the browser costs nothing wherever (or whenever) the wall is down.
+curl stays primary, so the browser costs nothing wherever (or whenever) the wall is down.
+
+Scope worth knowing: only that first-page failure escalates. A 403 arriving mid-pagination — the
+wall coming up between pages — still raises, so the Board reports a truncated read rather than
+silently re-reading half of it through a second transport.
 
 Only tenants with recruitment enabled return jobs; HR-only tenants (e.g. games24x7,
 recruitment_enabled:false) return an empty list.

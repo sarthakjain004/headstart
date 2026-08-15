@@ -5,7 +5,7 @@ Boards on CI and has done for over five days. A real Chrome driven over CDP (pyd
 Boards fine from the *same* GitHub Actions IP that gets 403s from `curl_cffi`, at 153/155 Boards
 and 0.38 s/Board — so the fix is a browser-driven scrape, and the volume test that was the last
 open question has passed. One contributing defect — a reporting bug that hid
-the wall in the logs — is already fixed (`_wall_or_last` in `src/headstart/scrapers/darwinbox.py`).
+the wall in the logs — is already fixed (`_is_wall` in `src/headstart/scrapers/darwinbox.py`).
 
 > **Two corrections (2026-08-15), both kept visible rather than quietly deleted.**
 >
@@ -125,7 +125,8 @@ overwritten by the other TLD's expected 500. Walled Boards therefore logged as
 `HTTPError: HTTP Error 500`, which reads as a dead tenant. That is why a fleet-wide 403 wall
 appeared in the logs as scattered 500s and went unexamined for days.
 
-`_wall_or_last` now prefers the 403. One subtlety worth remembering: the HTTP status comes off
+`_is_wall` now identifies the 403, and ADR-0056 routes it to the browser rather than merely
+reporting it. One subtlety worth remembering: the HTTP status comes off
 `exc.response.status_code`, **not** `exc.code` — `curl_cffi` raises `HTTPError(msg, 0, response)`
 where that `0` is a curl errno. A first version of the fix keyed on `exc.code` and was a silent
 no-op that still passed its test, because the test stubbed `http.fetch` to raise `urllib`'s

@@ -145,3 +145,40 @@ def test_tab_is_closed_even_when_the_caller_raises(fresh):
         with bh.origin("https://acme.darwinbox.in/careers"):
             raise ValueError("caller bug")
     assert fresh.tabs[0].closed
+
+
+def test_a_failed_navigation_returns_its_slot_and_closes_its_tab(fresh, monkeypatch):
+    """A tab opened before a failed nav must not outlive it, and the width must come back.
+
+    ``_TAB_WIDTH`` slots are the whole concurrency budget: leak them and every later walled
+    Board blocks forever on a semaphore nobody will release.
+    """
+
+    async def _boom(self, url, timeout=None):
+        raise TimeoutError("navigation gave up")
+
+    monkeypatch.setattr(_FakeTab, "go_to", _boom)
+    monkeypatch.setattr(bh, "_TAB_WIDTH", 1)  # one slot: a leak makes the retry hang
+
+    for _ in range(3):
+        with pytest.raises(TimeoutError):
+            with bh.origin("https://acme.darwinbox.in/careers"):
+                pass
+
+    # Three boards, three tabs, all closed — and the third only ran because the first two
+    # handed their slot back.
+    assert len(fresh.tabs) == 3
+    assert all(t.closed for t in fresh.tabs)
+
+
+def test_missing_pydoll_says_so_instead_of_blaming_chrome_startup(monkeypatch):
+    """An uninstalled extra is not a flaky launch: no retries, and a message naming the fix."""
+
+    def _no_pydoll():
+        raise bh.BrowserUnavailable("the browser transport needs pydoll")
+
+    monkeypatch.setattr(bh, "_chrome_factory", _no_pydoll)
+    monkeypatch.setattr(bh, "_browser", None)
+    with pytest.raises(bh.BrowserUnavailable, match="needs pydoll"):
+        with bh.origin("https://acme.darwinbox.in/careers"):
+            pass

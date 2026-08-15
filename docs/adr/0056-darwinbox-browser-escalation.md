@@ -68,6 +68,22 @@ nothing.
 - **Wait the wall out.** It has held for a week and darwinbox sells to enterprises that want
   scraping stopped; there is no signal it is temporary. Rejected.
 
+## What this costs, stated plainly
+
+- **A walled Board pays the curl 403 cycle before the browser.** Curl-first means each escalation
+  first burns `http.py`'s retry/backoff on the 403 (it is still in the retry set) on both TLDs.
+  That is the price of keeping curl primary so the wall dropping needs no code change; it is not
+  free, and it is why the per-Board cost is more than the probe's 0.38 s read.
+- **Subresource blocking is best-effort.** It uses pydoll's private command API, so it is wrapped
+  and degrades rather than failing the Board — but the wall doc measured an *unblocked*
+  navigation at 20.6 s, above the 20 s deadline, so silent degradation would look like a fleet of
+  timeouts. It therefore logs a warning, once per process, naming the exception.
+- **Only the first page escalates.** A 403 arriving mid-pagination raises, so the Board reports a
+  truncated read rather than re-reading half of it through a second transport.
+- **`python -m headstart` (the curated feed) has no pydoll.** It installs base deps only, so a
+  walled Board there raises `BrowserUnavailable` naming the `[scrape]` extra, rather than a
+  misleading "Chrome failed to start".
+
 ## Consequences
 
 - Walled darwinbox boards scrape again, at browser cost only while the wall holds. The cost

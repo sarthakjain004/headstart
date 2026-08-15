@@ -33,6 +33,10 @@ import json
 import threading
 from contextlib import contextmanager
 
+from headstart import log
+
+_log = log.get(__name__)
+
 _NAV_TIMEOUT_S = 20  # per-board deadline, from the shape probe's _DEADLINE
 _FETCH_TIMEOUT_S = 30
 _TAB_WIDTH = 4  # probe-measured: width 4-6 holds; stay at the safe end
@@ -59,6 +63,43 @@ _CHROME_ARGS = [
 ]
 
 
+class BrowserUnavailable(Exception):
+    """The browser transport cannot run here — pydoll is not installed.
+
+    Distinct from a launch failure: retrying will never help, and the fix is an install, so this
+    skips the retry loop and says so rather than surfacing as "Chrome failed to start 3 times".
+    """
+
+
+_blocking_failed = False
+
+
+async def _install_blocking(tab) -> None:
+    """Drop media and scripts for this tab. Best-effort, but *loudly* so.
+
+    Not cosmetic: the wall doc measured an unblocked navigation at 20.6 s, above
+    ``_NAV_TIMEOUT_S``. If pydoll's private command API drifts and this silently stops working,
+    every walled Board becomes a bare navigation timeout with nothing pointing at the cause — so
+    the first failure is logged with its exception, once per process.
+    """
+    global _blocking_failed
+    try:
+        from pydoll.commands.network_commands import NetworkCommands
+
+        await tab.enable_network_events()
+        await tab._execute_command(NetworkCommands.set_blocked_urls(_BLOCKED))
+    except Exception as exc:  # noqa: BLE001 - an optimisation, not a gate: degrade, don't die
+        if not _blocking_failed:
+            _blocking_failed = True
+            _log.warning(
+                "subresource blocking unavailable (%s: %s) — navigations will be slower and "
+                "may exceed the %ss deadline",
+                type(exc).__name__,
+                exc,
+                _NAV_TIMEOUT_S,
+            )
+
+
 class BrowserHTTPError(Exception):
     """A non-2xx answer from an in-page fetch. Carries the status like an HTTP error would."""
 
@@ -70,8 +111,14 @@ class BrowserHTTPError(Exception):
 
 def _default_chrome():
     """Start pydoll's Chrome (imported here so the extra is only needed when a wall is hit)."""
-    from pydoll.browser import Chrome
-    from pydoll.browser.options import ChromiumOptions
+    try:
+        from pydoll.browser import Chrome
+        from pydoll.browser.options import ChromiumOptions
+    except ImportError as exc:  # a missing extra, not a flaky launch — say which
+        raise BrowserUnavailable(
+            "the browser transport needs pydoll: pip install -e '.[scrape]' "
+            "(the pipeline's scrape shards install it; the curated-feed path does not)"
+        ) from exc
 
     options = ChromiumOptions()
     for arg in _CHROME_ARGS:
@@ -87,17 +134,29 @@ _lock = threading.Lock()
 _loop: asyncio.AbstractEventLoop | None = None
 _browser = None
 _gate: asyncio.Semaphore | None = None
+_atexit_registered = False
 
 
 def _run(coro, timeout: float):
-    """Run a coroutine on the browser loop from any thread."""
-    assert _loop is not None
-    return asyncio.run_coroutine_threadsafe(coro, _loop).result(timeout)
+    """Run a coroutine on the browser loop from any thread, cancelling it if we give up.
+
+    ``Future.result(timeout)`` abandons the *caller*; it does not stop the coroutine. Without the
+    cancel below, a timed-out ``_open`` goes on to take a semaphore slot and open a tab nobody
+    closes — four of those permanently exhaust ``_TAB_WIDTH`` and every later walled Board
+    deadlocks. Cancelling delivers ``CancelledError`` into the coroutine, whose own
+    ``except BaseException`` hands the slot back.
+    """
+    future = asyncio.run_coroutine_threadsafe(coro, _loop)
+    try:
+        return future.result(timeout)
+    except BaseException:
+        future.cancel()
+        raise
 
 
 def _ensure_started() -> None:
     """The process's one Chrome, started on first use, with a launch retry."""
-    global _loop, _browser, _gate
+    global _loop, _browser, _gate, _atexit_registered
     with _lock:
         if _browser is not None:
             return
@@ -119,8 +178,12 @@ def _ensure_started() -> None:
         for _ in range(_LAUNCH_ATTEMPTS):
             try:
                 _browser = _run(_start(), timeout=60)
-                atexit.register(shutdown)
+                if not _atexit_registered:
+                    atexit.register(shutdown)
+                    _atexit_registered = True
                 return
+            except BrowserUnavailable:
+                raise  # an install problem: retrying is theatre
             except Exception as exc:  # noqa: BLE001 - startup is the flaky part; retry it
                 last = exc
         raise RuntimeError(
@@ -188,18 +251,20 @@ def origin(page_url: str):
 
     async def _open():
         await _gate.acquire()
+        tab = None
         try:
             tab = await _browser.new_tab()
-            try:
-                from pydoll.commands.network_commands import NetworkCommands
-
-                await tab.enable_network_events()
-                await tab._execute_command(NetworkCommands.set_blocked_urls(_BLOCKED))
-            except Exception:  # noqa: BLE001 - blocking is an optimisation, not a gate
-                pass
+            await _install_blocking(tab)
             await tab.go_to(page_url, timeout=_NAV_TIMEOUT_S)
             return tab
         except BaseException:
+            # Hand back the slot *and* the tab: a tab opened before a failed navigation would
+            # otherwise sit open for the life of the browser.
+            if tab is not None:
+                try:
+                    await tab.close()
+                except BaseException:  # noqa: BLE001 - already failing; don't mask the cause
+                    pass
             _gate.release()
             raise
 
