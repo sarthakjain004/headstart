@@ -60,6 +60,17 @@ of the two:
 * **Rows this run did not probe are carried through byte-for-byte**, so a partial run is a partial
   update, never a truncation.
 
+Two costs those rules buy. Both are deliberate, and neither is fixed here:
+
+* **A consistently-failing board is re-selected every run** under ``--status live`` / ``--status
+  dead``. Its verdict is never overwritten, so ``checked_at`` never moves and the tenant-ordered
+  head of the ledger keeps picking the same rows. Grinding through a backlog of *failing* rows
+  would need a per-run cursor, which this does not have.
+* **``--status unknown`` spends the primary checker's TTL budget.** Bumping ``checked_at`` on an
+  UNKNOWN→UNKNOWN row defers `check_liveness.py`'s cheaper, more authoritative HTTP probe of that
+  row by ``UNKNOWN_TTL_DAYS`` (3). That is the wrong trade for precisely the rows the evidence
+  above says want a paced HTTP re-probe rather than a browser — so keep ``--limit`` small there.
+
 Run:  python scripts/validate/check_liveness_browser.py workable --status unknown --limit 50
       python scripts/validate/check_liveness_browser.py personio --status unknown --apply
       python scripts/validate/check_liveness_browser.py recruitee --status dead --limit 200
@@ -86,6 +97,11 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # after render and must return an integer job count, or -1 for "this is not a board" (which is
 # what settles DEAD). Selectors are deliberately broad — these are marketing-grade pages that
 # change often, and a missed selector must read as "couldn't tell" (UNKNOWN), never as zero jobs.
+#
+# Each DEAD tell is a *positive* identification of a not-a-board page — a redirect target or a
+# title — never a phrase found anywhere in the body, because a live board quoting that phrase in
+# one posting would settle DEAD for 90 days. personio has no DEAD tell at all (see below), so it
+# can only ever return a count, 0, or null; that asymmetry is deliberate, not an omission.
 _PAGE_PROBES: dict[str, dict] = {
     "workable": {
         "url": lambda t, u: f"https://apply.workable.com/{t}/",
@@ -97,6 +113,10 @@ _PAGE_PROBES: dict[str, dict] = {
             if (anchors.length) return anchors.length;
             const title = document.title || "";
             const t = document.body.innerText || "";
+            // A tenant with no board 302s to apply.workable.com/oops, titled just "Workable" —
+            // no text match catches that, so the redirect target is the tell and it is the only
+            // thing that settles DEAD here. Verified 2026-08-15 against a nonexistent tenant.
+            if (location.pathname.replace(/\\/$/, "") === "/oops") return -1;
             // Match the title, not the whole body: a live board carrying one expired posting
             // whose blurb says "no longer accepting" would otherwise settle DEAD for 90 days.
             if (/(page not found|doesn.t exist)/i.test(title)) return -1;
@@ -163,8 +183,12 @@ _PAGE_PROBES: dict[str, dict] = {
                 const m = (outOf.innerText || "").match(/of\\s+([\\d,]+)/i);
                 if (m) return parseInt(m[1].replace(/,/g, ""), 10);
             }
-            const t = document.body.innerText || "";
-            if (/(no jobs found|0 jobs)/i.test(t)) return 0;
+            // Scoped to the results region, not the whole body: a live board whose posting text
+            // happens to contain "0 jobs" would otherwise return 0, and min_jobs=1 drops a
+            // zero-count board from the Active list just as surely as a false DEAD would.
+            const results = document.querySelector(
+                "[data-automation-id='jobResults'], [data-automation-id='searchResults']");
+            if (results && /(no jobs found|0 jobs)/i.test(results.innerText || "")) return 0;
             // Title, not body: a live board listing one expired posting ("no longer available")
             // would otherwise settle DEAD and carry a 90-day TTL.
             if (/(page not found|no longer available)/i.test(document.title || "")) return -1;
@@ -350,11 +374,17 @@ def main() -> int:
         if status != UNKNOWN or ledger[tenant].status == UNKNOWN
     }
     counts = Counter(status for status, _ in probed.values())
-    changed = sum(1 for status, _ in settled.values() if status != args.status)
+    # Against the stored verdict, not against --status: a board going live,7 -> live,21 is a real
+    # write, and counting only status flips made the dry run under-report what --apply would do.
+    changed = sum(
+        1
+        for tenant, verdict in settled.items()
+        if verdict != (ledger[tenant].status, ledger[tenant].jobs)
+    )
     print(
         f"\n{args.ats}: {len(probed)} probed -> "
         + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-        + f"; {changed} would change from {args.status}"
+        + f"; {changed} row(s) would change"
         + f", {len(probed) - len(settled)} left untouched (couldn't tell)",
         flush=True,
     )
