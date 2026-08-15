@@ -331,6 +331,41 @@ def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
     assert sum("candidatejobdetail" in u for u in calls) == 1
 
 
+def test_darwinbox_tld_fallback_surfaces_the_block_not_the_wrong_tld_500(monkeypatch):
+    """A wall on the tenant's real TLD must not be reported as the other TLD's 500.
+
+    `.in` tenants answer `.com` with 500 "Invalid subdomain". Keeping only the *last* error
+    meant a 403 on `.in` was overwritten by that 500, so a blocked Board logged as a dead
+    one — which is how a fleet-wide 403 wall on CI read as 99 scattered 500s for 20 hours
+    (pipeline runs 31738892152 onward).
+
+    `http.fetch` *returns* a non-2xx response and `_alljobs` raises via `raise_for_status`,
+    so the fake returns real ``curl_cffi`` Responses and lets the library build the
+    exception. Stubbing `fetch` to raise instead would hand the scraper a `urllib` error,
+    whose ``.code`` is the HTTP status — ``curl_cffi``'s is a curl errno, always 0 here —
+    and the test would pass against a predicate that never fires in production.
+    """
+    from curl_cffi.requests import models
+    from curl_cffi.requests.exceptions import HTTPError
+
+    import headstart.scrapers.darwinbox as db
+
+    def _response(status, reason):
+        r = models.Response()
+        r.status_code, r.ok, r.reason = status, False, reason
+        return r
+
+    def _fetch(method, url, **kwargs):
+        if ".darwinbox.in" in url:
+            return _response(403, "Forbidden")  # the wall, on the tenant's real host
+        return _response(500, "Internal Server Error")  # wrong TLD: "Invalid subdomain"
+
+    monkeypatch.setattr(db.http, "fetch", _fetch)
+    with pytest.raises(HTTPError) as excinfo:
+        get_scraper("darwinbox", "licious", "Licious").fetch_raw()
+    assert excinfo.value.response.status_code == 403
+
+
 def test_oracle_parse():
     slug = "fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/CX_2"
     jobs = get_scraper("oracle", slug, "Oracle CE Tenant").parse(
