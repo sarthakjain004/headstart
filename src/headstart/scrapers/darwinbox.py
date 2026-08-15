@@ -15,6 +15,13 @@ Two wrinkles drive the shape of this scraper:
   * The server caps each page at 100 regardless of `limit`, so we page until a short batch.
     The data-center TLD varies (~77% .in, ~23% .com); we resolve it on the first page.
 
+Since ~2026-08-09 the wall is no longer transient: Cloudflare 403s every non-browser client —
+any TLS fingerprint, any IP — while admitting a real Chrome from the same address
+(`docs/darwinbox/cloudflare-wall.md`, ADR-0056). So a persistent wall on the resolved host
+routes the board through `browser_http`: navigate the careers page once to clear the wall, then
+call the same `alljobs` API via an in-page fetch on the warmed tab. Same JSON, same `parse`;
+curl stays primary so the browser costs nothing wherever (or whenever) the wall is down.
+
 Only tenants with recruitment enabled return jobs; HR-only tenants (e.g. games24x7,
 recruitment_enabled:false) return an empty list.
 """
@@ -56,23 +63,10 @@ def _iso_date(raw: str | int | float | None) -> str | None:
         return raw
 
 
-def _wall_or_last(errors: list[Exception]) -> Exception:
-    """The 403 among both TLD attempts if one walled us, else the last error.
-
-    Only one TLD hosts a given tenant; the other answers 500 "Invalid subdomain". Reporting
-    the *last* error therefore let that expected 500 bury a 403 from the tenant's real host,
-    so a walled Board was logged as a dead one. A 403 wins: it is never the wrong-TLD
-    answer, and it is the one failure a re-scrape can't clear on its own.
-
-    The status comes off ``exc.response``, not off ``exc.code`` — ``curl_cffi`` raises
-    ``HTTPError(msg, 0, response)``, where that 0 is a curl errno, not the HTTP status.
-    """
-    walled = (
-        e
-        for e in errors
-        if getattr(getattr(e, "response", None), "status_code", None) == 403
-    )
-    return next(walled, errors[-1])
+def _is_wall(exc: Exception) -> bool:
+    """Whether this failure is Cloudflare's 403 — read off ``exc.response``, never ``exc.code``
+    (``curl_cffi`` raises ``HTTPError(msg, 0, response)``; that 0 is a curl errno)."""
+    return getattr(getattr(exc, "response", None), "status_code", None) == 403
 
 
 class DarwinboxScraper(BaseScraper):
@@ -118,9 +112,41 @@ class DarwinboxScraper(BaseScraper):
         except Exception:  # noqa: BLE001 - portal detection must never sink the board
             return True
 
+    def _fetch_raw_browser(self, host: str) -> list[dict]:
+        """The walled board through a real Chrome: navigate once, then in-page fetches.
+
+        The wall admits a genuine browser and nothing else, and clearance is per-origin —
+        every tenant is its own subdomain — so each board pays exactly one navigation, then
+        pages the same JSON API the curl path uses. `parse` never knows the difference.
+        """
+        from headstart import (
+            browser_http,
+        )  # lazy: pydoll is only needed when a wall is hit
+
+        api = "/ms/candidateapi/job/alljobs?companyId=main"
+        body = {"companyId": "main", "sort_option": "new", "limit": _PAGE_SIZE}
+        with browser_http.origin(f"{host}/ms/candidate/careers") as page_ctx:
+            batch = page_ctx.post_json(api, {**body, "page": 1}).get("data") or []
+            jobs = list(batch)
+            page = 1
+            while len(batch) == _PAGE_SIZE and page < 99:
+                page += 1
+                batch = (
+                    page_ctx.post_json(api, {**body, "page": page}).get("data") or []
+                )
+                jobs.extend(batch)
+            try:
+                info = page_ctx.get_json("/ms/candidateapi/companyinfo?companyId=main")
+                company = (info.get("message") or {}).get("company") or {}
+                self._new_careers = bool(company.get("new_careers", True))
+            except Exception:  # noqa: BLE001 - portal detection must never sink the board
+                self._new_careers = True
+        self._host = host
+        return jobs
+
     def fetch_raw(self) -> Any:
         # data-center TLD varies per tenant; resolve it on the first page, then paginate.
-        errors: list[Exception] = []
+        errors: list[tuple[str, Exception]] = []
         host = batch = None
         for tld in _TLDS:
             candidate = f"https://{self.slug}.darwinbox.{tld}"
@@ -129,9 +155,16 @@ class DarwinboxScraper(BaseScraper):
                 host = candidate
                 break
             except Exception as exc:  # noqa: BLE001 - wrong-TLD host: try the other one
-                errors.append(exc)
+                errors.append((candidate, exc))
         if host is None:
-            raise _wall_or_last(errors)
+            # A 403 is the wall on the tenant's real TLD — the wrong TLD answers 500 "Invalid
+            # subdomain", never 403 — and the wall admits a real browser, so escalate rather
+            # than report the board failed. (This is also why the 403 can never again be buried
+            # by the wrong TLD's 500, the bug #137 fixed: it now routes before any reporting.)
+            walled = next((h for h, e in errors if _is_wall(e)), None)
+            if walled is not None:
+                return self._fetch_raw_browser(walled)
+            raise errors[-1][1]
         self._host = host
         self._new_careers = self._portal_is_v2(host)
         jobs = list(batch)

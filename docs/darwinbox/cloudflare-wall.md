@@ -166,7 +166,12 @@ startup, against a 60-minute budget. `ubuntu-latest` already ships Chrome.
 
 A cross-origin variant that never navigates at all is equally fast (0.39 s/Board), but it depends
 on darwinbox serving permissive CORS, which they can revoke without warning for a 0.01 s/Board
-saving. Keep it as the documented fallback, not the default.
+saving. And revoke it they did: on the 2026-08-15 probe run that variant regressed from 6/6 to
+3/6, every `.com` board answering `HTTP 403 THE WALL`, while the navigate-first shape held. Keep
+it out of production entirely.
+
+**Shipped** as ADR-0056: `headstart/browser_http.py` (the transport) + the wall route in
+`DarwinboxScraper.fetch_raw` — curl first, browser on the wall, `parse` untouched.
 
 **Now measured at production scale.** 155 Boards, four runs, no escalation (above); ~10 Boards on
 one runner — the real per-shard shape — passed 10/10 twice in 18-21 s including Chrome startup.
