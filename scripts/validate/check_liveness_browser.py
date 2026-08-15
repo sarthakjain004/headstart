@@ -47,8 +47,18 @@ Two limits of reading a rendered page rather than an API, both load-bearing:
 
 Safety: this **never writes the ledger unless asked**. `data/validate/liveness/` is committed to
 git and is the authoritative Active list, so a browser run — slower, smaller-sampled, easier to
-get wrong — defaults to a dry run that prints what it *would* change. Pass ``--apply`` to write,
-and only rows this run actually settled are touched; every other row is carried through untouched.
+get wrong — defaults to a dry run that prints what it *would* change. Pass ``--apply`` to write.
+
+Two rules bound what ``--apply`` may do, and both exist because this checker is the *less* trusted
+of the two:
+
+* **A probe that couldn't tell never overwrites a row that had a verdict.** Every browser failure
+  — timeout, crash, unrecognised page — settles UNKNOWN, and Chrome hanging on 50 live boards
+  would otherwise rewrite them all ``unknown, jobs=None``. The Active list keeps only ``live`` with
+  ``jobs >= 1``, so that is a silent mass deactivation from one bad run. UNKNOWN is written only
+  over an already-UNKNOWN row, where it destroys nothing and lets a large backlog advance.
+* **Rows this run did not probe are carried through byte-for-byte**, so a partial run is a partial
+  update, never a truncation.
 
 Run:  python scripts/validate/check_liveness_browser.py workable --status unknown --limit 50
       python scripts/validate/check_liveness_browser.py personio --status unknown --apply
@@ -60,6 +70,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -75,7 +86,7 @@ LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 # after render and must return an integer job count, or -1 for "this is not a board" (which is
 # what settles DEAD). Selectors are deliberately broad — these are marketing-grade pages that
 # change often, and a missed selector must read as "couldn't tell" (UNKNOWN), never as zero jobs.
-_ATS: dict[str, dict] = {
+_PAGE_PROBES: dict[str, dict] = {
     "workable": {
         "url": lambda t, u: f"https://apply.workable.com/{t}/",
         "ready": "[data-ui='job'], [data-ui='overview'], main",
@@ -86,12 +97,16 @@ _ATS: dict[str, dict] = {
             if (anchors.length) return anchors.length;
             const title = document.title || "";
             const t = document.body.innerText || "";
-            if (/(page not found|doesn.t exist|no longer)/i.test(t)) return -1;
+            // Match the title, not the whole body: a live board carrying one expired posting
+            // whose blurb says "no longer accepting" would otherwise settle DEAD for 90 days.
+            if (/(page not found|doesn.t exist)/i.test(title)) return -1;
             // A real board with nothing open renders the company blurb and no cards, titled
-            // "{Company} - Current Openings". Confirm it IS a board before returning 0, or a
-            // failed render would be recorded as a live-but-empty board — a false LIVE, which
-            // is the one verdict this checker must never invent.
-            if (/current openings/i.test(title) || /^careers at /i.test(t.trim())) return 0;
+            // "{Company} - Current Openings". But the title ships in the initial HTML, so it
+            // proves this IS a board and *not* that the board finished rendering — trusting it
+            // alone reports a late-painting board as live-but-empty, and min_jobs=1 then drops
+            // it from the Active list. Require the rendered shell before believing a zero.
+            const shell = document.querySelector("[data-ui='overview']");
+            if (shell && (/current openings/i.test(title) || /^careers at /i.test(t.trim()))) return 0;
             if (/no (open )?(jobs|positions)/i.test(t)) return 0;
             return null;
         """,
@@ -105,7 +120,10 @@ _ATS: dict[str, dict] = {
             if (cards.length) return cards.length;
             const t = document.body.innerText || "";
             if (/(keine offenen|no open positions|no vacancies)/i.test(t)) return 0;
-            if (/(nicht gefunden|not found|404)/i.test(t)) return -1;
+            // No DEAD sentinel here, deliberately. A missing board and a throttled request both
+            // land on Personio's marketing site and are indistinguishable from the rendered
+            // page, so this settles UNKNOWN (3-day TTL) rather than risk a false DEAD (90-day
+            // TTL) that silently drops a live Board from the Active list.
             return null;
         """,
     },
@@ -147,7 +165,9 @@ _ATS: dict[str, dict] = {
             }
             const t = document.body.innerText || "";
             if (/(no jobs found|0 jobs)/i.test(t)) return 0;
-            if (/(page not found|no longer available)/i.test(t)) return -1;
+            // Title, not body: a live board listing one expired posting ("no longer available")
+            // would otherwise settle DEAD and carry a 90-day TTL.
+            if (/(page not found|no longer available)/i.test(document.title || "")) return -1;
             // Only now the rendered cards, and only as a floor: a board that renders jobs but
             // states no total is still Live, just under-counted.
             const items = document.querySelectorAll("[data-automation-id='jobTitle']");
@@ -161,6 +181,9 @@ _ATS: dict[str, dict] = {
 # what created the backlog this script is aimed at. A browser is slow enough that modest
 # concurrency is already gentle, but the cap is explicit so it can never be raised by accident.
 _MAX_TABS = 4
+# Not the effective ceiling: pydoll applies its own 60s command timeout to PageMethod.NAVIGATE and
+# ignores this value, so an unreachable host blocks ~60s, not 25 (observed in the smoke test).
+# Budget a run at 60s/board worst case, and treat this as the floor it can return early on.
 _NAV_TIMEOUT_S = 25
 _RENDER_SETTLE_MS = 1200
 
@@ -213,7 +236,7 @@ async def _run(
     from pydoll.browser.chromium import Chrome
     from pydoll.browser.options import ChromiumOptions
 
-    spec = _ATS[ats]
+    spec = _PAGE_PROBES[ats]
     options = ChromiumOptions()
     for flag in (
         "--headless=new",
@@ -223,7 +246,7 @@ async def _run(
     ):
         options.add_argument(flag)
 
-    settled: dict[str, tuple[str, int | None]] = {}
+    probed: dict[str, tuple[str, int | None]] = {}
     done = 0
     async with Chrome(options=options) as browser:
         await browser.start()
@@ -237,7 +260,7 @@ async def _run(
                     status, jobs = await _probe(tab, spec, row.tenant, row.url)
                 finally:
                     await tab.close()
-            settled[row.tenant] = (status, jobs)
+            probed[row.tenant] = (status, jobs)
             done += 1
             # Per item, flushed: a long batch that reports only at the end hides a probe that
             # started failing on row 3, and one slow board must not stall all visibility.
@@ -248,14 +271,14 @@ async def _run(
             )
 
         await asyncio.gather(*(one(r) for r in rows))
-    return settled
+    return probed
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("ats", choices=sorted(_ATS), help="which ATS to re-probe")
+    ap.add_argument("ats", choices=sorted(_PAGE_PROBES), help="which ATS to re-probe")
     ap.add_argument(
         "--status",
         default=UNKNOWN,
@@ -281,10 +304,10 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    if args.tabs > _MAX_TABS:
+    if not 1 <= args.tabs <= _MAX_TABS:
         print(
             f"refusing --tabs {args.tabs}: these hosts rate-limit per IP and a burst is what "
-            f"created this backlog (cap {_MAX_TABS})",
+            f"created this backlog (allowed 1-{_MAX_TABS})",
             flush=True,
         )
         return 2
@@ -295,9 +318,19 @@ def main() -> int:
         print(f"no ledger at {path}", flush=True)
         return 1
 
-    rows = [v for v in ledger.values() if v.status == args.status][: args.limit]
+    # Past its TTL, not merely matching the status: without this the run re-probes the same
+    # head-of-ledger rows every time and a 21k backlog never advances.
+    today = date.today()
+    rows = [
+        v
+        for v in ledger.values()
+        if v.status == args.status and liveness.needs_probe(v, today)
+    ][: args.limit]
     if not rows:
-        print(f"{args.ats}: no rows with status={args.status}", flush=True)
+        print(
+            f"{args.ats}: no rows with status={args.status} are due a re-probe",
+            flush=True,
+        )
         return 0
     print(
         f"{args.ats}: {len(rows)} board(s) with status={args.status}, {args.tabs} tabs"
@@ -305,16 +338,24 @@ def main() -> int:
         flush=True,
     )
 
-    settled = asyncio.run(_run(args.ats, rows, args.tabs))
+    probed = asyncio.run(_run(args.ats, rows, args.tabs))
 
-    changed = {t: v for t, (s, _) in settled.items() if (v := s) != args.status}
-    counts: dict[str, int] = {}
-    for status, _ in settled.values():
-        counts[status] = counts.get(status, 0) + 1
+    # A probe that couldn't tell must never overwrite a row that had a verdict. Chrome hanging
+    # on 50 live boards would otherwise rewrite them all `unknown, jobs=None`, and the Active
+    # list keeps only `live` with `jobs >= 1` — a silent mass deactivation from one bad run.
+    # Writing UNKNOWN over an already-UNKNOWN row destroys nothing and lets the backlog advance.
+    settled = {
+        tenant: (status, jobs)
+        for tenant, (status, jobs) in probed.items()
+        if status != UNKNOWN or ledger[tenant].status == UNKNOWN
+    }
+    counts = Counter(status for status, _ in probed.values())
+    changed = sum(1 for status, _ in settled.values() if status != args.status)
     print(
-        f"\n{args.ats}: {len(settled)} probed -> "
+        f"\n{args.ats}: {len(probed)} probed -> "
         + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-        + f"; {len(changed)} would change from {args.status}",
+        + f"; {changed} would change from {args.status}"
+        + f", {len(probed) - len(settled)} left untouched (couldn't tell)",
         flush=True,
     )
 
@@ -322,13 +363,11 @@ def main() -> int:
         print("dry run — ledger untouched", flush=True)
         return 0
 
-    today = date.today().isoformat()
+    today_iso = today.isoformat()
     for tenant, (status, jobs) in settled.items():
         old = ledger[tenant]
-        # Only rows this run actually settled are rewritten; everything else is carried through
-        # exactly as it was, so a partial run can never blank the ledger.
         ledger[tenant] = liveness.Verdict(
-            old.ats, old.tenant, old.url, status, jobs, today
+            old.ats, old.tenant, old.url, status, jobs, today_iso
         )
     liveness.write(path, ledger.values())
     print(f"wrote {path} ({len(ledger)} rows, {len(settled)} re-probed)", flush=True)
