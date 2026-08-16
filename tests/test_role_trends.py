@@ -501,3 +501,75 @@ def test_a_zero_byte_ledger_does_not_sink_the_run(tmp_path, monkeypatch):
     lines = ledger.read_text().splitlines()
     assert lines[0] == "ts,version,metric,family,band,count"
     assert len(lines) == 3  # header + the one group + the non-tech diagnostic
+
+
+def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
+    """The third return value feeds ADR-0057's transition diff, so what it omits is load-bearing.
+
+    Non-tech rows carry no family to compare, and watch roles are title matches layered over the
+    taxonomy — a row "moving" between those is a title edit, not a reassignment. Either one
+    leaking into the snapshot would manufacture transitions out of nothing.
+    """
+    centroids = np.eye(3, _DIM, dtype=np.float32)
+    families = {
+        0: "software-engineering",
+        1: "ai-ml",
+        2: None,
+    }  # 2 is the non-tech cluster
+    watchlist = (
+        roles.load_watchlist_from_spec(  # type: ignore[attr-defined]
+            {
+                "roles": [
+                    {
+                        "name": "backend",
+                        "parent": "software-engineering",
+                        "pattern": "backend",
+                    }
+                ]
+            },
+            {"software-engineering", "ai-ml"},
+        )
+        if hasattr(roles, "load_watchlist_from_spec")
+        else []
+    )
+
+    rows = pa.Table.from_pylist(
+        [
+            {
+                "id": "ats:b:tech",
+                "title": "Backend Engineer",
+                "employment_type": "full-time",
+                "min_years": 3,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            },
+            {
+                "id": "ats:b:ai",
+                "title": "ML Engineer",
+                "employment_type": "full-time",
+                "min_years": 3,
+                "vector": [0.0, 1.0, 0.0, 0.0],
+            },
+            {
+                "id": "ats:b:nontech",
+                "title": "Data Entry Clerk",
+                "employment_type": "full-time",
+                "min_years": 0,
+                "vector": [0.0, 0.0, 1.0, 0.0],
+            },
+        ],
+        schema=pa.schema(
+            [
+                pa.field("id", pa.string()),
+                pa.field("title", pa.string()),
+                pa.field("employment_type", pa.string()),
+                pa.field("min_years", pa.int32()),
+                pa.field("vector", pa.list_(pa.float32(), _DIM)),
+            ]
+        ),
+    )
+    counts, non_tech, assigned = role_trends.count_groups(
+        rows, centroids, families, watchlist, "2026-01-01T00:00:00+00:00"
+    )
+    assert non_tech == 1
+    assert assigned == {"ats:b:tech": "software-engineering", "ats:b:ai": "ai-ml"}
+    assert not any(k.startswith(roles.WATCH_PREFIX) for k in assigned.values())

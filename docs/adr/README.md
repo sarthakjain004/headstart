@@ -64,3 +64,4 @@ supersedes it and note the supersession in both.
 | [0054](0054-learned-fan-out-speedup.md) | Predict the scrape makespan from a learned fan-out speedup | 2026-08-14 |
 | [0055](0055-bound-the-collapse-guards-hold.md) | Bound the collapse guard's hold so held rows drain instead of ratcheting | 2026-08-14 |
 | [0056](0056-darwinbox-browser-escalation.md) | Escalate walled darwinbox boards to a real browser | 2026-08-15 |
+| [0057](0057-record-family-assignments-and-report-reassignment.md) | Record each row's family assignment, and report the rows that moved | 2026-08-16 |
