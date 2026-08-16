@@ -71,7 +71,7 @@
     {
       "name": "fde",
       "label": "Forward Deployed Engineer",
-      "parent": "software-engineering",
+      "parent": "ai-ml",
       "match": [
         "forward[ -]deployed",
         "\\bFDE\\b"
