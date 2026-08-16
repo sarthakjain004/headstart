@@ -30,12 +30,22 @@ family — the right scale. The #142 flap does not contribute here: a flapped id
 so its re-add lands in the same family (and an id absent from either version is excluded from
 the shared-id diff entirely).
 
+## Direct confirmation from the first real per-tick entry
+
+Run 31934961378 (2026-08-16 08:57 UTC, the second post-b44e918 run — the first with a prior
+snapshot to diff against) logged its own transition tick directly:
+`163 of 227,544 rows changed family (0.07%), 22 transition rows | top: software-engineering ->
+hardware-embedded 83, -> ai-ml 26, -> architecture 16` — the same directional signature as the
+one-day retrospective diff above, from the mechanism ADR-0057 was built to measure, not from
+LanceDB time-travel. `role_assignments.parquet` (2.19 MB) and `role_reassignments.csv` (1,522
+bytes of real transitions, not the test-pollution junk #146 fixed) are both confirmed live on
+the HF dataset.
+
 ## Consequences
 
 - **Any per-family trend conclusion must subtract reassignment flow** — `role_trends`' stock
   series alone overstates SWE decline by ~957/day under current upgrade volume. The per-tick
-  `data/state/role_reassignments.csv` (first post-b44e918 run in flight as of this writing)
-  makes that correction computable going forward.
+  `data/state/role_reassignments.csv` now accumulates that correction going forward.
 - The drain should decay as the backlog of description-less SWE rows shrinks — worth re-running
   the workflow diff in a week; if the rate hasn't fallen, the mechanism story above needs
   revisiting (it is inferred from scale, not traced per-row).
