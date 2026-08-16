@@ -9,6 +9,11 @@ non-empty group is appended to ``data/state/role_trends.csv`` — plus one unban
 ``(non-tech, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
 changes only on an explicit centroid refit (a re-base, ADR-0040).
 
+It also records which family each row landed in and reports the rows that **changed** family
+since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counting stock alone
+cannot tell a closure apart from a reassignment, and re-embedding (ADR-0050) moves real jobs
+between families — so the transitions ride their own ledger rather than distorting this one.
+
 Degrades rather than dies: without the centroid store or the family map on disk (the fit
 hasn't shipped, or the join's state artifact was lost) it logs a warning and exits 0 — trends
 must never sink a run that already scraped and embedded successfully.
@@ -26,7 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from headstart import log, roles
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, role_assignments
 
 _log = log.get(__name__, __spec__)
 
@@ -35,6 +40,9 @@ _CENTROIDS = REPO_ROOT / "data" / "state" / "role_centroids"
 _FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0040)
 _WATCHLIST = REPO_ROOT / "config" / "role_watchlist.json"  # curated, in git (ADR-0051)
 _LEDGER = REPO_ROOT / "data" / "state" / "role_trends.csv"
+# id -> family snapshot + the transitions between snapshots (see role_assignments)
+_ASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_assignments.parquet"
+_REASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_reassignments.csv"
 
 _COLUMNS = ("ts", "version", "metric", "family", "band", "count")
 _OLD_COLUMNS = (
@@ -57,10 +65,12 @@ def count_groups(
     families: dict[int, str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
-) -> tuple[dict[tuple[str, str, str], int], int]:
+) -> tuple[dict[tuple[str, str, str], int], int, dict[str, str]]:
     """Count served rows into ``(metric, family, band)`` groups; non-tech rows counted apart.
 
-    Returns ``(counts, non_tech)``.
+    Returns ``(counts, non_tech, assigned)`` — the last being ``id -> family`` for every row that
+    landed in a real family, which :mod:`headstart.ingest.role_assignments` diffs against the
+    previous tick so a job that *changed* family is not miscounted as one that closed.
 
     Two metrics per group (ADR-0051): ``stock`` — every live row — and ``new`` — the subset
     whose ``first_seen`` is at or after ``new_after``. Stock answers "how big is this field";
@@ -80,6 +90,7 @@ def count_groups(
     # row-aligned with the other columns' to_pylist across chunk boundaries.
     vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
     clusters = roles.assign(vectors, centroids)
+    ids = rows["id"].to_pylist()
     min_years = rows["min_years"].to_pylist()
     titles = rows["title"].to_pylist()
     employment = rows["employment_type"].to_pylist()
@@ -91,6 +102,7 @@ def count_groups(
     )
 
     counts: dict[tuple[str, str, str], int] = {}
+    assigned: dict[str, str] = {}
 
     def bump(family: str, band: str, is_new: bool) -> None:
         counts[("stock", family, band)] = counts.get(("stock", family, band), 0) + 1
@@ -98,8 +110,8 @@ def count_groups(
             counts[("new", family, band)] = counts.get(("new", family, band), 0) + 1
 
     non_tech = 0
-    for cluster, years, title, etype, first in zip(
-        clusters, min_years, titles, employment, seen, strict=True
+    for job_id, cluster, years, title, etype, first in zip(
+        ids, clusters, min_years, titles, employment, seen, strict=True
     ):
         # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
@@ -111,8 +123,11 @@ def count_groups(
         if family is None:
             non_tech += 1
             continue
+        # Watch roles are deliberately absent here: they are title matches layered over the
+        # taxonomy, so a row "moving" between them is a title edit, not a reassignment.
+        assigned[job_id] = family
         bump(family, band, is_new)
-    return counts, non_tech
+    return counts, non_tech, assigned
 
 
 def _migrate_ledger(ledger: Path) -> None:
@@ -190,6 +205,8 @@ def main() -> int:
     ap.add_argument("--families", type=Path, default=_FAMILIES)
     ap.add_argument("--watchlist", type=Path, default=_WATCHLIST)
     ap.add_argument("--ledger", type=Path, default=_LEDGER)
+    ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
+    ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
     args = ap.parse_args()
 
     # Both inputs are checked, not just the centroids: the map ships in git while the
@@ -245,7 +262,7 @@ def main() -> int:
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
     # column, so ask only for what exists and let count_groups treat absence as "never new".
-    columns = ["vector", "min_years", "title", "employment_type"]
+    columns = ["id", "vector", "min_years", "title", "employment_type"]
     if "first_seen" in table.schema.names:
         columns.append("first_seen")
     rows = table.search().select(columns).limit(n).to_arrow()
@@ -253,7 +270,9 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
-    counts, non_tech = count_groups(rows, centroids, families, watchlist, new_after)
+    counts, non_tech, assigned = count_groups(
+        rows, centroids, families, watchlist, new_after
+    )
     written = append_ledger(args.ledger, counts, non_tech, manifest["version"], ts)
     stock_top = sorted(
         ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]
@@ -268,6 +287,37 @@ def main() -> int:
         f"non-tech: {non_tech} of {n} served rows ({100 * non_tech / n:.1f}% — the "
         "ADR-0017 filter's creep) excluded from the chart"
     )
+
+    # Which rows CHANGED family since the last tick. Without this, a re-embedded job that moves
+    # from one family to another is indistinguishable in the stock series from a closure plus an
+    # unrelated new posting — which is how a 622-row "software-engineering decline" turned out to
+    # be largely redistribution. Diagnostic only: never fails the run.
+    try:
+        previous = role_assignments.load_previous(args.assignments, manifest["version"])
+        moved = role_assignments.transitions(previous, assigned)
+        rows_written = role_assignments.append_ledger(
+            args.reassignments, moved, manifest["version"], ts
+        )
+        role_assignments.save(args.assignments, assigned, manifest["version"])
+        if previous is None:
+            _log.info(
+                f"assignments: first comparable snapshot ({len(assigned)} rows) -> "
+                f"{args.assignments}; transitions start next run"
+            )
+        else:
+            total = sum(moved.values())
+            top = sorted(moved.items(), key=lambda kv: -kv[1])[:3]
+            _log.info(
+                f"assignments: {total} of {len(assigned)} rows changed family "
+                f"({100 * total / max(len(assigned), 1):.2f}%), {rows_written} transition rows"
+                + (
+                    " | top: " + ", ".join(f"{a}->{b} {c}" for (a, b), c in top)
+                    if top
+                    else ""
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
+        _log.warning(f"assignment diff skipped: {type(exc).__name__}: {exc}")
     return 0
 
 
