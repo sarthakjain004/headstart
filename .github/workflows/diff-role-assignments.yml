@@ -1,0 +1,51 @@
+name: diff-role-assignments
+
+# Retrospective ADR-0057 answer for runs that already happened: check out two LanceDB table
+# versions, assign both to the same frozen centroids, and diff each shared id's family
+# (scripts/eval/diff_role_assignments.py). Read-only — it downloads state and writes nothing
+# back — so it deliberately does NOT share the pipeline's concurrency group. Runs here because
+# it needs the whole ~1 GB table, and large HF pulls belong on Actions, not a laptop.
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "Two table versions to diff, e.g. '40 48' — empty to just list versions"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+  HF_HUB_DISABLE_XET: "1" # plain resolve path survives this repo's 429s (ADR-0036)
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - name: Download the lancedb table + centroid store
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m headstart.ingest.state_fetch 'data/lancedb/*' 'data/state/role_centroids/*'
+      - name: List table versions
+        # Explicit bash so pipefail applies — the default shell would let tee's exit 0 mask a
+        # script failure and green the step.
+        shell: bash
+        run: python -u scripts/eval/diff_role_assignments.py --list | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Diff the requested versions
+        if: inputs.versions != ''
+        shell: bash
+        env:
+          # Env indirection, not ${{ }} splicing into run: — the input is free text and would
+          # otherwise execute as shell. Unquoted on purpose: "40 48" must word-split into the
+          # two argv values --versions expects (nargs=2).
+          VERSIONS: ${{ inputs.versions }}
+        run: python -u scripts/eval/diff_role_assignments.py --versions $VERSIONS | tee -a "$GITHUB_STEP_SUMMARY"
