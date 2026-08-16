@@ -24,22 +24,27 @@ reported, not guessed at.
 **The winner within a cluster** is the hostname NOT ending in `.eightfold.ai` when exactly one
 candidate qualifies (a company's own branded domain over eightfold's generic subdomain); ties
 (both `.eightfold.ai`, as with dsm-firmenich/dsm) fall back to the lexicographically smaller
-hostname. Wrong for a particular cluster? Override it with `--prefer` (`ats:winner_slug` lines) —
-same curated-override shape as `relocate_dead_boards.py --moves`.
+hostname — a deterministic tie-break, not a judgement about which name is more "current"; a
+company that renamed and kept both subdomains live could easily sort the wrong way. Wrong for a
+particular cluster? Override it with `--prefer` (bare `winner_slug` lines, one per cluster; this
+ledger is eightfold-only, so no `ats:` prefix is needed).
 
-**Known gap, not closed here**: marking the loser `status=dead` gets its already-indexed rows
-evicted by the next `index prune` (the only ledger lever that reaches them), but it is not
-durably protected against `check_liveness.py`'s own dead-TTL re-probe (`DEAD_TTL_DAYS`, 90 days
-by default) — a plain re-probe of a genuinely-live, 200-answering host would flip it back to
-`live` and silently re-admit the duplicate. ADR-0034 solved the identical durability problem for
-non-prod boards with a pre-probe skip (`_NONPROD_TENANTS`) inside `check_liveness.py` itself; the
-same shape belongs there for these tenants too, but that file carries unrelated uncommitted work
-as of this script's authorship and is deliberately not touched here. Re-run this script
-periodically (or after any `check_liveness.py` refresh) until that durability fix lands.
+**Known gap, not closed here**: marking the loser `status=dead` removes its Board key from
+`index sync/prune`'s live keep-set, so its already-indexed rows are evicted by the next
+`index prune` — via the plain off-board path (`plan_prune`'s `off_board`, not the case-variant
+`duplicate` group; that dedup is what fails to catch this problem *before* the fix, not the
+mechanism that fixes it after). But the marking is not durably protected against
+`check_liveness.py`'s own dead-TTL re-probe (`DEAD_TTL_DAYS`, 90 days by default) — a plain
+re-probe of a genuinely-live, 200-answering host would flip it back to `live` and silently
+re-admit the duplicate. ADR-0034 solved the identical durability problem for non-prod boards with
+a pre-probe skip (`_NONPROD_TENANTS`) inside `check_liveness.py` itself; the same shape belongs
+there for these tenants too, but that file carries unrelated uncommitted work as of this script's
+authorship and is deliberately not touched here. Re-run this script periodically (or after any
+`check_liveness.py` refresh) until that durability fix lands.
 
     python scripts/validate/dedupe_eightfold_aliases.py
     python scripts/validate/dedupe_eightfold_aliases.py --apply
-    python scripts/validate/dedupe_eightfold_aliases.py --prefer clusters.txt --apply
+    python scripts/validate/dedupe_eightfold_aliases.py --prefer winners.txt --apply
 """
 
 from __future__ import annotations
@@ -54,7 +59,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from headstart import liveness  # noqa: E402
-from headstart.scrapers.eightfold import EightfoldScraper, _JOB_LOC  # noqa: E402
+from headstart.scrapers.eightfold import group_id_for, sitemap_ids_for  # noqa: E402
 
 LEDGER = ROOT / "data" / "validate" / "liveness" / "eightfold.csv"
 
@@ -64,42 +69,21 @@ LEDGER = ROOT / "data" / "validate" / "liveness" / "eightfold.csv"
 _OVERLAP_THRESHOLD = 0.95
 
 
-def _sitemap_ids(slug: str) -> set[str]:
-    s = EightfoldScraper(slug, "")
-    r = s._get(f"https://{slug}/careers/sitemap.xml", accept="application/xml")
-    if r.status_code != 200:
-        return set()
-    return {
-        u.split("/careers/job/")[1].split("-")[0].split("?")[0]
-        for u in _JOB_LOC.findall(r.text)
-    }
-
-
-def _group_id(slug: str) -> str | None:
-    return EightfoldScraper(slug, "")._group_id()
-
-
-def read_prefer(path: Path) -> dict[str, str]:
-    """Curated ``ats:winner_slug`` lines — one winner per cluster, overriding the automatic pick.
-
-    Only the winner's slug needs stating; every *other* live tenant sharing that group_id in the
-    same run is the loser. A cluster with no curated line falls back to the automatic rule.
-    """
-    prefer: dict[str, str] = {}
+def read_prefer(path: Path) -> set[str]:
+    """Curated winner slugs, one per line — overrides the automatic pick for whichever cluster
+    that slug belongs to. A cluster with no curated winner falls back to the automatic rule."""
+    prefer: set[str] = set()
     for line in path.read_text().splitlines():
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
-        ats, _, slug = line.partition(":")
-        if not (ats and slug):
-            raise SystemExit(f"bad prefer line (want ats:slug): {line!r}")
-        prefer[slug] = (
-            slug  # keyed by slug so any member of the cluster resolves the winner
-        )
+        if ":" in line or " " in line:
+            raise SystemExit(f"bad prefer line (want a bare slug): {line!r}")
+        prefer.add(line)
     return prefer
 
 
-def pick_winner(slugs: list[str], prefer: dict[str, str]) -> str:
+def pick_winner(slugs: list[str], prefer: set[str]) -> str:
     for slug in slugs:
         if slug in prefer:
             return slug
@@ -112,11 +96,11 @@ def pick_winner(slugs: list[str], prefer: dict[str, str]) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--prefer", type=Path, help="curated `ats:winner_slug` lines, one per cluster"
+        "--prefer", type=Path, help="curated winner slugs, one bare slug per line"
     )
     ap.add_argument("--apply", action="store_true", help="write the ledger correction")
     args = ap.parse_args()
-    prefer = read_prefer(args.prefer) if args.prefer else {}
+    prefer = read_prefer(args.prefer) if args.prefer else set()
 
     ledger = liveness.load(LEDGER)
     live = [v for v in ledger.values() if v.status == liveness.LIVE]
@@ -124,7 +108,7 @@ def main() -> int:
 
     by_group: dict[str, list[str]] = defaultdict(list)
     for i, v in enumerate(live, 1):
-        gid = _group_id(v.tenant)
+        gid = group_id_for(v.tenant)
         if gid:
             by_group[gid.lower()].append(v.tenant)
         if i % 20 == 0:
@@ -137,7 +121,7 @@ def main() -> int:
 
     to_bury: list[tuple[str, str]] = []  # (winner, loser)
     for gid, slugs in sorted(clusters.items()):
-        id_sets = {slug: _sitemap_ids(slug) for slug in slugs}
+        id_sets = {slug: sitemap_ids_for(slug) for slug in slugs}
         winner = pick_winner(slugs, prefer)
         for slug in slugs:
             if slug == winner:

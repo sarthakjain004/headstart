@@ -385,6 +385,30 @@ class EightfoldScraper(BaseScraper):
         return jobs
 
 
+# --- public helpers for callers outside a scrape (e.g. alias detection, #154) ------------------
+# Thin wrappers over the scraper's own machinery, so a second caller reuses the real sitemap-index
+# child-following logic (``_job_urls``) rather than a parallel, less complete reimplementation.
+
+
+def group_id_for(slug: str) -> str | None:
+    """The board's ``_EF_GROUP_ID`` — the tenant identity the PCSX API keys on, independent of
+    which vanity hostname is asking. Two live hostnames sharing one group_id are the same board
+    (#154)."""
+    return EightfoldScraper(slug)._group_id()
+
+
+def sitemap_ids_for(slug: str) -> set[str]:
+    """Every job id in the board's sitemap, following index children exactly as a real scrape
+    would (:meth:`EightfoldScraper._job_urls`) — not a bare top-level fetch, which is only
+    ever right when a tenant has no index indirection."""
+    scraper = EightfoldScraper(slug)
+    return {
+        pid
+        for url in scraper._job_urls()
+        if (pid := _sitemap_position_id(url)) is not None
+    }
+
+
 def _short_reason(cause: str, got: int, total: int) -> str:
     """Why the crawl stopped, with exactly how short it left the list (ADR-0053). ``data.count``
     gives the board total, so every way ``_api_search`` can give up reports the same measured

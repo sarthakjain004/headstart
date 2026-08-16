@@ -34,21 +34,23 @@ def mod():
 
 def test_pick_winner_prefers_the_branded_domain_over_eightfold_ai(mod):
     assert (
-        mod.pick_winner(["nvidia.eightfold.ai", "jobs.nvidia.com"], {})
+        mod.pick_winner(["nvidia.eightfold.ai", "jobs.nvidia.com"], set())
         == "jobs.nvidia.com"
     )
     # order in the input list must not matter
     assert (
-        mod.pick_winner(["jobs.nvidia.com", "nvidia.eightfold.ai"], {})
+        mod.pick_winner(["jobs.nvidia.com", "nvidia.eightfold.ai"], set())
         == "jobs.nvidia.com"
     )
 
 
 def test_pick_winner_falls_back_to_lexicographic_when_both_are_eightfold_ai(mod):
     """dsm-firmenich.eightfold.ai vs dsm.eightfold.ai — neither is a branded domain, so the
-    automatic rule can't disambiguate by that signal and needs a deterministic fallback."""
+    automatic rule can't disambiguate by that signal and needs a deterministic fallback. This is
+    an ASCII accident ('-' sorts before '.'), not a judgement about which name is current — a
+    tenant where that matters should go through --prefer instead."""
     assert (
-        mod.pick_winner(["dsm-firmenich.eightfold.ai", "dsm.eightfold.ai"], {})
+        mod.pick_winner(["dsm-firmenich.eightfold.ai", "dsm.eightfold.ai"], set())
         == "dsm-firmenich.eightfold.ai"
     )
 
@@ -58,7 +60,7 @@ def test_pick_winner_honours_a_curated_override(mod):
     assert (
         mod.pick_winner(
             ["jobs.nvidia.com", "nvidia.eightfold.ai"],
-            {"nvidia.eightfold.ai": "nvidia.eightfold.ai"},
+            {"nvidia.eightfold.ai"},
         )
         == "nvidia.eightfold.ai"
     )
@@ -66,14 +68,12 @@ def test_pick_winner_honours_a_curated_override(mod):
 
 def test_read_prefer_accepts_comments_and_blank_lines(mod, tmp_path):
     path = tmp_path / "prefer.txt"
-    path.write_text(
-        "# a comment\n\neightfold:nvidia.eightfold.ai  # trailing comment\n"
-    )
-    assert mod.read_prefer(path) == {"nvidia.eightfold.ai": "nvidia.eightfold.ai"}
+    path.write_text("# a comment\n\nnvidia.eightfold.ai  # trailing comment\n")
+    assert mod.read_prefer(path) == {"nvidia.eightfold.ai"}
 
 
-def test_read_prefer_rejects_a_malformed_line(mod, tmp_path):
+def test_read_prefer_rejects_a_line_that_is_not_a_bare_slug(mod, tmp_path):
     path = tmp_path / "prefer.txt"
-    path.write_text("not-a-valid-line\n")
+    path.write_text("eightfold:nvidia.eightfold.ai\n")
     with pytest.raises(SystemExit):
         mod.read_prefer(path)
