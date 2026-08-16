@@ -878,9 +878,14 @@ def test_trends_since_and_until_together_narrow_to_one_stamp(trends_app):
 def test_trends_since_normalises_the_browsers_millisecond_z_format(trends_app):
     """The browser sends Date.toISOString() output — milliseconds, a trailing 'Z' — while the
     ledger stores whole-second '+00:00' stamps. A raw string compare of the two would exclude a
-    since value naming the EXACT SAME INSTANT as a stamp, because '.' (0x2E) sorts after '+'
-    (0x2B): '...:00+00:00' < '...:00.000Z' even though they mean the same moment. Both bounds
-    must land on T2 (>= and <=), not skip it."""
+    `since` naming the EXACT SAME INSTANT as a stamp, because '.' (0x2E) sorts after '+' (0x2B):
+    '...:00+00:00' < '...:00.000Z' even though they mean the same moment — this is the genuine
+    regression guard (fails without _norm_stamp). `until`'s assertion documents the same
+    required contract, but is NOT independently discriminating against this specific bug: for
+    '<=', that same '.' > '+' skew never produces a wrongful exclusion at an exact instant (only
+    '>=' can), so a naive `ts <= until_raw` happens to still read True here. Kept anyway — it
+    pins the correct behaviour and would catch a differently-shaped regression in _norm_stamp
+    itself."""
     client = trends_app.app.test_client()
     exact_instant = quote("2026-08-12T01:00:00.000Z")  # T2, browser-shaped
     since_only = client.get(f"/trends?since={exact_instant}").get_json()

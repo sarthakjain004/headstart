@@ -676,8 +676,9 @@ def trends():
 
     def _norm_stamp(raw: str) -> str:
         """``raw`` re-shaped to exactly how the ledger stores ``ts`` — see the docstring's note
-        on why a raw string compare against an unnormalised bound is unsafe."""
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        on why a raw string compare against an unnormalised bound is unsafe. ``fromisoformat``
+        already parses a trailing ``Z`` natively (3.11+), so nothing needs stripping first."""
+        dt = datetime.fromisoformat(raw)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
