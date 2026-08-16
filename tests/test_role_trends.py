@@ -94,6 +94,12 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             # and these tests must control exactly which roles are watched.
             "--watchlist",
             str(tmp_path / "watchlist.json"),
+            # Pinned too (ADR-0057): these default to the repo's real data/state files, and a
+            # test run must not write the production snapshot or append to its ledger.
+            "--assignments",
+            str(tmp_path / "role_assignments.parquet"),
+            "--reassignments",
+            str(tmp_path / "role_reassignments.csv"),
         ],
     )
     assert role_trends.main() == 0
@@ -260,6 +266,12 @@ def test_stale_family_map_errors_visibly_instead_of_silently(
             str(tmp_path / "families.json"),
             "--ledger",
             str(ledger),
+            # Pinned even though this path errors before writing (ADR-0057): the isolation
+            # must not depend on the error path staying an error path.
+            "--assignments",
+            str(tmp_path / "role_assignments.parquet"),
+            "--reassignments",
+            str(tmp_path / "role_reassignments.csv"),
         ],
     )
     caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
@@ -434,6 +446,12 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
             str(ledger),
             "--watchlist",
             str(tmp_path / "watchlist.json"),
+            # Pinned even though this path errors before writing (ADR-0057): the isolation
+            # must not depend on the error path staying an error path.
+            "--assignments",
+            str(tmp_path / "role_assignments.parquet"),
+            "--reassignments",
+            str(tmp_path / "role_reassignments.csv"),
         ],
     )
     assert (
