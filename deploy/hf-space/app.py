@@ -15,7 +15,7 @@ import hmac
 import json
 import os
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
@@ -646,6 +646,14 @@ def trends():
     the ledger's flow window. Default view: one series per family, each point the family's
     total across bands. ``?family=<name>`` splits that family by seniority band, and
     ``&split=roles`` swaps the bands for the family's watched roles (ADR-0051) instead.
+    ``?since=`` / ``?until=`` (ISO-8601, inclusive) narrow the window to runs whose stamp falls
+    in range. Parsed and re-normalised to the ledger's own stored shape (``+00:00``, whole
+    seconds) before comparing — a naive string compare against the browser's
+    ``Date.toISOString()`` (milliseconds, a ``Z`` suffix) would silently misorder a value that
+    names the *exact same instant* as a stamp, since ``'.'`` and ``'+'`` sort differently. A
+    naive (timezone-less) value is read as UTC, matching the ledger. Either bound may be
+    omitted; a malformed one is a 400, not a silent no-op; an out-of-data range returns a
+    normal 200 with empty series rather than a 503, since the ledger itself is not empty.
 
     ``totals`` carries the whole served table per stamp so the caller can plot a **share** of
     the index rather than a raw count — the count moves whenever our coverage does, the share
@@ -666,18 +674,42 @@ def trends():
     if split not in ("bands", "roles"):
         return jsonify(error="split must be 'bands' or 'roles'"), 400
 
+    def _norm_stamp(raw: str) -> str:
+        """``raw`` re-shaped to exactly how the ledger stores ``ts`` — see the docstring's note
+        on why a raw string compare against an unnormalised bound is unsafe."""
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+    try:
+        since = _norm_stamp(request.args["since"]) if "since" in request.args else None
+        until = _norm_stamp(request.args["until"]) if "until" in request.args else None
+    except ValueError:
+        return jsonify(error="since/until must be ISO-8601"), 400
+
+    # ``_TRENDS`` is already pinned to the live centroid version at load time, so filtering here
+    # never has to worry about a stray row from a stale refit; only the requested window changes.
+    trends_rows = _TRENDS
+    if since:
+        trends_rows = [r for r in trends_rows if r["ts"] >= since]
+    if until:
+        trends_rows = [r for r in trends_rows if r["ts"] <= until]
+
     # Stamps and the share denominator come from the FULL stock ledger, not the drilled
     # subset: total(ts) is the whole served table (families + non-tech, since count_groups
     # assigns every row exactly once), which is what makes share-of-index coverage-immune —
     # an index that grew 1.5% overnight moves every count but no share (ADR-0051).
-    stock = [r for r in _TRENDS if r["metric"] == "stock"]
+    stock = [r for r in trends_rows if r["metric"] == "stock"]
     stamps = sorted({r["ts"] for r in stock})
     totals: dict[str, int] = {}
     for r in stock:
         if not r["family"].startswith(_WATCH_PREFIX):  # watch rows re-count family rows
             totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
 
-    rows = [r for r in _TRENDS if r["metric"] == metric and r["family"] != _NON_TECH]
+    rows = [
+        r for r in trends_rows if r["metric"] == metric and r["family"] != _NON_TECH
+    ]
     if family and split == "roles":
         # The family's watched sub-roles (ADR-0051), each its own series.
         wanted = {n for n, meta in _WATCH.items() if meta["parent"] == family}
@@ -696,7 +728,7 @@ def trends():
     # That second case is an inference from row presence, not a recorded fact: a run where
     # nothing anywhere was new would read as unmeasured. At this corpus size that has never
     # happened, and the honest alternative (a per-run marker row) costs more than it settles.
-    measured = {r["ts"] for r in _TRENDS if r["metric"] == "new"}
+    measured = {r["ts"] for r in trends_rows if r["metric"] == "new"}
 
     def value_at(points: dict[str, int], ts: str) -> int | None:
         """A series' value at one stamp — 0 where the metric ran and found none, else None."""

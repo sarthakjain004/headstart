@@ -17,6 +17,13 @@
       </span>
     </span>
   </div>
+  <div class="trends-range">
+    <label class="note" for="trends-since">Window</label>
+    <input type="datetime-local" id="trends-since" aria-label="From">
+    <span class="note">–</span>
+    <input type="datetime-local" id="trends-until" aria-label="To">
+    <button class="ghost" id="trends-range-clear">Clear</button>
+  </div>
   <div class="trends-note" id="trends-empty"></div>
   <div class="trends-grid">
     <svg id="trends-chart" viewBox="0 0 720 260" preserveAspectRatio="none"

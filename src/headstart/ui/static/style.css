@@ -318,6 +318,13 @@ textarea:focus{ border-color:var(--violet); }
   border-radius:var(--r-xl); }
 .trends-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
 .trends-head h2{ font-size:16px; margin:0; letter-spacing:-.01em; }
+.trends-range{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.trends-range input[type="datetime-local"]{ padding:7px 9px; border-radius:var(--r-md);
+  font:inherit; font-size:12.5px; background:var(--raise); color:var(--ink);
+  border:1px solid var(--rule); outline:none; color-scheme:dark light; }
+/* the native picker follows the SITE theme when the toggle has forced one, not the OS */
+:root[data-theme="dark"] .trends-range input[type="datetime-local"]{ color-scheme:dark; }
+:root[data-theme="light"] .trends-range input[type="datetime-local"]{ color-scheme:light; }
 .trends-note{ color:var(--ink-3); font-size:12.5px; }
 .trends-grid{ display:grid; grid-template-columns:1fr 232px; gap:18px; align-items:start;
   margin-top:14px; }
