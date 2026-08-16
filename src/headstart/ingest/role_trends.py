@@ -295,14 +295,25 @@ def main() -> int:
     try:
         previous = role_assignments.load_previous(args.assignments, manifest["version"])
         moved = role_assignments.transitions(previous, assigned)
+        # Snapshot BEFORE the ledger, deliberately. The ledger is append-only, so if the snapshot
+        # write failed after appending, the next tick would diff against the stale snapshot and
+        # append the same transitions again — silently inflating the series with duplicates that
+        # are indistinguishable from real repeated moves. This order can instead lose one tick's
+        # transitions, which under-reports once and stays truthful.
+        had_snapshot = args.assignments.exists()
+        role_assignments.save(args.assignments, assigned, manifest["version"])
         rows_written = role_assignments.append_ledger(
             args.reassignments, moved, manifest["version"], ts
         )
-        role_assignments.save(args.assignments, assigned, manifest["version"])
         if previous is None:
+            why = (
+                "discarded the previous snapshot (unreadable, or a centroid refit re-based it)"
+                if had_snapshot
+                else "first snapshot"
+            )
             _log.info(
-                f"assignments: first comparable snapshot ({len(assigned)} rows) -> "
-                f"{args.assignments}; transitions start next run"
+                f"assignments: {why} — wrote {len(assigned)} rows to {args.assignments}; "
+                "transitions start next run"
             )
         else:
             total = sum(moved.values())

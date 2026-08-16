@@ -12,9 +12,9 @@ import csv
 
 import pytest
 
-from headstart.ingest import role_assignments as ra
-
 pytest.importorskip("pyarrow")
+
+from headstart.ingest import role_assignments as ra  # noqa: E402
 
 
 def test_transitions_counts_only_rows_present_on_both_sides():
@@ -59,6 +59,22 @@ def test_a_centroid_refit_makes_the_previous_snapshot_incomparable(tmp_path):
     ra.save(path, {"ats:board:1": "ai-ml"}, version=2)
     assert ra.load_previous(path, version=3) is None
     assert ra.load_previous(path, version=2) is not None
+
+
+def test_an_unstamped_snapshot_is_not_treated_as_comparable(tmp_path):
+    """A snapshot with no provenance is the least vouchable kind, so it must not be diffed.
+
+    Written by hand rather than via `save`, because `save` always stamps — the case this guards
+    is a file from another tool, an older build, or a partially-recovered artifact.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path = tmp_path / "role_assignments.parquet"
+    pq.write_table(
+        pa.table({"id": pa.array(["x"]), "family": pa.array(["ai-ml"])}), path
+    )
+    assert ra.load_previous(path, version=2) is None
 
 
 def test_a_corrupt_snapshot_degrades_instead_of_raising(tmp_path):

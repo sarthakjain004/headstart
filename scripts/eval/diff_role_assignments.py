@@ -15,8 +15,8 @@ That is the distinction the stock series cannot express, and the reason a 622-ro
 centroid store; the repo's convention is that large HF pulls and index reads run in Actions
 (see `docs/agents/deployment.md`). It is read-only: it opens versions and writes nothing.
 
-Run: python scripts/eval/diff_family_assignments.py --versions 40 48
-     python scripts/eval/diff_family_assignments.py --list
+Run: python scripts/eval/diff_role_assignments.py --versions 40 48
+     python scripts/eval/diff_role_assignments.py --list
 """
 
 from __future__ import annotations

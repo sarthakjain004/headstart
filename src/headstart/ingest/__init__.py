@@ -31,6 +31,7 @@ Alongside them, the helper modules with no consumer outside this package::
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
     index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
     observability  Run context, step summaries, and the shard-report round trip
+    role_assignments  The id->family snapshot and the transitions between them (ADR-0057)
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
 
 Genuinely shared logic stays in ``headstart`` proper — ``harvest`` (the scrape engine),

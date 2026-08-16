@@ -51,6 +51,15 @@ different centroid version yields `None` rather than a diff, so a re-base is nev
 every Job in the corpus moving at once. Watch roles are excluded — they are title matches layered
 over the taxonomy, so movement between them is a title edit, not a reassignment.
 
+An **unstamped** snapshot is rejected exactly like a mismatched one: the guard exists for files
+whose provenance cannot be vouched for, and one with no stamp at all is the least vouchable.
+
+The snapshot is written **before** the ledger, deliberately. The ledger is append-only, so
+appending first and then failing to save would leave the next tick diffing against a stale
+snapshot and re-appending the same transitions — inflating the series with duplicates that are
+indistinguishable from real repeated moves. This order can instead lose one tick's transitions,
+which under-reports once and stays truthful.
+
 The whole diff is wrapped: a diagnostic must never sink a run that already scraped and embedded.
 
 ## Alternatives considered
@@ -72,7 +81,11 @@ The whole diff is wrapped: a diagnostic must never sink a run that already scrap
 - A family's fall can now be decomposed into closures versus reassignments, so ADR-0040/0051's
   series become interpretable over time rather than only within a tick.
 - Two new files ride the HF state round trip. The snapshot is ~290k rows of `(id, family)`,
-  zstd-parquet — small next to the embedding store, and overwritten rather than appended.
+  zstd-parquet — small next to the embedding store, and overwritten rather than appended. No
+  allow-list needs changing: the upload pushes `data/state` whole and `state_fetch` takes
+  `data/state/*`. The cost of that generality is that `scrape-plan` also pulls the snapshot it has
+  no use for — the same reason `data/descriptions` is deliberately kept out of that glob. If the
+  snapshot ever grows enough to matter, narrowing the scrape-plan fetch is the lever.
 - The first run after this lands reports no transitions by design (nothing comparable yet), so the
   series begins on the second run.
 - It does **not** fix the separate finding that 54% of evicted ids are re-added within hours

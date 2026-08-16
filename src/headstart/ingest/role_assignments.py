@@ -37,9 +37,12 @@ _COLUMNS = ("ts", "version", "family_from", "family_to", "count")
 def load_previous(path: Path, version: int) -> dict[str, str] | None:
     """The previous tick's ``id -> family``, or None when there is nothing comparable.
 
-    None (rather than an empty dict) for the first run, an unreadable file, or a different
-    centroid version — all cases where "no transitions" is the honest answer and an empty diff
-    would be a lie that reads as "nothing moved".
+    None (rather than an empty dict) for the first run, an unreadable file, a snapshot carrying no
+    version stamp, or one stamped with a different centroid version — all cases where "no
+    transitions" is the honest answer and an empty diff would be a lie that reads as "nothing
+    moved". An **unstamped** snapshot is rejected for the same reason a mismatched one is: this
+    guard exists precisely for files whose provenance cannot be vouched for, and one with no
+    provenance at all is the least vouchable of them.
     """
     if not path.exists():
         return None
@@ -47,10 +50,10 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
         import pyarrow.parquet as pq
 
         table = pq.read_table(path)
-        if table.schema.metadata:
-            stamped = table.schema.metadata.get(b"centroid_version")
-            if stamped is not None and stamped.decode() != str(version):
-                return None  # a refit re-based everything; transitions are meaningless across it
+        metadata = table.schema.metadata or {}
+        stamped = metadata.get(b"centroid_version")
+        if stamped is None or stamped.decode() != str(version):
+            return None  # a refit re-based everything; transitions are meaningless across it
         return dict(zip(table["id"].to_pylist(), table["family"].to_pylist()))
     except Exception:  # noqa: BLE001 - a corrupt snapshot must not sink the run
         return None
@@ -64,10 +67,12 @@ def save(path: Path, assignments: dict[str, str], version: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     ids = list(assignments)
     table = pa.table(
-        {"id": pa.array(ids, pa.string()),
-         "family": pa.array([assignments[i] for i in ids], pa.string())},
+        {
+            "id": pa.array(ids, pa.string()),
+            "family": pa.array([assignments[i] for i in ids], pa.string()),
+        },
         metadata={b"centroid_version": str(version).encode()},
-    )  # fmt: skip
+    )
     tmp = path.with_suffix(path.suffix + ".tmp")
     pq.write_table(table, tmp, compression="zstd")
     tmp.replace(
