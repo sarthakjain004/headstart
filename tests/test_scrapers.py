@@ -1096,6 +1096,80 @@ def test_eightfold_leaves_truncated_unset_on_a_complete_crawl():
     assert scraper.truncated is None
 
 
+def test_eightfold_resweeps_an_unstable_list_to_completeness():
+    """The index flap's dominant cause, pinned at the scraper (#142).
+
+    PCSX serves ``/api/pcsx/search`` from replicas whose orderings disagree — ``postedTs`` has
+    day resolution, so hundreds of postings tie and each replica breaks the ties its own way. One
+    offset crawl then returns some jobs twice and others never, and because duplicate rows counted
+    toward ``data.count`` the crawl believed itself complete: no truncation mark, Board stays in
+    the eviction scope, and sync evicts the missed jobs as delistings. Next run misses a
+    *different* subset, so they come back as adds. Measured on ngc.eightfold.ai: 3,685 rows
+    fetched, 3,460 unique — 225 jobs missed per crawl, and 93% of all eightfold evictions were
+    re-added within the audit window.
+
+    A crawl must judge completeness on *distinct* postings and re-sweep to pick up what the next
+    replica deals to different offsets.
+    """
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        def __init__(self, ids, count=30):
+            self.status_code = 200
+            self._body = {
+                "data": {"positions": [{"id": n} for n in ids], "count": count}
+            }
+
+        def json(self):
+            return self._body
+
+    pages = [
+        _Resp(range(10)),  # sweep 1: pages disagree on ordering —
+        _Resp(range(10, 20)),
+        _Resp([5, 6, 7, 8, 9, 20, 21, 22, 23, 24]),  # 5-9 again; 25-29 never dealt
+        _Resp([25, 26, 27, 28, 29, 0, 1, 2, 3, 4]),  # sweep 2 finds the missed five
+    ]
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("acme")
+
+    ids = [str(p["id"]) for p in got]
+    assert sorted(ids, key=int) == [str(n) for n in range(30)], (
+        "every distinct posting must be present exactly once"
+    )
+    assert len(ids) == len(set(ids)), "duplicate rows must not be returned"
+    assert scraper.truncated is None, (
+        "a re-sweep that completed the list is not a truncation"
+    )
+
+
+def test_eightfold_marks_a_persistently_short_list_truncated():
+    """When re-sweeps stop finding new postings the gap is real: report it, so sync keeps the
+    Board out of the eviction scope instead of reading the never-dealt jobs as delistings."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        def __init__(self, ids):
+            self.status_code = 200
+            self._body = {"data": {"positions": [{"id": n} for n in ids], "count": 30}}
+
+        def json(self):
+            return self._body
+
+    # Every sweep deals the same 25 postings; 5 of the advertised 30 never appear.
+    sweep = [range(10), range(10, 20), [5, 6, 7, 8, 9, 20, 21, 22, 23, 24]]
+    pages = [_Resp(ids) for _ in range(3) for ids in sweep]
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    got = scraper._api_search("acme")
+
+    assert len({str(p["id"]) for p in got}) == 25
+    assert scraper.truncated, "a list still short after re-sweeps must say so"
+    assert "25 of 30" in scraper.truncated
+
+
 def test_mark_truncated_keeps_the_first_reason():
     """A crawl that gave up once tends to give up again, and the reasons that follow are
     consequences of the first — so the first one is the one worth reporting (ADR-0053)."""

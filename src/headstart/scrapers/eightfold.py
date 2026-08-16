@@ -48,7 +48,12 @@ _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # trades wall-clock for recovered fetches in both directions.
 _DETAIL_STREAMS = 25
 _PAGE = 10  # PCSX search page size is fixed at 10 (num_items is ignored)
-_MAX_PAGES = 2000  # loop bound: 2000 x 10 = 20k jobs, above any real board
+_MAX_PAGES = (
+    2000  # fetch bound across all sweeps: 2000 x 10 = 20k jobs, above any real board
+)
+# Full re-crawls to reassemble a complete list when replica orderings disagree (#142). Two extra
+# sweeps close a ~6% per-sweep miss almost surely; a board still short after three is reported.
+_MAX_SWEEPS = 3
 _MAX_INDEX_CHILDREN = 50  # sitemap-fallback: child sitemaps to follow from an index
 
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
@@ -127,10 +132,19 @@ class EightfoldScraper(BaseScraper):
         """Paginate ``/api/pcsx/search`` to the full position list. None signals "API unavailable"
         (403/non-200 on the first page) so the caller falls back to the sitemap.
 
-        A crawl that gives up part-way keeps the positions it has and marks the Board truncated.
-        The API hands back ``data.count``, so how short the list is comes out *exactly* rather
-        than inferred — which is the whole point: ``index sync`` can then skip the Board instead
-        of reading the gap as delistings and evicting them (ADR-0053)."""
+        The pages come from replicas whose orderings disagree — the default sort key
+        (``postedTs``) has day resolution, so hundreds of postings tie and each replica breaks
+        the ties its own way. One offset crawl can therefore return a posting at two offsets and
+        another at none, and counting raw rows against ``data.count`` let such a crawl believe
+        itself complete while silently missing jobs — which sync then evicted as delistings and
+        the next run re-added, the #142 flap. Positions are deduped by id, completeness is judged
+        on *distinct* postings, and a short sweep is re-crawled (up to :data:`_MAX_SWEEPS`) to
+        pick up the offsets the next replica deals differently.
+
+        A crawl that still comes up short keeps the positions it has and marks the Board
+        truncated. The API hands back ``data.count``, so how short the list is comes out
+        *exactly* rather than inferred — which is the whole point: ``index sync`` can then skip
+        the Board instead of reading the gap as delistings and evicting them (ADR-0053)."""
         first = self._get(self._search_url(group_id, 0))
         if first.status_code != 200:
             return None
@@ -138,40 +152,61 @@ class EightfoldScraper(BaseScraper):
             data = first.json().get("data") or {}
         except ValueError:
             return None
-        positions = list(data.get("positions") or [])
         total = int(data.get("count") or 0)
-        start = _PAGE
+        seen: dict[str, dict[str, Any]] = {}
+        for pos in data.get("positions") or []:
+            seen.setdefault(str(pos.get("id")), pos)
         pages = 1
-        while len(positions) < total and pages < _MAX_PAGES:
-            r = self._get(self._search_url(group_id, start))
-            if r.status_code != 200:
+        for sweep in range(_MAX_SWEEPS):
+            # Sweep 1 continues from the first page already fetched; later sweeps restart, since
+            # the point is to see the same offsets dealt by a differently-ordered replica.
+            start = _PAGE if sweep == 0 else 0
+            before = len(seen)
+            while len(seen) < total and start < total and pages < _MAX_PAGES:
+                r = self._get(self._search_url(group_id, start))
+                if r.status_code != 200:
+                    self.mark_truncated(
+                        _short_reason(
+                            f"HTTP {r.status_code} on page {pages + 1}",
+                            len(seen),
+                            total,
+                        )
+                    )
+                    return list(seen.values())
+                batch = (r.json().get("data") or {}).get("positions") or []
+                if not batch:
+                    # The list ended early; whether that is a truncation is decided below, on
+                    # what the sweeps collectively found — not per page.
+                    break
+                for pos in batch:
+                    seen.setdefault(str(pos.get("id")), pos)
+                start += _PAGE
+                pages += 1
+            if len(seen) >= total:
+                break
+            if pages >= _MAX_PAGES:
                 self.mark_truncated(
                     _short_reason(
-                        f"HTTP {r.status_code} on page {pages + 1}",
-                        len(positions),
-                        total,
+                        f"hit the {_MAX_PAGES}-page ceiling", len(seen), total
                     )
                 )
                 break
-            batch = (r.json().get("data") or {}).get("positions") or []
-            if not batch:
+            if sweep and len(seen) == before:
+                # Another full pass found nothing new — more sweeps won't either.
                 self.mark_truncated(
-                    _short_reason(f"empty page {pages + 1}", len(positions), total)
+                    _short_reason(
+                        f"no new postings on sweep {sweep + 1}", len(seen), total
+                    )
                 )
                 break
-            positions.extend(batch)
-            start += _PAGE
-            pages += 1
         else:
-            if (
-                len(positions) < total
-            ):  # loop ended on _MAX_PAGES, not on having them all
+            if len(seen) < total:
                 self.mark_truncated(
                     _short_reason(
-                        f"hit the {_MAX_PAGES}-page ceiling", len(positions), total
+                        f"still short after {_MAX_SWEEPS} sweeps", len(seen), total
                     )
                 )
-        return positions
+        return list(seen.values())
 
     def _details_url(self, group_id: str, position_id: str) -> str:
         q = urllib.parse.urlencode(
