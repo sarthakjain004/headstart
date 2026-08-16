@@ -57,21 +57,34 @@ even 3 re-sweeps left a 3-posting gap, which #144 now correctly reports as trunc
 
 ## Intricacies and gotchas (2026-08-16 follow-up investigation)
 
-### Why the ±4: two distinct, small, and harmless drift sources
+### Why the ±4: two distinct, small, harmless drift sources — but their mix varies per tenant
 
-Deep-diving `nvidia.eightfold.ai` (2,607 sitemap ids, `data.count`=2,607, but even the **#144
-fixed** API crawl only converged on 2,604 of 2,607 after 3 full sweeps) resolved every
-discrepant id individually via `position_details`:
+Deep-diving three tenants (`nvidia.eightfold.ai`, `appliedmaterials.eightfold.ai`,
+`careers.micron.com`) resolved every discrepant id individually via `position_details`. All
+three confirm the same **two** causes as the only ones present — but not in a fixed ratio:
 
-- **3 sitemap-only ids → 404.** Genuinely closed; the sitemap (a batch/cron artifact) hadn't
-  regenerated yet. Ordinary staleness.
-- **2 sitemap-only ids → 200, real `creationTs`.** Still open, and *not* in the API crawl's 2,604
-  either — these are jobs the re-sweep itself failed to converge on within its 3-sweep budget,
-  caught by #144's own truncation report (`still short after 3 sweeps`). Not a sitemap problem
-  at all: a residual gap in the compensating fix, which sitemap-primary would sidestep entirely
-  since it never needed the re-sweep to find these ids in the first place.
-- **2 api-only ids → 200, both sharing one `postedTs` day-bucket.** Recently created or reposted,
-  not yet reflected in the sitemap's last regeneration.
+| tenant | sitemap vs `data.count` | crawl's own shortfall (3 sweeps) | sitemap-only: closed / still-open-but-missed |
+|---|---|---|---|
+| nvidia | 2,607 = 2,607 | 2,604/2,607 | 3 closed / 2 still-open |
+| appliedmaterials | 1,802 ≈ 1,803 | 1,796/1,803 | **1 closed / 6 still-open** |
+| micron | 2,672 vs 2,666 (base gap) | 2,660/2,666 | **5 closed / 1 still-open** |
+
+- **Genuine closure** (`position_details` 404): the sitemap, a batch/cron artifact, hadn't
+  regenerated since the posting closed. Ordinary staleness.
+- **Real, still-open job the API crawl itself missed** (`position_details` 200, valid
+  `creationTs`, and *absent* from the fixed #144 crawl's own result — every one of these tenants'
+  truncation reports read `still short after N sweeps`). Not a sitemap problem: a residual
+  convergence gap in the compensating fix, which sitemap-primary sidesteps entirely since it
+  never depends on the re-sweep to find these ids at all.
+- One api-only case per tenant sampled (nvidia: 2, sharing one `postedTs` day-bucket — plausible
+  recent reposts not yet reflected in the sitemap's last regen).
+
+**The mix is tenant-dependent, not a fixed split** — appliedmaterials' discrepancy is
+6-of-7 "API still missed it" (the #144 fix's own residual gap dominates), while micron's is
+5-of-6 "genuinely closed" (ordinary staleness dominates). Don't assume either cause is the
+majority on an untested tenant; both need to stay in the trust-gate's mental model. The practical
+upshot doesn't change — sitemap-primary would have served every one of these "still-open, API
+missed it" jobs correctly, on every tenant, without needing a re-sweep at all.
 
 So the ±4 is small, bidirectional, and has two independent causes — sitemap regen lag (both
 directions) and the *search* API's own residual non-convergence — neither of which is a defect
