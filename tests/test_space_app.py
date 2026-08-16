@@ -17,6 +17,7 @@ import sys
 import types
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -848,3 +849,64 @@ def test_trends_rejects_unknown_metric_and_split(trends_app):
     client = trends_app.app.test_client()
     assert client.get("/trends?metric=x").status_code == 400
     assert client.get("/trends?family=software-engineering&split=x").status_code == 400
+
+
+def test_trends_since_excludes_earlier_stamps(trends_app):
+    # quote(): the timestamp's literal '+' must survive as '+', not decode to a space the way
+    # a raw, un-urlencoded '+' would under application/x-www-form-urlencoded rules — the same
+    # encoding the browser's URLSearchParams.set() (used in app.js) already handles correctly.
+    d = trends_app.app.test_client().get(f"/trends?since={quote(_T2)}").get_json()
+    assert d["stamps"] == [_T2, _T3]
+    assert d["totals"] == [192, 210]  # T1's 175 dropped with it
+
+
+def test_trends_until_excludes_later_stamps(trends_app):
+    d = trends_app.app.test_client().get(f"/trends?until={quote(_T2)}").get_json()
+    assert d["stamps"] == [_T1, _T2]
+    assert d["totals"] == [175, 192]
+
+
+def test_trends_since_and_until_together_narrow_to_one_stamp(trends_app):
+    d = (
+        trends_app.app.test_client()
+        .get(f"/trends?since={quote(_T2)}&until={quote(_T2)}")
+        .get_json()
+    )
+    assert d["stamps"] == [_T2]
+
+
+def test_trends_since_normalises_the_browsers_millisecond_z_format(trends_app):
+    """The browser sends Date.toISOString() output — milliseconds, a trailing 'Z' — while the
+    ledger stores whole-second '+00:00' stamps. A raw string compare of the two would exclude a
+    `since` naming the EXACT SAME INSTANT as a stamp, because '.' (0x2E) sorts after '+' (0x2B):
+    '...:00+00:00' < '...:00.000Z' even though they mean the same moment — this is the genuine
+    regression guard (fails without _norm_stamp). `until`'s assertion documents the same
+    required contract, but is NOT independently discriminating against this specific bug: for
+    '<=', that same '.' > '+' skew never produces a wrongful exclusion at an exact instant (only
+    '>=' can), so a naive `ts <= until_raw` happens to still read True here. Kept anyway — it
+    pins the correct behaviour and would catch a differently-shaped regression in _norm_stamp
+    itself."""
+    client = trends_app.app.test_client()
+    exact_instant = quote("2026-08-12T01:00:00.000Z")  # T2, browser-shaped
+    since_only = client.get(f"/trends?since={exact_instant}").get_json()
+    assert _T2 in since_only["stamps"], "an exact-instant since must include that stamp"
+    until_only = client.get(f"/trends?until={exact_instant}").get_json()
+    assert _T2 in until_only["stamps"], "an exact-instant until must include that stamp"
+
+
+def test_trends_rejects_a_malformed_range_bound(trends_app):
+    r = trends_app.app.test_client().get("/trends?since=not-a-date")
+    assert r.status_code == 400
+
+
+def test_trends_range_outside_the_data_returns_empty_not_503(trends_app):
+    """The ledger itself is not empty — only the requested window is — so this must read as
+    'nothing in range', not as the no-ledger-yet 503 the bare route returns before any data
+    lands."""
+    r = trends_app.app.test_client().get(
+        f"/trends?since={quote('2030-01-01T00:00:00+00:00')}"
+    )
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["stamps"] == []
+    assert d["series"] == []

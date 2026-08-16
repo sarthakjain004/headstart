@@ -609,6 +609,18 @@ let trendMetric = 'stock', trendUnit = 'share', trendSplit = 'bands';
 const LEGEND_MAX = 12;   // rows listed; CHART_MAX of them are plotted
 const CHART_MAX = 8;     // distinct colours in TREND_COLOURS
 
+// The window inputs go to the server — a range must filter before the share denominator is
+// computed, not after. `datetime-local` reads in the browser's local zone; converted to UTC so
+// the filter lines up with the chart's own UTC axis (stampLabel already renders in UTC).
+function trendRange(){
+  const r = {};
+  const since = el('trends-since') && el('trends-since').value;
+  const until = el('trends-until') && el('trends-until').value;
+  if (since) r.since = new Date(since).toISOString();
+  if (until) r.until = new Date(until).toISOString();
+  return r;
+}
+
 async function loadTrends(family){
   const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
@@ -617,6 +629,9 @@ async function loadTrends(family){
   if (family && !(trendData?.watch_parents || []).includes(family)) trendSplit = 'bands';
   if (family) { q.set('family', family); q.set('split', trendSplit); }
   if (trendMetric !== 'stock') q.set('metric', trendMetric);
+  const range = trendRange();
+  if (range.since) q.set('since', range.since);
+  if (range.until) q.set('until', range.until);
   const r = await fetch('/trends' + (q.size ? '?' + q : ''));
   if (!r.ok) { el('trends').style.display = 'none'; return; }
   trendData = await r.json(); trendDrill = family || null;
@@ -821,6 +836,13 @@ trendSeg('trends-metric', 'metric', v => {
 });
 trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
 trendSeg('trends-split', 'split', v => { trendSplit = v; loadTrends(trendDrill); });
+['trends-since', 'trends-until'].forEach(id => {
+  if (el(id)) el(id).addEventListener('change', () => loadTrends(trendDrill));
+});
+if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click', () => {
+  ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
+  loadTrends(trendDrill);
+});
 
 function initAlerts(){
   if (!window.google || !CFG.google_client_id) return;
