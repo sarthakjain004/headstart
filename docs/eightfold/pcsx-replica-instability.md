@@ -195,14 +195,32 @@ front of whatever serves the API — standard token-bucket behaviour. This is wh
 caps eightfold detail concurrency at 25 streams and why re-sweeps deliberately re-fetch only
 the cheap listing pages.
 
-**Tiered protection by surface sensitivity** (observed). Three namespaces on the same host
-behave differently: `/api/pcsx/*` (the anonymous job-browsing API) answers plain HTTP clients;
-`/api/apply/v2/*` (the application flow — the one that touches candidate PII) hard-403s
-non-browser clients; and the *HTML* surfaces (`/careers/job/{id}` pages, `/careers/sitemap.xml`)
-405 a bare Python fetch but answer a real browser. Inferred: a WAF/bot-management layer at the
-edge (fingerprinting TLS/headers) with per-route policies — lenient where the data is public
-and read-only, strict where abuse would hurt. For us this dictated surface choice: the JSON API
-first, browser-grade transport (`browser_http`) when an HTML surface is unavoidable.
+**Correction (2026-08-16):** an earlier version of this section claimed a static, per-route WAF
+policy — `/api/apply/v2/*` always hard-403s non-browser clients, HTML surfaces always 405 a bare
+fetch. That was wrong, and worth recording *why* it was wrong: the 405 this project actually hit
+(commit fixing #121, "405 was what Eightfold's edge returned once its per-origin budget was
+spent") is the **same shared rate-limiter** described above, not a separate per-route tier —
+`http.fetch` already retries 403/405/429 as bot-wall blips (`headstart/http.py`, ADR-0047) and
+honours `Retry-After`, so production scrapers never observed a raw first-attempt block; it was
+silently absorbed. Direct, unwrapped probes on 2026-08-16 (bypassing the retry layer) found:
+
+- `/careers/sitemap.xml` and `/careers/job/{id}` answer **200 to a single bare request** under
+  *any* of: `curl_cffi` with Chrome TLS impersonation (`http.fetch`'s transport for every
+  scraper) regardless of headers, `curl_cffi` with no impersonation but full browser-style
+  headers, or plain stdlib `urllib` with full browser-style headers. Only stdlib `urllib` with
+  **zero** headers (Python's own default `User-Agent: Python-urllib/3.x`, no `Accept`/`Referer`)
+  was blocked, and with 403 — not 405.
+- So there are two independent, weaker mechanisms, not one route-tiered WAF: a baseline
+  UA/header plausibility check that a bare unbranded client fails (403, static, low-volume), and
+  the shared per-origin rate/budget meter that trips under sustained concurrent load regardless
+  of path (405, the #121 mechanism). Neither is route-specific — `/api/pcsx/search` itself would
+  presumably also 405 under enough concurrent load, and every surface passes the baseline check
+  once *any* plausible header set or TLS fingerprint is present.
+- Every request in this codebase already goes through `http.fetch`, which supplies Chrome TLS
+  impersonation unconditionally — so this was never a live risk for us, but the causal story
+  (bot-hardened per-route policy) does not hold, and a design decision (sitemap-primary; below)
+  built on the wrong story would have over-invested in browser-grade transport for surfaces that
+  never needed it.
 
 **A separate per-document read path** (observed). Job descriptions are not in the search
 response at all; each is a separate `GET /api/pcsx/position_details?position_id=...` returning
