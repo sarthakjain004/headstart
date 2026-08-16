@@ -94,6 +94,12 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             # and these tests must control exactly which roles are watched.
             "--watchlist",
             str(tmp_path / "watchlist.json"),
+            # Pinned too (ADR-0057): these default to the repo's real data/state files, and a
+            # test run must not write the production snapshot or append to its ledger.
+            "--assignments",
+            str(tmp_path / "role_assignments.parquet"),
+            "--reassignments",
+            str(tmp_path / "role_reassignments.csv"),
         ],
     )
     assert role_trends.main() == 0
