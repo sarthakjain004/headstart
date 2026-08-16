@@ -36,7 +36,16 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python -m headstart.ingest.state_fetch 'data/lancedb/*' 'data/state/role_centroids/*'
       - name: List table versions
+        # Explicit bash so pipefail applies — the default shell would let tee's exit 0 mask a
+        # script failure and green the step.
+        shell: bash
         run: python -u scripts/eval/diff_role_assignments.py --list | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Diff the requested versions
         if: inputs.versions != ''
-        run: python -u scripts/eval/diff_role_assignments.py --versions ${{ inputs.versions }} | tee -a "$GITHUB_STEP_SUMMARY"
+        shell: bash
+        env:
+          # Env indirection, not ${{ }} splicing into run: — the input is free text and would
+          # otherwise execute as shell. Unquoted on purpose: "40 48" must word-split into the
+          # two argv values --versions expects (nargs=2).
+          VERSIONS: ${{ inputs.versions }}
+        run: python -u scripts/eval/diff_role_assignments.py --versions $VERSIONS | tee -a "$GITHUB_STEP_SUMMARY"
