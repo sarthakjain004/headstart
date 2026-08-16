@@ -38,10 +38,11 @@ _ROOT = Path(__file__).resolve().parents[2]
 _CACHE = _ROOT / "experiment" / "index-flapping" / "artifacts"
 
 # `_log_ids` lines: ``HH:MM:SS [index] LABEL [i-j of N]: id id id ...``. Anchored on the logger
-# prefix so the workflow's own `|| echo` text can never match (the command-echo trap).
+# prefix so the workflow's own `|| echo` text can never match (the command-echo trap). Known
+# noise: the ids are space-joined, and a rare workday native id itself contains spaces (ADR-0049),
+# so those few split into junk fragments — visible as nonsense "ATSes", too small to move rates.
 _IDS_LINE = re.compile(
-    r"\[index\] (add|evict|prune off-Board|prune duplicate|scope-excluded Board)"
-    r" \[\d+-\d+ of \d+\]: (.*)$"
+    r"\[index\] (add|evict|prune off-Board|prune duplicate) \[\d+-\d+ of \d+\]: (.*)$"
 )
 _LABELS = ("add", "evict", "prune off-Board", "prune duplicate")
 _RED_THRESHOLD = 0.10  # overall already-known-adds rate above this is RED
@@ -112,6 +113,11 @@ def _board(job_id: str) -> str:
     return job_id.rsplit(":", 1)[0]
 
 
+def _out(sets: dict[str, set[str]]) -> set[str]:
+    """Every id a run took out of the table, across all three eviction paths."""
+    return sets["evict"] | sets["prune off-Board"] | sets["prune duplicate"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runs", type=int, default=8, help="window size (default 8)")
@@ -125,7 +131,7 @@ def main() -> int:
         except RuntimeError as exc:
             print(f"skip {run_id}: {exc}", flush=True)
             continue
-        evicted = sets["evict"] | sets["prune off-Board"] | sets["prune duplicate"]
+        evicted = _out(sets)
         print(
             f"run {run_id} {ts}: add {len(sets['add'])}, evict {len(sets['evict'])} "
             f"(+{len(sets['prune off-Board'])} off-Board, "
@@ -144,7 +150,7 @@ def main() -> int:
     label_of: dict[str, str] = {}  # flapped id -> the label that evicted it (last wins)
     for i in range(len(runs) - 1):
         _, ts, sets = runs[i]
-        out = sets["evict"] | sets["prune off-Board"] | sets["prune duplicate"]
+        out = _out(sets)
         next_add = runs[i + 1][2]["add"]
         later_add = set().union(*(r[2]["add"] for r in runs[i + 1 :]))
         readded = out & later_add
@@ -186,12 +192,7 @@ def main() -> int:
                 f"({len(known) / len(sets['add']):.0%})",
                 flush=True,
             )
-        seen |= (
-            sets["add"]
-            | sets["evict"]
-            | sets["prune off-Board"]
-            | sets["prune duplicate"]
-        )
+        seen |= sets["add"] | _out(sets)
     known_rate = known_total / adds_total if adds_total else 0.0
     print(
         f"overall: {known_total}/{adds_total} adds already known ({known_rate:.0%})",
@@ -206,8 +207,8 @@ def main() -> int:
             label_of[jid] for jid in window_readded if _board(jid) == board
         )
         per_run = " ".join(
-            f"+{len({i for i in r[2]['add'] if _board(i) == board})}"
-            f"/-{len({i for i in (r[2]['evict'] | r[2]['prune off-Board'] | r[2]['prune duplicate']) if _board(i) == board})}"
+            f"+{sum(_board(i) == board for i in r[2]['add'])}"
+            f"/-{sum(_board(i) == board for i in _out(r[2]))}"
             for r in runs
         )
         print(f"  {board}: {n} flapped {dict(labels)} | per-run {per_run}", flush=True)
