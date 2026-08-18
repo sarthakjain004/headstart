@@ -203,15 +203,21 @@ jobs:
             # here, and on its defaults apt will wait out a server that accepts the connection
             # and then trickles essentially forever.
             #
-            # Best-effort, deliberately: a wedge here does not prove the Cloudflare index never
-            # arrived — `update` walks every configured repo, so it can have the one we just added
-            # and still be stuck on an unrelated mirror when the timeout fires. Skipping `update`
-            # altogether would not work (a new repo's package is unknown until its index is
-            # fetched), so the `install` below is the honest test of whether we got what we need,
-            # and it fails fast and cheaply when we did not.
+            # Narrowed to the list just added, so no unrelated Ubuntu mirror is on the critical
+            # path of a Cloudflare install at all — `update` otherwise walks every configured
+            # repo, which is how one slow host stalls the whole step. `List-Cleanup=0` keeps the
+            # runner image's existing indexes, which are what resolve dependencies below.
+            # Measured in ubuntu:24.04 with an unrelated mirror blackholed: full update 13 s,
+            # narrowed 1 s, and `cloudflare-warp` still resolves and installs after it.
+            #
+            # Best-effort, deliberately: skipping `update` outright would not work (a new repo's
+            # package is unknown until its index arrives), so the `install` below is the honest
+            # test of whether we got what we need, and it fails fast and cheap when we did not.
             sudo timeout 45 apt-get update -qq \
               -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
-              -o Acquire::Retries=2 || true
+              -o Acquire::Retries=2 \
+              -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/cloudflare-client.list \
+              -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
             sudo timeout 60 apt-get install -y -qq \
               -o Acquire::http::Timeout=10 -o Acquire::Retries=2 cloudflare-warp || return 1
           }
