@@ -230,6 +230,29 @@ def _log_ids(label: str, ids: list[str]) -> None:
         )
 
 
+# A scrape reason is a sentence or an exception repr, not a traceback.
+_REASON_CHARS = 160
+
+
+def _log_reasons(label: str, reasons: dict[str, str]) -> None:
+    """One Board per line with *why* it is there — unlike :func:`_log_ids`, which batches bare ids.
+
+    A reason is the whole point of the line, so batching would bury it; one per line is what lets
+    `grep 'scope-excluded' | grep 429` split a rate-limited Board from a genuinely short page.
+    Reasons are flattened and clipped because they carry arbitrary scraper text — a newline would
+    break the one-Board-per-line contract the grep depends on.
+
+    Logged at **warning**, matching the header these lines explain: at info they would vanish
+    from a warning-filtered log and leave exactly the bare count that made 19 runs' worth of
+    exclusions undiagnosable in the first place.
+    """
+    for board, reason in reasons.items():
+        why = " ".join(str(reason).split()) or "no reason recorded"
+        if len(why) > _REASON_CHARS:
+            why = why[:_REASON_CHARS] + "…"
+        _log.warning(f"{label}: {board} — {why}")
+
+
 def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     """Delete the rows for ids being re-embedded, returning the ``first_seen`` each one carried.
 
@@ -282,7 +305,10 @@ def sync(args: argparse.Namespace) -> int:
             "(truncated, or the scrape raised) and are excluded from the eviction scope — their "
             "missing rows are unscraped, not closed"
         )
-        _log_ids("scope-excluded Board", sorted(excluded))
+        _log_reasons(
+            "scope-excluded Board",
+            {b: unauthoritative[b.lower()] for b in sorted(excluded)},
+        )
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
     _log.info(

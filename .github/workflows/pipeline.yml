@@ -303,6 +303,12 @@ jobs:
         # of balance, so it must not sink a run that already scraped and embedded successfully.
         continue-on-error: true
         run: python -m headstart.ingest.update_ledgers cost
+      - name: Update board failures ledger (consecutive-gone quarantine)
+        # Tracks Boards that answered 404/410 on consecutive scrapes; at 5 strikes scrape-plan
+        # stops re-scraping them. Rides data/state like the other ledgers. Never fatal: a missed
+        # update costs one run of memory, and quarantine fails open on a missing file.
+        continue-on-error: true
+        run: python -m headstart.ingest.update_ledgers failures
       - name: Plan the embed fan-out
         id: plan
         run: |

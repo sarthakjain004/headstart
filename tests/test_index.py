@@ -249,3 +249,39 @@ def test_an_upgraded_row_keeps_its_original_first_seen(tmp_path, monkeypatch):
         stamps["greenhouse:a:1"] == "2026-01-01T09:00:00+00:00"
     )  # replaced, not re-dated
     assert stamps["greenhouse:a:2"] == "2026-01-01T09:00:00+00:00"  # untouched
+
+
+def test_log_reasons_pairs_each_board_with_why_on_its_own_line(caplog):
+    """The scope-exclusion warning names a count and the Boards, but the cause it hints at
+    ("truncated, or the scrape raised") was never recorded per Board — so a Board excluded on
+    every run for 19 runs read the same whether it was rate-limited or served a short page.
+    One line each, because the reason is what a `grep` has to be able to land on."""
+    caplog.set_level("INFO")
+    idx._log_reasons(
+        "scope-excluded Board",
+        {
+            "eightfold:caci.eightfold.ai": "truncated: 500 of 1200",
+            "workday:x/Careers": "HTTPError: HTTP Error 429: ",
+        },
+    )
+    lines = [r.getMessage() for r in caplog.records]
+    assert lines == [
+        "scope-excluded Board: eightfold:caci.eightfold.ai — truncated: 500 of 1200",
+        "scope-excluded Board: workday:x/Careers — HTTPError: HTTP Error 429:",
+    ]
+
+
+def test_log_reasons_flattens_and_clips_so_one_board_stays_one_line(caplog):
+    """A reason carries arbitrary scraper text. A newline would split one Board across two lines
+    and break the grep contract; an unbounded traceback would bury the rest of the log."""
+    caplog.set_level("INFO")
+    idx._log_reasons(
+        "scope-excluded Board",
+        {"greenhouse:a": "boom\n  File 'x.py', line 1\n" + "y" * 400, "lever:b": "  "},
+    )
+    lines = [r.getMessage() for r in caplog.records]
+    assert len(lines) == 2
+    assert "\n" not in lines[0]
+    assert lines[0].endswith("…")
+    assert len(lines[0]) < 260
+    assert lines[1] == "scope-excluded Board: lever:b — no reason recorded"

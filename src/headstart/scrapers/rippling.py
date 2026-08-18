@@ -50,6 +50,7 @@ def _pay_range(ranges: list | None) -> str | None:
 
 class RipplingScraper(BaseScraper):
     ats = "rippling"
+    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
@@ -62,8 +63,9 @@ class RipplingScraper(BaseScraper):
             headers={"User-Agent": _UA, "Accept": "application/json"},
             timeout=30,
         )
-        if resp.status_code != 200:
-            return []
+        # Raise, don't return [] — a swallowed listing error reads as an empty board and
+        # hides a dead one from the ADR-0058 quarantine forever.
+        resp.raise_for_status()
         data = resp.json()
         items = (
             data

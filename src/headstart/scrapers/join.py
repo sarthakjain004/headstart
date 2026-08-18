@@ -34,16 +34,21 @@ _REMOTE = {
 
 class JoinScraper(BaseScraper):
     ats = "join"
+    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
         return f"https://join.com/companies/{self.slug}"
 
     def _company(self) -> dict:
-        """The company object (incl. numeric id) from the careers page __NEXT_DATA__."""
+        """The company object (incl. numeric id) from the careers page __NEXT_DATA__.
+
+        A non-200 careers page raises rather than reading as an empty board: swallowing it
+        hid dead boards from the ADR-0058 quarantine as "alive with zero jobs". A 200 page
+        without __NEXT_DATA__ still returns ``{}`` — that is the page's shape, not an error.
+        """
         resp = http.fetch("GET", self.url(), headers={"User-Agent": _UA}, timeout=30)
-        if resp.status_code != 200:
-            return {}
+        resp.raise_for_status()
         m = _NEXT.search(resp.text)
         if not m:
             return {}

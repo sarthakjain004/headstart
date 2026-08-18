@@ -35,6 +35,19 @@ class BaseScraper(ABC):
 
     ats: str  # set by each subclass
 
+    #: This scraper's politeness bound for its detail pass, as **thread-pool workers** — what
+    #: :meth:`fan_out` is called with. Declared on the class rather than kept as a module constant
+    #: so :meth:`fan_out_async` can fall back to it: a scraper that bounds its sync path to 6
+    #: because "they hit one host" means that about the host, not about the thread pool, and the
+    #: async path had been silently taking :data:`_DEFAULT_H2_STREAMS` (100) instead. That
+    #: divergence is what ADR-0047 found for Eightfold and this cost Workday too.
+    detail_workers: int | None = None
+
+    #: Optional async-only override of :attr:`detail_workers`, as HTTP/2 **streams**. Set it only
+    #: where a wider multiplexing width has been *measured* to be safe (Eightfold's 25, ADR-0047);
+    #: leaving it None keeps the async path as polite as the sync one.
+    detail_streams: int | None = None
+
     #: Whether this scraper makes a per-Job **detail pass** — a second fetch after the listing,
     #: usually for ``description``. False means every field a Job carries came from the listing
     #: response, so its description can never go missing; True means it can (ADR-0050). Read by
@@ -163,8 +176,8 @@ class BaseScraper(ABC):
                     results[index] = default
         return results
 
-    @staticmethod
     def fan_out_async(
+        self,
         items: Sequence[_T],
         fn: Callable[[Any, _T], Awaitable[_R]],
         *,
@@ -175,17 +188,24 @@ class BaseScraper(ABC):
 
         ``fn(session, item)`` returns an awaitable. One ``curl_cffi`` ``AsyncSession`` is shared across
         every item, so same-host requests ride as concurrent **streams over one HTTP/2 connection**
-        instead of one connection per thread. ``concurrency`` bounds the in-flight streams (the
-        multiplexing width); when None it resolves to ``HEADSTART_H2_STREAMS`` or
-        :data:`_DEFAULT_H2_STREAMS` (100) at call time. Results are input-aligned and a raising item
-        becomes ``default`` — same contract as :meth:`fan_out`. Runs its own event loop, so a sync
+        instead of one connection per thread. Results are input-aligned and a raising item becomes
+        ``default`` — same contract as :meth:`fan_out`. Runs its own event loop, so a sync
         thread-pool caller (one board per company thread) can invoke it directly.
+
+        ``concurrency`` bounds the in-flight streams (the multiplexing width), resolved at call
+        time as: the explicit argument, then ``HEADSTART_H2_STREAMS`` (the operator's
+        ``run_scrapers --streams`` escape hatch), then this scraper's own :attr:`detail_streams`
+        or :attr:`detail_workers`, and only then :data:`_DEFAULT_H2_STREAMS`. The scraper's own
+        bound comes before the global default so a detail pass cannot be polite on the sync path
+        and 100-wide on the async one — the divergence that had Workday fetching 100 streams
+        against a host its sync path deliberately held to 6.
         """
         if not items:
             return [default] * len(items)
         if concurrency is None:
+            env = os.environ.get("HEADSTART_H2_STREAMS")
             concurrency = int(
-                os.environ.get("HEADSTART_H2_STREAMS") or _DEFAULT_H2_STREAMS
+                env or self.detail_streams or self.detail_workers or _DEFAULT_H2_STREAMS
             )
         return asyncio.run(BaseScraper._gather_async(items, fn, concurrency, default))
 

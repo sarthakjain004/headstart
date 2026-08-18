@@ -71,6 +71,7 @@ class SuccessFactorsScraper(BaseScraper):
     """SuccessFactors RMK scraper — ``slug`` is the board's vanity host."""
 
     ats = "successfactors"
+    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(self, slug: str, company: str | None = None) -> None:
@@ -226,6 +227,14 @@ class SuccessFactorsScraper(BaseScraper):
                 surface = "rss-stream"
                 if rss_cut_short:
                     self.mark_truncated(rss_cut_short)
+        # NB: all three surfaces empty is indistinguishable here from a dead vanity host, since
+        # each maps its own non-200 to "nothing" and falls through — so a gone SuccessFactors
+        # tenant cannot currently earn an ADR-0058 gone-verdict. A root-of-host probe was tried
+        # and rejected on measurement: of 12 hosts this ledger already calls dead, 9 answer
+        # `GET /` with 200 (the jobs2web parking page), so the probe would have cost one extra
+        # request per empty board per run and still missed three quarters of the dead ones. The
+        # real fix is for the three surfaces to distinguish "errored" from "legitimately empty"
+        # and raise only when every one of them errored.
         # Which of the three surfaces answered, and how much the detail pass will cost. This
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs

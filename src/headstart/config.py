@@ -117,7 +117,7 @@ def load_active_companies(
     return _drop_parked(_dedupe_boards(companies))
 
 
-def _board_identity(company: CompanyRef) -> str:
+def board_identity(company: CompanyRef) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
     ``ats:slug`` where a malformed slug defeats it — never dropping the Board either way."""
     from headstart.scrapers.registry import SCRAPERS
@@ -131,7 +131,7 @@ def _board_identity(company: CompanyRef) -> str:
 def _drop_parked(companies: list[CompanyRef]) -> list[CompanyRef]:
     """Drop :data:`PARKED_BOARDS`, matched on the same identity ``_dedupe_boards`` collapses on
     so the two can never disagree about which Board an entry names."""
-    return [c for c in companies if _board_identity(c).lower() not in PARKED_BOARDS]
+    return [c for c in companies if board_identity(c).lower() not in PARKED_BOARDS]
 
 
 def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
@@ -148,7 +148,7 @@ def _dedupe_boards(companies: list[CompanyRef]) -> list[CompanyRef]:
     amendment.)"""
     best: dict[str, tuple[str, CompanyRef]] = {}
     for company in companies:
-        key = _board_identity(company)
+        key = board_identity(company)
         canon = key.lower()
         current = best.get(canon)
         if current is None or key < current[0]:
