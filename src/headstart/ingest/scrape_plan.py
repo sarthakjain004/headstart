@@ -41,7 +41,7 @@ from headstart import log
 from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import _board_identity, load_active_companies
+from headstart.config import board_identity, load_active_companies
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
@@ -205,7 +205,7 @@ def main() -> int:
         # ledger's casing and `board_key()`'s need not agree (ADR-0049).
         before = len(companies)
         companies = [
-            c for c in companies if _board_identity(c).lower() not in quarantine
+            c for c in companies if board_identity(c).lower() not in quarantine
         ]
         _log.info(
             f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "

@@ -285,3 +285,20 @@ def test_the_entrypoint_turns_a_budget_kill_into_a_green_exit(monkeypatch):
     scrape_run._exit_without_joining_stragglers()
 
     assert codes == [0]
+
+
+def test_progress_records_every_board_that_did_not_raise():
+    """`boards_ok` is what tells the failures ledger a Board is alive when it produced no jobs.
+    A zero-job success leaves no corpus lines and no error entry, so without this it looks
+    identical to a Board that was never scraped — and its gone-streak would never clear."""
+    progress = scrape_run._Progress(assigned=3)
+    progress.on_board("greenhouse:busy", jobs=5, error=None, seconds=1.0)
+    progress.on_board(
+        "greenhouse:quiet", jobs=0, error=None, seconds=1.0
+    )  # alive, empty
+    progress.on_board(
+        "greenhouse:dead", jobs=0, error="HTTPError: HTTP Error 404: ", seconds=1.0
+    )
+
+    assert progress.boards_ok == ["greenhouse:busy", "greenhouse:quiet"]
+    assert set(progress.errors) == {"greenhouse:dead"}

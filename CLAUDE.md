@@ -186,6 +186,15 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   and re-verify (tests + lint) before merging. Docs-only PRs are exempt. This is the review that
   caught a guard justified by a false premise on #77 and a glossary collision on #78 — it earns
   its run time.
+- **Verify against the live API whenever a review claim rests on how a real endpoint behaves.**
+  Reading the code cannot tell you what a host actually returns, and a plausible-sounding guard
+  built on an assumed response is worse than none. Hit the endpoint — a handful of real hosts,
+  drawn from both sides of whatever the change keys on (live *and* dead, empty *and* full) — and
+  let the measurement decide. Report the sample size with the finding; a 12-host probe is
+  evidence, not proof. This rule exists because a "probe the host root to tell dead from empty"
+  guard on #160 looked obviously correct and died on contact: 9 of 12 boards the ledger already
+  calls dead answer `GET /` with 200. The same discipline applies to any claim about rate limits,
+  pagination, or response shape — measure it, don't reason about it.
 
 ## Repo Conventions
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).

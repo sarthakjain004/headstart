@@ -64,22 +64,30 @@ def is_gone(reason: str) -> bool:
     return bool(_GONE.search(reason or ""))
 
 
-def board_key_of(ats: str, slug: str) -> str | None:
-    """The canonical ``board_key()`` for a scrape-list entry, or None if it will not resolve.
+def board_key_of(report_key: str) -> str | None:
+    """The canonical ``board_key()`` for a shard report's ``{ats}:{slug}`` key, or None if it
+    will not resolve.
 
-    The three inputs to this ledger arrive in two different key spaces, and pairing them wrongly
-    is silent: the shard reports key errors ``{ats}:{slug}`` (Workday's slug is a whole URL), while
+    The inputs to this ledger arrive in two different key spaces, and pairing them wrongly is
+    silent: the shard reports key errors ``{ats}:{slug}`` (Workday's slug is a whole URL), while
     ``corpus.board_of`` yields the ``board_key`` shape the job ids were built from (ADR-0049).
     Everything here is normalised to ``board_key`` — the same conversion, and the same
-    drop-what-will-not-resolve rule, that ``scrape_join.write_unauthoritative_boards`` applies for
-    the same reason. ``config._board_identity`` does this for a ``CompanyRef``; this takes the
-    parts, because a shard report has only the string.
+    drop-what-will-not-resolve rule, that ``scrape_join.write_unauthoritative_boards`` applies.
+
+    Unresolvable rows are dropped rather than passed through, because a key that cannot be
+    resolved cannot be compared against ``produced`` either: keeping it would let a Board accrue
+    strikes that no successful scrape could ever clear. That is the one place this differs from
+    :func:`headstart.config.board_identity`, which falls back to the plain key because its job is
+    to name every Board, not to pair two sets.
     """
     from headstart.scrapers.registry import get_scraper
 
+    ats, sep, slug = str(report_key).partition(
+        ":"
+    )  # partition: a Workday slug holds colons
+    if not sep or not ats or not slug:
+        return None
     try:
-        if not ats or not slug:
-            return None
         return get_scraper(ats, slug).board_key()
     except Exception:  # noqa: BLE001 - a malformed slug must not sink the ledger
         return None

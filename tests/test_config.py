@@ -4,7 +4,7 @@ from headstart import config
 from headstart.config import (
     EXCLUDED_BOARDS,
     PARKED_BOARDS,
-    _board_identity,
+    board_identity,
     load_active_companies,
     load_companies,
 )
@@ -121,7 +121,7 @@ def test_parked_boards_name_a_live_board_and_are_dropped(monkeypatch):
     ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
 
     selected = {
-        _board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
+        board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
     }
     assert not (PARKED_BOARDS & selected), (
         f"parked Boards still selectable: {sorted(PARKED_BOARDS & selected)}"
@@ -129,7 +129,7 @@ def test_parked_boards_name_a_live_board_and_are_dropped(monkeypatch):
 
     monkeypatch.setattr(config, "PARKED_BOARDS", frozenset())
     unparked = {
-        _board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
+        board_identity(c).lower() for c in load_active_companies(ledger, min_jobs=0)
     }
     assert PARKED_BOARDS <= unparked, (
         f"parked keys naming no live Board: {sorted(PARKED_BOARDS - unparked)}"

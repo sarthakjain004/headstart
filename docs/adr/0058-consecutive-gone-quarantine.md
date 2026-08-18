@@ -45,10 +45,19 @@ A third `data/state/` ledger, `board_failures.csv`, maintained by a new
 - For the gone-verdict to be reachable, **no scraper may swallow a listing-level HTTP error into
   an empty result**. This change removed exactly that in lever (dual-host 404 → `[]`), workday
   (first-page 404 → "no jobs"), rippling, join, ripplehire, eightfold's sitemap surface, and
-  successfactors (all surfaces empty now probes the host root and raises if it is gone). Per-job
-  *detail* failures stay isolated — one job's failed description must not sink a board — and
-  content-shaped dead signals on HTTP 200 (keka's dead-portal markers, freshteam's HTML-404-at-
-  200) stay as empty results, since there is no HTTP status for the ledger to count.
+  zoho's page-shape parse. Per-job *detail* failures stay isolated — one job's failed description
+  must not sink a board — and content-shaped dead signals on HTTP 200 (keka's dead-portal
+  markers, freshteam's HTML-404-at-200) stay as empty results, since there is no HTTP status for
+  the ledger to count.
+- **Known gaps, deliberately left:** SuccessFactors' three surfaces each map their own non-200 to
+  "nothing" and fall through, so a gone tenant reports a clean empty scrape and cannot earn a
+  verdict. A root-of-host probe was built and then **rejected on live measurement** — of 12 hosts
+  this ledger already calls dead, 9 answer `GET /` with 200 (a jobs2web parking page), so the
+  probe would have cost an extra request per empty board per run, missed three quarters of the
+  dead, and risked striking a live tenant whose root is not 200. The real fix is for each surface
+  to distinguish *errored* from *legitimately empty* and raise only when all of them errored.
+  Darwinbox is unquarantinable for a different reason: it re-raises its second TLD's 500
+  ("Invalid subdomain"), never a 404/410.
 - The filter applies in `scrape_plan` **only**. `live_keep_set` — which feeds `index prune` — is
   deliberately untouched: shrinking it would evict the board's served rows as a side effect of a
   scraping decision, and rows on a quarantined board should instead age out through the normal

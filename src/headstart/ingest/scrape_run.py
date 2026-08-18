@@ -99,7 +99,7 @@ class _Progress:
         # success is invisible everywhere else (no lines in the corpus, no error in the report),
         # yet it is exactly the evidence that clears a Board's ADR-0058 gone-streak: alive and
         # empty is not gone.
-        self.ok: list[str] = []
+        self.boards_ok: list[str] = []
         self.jobs = 0
 
     def on_board(
@@ -114,12 +114,12 @@ class _Progress:
         self.jobs += jobs
         if truncated is not None:
             self.truncated[key] = truncated
-        if error is None:
-            self.ok.append(key)
         if error is not None:
             self.errors[key] = error
             _log.info(f"{key} failed after {seconds:.0f}s: {error}")
-        elif seconds >= _SLOW_BOARD_S:
+            return
+        self.boards_ok.append(key)
+        if seconds >= _SLOW_BOARD_S:
             _log.info(f"slow board {key}: {jobs} jobs in {seconds:.0f}s")
         else:
             _log.debug(f"{key}: {jobs} jobs in {seconds:.1f}s")
@@ -259,7 +259,7 @@ def _report(
         # every Board that completed without raising, zero-job ones included — the evidence
         # that clears an ADR-0058 gone-streak, which neither the corpus (no lines) nor the
         # error map (no entry) can carry
-        boards_ok=progress.ok,
+        boards_ok=progress.boards_ok,
     )
 
 

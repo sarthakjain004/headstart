@@ -41,7 +41,6 @@ _DETAIL_WORKERS = 4  # detail pages sit behind DataDome — keep the concurrency
 
 class TrakstarScraper(BaseScraper):
     ats = "trakstar"
-    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:

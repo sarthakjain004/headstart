@@ -227,18 +227,14 @@ class SuccessFactorsScraper(BaseScraper):
                 surface = "rss-stream"
                 if rss_cut_short:
                     self.mark_truncated(rss_cut_short)
-        if not listed:
-            # All three surfaces came back empty — which is what a dead vanity host looks
-            # like too, since each surface maps its own non-200 to "nothing" and falls
-            # through. One probe of the host root tells them apart: a live-but-empty tenant
-            # 200s and the board returns [] as before; a gone one raises its HTTP error so
-            # the ADR-0058 quarantine can count it instead of seeing alive-and-empty forever.
-            http.fetch(
-                "GET",
-                f"https://{self.slug}/",
-                headers={"User-Agent": _USER_AGENT},
-                timeout=30,
-            ).raise_for_status()
+        # NB: all three surfaces empty is indistinguishable here from a dead vanity host, since
+        # each maps its own non-200 to "nothing" and falls through — so a gone SuccessFactors
+        # tenant cannot currently earn an ADR-0058 gone-verdict. A root-of-host probe was tried
+        # and rejected on measurement: of 12 hosts this ledger already calls dead, 9 answer
+        # `GET /` with 200 (the jobs2web parking page), so the probe would have cost one extra
+        # request per empty board per run and still missed three quarters of the dead ones. The
+        # real fix is for the three surfaces to distinguish "errored" from "legitimately empty"
+        # and raise only when every one of them errored.
         # Which of the three surfaces answered, and how much the detail pass will cost. This
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs

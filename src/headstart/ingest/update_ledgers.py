@@ -115,18 +115,14 @@ def failures(args: argparse.Namespace) -> int:
     alive: set[str] = set()
     for report in reports:
         for key, reason in (report.get("errors") or {}).items():
-            if not board_failures.is_gone(str(reason)):
-                continue
-            ats, _sep, slug = str(key).partition(":")  # a Workday slug holds colons
-            board = board_failures.board_key_of(ats, slug)
-            if board is not None:
+            board = board_failures.board_key_of(key)
+            if board is not None and board_failures.is_gone(str(reason)):
                 gone[board] = str(reason)
         # boards_ok carries the zero-job successes the corpus can't: alive-and-empty must
         # clear a streak, or a board that empties after a few 404s stays one strike from
         # quarantine forever
         for key in report.get("boards_ok") or []:
-            ats, _sep, slug = str(key).partition(":")
-            board = board_failures.board_key_of(ats, slug)
+            board = board_failures.board_key_of(key)
             if board is not None:
                 alive.add(board)
     # `board_of` yields the board_key shape the ids were built from, so both sides of the
@@ -190,7 +186,13 @@ def main() -> int:
         default=_FRAGMENTS,
         help="dir of scrape fragment dirs (default: data/scrape/fragments)",
     )
-    p_failures.add_argument("--jobs", type=Path, default=_JOBS)
+    p_failures.add_argument(
+        "--jobs",
+        type=Path,
+        default=_JOBS,
+        help="this run's scrape output; every Board with lines here clears its streak "
+        "(default: data/jobs)",
+    )
     p_failures.add_argument(
         "--ledger",
         type=Path,

@@ -241,12 +241,16 @@ def _log_reasons(label: str, reasons: dict[str, str]) -> None:
     `grep 'scope-excluded' | grep 429` split a rate-limited Board from a genuinely short page.
     Reasons are flattened and clipped because they carry arbitrary scraper text — a newline would
     break the one-Board-per-line contract the grep depends on.
+
+    Logged at **warning**, matching the header these lines explain: at info they would vanish
+    from a warning-filtered log and leave exactly the bare count that made 19 runs' worth of
+    exclusions undiagnosable in the first place.
     """
-    for board in reasons:
-        why = " ".join(str(reasons[board]).split()) or "no reason recorded"
+    for board, reason in reasons.items():
+        why = " ".join(str(reason).split()) or "no reason recorded"
         if len(why) > _REASON_CHARS:
             why = why[:_REASON_CHARS] + "…"
-        _log.info(f"{label}: {board} — {why}")
+        _log.warning(f"{label}: {board} — {why}")
 
 
 def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
