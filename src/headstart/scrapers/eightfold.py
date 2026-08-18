@@ -96,10 +96,10 @@ class EightfoldScraper(BaseScraper):
         self,
         url: str | None = None,
         accept: str = "application/json",
-        egress: bool = True,
+        marks_wall: bool = True,
     ) -> Any:
-        """GET one Eightfold URL. ``egress=False`` exempts the request from the spare-egress
-        fallback — for the one call whose non-200 means something other than a wall."""
+        """GET one Eightfold URL. ``marks_wall=False`` still routes over the spare egress once this
+        ATS is walled, but stops *this* request's failures from being what walls it."""
         return http.fetch(
             "GET",
             url or self.url(),
@@ -109,7 +109,7 @@ class EightfoldScraper(BaseScraper):
                 "Referer": f"https://{self.slug}/careers",
             },
             timeout=30,
-            **(self._egress() if egress else {}),
+            **self._egress(marks_wall=marks_wall),
         )
 
     # --- shared entry -------------------------------------------------------------------------
@@ -160,12 +160,13 @@ class EightfoldScraper(BaseScraper):
         truncated. The API hands back ``data.count``, so how short the list is comes out
         *exactly* rather than inferred — which is the whole point: ``index sync`` can then skip
         the Board instead of reading the gap as delistings and evicting them (ADR-0053)."""
-        # Exempt from the spare-egress fallback (ADR-0063). A non-200 *here* is how this scraper
-        # asks "does this tenant expose the API at all?", and for the ~40% that do not it is a
-        # steady 403 answered by a healthy 200 on the sitemap right after. Letting that mark the
-        # ATS walled would dial the spare egress on nearly every shard, on the normal path, and
-        # route every other Eightfold Board through it for no reason.
-        first = self._get(self._search_url(group_id, 0), egress=False)
+        # This page decides "does this tenant expose the API at all?", so its non-200 must not
+        # mark the ATS walled (ADR-0063): ~40% of tenants answer a steady 403 here and a healthy
+        # 200 on the sitemap right after, which would dial the spare egress on nearly every shard,
+        # on the normal path. It still *routes* over the spare egress once something else has
+        # walled us — exempting it from the routing too would send it over the spent IP and drop
+        # every remaining Board onto the far more expensive per-job sitemap path.
+        first = self._get(self._search_url(group_id, 0), marks_wall=False)
         if first.status_code != 200:
             return None
         try:

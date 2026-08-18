@@ -56,16 +56,20 @@ class BaseScraper(ABC):
     has_detail_pass: bool = False
 
     #: HTTP statuses at which this ATS should stop being requested over the shard's own egress IP
-    #: and move to a spare one (Cloudflare WARP; see :mod:`headstart.spare_egress`). ``None`` — every
-    #: scraper unless it says otherwise — keeps the direct route no matter what comes back, which
-    #: is the behaviour every ATS had before this existed.
+    #: and move to a spare one (see :mod:`headstart.spare_egress`). Empty — every scraper unless it
+    #: says otherwise — keeps the direct route no matter what comes back, which is the behaviour
+    #: every ATS had before this existed.
     #:
     #: Set it only for an ATS measured to meter **per origin**, where a wall is about the shard's
     #: IP rather than about the request: Eightfold's edge answers 403/405 once a shard's budget is
     #: spent, and the same Boards serve 200 from a different IP moments later (ADR-0063). A status
     #: that means "this request is wrong" — a 401, a 404 — must never appear here; rotating egress
     #: would not fix it and would spend a second budget learning that.
-    egress_fallback_on: frozenset[int] | None = None
+    #:
+    #: Only requests made through :meth:`_get` carry the opt-in. A scraper that calls
+    #: ``http.fetch`` directly (most of them do, for their detail passes) must pass
+    #: ``**self._egress()`` itself, or setting this is silently inert.
+    egress_fallback_on: frozenset[int] = frozenset()
 
     #: Job ids whose per-job detail fetch can be skipped because we already hold it (ADR-0048;
     #: re-keyed onto the description store by ADR-0050). ``None`` means fetch every detail. The
@@ -135,16 +139,25 @@ class BaseScraper(ABC):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         """Turn a raw API/page response into normalized Jobs."""
 
-    def _egress(self) -> dict[str, Any]:
+    def _egress(self, *, marks_wall: bool = True) -> dict[str, Any]:
         """``http.fetch`` kwargs opting this scraper into the spare-egress fallback, or ``{}``.
 
         Empty for every scraper that leaves :attr:`egress_fallback_on` unset, so the call it feeds
         is identical to the one made before this existed. Keyed on :attr:`ats` rather than the
         Board, because the metering that motivates it is per origin across all of an ATS's tenants.
+
+        ``marks_wall=False`` keeps the **routing** and drops only the **marking**: the request still
+        rides the spare egress once the ATS is walled, but its own failures can never be what walls
+        it. That is for a request whose non-200 means something other than "this IP is refused" —
+        see Eightfold's API-availability probe (ADR-0063). Dropping the routing too would send it
+        over the spent IP on exactly the shard the fallback exists to rescue.
         """
         if not self.egress_fallback_on:
             return {}
-        return {"egress_group": self.ats, "egress_on": self.egress_fallback_on}
+        return {
+            "egress_group": self.ats,
+            "egress_on": self.egress_fallback_on if marks_wall else frozenset(),
+        }
 
     def _get(self, url: str | None = None) -> str:
         """GET a board URL as text via the reliable-fetch seam (retry lives there). Defaults to

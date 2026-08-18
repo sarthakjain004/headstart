@@ -37,14 +37,7 @@ from curl_cffi.requests import RequestsError  # re-exported for callers' except 
 
 from headstart import log, spare_egress
 
-__all__ = [
-    "fetch",
-    "fetch_async",
-    "session",
-    "RequestsError",
-    "walled_groups",
-    "reset_walled",
-]
+__all__ = ["fetch", "fetch_async", "session", "RequestsError"]
 
 _log = log.get(__name__)
 
@@ -99,56 +92,14 @@ def reset_retry_stats() -> None:
 # --- spare egress ------------------------------------------------------------------------------
 # An ATS that meters per origin hands each shard its own budget (ADR-0047). When a shard spends
 # one, every remaining Board of that ATS on that shard is lost for the run — so the wall statuses
-# escalate one step further than a retry: onto a second egress IP (Cloudflare WARP, `warp`).
+# escalate one step further than a retry: onto a second egress IP. The registry of which groups are
+# walled, and the dial itself, live in `spare_egress`; `fetch` only decides when to consult them.
 #
-# Keyed on the **ATS**, not the host. Eightfold's edge meters across all of a tenant's siblings, so
-# per-host marking would make each of a shard's Boards rediscover the same wall in turn, spending
-# three attempts each to learn what the first one already proved.
-#
-# Opt-in per scraper (`BaseScraper.egress_fallback_on`): a caller that names no group behaves
-# exactly as before, which keeps this invisible to every ATS that has never walled us. The statuses
-# come with the group rather than being defaulted here — the scraper that knows the ATS is the one
-# that knows what a wall looks like on it, and a default would be a second place to edit.
-_walled: set[str] = set()
-_walled_lock = threading.Lock()
-
-
-def walled_groups() -> frozenset[str]:
-    """The egress groups that have hit a wall in this process (diagnostics, tests)."""
-    with _walled_lock:
-        return frozenset(_walled)
-
-
-def reset_walled() -> None:
-    """Forget which groups are walled — a stage calls this so its state is its own (tests)."""
-    with _walled_lock:
-        _walled.clear()
-
-
-def _mark_walled(group: str, status: int) -> None:
-    """Record that ``group``'s origin budget is spent, once per process, and say so loudly."""
-    with _walled_lock:
-        if group in _walled:
-            return
-        _walled.add(group)
-    _log.warning(
-        f"{group}: origin returned {status} — spending this shard's spare egress for the "
-        f"rest of the run"
-    )
-
-
-def _egress_proxy(group: str | None) -> str | None:
-    """The proxy ``group`` should now be routed through, or None to stay on the direct route.
-
-    None until the group is walled, so the fast path costs one set lookup, and None *after* it is
-    walled if WARP cannot be brought up — in which case the caller degrades to today's behaviour.
-    """
-    if group is None:
-        return None
-    with _walled_lock:
-        if group not in _walled:
-            return None
-    return spare_egress.proxy_url()
+# The two knobs are deliberately **orthogonal**, because Eightfold needs exactly one of each:
+#   egress_group -> "route this request with that group, once the group is walled"
+#   egress_on    -> "these statuses, seen here, are what marks the group walled"
+# A request naming a group with an empty `egress_on` therefore rides the spare egress but can never
+# trigger it — which is what the API-availability probe wants (ADR-0063).
 
 
 def _retry_reason(why: str) -> str:
@@ -229,8 +180,9 @@ def fetch(
     ``egress_group`` opts this request into the spare-egress fallback: a response in ``egress_on``
     marks that group walled, and this and every later request naming it are routed through the
     spare egress for the rest of the process (see the block above). Omitting it — every caller that
-    has not opted in — leaves behaviour byte-for-byte unchanged, and so does passing a group with
-    an empty ``egress_on``.
+    has not opted in — leaves behaviour byte-for-byte unchanged. Passing a group with an empty
+    ``egress_on`` is *not* the same thing: that request still rides the spare egress once something
+    else has walled the group, it just can never do the walling itself.
 
     ``egress_on`` is expected to be a subset of :data:`_TRANSIENT`. A status outside it would be
     marked but never retried, so this request would settle on the wall it just reported — the mark
@@ -242,7 +194,7 @@ def fetch(
     attempts.
     """
     for attempt in range(attempts):
-        proxy = _egress_proxy(egress_group)
+        proxy = spare_egress.proxy_for(egress_group)
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
         )
@@ -255,8 +207,12 @@ def fetch(
                 _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
             )
             continue
+        if proxy and egress_group is not None:
+            spare_egress.note_routed(
+                egress_group, recovered=response.status_code == 200
+            )
         if egress_group is not None and response.status_code in egress_on:
-            _mark_walled(egress_group, response.status_code)
+            spare_egress.mark_walled(egress_group, response.status_code)
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
             time.sleep(
                 _note_retry(

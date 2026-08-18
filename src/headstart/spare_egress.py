@@ -37,10 +37,20 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from collections import Counter, defaultdict
 
 from headstart import log
 
-__all__ = ["proxy_url", "reset"]
+__all__ = [
+    "proxy_url",
+    "proxy_for",
+    "mark_walled",
+    "note_routed",
+    "walled_groups",
+    "traffic",
+    "report",
+    "reset",
+]
 
 _log = log.get(__name__)
 
@@ -116,8 +126,9 @@ def _connect() -> str | None:
         if _connected():
             return f"socks5://127.0.0.1:{_PORT}"
         time.sleep(_POLL)
-    _log.info(
-        f"spare egress: no Connected status within {_CONNECT_TIMEOUT:.0f}s — staying direct"
+    _log.warning(
+        f"spare egress: dialled but no Connected status within {_CONNECT_TIMEOUT:.0f}s "
+        f"— staying on the direct route"
     )
     return None
 
@@ -137,16 +148,124 @@ def proxy_url() -> str | None:
     with _lock:
         if _resolved:
             return _proxy
+        started = time.monotonic()
         _proxy = _connect()
         _resolved = True
+        took = time.monotonic() - started
         if _proxy:
-            _log.warning(f"spare egress: connected, available on {_proxy}")
+            _log.warning(
+                f"spare egress: connected in {took:.1f}s, routing via {_proxy}"
+            )
+        else:
+            _log.warning(
+                f"spare egress: unavailable after {took:.1f}s — every walled Board this run "
+                f"stays on the spent origin"
+            )
         return _proxy
 
 
+# --- which groups have spent their budget -------------------------------------------------------
+# Keyed on the **ATS**, not the host. Eightfold's edge meters across all of a tenant's siblings, so
+# per-host marking would make each of a shard's Boards rediscover the same wall in turn, spending
+# three attempts each to learn what the first one already proved.
+_walled: set[str] = set()
+_walled_lock = threading.Lock()
+
+
+def walled_groups() -> frozenset[str]:
+    """The groups that have spent their Origin budget in this process.
+
+    Read by the shard report, so a run says which ATSes cost it their budget rather than leaving
+    the fallback's firing rate invisible.
+    """
+    with _walled_lock:
+        return frozenset(_walled)
+
+
+#: Per group: how many requests the spare egress carried, and how many of those came back 200.
+#: Counted for the same reason ``http.retry_stats`` is — without it a shard that routed everything
+#: successfully and one whose proxy silently carried nothing log identically, and "did the fallback
+#: work?" is the only question this feature has. Recovery *rate* is the number to watch: a high
+#: routed count with a low recovery rate means the spare egress is walled too, which is the signal
+#: to stop trusting it rather than to route more.
+_traffic: defaultdict[str, Counter[str]] = defaultdict(Counter)
+_traffic_lock = threading.Lock()
+
+
+def mark_walled(group: str, status: int) -> None:
+    """Record that ``group``'s origin budget is spent, once per process, and say so loudly."""
+    with _walled_lock:
+        if group in _walled:
+            return
+        _walled.add(group)
+    _log.warning(
+        f"{group}: origin returned {status} — spending this shard's spare egress for the "
+        f"rest of the run"
+    )
+
+
+def note_routed(group: str, *, recovered: bool) -> None:
+    """Count one request carried by the spare egress, and whether it came back 200."""
+    with _traffic_lock:
+        counts = _traffic[group]
+        counts["routed"] += 1
+        if recovered:
+            counts["recovered"] += 1
+
+
+def traffic() -> dict[str, Counter[str]]:
+    """Per group, ``{"routed": n, "recovered": n}`` for the requests the spare egress carried."""
+    with _traffic_lock:
+        return {group: Counter(counts) for group, counts in _traffic.items()}
+
+
+def report() -> list[str]:
+    """One human-readable line per group that spent its budget — for the shard report.
+
+    Includes groups that were walled but carried nothing, because that is the *worst* case and the
+    one a bare traffic counter would omit: the ATS refused us and no spare egress could be raised,
+    so those Boards were lost exactly as they were before this existed.
+    """
+    counts = traffic()
+    lines = []
+    for group in sorted(walled_groups()):
+        routed = counts.get(group, Counter())["routed"]
+        recovered = counts.get(group, Counter())["recovered"]
+        if not routed:
+            lines.append(
+                f"{group}: walled, but no spare egress was available — Boards lost"
+            )
+            continue
+        rate = 100 * recovered / routed
+        lines.append(
+            f"{group}: walled; spare egress carried {routed} request(s), "
+            f"{recovered} recovered ({rate:.0f}%)"
+        )
+    return lines
+
+
+def proxy_for(group: str | None) -> str | None:
+    """The proxy ``group`` should be routed through now, or None to stay on the direct route.
+
+    None until the group is walled — so the fast path costs one set lookup — and None *after* it is
+    walled if no spare egress can be brought up, in which case the caller degrades to the direct
+    route it would have used before this existed.
+    """
+    if group is None:
+        return None
+    with _walled_lock:
+        if group not in _walled:
+            return None
+    return proxy_url()
+
+
 def reset() -> None:
-    """Forget the cached outcome so the next :func:`proxy_url` probes again (tests)."""
+    """Forget the cached proxy *and* the walled groups, so the next call probes again (tests)."""
     global _resolved, _proxy
     with _lock:
         _resolved = False
         _proxy = None
+    with _walled_lock:
+        _walled.clear()
+    with _traffic_lock:
+        _traffic.clear()

@@ -1648,15 +1648,15 @@ def test_zoho_slug_from_keeps_only_the_host():
     assert get_scraper("zoho", host).url() == f"https://{host}/jobs/Careers"
 
 
-def test_eightfold_api_availability_probe_is_exempt_from_spare_egress(monkeypatch):
-    """The first `/api/pcsx/search` page asks "does this tenant expose the API at all?", and for
-    the ~40% that do not the answer is a steady 403 followed by a healthy 200 on the sitemap.
+def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkeypatch):
+    """The first `/api/pcsx/search` page asks "does this tenant expose the API at all?", and ~40%
+    of tenants answer a steady 403 there followed by a healthy 200 on the sitemap.
 
-    Letting that mark the ATS walled (ADR-0063) would dial the spare egress on nearly every shard,
-    on the normal path, and route every other Eightfold Board through it for nothing. Every *other*
-    request must still opt in — so this asserts the split, not just the exemption.
+    So it must not *mark* the ATS walled (that would dial the spare egress on nearly every shard,
+    on the normal path) — but it must still *route* over it once something else has, or on exactly
+    the walled shard the probe 403s against the spent IP and every remaining Board falls through to
+    the per-job sitemap path, thousands of fetches inside a 60-minute budget (ADR-0063).
     """
-    import headstart.http as http
     from headstart.scrapers.eightfold import EightfoldScraper
 
     seen: list[tuple[str, dict]] = []
@@ -1671,10 +1671,12 @@ def test_eightfold_api_availability_probe_is_exempt_from_spare_egress(monkeypatc
     )
     scraper = EightfoldScraper("symetra.eightfold.ai")
 
-    scraper._get(scraper._search_url("symetra.com", 0), egress=False)
-    assert "egress_group" not in seen[-1][1]  # the availability probe
+    scraper._get(scraper._search_url("symetra.com", 0), marks_wall=False)
+    probe = seen[-1][1]
+    assert probe["egress_group"] == "eightfold"  # still routed once the ATS is walled
+    assert probe["egress_on"] == frozenset()  # but can never be what walls it
 
     scraper._get("https://symetra.eightfold.ai/careers/sitemap.xml")
-    assert (
-        seen[-1][1]["egress_group"] == "eightfold"
-    )  # a real wall surface still escalates
+    wall_surface = seen[-1][1]
+    assert wall_surface["egress_group"] == "eightfold"
+    assert wall_surface["egress_on"] == frozenset({403, 405})

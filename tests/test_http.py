@@ -193,9 +193,9 @@ def test_retries_log_debug_records(monkeypatch, caplog):
 @pytest.fixture(autouse=True)
 def _clean_egress():
     """Walled groups are process-global; leaking one would make later tests route unexpectedly."""
-    http.reset_walled()
+    http.spare_egress.reset()
     yield
-    http.reset_walled()
+    http.spare_egress.reset()
 
 
 #: What Eightfold declares. Passed explicitly everywhere below, because `fetch` deliberately has no
@@ -218,7 +218,7 @@ def test_without_egress_group_a_wall_changes_nothing(monkeypatch):
     calls = _stub(monkeypatch, [403, 200])
     assert http.fetch("GET", "u").status_code == 200
     assert _proxied(calls) == [False, False]
-    assert http.walled_groups() == frozenset()
+    assert http.spare_egress.walled_groups() == frozenset()
 
 
 def test_wall_marks_the_group_and_routes_the_retry(monkeypatch):
@@ -228,7 +228,7 @@ def test_wall_marks_the_group_and_routes_the_retry(monkeypatch):
         http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
         == 200
     )
-    assert http.walled_groups() == frozenset({"eightfold"})
+    assert http.spare_egress.walled_groups() == frozenset({"eightfold"})
     # the first attempt goes direct (nothing known yet); the retry is the one that moves
     assert _proxied(calls) == [False, True]
     assert calls[1][2]["proxies"] == {
@@ -256,7 +256,7 @@ def test_wall_on_the_final_attempt_still_marks(monkeypatch):
         http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
         == 405
     )
-    assert http.walled_groups() == frozenset({"eightfold"})
+    assert http.spare_egress.walled_groups() == frozenset({"eightfold"})
 
 
 def test_transient_but_non_wall_status_does_not_move_egress(monkeypatch):
@@ -265,7 +265,7 @@ def test_transient_but_non_wall_status_does_not_move_egress(monkeypatch):
     _warp(monkeypatch)
     calls = _stub(monkeypatch, [500, 200])
     http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL)
-    assert http.walled_groups() == frozenset()
+    assert http.spare_egress.walled_groups() == frozenset()
     assert _proxied(calls) == [False, False]
 
 
@@ -275,7 +275,7 @@ def test_custom_egress_on_is_respected(monkeypatch):
     _warp(monkeypatch)
     calls = _stub(monkeypatch, [403, 200])
     http.fetch("GET", "u", egress_group="other", egress_on=frozenset({429}))
-    assert http.walled_groups() == frozenset()
+    assert http.spare_egress.walled_groups() == frozenset()
     assert _proxied(calls) == [False, False]
 
 
@@ -287,7 +287,7 @@ def test_no_warp_available_stays_on_the_direct_route(monkeypatch):
         http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
         == 403
     )
-    assert http.walled_groups() == frozenset(
+    assert http.spare_egress.walled_groups() == frozenset(
         {"eightfold"}
     )  # still recorded, for the log line
     assert _proxied(calls) == [False, False, False]
@@ -299,5 +299,19 @@ def test_a_group_with_no_wall_statuses_never_marks(monkeypatch):
     _warp(monkeypatch)
     calls = _stub(monkeypatch, [403, 200])
     http.fetch("GET", "u", egress_group="eightfold")
-    assert http.walled_groups() == frozenset()
+    assert http.spare_egress.walled_groups() == frozenset()
     assert _proxied(calls) == [False, False]
+
+
+def test_proxied_requests_are_counted_for_the_shard_report(monkeypatch):
+    # `routed` vs `recovered` is what tells a working fallback from a proxy carrying nothing
+    _warp(monkeypatch)
+    _stub(monkeypatch, [403, 200, 405, 405, 405])
+    http.fetch(
+        "GET", "u", egress_group="eightfold", egress_on=_WALL
+    )  # direct 403 -> mark; retry
+    http.fetch(
+        "GET", "v", egress_group="eightfold", egress_on=_WALL
+    )  # already walled: 3 tries
+    # attempt 1 of the first fetch went direct (nothing known yet); the other four were carried
+    assert http.spare_egress.traffic()["eightfold"] == {"routed": 4, "recovered": 1}

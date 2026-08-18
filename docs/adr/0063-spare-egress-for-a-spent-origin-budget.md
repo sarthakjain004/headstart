@@ -75,12 +75,27 @@ WARP in proxy mode — for the rest of that shard's run.**
   artifact upload, the HF push and the GitHub API. Proxy mode moves only the clients pointed at the
   SOCKS5 port.
 
-The **API-availability probe is exempt**. Eightfold's first `/api/pcsx/search` page is how the
-scraper asks whether a tenant exposes the API at all, and ~40% of them answer a steady 403 there
-and a healthy 200 on the sitemap immediately after (8 of 18 hosts probed). That 403 is a routing
-signal, not a wall; marking on it would dial the spare egress on nearly every shard, on the normal
-path. Only the surfaces where a non-200 really means "this IP is refused" — the careers page, the
-sitemap, and pagination past the first page — opt in.
+**Routing and marking are separate knobs**, because Eightfold needs exactly one of each:
+`egress_group` says *route this with that group once the group is walled*, `egress_on` says *these
+statuses, seen here, are what walls it*.
+
+That split exists for the **API-availability probe**. Eightfold's first `/api/pcsx/search` page is
+how the scraper asks whether a tenant exposes the API at all, and ~40% answer a steady 403 there
+and a healthy 200 on the sitemap immediately after (8 of 18 hosts probed). So the probe must not
+*mark* — that would dial the spare egress on nearly every shard, on the normal path. But it must
+still *route*: exempting it from routing too would send it over the spent IP on exactly the walled
+shard this exists to rescue, `_api_search` would return None, and every remaining Board would fall
+through to the per-job sitemap path — thousands of fetches for Boards like nvidia (2,629 postings)
+inside a 60-minute budget, plus the loss of `data.count`'s exact ADR-0053 truncation. Every other
+surface — the careers page, the sitemap, pagination past the first page — both routes and marks.
+
+**It reports what it did.** `spare_egress` counts requests carried and requests recovered per
+group, and the shard report prints one line per walled ATS: `eightfold: walled; spare egress
+carried 412 request(s), 398 recovered (97%)`. A walled group that carried *nothing* is reported
+too — that is the worst case and the one a bare traffic counter would hide, since it means no
+spare egress could be raised and those Boards were lost exactly as before. Recovery rate is the
+number to watch: high routed with low recovery means the spare egress is walled as well, which is
+the signal to stop trusting it rather than to route more.
 
 Verified before building, per the live-API rule in `CLAUDE.md`: all 8 probed Eightfold hosts —
 including the persistently API-disabled ones — serve **200 on both surfaces through a WARP egress**
