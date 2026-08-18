@@ -190,3 +190,46 @@ cause — a concurrency bound that is per *Board* while the budget is per *host*
 (`harvest._default_workers`: peak ≈ `workers × detail_streams`, ~400 in flight, ~150 to one
 instance) — is untouched by this amendment and remains the real fix.
 
+---
+
+## Amendment, 2026-08-18: the spare egress rotates
+
+The original decision treats the spare egress as a single second IP: dial once, cache the outcome,
+stay there. That is not enough for Workday, where the volume is large enough to spend the *second*
+budget too — and a spare egress that is itself walled is indistinguishable, in the logs, from one
+that is working.
+
+**The model is now two routes, not three rungs: direct, then a rotating spare egress.** The spare
+egress is a supply of IPs rather than one fallback address. A wall on the direct route moves a
+group onto it; a wall seen *through* it moves it again; it keeps moving while it keeps being
+refused.
+
+Three things were taken from a sibling project that had already solved this, rather than
+rediscovered:
+
+- **`systemctl restart warp-svc`, not `warp-cli disconnect` + `connect`.** The CLI pair is a no-op
+  for rotation — a registration is sticky to its WARP edge node, so disconnect/connect returns the
+  *same* egress IP. Measured there on 2026-05-29: `104.28.232.96` before and after the CLI pair; a
+  daemon restart moved it to `104.28.200.91`. `resilience.md` records the symptom ("rotation can be
+  a no-op"); this is the working answer. `sudo -n`, so a runner without passwordless sudo fails
+  fast instead of blocking on a TTY prompt nobody will answer.
+- **Readiness is a real SOCKS5 handshake** (RFC 1928: send `05 01 00`, expect `05 00`), replacing
+  the `warp-cli status` poll. "Connected" is a claim about the tunnel, not about the listener, and
+  any stale listener on the port would otherwise be adopted and then fail every request during
+  negotiation. This closes what the original decision called "the one bad case".
+- **Rotations coalesce on a generation counter.** Sixteen worker threads meeting a walled spare
+  egress at once must produce one restart, not sixteen. A thread snapshots the generation before
+  queueing on the lock; if it moved while it waited, a peer already rotated and this thread rides
+  the new IP.
+
+**A cooldown bounds it** (`_ROTATION_COOLDOWN`, 60 s). "Keep rotating on every 429" and "restart
+the daemon every few seconds" are the same instruction without one, and a shard meeting 429s
+continuously would spend its 60-minute budget bouncing the tunnel rather than scraping. The floor
+also buys each new IP a fair trial before it is abandoned. Throttled attempts are counted, so the
+shard report distinguishes "we did not rotate" from "we were not allowed to yet".
+
+**What to watch.** The shard report now carries both the recovery rate and
+`spare egress rotations: attempted N, succeeded N, failed N, throttled N`. Many rotations with a
+low recovery rate means the whole WARP range is refused, not just one IP — at which point this
+mechanism is not the answer and the per-host concurrency bound (the measured root cause) is.
+

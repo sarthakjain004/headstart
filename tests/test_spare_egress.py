@@ -31,8 +31,12 @@ class _Proc:
         self.stderr = stderr
 
 
-def _stub(monkeypatch, handler):
-    """Route `subprocess.run` through `handler(args) -> _Proc | Exception`, recording the calls."""
+def _stub(monkeypatch, handler, ready=lambda: True):
+    """Route `subprocess.run` through `handler(args) -> _Proc | Exception`, recording the calls.
+
+    ``ready`` stands in for the SOCKS5 handshake — the thing that decides whether a proxy is
+    handed out at all.
+    """
     calls: list[list[str]] = []
 
     def _run(argv, **kwargs):
@@ -44,11 +48,14 @@ def _stub(monkeypatch, handler):
 
     monkeypatch.setattr(spare_egress.subprocess, "run", _run)
     monkeypatch.setattr(spare_egress.time, "sleep", lambda *a: None)
+    # The SOCKS5 handshake is a real socket connect; left unstubbed the readiness wait spins for
+    # _CONNECT_TIMEOUT of wall clock in every test (it took the suite from 6s to 66s).
+    monkeypatch.setattr(spare_egress, "_socks5_ready", lambda *a, **k: ready())
     return calls
 
 
 def _happy(argv):
-    return _Proc(stdout="Status update: Connected") if "status" in argv else _Proc()
+    return _Proc()
 
 
 def test_connects_in_proxy_mode_and_returns_the_socks_url(monkeypatch):
@@ -91,11 +98,12 @@ def test_a_failing_step_degrades_to_none(monkeypatch):
     assert spare_egress.proxy_url() is None
 
 
-def test_proxy_is_withheld_until_status_reports_connected(monkeypatch):
-    """`connect` returns as soon as the request is accepted. Handing out a proxy that is not
-    carrying traffic yet would turn the first Board after the wall into a second failure."""
+def test_proxy_is_withheld_until_the_socks5_handshake_answers(monkeypatch):
+    """`connect` returns as soon as the request is accepted, and "Connected" is a claim about the
+    tunnel, not the listener. A proxy handed out before it can carry traffic would turn the first
+    Board after the wall into a second failure — so readiness is a real RFC-1928 handshake."""
     monkeypatch.setattr(spare_egress, "_CONNECT_TIMEOUT", 0.05)
-    _stub(monkeypatch, lambda argv: _Proc(stdout="Status update: Disconnected"))
+    _stub(monkeypatch, _happy, ready=lambda: False)
     assert spare_egress.proxy_url() is None
 
 
