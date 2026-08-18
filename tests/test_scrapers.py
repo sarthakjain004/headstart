@@ -1646,3 +1646,37 @@ def test_zoho_slug_from_keeps_only_the_host():
     assert ZohoScraper.slug_from("acme", f"https://{host}/jobs/Careers/123") == host
     assert ZohoScraper.slug_from("acme", f"https://{host}/jobs?utm_source=x") == host
     assert get_scraper("zoho", host).url() == f"https://{host}/jobs/Careers"
+
+
+def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkeypatch):
+    """The first `/api/pcsx/search` page asks "does this tenant expose the API at all?", and ~40%
+    of tenants answer a steady 403 there followed by a healthy 200 on the sitemap.
+
+    So it must not *mark* the ATS walled (that would dial the spare egress on nearly every shard,
+    on the normal path) — but it must still *route* over it once something else has, or on exactly
+    the walled shard the probe 403s against the spent IP and every remaining Board falls through to
+    the per-job sitemap path, thousands of fetches inside a 60-minute budget (ADR-0063).
+    """
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    seen: list[tuple[str, dict]] = []
+
+    class _Resp:
+        status_code = 403
+        headers: dict = {}
+        text = ""
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append((url, kw)), _Resp())[1]
+    )
+    scraper = EightfoldScraper("symetra.eightfold.ai")
+
+    scraper._get(scraper._search_url("symetra.com", 0), marks_wall=False)
+    probe = seen[-1][1]
+    assert probe["egress_group"] == "eightfold"  # still routed once the ATS is walled
+    assert probe["egress_on"] == frozenset()  # but can never be what walls it
+
+    scraper._get("https://symetra.eightfold.ai/careers/sitemap.xml")
+    wall_surface = seen[-1][1]
+    assert wall_surface["egress_group"] == "eightfold"
+    assert wall_surface["egress_on"] == frozenset({403, 405})

@@ -28,7 +28,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from headstart import http, log
+from headstart import http, log, spare_egress
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, board_identity, load_active_companies
 from headstart.harvest import scrape_all
@@ -230,6 +230,12 @@ def _report(
             + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
             + f" (total {sum(retries.values())})"
         )
+    # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for them
+    # (ADR-0063). Reported for the same reason the retry classes are: without it a shard that
+    # routed everything successfully and one whose proxy carried nothing log identically, and
+    # "did the fallback work?" is the only question this feature has.
+    for line in spare_egress.report():
+        _log.warning(line)
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
         if predicted
