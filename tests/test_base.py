@@ -152,3 +152,32 @@ def test_async_fanout_enabled_on_by_default(monkeypatch):
     assert BaseScraper.async_fanout_enabled() is False
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "1")
     assert BaseScraper.async_fanout_enabled() is True
+
+
+# --- spare-egress opt-in (ADR-0063) ---------------------------------------------------------------
+
+
+class _WalledScraper(_StubScraper):
+    ats = "walled"
+    egress_fallback_on = frozenset({403, 405})
+
+
+def test_egress_is_empty_unless_the_scraper_opts_in():
+    """The default has to be inert: every ATS that has never walled us must keep making exactly
+    the call it made before this existed."""
+    assert _StubScraper("acme")._egress() == {}
+
+
+def test_egress_opt_in_keys_on_the_ats_not_the_board():
+    # per-Board marking would make each of a shard's Boards spend its own attempts rediscovering
+    # a wall the first one already proved (the metering is per origin, across tenants)
+    kwargs = _WalledScraper("acme")._egress()
+    assert kwargs == {"egress_group": "walled", "egress_on": frozenset({403, 405})}
+    assert _WalledScraper("other-board")._egress() == kwargs
+
+
+def test_eightfold_opts_in_on_the_two_wall_statuses():
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    assert EightfoldScraper.egress_fallback_on == frozenset({403, 405})
+    assert EightfoldScraper("x.eightfold.ai")._egress()["egress_group"] == "eightfold"

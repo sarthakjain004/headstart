@@ -33,7 +33,7 @@ def _stub(monkeypatch, outcomes):
     class _Session:
         def request(self, method, url, **kwargs):
             outcome = outcomes[len(calls)]
-            calls.append((method, url))
+            calls.append((method, url, kwargs))
             if isinstance(outcome, BaseException):
                 raise outcome
             if isinstance(outcome, tuple):  # (status, headers)
@@ -182,3 +182,136 @@ def test_retries_log_debug_records(monkeypatch, caplog):
     assert "attempt 1/3 failed" in records[0].getMessage()
     assert "-> 503" in records[1].getMessage()
     assert "retrying" in records[1].getMessage()
+
+
+# --- spare egress (ADR-0063) ---------------------------------------------------------------------
+# The escalation past retry: a wall status moves an opted-in ATS onto a second egress IP. These
+# stub `spare_egress.proxy_url` rather than dialling anything, so what is asserted is the routing decision
+# — which request carries a proxy and which does not — not the tunnel itself (see test_spare_egress.py).
+
+
+@pytest.fixture(autouse=True)
+def _clean_egress():
+    """Walled groups are process-global; leaking one would make later tests route unexpectedly."""
+    http.spare_egress.reset()
+    yield
+    http.spare_egress.reset()
+
+
+#: What Eightfold declares. Passed explicitly everywhere below, because `fetch` deliberately has no
+#: default for it — the scraper that knows the ATS is the one that knows what a wall looks like.
+_WALL = frozenset({403, 405})
+
+
+def _warp(monkeypatch, url="socks5://127.0.0.1:40000"):
+    monkeypatch.setattr(http.spare_egress, "proxy_url", lambda: url)
+
+
+def _proxied(calls):
+    """Which of the recorded calls carried a proxy, as a list of bools."""
+    return ["proxies" in kwargs for _, _, kwargs in calls]
+
+
+def test_without_egress_group_a_wall_changes_nothing(monkeypatch):
+    # every ATS that has not opted in: 403 is still just a retryable blip, and no route moves
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [403, 200])
+    assert http.fetch("GET", "u").status_code == 200
+    assert _proxied(calls) == [False, False]
+    assert http.spare_egress.walled_groups() == frozenset()
+
+
+def test_wall_marks_the_group_and_routes_the_retry(monkeypatch):
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [403, 200])
+    assert (
+        http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
+        == 200
+    )
+    assert http.spare_egress.walled_groups() == frozenset({"eightfold"})
+    # the first attempt goes direct (nothing known yet); the retry is the one that moves
+    assert _proxied(calls) == [False, True]
+    assert calls[1][2]["proxies"] == {
+        "http": "socks5://127.0.0.1:40000",
+        "https": "socks5://127.0.0.1:40000",
+    }
+
+
+def test_a_later_request_starts_on_the_spare_egress(monkeypatch):
+    # the point of keying on the ATS rather than the Board: the second Board must not have to
+    # rediscover the wall by spending its own three attempts
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [405, 200, 200])
+    http.fetch("GET", "board-1", egress_group="eightfold", egress_on=_WALL)
+    http.fetch("GET", "board-2", egress_group="eightfold", egress_on=_WALL)
+    assert _proxied(calls) == [False, True, True]
+
+
+def test_wall_on_the_final_attempt_still_marks(monkeypatch):
+    # this request is lost either way, but it is exactly as informative about the origin as an
+    # early wall — not recording it would make every later Board repeat the same three attempts
+    _warp(monkeypatch)
+    _stub(monkeypatch, [405, 405, 405])
+    assert (
+        http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
+        == 405
+    )
+    assert http.spare_egress.walled_groups() == frozenset({"eightfold"})
+
+
+def test_transient_but_non_wall_status_does_not_move_egress(monkeypatch):
+    # a 500 is the origin failing, not the origin refusing this IP; spending a second budget on it
+    # would buy nothing
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [500, 200])
+    http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL)
+    assert http.spare_egress.walled_groups() == frozenset()
+    assert _proxied(calls) == [False, False]
+
+
+def test_custom_egress_on_is_respected(monkeypatch):
+    # the opt-in carries its own statuses, so a future ATS walled by 429 does not have to accept
+    # Eightfold's 403/405 definition
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [403, 200])
+    http.fetch("GET", "u", egress_group="other", egress_on=frozenset({429}))
+    assert http.spare_egress.walled_groups() == frozenset()
+    assert _proxied(calls) == [False, False]
+
+
+def test_no_warp_available_stays_on_the_direct_route(monkeypatch):
+    # the degradation that makes this safe to ship: a runner without WARP behaves as it does today
+    _warp(monkeypatch, url=None)
+    calls = _stub(monkeypatch, [403, 403, 403])
+    assert (
+        http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
+        == 403
+    )
+    assert http.spare_egress.walled_groups() == frozenset(
+        {"eightfold"}
+    )  # still recorded, for the log line
+    assert _proxied(calls) == [False, False, False]
+
+
+def test_a_group_with_no_wall_statuses_never_marks(monkeypatch):
+    """`fetch` has no default `egress_on`, so a caller that names a group but no statuses opts
+    into nothing. Asserted rather than assumed: this is the shape a mis-wired scraper would take."""
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [403, 200])
+    http.fetch("GET", "u", egress_group="eightfold")
+    assert http.spare_egress.walled_groups() == frozenset()
+    assert _proxied(calls) == [False, False]
+
+
+def test_proxied_requests_are_counted_for_the_shard_report(monkeypatch):
+    # `routed` vs `recovered` is what tells a working fallback from a proxy carrying nothing
+    _warp(monkeypatch)
+    _stub(monkeypatch, [403, 200, 405, 405, 405])
+    http.fetch(
+        "GET", "u", egress_group="eightfold", egress_on=_WALL
+    )  # direct 403 -> mark; retry
+    http.fetch(
+        "GET", "v", egress_group="eightfold", egress_on=_WALL
+    )  # already walled: 3 tries
+    # attempt 1 of the first fetch went direct (nothing known yet); the other four were carried
+    assert http.spare_egress.traffic()["eightfold"] == {"routed": 4, "recovered": 1}
