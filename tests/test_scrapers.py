@@ -1680,3 +1680,44 @@ def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkey
     wall_surface = seen[-1][1]
     assert wall_surface["egress_group"] == "eightfold"
     assert wall_surface["egress_on"] == frozenset({403, 405})
+
+
+def test_workday_opts_into_the_spare_egress_on_429(monkeypatch):
+    """Provisional experiment (ADR-0063, amended): Workday's metering was measured to be per
+    (source IP x instance host), so a second egress is a second allocation rather than a way of
+    ignoring a rate limit. Only the sync listing POST can lose a Board — a detail failure returns
+    None — so that is the call that must carry the opt-in.
+    """
+    from headstart.scrapers.workday import WorkdayScraper
+
+    assert WorkdayScraper.egress_fallback_on == frozenset({429})
+
+    seen: list[dict] = []
+
+    class _Resp:
+        status_code = 200
+        headers: dict = {}
+
+        @staticmethod
+        def json():
+            return {"jobPostings": [], "total": 0}
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append(kw), _Resp())[1]
+    )
+    scraper = WorkdayScraper("https://micron.wd1.myworkdayjobs.com/External")
+    scraper._post({}, 0)
+    assert seen[-1]["egress_group"] == "workday"
+    assert seen[-1]["egress_on"] == frozenset({429})
+
+
+def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
+    """The opt-in is per scraper; an ATS that never walled us must stay on its direct route."""
+    from headstart.scrapers.greenhouse import GreenhouseScraper
+
+    assert GreenhouseScraper.egress_fallback_on == frozenset()
+    assert GreenhouseScraper("acme")._egress() == {}

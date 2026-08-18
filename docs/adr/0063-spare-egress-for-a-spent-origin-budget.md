@@ -142,3 +142,104 @@ the run degrades to exactly the fatal errors we have today — no worse, but no 
 detail pass is not routed. Both symptoms this addresses — the fatal Board error and the
 mid-pagination truncation — occur on the sync path, so this is a real limit rather than a gap in
 the fix; widening it means giving `fan_out_async` a proxied session.
+
+---
+
+## Amendment, 2026-08-18: Workday opts in on 429 — provisional
+
+The Consequences above say a 429 deliberately does not trigger the spare egress, on the grounds
+that it is the origin's polite signal and ADR-0026 makes honouring it binding. **Workday is now
+opted in on 429 anyway, as a bounded experiment.** Recording the reversal rather than leaving the
+paragraph above quietly false.
+
+**What changed the argument.** The ten-run diagnosis measured Workday's metering to be per
+**(source IP × instance host)**, not global: a shard's failure rate on an instance tracks *its own*
+load on that instance, monotonically, on every instance tested.
+
+| per-shard Boards on the instance | wd1 | wd5 | wd3 |
+|---|---|---|---|
+| 0–9 | 0.0% | 25.0% | 10.8% |
+| 10–19 | 17.9% | 25.3% | 17.5% |
+| 20–29 | 28.2% | 32.2% | — |
+| 30–39 | 34.4% | 35.7% | — |
+| 40–49 | 36.0% | — | — |
+
+Under that model a second egress is a second *allocation* — the same logic ADR-0047 already uses
+when it spreads an ATS across shards to spend one budget per IP — rather than a way of ignoring the
+first. Retry and `Retry-After` are still honoured ahead of it; this is only what happens once the
+ladder is spent and the Board would otherwise be lost.
+
+**What is genuinely unlike the Eightfold case, and why this is provisional:**
+
+- **A 429 is a signal; a 403/405 is a wall.** Eightfold tells us nothing and refuses; Workday tells
+  us exactly what it wants. Moving IP in response to the second is a weaker justification than the
+  first, and reasonable people would draw this line differently.
+- **The blast radius is far larger.** Eightfold's wall touched 18–30 Boards per run. Workday 429s
+  are pervasive, so the group will be marked walled within the first minutes of nearly every shard
+  and stay there — meaning most Workday listing traffic rides a shared Cloudflare range every run.
+- **It moves the fatals, not the load.** `async_fanout_enabled()` is on by default, so Workday's
+  detail pass runs on `fetch_async`, which this design does not route. Only the sync listing POST
+  can lose a Board (a failed detail returns None), so the spare egress catches the measured symptom
+  while ~95% of request volume stays on the direct IP. That is favourable for the experiment — the
+  spare egress carries little — but it means this does **not** reduce the pressure that causes the
+  429s.
+
+**Exit criterion.** Watch the shard report's `recovered` rate. A high routed count with a low
+recovery rate means the spare egress is saturated too, and this comes back out. The measured root
+cause — a concurrency bound that is per *Board* while the budget is per *host*
+(`harvest._default_workers`: peak ≈ `workers × detail_streams`, ~400 in flight, ~150 to one
+instance) — is untouched by this amendment and remains the real fix.
+
+---
+
+## Amendment, 2026-08-18: the spare egress rotates
+
+The original decision treats the spare egress as a single second IP: dial once, cache the outcome,
+stay there. That is not enough for Workday, where the volume is large enough to spend the *second*
+budget too — and a spare egress that is itself walled is indistinguishable, in the logs, from one
+that is working.
+
+**The model is now two routes, not three rungs: direct, then a rotating spare egress.** The spare
+egress is a supply of IPs rather than one fallback address. A wall on the direct route moves a
+group onto it; a wall seen *through* it moves it again; it keeps moving while it keeps being
+refused.
+
+Three things were taken from a sibling project that had already solved this, rather than
+rediscovered:
+
+- **`systemctl restart warp-svc`, not `warp-cli disconnect` + `connect`.** The CLI pair is a no-op
+  for rotation — a registration is sticky to its WARP edge node, so disconnect/connect returns the
+  *same* egress IP. Measured there on 2026-05-29: `104.28.232.96` before and after the CLI pair; a
+  daemon restart moved it to `104.28.200.91`. `resilience.md` records the symptom ("rotation can be
+  a no-op"); this is the working answer. `sudo -n`, so a runner without passwordless sudo fails
+  fast instead of blocking on a TTY prompt nobody will answer.
+- **Readiness is a real SOCKS5 handshake** (RFC 1928: send `05 01 00`, expect `05 00`), replacing
+  the `warp-cli status` poll. "Connected" is a claim about the tunnel, not about the listener, and
+  any stale listener on the port would otherwise be adopted and then fail every request during
+  negotiation. This closes what the original decision called "the one bad case".
+- **A rotation gate, and coalescing.** Two separate needs, and only taking the second is what a
+  first pass got wrong. The **gate** is closed for the duration of a restart, because peers would
+  otherwise keep firing at a SOCKS5 port the restart has just taken away — every one a
+  `RequestsError` that burns an attempt and can lose a Board. The **generation counter** stops a
+  thread that queued behind a peer's rotation from immediately bouncing the daemon again. The
+  cooldown alone would coalesce most of the herd; the counter closes the window where a rotation
+  outlasts the cooldown, since the cooldown stamps at the *start*.
+- **A settle after the restart.** `systemctl restart` returns once the *unit* is back, not once the
+  daemon is listening; re-arming immediately makes all three `warp-cli` calls land on a dead socket,
+  fail silently, and the readiness wait then burn its whole deadline for nothing.
+- **A failed rotation must not be permanent.** Clearing the cached proxy without clearing the
+  *resolved* flag pins the process to the direct route for the rest of the run — strictly worse
+  than never having rotated, and the exact opposite of "it keeps moving while it keeps being
+  refused". Both are cleared, so a later caller re-dials.
+
+**A cooldown bounds it** (`_ROTATION_COOLDOWN`, 60 s). "Keep rotating on every 429" and "restart
+the daemon every few seconds" are the same instruction without one, and a shard meeting 429s
+continuously would spend its 60-minute budget bouncing the tunnel rather than scraping. The floor
+also buys each new IP a fair trial before it is abandoned. Throttled attempts are counted, so the
+shard report distinguishes "we did not rotate" from "we were not allowed to yet".
+
+**What to watch.** The shard report now carries both the recovery rate and
+`spare egress rotations: attempted N, succeeded N, failed N, throttled N`. Many rotations with a
+low recovery rate means the whole WARP range is refused, not just one IP — at which point this
+mechanism is not the answer and the per-host concurrency bound (the measured root cause) is.
+

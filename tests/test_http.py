@@ -315,3 +315,40 @@ def test_proxied_requests_are_counted_for_the_shard_report(monkeypatch):
     )  # already walled: 3 tries
     # attempt 1 of the first fetch went direct (nothing known yet); the other four were carried
     assert http.spare_egress.traffic()["eightfold"] == {"routed": 4, "recovered": 1}
+
+
+def test_the_ladder_is_direct_then_spare_egress_then_rotate(monkeypatch):
+    """The whole escalation, in order: direct -> spare egress -> rotated spare egress.
+
+    Each rung is a *different* recovery, so a log says which one worked rather than just "it took
+    three tries". A wall seen *through* the spare egress means that IP is spent too, so the next
+    rung moves again instead of spending another attempt on a route we were just refused by.
+    """
+    rotations = []
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000"
+    )
+    monkeypatch.setattr(
+        http.spare_egress, "rotate", lambda: (rotations.append(1), True)[1]
+    )
+    calls = _stub(monkeypatch, [429, 429, 200])
+
+    http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert _proxied(calls) == [False, True, True]  # direct, spare, spare (rotated)
+    assert len(rotations) == 1  # only the wall seen *through* the proxy rotates
+
+
+def test_a_wall_on_the_direct_route_never_rotates(monkeypatch):
+    """Rotation answers "this IP is spent". On the first, direct attempt we do not yet have a
+    spare egress to rotate — moving then would burn a rotation to learn nothing."""
+    rotations = []
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_url", lambda: None
+    )  # no WARP available
+    monkeypatch.setattr(
+        http.spare_egress, "rotate", lambda: (rotations.append(1), True)[1]
+    )
+    _stub(monkeypatch, [429, 429, 429])
+    http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+    assert rotations == []
