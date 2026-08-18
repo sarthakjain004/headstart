@@ -57,6 +57,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
+from headstart.models import host_of  # noqa: E402 - one host rule, shared with the scrapers
 from headstart.scrapers.workday import (  # noqa: E402 - the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
@@ -683,7 +684,7 @@ def p_zoho(t, u):
     # Host only, matching ZohoScraper.slug_from — same latent shape as the personio bug above.
     # Zoho's ledger carries 44 pathy / 19 query rows; none is live today, so this is not yet
     # costing coverage, but the identical `/jobs/Careers` suffix would land inside a query.
-    host = (u or "").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+    host = host_of(u)
     status, body = _get(f"https://{host}/jobs/Careers")
     if status == "dns" or status in (404, 410):
         return DEAD, None
@@ -1098,9 +1099,7 @@ def p_personio(t, u):
     # where the `/xml` lands INSIDE the query string, so Personio served the ordinary HTML job
     # page with a 200 and this counted zero `<position>` entries. Every one of the 312 such rows
     # is recorded live with jobs=0 — probed as alive while the scraper could never read them.
-    host = (u or "").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[
-        0
-    ] or f"{t}.jobs.personio.de"
+    host = host_of(u) or f"{t}.jobs.personio.de"
     status, body = _get(f"https://{host}/xml")
     if status == "dns" or status in (404, 410):
         return DEAD, None

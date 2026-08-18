@@ -234,8 +234,9 @@ jobs:
                  || { echo "::error::scrape shard exited $rc — a crash, not the time budget"; exit "$rc"; }; }
         timeout-minutes: 66
       - name: Upload the shard fragment
-        # always(): the `|| echo` above already absorbs the inner timeout, so this is the belt to
-        # that braces — if the *step* timeout ever fires instead, the Boards that did finish are
+        # always(): the guard above absorbs the inner time budget (exit 124) and fails the step on
+        # anything else, so this is the belt to that braces — on either exit, and if the *step*
+        # timeout ever fires instead, the Boards that did finish are
         # on disk and must still reach the join rather than being thrown away.
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

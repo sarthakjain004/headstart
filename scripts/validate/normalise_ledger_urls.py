@@ -19,15 +19,19 @@ dropped, or re-keyed.
 Rows whose status came from a probe of the *wrong* URL are also reset to `unknown` with `--reprobe`,
 so the next `check_liveness` run re-verifies them rather than trusting a verdict about a job page.
 
-    python -m scripts.merge.normalise_ledger_urls --dry-run
-    python -m scripts.merge.normalise_ledger_urls --apply --reprobe
+    python scripts/validate/normalise_ledger_urls.py --dry-run
+    python scripts/validate/normalise_ledger_urls.py --apply --reprobe
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from headstart.models import host_of  # noqa: E402 - needs src on sys.path first
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = REPO_ROOT / "data" / "validate" / "liveness"
@@ -41,12 +45,6 @@ LEDGER_DIR = REPO_ROOT / "data" / "validate" / "liveness"
 # This allowlist is the whole safety of the script. Run unscoped it would rewrite 126,665 rows —
 # stripping `boards.greenhouse.io/stripe` to `boards.greenhouse.io` and destroying the ledger.
 HOST_SHAPED = ("personio", "zoho")
-
-
-def bare_host(url: str) -> str:
-    """The host alone — no scheme, path, query or trailing slash."""
-    rest = (url or "").split("://", 1)[-1]
-    return rest.split("/", 1)[0].split("?", 1)[0]
 
 
 def is_polluted(url: str) -> bool:
@@ -67,7 +65,7 @@ def normalise(path: Path, *, apply: bool, reprobe: bool) -> tuple[int, int]:
         url = row.get("url") or ""
         if not is_polluted(url):
             continue
-        host = bare_host(url)
+        host = host_of(url)
         if not host:
             continue  # nothing recoverable; leave the row exactly as it is
         row["url"] = f"https://{host}" if "://" in url else host
@@ -88,12 +86,6 @@ def normalise(path: Path, *, apply: bool, reprobe: bool) -> tuple[int, int]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ledger-dir", type=Path, default=LEDGER_DIR)
-    ap.add_argument(
-        "--ats",
-        action="append",
-        help=f"limit to these ATSes (default: {', '.join(HOST_SHAPED)})",
-    )
     ap.add_argument("--apply", action="store_true", help="write; default is a dry run")
     ap.add_argument(
         "--reprobe",
@@ -103,8 +95,8 @@ def main() -> int:
     args = ap.parse_args()
 
     total = total_reset = 0
-    for path in sorted(args.ledger_dir.glob("*.csv")):
-        if path.stem not in (args.ats or HOST_SHAPED):
+    for path in sorted(LEDGER_DIR.glob("*.csv")):
+        if path.stem not in HOST_SHAPED:
             continue
         changed, reset = normalise(path, apply=args.apply, reprobe=args.reprobe)
         if changed:

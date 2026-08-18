@@ -16,7 +16,7 @@ import json
 import re
 from typing import Any
 
-from headstart.models import Job, html_to_text
+from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import BaseScraper
 
 _JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
@@ -49,7 +49,7 @@ class ZohoScraper(BaseScraper):
         # suffix inside the path or query and fetch something that is not the board. Zoho's
         # ledger carries 44 pathy / 19 query rows; none is live today, so this is a latent
         # version of the bug that cost personio 678 ParseErrors a run, not an active one.
-        return url.split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+        return host_of(url)
 
     def url(self) -> str:
         return f"https://{self.slug}/jobs/Careers"

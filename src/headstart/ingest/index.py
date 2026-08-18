@@ -352,7 +352,11 @@ def sync(args: argparse.Namespace) -> int:
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
     # 19 runs that read as +4,376 while the table actually fell by 388 rows. Spell out the split
     # and the net, so a run says in one line whether the served index grew.
-    listings = len(plan.add) - len(taken)
+    # Intersect rather than subtract: an upgraded Job that has since left the corpus is deleted
+    # by `_take_upgrades` and never re-added, so it is in `taken` but not in `plan.add`, and a
+    # bare `len(add) - len(taken)` would under-report the new listings by that many.
+    re_embedded = len(plan.add & taken.keys())
+    listings = len(plan.add) - re_embedded
     _log.info(
         f"plan: add {len(plan.add)} ({listings} new listings + {len(taken)} re-embedded), "
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"

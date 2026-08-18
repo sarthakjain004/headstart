@@ -3,7 +3,11 @@
 A Board that yields tech jobs should be scraped — and its docs embedded — before the long
 tail of boards that never do. The signal is a sticky EWMA of each Board's tech-job count,
 persisted as ``data/state/board_priority.csv`` (``board,score,last_tech_jobs,updated_at``,
-``board`` being the ``{ats}:{slug}`` key from :func:`headstart.corpus.board_of`). The file
+``board`` being whatever :func:`headstart.corpus.board_of` yields — the **board_key** shape,
+which is *not* ``{ats}:{slug}`` wherever a scraper overrides ``board_key()``: a Workday slug is
+a whole careers URL and a Personio slug the whole host. Every lookup therefore goes through
+:func:`headstart.config.board_identity`, never ``f"{ats}:{slug}"`` — keying it the latter way
+left all 13,714 Workday and Personio boards permanently unscored). The file
 rides the pipeline's HF-dataset state round-trip; it deliberately does NOT live in the
 embedding store dir, which is regenerable and gets wiped by evictions — this history must
 survive them. A missing file degrades every consumer to the old behavior (pure shuffle,
@@ -124,23 +128,28 @@ def pick_boards(
     # `board_identity`, not `f"{ats}:{slug}"`. The ledger is written by `update_ledgers priority`
     # from `corpus.board_of(job_id)`, which yields the **board_key** shape — and Workday and
     # Personio override `board_key()` (a Workday slug is a whole careers URL, a Personio slug the
-    # whole host). The old `f"{ats}:{slug}"` therefore never matched their rows: measured against
-    # the live ledger, 13,714 of 66,745 boards — 20.5%, every Workday and every Personio — scored
-    # 0.0 no matter what they had earned, so they could only ever enter a slice through the random
-    # exploration tail. The line even carried a comment claiming it matched `corpus.board_of`.
-    key = board_identity  # noqa: E731 - one keyspace with the ledger (ADR-0049)
-    known = [c for c in shuffled if scores.get(key(c), 0.0) > 0.0]
+    # whole host), so the old key could never match one of their rows. It even carried a comment
+    # claiming it matched `corpus.board_of`.
+    #
+    # 13,402 boards — 20.1% of the scrape list — are keyed that way. What it cost is the subset
+    # that had actually earned a score: against a local ledger snapshot (2026-08-16; the live one
+    # rides HF, so treat this as indicative) 4,611 of them held a row — 3,784 Workday, 827
+    # Personio — every one scoring 0.0 whatever it had earned, reachable only through the random
+    # exploration tail. No board loses a score from this change; 4,611 regain one.
+    known = [c for c in shuffled if scores.get(board_identity(c), 0.0) > 0.0]
     if not known:
         return shuffled[:max_boards] if max_boards else shuffled
     known.sort(
-        key=lambda c: scores[key(c)], reverse=True
+        key=lambda c: scores[board_identity(c)], reverse=True
     )  # stable: shuffle breaks ties
 
     if not max_boards or max_boards >= len(companies):
-        rest = [c for c in shuffled if scores.get(key(c), 0.0) <= 0.0]
+        rest = [c for c in shuffled if scores.get(board_identity(c), 0.0) <= 0.0]
         return known + rest
 
     head = known[: max_boards - round(max_boards * explore_frac)]
-    head_set = {key(c) for c in head}
-    tail = [c for c in shuffled if key(c) not in head_set][: max_boards - len(head)]
+    head_set = {board_identity(c) for c in head}
+    tail = [c for c in shuffled if board_identity(c) not in head_set][
+        : max_boards - len(head)
+    ]
     return head + tail
