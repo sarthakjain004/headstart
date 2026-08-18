@@ -429,7 +429,7 @@ def test_async_recovery_is_counted(monkeypatch):
     """`spare egress carried N request(s), M recovered` is the only evidence ADR-0063 works; a
     path that routes but does not count reads as a proxy that carried nothing."""
     _warp(monkeypatch)
-    session, calls = _astub(monkeypatch, [429, 200])
+    session, _calls = _astub(monkeypatch, [429, 200])
     asyncio.run(
         http.fetch_async(
             session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
@@ -444,7 +444,7 @@ def test_async_wall_through_the_proxy_rotates(monkeypatch):
     monkeypatch.setattr(
         http.spare_egress, "rotate", lambda: rotations.append(True) or True
     )
-    session, calls = _astub(monkeypatch, [429, 429, 200])
+    session, _calls = _astub(monkeypatch, [429, 429, 200])
     asyncio.run(
         http.fetch_async(
             session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
