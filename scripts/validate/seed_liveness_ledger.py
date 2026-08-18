@@ -19,19 +19,19 @@ from __future__ import annotations
 
 import csv
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import liveness  # noqa: E402 - needs src on sys.path first
+from headstart import liveness  # needs src on sys.path first
 
 POOL = ROOT / "data" / "ats-tenants-merged"
 ACTIVE = POOL / "active"
 
 
 def _mtime_date(path: Path) -> str:
-    return datetime.fromtimestamp(path.stat().st_mtime).date().isoformat()
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).date().isoformat()
 
 
 def main() -> int:

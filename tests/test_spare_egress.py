@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-import headstart.spare_egress as spare_egress
+from headstart import spare_egress
 
 
 @pytest.fixture(autouse=True)

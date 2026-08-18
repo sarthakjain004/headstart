@@ -198,7 +198,7 @@ def get(url: str) -> str | None:
                 backoff = min(backoff * 2, 480)
             else:
                 time.sleep(5)
-        except Exception:
+        except Exception:  # noqa: BLE001
             time.sleep(5)
     return None
 

@@ -101,7 +101,7 @@ async def _ask(client: _Client, name: str, timeout: float) -> bool | None:
         assert client.transport is not None
         client.transport.sendto(_query_packet(qid, name))
         return _answered(await asyncio.wait_for(fut, timeout))
-    except (asyncio.TimeoutError, OSError):
+    except (TimeoutError, OSError):
         return None
     finally:
         client.pending.pop(qid, None)
@@ -119,7 +119,7 @@ async def sweep(
     hits = 0
     done = 0
     started = time.monotonic()
-    out = open(out_path, "a", encoding="utf-8")
+    out = open(out_path, "a", encoding="utf-8")  # noqa: ASYNC230, SIM115
 
     async def one(idx: int, label: str) -> None:
         """Up to 4 tries on rotating nameservers — a dropped UDP packet or a rate-limit
@@ -167,7 +167,7 @@ def main() -> None:
     raw: list[str] = []
     if args.files:
         for f in args.files:
-            raw.extend(open(f, encoding="utf-8", errors="replace").read().split())
+            raw.extend(open(f, encoding="utf-8", errors="replace").read().split())  # noqa: SIM115
     else:
         raw.extend(sys.stdin.read().split())
     labels = list(dict.fromkeys(w.strip().lower().strip(".") for w in raw if w.strip()))

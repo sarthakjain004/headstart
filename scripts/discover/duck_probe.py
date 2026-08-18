@@ -11,7 +11,7 @@ import time
 import duckdb
 
 crawl = sys.argv[1] if len(sys.argv) > 1 else "CC-MAIN-2024-51"
-raw = subprocess.run(
+raw = subprocess.run(  # noqa: PLW1510
     [
         "curl",
         "-s",

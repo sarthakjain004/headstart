@@ -33,7 +33,7 @@ _LOC = re.compile(r'js-job-list-opening-loc[^>]*\btitle="([^"]*)"')
 _DEPT = re.compile(r'"rb-text-4">\s*([^<]+?)\s*</div>')
 _EMPTYPE = re.compile(r"js-job-list-opening-meta[^>]*>\s*<span>\s*([^<]+?)\s*</span>")
 _JSONLD = re.compile(
-    r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.S | re.I
+    r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE
 )
 _UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 4  # detail pages sit behind DataDome — keep the concurrency gentle

@@ -50,15 +50,17 @@ import time
 import urllib.parse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import UTC, datetime
 from itertools import zip_longest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
-from headstart.models import host_of  # noqa: E402 - one host rule, shared with the scrapers
-from headstart.scrapers.workday import (  # noqa: E402 - the DC list, single source of truth
+from headstart import http, liveness  # needs src on sys.path first
+from headstart.models import (  # one host rule, shared with the scrapers
+    host_of,
+)
+from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
 
@@ -148,8 +150,7 @@ class _HostGate:
             now = time.monotonic()
             was_banned = now < self._banned_until
             until = now + seconds
-            if until > self._banned_until:
-                self._banned_until = until
+            self._banned_until = max(self._banned_until, until)
             first = not was_banned
         if first:
             print(
@@ -363,7 +364,7 @@ def _retry_after_s(value):
         from email.utils import parsedate_to_datetime
 
         return max(0, int(parsedate_to_datetime(value).timestamp() - time.time()))
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -411,7 +412,7 @@ def _cloudscraper_fetch(method, url, **kw):
         return _cs_session().request(
             method, url, timeout=TIMEOUT, verify=False, headers=headers or None, **kw
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _note(f"cloudscraper-{type(e).__name__}")
         return None
 
@@ -574,7 +575,7 @@ def _post(url, json_body, headers):
     if r.status_code == 200:
         try:
             return 200, r.json()
-        except Exception:
+        except Exception:  # noqa: BLE001
             _note("json-parse-fail")
             return None, None  # 200 but unparseable -> treat as transient
     # Only ``p_workday`` posts, and its conclusive "not here" set is _WD_GONE (404/410/422) — those
@@ -601,7 +602,7 @@ def _len_of(body, *keys):
     """JSON list length: top-level list, or the first of `keys`. None if body won't parse."""
     try:
         data = json.loads(body)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     if isinstance(data, list):
         return len(data)
@@ -676,7 +677,7 @@ def _zoho_count(text):
         return None
     try:
         return len(json.loads(_html.unescape(m.group(1))))
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -809,7 +810,7 @@ def p_ripplehire(t, u):
         return UNKNOWN, None
     try:
         return LIVE, int(r2.json().get("totalJobCount", 0))
-    except Exception:
+    except Exception:  # noqa: BLE001
         return UNKNOWN, None
 
 
@@ -840,7 +841,7 @@ def p_darwinbox(t, u):
         if r.status_code == 200:
             try:
                 return LIVE, len(r.json().get("data") or [])
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return UNKNOWN, None
         # 404/other on this tld -> try the other tld
     return (DEAD, None) if dns_fails == 2 else (UNKNOWN, None)
@@ -890,7 +891,7 @@ def p_smartrecruiters(t, u):
     def count(b):
         try:
             d = json.loads(b)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
         tf = d.get("totalFound")
         return tf if isinstance(tf, int) else len(d.get("content") or [])
@@ -986,8 +987,12 @@ def p_rippling(t, u):
 # 63 jobs each — while 24 sampled known-good Boards every one carried their own domain. Without
 # this check those hosts read as LIVE with a plausible-looking 63 jobs and the scrape would file
 # Eightfold's own postings under the wrong company.
-_EF_VENDOR_DOMAIN = re.compile(r"/careers/job/[^<\s]*?[?&]domain=eightfold\.ai\b", re.I)
-_EF_TENANT_DOMAIN = re.compile(r"/careers/job/[^<\s]*?[?&]domain=([^&\"'<\s]+)", re.I)
+_EF_VENDOR_DOMAIN = re.compile(
+    r"/careers/job/[^<\s]*?[?&]domain=eightfold\.ai\b", re.IGNORECASE
+)
+_EF_TENANT_DOMAIN = re.compile(
+    r"/careers/job/[^<\s]*?[?&]domain=([^&\"'<\s]+)", re.IGNORECASE
+)
 
 
 def _eightfold_is_vendor_board(text):
@@ -1068,7 +1073,7 @@ def p_eightfold(t, u):
     if n:
         return LIVE, n
     child = re.search(
-        r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", text, re.I
+        r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", text, re.IGNORECASE
     )
     if child and "index" not in child.group(1).lower():
         cs, cbody = _get(child.group(1))
@@ -1114,12 +1119,12 @@ def p_join(t, u):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
-    m = re.search(rb'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', body, re.S)
+    m = re.search(rb'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', body, re.DOTALL)
     if not m:
         return UNKNOWN, None
     try:
         state = (json.loads(m.group(1)).get("props") or {}).get("pageProps") or {}
-    except Exception:
+    except Exception:  # noqa: BLE001
         return UNKNOWN, None
     # join.com serves a 200 Next.js error page (pageProps.statusCode 404 "Entity not found" / 410
     # "Resource deleted") for a company that's gone — a soft-404, so DEAD.
@@ -1130,7 +1135,7 @@ def p_join(t, u):
         return UNKNOWN, None
     return _classify(
         f"https://join.com/api/public/companies/{cid}/jobs?locale=en&page=1&pageSize=1",
-        lambda b: (lambda d: (d.get("pagination") or {}).get("rowCount"))(
+        lambda b: (lambda d: (d.get("pagination") or {}).get("rowCount"))(  # noqa: PLC3002
             json.loads(b)
         ),
     )
@@ -1202,7 +1207,7 @@ def main():
         _parse_args(sys.argv[1:])
     )
     ledger_dir.mkdir(parents=True, exist_ok=True)
-    today = date.today()
+    today = datetime.now(UTC).date()
     today_iso = today.isoformat()
 
     # Per ATS: carry the whole ledger forward (verdicts[ats]: tenant -> Verdict), and re-probe only
@@ -1266,7 +1271,7 @@ def main():
             else:
                 try:
                     verdict, jobs = PROBES[ats](tenant, url)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     _note(f"probe-raised-{type(e).__name__}")
                     verdict, jobs = UNKNOWN, None
             if verdict == UNKNOWN:

@@ -45,10 +45,10 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import log
+from headstart import board_description_gap, log
 from headstart.board_cost import ShardCost, ats_medians, read_shard_rows
 from headstart.board_cost import load as load_cost
 from headstart.board_cost import save as save_cost
@@ -58,7 +58,6 @@ from headstart.board_priority import save as save_priority
 from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
-from headstart import board_description_gap
 from headstart.ingest import REPO_ROOT, board_failures, observability
 from headstart.ingest.update_descriptions import settled_ids
 
@@ -143,7 +142,7 @@ def failures(args: argparse.Namespace) -> int:
     # braces: pre-change shard reports carry no boards_ok, and the corpus still clears any
     # board that produced lines.
     produced = alive | {board_of(j["id"]) for j in iter_jobs(args.jobs)}
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
 
     prev = board_failures.load(args.ledger)
     rows = board_failures.update(prev, gone, produced, now)
@@ -208,7 +207,7 @@ def gap(args: argparse.Namespace) -> int:
             # one Board) into a single row instead of two half-counts.
             counts[board_of(row["id"]).lower()] += 1
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     board_description_gap.save(args.ledger, dict(counts), today=today)
     jobs = sum(counts.values())
     _log.info(

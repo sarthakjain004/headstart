@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-import headstart.harvest as harvest
+from headstart import harvest
 from headstart.board_cost import read_shard_rows
 from headstart.config import CompanyRef
 from headstart.harvest import build_feed, scrape_all, write_feed

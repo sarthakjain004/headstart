@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from headstart.scrapers.registry import SCRAPERS, get_scraper  # noqa: E402
+from headstart.scrapers.registry import SCRAPERS, get_scraper
 
 MERGED = ROOT / "data" / "ats-tenants-merged"
 WORKERS = 16

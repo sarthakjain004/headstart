@@ -11,7 +11,6 @@ import json
 import sys
 
 import headstart.ingest.scrape_plan as ps
-
 from headstart.config import CompanyRef
 
 

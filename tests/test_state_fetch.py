@@ -291,4 +291,4 @@ def test_absent_locally_catches_a_partial_fetch(tmp_path: Path) -> None:
     for rel in landed:
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x", encoding="utf-8")
-    assert sf.absent_locally(wanted, tmp_path) == [sorted(wanted)[0]]
+    assert sf.absent_locally(wanted, tmp_path) == [min(wanted)]

@@ -15,7 +15,7 @@ pytest.importorskip("langdetect")
 
 # Imported after the gates above, not at the top: the module pulls the ML stack, which
 # the quality CI job does not install — this must skip rather than error.
-import headstart.ingest.embed_run as er  # noqa: E402
+import headstart.ingest.embed_run as er
 
 
 def _padded_cost(order: list[int], tokens: list[int], batch: int) -> int:

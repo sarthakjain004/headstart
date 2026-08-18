@@ -36,16 +36,15 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping
 
-from headstart import log
+from headstart import board_description_gap, log
 from headstart.board_cost import BoardCost, costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import board_identity, load_active_companies
-from headstart import board_description_gap
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
@@ -127,7 +126,7 @@ def _gated_boards(
     ATS's median by :func:`costs_for`, and gating on that would drop a Board for its ATS's
     reputation before it ever had a record of its own.
     """
-    today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = today or datetime.now(UTC).strftime("%Y-%m-%d")
     gated: dict[str, float] = {}
     for cost_key, priority_key in identities:
         row = cost_rows.get(cost_key)
@@ -149,8 +148,8 @@ def _days_since(updated_at: str, today: str) -> float:
     """
     fmt = "%Y-%m-%d"
     try:
-        then = datetime.strptime(updated_at, fmt)
-        now = datetime.strptime(today, fmt)
+        then = datetime.strptime(updated_at, fmt)  # noqa: DTZ007
+        now = datetime.strptime(today, fmt)  # noqa: DTZ007
     except (TypeError, ValueError):
         return float("inf")
     return float((now - then).days)

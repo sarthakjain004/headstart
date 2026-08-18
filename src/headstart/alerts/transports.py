@@ -58,7 +58,7 @@ class Transport:
     name: str
     selects: Callable[[Subscription], bool]
     send: Callable[
-        [Subscription, list[dict[str, Any]], "Payload", str, Mapping[str, str]], None
+        [Subscription, list[dict[str, Any]], Payload, str, Mapping[str, str]], None
     ]
     needs: tuple[str, ...] = field(default_factory=tuple)
 
@@ -70,7 +70,7 @@ class Transport:
 def _send_telegram(
     sub: Subscription,
     jobs: list[dict[str, Any]],
-    payload: "Payload",
+    payload: Payload,
     space: str,
     config: Mapping[str, str],
 ) -> None:
@@ -85,7 +85,7 @@ def _send_telegram(
 def _send_email(
     sub: Subscription,
     jobs: list[dict[str, Any]],
-    payload: "Payload",
+    payload: Payload,
     space: str,
     config: Mapping[str, str],
 ) -> None:

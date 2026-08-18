@@ -39,7 +39,7 @@ def test_an_attachment_goes_as_a_multipart_document_after_the_messages():
         "sendMessage",
         "sendDocument",
     ]
-    url, body, headers = calls[-1]
+    _url, body, headers = calls[-1]
     assert headers["Content-Type"].startswith("multipart/form-data; boundary=")
     assert b"xlsx-bytes" in body
     assert b'name="chat_id"' in body and b"4242" in body

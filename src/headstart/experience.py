@@ -106,19 +106,25 @@ _DESC_PATTERNS = [
         + _YEARS
         + _GAP
         + "experience",
-        re.I,
+        re.IGNORECASE,
     ),
     # "experience" then a range (reversed): "Experience: 8 – 12 Years"
     re.compile(
         "experience" + _GAP + r"(\d{1,2})\s*(?:to|-|–|—)\s*(\d{1,2})\s*\+?\s*" + _YEARS,
-        re.I,
+        re.IGNORECASE,
     ),
     # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
-    re.compile(r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _GAP + "experience", re.I),
+    re.compile(
+        r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _GAP + "experience", re.IGNORECASE
+    ),
     # reversed single: "experience of 5+ years", "Experience: 5 years"
-    re.compile("experience" + _GAP + r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS, re.I),
+    re.compile(
+        "experience" + _GAP + r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS, re.IGNORECASE
+    ),
     # "5+ years in software testing", "7 years of professional engineering", "4+ years building …"
-    re.compile(r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _CONN + _WORDS + _WORK, re.I),
+    re.compile(
+        r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _CONN + _WORDS + _WORK, re.IGNORECASE
+    ),
 ]
 
 # The work-word patterns: the ones that match without the literal word "experience" nearby, so only
@@ -133,7 +139,7 @@ _WORK_WORD_PATTERNS = {i for i, p in enumerate(_DESC_PATTERNS) if _WORK in p.pat
 _NARRATIVE_BEFORE = re.compile(
     r"\b(?:spent|combined|celebrat\w*|founded|established|history|anniversar\w*|"
     r"vest\w*|sabbatical|tenure|runway)\b[\w\s,'’-]{0,25}$",
-    re.I,
+    re.IGNORECASE,
 )
 # Case-sensitive **on purpose**: "at Palantir" is tenure, but "at a startup" / "at the company" are
 # ordinary requirement prose, and under re.I the `[A-Z]` would match both and discard a real number.
@@ -145,7 +151,7 @@ _NARRATIVE_AFTER = re.compile(r"^\s*(?:[Aa][Gg][Oo]\b|at\s+[A-Z])")
 # bug, for every pattern at once and for separators the range patterns never enumerate: "2 ~ 4",
 # "between 2 and 4". `and` is safe here only because the digit must sit immediately before it —
 # "3 year and 10 year anniversary" has "year" in between, so it does not read as a range.
-_RANGE_TAIL = re.compile(r"(\d{1,2})\s*(?:-|–|—|~|to|or|and)\s*$", re.I)
+_RANGE_TAIL = re.compile(r"(\d{1,2})\s*(?:-|–|—|~|to|or|and)\s*$", re.IGNORECASE)
 
 
 def _is_narrative(text: str, match: re.Match) -> bool:
@@ -200,17 +206,22 @@ _SENIORITY = [
     (
         re.compile(
             r"\b(director|vice[\s-]?president|\bvp\b|chief|\bcto\b|\bceo\b|head of|principal|distinguished|fellow)\b",
-            re.I,
+            re.IGNORECASE,
         ),
         10,
     ),
-    (re.compile(r"\b(lead|staff|architect|expert)\b", re.I), 7),
-    (re.compile(r"\b(senior|mid[\s-]?senior|\bsr\b|experienced|executive)\b", re.I), 5),
-    (re.compile(r"\b(associate|mid[\s_-]?level|intermediate)\b", re.I), 3),
+    (re.compile(r"\b(lead|staff|architect|expert)\b", re.IGNORECASE), 7),
+    (
+        re.compile(
+            r"\b(senior|mid[\s-]?senior|\bsr\b|experienced|executive)\b", re.IGNORECASE
+        ),
+        5,
+    ),
+    (re.compile(r"\b(associate|mid[\s_-]?level|intermediate)\b", re.IGNORECASE), 3),
     (
         re.compile(
             r"\b(intern|internship|trainee|graduate|\bgrad\b|student|entry[\s_-]?level|junior|\bjr\b|apprentice|fresher|early[\s-]?career)\b",
-            re.I,
+            re.IGNORECASE,
         ),
         0,
     ),
@@ -222,7 +233,7 @@ _SENIORITY = [
 _LEVEL = re.compile(
     r"\b(?:engineer|developer|programmer|analyst|scientist|architect|sde|swe)\s*"
     r"(iii|ii|iv|i|v|[1-5])\b",
-    re.I,
+    re.IGNORECASE,
 )
 _LEVEL_YEARS = {
     "i": 0,

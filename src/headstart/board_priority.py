@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import csv
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from headstart.config import CompanyRef
@@ -91,7 +92,7 @@ def update(
     Rows decayed below ``prune_below`` drop out; exploration re-adds a board that hires
     tech again.
     """
-    today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = today or datetime.now(UTC).strftime("%Y-%m-%d")
     rows = dict(prev)
     for board in snapshot_boards:
         current = tech_counts.get(board, 0)
@@ -107,11 +108,11 @@ def update(
 
 
 def _gap_picks(
-    companies: list["CompanyRef"],
+    companies: list[CompanyRef],
     unsettled: Mapping[str, int],
     taken: set[str],
     slots: int,
-) -> list["CompanyRef"]:
+) -> list[CompanyRef]:
     """The gap quota's boards: cheapest class first, then most unsettled Jobs (ADR-0062).
 
     Listing-only ATSes come first because their descriptions arrive *with the listing* — one
@@ -120,8 +121,8 @@ def _gap_picks(
     keeps the makespan risk away from the first runs. Within a class, the Board holding the most
     unsettled Jobs goes first, so each slot repairs as many rows as it can.
     """
-    from headstart.config import board_identity
     from headstart.board_description_gap import key_for
+    from headstart.config import board_identity
     from headstart.scrapers.registry import detail_pass_atses
 
     detail_pass = detail_pass_atses()
@@ -138,7 +139,7 @@ def _gap_picks(
 
 
 def pick_boards(
-    companies: list["CompanyRef"],
+    companies: list[CompanyRef],
     scores: Mapping[str, float],
     max_boards: int,
     *,
@@ -146,7 +147,7 @@ def pick_boards(
     unsettled: Mapping[str, int] | None = None,
     gap_frac: float = GAP_FRAC,
     rng: random.Random | None = None,
-) -> list["CompanyRef"]:
+) -> list[CompanyRef]:
     """The run's slice: scored boards first (score desc), a gap quota, then random exploration.
 
     The head gets ``max_boards - round(max_boards * explore_frac)`` slots of scored boards

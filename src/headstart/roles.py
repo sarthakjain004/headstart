@@ -134,7 +134,7 @@ class WatchRole:
     family, and overlaps its siblings (a "Senior Backend QA Engineer" counts under both).
     """
 
-    __slots__ = ("name", "label", "parent", "_patterns")
+    __slots__ = ("_patterns", "label", "name", "parent")
 
     def __init__(self, name: str, label: str, parent: str, patterns: list[str]) -> None:
         self.name, self.label, self.parent = name, label, parent

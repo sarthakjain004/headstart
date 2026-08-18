@@ -247,7 +247,7 @@ async def sweep(labels: list[str], concurrency: int) -> set[str]:
                 except dns.resolver.NoAnswer:
                     verdict = "noanswer"
                     break
-                except Exception:
+                except Exception:  # noqa: BLE001
                     res = resolvers[(i + attempt + 1) % len(resolvers)]
         async with lock:
             done["n"] += 1

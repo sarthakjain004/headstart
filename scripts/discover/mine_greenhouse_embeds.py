@@ -66,7 +66,7 @@ def get(url, tries=4):
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=TIMEOUT, context=CTX) as r:
                 return r.read().decode("utf-8", "replace")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return None
 

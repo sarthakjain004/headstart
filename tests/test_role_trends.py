@@ -21,11 +21,13 @@ pytest.importorskip("lancedb")  # [embed] extra — not installed in CI's qualit
 np = pytest.importorskip("numpy")
 pa = pytest.importorskip("pyarrow")
 
-import lancedb  # noqa: E402
+from datetime import UTC
 
-import headstart.ingest.role_trends as role_trends  # noqa: E402
-from headstart import roles  # noqa: E402
-from headstart.search import PROD_TABLE  # noqa: E402
+import lancedb
+
+from headstart import roles
+from headstart.ingest import role_trends
+from headstart.search import PROD_TABLE
 
 _DIM = 4
 
@@ -303,10 +305,10 @@ def test_new_metric_counts_only_rows_first_seen_inside_the_window(
 ):
     """Stock answers "how big is this field"; new answers "is it hiring this week" (ADR-0051).
     A row without a stamp (pre-ADR-0031) is stock but never new — absence of evidence."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     _centroids(tmp_path / "rc", tmp_path / "families.json")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fresh = (now - timedelta(days=1)).isoformat(timespec="seconds")
     stale = (now - timedelta(days=30)).isoformat(timespec="seconds")
     x = [1.0, 0.0, 0.0, 0.0]
@@ -585,7 +587,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
             ]
         ),
     )
-    counts, non_tech, assigned = role_trends.count_groups(
+    _counts, non_tech, assigned = role_trends.count_groups(
         rows, centroids, families, watchlist, "2026-01-01T00:00:00+00:00"
     )
     assert non_tech == 1

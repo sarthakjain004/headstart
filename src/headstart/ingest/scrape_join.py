@@ -245,8 +245,10 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
         "Scrape fan-out",
         [
             f"- {lines:,} job lines across {ats_files} ATS files",
-            f"- {len(reports)} shards, slowest **{slowest_seconds / 60:.1f} min**, "
-            f"worst single board **{worst_board:.0f}s**",
+            (
+                f"- {len(reports)} shards, slowest **{slowest_seconds / 60:.1f} min**, "
+                f"worst single board **{worst_board:.0f}s**"
+            ),
             f"- {errors} board errors, {sum(retries.values())} retries"
             + (
                 f" ({', '.join(f'{k} {v}' for k, v in sorted(retries.items()))})"

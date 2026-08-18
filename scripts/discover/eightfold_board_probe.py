@@ -38,18 +38,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http  # noqa: E402 - needs src on sys.path first
+from headstart import http  # needs src on sys.path first
 
 UA = "headstart/0.1 (job-board reader)"
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
 _CHILD_SITEMAP = re.compile(
-    r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", re.I
+    r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", re.IGNORECASE
 )
 # Eightfold's own board, served as the fallthrough for a host with no tenant behind it. On the
 # careers page it shows up as one of these group ids; in the sitemap, as job URLs whose
 # `?domain=` is eightfold.ai rather than the tenant's own. Either way the host has no Board.
 _VENDOR_GROUPS = {"volkscience.com", "eightfold.ai"}
-_SITEMAP_DOMAIN = re.compile(r"/careers/job/[^<\s]*?[?&]domain=([^&\"'<\s]+)", re.I)
+_SITEMAP_DOMAIN = re.compile(
+    r"/careers/job/[^<\s]*?[?&]domain=([^&\"'<\s]+)", re.IGNORECASE
+)
 
 
 def _is_vendor_sitemap(text: str) -> bool:
@@ -207,13 +209,13 @@ def main() -> None:
 
     raw: list[str] = []
     for f in args.files:
-        raw.extend(open(f, encoding="utf-8", errors="replace").read().split())
+        raw.extend(open(f, encoding="utf-8", errors="replace").read().split())  # noqa: SIM115
     if not args.files:
         raw.extend(sys.stdin.read().split())
     hosts = list(dict.fromkeys(h.strip().lower() for h in raw if h.strip()))
     print(f"probing {len(hosts)} hosts with {args.workers} workers", flush=True)
 
-    out = open(args.out, "w", newline="", encoding="utf-8")
+    out = open(args.out, "w", newline="", encoding="utf-8")  # noqa: SIM115
     writer = csv.DictWriter(
         out, fieldnames=["host", "group_id", "surface", "jobs", "note"]
     )

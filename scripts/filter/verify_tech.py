@@ -71,7 +71,7 @@ def _judge_batch(jobs: list[dict]) -> list[tuple[bool, str]]:
         f"{i}. {j.get('title', '')}  (dept: {j.get('department') or 'n/a'})"
         for i, j in enumerate(jobs)
     )
-    proc = subprocess.run(
+    proc = subprocess.run(  # noqa: PLW1510
         [
             "claude",
             "-p",

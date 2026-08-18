@@ -20,8 +20,8 @@ import csv
 import errno
 import re
 import socket
-import threading
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse

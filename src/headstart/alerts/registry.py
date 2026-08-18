@@ -65,7 +65,7 @@ class Registry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Registry":
+    def from_dict(cls, data: dict[str, Any]) -> Registry:
         raw = data.get("pending")
         pending = {}
         if isinstance(raw, dict):

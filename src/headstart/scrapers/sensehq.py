@@ -8,7 +8,7 @@ scraper repo:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from headstart.models import Job, html_to_text, is_remote
@@ -44,7 +44,7 @@ class SenseHQScraper(BaseScraper):
             posted = None
             if r.get("created_on"):
                 posted = datetime.fromtimestamp(
-                    r["created_on"] / 1000, tz=timezone.utc
+                    r["created_on"] / 1000, tz=UTC
                 ).isoformat()
             location = r.get("location")
             workplace = r.get("workplace_type") or ""

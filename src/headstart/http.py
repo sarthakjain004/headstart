@@ -37,7 +37,7 @@ from curl_cffi.requests import RequestsError  # re-exported for callers' except 
 
 from headstart import log, spare_egress
 
-__all__ = ["fetch", "fetch_async", "session", "RequestsError"]
+__all__ = ["RequestsError", "fetch", "fetch_async", "session"]
 
 _log = log.get(__name__)
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import consolidate_harvested_lists as C  # noqa: E402
+import consolidate_harvested_lists as C
 
 SRC = C.SRC
 BYP = C.OUT
@@ -37,7 +37,7 @@ def contribution(p: Path) -> tuple[int, int, int]:
     """(url_scan, columnar_scan, filename-keyed) slug counts — mirrors main()."""
     try:
         text = p.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 0, 0, 0
     url = len(list(C.url_scan(text)))
     col = len(list(C.columnar_scan(p, text)))
@@ -62,7 +62,7 @@ def first_line(p: Path) -> str:
         for ln in p.read_text(encoding="utf-8", errors="ignore").splitlines():
             if ln.strip():
                 return ln.strip()[:95]
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return ""
 

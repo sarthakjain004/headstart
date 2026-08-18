@@ -48,7 +48,7 @@ async def probe(host: str, res: dns.asyncresolver.Resolver) -> tuple[str, str, s
         answer = await res.resolve(host, "A", raise_on_no_answer=False)
     except dns.resolver.NXDOMAIN:
         return host, "nxdomain", ""
-    except Exception as exc:  # timeout / SERVFAIL / no nameservers
+    except Exception as exc:  # timeout / SERVFAIL / no nameservers  # noqa: BLE001
         return host, "error", type(exc).__name__
     chain = [
         str(item.target).rstrip(".").lower()

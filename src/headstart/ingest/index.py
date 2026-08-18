@@ -56,7 +56,7 @@ import argparse
 import json
 import shutil
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -66,13 +66,13 @@ import pyarrow as pa
 
 from headstart import log
 from headstart.corpus import iter_jobs
-from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     observability,
     read_id_list,
 )
+from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
@@ -81,8 +81,8 @@ from headstart.ingest.index_plan import (
     live_keep_set,
     plan_prune,
     plan_sync,
-    resolve_board,
     read_unauthoritative_boards,
+    resolve_board,
 )
 from headstart.search import PROD_TABLE
 
@@ -449,7 +449,7 @@ def sync(args: argparse.Namespace) -> int:
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
     # `sync` is the only place rows are ever added, so each row is stamped exactly once. A Job that
     # is evicted and later reappears is stamped afresh — it is newly visible again (ADR-0031).
-    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
     add_ids = sorted(plan.add)
     _log_ids("add", add_ids)
     for start in range(0, len(add_ids), _ADD_CHUNK):
@@ -484,8 +484,10 @@ def sync(args: argparse.Namespace) -> int:
         )
         + (
             [
-                f"- collapse guard withheld **{withheld:,}** evictions across "
-                f"**{len(plan.held)}** Boards that came back short"
+                (
+                    f"- collapse guard withheld **{withheld:,}** evictions across "
+                    f"**{len(plan.held)}** Boards that came back short"
+                )
             ]
             if plan.held
             else []
@@ -540,8 +542,10 @@ def prune(args: argparse.Namespace) -> int:
     observability.summary(
         "Index prune",
         [
-            f"- evicted **{len(evict):,}** ({len(off_board):,} off-Board, "
-            f"{len(duplicate):,} duplicate)",
+            (
+                f"- evicted **{len(evict):,}** ({len(off_board):,} off-Board, "
+                f"{len(duplicate):,} duplicate)"
+            ),
             f"- served table now holds **{final:,}** rows",
         ],
     )

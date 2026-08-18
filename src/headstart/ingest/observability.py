@@ -117,7 +117,7 @@ def percentiles(values: list[float]) -> dict[str, float]:
     if not values:
         return {}
     ordered = sorted(values)
-    at = lambda q: ordered[min(len(ordered) - 1, int(q * len(ordered)))]  # noqa: E731
+    at = lambda q: ordered[min(len(ordered) - 1, int(q * len(ordered)))]
     return {
         "p50": round(at(0.50), 1),
         "p90": round(at(0.90), 1),

@@ -130,8 +130,10 @@ def _request_access(
         (chat_id, "Asked for access — you'll get a message once it's approved."),
         (
             registry.master,
-            f"{waiting.describe()} wants job alerts.\n"
-            f"/allow {chat_id}   or   /deny {chat_id}",
+            (
+                f"{waiting.describe()} wants job alerts.\n"
+                f"/allow {chat_id}   or   /deny {chat_id}"
+            ),
         ),
     ]
 

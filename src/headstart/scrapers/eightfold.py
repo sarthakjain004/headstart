@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from headstart import http, log
@@ -58,13 +58,13 @@ _MAX_INDEX_CHILDREN = 50  # sitemap-fallback: child sitemaps to follow from an i
 
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
 # sitemap-fallback patterns
-_JOB_LOC = re.compile(r"<loc>\s*([^<\s]*/careers/job/[^<\s]+?)\s*</loc>", re.I)
+_JOB_LOC = re.compile(r"<loc>\s*([^<\s]*/careers/job/[^<\s]+?)\s*</loc>", re.IGNORECASE)
 _CHILD_SITEMAP = re.compile(
-    r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", re.I
+    r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", re.IGNORECASE
 )
 _POSITION_ID = re.compile(r"/careers/job/(\d+)")
 _LD_BLOCK = re.compile(
-    r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.S
+    r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.DOTALL
 )
 
 # workLocationOption -> remote. "hybrid" stays None (neither purely remote nor onsite).
@@ -465,7 +465,7 @@ def _ts_to_iso(ts: Any) -> str | None:
         return None
     if seconds <= 0:
         return None
-    return datetime.fromtimestamp(seconds, tz=timezone.utc).date().isoformat()
+    return datetime.fromtimestamp(seconds, tz=UTC).date().isoformat()
 
 
 def _remote_from(option: Any) -> bool | None:

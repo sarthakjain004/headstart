@@ -2,6 +2,7 @@ import json
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -435,11 +436,10 @@ def test_darwinbox_browser_route_paginates_full_pages(monkeypatch):
 
 def test_darwinbox_no_wall_no_browser_raises_the_last_error(monkeypatch):
     """Without a 403 there is nothing to escalate: the last real error surfaces."""
+    from curl_cffi.requests import models
     from curl_cffi.requests.exceptions import HTTPError
 
     import headstart.scrapers.darwinbox as db
-
-    from curl_cffi.requests import models
 
     def _response(status, reason):
         r = models.Response()
@@ -1540,8 +1540,10 @@ def test_successfactors_reports_an_rss_stream_that_ended_early(monkeypatch):
         search=([], None),
         rss=(
             [("https://careers.voith.com/job/x/1/", "1")],
-            "the tenant's RSS feed aborted 2,097,152 bytes in — postings past that point "
-            "were not listed",
+            (
+                "the tenant's RSS feed aborted 2,097,152 bytes in — postings past that point "
+                "were not listed"
+            ),
         ),
     )
 
@@ -1801,7 +1803,7 @@ def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkey
 
     class _Resp:
         status_code = 403
-        headers: dict = {}
+        headers: ClassVar[dict] = {}
         text = ""
 
     monkeypatch.setattr(
@@ -1834,7 +1836,7 @@ def test_workday_opts_into_the_spare_egress_on_429(monkeypatch):
 
     class _Resp:
         status_code = 200
-        headers: dict = {}
+        headers: ClassVar[dict] = {}
 
         @staticmethod
         def json():

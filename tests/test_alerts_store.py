@@ -176,8 +176,10 @@ def test_allowlist_shapes(monkeypatch, body, expected):
         # A bare string is still the self-serve shape: invited, no Query of its own.
         (b'{"allowed": ["a@x.com"]}', [st.Invite("a@x.com", "", {})]),
         (
-            b'{"allowed": [{"email": "A@x.com", "query": " backend ",'
-            b' "filters": {"remote": "true", "bogus": "x"}}]}',
+            (
+                b'{"allowed": [{"email": "A@x.com", "query": " backend ",'
+                b' "filters": {"remote": "true", "bogus": "x"}}]}'
+            ),
             [st.Invite("a@x.com", "backend", {"remote": "true"})],
         ),
         # A default is carried *separately*, never folded into the entry's own Query:
@@ -187,8 +189,10 @@ def test_allowlist_shapes(monkeypatch, body, expected):
             [st.Invite("a@x.com", "", {}, "data engineer")],
         ),
         (
-            b'{"default_query": "data", "allowed": [{"email": "a@x.com",'
-            b' "query": "backend"}]}',
+            (
+                b'{"default_query": "data", "allowed": [{"email": "a@x.com",'
+                b' "query": "backend"}]}'
+            ),
             [st.Invite("a@x.com", "backend", {}, "data")],
         ),
         # One malformed entry is dropped; it must not deny everybody else.
@@ -335,7 +339,7 @@ def test_parse_counter_fails_closed_on_an_unreadable_file(monkeypatch):
     # get_profile collapses absent-and-unreadable would reset the lifetime cap on a blip.
     account = st.subscription_id("ada@example.com")
     _Hub({f"profiles/{account}.parses.json": b"not json"}).install(monkeypatch)
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017
         st.Store(REPO, TOKEN).parses_used(account)
 
 
@@ -354,14 +358,14 @@ def test_profile_delete_leaves_the_counter_file(monkeypatch):
 
 
 def _star(email="ada@example.com", job_id="greenhouse:acme:123", **fields):
-    defaults = dict(
-        title="Backend Engineer",
-        company="acme",
-        url="https://boards.greenhouse.io/acme/jobs/123",
-        location="Bengaluru",
-        remote=True,
-        salary="₹30L",
-    )
+    defaults = {
+        "title": "Backend Engineer",
+        "company": "acme",
+        "url": "https://boards.greenhouse.io/acme/jobs/123",
+        "location": "Bengaluru",
+        "remote": True,
+        "salary": "₹30L",
+    }
     defaults.update(fields)
     return st.SavedJob.create(email, job_id, **defaults)
 

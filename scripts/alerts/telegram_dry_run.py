@@ -21,9 +21,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from headstart.alerts import bot, digest, run, telegram, transports  # noqa: E402
-from headstart.alerts.registry import Registry  # noqa: E402
-from headstart.alerts.store import Subscription, chat_subscription_id  # noqa: E402
+from headstart.alerts import bot, digest, run, telegram, transports
+from headstart.alerts.registry import Registry
+from headstart.alerts.store import Subscription, chat_subscription_id
 
 MASTER, ADA = "1000", "2000"
 

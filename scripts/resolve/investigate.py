@@ -61,7 +61,7 @@ HOST = re.compile(
     r"|([a-z0-9-]+)\.skillate\.com"
     r"|([a-z0-9-]+)\.turbohire\.co|([a-z0-9-]+)\.fa\.ocs\.oraclecloud\.com"
     r"|smartrecruiters\.com/([a-z0-9-]+)",
-    re.I,
+    re.IGNORECASE,
 )
 JUNK = {"www", "careers", "jobs", "for", "en", "job", "embed", "apply", "go", "app"}
 
@@ -72,7 +72,7 @@ def get(url, as_json=False):
         if r.status_code >= 400:
             return None
         return r.json() if as_json else r.text
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -96,7 +96,7 @@ def probe_clean(name, domain):
                 try:
                     if count(d) > 0:
                         hits.add(f"{ats}:{s}")
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
     return hits
 

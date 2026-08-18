@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http  # noqa: E402 - needs src on sys.path first
+from headstart import http  # needs src on sys.path first
 
 UA = "headstart/0.1 (job-board reader)"
 PORTALS = ["app.eightfold.ai", "app-eu.eightfold.ai", "app-wu.eightfold.ai"]
@@ -114,13 +114,13 @@ def main() -> None:
 
     raw: list[str] = []
     for f in args.files:
-        raw.extend(open(f, encoding="utf-8", errors="replace").read().split())
+        raw.extend(open(f, encoding="utf-8", errors="replace").read().split())  # noqa: SIM115
     if not args.files:
         raw.extend(sys.stdin.read().split())
     domains = [d for d in dict.fromkeys(x.strip().lower() for x in raw if x.strip())]
     print(f"sweeping {len(domains)} domains over {len(PORTALS)} portals", flush=True)
 
-    out = open(args.out, "w", newline="", encoding="utf-8")
+    out = open(args.out, "w", newline="", encoding="utf-8")  # noqa: SIM115
     writer = csv.DictWriter(out, fieldnames=["domain", "portal", "jobs", "first_title"])
     writer.writeheader()
     out.flush()

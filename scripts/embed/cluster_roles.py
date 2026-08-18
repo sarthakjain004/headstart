@@ -27,14 +27,14 @@ import json
 import re
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from headstart import log, roles  # noqa: E402
+from headstart import log, roles
 
 _log = log.get("headstart.cluster_roles")
 
@@ -48,8 +48,31 @@ _TOP_TITLES = 30
 # (Numerals and single letters never reach here: the tokenizer is letters-only and one-char
 # tokens are dropped at the call site.)
 _LABEL_STOPWORDS = frozenset(
-    "senior sr jr junior staff lead principal head chief intern trainee associate"
-    " ii iii iv the an of and or remote hybrid onsite".split()
+    [
+        "senior",
+        "sr",
+        "jr",
+        "junior",
+        "staff",
+        "lead",
+        "principal",
+        "head",
+        "chief",
+        "intern",
+        "trainee",
+        "associate",
+        "ii",
+        "iii",
+        "iv",
+        "the",
+        "an",
+        "of",
+        "and",
+        "or",
+        "remote",
+        "hybrid",
+        "onsite",
+    ]
 )
 
 
@@ -156,7 +179,7 @@ def main() -> int:
             "k": k,
             "dim": int(centroids.shape[1]),
             "normalized": True,
-            "fitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "fitted_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "fitted_on_rows": len(vectors),
             "silhouette_sampled": round(score, 4),
             "clusters": clusters,

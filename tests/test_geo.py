@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.geo import STATES, CITIES, DROPDOWN, REGIONS, where
+from headstart.geo import CITIES, DROPDOWN, REGIONS, STATES, where
 
 # Real-shaped location strings: (location, in_india, cities_it_belongs_to)
 _ROWS = [

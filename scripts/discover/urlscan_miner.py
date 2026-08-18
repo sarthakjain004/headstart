@@ -55,7 +55,7 @@ def get(url: str) -> dict | None:
                 delay = min(delay * 2, 180)
                 continue
             return None
-        except Exception:
+        except Exception:  # noqa: BLE001
             time.sleep(delay)
             delay = min(delay * 2, 180)
     return None

@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("pyarrow")
 
-from headstart.ingest import role_assignments as ra  # noqa: E402
+from headstart.ingest import role_assignments as ra
 
 
 def test_transitions_counts_only_rows_present_on_both_sides():

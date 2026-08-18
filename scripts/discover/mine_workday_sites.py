@@ -38,22 +38,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart.scrapers.workday import INSTANCES  # noqa: E402 - needs src on sys.path
+import urllib.error
+import urllib.request
 
-import urllib.error  # noqa: E402
-import urllib.request  # noqa: E402
+from headstart.scrapers.workday import INSTANCES  # needs src on sys.path
 
 LEDGER = ROOT / "data" / "validate" / "liveness" / "workday.csv"
 POOL = ROOT / "data" / "ats-tenants-merged" / "workday.csv"
 UA = "HeadStart-discovery/0.1 (workday site enumeration)"
 TIMEOUT = 20
 BOARD_RE = re.compile(
-    r"^https?://([a-z0-9][a-z0-9-]*)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)", re.I
+    r"^https?://([a-z0-9][a-z0-9-]*)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)",
+    re.IGNORECASE,
 )
 # robots.txt lists each public site twice; either line is enough, both are parsed for safety.
-ALLOW_RE = re.compile(r"^Allow:\s*/([^/\s]+)/\s*$", re.I | re.M)
+ALLOW_RE = re.compile(r"^Allow:\s*/([^/\s]+)/\s*$", re.IGNORECASE | re.MULTILINE)
 SITEMAP_RE = re.compile(
-    r"^Sitemap:\s*https?://[^/]+/([^/\s]+)/siteMap\.xml\s*$", re.I | re.M
+    r"^Sitemap:\s*https?://[^/]+/([^/\s]+)/siteMap\.xml\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 # Path segments Workday serves that are not careers sites.
 NOT_A_SITE = {"refreshFacet", "private", "talentcommunity", "wday", "cxs", "assets"}
@@ -100,7 +102,7 @@ def fetch_robots(tenant, pod):
                 BACKOFF.trip(20 * (attempt + 1))
                 continue
             return e.code, ""  # 422 (wrong pod) / 404 are real verdicts, not failures
-        except Exception:
+        except Exception:  # noqa: BLE001
             time.sleep(2 * (attempt + 1))
     return None, ""
 

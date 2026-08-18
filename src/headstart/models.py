@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -87,4 +87,4 @@ def epoch_ms_to_iso(ms: int | None) -> str | None:
     """Convert a millisecond Unix timestamp to an ISO-8601 UTC string."""
     if ms is None:
         return None
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()

@@ -80,7 +80,8 @@ TLDS = (
 
 # Environment/instance suffixes on a name-like SF company id: BurberryProd, atlascopcoP.
 _SUFFIX = re.compile(
-    r"(prod|prd|production|test|tst|stage|stg|dev|corp|global|ext|dp|p|t)+$", re.I
+    r"(prod|prd|production|test|tst|stage|stg|dev|corp|global|ext|dp|p|t)+$",
+    re.IGNORECASE,
 )
 _OPAQUE = re.compile(r"^C?\d")  # numeric customer ids can't be derived from
 _LABEL_OK = re.compile(r"^[a-z0-9][a-z0-9-]{2,40}$")
@@ -132,7 +133,7 @@ def main(argv: list[str]) -> int:
         for row in csv.DictReader(csb.open(encoding="utf-8")):
             cid = (row.get("company") or "").strip()
             if cid and not _OPAQUE.match(cid):
-                ids.add((_SUFFIX.sub("", cid.lower()) or cid.lower()))
+                ids.add(_SUFFIX.sub("", cid.lower()) or cid.lower())
 
     labels = {label for label in (keys | ids) if _LABEL_OK.match(label)}
     print(

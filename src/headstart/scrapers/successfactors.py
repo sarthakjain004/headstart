@@ -56,12 +56,14 @@ _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 _JOB_PATH = re.compile(r"(/job/[^\s\"'<>?#]+/(\d+)/)")
 
 _LD_BLOCK = re.compile(
-    r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.S
+    r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.DOTALL
 )
 _ITEMPROP_TITLE = re.compile(r'<[^>]*itemprop="title"[^>]*>([^<]*)')
 _OG_TITLE = re.compile(r'property="og:title"\s+content="([^"]*)"')
-_TITLE_TAG = re.compile(r"<title>([^<|]*)", re.I)
-_DESC_OPEN = re.compile(r'<(span|div)\b[^>]*itemprop="description"[^>]*>', re.I)
+_TITLE_TAG = re.compile(r"<title>([^<|]*)", re.IGNORECASE)
+_DESC_OPEN = re.compile(
+    r'<(span|div)\b[^>]*itemprop="description"[^>]*>', re.IGNORECASE
+)
 
 # Vanity-host labels that are the board, not the company: jobs.sap.com -> "sap".
 _BOARD_HOST_LABELS = {"jobs", "careers", "career", "jobsearch", "jobdetails"}
@@ -425,7 +427,7 @@ def _csb_description(page: str) -> str | None:
 def _matched_content(page: str, open_match: re.Match) -> str:
     """Inner HTML of the element opened at ``open_match``, by open/close tag counting."""
     tag = open_match.group(1).lower()
-    token = re.compile(rf"<{tag}\b|</{tag}\s*>", re.I)
+    token = re.compile(rf"<{tag}\b|</{tag}\s*>", re.IGNORECASE)
     depth = 1
     for match in token.finditer(page, open_match.end()):
         depth += -1 if match.group(0).startswith("</") else 1
@@ -460,7 +462,7 @@ def _careersite_prop(page: str, prop: str) -> str | None:
     in a nested element (``<span ...><p id="job-location">Durham, NC, US</p></span>``), where a
     plain label-value regex captures only the whitespace before the nested tag."""
     match = re.search(
-        rf'data-careersite-propertyid="{prop}"[^>]*>(.*?)</span>', page, re.S
+        rf'data-careersite-propertyid="{prop}"[^>]*>(.*?)</span>', page, re.DOTALL
     )
     if not match:
         return None
@@ -500,7 +502,7 @@ def _csb_posted_at(page: str) -> str | None:
     for value, formats in candidates:
         for fmt in formats:
             try:
-                return datetime.strptime(value, fmt).date().isoformat()
+                return datetime.strptime(value, fmt).date().isoformat()  # noqa: DTZ007
             except (TypeError, ValueError):
                 continue
     return None

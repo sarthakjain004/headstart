@@ -26,7 +26,7 @@ constants and both filter builders stay importable (and unit-testable) without t
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -218,9 +218,9 @@ def build_filter(
         # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
         # '21-Apr-2026' sort lexicographically ABOVE any ISO cutoff and would otherwise
         # leak into every window.
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=int(posted_within))
-        ).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(UTC) - timedelta(days=int(posted_within))).strftime(
+            "%Y-%m-%d"
+        )
         filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
 
     # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
@@ -251,9 +251,9 @@ def build_filter(
         # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
         # ourselves, so it is always ISO-8601 UTC. Rows predating the column are null, and
         # `NULL >= '…'` is never true, so they drop out on their own (ADR-0031).
-        since = (
-            datetime.now(timezone.utc) - timedelta(hours=int(seen_within))
-        ).isoformat(timespec="seconds")
+        since = (datetime.now(UTC) - timedelta(hours=int(seen_within))).isoformat(
+            timespec="seconds"
+        )
         filters.append(f"first_seen >= '{since}'")
     if first_seen_after and has_first_seen:
         # The alerts run's exact cutoff (ADR-0035), beside the UI's hour-granular window: a

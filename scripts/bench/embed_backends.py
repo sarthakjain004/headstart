@@ -185,8 +185,8 @@ def main() -> int:
     # Version provenance is load-bearing: the backend extras drag transformers down to 4.5x
     # (optimum-intel caps <4.58) while production runs 5.x, so a result measured here may not
     # be a result production can adopt. Record what actually resolved.
-    import transformers
     import sentence_transformers
+    import transformers
 
     print(
         f"threads={torch.get_num_threads()}"

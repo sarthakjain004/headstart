@@ -28,9 +28,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-import numpy as np  # noqa: E402
+import numpy as np
 
-from headstart import roles  # noqa: E402
+from headstart import roles
 
 _DB = Path("data/lancedb")
 _CENTROIDS = Path("data/state/role_centroids")

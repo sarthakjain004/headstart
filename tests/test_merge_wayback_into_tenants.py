@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "merge"))
 
-import merge_wayback_into_tenants as mw  # noqa: E402
+import merge_wayback_into_tenants as mw
 
 
 def write_csv(path: Path, header, rows):

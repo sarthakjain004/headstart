@@ -31,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import candidate_slugs  # noqa: E402
+from fingerprint import candidate_slugs
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 RESULTS = ROOT / "data" / "resolve" / "fingerprint_results.csv"
@@ -89,7 +89,7 @@ def get_text(url, cap=200000):
                     break
                 buf += chunk
             return bytes(buf).decode("utf-8", "replace")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -99,12 +99,12 @@ def get_json(url):
         return None
     try:
         return json.loads(t)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
 def title_of(html):
-    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.I | re.S)
+    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.IGNORECASE | re.DOTALL)
     return re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
 
 
@@ -127,7 +127,7 @@ def probe_clean(name, domain):
                 try:
                     if count(d) > 0:
                         hits.add((ats, s))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
     return hits
 
