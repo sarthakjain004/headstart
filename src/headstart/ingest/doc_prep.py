@@ -9,22 +9,20 @@ doc-text builder, and the token-length **Bucket** are byte-identical across the 
 live here once instead of being hand-copied. ``embed_run.py`` re-exports these for its own
 callers and tests.
 
-Pure and ML-free: langdetect + regex only, no torch/sentence-transformers, so the planner and
-unit tests import it without the encoder stack. Tokenization (the one step that needs the
-model's tokenizer) stays with each caller; this module only classifies a known token count into
-a Bucket.
+Pure and ML-free: regex only at import time, no torch/sentence-transformers, so the planner and
+unit tests import it without the encoder stack. ``langdetect`` is the one non-base dependency and
+is imported *inside* :func:`is_english`, so everything else here — ``META_FIELDS``,
+``DERIVATIONS_VERSION``, ``to_meta`` — is importable on a base install too. Tokenization (the one
+step that needs the model's tokenizer) stays with each caller; this module only classifies a known
+token count into a Bucket.
 """
 
 from __future__ import annotations
 
 import re
 
-from langdetect import DetectorFactory, LangDetectException, detect
-
 from headstart.experience import extract
 from headstart.search import DOC_PREFIX
-
-DetectorFactory.seed = 0  # make langdetect deterministic
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 _MD_SYNTAX = re.compile(
@@ -79,7 +77,19 @@ def clean_markdown(text: str) -> str:
 
 
 def is_english(title: str, description: str) -> bool:
-    """English gate. Detect on title + a description sample (full text is needless and slow)."""
+    """English gate. Detect on title + a description sample (full text is needless and slow).
+
+    ``langdetect`` is imported here rather than at module scope so the rest of this module —
+    ``META_FIELDS``, ``DERIVATIONS_VERSION``, ``to_meta`` — stays importable on a base install.
+    CI's quality job installs base deps only, and a top-level import made every consumer of those
+    constants uninstallable there, which is how the ADR-0061 refresh tests came to be skipped.
+    The import is cached after the first call, so the per-Doc cost is a dict lookup.
+    """
+    from langdetect import DetectorFactory, LangDetectException, detect
+
+    DetectorFactory.seed = (
+        0  # deterministic; idempotent, so setting it per call is free
+    )
     try:
         return detect(f"{title} {description[:500]}") == "en"
     except LangDetectException:
