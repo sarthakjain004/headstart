@@ -67,4 +67,5 @@ supersedes it and note the supersession in both.
 | [0057](0057-record-family-assignments-and-report-reassignment.md) | Record each row's family assignment, and report the rows that moved | 2026-08-16 |
 | [0058](0058-consecutive-gone-quarantine.md) | Confirmed-dead boards quarantine via a consecutive-gone ledger in `data/state/` | 2026-08-18 |
 | [0059](0059-two-board-keyspaces.md) | The priority ledger keys on `board_key`, the cost ledger on `{ats}:{slug}` | 2026-08-18 |
+| [0060](0060-narrative-guards-for-the-work-word-patterns.md) | The work-word patterns carry narrative guards and their own requirement ceiling | 2026-08-18 |
 | [0061](0061-refreshable-metadata.md) | Stored metadata is refreshable — facts reconcile, derivations re-derive on a version bump | 2026-08-18 |

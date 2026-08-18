@@ -157,6 +157,116 @@ def test_description_ignores_non_experience_year_mentions():
     assert from_description("$60,000-70,000/year") is None
 
 
+# --- Tier 2: a range's floor is the floor -------------------------------------------------------
+# Where "experience" sits further from the number than `_GAP`, the range patterns cannot anchor, and
+# a single-value pattern matched at the range's TOP — serving the CEILING as the FLOOR. That both
+# mislabels the job and hides it from the `min_years <= your_years` filter from exactly the
+# candidate who qualifies. Measured at 2,672 jobs across the description store before the fix.
+# `_RANGE_TAIL` is the whole cure: it works for every pattern, and for separators none enumerate.
+
+
+def test_description_range_without_the_word_experience():
+    # the reported bug: "2-4 years" must not be served as 4+
+    assert from_description(
+        "2-4 years of hands-on software development"
+    ) == ExperienceSpan(2, 4, "regex")
+    assert from_description("1-3 years in a Field Engineering role") == ExperienceSpan(
+        1, 3, "regex"
+    )
+
+
+def test_description_range_with_trailing_plus():
+    # "5-8+ years" — the ceiling carries the "+", and the gap to "experience" exceeds the anchor
+    assert from_description(
+        "- 5-8+ years of all-source investigative or targeting experience"
+    ) == ExperienceSpan(5, 8, "regex")
+
+
+def test_description_recovers_floor_for_unenumerated_separator():
+    # the backward look is the safety net: no range pattern lists "~" or "and"
+    assert from_description("2 ~ 4 years of experience") == ExperienceSpan(
+        2, 4, "regex"
+    )
+    assert from_description("between 2 and 4 years of experience") == ExperienceSpan(
+        2, 4, "regex"
+    )
+    assert from_description(
+        "10 to 12 years of embedded switching software"
+    ) == ExperienceSpan(10, 12, "regex")
+
+
+def test_range_tail_and_does_not_swallow_an_anniversary_list():
+    # "and" is only safe because a digit must sit immediately before it — "3 year and 10 year"
+    # has "year" in between, so it must not read as a range (nor as a requirement at all)
+    assert from_description("PTO at 3 year and 10 year anniversary plus bonus") is None
+
+
+def test_description_accepts_yrs_abbreviation():
+    assert from_description("2-4 yrs of experience") == ExperienceSpan(2, 4, "regex")
+    assert from_description("5 + yrs building production APIs") == ExperienceSpan(
+        5, None, "regex"
+    )
+
+
+def test_description_optional_connector_captures_bare_gerund():
+    # "N years building/working/hands-on …" with no of/in/as connector
+    assert from_description(
+        "4+ years building distributed & scalable systems"
+    ) == ExperienceSpan(4, None, "regex")
+    assert from_description(
+        "2+ years data center or IT infrastructure experience"
+    ) == ExperienceSpan(2, None, "regex")
+
+
+def test_description_rejects_company_narrative():
+    # Loosening the connector reopened this class, so the exclusion is now explicit. Company age,
+    # founder tenure and benefits are never requirements.
+    assert (
+        from_description("has spent the last 15 years building modern infrastructure")
+        is None
+    )
+    assert (
+        from_description("Founded in New Zealand 12 years ago, we are working with")
+        is None
+    )
+    assert (
+        from_description(
+            "The founding team spent a combined 40+ years at Palantir building"
+        )
+        is None
+    )
+    assert from_description("1-month sabbatical after 3 years of service") is None
+
+
+def test_narrative_at_guard_is_case_sensitive():
+    # "at Palantir" is tenure; "at a startup" / "at the company" is ordinary requirement prose.
+    # Under re.I the `[A-Z]` matched both and silently discarded a real number.
+    assert from_description(
+        "3+ years of engineering at a fast-growing startup"
+    ) == ExperienceSpan(3, None, "regex")
+    assert from_description(
+        "4+ years of software development at the company"
+    ) == ExperienceSpan(4, None, "regex")
+
+
+def test_work_word_guard_indices_are_derived_not_hardcoded():
+    # The guards must bind to the work-word patterns themselves. A hardcoded index set silently
+    # re-binds when a range phrasing is inserted (ordering forces insertion, not appending).
+    from headstart.experience import _DESC_PATTERNS, _WORK, _WORK_WORD_PATTERNS
+
+    assert _WORK_WORD_PATTERNS == {
+        i for i, p in enumerate(_DESC_PATTERNS) if _WORK in p.pattern
+    }
+    assert _WORK_WORD_PATTERNS, "guards would be inert if this were empty"
+
+
+def test_description_narrative_does_not_mask_a_real_requirement():
+    # a guarded rejection must fall through to the next occurrence, not abandon the description
+    assert from_description(
+        "Founded 12 years ago. Requirements: 5+ years building production systems"
+    ) == ExperienceSpan(5, None, "regex")
+
+
 # --- Tier 3: seniority fallback, calibrated to data (ADR-0018) ------------------------------------
 
 
