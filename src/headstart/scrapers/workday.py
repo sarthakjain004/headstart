@@ -306,7 +306,6 @@ class WorkdayScraper(BaseScraper):
                 self._detail_url(external_path),
                 timeout=30,
                 headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
-                **self._egress(),
             )
         except http.RequestsError:
             return None  # a missing detail must not drop the job

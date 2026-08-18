@@ -180,3 +180,88 @@ def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog
     _stub(monkeypatch, lambda argv: FileNotFoundError("warp-cli"))
     assert spare_egress.proxy_url() is None
     assert any("unavailable" in r.getMessage() for r in caplog.records)
+
+
+# --- rotation ------------------------------------------------------------------------------------
+# The half of the design that had no tests, which is exactly why a failed rotation could pin the
+# process to the direct route permanently and nothing caught it.
+
+
+def _rotating(monkeypatch, *, restart_ok=True, comes_back=True):
+    """Stub a rotation: sudo/systemctl outcome and whether SOCKS5 answers afterwards."""
+    calls: list[list[str]] = []
+
+    def _run(argv, **kw):
+        calls.append(argv)
+        if argv[:2] == ["sudo", "-n"]:
+            return _Proc(
+                returncode=0 if restart_ok else 1,
+                stderr="" if restart_ok else "no sudo",
+            )
+        return _Proc()
+
+    monkeypatch.setattr(spare_egress.subprocess, "run", _run)
+    monkeypatch.setattr(spare_egress.time, "sleep", lambda *a: None)
+    monkeypatch.setattr(spare_egress, "_socks5_ready", lambda: comes_back)
+    monkeypatch.setattr(spare_egress, "_CONNECT_TIMEOUT", 0.01)
+    return calls
+
+
+def test_rotate_restarts_the_daemon_rather_than_reconnecting(monkeypatch):
+    """A warp-cli disconnect/connect returns the SAME egress IP — the registration is sticky to its
+    edge node. Only a daemon restart forces a fresh edge, so that is what rotation must do."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    calls = _rotating(monkeypatch)
+    assert spare_egress.rotate() is True
+    assert ["sudo", "-n", "systemctl", "restart", "warp-svc"] in calls
+    assert not any(c[-1] == "disconnect" for c in calls)
+    assert spare_egress.rotations()["succeeded"] == 1
+
+
+def test_a_failed_rotation_does_not_pin_the_process_to_the_direct_route(monkeypatch):
+    """The bug this test exists for: clearing `_proxy` while leaving `_resolved` set made
+    `proxy_url()` return None forever, so one bad rotation cost the whole run its spare egress —
+    strictly worse than never rotating."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch, comes_back=False)
+    assert spare_egress.rotate() is False
+    assert spare_egress._resolved is False  # a later caller re-dials
+    assert spare_egress.rotations()["failed"] == 1
+
+
+def test_rotation_without_sudo_degrades(monkeypatch):
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch, restart_ok=False)
+    assert spare_egress.rotate() is False
+    assert spare_egress.rotations()["failed"] == 1
+
+
+def test_the_cooldown_bounds_successive_rotations(monkeypatch):
+    """ "Keep rotating on every 429" and "restart the daemon every few seconds" are the same
+    instruction without a floor."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    assert spare_egress.rotate() is True
+    assert spare_egress.rotate() is True  # throttled, but still reports a usable proxy
+    counts = spare_egress.rotations()
+    assert counts["attempted"] == 1 and counts["throttled"] == 1
+
+
+def test_the_gate_reopens_on_every_failure_path(monkeypatch):
+    """A gate left closed would stall every worker behind a rotation that never happened."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch, restart_ok=False)
+    spare_egress.rotate()
+    assert spare_egress._gate.is_set()
+
+
+def test_report_includes_rotation_counts():
+    spare_egress.mark_walled("workday", 429)
+    spare_egress._rotations.update({"attempted": 2, "succeeded": 1, "failed": 1})
+    lines = spare_egress.report()
+    assert any("rotations" in line and "attempted 2" in line for line in lines)

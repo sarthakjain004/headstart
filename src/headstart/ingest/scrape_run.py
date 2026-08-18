@@ -236,12 +236,6 @@ def _report(
     # "did the fallback work?" is the only question this feature has.
     for line in spare_egress.report():
         _log.warning(line)
-    rotations = spare_egress.rotations()
-    if rotations:
-        _log.warning(
-            "spare egress rotations: "
-            + ", ".join(f"{why} {n}" for why, n in sorted(rotations.items()))
-        )
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
         if predicted

@@ -217,10 +217,20 @@ rediscovered:
   the `warp-cli status` poll. "Connected" is a claim about the tunnel, not about the listener, and
   any stale listener on the port would otherwise be adopted and then fail every request during
   negotiation. This closes what the original decision called "the one bad case".
-- **Rotations coalesce on a generation counter.** Sixteen worker threads meeting a walled spare
-  egress at once must produce one restart, not sixteen. A thread snapshots the generation before
-  queueing on the lock; if it moved while it waited, a peer already rotated and this thread rides
-  the new IP.
+- **A rotation gate, and coalescing.** Two separate needs, and only taking the second is what a
+  first pass got wrong. The **gate** is closed for the duration of a restart, because peers would
+  otherwise keep firing at a SOCKS5 port the restart has just taken away — every one a
+  `RequestsError` that burns an attempt and can lose a Board. The **generation counter** stops a
+  thread that queued behind a peer's rotation from immediately bouncing the daemon again. The
+  cooldown alone would coalesce most of the herd; the counter closes the window where a rotation
+  outlasts the cooldown, since the cooldown stamps at the *start*.
+- **A settle after the restart.** `systemctl restart` returns once the *unit* is back, not once the
+  daemon is listening; re-arming immediately makes all three `warp-cli` calls land on a dead socket,
+  fail silently, and the readiness wait then burn its whole deadline for nothing.
+- **A failed rotation must not be permanent.** Clearing the cached proxy without clearing the
+  *resolved* flag pins the process to the direct route for the rest of the run — strictly worse
+  than never having rotated, and the exact opposite of "it keeps moving while it keeps being
+  refused". Both are cleared, so a later caller re-dials.
 
 **A cooldown bounds it** (`_ROTATION_COOLDOWN`, 60 s). "Keep rotating on every 429" and "restart
 the daemon every few seconds" are the same instruction without one, and a shard meeting 429s
