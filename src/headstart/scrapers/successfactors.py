@@ -227,6 +227,18 @@ class SuccessFactorsScraper(BaseScraper):
                 surface = "rss-stream"
                 if rss_cut_short:
                     self.mark_truncated(rss_cut_short)
+        if not listed:
+            # All three surfaces came back empty — which is what a dead vanity host looks
+            # like too, since each surface maps its own non-200 to "nothing" and falls
+            # through. One probe of the host root tells them apart: a live-but-empty tenant
+            # 200s and the board returns [] as before; a gone one raises its HTTP error so
+            # the ADR-0058 quarantine can count it instead of seeing alive-and-empty forever.
+            http.fetch(
+                "GET",
+                f"https://{self.slug}/",
+                headers={"User-Agent": _USER_AGENT},
+                timeout=30,
+            ).raise_for_status()
         # Which of the three surfaces answered, and how much the detail pass will cost. This
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs

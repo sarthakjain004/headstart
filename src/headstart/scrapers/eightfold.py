@@ -232,7 +232,6 @@ class EightfoldScraper(BaseScraper):
             fetched = self.fan_out_async(
                 wanted,
                 lambda session, pid: self._description_async(session, group_id, pid),
-                concurrency=_DETAIL_STREAMS,
             )
         else:
             fetched = self.fan_out(
@@ -301,7 +300,6 @@ class EightfoldScraper(BaseScraper):
             fields = self.fan_out_async(
                 listed,
                 lambda session, u: self._jsonld_async(session, u),
-                concurrency=_DETAIL_STREAMS,
             )
         else:
             fields = self.fan_out(
@@ -322,8 +320,10 @@ class EightfoldScraper(BaseScraper):
 
     def _job_urls(self) -> list[str]:
         r = self._get(accept="application/xml")
-        if r.status_code != 200:
-            return []
+        # The sitemap is the LAST surface — reaching it means the careers page or the API
+        # already failed — so a non-200 here means the board went unread, and returning []
+        # would present a dead board as alive-and-empty (invisible to ADR-0058's quarantine).
+        r.raise_for_status()
         jobs = _dedupe(_JOB_LOC.findall(r.text))
         if jobs:
             return jobs
@@ -337,6 +337,14 @@ class EightfoldScraper(BaseScraper):
             cr = self._get(child, accept="application/xml")
             if cr.status_code == 200:
                 found.extend(_JOB_LOC.findall(cr.text))
+            else:
+                # One child of a live index failing is a partial read, not a dead board —
+                # report it so sync excludes the Board from eviction instead of reading the
+                # unread child's postings as delistings (ADR-0053).
+                self.mark_truncated(
+                    f"HTTP {cr.status_code} on child sitemap {child} — "
+                    "its postings were not listed"
+                )
         return _dedupe(found)
 
     def _jsonld(self, job_url: str) -> dict[str, Any] | None:

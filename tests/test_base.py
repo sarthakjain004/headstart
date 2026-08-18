@@ -81,15 +81,9 @@ def test_fan_out_async_empty_returns_empty():
     assert _StubScraper("x").fan_out_async([], fn) == []
 
 
-def test_fan_out_async_falls_back_to_the_scrapers_own_bound(monkeypatch):
-    """The trap ADR-0047 found on Eightfold and that also cost Workday: the sync path bounded
-    itself to a handful of workers "since they hit one host" while the async path silently took
-    the shared 100-stream default against that same host. A scraper that declares a bound must get
-    that bound on both paths without having to remember a keyword at every call site."""
+def _spy_concurrency(monkeypatch):
+    """Replace _gather_async with a no-network spy; returns the dict the width lands in."""
     seen = {}
-
-    async def fn(_session, x):
-        return x
 
     def spy(items, f, concurrency, default):
         seen["concurrency"] = concurrency
@@ -100,11 +94,25 @@ def test_fan_out_async_falls_back_to_the_scrapers_own_bound(monkeypatch):
         return _noop()
 
     monkeypatch.setattr(BaseScraper, "_gather_async", staticmethod(spy))
+    return seen
+
+
+async def _echo(_session, x):
+    return x
+
+
+def test_fan_out_async_falls_back_to_the_scrapers_own_bound(monkeypatch):
+    """The trap ADR-0047 found on Eightfold and that also cost Workday: the sync path bounded
+    itself to a handful of workers "since they hit one host" while the async path silently took
+    the shared 100-stream default against that same host. A scraper that declares a bound must get
+    that bound on both paths without having to remember a keyword at every call site."""
+    seen = _spy_concurrency(monkeypatch)
+    monkeypatch.delenv("HEADSTART_H2_STREAMS", raising=False)
 
     class _Bounded(_StubScraper):
         detail_workers = 6
 
-    _Bounded("x").fan_out_async([1], fn)
+    _Bounded("x").fan_out_async([1], _echo)
     assert seen["concurrency"] == 6, (
         "must inherit the scraper's own politeness bound, not 100"
     )
@@ -112,37 +120,28 @@ def test_fan_out_async_falls_back_to_the_scrapers_own_bound(monkeypatch):
     class _Measured(_Bounded):
         detail_streams = 25  # measured async headroom overrides the sync bound
 
-    _Measured("x").fan_out_async([1], fn)
+    _Measured("x").fan_out_async([1], _echo)
     assert seen["concurrency"] == 25
 
-    # An explicit argument still wins, and so does the operator's escape hatch.
-    _Measured("x").fan_out_async([1], fn, concurrency=3)
-    assert seen["concurrency"] == 3
+    # The operator's escape hatch outranks the declaration...
     monkeypatch.setenv("HEADSTART_H2_STREAMS", "7")
-    _Measured("x").fan_out_async([1], fn)
+    _Measured("x").fan_out_async([1], _echo)
     assert seen["concurrency"] == 7
+    # ...and an explicit argument outranks even the escape hatch — a call site that pins its
+    # width (trakstar behind DataDome) is stating a host constraint no operator flag may widen.
+    _Measured("x").fan_out_async([1], _echo, concurrency=3)
+    assert seen["concurrency"] == 3
 
 
 def test_fan_out_async_keeps_the_global_default_when_nothing_is_declared(monkeypatch):
     """A scraper with no detail pass declares no bound; it must not silently drop to something
     tiny, or every such fan-out gets slower for no reason."""
-    seen = {}
+    from headstart.scrapers.base import _DEFAULT_H2_STREAMS
 
-    async def fn(_session, x):
-        return x
-
-    def spy(items, f, concurrency, default):
-        seen["concurrency"] = concurrency
-
-        async def _noop():
-            return [default] * len(items)
-
-        return _noop()
-
+    seen = _spy_concurrency(monkeypatch)
     monkeypatch.delenv("HEADSTART_H2_STREAMS", raising=False)
-    monkeypatch.setattr(BaseScraper, "_gather_async", staticmethod(spy))
-    _StubScraper("x").fan_out_async([1], fn)
-    assert seen["concurrency"] == 100
+    _StubScraper("x").fan_out_async([1], _echo)
+    assert seen["concurrency"] == _DEFAULT_H2_STREAMS
 
 
 def test_async_fanout_enabled_on_by_default(monkeypatch):

@@ -37,7 +37,18 @@ A third `data/state/` ledger, `board_failures.csv`, maintained by a new
 - A board is quarantined — dropped from the scrape slice — only after **5 consecutive gone-runs**
   (`QUARANTINE_AT`). Runs that don't select the board leave its row untouched (the same
   partial-harvest rule the other ledgers follow), so 5 strikes is weeks of agreement, not one bad
-  afternoon. Any run that produces jobs for the board deletes its row entirely.
+  afternoon. Any *successful scrape* deletes its row entirely — including a zero-job one: the
+  shard reports carry `boards_ok` (every board that completed without raising) precisely because
+  a zero-job success leaves no corpus lines and would otherwise be indistinguishable from "not
+  scraped". Alive-and-empty must clear, or a board that empties after a few 404s would sit one
+  strike from quarantine forever.
+- For the gone-verdict to be reachable, **no scraper may swallow a listing-level HTTP error into
+  an empty result**. This change removed exactly that in lever (dual-host 404 → `[]`), workday
+  (first-page 404 → "no jobs"), rippling, join, ripplehire, eightfold's sitemap surface, and
+  successfactors (all surfaces empty now probes the host root and raises if it is gone). Per-job
+  *detail* failures stay isolated — one job's failed description must not sink a board — and
+  content-shaped dead signals on HTTP 200 (keka's dead-portal markers, freshteam's HTML-404-at-
+  200) stay as empty results, since there is no HTTP status for the ledger to count.
 - The filter applies in `scrape_plan` **only**. `live_keep_set` — which feeds `index prune` — is
   deliberately untouched: shrinking it would evict the board's served rows as a side effect of a
   scraping decision, and rows on a quarantined board should instead age out through the normal

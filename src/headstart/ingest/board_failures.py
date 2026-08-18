@@ -134,10 +134,10 @@ def update(
 ) -> dict[str, Failure]:
     """Blend one run's outcome into the ledger.
 
-    ``gone`` is ``{board: reason}`` for the Boards that reported 404/410 this run, ``produced`` is
-    every Board that yielded at least one job. A Board in neither was not scraped (or was scraped
-    and legitimately returned an empty list) and keeps its row exactly as it was — the ledger only
-    moves on evidence.
+    ``gone`` is ``{board: reason}`` for the Boards that reported 404/410 this run; ``produced``
+    is every Board that scraped alive — the shard reports' ``boards_ok`` (which includes
+    zero-job successes) plus every Board with corpus lines. A Board in neither set was not
+    scraped this run and keeps its row exactly as it was — the ledger only moves on evidence.
     """
     rows = dict(prev)
     for board in produced:  # alive: any output clears the streak

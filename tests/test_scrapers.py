@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from headstart import http
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.registry import get_scraper
 
@@ -297,6 +298,9 @@ def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
             self.url = url
             self._payload = payload
             self.status_code = 200
+
+        def raise_for_status(self):
+            pass  # always 200 in this fixture
 
         def json(self):
             return self._payload
@@ -599,7 +603,7 @@ def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
         60: {"jobPostings": [{"bulletFields": ["R60"]}]},
         80: {"jobPostings": [{"bulletFields": ["R80"]}]},
     }
-    monkeypatch.setattr(s, "_post", lambda applied, offset: pages[offset])
+    monkeypatch.setattr(s, "_post", lambda applied, offset, **_: pages[offset])
     absorbed = []
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
     s._paginate({}, 100, absorbed.extend)
@@ -1482,7 +1486,7 @@ def test_workday_reports_a_subdivided_slice_that_lost_its_first_page(monkeypatch
         ],
     }
 
-    def post(applied, offset):
+    def post(applied, offset, *, raise_gone=False):
         if not applied:
             return root
         if applied.get("jobFamilyGroup") == ["Eng"]:
@@ -1500,18 +1504,47 @@ def test_workday_reports_a_subdivided_slice_that_lost_its_first_page(monkeypatch
     assert scraper.truncated and "jobFamilyGroup=Eng" in scraper.truncated
 
 
-def test_workday_leaves_a_board_that_answered_nothing_unflagged(monkeypatch):
-    """A 404 on the *unfiltered* first page yields no postings at all, so the Board writes no
-    lines and eviction never reaches it. Flagging it would report a truncation nothing can act
-    on — and every dead Workday board would carry one."""
+def test_workday_raises_when_the_whole_site_is_gone(monkeypatch):
+    """A 404 on the *unfiltered* first page means the site is gone, and it must RAISE.
+
+    It used to return None and read as "no jobs": the Board wrote no lines, so nothing flagged
+    it and nothing could act on it — a dead Workday board looked exactly like a live empty one
+    for as long as it stayed in the ledger. ADR-0058 counts only a *raised* 404/410 as a
+    gone-verdict, so swallowing it here is what would keep such a board un-quarantinable
+    forever. A truncation flag is still not the answer (there are no partial rows to protect) —
+    the error is.
+    """
     scraper = _workday_scraper()
-    monkeypatch.setattr(scraper, "_post", lambda applied, offset: None)
-    absorbed: list[dict] = []
 
-    scraper._exhaust({}, absorbed.extend, depth=0)
+    class _Gone:
+        status_code = 404
 
-    assert absorbed == []
-    assert scraper.truncated is None
+        def raise_for_status(self):
+            raise http.RequestsError("HTTP Error 404: Not Found")
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Gone())
+
+    with pytest.raises(http.RequestsError, match="404"):
+        scraper._exhaust({}, lambda batch: None, depth=0)
+    assert scraper.truncated is None  # an error, not a truncation
+
+
+def test_workday_keeps_the_none_path_for_a_subdivided_slice(monkeypatch):
+    """Only depth 0 raises. A subdivided slice that 404s is one slice of a live board, so it
+    stays a reported truncation and its siblings' postings still ship — raising there would
+    throw away a whole board over one vanished facet."""
+    scraper = _workday_scraper()
+    seen: list[bool] = []
+
+    def post(applied, offset, *, raise_gone=False):
+        seen.append(raise_gone)
+        return None if applied else {"total": 1, "jobPostings": [], "facets": []}
+
+    monkeypatch.setattr(scraper, "_post", post)
+    scraper._exhaust({"jobFamilyGroup": ["Eng"]}, lambda batch: None, depth=1)
+
+    assert seen == [False], "a subdivided slice must not raise on 404"
+    assert scraper.truncated and "jobFamilyGroup=Eng" in scraper.truncated
 
 
 def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
@@ -1522,7 +1555,7 @@ def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
     monkeypatch.setattr(
         scraper,
         "_post",
-        lambda applied, offset: {"total": 2000, "jobPostings": [], "facets": []},
+        lambda applied, offset, **_: {"total": 2000, "jobPostings": [], "facets": []},
     )
 
     scraper._exhaust({}, lambda batch: None, depth=0)
@@ -1534,7 +1567,68 @@ def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
     monkeypatch.setattr(
         whole,
         "_post",
-        lambda applied, offset: {"total": 40, "jobPostings": [], "facets": []},
+        lambda applied, offset, **_: {"total": 40, "jobPostings": [], "facets": []},
     )
     whole._exhaust({}, lambda batch: None, depth=0)
     assert whole.truncated is None
+
+
+# --- listing-level errors must raise, never read as an empty board (ADR-0058) -----------------
+#
+# A scraper that maps a dead listing endpoint to `[]` presents a gone board as alive-and-empty:
+# it writes no lines, so `index sync` never reaches it, no error reaches the shard report, and the
+# consecutive-gone quarantine — which counts only a *raised* 404/410 — can never fire. Each case
+# below reverts to that shape if the guard is removed.
+
+
+class _Status:
+    """A minimal response whose raise_for_status behaves like curl_cffi's."""
+
+    def __init__(self, status_code=200, text="", payload=None, url=""):
+        self.status_code = status_code
+        self.text = text
+        self._payload = payload
+        self.url = url
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if not (200 <= self.status_code < 400):
+            raise http.RequestsError(f"HTTP Error {self.status_code}: Not Found")
+
+
+@pytest.mark.parametrize(
+    ("ats", "slug"),
+    [
+        ("lever", "gone-co"),
+        ("rippling", "gone-co"),
+        ("join", "gone-co"),
+        ("ripplehire", "gone-co"),
+    ],
+)
+def test_a_dead_listing_endpoint_raises_instead_of_reading_as_empty(
+    monkeypatch, ats, slug
+):
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Status(status_code=404))
+    with pytest.raises(http.RequestsError, match="404"):
+        get_scraper(ats, slug).fetch_raw()
+
+
+def test_eightfold_sitemap_surface_raises_when_it_is_the_last_surface(monkeypatch):
+    """The sitemap is only reached once the careers page and the API have failed, so a non-200
+    there means the board went entirely unread — not that it is empty."""
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Status(status_code=404))
+    with pytest.raises(http.RequestsError, match="404"):
+        get_scraper("eightfold", "gone.eightfold.ai").fetch_raw()
+
+
+def test_zoho_raises_when_the_page_shape_changes(monkeypatch):
+    """A careers page carrying the jobs input whose JSON will not parse is Zoho changing shape
+    under us. Swallowing it would empty every zoho board at once and sync would evict them all."""
+    from headstart.scrapers.zoho import ZohoScraper
+
+    with pytest.raises(json.JSONDecodeError):
+        ZohoScraper._records('<input value="{not json" id="jobs" />')
+    # ...while a page with no jobs input at all is simply an empty board.
+    assert ZohoScraper._records("<html>no jobs here</html>") == []

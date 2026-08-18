@@ -95,6 +95,11 @@ class _Progress:
         # Boards that returned a short list without raising (ADR-0053). Held here, like errors,
         # so the numbers already exist when SIGTERM lands and the shutdown path only prints them.
         self.truncated: dict[str, str] = {}
+        # Boards that completed without raising — including those with zero jobs. Zero-job
+        # success is invisible everywhere else (no lines in the corpus, no error in the report),
+        # yet it is exactly the evidence that clears a Board's ADR-0058 gone-streak: alive and
+        # empty is not gone.
+        self.ok: list[str] = []
         self.jobs = 0
 
     def on_board(
@@ -109,6 +114,8 @@ class _Progress:
         self.jobs += jobs
         if truncated is not None:
             self.truncated[key] = truncated
+        if error is None:
+            self.ok.append(key)
         if error is not None:
             self.errors[key] = error
             _log.info(f"{key} failed after {seconds:.0f}s: {error}")
@@ -249,6 +256,10 @@ def _report(
         # aggregate error classes across shards if the classes survive the runner
         errors=progress.errors,
         truncated=progress.truncated,
+        # every Board that completed without raising, zero-job ones included — the evidence
+        # that clears an ADR-0058 gone-streak, which neither the corpus (no lines) nor the
+        # error map (no entry) can carry
+        boards_ok=progress.ok,
     )
 
 

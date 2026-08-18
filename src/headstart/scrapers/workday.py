@@ -191,10 +191,21 @@ class WorkdayScraper(BaseScraper):
                 return
 
     def _post(
-        self, applied_facets: dict[str, list[str]], offset: int
+        self,
+        applied_facets: dict[str, list[str]],
+        offset: int,
+        *,
+        raise_gone: bool = False,
     ) -> dict[str, Any] | None:
         """POST one page of the jobs query (retry lives in fetch). Returns the JSON dict, or
-        None on 404 (site gone)."""
+        None on 404 — except with ``raise_gone``, where the 404 raises like any other error.
+
+        The split is per call site: mid-crawl (later pages, subdivided slices) a 404 is one
+        page of a live board and the caller degrades to a *reported* partial (``_paginate``'s
+        truncation). On the very first page of the whole board it means the site is gone, and
+        returning None there read as an empty board — hiding dead boards from the ADR-0058
+        quarantine forever, because only a raised 404/410 counts as a gone-verdict.
+        """
         body = {
             "appliedFacets": applied_facets,
             "limit": _PAGE_LIMIT,
@@ -209,8 +220,8 @@ class WorkdayScraper(BaseScraper):
         response = http.fetch(
             "POST", self.url(), json=body, headers=headers, timeout=30
         )
-        if response.status_code == 404:
-            return None  # site not found — treat as no jobs
+        if response.status_code == 404 and not raise_gone:
+            return None  # one page of a live board — the caller reports the gap
         response.raise_for_status()
         return response.json()
 
@@ -238,7 +249,6 @@ class WorkdayScraper(BaseScraper):
                 lambda session, item: self._job_detail_async(
                     session, item.get("externalPath")
                 ),
-                concurrency=_DETAIL_STREAMS,
             )
         else:
             details = self.fan_out(
@@ -308,14 +318,15 @@ class WorkdayScraper(BaseScraper):
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:
         """Exhaust one filter combination: paginate normally, or subdivide when the
         2,000 cap is hit and a fresh facet is available."""
-        first = self._post(applied, offset=0)
+        # Depth 0 raises on 404 (site gone — ADR-0058 needs the error); a subdivided slice
+        # keeps the None path so one vanished slice degrades to a reported truncation while
+        # its siblings' postings still ship.
+        first = self._post(applied, offset=0, raise_gone=not depth)
         if not first:
             if depth:
                 # A subdivided slice that 404s on its first page is dropped whole, while the
                 # Board still emits every posting its sibling slices found — so it stays in the
                 # eviction scope and sync reads the vanished slice as delistings (ADR-0053).
-                # Depth 0 needs no flag: nothing was absorbed, so the Board writes no lines and
-                # is outside that scope already.
                 self.mark_truncated(
                     f"no first page for {_slice_label(applied)} — "
                     "none of that slice's postings were read"

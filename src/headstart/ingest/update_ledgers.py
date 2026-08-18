@@ -112,6 +112,7 @@ def cost(args: argparse.Namespace) -> int:
 def failures(args: argparse.Namespace) -> int:
     reports = observability.read_shards(args.fragments)
     gone: dict[str, str] = {}
+    alive: set[str] = set()
     for report in reports:
         for key, reason in (report.get("errors") or {}).items():
             if not board_failures.is_gone(str(reason)):
@@ -120,9 +121,19 @@ def failures(args: argparse.Namespace) -> int:
             board = board_failures.board_key_of(ats, slug)
             if board is not None:
                 gone[board] = str(reason)
+        # boards_ok carries the zero-job successes the corpus can't: alive-and-empty must
+        # clear a streak, or a board that empties after a few 404s stays one strike from
+        # quarantine forever
+        for key in report.get("boards_ok") or []:
+            ats, _sep, slug = str(key).partition(":")
+            board = board_failures.board_key_of(ats, slug)
+            if board is not None:
+                alive.add(board)
     # `board_of` yields the board_key shape the ids were built from, so both sides of the
-    # update pair in the same key space (ADR-0049).
-    produced = {board_of(j["id"]) for j in iter_jobs(args.jobs)}
+    # update pair in the same key space (ADR-0049). The union with boards_ok is belt and
+    # braces: pre-change shard reports carry no boards_ok, and the corpus still clears any
+    # board that produced lines.
+    produced = alive | {board_of(j["id"]) for j in iter_jobs(args.jobs)}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     prev = board_failures.load(args.ledger)

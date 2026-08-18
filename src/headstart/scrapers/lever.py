@@ -49,7 +49,10 @@ class LeverScraper(BaseScraper):
         return f"https://api.lever.co/v0/postings/{self.slug}?mode=json"
 
     def fetch_raw(self) -> Any:
-        # try the global instance, then EU; a 404 on both means the company isn't on Lever.
+        # try the global instance, then EU; a 404 on both means the company isn't on Lever —
+        # which must RAISE, not read as an empty board: swallowing it left dead boards
+        # "alive with zero jobs" forever, invisible to the ADR-0058 quarantine.
+        response = None
         for host in ("api.lever.co", "api.eu.lever.co"):
             response = http.fetch(
                 "GET", f"https://{host}/v0/postings/{self.slug}?mode=json"
@@ -58,7 +61,8 @@ class LeverScraper(BaseScraper):
                 continue
             response.raise_for_status()
             return response.json()
-        return []
+        response.raise_for_status()  # the EU 404: surface it as the error it is
+        raise AssertionError("unreachable")  # raise_for_status always raises on 404
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

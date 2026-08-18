@@ -41,7 +41,7 @@ from headstart import log
 from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import load_active_companies
+from headstart.config import _board_identity, load_active_companies
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
@@ -193,15 +193,20 @@ def main() -> int:
     args = ap.parse_args()
 
     companies = load_active_companies(Path(args.ledger), min_jobs=0)
-    quarantine = board_failures.quarantined(board_failures.load(args.failures))
+    quarantine = {
+        b.lower()
+        for b in board_failures.quarantined(board_failures.load(args.failures))
+    }
     if quarantine:
         # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here,
         # and only here: the liveness ledger stays the probe-owned truth, and `live_keep_set`
         # (which feeds `index prune`) must not shrink, or a scraping decision would evict rows.
-        from headstart.config import _board_identity
-
+        # Lowercased on both sides, like every other Board-key comparison in the plan path: the
+        # ledger's casing and `board_key()`'s need not agree (ADR-0049).
         before = len(companies)
-        companies = [c for c in companies if _board_identity(c) not in quarantine]
+        companies = [
+            c for c in companies if _board_identity(c).lower() not in quarantine
+        ]
         _log.info(
             f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "
             "confirmed-gone board(s)"

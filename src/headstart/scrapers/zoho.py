@@ -76,14 +76,18 @@ class ZohoScraper(BaseScraper):
 
     @staticmethod
     def _records(page: str) -> list[dict]:
-        """The job records embedded in a careers/detail page's jobs `<input>`."""
+        """The job records embedded in a careers/detail page's jobs `<input>`.
+
+        A page without the input returns ``[]`` — that is what an empty board serves. A page
+        *with* the input whose JSON will not parse raises instead: that is Zoho changing its
+        page shape under us, and swallowing it would read as every zoho board emptying at
+        once — sync would evict all their rows as delistings (the eightfold-flap failure
+        class), with nothing in any log saying why.
+        """
         match = _JOBS_INPUT.search(page)
         if not match:
             return []
-        try:
-            return json.loads(html.unescape(match.group(1)))
-        except json.JSONDecodeError:
-            return []
+        return json.loads(html.unescape(match.group(1)))
 
     def _detail_description(self, jid: str) -> str | None:
         """GET one job's detail page and pull Job_Description from its embedded record."""
