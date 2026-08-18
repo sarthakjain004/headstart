@@ -71,6 +71,7 @@ class SuccessFactorsScraper(BaseScraper):
     """SuccessFactors RMK scraper — ``slug`` is the board's vanity host."""
 
     ats = "successfactors"
+    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(self, slug: str, company: str | None = None) -> None:

@@ -45,6 +45,7 @@ from headstart.config import load_active_companies
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
+    board_failures,
     observability,
     shard_speedup,
 )
@@ -60,6 +61,7 @@ _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST = REPO_ROOT / "data" / "state" / "board_cost.csv"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
+_FAILURES = REPO_ROOT / "data" / "state" / "board_failures.csv"
 
 _OUT = REPO_ROOT / "data" / "scrape" / "assignments"
 
@@ -165,6 +167,12 @@ def main() -> int:
         "(ADR-0054); absent predicts serial, as before",
     )
     ap.add_argument(
+        "--failures",
+        default=str(_FAILURES),
+        help="board_failures.csv of consecutive gone-runs; boards at/over "
+        f"{board_failures.QUARANTINE_AT} strikes are skipped (absent skips nothing)",
+    )
+    ap.add_argument(
         "--target-seconds",
         type=float,
         default=_TARGET_SECONDS,
@@ -185,6 +193,19 @@ def main() -> int:
     args = ap.parse_args()
 
     companies = load_active_companies(Path(args.ledger), min_jobs=0)
+    quarantine = board_failures.quarantined(board_failures.load(args.failures))
+    if quarantine:
+        # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here,
+        # and only here: the liveness ledger stays the probe-owned truth, and `live_keep_set`
+        # (which feeds `index prune`) must not shrink, or a scraping decision would evict rows.
+        from headstart.config import _board_identity
+
+        before = len(companies)
+        companies = [c for c in companies if _board_identity(c) not in quarantine]
+        _log.info(
+            f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "
+            "confirmed-gone board(s)"
+        )
     scores = load_scores(Path(args.priority))
     companies = pick_boards(companies, scores, args.max_boards)
     n = len(companies)
@@ -316,11 +337,15 @@ def main() -> int:
     if measured:
         # The packer's own spread, which nothing logged: a planner that reports even shards is
         # doing its job on Σ÷concurrency while the slowest single board decides the outcome.
+        # All three numbers are SERIAL pack minutes (`loads`), not wall clock — the makespan line
+        # above already reports wall clock, and mixing the two units here once printed the
+        # impossible "min 100.6 / mean 100.8 / max 37.4".
         even = total_cost / 60 / m
+        widest = max(loads) / 60
         floor = max(costs) / 60 if costs else 0.0
         _log.info(
             f"predicted spread: min {min(loads) / 60:.1f} / mean {even:.1f} / "
-            f"max {makespan:.1f} min ({makespan / even if even else 0:.2f}x mean); "
+            f"max {widest:.1f} min ({widest / even if even else 0:.2f}x mean); "
             f"single-board floor {floor:.1f} min"
         )
         if floor > even:

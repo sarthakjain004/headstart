@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Blend this run's measurements into the two ``data/state/`` board ledgers (ADR-0028).
+"""Blend this run's measurements into the ``data/state/`` board ledgers (ADR-0028).
 
-Both run in the join stage, both read what this run produced, both EWMA-blend it into a CSV keyed by
-``{ats}:{slug}``, and both leave Boards the run didn't touch untouched — the partial-harvest rule
-(ADR-0022). They stay separate subcommands because the workflow treats their failures differently:
-a cost-ledger failure is ``continue-on-error`` (it costs one run of packing balance), a priority
-failure is not::
+All run in the join stage, all read what this run produced, and all leave Boards the run didn't
+touch untouched — the partial-harvest rule (ADR-0022). They stay separate subcommands because the
+workflow treats their failures differently: a cost- or failures-ledger failure is
+``continue-on-error`` (it costs one run of memory), a priority failure is not::
 
     python -m headstart.ingest.update_ledgers priority   # ADR-0022
     python -m headstart.ingest.update_ledgers cost       # ADR-0027
+    python -m headstart.ingest.update_ledgers failures   # consecutive-gone quarantine
 
 **priority** runs after the tech filter: every Board present in the harvest snapshot
 (``data/jobs``) gets its EWMA score refreshed from its tech-subset count (``data/jobs/tech``);
@@ -21,6 +21,13 @@ EWMA-blends them into ``data/state/board_cost.csv``, which rides the HF state ro
 the *next* run's ``scrape_plan`` bin-packs on. A shard that died mid-write contributes every row it
 did flush; only a torn final line is skipped.
 
+**failures** reads the shard reports' per-Board errors, keeps only the *gone* class (404/410 —
+see :mod:`headstart.ingest.board_failures` for why a 429 or a timeout must not count), and tracks
+consecutive gone-runs per Board. At :data:`~headstart.ingest.board_failures.QUARANTINE_AT` strikes
+the Board leaves the next run's scrape slice; any successful scrape clears it. This is the loop
+nothing else closes: the liveness ledger is only written by manual probes, and the priority ledger
+carries an unscraped-looking Board unchanged.
+
 Seed the priority ledger from a full local corpus with::
 
     python -m headstart.ingest.update_ledgers priority --jobs data/jobs/tech
@@ -30,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from headstart import log
@@ -42,7 +50,7 @@ from headstart.board_priority import save as save_priority
 from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, board_failures, observability
 
 _log = log.get(__name__, __spec__)
 
@@ -51,6 +59,7 @@ _TECH = REPO_ROOT / "data" / "jobs" / "tech"
 _FRAGMENTS = REPO_ROOT / "data" / "scrape" / "fragments"
 _PRIORITY_LEDGER = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST_LEDGER = REPO_ROOT / "data" / "state" / "board_cost.csv"
+_FAILURES_LEDGER = REPO_ROOT / "data" / "state" / "board_failures.csv"
 
 
 def priority(args: argparse.Namespace) -> int:
@@ -100,6 +109,39 @@ def cost(args: argparse.Namespace) -> int:
     return 0
 
 
+def failures(args: argparse.Namespace) -> int:
+    reports = observability.read_shards(args.fragments)
+    gone: dict[str, str] = {}
+    for report in reports:
+        for key, reason in (report.get("errors") or {}).items():
+            if not board_failures.is_gone(str(reason)):
+                continue
+            ats, _sep, slug = str(key).partition(":")  # a Workday slug holds colons
+            board = board_failures.board_key_of(ats, slug)
+            if board is not None:
+                gone[board] = str(reason)
+    # `board_of` yields the board_key shape the ids were built from, so both sides of the
+    # update pair in the same key space (ADR-0049).
+    produced = {board_of(j["id"]) for j in iter_jobs(args.jobs)}
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    prev = board_failures.load(args.ledger)
+    rows = board_failures.update(prev, gone, produced, now)
+    board_failures.save(args.ledger, rows)
+
+    quarantined = board_failures.quarantined(rows)
+    cleared = sum(1 for b in prev if b not in rows)
+    _log.info(
+        f"failures: {len(gone)} board(s) reported gone (404/410) across {len(reports)} shard(s) | "
+        f"{len(rows)} ledger rows ({cleared} cleared by a successful scrape) | "
+        f"{len(quarantined)} at/over {board_failures.QUARANTINE_AT} strikes -> {args.ledger}"
+    )
+    for board in sorted(quarantined)[:20]:
+        row = rows[board]
+        _log.info(f"  quarantined  {board} ({row.strikes} strikes, {row.last_reason})")
+    return 0
+
+
 def main() -> int:
     log.setup()
     ap = argparse.ArgumentParser(
@@ -127,6 +169,24 @@ def main() -> int:
         help="cost ledger to update (default: data/state/board_cost.csv)",
     )
     p_cost.set_defaults(fn=cost)
+
+    p_failures = sub.add_parser(
+        "failures", help="track consecutive gone-runs; quarantine confirmed-dead boards"
+    )
+    p_failures.add_argument(
+        "--fragments",
+        type=Path,
+        default=_FRAGMENTS,
+        help="dir of scrape fragment dirs (default: data/scrape/fragments)",
+    )
+    p_failures.add_argument("--jobs", type=Path, default=_JOBS)
+    p_failures.add_argument(
+        "--ledger",
+        type=Path,
+        default=_FAILURES_LEDGER,
+        help="failures ledger to update (default: data/state/board_failures.csv)",
+    )
+    p_failures.set_defaults(fn=failures)
 
     args = ap.parse_args()
     return args.fn(args)

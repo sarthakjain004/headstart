@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.registry import get_scraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -692,6 +693,49 @@ def test_personio_parse():
     assert j.url == "https://avian.jobs.personio.com/job/2642824"
     assert j.posted_at  # createdAt
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_personio_slug_from_keeps_only_the_host():
+    """Discovery stored the raw Common Crawl capture for host-shaped ATSes, so 634 rows in the
+    personio ledger carry a job deep link with tracking params instead of the board. A path alone
+    404s honestly; a *query* is silent, because `url()` appends /xml and on `...?language=de` that
+    lands inside the query string — Personio then serves the HTML job page with a 200 and the XML
+    parse dies (678 ParseErrors over 19 pipeline runs)."""
+    s = PersonioScraper.slug_from
+    host = "falkemedia.jobs.personio.de"
+    assert s("falkemedia", f"https://{host}") == host
+    assert s("falkemedia", f"https://{host}/") == host
+    assert s("falkemedia", f"https://{host}/job/186062") == host
+    assert s("falkemedia", f"https://{host}/job/186062?language=de") == host
+    assert s("falkemedia", f"https://{host}/?language=de") == host
+    assert (
+        s(
+            "apploft",
+            "https://apploft.jobs.personio.com/job/609444?utm_id=1&utm_source=x",
+        )
+        == "apploft.jobs.personio.com"
+    )
+
+
+def test_personio_slug_from_falls_back_when_the_host_is_not_personio():
+    """The `personio` test must read the host, not the whole URL: a path segment naming personio
+    on some other domain would otherwise be taken for a board host."""
+    assert (
+        PersonioScraper.slug_from("acme", "https://example.com/personio/job/1")
+        == "acme.jobs.personio.de"
+    )
+    assert PersonioScraper.slug_from("acme", "") == "acme.jobs.personio.de"
+
+
+def test_personio_url_is_the_xml_feed_on_a_normalised_slug():
+    """The seam the ledger data broke: /xml has to terminate the URL, not land inside a query."""
+    slug = PersonioScraper.slug_from(
+        "falkemedia", "https://falkemedia.jobs.personio.de/job/186062?language=de"
+    )
+    assert (
+        get_scraper("personio", slug, "falkemedia").url()
+        == "https://falkemedia.jobs.personio.de/xml"
+    )
 
 
 def test_join_parse():

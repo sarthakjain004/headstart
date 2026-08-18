@@ -40,7 +40,13 @@ class PersonioScraper(BaseScraper):
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
-        host = (url or "").split("://", 1)[-1].rstrip("/")
+        # Host only — the ledger's url is not always the board. Discovery stored the raw capture
+        # for host-shaped ATSes, so 634 personio rows carry a job deep link with tracking params.
+        # A path alone 404s honestly, but a *query* is silent: `url()` appends /xml, which on
+        # `...?language=de` lands inside the query string, so Personio serves the ordinary HTML
+        # job page with a 200 and the XML parse dies on it — 678 ParseErrors over 19 runs, and a
+        # liveness prober sharing this split marked all 312 such boards live with 0 positions.
+        host = (url or "").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
         return host if "personio" in host else f"{tenant}.jobs.personio.de"
 
     @property

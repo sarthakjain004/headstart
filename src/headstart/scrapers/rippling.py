@@ -50,6 +50,7 @@ def _pay_range(ranges: list | None) -> str | None:
 
 class RipplingScraper(BaseScraper):
     ats = "rippling"
+    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:

@@ -76,6 +76,13 @@ _PAGE_LIMIT = 20  # Workday hard-caps `limit` at 20 (higher returns 400).
 _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide.
 _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceiling.
 _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit one host
+# The async path's multiplexing width. It had been inheriting the shared 100-stream default while
+# the sync path above deliberately held to 6 against the same host — measured cost of that
+# divergence over 19 pipeline runs: 3,023,846 429-retries and 1,254,130 of 2,426,147 descriptions
+# (51.7%) coming back empty. 25 is the width ADR-0047 measured as safe for Eightfold's comparable
+# detail pass; Workday carries ~2.5x the per-shard volume, so this is a starting point to re-measure
+# with scripts/bench/probe_eightfold_throttle.py's method, not a settled number.
+_DETAIL_STREAMS = 25
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
@@ -101,6 +108,8 @@ class WorkdayScraper(BaseScraper):
     """Workday scraper — `slug` must be the full careers URL."""
 
     ats = "workday"
+    detail_workers = _DETAIL_WORKERS
+    detail_streams = _DETAIL_STREAMS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(self, slug: str, company: str | None = None) -> None:
@@ -229,6 +238,7 @@ class WorkdayScraper(BaseScraper):
                 lambda session, item: self._job_detail_async(
                     session, item.get("externalPath")
                 ),
+                concurrency=_DETAIL_STREAMS,
             )
         else:
             details = self.fan_out(

@@ -80,6 +80,8 @@ class EightfoldScraper(BaseScraper):
     """Eightfold AI scraper — ``slug`` is the board host."""
 
     ats = "eightfold"
+    detail_workers = _DETAIL_WORKERS
+    detail_streams = _DETAIL_STREAMS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:

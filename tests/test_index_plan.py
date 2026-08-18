@@ -457,13 +457,15 @@ def test_read_unauthoritative_boards_reads_the_file_lowercased(tmp_path):
     p.write_text('{"eightfold:NVIDIA.eightfold.ai": "HTTP 429"}', encoding="utf-8")
     # Lowercased because `resolve_board` returns a Board in the *id's* casing while the file is
     # written from `board_key()`, which carries the ledger's — the two need not agree.
-    assert read_unauthoritative_boards(p) == {"eightfold:nvidia.eightfold.ai"}
+    assert read_unauthoritative_boards(p) == {
+        "eightfold:nvidia.eightfold.ai": "HTTP 429"
+    }
 
 
 def test_read_unauthoritative_boards_is_empty_when_the_file_is_absent(tmp_path):
     """A local sync, or a run predating the file: fall back to the old infer-from-lines scope
     rather than failing, since unreadable telemetry must not stop the index updating."""
-    assert read_unauthoritative_boards(tmp_path / "nope.json") == set()
+    assert read_unauthoritative_boards(tmp_path / "nope.json") == {}
 
 
 @pytest.mark.parametrize("body", ["[1, 2]", '"abc"', "null", "42"])
@@ -475,13 +477,26 @@ def test_read_unauthoritative_boards_rejects_a_json_shape_that_is_not_an_object(
     on `.lower()` and take sync down with it."""
     p = tmp_path / "unauthoritative_boards.json"
     p.write_text(body, encoding="utf-8")
-    assert read_unauthoritative_boards(p) == set()
+    assert read_unauthoritative_boards(p) == {}
 
 
 def test_read_unauthoritative_boards_survives_a_corrupt_file(tmp_path):
     p = tmp_path / "unauthoritative_boards.json"
     p.write_text("{not json", encoding="utf-8")
-    assert read_unauthoritative_boards(p) == set()
+    assert read_unauthoritative_boards(p) == {}
+
+
+def test_read_unauthoritative_boards_keeps_the_reason(tmp_path):
+    """The reason is the diagnostic payload: a Board excluded every run reads identically whether
+    it was rate-limited or served a short page, and only the reason separates the two."""
+    p = tmp_path / "unauthoritative_boards.json"
+    p.write_text(
+        '{"eightfold:caci.eightfold.ai": "truncated: 500 of 1200 rows"}',
+        encoding="utf-8",
+    )
+    assert read_unauthoritative_boards(p) == {
+        "eightfold:caci.eightfold.ai": "truncated: 500 of 1200 rows"
+    }
 
 
 def test_the_drain_always_takes_at_least_one_row():
