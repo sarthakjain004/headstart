@@ -43,9 +43,11 @@ def board_of(job_id: str) -> str:
     the live keep-set by prefix (``index_plan.resolve_board``) and call this only as the fallback
     for an id on no known Board, which is the self-comparing case again.
 
-    Callers that still compare a guess against a real key, unfixed and named in ADR-0049:
-    ``board_priority.pick_boards`` and ``embed_run.order_by_priority``. Both mis-*score* a
-    colon-bearing Board rather than evicting anything.
+    The priority ledger is keyed by this function, so its consumers must pair against it rather
+    than rebuild a key themselves: ``pick_boards`` now looks up ``config.board_identity`` (the
+    real ``board_key()``) and ``embed_run.order_by_priority`` calls this. What remains of
+    ADR-0049's caveat is only the colon-bearing native id — it writes a phantom Board no real
+    key matches, which mis-*scores* that Board rather than evicting anything.
     """
     return job_id.rsplit(":", 1)[0]
 

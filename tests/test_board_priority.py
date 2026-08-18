@@ -101,3 +101,32 @@ def test_pick_boards_short_known_list_still_fills_cap():
     assert len(picked) == 10
     assert picked[0].slug == "c0"
     assert len({c.slug for c in picked}) == 10  # no duplicates
+
+
+def test_pick_boards_scores_workday_and_personio_by_their_board_key():
+    """The ledger is written from `corpus.board_of(job_id)`, which is the **board_key** shape —
+    and Workday and Personio override `board_key()` (a Workday slug is a whole careers URL, a
+    Personio slug the whole host). Keying the lookup `f"{ats}:{slug}"` therefore never matched
+    their rows. 13,402 boards (20.1% of the scrape list) are keyed that way; against a local
+    ledger snapshot 4,611 of them had actually earned a score and were reading 0.0, reachable
+    only through the random exploration tail."""
+    from headstart.config import CompanyRef
+
+    workday = CompanyRef(
+        ats="workday", slug="https://x.wd1.myworkdayjobs.com/Careers", name="X"
+    )
+    personio = CompanyRef(ats="personio", slug="acme.jobs.personio.de", name="Acme")
+    plain = CompanyRef(ats="greenhouse", slug="stripe", name="Stripe")
+    # keyed exactly as `update_ledgers priority` writes them
+    scores = {
+        "workday:x/Careers": 90.0,
+        "personio:acme": 80.0,
+        "greenhouse:stripe": 70.0,
+    }
+
+    picked = pick_boards([plain, workday, personio], scores, max_boards=3)
+
+    assert [c.ats for c in picked] == ["workday", "personio", "greenhouse"], (
+        "all three are scored, so all three sort by score — a board the lookup misses "
+        "would fall to the unscored exploration tail instead"
+    )

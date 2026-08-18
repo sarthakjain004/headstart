@@ -66,3 +66,4 @@ supersedes it and note the supersession in both.
 | [0056](0056-darwinbox-browser-escalation.md) | Escalate walled darwinbox boards to a real browser | 2026-08-15 |
 | [0057](0057-record-family-assignments-and-report-reassignment.md) | Record each row's family assignment, and report the rows that moved | 2026-08-16 |
 | [0058](0058-consecutive-gone-quarantine.md) | Confirmed-dead boards quarantine via a consecutive-gone ledger in `data/state/` | 2026-08-18 |
+| [0059](0059-two-board-keyspaces.md) | The priority ledger keys on `board_key`, the cost ledger on `{ats}:{slug}` | 2026-08-18 |

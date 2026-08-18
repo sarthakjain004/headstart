@@ -30,7 +30,7 @@ from pathlib import Path
 
 from headstart import http, log
 from headstart.board_priority import load_scores, pick_boards
-from headstart.config import CompanyRef, load_active_companies
+from headstart.config import CompanyRef, board_identity, load_active_companies
 from headstart.harvest import scrape_all
 from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability
 
@@ -303,9 +303,7 @@ def main() -> int:
         companies = load_active_companies(_LEDGER, min_jobs=0)
         scores = load_scores(_PRIORITY)
         companies = pick_boards(companies, scores, args.max_boards)
-        priority = sum(
-            1 for c in companies if scores.get(f"{c.ats}:{c.slug}", 0.0) > 0.0
-        )
+        priority = sum(1 for c in companies if scores.get(board_identity(c), 0.0) > 0.0)
         _log.info(
             f"harvest: {len(companies)} boards this run "
             f"({priority} priority + {len(companies) - priority} exploration)"

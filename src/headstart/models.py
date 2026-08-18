@@ -46,6 +46,21 @@ _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
 
 
+def host_of(url: str | None) -> str:
+    """The bare host of a url — no scheme, path, query or trailing slash.
+
+    One definition because the rule has to hold in four places at once: a scraper whose slug *is*
+    a host (``personio``, ``zoho``), the liveness prober for that same ATS, and the ledger repair.
+    They disagreed once, and it was expensive: discovery had stored raw Common Crawl captures —
+    job deep links, some carrying ``utm_*`` — in the ledger's ``url`` column, and Personio's
+    ``url()`` appends ``/xml``. On ``.../job/186062?language=de`` that suffix landed *inside* the
+    query string, so Personio served the ordinary HTML job page with a 200: the scrape died in
+    ``ET.fromstring`` (678 ParseErrors across 19 runs) while the prober, splitting the same wrong
+    way, recorded all 312 such boards live with zero jobs.
+    """
+    return (url or "").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+
+
 def html_to_text(value: str | None) -> str | None:
     """Strip HTML tags/entities from a description blob into clean, single-spaced text.
 

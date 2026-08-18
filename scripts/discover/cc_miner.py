@@ -381,7 +381,15 @@ def tenant_from(kind, match):
         return board, board  # canonical board URL (what slug_from reads)
     tok = match.group(1)
     if kind in ("host", "oracle"):
-        return tok.lower(), None  # full careers host; url filled from the raw capture
+        # Reconstruct the BOARD url rather than returning None and letting the caller store the
+        # raw Common Crawl capture — that capture is usually a job deep link with tracking
+        # params, and it is written straight into the ledger's `url` column. 634 personio rows
+        # arrived that way; because the personio scraper appends `/xml`, the suffix landed inside
+        # the query string and Personio answered with the HTML job page at 200, so both the
+        # scraper and the liveness prober read a live board as empty. The tenant column was
+        # always clean — only `url` was polluted, and only because of this branch.
+        host = tok.lower()
+        return host, f"https://{host}"
     tok = tok.lower()  # label / slug
     if tok in BLOCK or len(tok) < 2 or tok.isdigit():
         return None
