@@ -177,15 +177,44 @@ jobs:
         #
         # Never fatal: `continue-on-error` plus `warp.proxy_url()` returning None means a runner
         # without WARP keeps its direct route, which is the behaviour every shard had before this.
+        #
+        # `continue-on-error` covers the install *failing*; `timeout-minutes` covers it *hanging*,
+        # which is the failure that actually happened. Run 32157275202: four shards sat ~72 min
+        # in this apt-get, hit the 72 min job cap, and were cancelled with their scrape step still
+        # `skipped` — 5 of 15 shards produced nothing, the join ran on 10, and the run was green.
+        # The step is a convenience for a fallback most shards never dial, so it gets a small
+        # bounded slice of the budget and the shard scrapes regardless: two bounded attempts
+        # inside 5 min, against a p50 install of 24 s (run 32146017194's 15 shards).
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           set -x
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg \
-            | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
-            | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq cloudflare-warp
+          # Every network call carries its own ceiling, and the mirror gets a second chance: the
+          # observed failure was a wedge, not a refusal, and a wedge that clears is exactly what a
+          # retry is for. `timeout-minutes` above is the backstop if both attempts wedge.
+          install_warp() {
+            curl -fsSL --max-time 20 --retry 2 --retry-delay 2 \
+              https://pkg.cloudflareclient.com/pubkey.gpg \
+              | sudo gpg --yes --dearmor \
+                -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg || return 1
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
+              | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+            # apt's own ceilings, not just the outer `timeout`: the measured hang was exactly
+            # here, and on its defaults apt will wait out a server that accepts the connection
+            # and then trickles essentially forever.
+            sudo timeout 45 apt-get update -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+              -o Acquire::Retries=2 || return 1
+            sudo timeout 60 apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::Retries=2 cloudflare-warp || return 1
+          }
+          for attempt in 1 2; do
+            install_warp && break
+            echo "warp install attempt $attempt failed — retrying" >&2
+            sleep 5
+          done
+          # Both attempts spent: fall through. `warp-cli` is absent, `spare_egress.proxy_url()`
+          # returns None, and the shard keeps the direct route it had before ADR-0063.
           sudo systemctl start warp-svc || true
           # The daemon answers a beat after the unit starts; registering against a dead socket is
           # the one failure that would otherwise look like "WARP unavailable" on every later call.
