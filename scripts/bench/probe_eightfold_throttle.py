@@ -1,6 +1,6 @@
 """Measure how much of an Eightfold board's detail pass survives, by fan-out width.
 
-Runs the *real* scraper detail-fetch path (`BaseScraper.fan_out_async` -> `http.fetch_async`,
+Runs the *real* scraper detail-fetch path (`fan_out_async` -> `http.fetch_async`,
 identical retry policy) against one live board at several concurrency widths, and reports how many
 descriptions come back None plus the settled HTTP status histogram.
 
@@ -17,7 +17,7 @@ import urllib.parse
 from collections import Counter
 
 from headstart import http
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.registry import get_scraper
 
 SLUG = sys.argv[1] if len(sys.argv) > 1 else "nvidia.eightfold.ai"
 N = int(sys.argv[2]) if len(sys.argv) > 2 else 120
@@ -84,11 +84,15 @@ def main() -> int:
         print("no ids — search itself was blocked", flush=True)
         return 1
 
+    # An instance, because fan_out_async falls back to the scraper's own bound — irrelevant here
+    # since every call passes an explicit width, but it is the same object the scrape path uses.
+    scraper = get_scraper("eightfold", SLUG)
+
     for width in WIDTHS:
         statuses.clear()
         http.reset_retry_stats()
         t0 = time.time()
-        out = BaseScraper.fan_out_async(ids, _fetch, concurrency=width)
+        out = scraper.fan_out_async(ids, _fetch, concurrency=width)
         missing = sum(1 for o in out if o is None)
         print(
             f"width {width:>4}: {missing:>4}/{len(out)} missing ({100 * missing / len(out):5.1f}%) "

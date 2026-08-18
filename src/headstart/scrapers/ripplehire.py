@@ -43,6 +43,10 @@ class RippleHireScraper(BaseScraper):
         response = http.fetch(
             "GET", self.url(), headers={"User-Agent": _UA}, timeout=30
         )
+        # An HTTP error here must raise, not read as an empty board (ADR-0058 needs the 404).
+        # A 200 that redirects somewhere without a token still returns [] — that is the
+        # portal's shape for "no public board", not a fetch failure.
+        response.raise_for_status()
         m = _TOKEN.search(response.url)
         if not m:
             return []

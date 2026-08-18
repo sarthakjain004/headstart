@@ -236,15 +236,20 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     return live
 
 
-def read_unauthoritative_boards(path: str | Path) -> set[str]:
+def read_unauthoritative_boards(path: str | Path) -> dict[str, str]:
     """Boards whose scraped list is not authoritative this run — it came back truncated, or the
-    scrape raised — lowercased for matching (ADR-0053).
+    scrape raised — lowercased for matching, mapped to *why* (ADR-0053).
 
     Written by ``scrape_join.write_unauthoritative_boards``; ``index sync`` drops these from the
     eviction scope so a truncated scrape cannot read as a delisting. Lives here rather than beside
     its caller so the scoping invariants stay unit-testable on CI's base-deps-only install.
 
-    Fails **open** — an unreadable or wrong-shaped file yields an empty set, restoring the old
+    Returns the reason, not just the Board, because the exclusion warning is the only place the
+    outcome surfaces: without it a Board reads as excluded for an unknown one of two very different
+    causes, and telling a 429 apart from a short page needs the log line to say which. Callers that
+    only want membership can still use ``in``.
+
+    Fails **open** — an unreadable or wrong-shaped file yields an empty mapping, restoring the old
     infer-from-lines behaviour. Failing the other way would freeze eviction across the whole index
     on a bad file. The shape check is not paranoia: JSON's top level may legally be a list or a
     string, and iterating either yields items that are not Board keys — ``"abc"`` would quietly
@@ -252,21 +257,21 @@ def read_unauthoritative_boards(path: str | Path) -> set[str]:
     """
     p = Path(path)
     if not p.exists():
-        return set()
+        return {}
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - telemetry must never stop the index updating
         _log.warning(
             f"unreadable {p}: {exc} — no Board is protected from eviction this run"
         )
-        return set()
+        return {}
     if not isinstance(data, dict):
         _log.warning(
             f"{p} holds {type(data).__name__}, expected an object of Board -> reason — "
             "no Board is protected from eviction this run"
         )
-        return set()
-    return {str(k).lower() for k in data}
+        return {}
+    return {str(k).lower(): str(v) for k, v in data.items()}
 
 
 def resolve_board(job_id: str, live: dict[str, str]) -> str:
