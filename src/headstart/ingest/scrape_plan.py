@@ -109,7 +109,7 @@ _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap a
 _GATE_RECHECK_DAYS = 14
 
 
-def _starved_boards(
+def _gated_boards(
     identities: list[tuple[str, str]],
     cost_rows: Mapping[str, BoardCost],
     scores: Mapping[str, float],
@@ -128,17 +128,17 @@ def _starved_boards(
     reputation before it ever had a record of its own.
     """
     today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    starved: dict[str, float] = {}
+    gated: dict[str, float] = {}
     for cost_key, priority_key in identities:
         row = cost_rows.get(cost_key)
         if row is None or row.seconds <= _GATE_FLOOR_S:
             continue
         if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
             continue  # measurement expired — re-admit it and measure again
-        density = scores.get(priority_key, 0.0) / (row.seconds / 60)
-        if density < _GATE_MIN_TECH_PER_MIN:
-            starved[cost_key] = density
-    return starved
+        tech_per_min = scores.get(priority_key, 0.0) / (row.seconds / 60)
+        if tech_per_min < _GATE_MIN_TECH_PER_MIN:
+            gated[cost_key] = tech_per_min
+    return gated
 
 
 def _days_since(updated_at: str, today: str) -> float:
@@ -153,7 +153,7 @@ def _days_since(updated_at: str, today: str) -> float:
         now = datetime.strptime(today, fmt)
     except (TypeError, ValueError):
         return float("inf")
-    return (now - then).days
+    return float((now - then).days)
 
 
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`
@@ -295,23 +295,22 @@ def main() -> int:
     # seconds to decide what is worth a shard's makespan, and a Board dropped after selection
     # would still have taken a slot from something that would have been scraped.
     cost_rows = load_cost_ledger(Path(args.cost))
-    starved = _starved_boards(
+    gated = _gated_boards(
         [(f"{c.ats}:{c.slug}", board_identity(c)) for c in companies],
         cost_rows,
         scores,
     )
-    if starved:
-        companies = [c for c in companies if f"{c.ats}:{c.slug}" not in starved]
+    if gated:
+        companies = [c for c in companies if f"{c.ats}:{c.slug}" not in gated]
         # Named, every run, not just counted. This gate removes work on purpose, and the only
         # way that stays honest is if the list is in front of whoever reads the run — a Board
         # gated in error is invisible everywhere else, because nothing downstream misses it.
-        worst = sorted(starved.items(), key=lambda kv: kv[1])
+        worst = sorted(gated.items(), key=lambda kv: kv[1])
         _log.warning(
-            f"value gate: skipped {len(starved)} Board(s) costing over "
+            f"value gate: skipped {len(gated)} Board(s) costing over "
             f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
             f"jobs/min — "
-            + ", ".join(f"{k} ({d:.2f}/min)" for k, d in worst[:10])
-            + (f", +{len(worst) - 10} more" if len(worst) > 10 else "")
+            + observability.named_sample([f"{k} ({d:.2f}/min)" for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)

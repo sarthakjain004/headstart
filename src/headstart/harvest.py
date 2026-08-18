@@ -126,14 +126,18 @@ class JobWriter:
         self._done_handle.write(board_key + "\n")
         self._done_handle.flush()
 
-    def record_cost(self, board_key: str, seconds: float, jobs: int) -> None:
+    def record_cost(
+        self, board_key: str, seconds: float, jobs: int, *, unfinished: bool = False
+    ) -> None:
         """Append this board's measured scrape seconds, flushed per board (ADR-0027).
 
         Same contract as :meth:`mark_done`: written as each board lands, never buffered, so a
         shard killed by its time budget still hands the join every timing it did measure. The
         filename is deliberately *not* dotted — ``actions/upload-artifact`` skips hidden files by
         default, which is why the ``.done`` journal never reaches the join and this must."""
-        self._cost_handle.write(shard_row(board_key, seconds, jobs))
+        self._cost_handle.write(
+            shard_row(board_key, seconds, jobs, unfinished=unfinished)
+        )
         self._cost_handle.flush()
 
     def close(self) -> None:
@@ -209,11 +213,15 @@ def scrape_all(
     def run_one(company: CompanyRef) -> list[Job]:
         start = time.monotonic()
         key = f"{company.ats}:{company.slug}"
-        with in_flight_lock:
-            in_flight[key] = start
         scraper = get_scraper(
             company.ats, company.slug, company.name, have_details=have_details
         )
+        # Registered only once there is a fetch to be in the middle of. `get_scraper` raises on
+        # an unknown ATS or a malformed slug, and a key registered before it would never be
+        # popped — the teardown would then cost that Board the shard's whole remaining hour and
+        # the value gate would drop it forever, on a Board that failed instantly.
+        with in_flight_lock:
+            in_flight[key] = start
         try:
             return scraper.fetch()
         finally:
@@ -289,15 +297,13 @@ def scrape_all(
         # a shard again, every run (ADR-0064).
         #
         # Snapshot under the lock: the abandoned threads are still running and still popping
-        # their own keys. A Board that finishes between this snapshot and the write has already
-        # written its own measured row, so the floor is skipped for it — `elapsed` is the record
-        # of that, and it is only ever added to.
+        # their own keys. No Board can be both here and already costed — a worker pops itself
+        # before its future completes, and `record_cost` runs only from the `as_completed` loop
+        # above, which has already exited. So everything in this snapshot needs its floor.
         with in_flight_lock:
             unfinished = sorted(in_flight.items())
         for key, started_at in unfinished:
-            if key in elapsed:
-                continue  # it landed after all; its measured row is the honest one
-            writer.record_cost(key, time.monotonic() - started_at, 0)
+            writer.record_cost(key, time.monotonic() - started_at, 0, unfinished=True)
         writer.close()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done

@@ -221,9 +221,9 @@ def test_records_measured_seconds_for_every_board_including_failures(
 
     rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
     assert set(rows) == {"x:good", "x:bad"}
-    assert all(seconds >= 0.0 for seconds, _ in rows.values())
-    assert rows["x:good"][1] == 1  # jobs written
-    assert rows["x:bad"][1] == 0  # errored board wrote none, but is still costed
+    assert all(r.seconds >= 0.0 for r in rows.values())
+    assert rows["x:good"].jobs == 1  # jobs written
+    assert rows["x:bad"].jobs == 0  # errored board wrote none, but is still costed
     assert not harvest.COST_FILENAME.startswith(".")
 
 
@@ -410,11 +410,12 @@ def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
     assert set(rows) == {"x:quick", "x:monster"}, (
         "the unfinished Board must be costed, not silently dropped"
     )
-    burned, jobs = rows["x:monster"]
-    assert burned >= 0.04, (
-        f"the floor must be the seconds it actually burned, got {burned}"
+    monster = rows["x:monster"]
+    assert monster.seconds >= 0.04, (
+        f"the floor must be the seconds it actually burned, got {monster.seconds}"
     )
-    assert jobs == 0  # it banked none — the row is a cost, not a yield
+    assert monster.unfinished, "a bound must not reach the ledger as a measurement"
+    assert not rows["x:quick"].unfinished
 
 
 def test_a_clean_finish_costs_every_board_exactly_once(monkeypatch, tmp_path):
@@ -430,3 +431,29 @@ def test_a_clean_finish_costs_every_board_exactly_once(monkeypatch, tmp_path):
 
     lines = (tmp_path / harvest.COST_FILENAME).read_text().strip().split("\n")
     assert len(lines) == 3, f"header + one row per Board, got {lines}"
+
+
+def test_a_board_whose_scraper_never_constructed_gets_no_floor(monkeypatch, tmp_path):
+    """The floor must cost a fetch, not a failure to start one.
+
+    `get_scraper` raises on an unknown ATS or a malformed slug. Registering the Board as
+    in-flight before that call leaked the key — nothing ever popped it — so the teardown costed
+    an instantly-failed Board the shard's entire remaining hour, and the ADR-0064 value gate then
+    dropped it permanently on a number it never earned.
+    """
+
+    def fake_get(ats, slug, name=None, **_):
+        if slug == "unbuildable":
+            raise ValueError(f"unknown ats: {ats}")
+        return FakeScraper([make_job("x:ok:1")])
+
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
+    scrape_all(
+        [CompanyRef("x", "unbuildable"), CompanyRef("x", "ok")], jobs_dir=tmp_path
+    )
+
+    rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
+    assert not any(r.unfinished for r in rows.values()), (
+        f"a Board that never started a fetch was costed as if it had: {rows}"
+    )
+    assert [k for k, r in rows.items() if r.unfinished] == []

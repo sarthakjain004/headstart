@@ -77,9 +77,6 @@ _SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler mater
 # waiting on the pool's atexit join. Any other value is a real failure and exits as itself.
 _BUDGET_KILLED = 100
 
-# How many deferred Board keys the kill warning names before it summarises the rest.
-_DEFERRED_SHOWN = 10
-
 
 class _Progress:
     """What the shard has done so far, kept outside ``scrape_all`` on purpose.
@@ -230,9 +227,7 @@ def _report(
         # how `workday:dollartree/dollartreeus` was found on 2026-08-18, and it should have been
         # one log line. Capped: a shard killed early defers hundreds and the list is then noise.
         if deferred:
-            shown = ", ".join(deferred[:_DEFERRED_SHOWN])
-            rest = len(deferred) - _DEFERRED_SHOWN
-            _log.warning("deferred: " + shown + (f", +{rest} more" if rest > 0 else ""))
+            _log.warning("deferred: " + observability.named_sample(deferred))
     if progress.errors:
         _log.warning(
             f"{len(progress.errors)} board errors: {_error_summary(progress.errors)}"

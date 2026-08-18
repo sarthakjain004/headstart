@@ -77,14 +77,22 @@ seconds it burned.**
 
 The two are one change, because either alone fails. The gate cannot see dollartree while the
 survivorship hole prices it at 411.9 s; the floor cost alone learns the truth and keeps paying it.
-Together: one run records the floor, the next gate reads 1,766 s / 0.33 tech-per-min and stops
+Together: one killed run records 3,120 s, and the next plan reads 0.19 tech-per-min and stops
 drawing it.
 
 * `harvest.scrape_all` tracks Boards mid-fetch and, on the way down, writes a cost row for
-  whatever is still in flight. The seconds a kill proves are a **floor**, not a measurement, and
-  are written only for Boards actually running — never for queued ones, whose cost is unknown.
-* `scrape_run` names the deferred Boards in its warning and its shard report. Finding dollartree
-  took downloading two artifacts and diffing them; the shard knew the answer the whole time.
+  whatever is still in flight, **marked `unfinished`**. The seconds a kill proves are a *lower
+  bound*, so the ledger takes `max(stored, burned)` rather than its usual EWMA: a bound may raise
+  a Board's price, never lower it. Blending instead records less than the kill proved — for
+  dollartree, 1,766 s against the 3,120 s demonstrably burned — and a Board whose stored price is
+  low enough can blend back *under* the gate floor and be re-packed every run, which is the loop
+  this exists to break. The row keeps its prior `jobs` count, since an unfinished run banked no
+  complete listing. It is written only for Boards actually fetching — never for queued ones, whose
+  cost is unknown, and never for one whose scraper failed to construct, which never fetched.
+* `scrape_run` names the deferred Boards in its warning and its shard report, and `scrape_join`
+  names them again across the whole fan-out — where a Board deferred run after run reads as a
+  pattern rather than as one shard's bad luck. Finding dollartree took downloading two artifacts
+  and diffing them; the reports knew the answer the whole time and nothing read it.
 * `scrape_plan._starved_boards` gates on value density, before slice selection — a Board dropped
   after selection has already taken a slot from something scrapable.
 
@@ -104,7 +112,7 @@ Three properties the gate must have, each of which cost a failure mode elsewhere
 ## Consequences
 
 Six Boards are gated against today's ledger, freeing **3.5 shard-hours per run**; dollartree makes
-seven once fix 1 measures it. Six giants stay — walmart, EY, both hcltech boards, paradox, target —
+seven after a single killed run measures it (411.9 s → 3,120 s → 0.19 tech/min). Six giants stay — walmart, EY, both hcltech boards, paradox, target —
 and walmart's 44.5 minutes becomes the makespan floor, so the expected slowest shard lands around
 45–50 min against a 60-minute budget.
 

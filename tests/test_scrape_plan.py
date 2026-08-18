@@ -155,7 +155,7 @@ def test_the_gate_drops_a_giant_board_that_yields_almost_no_tech():
     It cannot finish, so it kills a shard, defers, and is re-drawn next run. Cost per unit of
     value is the honest way to say that: 0.2 tech jobs per minute of shard time.
     """
-    gated = ps._starved_boards(
+    gated = ps._gated_boards(
         [("workday:dollartree", "workday:dollartree")],
         {"workday:dollartree": _cost(4000.0)},
         {"workday:dollartree": 9.7},
@@ -167,7 +167,7 @@ def test_the_gate_drops_a_giant_board_that_yields_almost_no_tech():
 def test_the_gate_keeps_a_giant_board_that_earns_its_hour():
     """Walmart is just as big and just as slow — 15,476 postings, 44.5 min — and returns 903 tech
     jobs for it. A rule that dropped this too would be a volume cap, not a value gate."""
-    gated = ps._starved_boards(
+    gated = ps._gated_boards(
         [("workday:walmart", "workday:walmart")],
         {"workday:walmart": _cost(2670.0)},
         {"workday:walmart": 903.9},
@@ -179,7 +179,7 @@ def test_the_gate_keeps_a_giant_board_that_earns_its_hour():
 def test_the_gate_never_touches_a_cheap_board():
     """Almost the whole corpus: a Board too cheap to threaten the makespan is not the gate's
     business however little it yields, and gating on yield alone would gut the long tail."""
-    gated = ps._starved_boards(
+    gated = ps._gated_boards(
         [("lever:tiny", "lever:tiny")],
         {"lever:tiny": _cost(3.0)},
         {},  # unscored, zero tech jobs — and still none of the gate's business
@@ -192,7 +192,7 @@ def test_the_gate_never_drops_a_board_it_has_not_measured():
     """The cost cascade estimates an unmeasured Board from its ATS median, and gating on an
     estimate would drop Boards for their ATS's reputation rather than their own record — every
     unmeasured SuccessFactors board at once, none of them ever measured to disprove it."""
-    gated = ps._starved_boards(
+    gated = ps._gated_boards(
         [("successfactors:unknown", "successfactors:unknown")],
         {},  # no measurement of its own
         {},
@@ -208,7 +208,7 @@ def test_a_gated_board_is_re_measured_once_its_costing_goes_stale():
     evidence is judged forever. Letting the measurement expire puts it back in the slice, where
     it is re-measured and re-judged on what it is now, not what it was.
     """
-    stale = ps._starved_boards(
+    stale = ps._gated_boards(
         [("workday:dollartree", "workday:dollartree")],
         {"workday:dollartree": _cost(4000.0, day="2026-07-01")},
         {"workday:dollartree": 9.7},
@@ -216,7 +216,7 @@ def test_a_gated_board_is_re_measured_once_its_costing_goes_stale():
     )
     assert stale == {}, "a stale costing must re-admit the board for re-measurement"
 
-    fresh = ps._starved_boards(
+    fresh = ps._gated_boards(
         [("workday:dollartree", "workday:dollartree")],
         {"workday:dollartree": _cost(4000.0, day="2026-08-17")},
         {"workday:dollartree": 9.7},
@@ -230,7 +230,7 @@ def test_the_gate_reads_the_score_under_its_own_key():
     `board_identity` — and conflating them is what left every Workday board unscored (ADR-0049).
     A gate that looked the score up under the cost key would read every Workday giant as
     zero-yield and drop them all, walmart included."""
-    gated = ps._starved_boards(
+    gated = ps._gated_boards(
         [("workday:https://walmart.wd504.myworkdayjobs.com/x", "workday:walmart/x")],
         {"workday:https://walmart.wd504.myworkdayjobs.com/x": _cost(2670.0)},
         {"workday:walmart/x": 903.9},  # scored under board_identity, not the cost key

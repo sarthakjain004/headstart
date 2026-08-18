@@ -228,6 +228,12 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
             f"{len(killed)} shard(s) hit the time budget, deferring {deferred} boards: "
             + ", ".join(str(r.get("shard", "?")) for r in killed)
         )
+        # Which Boards, across the whole fan-out. The shard names its own, but the run page is
+        # where a Board that keeps being deferred becomes visible as a pattern rather than as
+        # one shard's bad luck — and a name is what turns "a shard was killed" into a fix.
+        lost = [b for r in killed for b in (r.get("deferred") or [])]
+        if lost:
+            _log.warning("deferred boards: " + observability.named_sample(lost))
     if errors:
         _log.warning(f"{errors} board errors across {len(reports)} shards")
     _log.info(

@@ -350,7 +350,9 @@ def test_the_deferred_warning_summarises_a_long_tail(tmp_path, caplog):
 
     line = next(m for m in (r.getMessage() for r in caplog.records) if "deferred:" in m)
     assert "+15 more" in line
-    assert line.count(",") == scrape_run._DEFERRED_SHOWN  # 9 separators + the tail's
+    assert (
+        "lever:c9" in line and "lever:c10" not in line
+    )  # the first ten, then the tail
 
 
 def test_a_clean_finish_defers_nothing(tmp_path, caplog):
