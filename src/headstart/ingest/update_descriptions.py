@@ -46,7 +46,12 @@ import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT
+from headstart.ingest import (
+    HELD_DETAILS_PATH,
+    PENDING_REDERIVE_PATH,
+    REPO_ROOT,
+    append_id_list,
+)
 
 _log = log.get(__name__, __spec__)
 
@@ -112,11 +117,18 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     return out
 
 
-def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
+def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int, list[str]]:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
-    Returns ``(filled, learned, settled)`` — corpus rows repaired from the store, descriptions
-    newly stored or changed, and postings recorded as authoritatively having none.
+    Returns ``(filled, learned, settled, rederive_ids)`` — corpus rows repaired from the store,
+    descriptions newly stored or changed, postings recorded as authoritatively having none, and
+    the ids behind those last two.
+
+    ``rederive_ids`` is the ADR-0062 marking. A Job whose description settles *now* still carries
+    metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
+    skips ids it has embedded, and ``update_meta``'s version sweep only fires on a
+    ``DERIVATIONS_VERSION`` bump. Both entry kinds belong in it — a text entry gives the cascade
+    something new to read, and an authoritative ``null`` is equally a settled answer.
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
@@ -157,7 +169,7 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
-    return filled, len(learned) - settled, settled
+    return filled, len(learned) - settled, settled, [r["id"] for r in learned]
 
 
 def settled_ids(store_root: Path) -> set[str]:
@@ -240,6 +252,11 @@ def main() -> int:
         "--held-details", default=str(HELD_DETAILS_PATH), help="skip-list to publish"
     )
     ap.add_argument(
+        "--pending-rederive",
+        default=str(PENDING_REDERIVE_PATH),
+        help="queue of ids whose description settled this run, for update_meta (ADR-0062)",
+    )
+    ap.add_argument(
         "--compact",
         action="store_true",
         help="fold each ATS's fragments into its base file and stop",
@@ -256,16 +273,23 @@ def main() -> int:
     if not jobs.is_dir():
         _log.warning(f"no tech corpus at {jobs} — nothing to reconcile")
         return 0
+    queued = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
-        filled, learned, settled = reconcile(path, store / ats)
+        filled, learned, settled, rederive = reconcile(path, store / ats)
+        # Appended per ATS rather than accumulated and written once: the queue is what stops these
+        # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must
+        # not lose the ids of the ATSes already reconciled.
+        append_id_list(Path(args.pending_rederive), rederive)
+        queued += len(rederive)
         _log.info(
             f"{ats}: filled {filled:,} from the store, learned {learned:,}, "
-            f"settled {settled:,} as having none"
+            f"settled {settled:,} as having none, queued {len(rederive):,} to re-derive"
         )
     _log.info(
         f"skip-list: {write_held_details(store, Path(args.held_details)):,} Jobs held"
     )
+    _log.info(f"re-derive queue: {queued:,} newly settled -> {args.pending_rederive}")
     return 0
 
 

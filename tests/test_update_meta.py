@@ -247,3 +247,72 @@ def test_refresh_no_ops_without_a_store(tmp_path):
     assert (
         um.refresh(tmp_path / "absent", tmp_path, tmp_path, tmp_path / "wm.json") == 0
     )
+
+
+# --- the ADR-0062 re-derivation queue -------------------------------------------------------
+
+
+def test_a_queued_row_is_rederived_at_an_unchanged_version(tmp_path):
+    """The gap this closes: a Board is finally scraped, its description settles — and nothing
+    would otherwise revisit the row. `embed_plan` skips ids it has embedded and the sweep only
+    fires on a version bump, so the queue is the row's only route back to the cascade."""
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "at least 7 years of experience required"}
+    )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(
+        watermark, um.DERIVATIONS_VERSION
+    )  # already swept: no sweep here
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("greenhouse:acme:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert row["min_years"] == 7, "the newly-settled description must reach the cascade"
+    assert not queue.exists(), (
+        "a consumed queue is cleared so the next run does not redo it"
+    )
+
+
+def test_an_unqueued_row_is_left_alone_at_an_unchanged_version(tmp_path):
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "at least 7 years of experience required"}
+    )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"  # never written
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert row["min_years"] == 4  # the embed-time value, untouched
+
+
+def test_a_lost_description_store_keeps_the_queue_for_the_next_run(tmp_path):
+    """The mirror of the watermark guard. Re-deriving with no text would wipe the very floors the
+    queue exists to repair, and clearing it would make that permanent."""
+    store, jobs, desc = _store_and_corpus(tmp_path)  # no description store at all
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("greenhouse:acme:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert row["min_years"] == 4, "no text loaded, so the floor must not be recomputed"
+    assert queue.read_text(encoding="utf-8").strip() == "greenhouse:acme:1"
+
+
+def test_refresh_row_rederive_flag_is_independent_of_sweep():
+    meta = _meta(min_years=None, experience_source=None)
+    row, _, changed = um.refresh_row(
+        meta,
+        None,
+        {"greenhouse:acme:1": "5+ years of experience"},
+        False,
+        rederive=True,
+    )
+    assert changed
+    assert row["min_years"] == 5

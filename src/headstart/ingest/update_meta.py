@@ -22,6 +22,12 @@ description the ADR-0050 store *settles* is re-derived through the full cascade.
 never settled are left alone — recomputing without the text a value came from could only downgrade
 it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
 
+**The re-derivation queue** (ADR-0062) is the other half of that: when a run finally settles one of
+those descriptions, the row is still carrying numbers derived without it, and no version has moved.
+``update_descriptions`` appends the ids to ``data/state/pending_rederive.txt``; this module runs the
+cascade for exactly those rows and clears the file. Without it, closing the description gap would
+repair the *text* and leave every number behind it stale until the next version bump.
+
 **What is deliberately never rewritten:** ``vector`` (a fact about the embedded doc — only the
 ADR-0050 upgrade path replaces it), ``has_description`` (a fact about *that vector*: the upgrade
 planner keys on it, so refreshing it from the store would hide every title-only vector from the
@@ -41,7 +47,7 @@ from typing import Any
 
 from headstart import log
 from headstart.experience import extract, from_field, from_seniority
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import PENDING_REDERIVE_PATH, REPO_ROOT, read_id_list
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
 
@@ -98,12 +104,22 @@ def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
     return facts
 
 
-def held_descriptions(store_dir: Path) -> dict[str, str | None]:
-    """Every settled description across the ADR-0050 store, keyed by Job id."""
+def held_descriptions(
+    store_dir: Path, keep: set[str] | None = None
+) -> dict[str, str | None]:
+    """Every settled description across the ADR-0050 store, keyed by Job id.
+
+    ``keep`` narrows the result to those ids. A version sweep needs all of them, but the ADR-0062
+    re-derivation only needs this run's newly-settled handful — and holding the whole store is
+    ~1 GB of text on a runner that is already the pipeline's memory ceiling.
+    """
     held: dict[str, str | None] = {}
     if store_dir.is_dir():
         for ats_dir in sorted(p for p in store_dir.iterdir() if p.is_dir()):
-            held.update(read_store(ats_dir))
+            rows = read_store(ats_dir)
+            held.update(
+                rows if keep is None else {k: v for k, v in rows.items() if k in keep}
+            )
     return held
 
 
@@ -112,8 +128,15 @@ def refresh_row(
     facts: dict | None,
     descriptions: dict[str, str | None],
     sweep: bool,
+    rederive: bool = False,
 ) -> tuple[dict, bool, bool]:
     """One row's refresh. Returns ``(row, facts_changed, derivations_changed)``.
+
+    ``rederive`` marks a single row for the cascade at an unchanged version — the ADR-0062 case,
+    where this run's scrape settled a description the row was never derived from. It is kept
+    separate from ``sweep`` because the two mean different things: ``sweep`` is "the extractor
+    changed, redo everything the store settles", ``rederive`` is "this row's third cascade input
+    just arrived".
 
     Pure, so the whole policy is unit-testable without a store on disk.
     """
@@ -125,14 +148,14 @@ def refresh_row(
                 row[field] = facts[field]
                 facts_changed = True
 
-    # Re-derive when the code moved, or when this row's own inputs just did. `experience` (the raw
-    # field) and `title` are two of the three cascade inputs, so a change in either can change the
-    # answer even at an unchanged version.
+    # Re-derive when the code moved, when this row was marked, or when its own inputs just did.
+    # `experience` (the raw field) and `title` are two of the three cascade inputs, so a change in
+    # either can change the answer even at an unchanged version.
     inputs_moved = facts_changed and (
         row.get("experience") != meta.get("experience")
         or row.get("title") != meta.get("title")
     )
-    if not (sweep or inputs_moved):
+    if not (sweep or rederive or inputs_moved):
         return row, facts_changed, False
 
     if (
@@ -181,7 +204,11 @@ def _rederive_without_text(row: dict, meta: dict) -> Any:
 
 
 def refresh(
-    store: Path, jobs_dir: Path, descriptions_dir: Path, watermark: Path
+    store: Path,
+    jobs_dir: Path,
+    descriptions_dir: Path,
+    watermark: Path,
+    pending_rederive: Path | None = None,
 ) -> int:
     meta_path = store / "meta.jsonl"
     if not meta_path.exists():
@@ -191,11 +218,28 @@ def refresh(
     stored_version = read_watermark(watermark)
     sweep = DERIVATIONS_VERSION > stored_version
     facts = corpus_facts(jobs_dir)
-    descriptions = held_descriptions(descriptions_dir) if sweep else {}
+    pending = read_id_list(pending_rederive) if pending_rederive else set()
+    if sweep:
+        descriptions = held_descriptions(descriptions_dir)
+    elif pending:
+        descriptions = held_descriptions(descriptions_dir, keep=pending)
+    else:
+        descriptions = {}
+    if pending and not descriptions:
+        # Same failure the watermark guards against: the merge job takes the description store from
+        # a `continue-on-error` artifact, so an empty one means it was lost. Re-deriving now would
+        # run the cascade with no text and *wipe* description-sourced floors on exactly the rows
+        # this queue exists to repair — and clearing the queue would make that permanent.
+        _log.warning(
+            f"{len(pending)} rows queued to re-derive but no descriptions loaded — the store is "
+            "missing, not empty; leaving the queue for the next run"
+        )
+        pending = set()
     _log.info(
         f"derivations v{stored_version} stored, v{DERIVATIONS_VERSION} in code — "
-        f"{'SWEEPING' if sweep else 'no sweep'}; corpus facts for {len(facts)} Jobs"
-        + (f"; {len(descriptions)} settled descriptions" if sweep else "")
+        f"{'SWEEPING' if sweep else 'no sweep'}; corpus facts for {len(facts)} Jobs; "
+        f"{len(pending)} queued to re-derive"
+        + (f"; {len(descriptions)} settled descriptions" if descriptions else "")
     )
 
     tmp = meta_path.with_suffix(".jsonl.refresh")
@@ -211,7 +255,11 @@ def refresh(
                     continue
                 meta = json.loads(line)
                 row, fact_changed, derived_changed = refresh_row(
-                    meta, facts.get(meta["id"]), descriptions, sweep
+                    meta,
+                    facts.get(meta["id"]),
+                    descriptions,
+                    sweep,
+                    rederive=meta["id"] in pending,
                 )
                 rows += 1
                 fact_hits += fact_changed
@@ -240,6 +288,14 @@ def refresh(
     elif sweep:
         write_watermark(watermark, DERIVATIONS_VERSION)
         _log.info(f"watermark -> v{DERIVATIONS_VERSION}")
+
+    if pending and pending_rederive is not None:
+        # Cleared only now, after the rewrite landed. Safe against a later failure too: the merge
+        # job uploads data/state and the embedding store in the same step sequence, so a failed
+        # upload leaves HF holding the *old* queue beside the *old* meta.jsonl — consistent, and
+        # the next run redoes both.
+        pending_rederive.unlink(missing_ok=True)
+        _log.info(f"re-derive queue: cleared {len(pending)} consumed id(s)")
     return 0
 
 
@@ -250,8 +306,21 @@ def main() -> int:
     parser.add_argument("--source", type=Path, default=_JOBS)
     parser.add_argument("--descriptions", type=Path, default=_DESCRIPTIONS)
     parser.add_argument("--watermark", type=Path, default=_WATERMARK)
+    parser.add_argument(
+        "--pending-rederive",
+        type=Path,
+        default=PENDING_REDERIVE_PATH,
+        help="ids whose description settled since they were embedded (ADR-0062); "
+        "re-derived at an unchanged version, then cleared",
+    )
     args = parser.parse_args()
-    return refresh(args.store, args.source, args.descriptions, args.watermark)
+    return refresh(
+        args.store,
+        args.source,
+        args.descriptions,
+        args.watermark,
+        args.pending_rederive,
+    )
 
 
 if __name__ == "__main__":
