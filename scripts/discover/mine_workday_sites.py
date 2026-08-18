@@ -41,7 +41,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import urllib.error
 import urllib.request
 
-from headstart.scrapers.workday import INSTANCES
+from headstart.scrapers.workday import INSTANCES  # needs src on sys.path
 
 LEDGER = ROOT / "data" / "validate" / "liveness" / "workday.csv"
 POOL = ROOT / "data" / "ats-tenants-merged" / "workday.csv"

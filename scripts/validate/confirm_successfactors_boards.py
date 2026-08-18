@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http
+from headstart import http  # needs src on sys.path first
 
 UA = "HeadStart-discovery/0.1 (ATS board confirmation)"
 # The scraper's own job-URL shape: /job/{slug}/{numeric id}/ (scrapers/successfactors.py _JOB_PATH)

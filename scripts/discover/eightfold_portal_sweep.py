@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http
+from headstart import http  # needs src on sys.path first
 
 UA = "headstart/0.1 (job-board reader)"
 PORTALS = ["app.eightfold.ai", "app-eu.eightfold.ai", "app-wu.eightfold.ai"]

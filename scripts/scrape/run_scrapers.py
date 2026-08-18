@@ -75,7 +75,7 @@ def _load_rows(csv_path: Path) -> list[tuple[CompanyRef, int]]:
                 tenant, url = r.get("tenant", ""), r.get("url", "")
                 try:
                     slug = scraper.slug_from(tenant, url)
-                except Exception:  # noqa: BLE001, S112
+                except Exception:  # noqa: BLE001, S112 - a malformed row shouldn't crash the batch
                     continue
                 jobs = (r.get("jobs") or "").strip()
                 out.append(

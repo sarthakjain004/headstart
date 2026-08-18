@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "validate"))
 sys.path.insert(0, str(ROOT / "src"))
-from check_liveness import LIVE, PROBES
+from check_liveness import LIVE, PROBES  # needs the path above first
 
 from headstart import liveness
 

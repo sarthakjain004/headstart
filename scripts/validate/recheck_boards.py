@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_liveness import PROBES
+from check_liveness import PROBES  # needs the paths above first
 
 from headstart import liveness
 

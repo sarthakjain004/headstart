@@ -267,7 +267,7 @@ async def _probe(tab, spec: dict, tenant: str, url: str) -> tuple[str, int | Non
         await tab.go_to(target, timeout=_NAV_TIMEOUT_S)
         try:
             await tab.find(css_selector=spec["ready"], timeout=8, raise_exc=False)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:  # noqa: BLE001, S110 - a missing anchor is not a verdict
             pass
         await asyncio.sleep(_RENDER_SETTLE_MS / 1000)
         count = _script_value(

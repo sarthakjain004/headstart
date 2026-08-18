@@ -56,11 +56,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http, liveness
-from headstart.models import (
+from headstart import http, liveness  # needs src on sys.path first
+from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
-from headstart.scrapers.workday import (
+from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
 

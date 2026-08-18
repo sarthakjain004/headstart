@@ -45,7 +45,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http
+from headstart import http  # needs src on sys.path first
 
 UA = "HeadStart-discovery/0.1 (careers-board discovery; polite)"
 # Keka renders these at HTTP 200: unknown slug -> "Invalid Tenant", disabled portal ->

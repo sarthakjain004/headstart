@@ -67,5 +67,5 @@ def ask(prompt: str) -> str:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             reply = json.load(resp)
         return reply["choices"][0]["message"]["content"]
-    except Exception as exc:
+    except Exception as exc:  # every failure mode maps to the same caller answer
         raise RouterUnavailable(f"{type(exc).__name__}: {exc}") from exc

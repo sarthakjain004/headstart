@@ -156,7 +156,7 @@ class _PinnedClock:
     def __init__(self, moment: datetime) -> None:
         self.moment = moment
 
-    def now(self, tz=None) -> datetime:
+    def now(self, tz=None) -> datetime:  # mirrors datetime.now(tz)
         return self.moment
 
 

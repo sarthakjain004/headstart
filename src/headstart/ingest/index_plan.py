@@ -194,7 +194,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     for company in load_active_companies(ledger_dir, min_jobs=0):
         try:
             keep.add(get_scraper(company.ats, company.slug, company.name).board_key())
-        except Exception:  # noqa: BLE001, S112
+        except Exception:  # noqa: BLE001, S112 - a malformed ledger row shouldn't sink the whole set
             continue
     return keep
 
