@@ -58,12 +58,8 @@ from headstart.board_priority import save as save_priority
 from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
-from headstart.ingest import (
-    REPO_ROOT,
-    board_description_gap,
-    board_failures,
-    observability,
-)
+from headstart import board_description_gap
+from headstart.ingest import REPO_ROOT, board_failures, observability
 from headstart.ingest.update_descriptions import settled_ids
 
 _log = log.get(__name__, __spec__)

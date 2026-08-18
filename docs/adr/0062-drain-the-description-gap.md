@@ -104,6 +104,12 @@ description, which proves one existed when the Doc was built, and that alone res
 them; ADR-0050 measured the genuinely title-only population at ~16,771 index-wide, so the guess
 over-approximated by roughly 9×.
 
+Two populations are easy to confuse here, so both are named explicitly. The **degraded set** is every
+row with no flag on a detail-pass ATS — 152,383, of which the evidence rescues 66,296, leaving
+86,087. The **detail-pass gap** is the subset of those whose description is *also* still unsettled —
+151,538, of which 66,175 carry `regex`. The first is what `embed_plan` acts on; the second is what
+this ADR's slice quota drains.
+
 `update_meta` now writes the flag once on any row lacking it: `True` where the evidence proves it,
 and otherwise exactly what the inference already concluded — so recording it changes no behaviour,
 it only stops the guess being re-made every run. `embed_plan` then reads `has_description is False`

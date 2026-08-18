@@ -121,25 +121,19 @@ def _gap_picks(
     unsettled Jobs goes first, so each slot repairs as many rows as it can.
     """
     from headstart.config import board_identity
-    from headstart.scrapers.registry import SCRAPERS
+    from headstart.board_description_gap import key_for
+    from headstart.scrapers.registry import detail_pass_atses
 
-    # The gap ledger is keyed lowercase (ADR-0049 / ADR-0023: the liveness ledger's casing and the
-    # one baked into a Job id need not agree). `taken` holds the head's keys as-observed, which is
-    # the right comparison there — it is the same `board_identity` on both sides.
+    detail_pass = detail_pass_atses()
     candidates = [
         c
         for c in companies
-        if board_identity(c).lower() in unsettled and board_identity(c) not in taken
+        if key_for(c) in unsettled and board_identity(c) not in taken
     ]
     # `False < True`, so listing-only sorts ahead of detail-pass. An ATS missing from the registry
     # cannot be scraped at all, so where it lands is moot — it is treated as the expensive class
     # rather than special-cased.
-    candidates.sort(
-        key=lambda c: (
-            getattr(SCRAPERS.get(c.ats), "has_detail_pass", True),
-            -unsettled[board_identity(c).lower()],
-        )
-    )
+    candidates.sort(key=lambda c: (c.ats in detail_pass, -unsettled[key_for(c)]))
     return candidates[:slots]
 
 

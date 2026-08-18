@@ -43,10 +43,10 @@ from headstart.board_cost import costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import board_identity, load_active_companies
+from headstart import board_description_gap
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
-    board_description_gap,
     board_failures,
     observability,
     shard_speedup,
@@ -225,17 +225,17 @@ def main() -> int:
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)
     n = len(companies)
     priority = sum(1 for c in companies if scores.get(board_identity(c), 0.0) > 0.0)
-    # Gap boards are counted after the pick rather than from the ledger: the quota is capped by
-    # the slots available, and a Board already in the priority head is not re-picked for it.
-    gap_picked = sum(
-        1
-        for c in companies
-        if scores.get(board_identity(c), 0.0) <= 0.0
-        and board_identity(c).lower() in unsettled
+    # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
+    # quota picked N". With ~12k gap Boards and a ~14k random exploration tail, coincidental hits
+    # dominate the ~700 reserved slots, so a count phrased as quota fill would read as progress
+    # that the reservation did not make. What the ledger still tells us honestly is the backlog.
+    gap_in_slice = sum(
+        1 for c in companies if board_description_gap.key_for(c) in unsettled
     )
     _log.info(
-        f"slice: {n} boards ({priority} priority + {n - priority} exploration, of which "
-        f"{gap_picked} hold unsettled descriptions from {len(unsettled)} gap boards)"
+        f"slice: {n} boards ({priority} priority + {n - priority} exploration); "
+        f"{gap_in_slice} hold unsettled descriptions, out of {len(unsettled):,} gap boards "
+        f"({sum(unsettled.values()):,} jobs) still to drain"
     )
 
     out_dir = Path(args.out_dir)

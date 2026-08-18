@@ -270,8 +270,8 @@ def test_a_queued_row_is_rederived_at_an_unchanged_version(tmp_path):
 
     row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
     assert row["min_years"] == 7, "the newly-settled description must reach the cascade"
-    assert not queue.exists(), (
-        "a consumed queue is cleared so the next run does not redo it"
+    assert queue.read_text(encoding="utf-8").strip() == "", (
+        "a consumed queue is emptied so the next run does not redo it"
     )
 
 
@@ -386,3 +386,59 @@ def test_backfill_never_overwrites_an_existing_flag(tmp_path):
 
     out = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
     assert out["has_description"] is False
+
+
+def test_backfill_reads_the_row_as_it_was_before_this_refresh(tmp_path):
+    """The bug this pins: a pre-ADR-0050 Workday row embedded title-only, whose description settles
+    now. The cascade rewrites experience_source to 'regex' from text the vector never saw — reading
+    that back as proof would mark it has_description True and hide a genuinely degraded vector from
+    the upgrade path forever, which is exactly what ADR-0061 froze the field against."""
+    store = tmp_path / "store"
+    store.mkdir()
+    row = _meta(
+        id="workday:a:1", ats="workday", experience_source="seniority", min_years=0
+    )
+    del row["has_description"]  # pre-ADR-0050
+    (store / "meta.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+
+    import gzip
+
+    desc = tmp_path / "descriptions"
+    (desc / "workday").mkdir(parents=True)
+    with gzip.open(desc / "workday" / "base.jsonl.gz", "wt", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps({"id": "workday:a:1", "description": "8+ years of experience"})
+            + "\n"
+        )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("workday:a:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    out = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert out["min_years"] == 8, "the settled description must still reach the cascade"
+    assert out["has_description"] is False, (
+        "the vector was built before this text existed, so it stays degraded and repairable"
+    )
+
+
+def test_a_consumed_queue_is_emptied_not_unlinked(tmp_path):
+    """The merge uploads data/state without --delete, so a local unlink never reaches the dataset
+    (data/state/embedded_ids.txt.gz is still on HF though nothing writes it). An unlinked queue
+    would be re-fetched and re-appended by every later join, forever."""
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "5+ years of experience"}
+    )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("greenhouse:acme:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    assert queue.exists(), "the file must survive so it overwrites the remote copy"
+    assert queue.read_text(encoding="utf-8").strip() == ""

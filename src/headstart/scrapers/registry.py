@@ -62,6 +62,18 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 DISABLED_ATS: frozenset[str] = frozenset({"join"})
 
 
+def detail_pass_atses() -> frozenset[str]:
+    """ATSes whose ``description`` comes from a per-Job **detail pass**, so it can go missing.
+
+    Lives here because three callers across two packages need the same answer and had drifted into
+    computing it three ways — `embed_plan` to decide which vectors were degraded, `update_meta` to
+    backfill that flag, and `board_priority` to drain the cheap half of the description gap first.
+    """
+    return frozenset(
+        ats for ats, scraper in SCRAPERS.items() if scraper.has_detail_pass
+    )
+
+
 def get_scraper(
     ats: str,
     slug: str,

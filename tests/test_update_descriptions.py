@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import sys
 
 from headstart.ingest import update_descriptions as ud
 
@@ -248,3 +249,44 @@ def test_an_edited_description_is_requeued(tmp_path):
     _, _, _, ids = ud.reconcile(jobs, store)
 
     assert ids == ["eightfold:acme:1"]
+
+
+def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch):
+    """A Job first embedded this run has its metadata written from this very description, so it
+    needs no repair. Queueing every `learned` id would put every new Job on every listing-only
+    Board in the queue — tens of thousands per run — and a non-empty queue makes the merge load the
+    whole description store every run instead of only on a sweep."""
+    jobs_dir = tmp_path / "tech"
+    _corpus(
+        jobs_dir / "eightfold.jsonl",
+        [
+            _job("eightfold:acme:old", "3+ years.", detail_fetched=True),
+            _job("eightfold:acme:new", "5+ years.", detail_fetched=True),
+        ],
+    )
+    prior_meta = tmp_path / "meta.jsonl"
+    prior_meta.write_text(
+        json.dumps({"id": "eightfold:acme:old"}) + "\n", encoding="utf-8"
+    )
+    queue = tmp_path / "pending_rederive.txt"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--jobs",
+            str(jobs_dir),
+            "--store",
+            str(tmp_path / "store"),
+            "--held-details",
+            str(tmp_path / "held.txt.gz"),
+            "--pending-rederive",
+            str(queue),
+            "--prior-meta",
+            str(prior_meta),
+        ],
+    )
+    ud.main()
+
+    assert queue.read_text(encoding="utf-8").split() == ["eightfold:acme:old"]

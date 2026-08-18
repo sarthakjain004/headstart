@@ -14,7 +14,7 @@ import gzip
 import json
 from pathlib import Path
 
-from headstart.ingest import board_description_gap
+from headstart import board_description_gap
 from headstart.ingest import board_failures as bf
 from headstart.ingest.update_ledgers import failures, gap
 

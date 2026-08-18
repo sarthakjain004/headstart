@@ -55,6 +55,7 @@ from headstart.experience import extract, from_field, from_seniority
 from headstart.ingest import PENDING_REDERIVE_PATH, REPO_ROOT, read_id_list
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
+from headstart.scrapers import registry
 
 _log = log.get(__name__, __spec__)
 
@@ -75,13 +76,6 @@ FACT_FIELDS = tuple(f for f in META_FIELDS if f not in _IDENTITY)
 
 #: Recomputed from facts whenever the extractor's version moves.
 DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
-
-
-def detail_pass_atses() -> frozenset[str]:
-    """ATSes whose descriptions need a per-Job fetch, so a lost fetch means a title-only vector."""
-    from headstart.scrapers.registry import SCRAPERS
-
-    return frozenset(a for a, s in SCRAPERS.items() if s.has_detail_pass)
 
 
 def has_description_for(row: dict, detail_pass: frozenset[str]) -> bool:
@@ -277,7 +271,7 @@ def refresh(
         + (f"; {len(descriptions)} settled descriptions" if descriptions else "")
     )
 
-    detail_pass = detail_pass_atses()
+    detail_pass = registry.detail_pass_atses()
     tmp = meta_path.with_suffix(".jsonl.refresh")
     rows = fact_hits = derived_hits = backfilled = 0
     try:
@@ -302,8 +296,15 @@ def refresh(
                 derived_hits += derived_changed
                 # Written once, on the rows that never had it. A row that carries the flag keeps
                 # it: it is a fact about the vector, and only a re-embed may change it.
+                #
+                # Read from `meta`, the row as it was BEFORE this refresh — never from `row`. The
+                # cascade above may have just set `experience_source = "regex"` from a description
+                # that settled *this run*, which the vector was never built from. Reading that back
+                # as proof would mark a genuinely title-only vector `has_description: True` and hide
+                # it from the upgrade path forever — the exact failure ADR-0061 froze this field
+                # against.
                 if row.get("has_description") is None:
-                    row["has_description"] = has_description_for(row, detail_pass)
+                    row["has_description"] = has_description_for(meta, detail_pass)
                     backfilled += 1
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 if rows % 50_000 == 0:
@@ -336,7 +337,12 @@ def refresh(
         # job uploads data/state and the embedding store in the same step sequence, so a failed
         # upload leaves HF holding the *old* queue beside the *old* meta.jsonl — consistent, and
         # the next run redoes both.
-        pending_rederive.unlink(missing_ok=True)
+        #
+        # **Truncated, not unlinked.** The merge uploads `data/state` without `--delete`, so a
+        # local deletion never reaches the dataset: `data/state/embedded_ids.txt.gz` is still on HF
+        # although nothing in this repo has written it for months. An unlink here would leave the
+        # remote queue intact, and every later join would re-fetch and re-append it forever.
+        pending_rederive.write_text("", encoding="utf-8")
         _log.info(f"re-derive queue: cleared {len(pending)} consumed id(s)")
     return 0
 
