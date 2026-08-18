@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from collections.abc import Callable, Container
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -125,14 +126,18 @@ class JobWriter:
         self._done_handle.write(board_key + "\n")
         self._done_handle.flush()
 
-    def record_cost(self, board_key: str, seconds: float, jobs: int) -> None:
+    def record_cost(
+        self, board_key: str, seconds: float, jobs: int, *, unfinished: bool = False
+    ) -> None:
         """Append this board's measured scrape seconds, flushed per board (ADR-0027).
 
         Same contract as :meth:`mark_done`: written as each board lands, never buffered, so a
         shard killed by its time budget still hands the join every timing it did measure. The
         filename is deliberately *not* dotted — ``actions/upload-artifact`` skips hidden files by
         default, which is why the ``.done`` journal never reaches the join and this must."""
-        self._cost_handle.write(shard_row(board_key, seconds, jobs))
+        self._cost_handle.write(
+            shard_row(board_key, seconds, jobs, unfinished=unfinished)
+        )
         self._cost_handle.flush()
 
     def close(self) -> None:
@@ -193,6 +198,14 @@ def scrape_all(
     # board that hangs 30s before raising costs 30s, and the packer must know that.
     elapsed: dict[str, float] = {}
 
+    # Boards currently mid-fetch: {board: the monotonic clock it started at}. Only the ones still
+    # here when the harvest goes down matter — those are the Boards a time budget killed
+    # unfinished, and they are exactly the Boards `elapsed` can never hold a timing for. Guarded
+    # by a lock rather than relying on dict atomicity because the teardown path reads it while
+    # abandoned threads are still popping their own keys (ADR-0064).
+    in_flight: dict[str, float] = {}
+    in_flight_lock = threading.Lock()
+
     # Boards that returned a list they know is short: "ats:slug" -> why. Filled beside `elapsed`
     # rather than raised, because the partial Jobs are real and must still be written (ADR-0053).
     truncated: dict[str, str] = {}
@@ -203,10 +216,18 @@ def scrape_all(
         scraper = get_scraper(
             company.ats, company.slug, company.name, have_details=have_details
         )
+        # Registered only once there is a fetch to be in the middle of. `get_scraper` raises on
+        # an unknown ATS or a malformed slug, and a key registered before it would never be
+        # popped — the teardown would then cost that Board the shard's whole remaining hour and
+        # the value gate would drop it forever, on a Board that failed instantly.
+        with in_flight_lock:
+            in_flight[key] = start
         try:
             return scraper.fetch()
         finally:
             elapsed[key] = time.monotonic() - start
+            with in_flight_lock:
+                in_flight.pop(key, None)
             # Read after fetch, in `finally`: a scraper that truncated and *then* raised still
             # reported something worth carrying.
             if scraper.truncated:
@@ -269,6 +290,20 @@ def scrape_all(
         # exited, and `JobWriter` is written only from that loop and flushed per Board, so no
         # straggler is mid-write when we stop waiting.
         executor.shutdown(wait=False, cancel_futures=True)
+        # Cost the Boards that never finished, before the writer closes. Whatever is still in
+        # flight here was killed mid-fetch, and the seconds it burned are a *floor* on its true
+        # cost — the one thing a kill proves. Without this the packer never learns: a Board too
+        # big to finish writes no row, keeps its stale estimate, is packed cheap again, and kills
+        # a shard again, every run (ADR-0064).
+        #
+        # Snapshot under the lock: the abandoned threads are still running and still popping
+        # their own keys. No Board can be both here and already costed — a worker pops itself
+        # before its future completes, and `record_cost` runs only from the `as_completed` loop
+        # above, which has already exited. So everything in this snapshot needs its floor.
+        with in_flight_lock:
+            unfinished = sorted(in_flight.items())
+        for key, started_at in unfinished:
+            writer.record_cost(key, time.monotonic() - started_at, 0, unfinished=True)
         writer.close()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done

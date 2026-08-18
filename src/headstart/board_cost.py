@@ -29,13 +29,28 @@ from typing import Iterable, Mapping
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
 # Schema lives here, next to its reader, so adding a column is one edit rather than two files.
-SHARD_FIELDS = ("board", "seconds", "jobs")
+SHARD_FIELDS = ("board", "seconds", "jobs", "unfinished")
 SHARD_HEADER = ",".join(SHARD_FIELDS) + "\n"
 
 
-def shard_row(board_key: str, seconds: float, jobs: int) -> str:
+@dataclass(frozen=True, slots=True)
+class ShardCost:
+    """One shard's timing for one Board — what the fragment carries to the join."""
+
+    seconds: float
+    jobs: int
+    # True when the shard was killed while this Board was still fetching. Then `seconds` is a
+    # *lower bound* on the Board's cost, not a measurement of it, and the two must not blend the
+    # same way: an EWMA would record less than the kill proved, which is how a Board too big to
+    # finish kept a price low enough to be packed again every run (ADR-0064).
+    unfinished: bool = False
+
+
+def shard_row(
+    board_key: str, seconds: float, jobs: int, *, unfinished: bool = False
+) -> str:
     """One ``board_cost.csv`` line, newline included."""
-    return f"{board_key},{seconds:.3f},{jobs}\n"
+    return f"{board_key},{seconds:.3f},{jobs},{int(unfinished)}\n"
 
 
 # EWMA weight on this run's seconds. Lower than board_priority's 0.7 because wall time carries
@@ -78,20 +93,35 @@ def save(path: str | Path, rows: dict[str, BoardCost]) -> None:
             writer.writerow([board, f"{c.seconds:.3f}", c.jobs, c.updated_at])
 
 
-def read_shard_rows(path: str | Path) -> dict[str, tuple[float, int]]:
-    """One shard's ``board_cost.csv`` as {board: (seconds, jobs)}.
+def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
+    """One shard's ``board_cost.csv`` as {board: ShardCost}.
 
     Tolerates a truncated final line: a shard killed mid-write by its time budget can leave one,
     and dropping just that row is strictly better than losing the shard's whole measurement set.
+    A fragment written before the ``unfinished`` column existed reads as all-measured, which is
+    what it was — the column is absent, not false.
     """
     path = Path(path)
     if not path.exists():
         return {}
-    out: dict[str, tuple[float, int]] = {}
+    out: dict[str, ShardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
+        reader = csv.DictReader(fh)
+        # Whether the *file* has the column, not whether a row does. A row missing it means two
+        # different things: in a pre-``unfinished`` fragment the row is a complete measurement,
+        # but in a current one it is a tail torn mid-write — and a torn floor row read as a
+        # measurement gets EWMA-blended, which is the one thing the floor exists to prevent.
+        has_flag = "unfinished" in (reader.fieldnames or ())
+        for row in reader:
             try:
-                out[row["board"]] = (float(row["seconds"]), int(row["jobs"]))
+                flag = row.get("unfinished")
+                if has_flag and flag is None:
+                    continue  # torn tail row
+                out[row["board"]] = ShardCost(
+                    seconds=float(row["seconds"]),
+                    jobs=int(row["jobs"]),
+                    unfinished=bool(int(flag or 0)),
+                )
             except (TypeError, ValueError):
                 continue  # half-written tail row
     return out
@@ -99,7 +129,7 @@ def read_shard_rows(path: str | Path) -> dict[str, tuple[float, int]]:
 
 def update(
     prev: dict[str, BoardCost],
-    measured: Mapping[str, tuple[float, int]],
+    measured: Mapping[str, ShardCost],
     *,
     current_weight: float = CURRENT_WEIGHT,
     today: str | None = None,
@@ -111,19 +141,36 @@ def update(
     scrape carry their row unchanged — a partial harvest must not decay what it never timed.
     Nothing is pruned: unlike a tech-yield score, a Board being expensive is not a reason to
     forget it, and the row is tiny.
+
+    An **unfinished** row does not blend. Its seconds are a lower bound — the Board ran that long
+    and still had work left — so the ledger takes ``max(stored, burned)``: a bound may raise a
+    Board's price, never lower it. Blending one instead records less than the kill proved, and
+    for the Board this matters for that is the difference between being re-packed every run and
+    being priced honestly (ADR-0064). Its ``jobs`` count is left as it was, because the Board
+    banked no complete listing this run and a 0 there would erase what the last full scrape saw.
     """
     today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     rows = dict(prev)
-    for board, (seconds, jobs) in measured.items():
-        if seconds <= 0:  # never measured (or a clock artifact) — don't poison the EWMA
+    for board, now in measured.items():
+        if (
+            now.seconds <= 0
+        ):  # never measured (or a clock artifact) — don't poison the EWMA
             continue
         before = prev.get(board)
+        if now.unfinished:
+            floor = max(now.seconds, before.seconds) if before else now.seconds
+            rows[board] = BoardCost(
+                seconds=floor,
+                jobs=before.jobs if before else now.jobs,
+                updated_at=today,
+            )
+            continue
         blended = (
-            seconds
+            now.seconds
             if before is None
-            else current_weight * seconds + (1 - current_weight) * before.seconds
+            else current_weight * now.seconds + (1 - current_weight) * before.seconds
         )
-        rows[board] = BoardCost(seconds=blended, jobs=jobs, updated_at=today)
+        rows[board] = BoardCost(seconds=blended, jobs=now.jobs, updated_at=today)
     return rows
 
 

@@ -221,9 +221,9 @@ def test_records_measured_seconds_for_every_board_including_failures(
 
     rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
     assert set(rows) == {"x:good", "x:bad"}
-    assert all(seconds >= 0.0 for seconds, _ in rows.values())
-    assert rows["x:good"][1] == 1  # jobs written
-    assert rows["x:bad"][1] == 0  # errored board wrote none, but is still costed
+    assert all(r.seconds >= 0.0 for r in rows.values())
+    assert rows["x:good"].jobs == 1  # jobs written
+    assert rows["x:bad"].jobs == 0  # errored board wrote none, but is still costed
     assert not harvest.COST_FILENAME.startswith(".")
 
 
@@ -357,3 +357,102 @@ def test_shutdown_does_not_wait_for_a_board_still_in_flight(monkeypatch, tmp_pat
 
     # With wait=True this sits on the blocked Board for its full 30s. The bug is "waits at all".
     assert elapsed < 5, f"shutdown blocked {elapsed:.1f}s on an in-flight Board"
+
+
+def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
+    monkeypatch, tmp_path
+):
+    """The survivorship hole that let one Board kill a shard every run, forever.
+
+    A Board that never finishes writes no cost row, so the packer keeps whatever stale estimate
+    it held. Measured 2026-08-18 on run 32133497258: `workday:dollartree/dollartreeus` (24,017
+    postings, ~67 min to page at Workday's 20-per-page cap) ran the last 52 minutes of shard 13
+    and was killed unfinished — while the ledger priced it at 411.9 s. It was re-drawn as a cheap
+    Board and killed a shard again the next run, and would have indefinitely: the one Board whose
+    cost the model most needed to learn was the one Board it could never measure.
+
+    So the timing a kill *does* prove — that the Board ran at least this long without finishing —
+    has to reach the ledger. It is a floor, not a measurement, which is why it is only ever
+    written for a Board still in flight when the harvest goes down.
+    """
+    import threading
+
+    blocked = threading.Event()
+    released = threading.Event()
+
+    class _Blocking:
+        truncated: str | None = None
+
+        def fetch(self):
+            blocked.set()
+            released.wait(30)  # stands in for the giant board still paging at the kill
+            return []
+
+    def fake_get(ats, slug, name=None, **_):
+        return FakeScraper([make_job("x:quick:1")]) if slug == "quick" else _Blocking()
+
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
+
+    def on_board(key, jobs, error, seconds, truncated=None):
+        if key.endswith(":quick"):
+            blocked.wait(10)  # the monster really is mid-fetch when the budget fires
+            time.sleep(0.05)  # ... and has burned time worth recording when it does
+            raise SystemExit("time budget")
+
+    companies = [CompanyRef(ats="x", slug="quick"), CompanyRef(ats="x", slug="monster")]
+    try:
+        with pytest.raises(SystemExit):
+            scrape_all(companies, jobs_dir=tmp_path, on_board=on_board)
+    finally:
+        released.set()
+
+    rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
+    assert set(rows) == {"x:quick", "x:monster"}, (
+        "the unfinished Board must be costed, not silently dropped"
+    )
+    monster = rows["x:monster"]
+    assert monster.seconds >= 0.04, (
+        f"the floor must be the seconds it actually burned, got {monster.seconds}"
+    )
+    assert monster.unfinished, "a bound must not reach the ledger as a measurement"
+    assert not rows["x:quick"].unfinished
+
+
+def test_a_clean_finish_costs_every_board_exactly_once(monkeypatch, tmp_path):
+    """The floor must not double-write. Every Board finished, so nothing is in flight, and the
+    rows are the ordinary measured ones — a second row per Board would blend a Board's own
+    timing into itself and drag the whole ledger."""
+
+    def fake_get(ats, slug, name=None, **_):
+        return FakeScraper([make_job(f"x:{slug}:1")])
+
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
+    scrape_all([CompanyRef("x", "a"), CompanyRef("x", "b")], jobs_dir=tmp_path)
+
+    lines = (tmp_path / harvest.COST_FILENAME).read_text().strip().split("\n")
+    assert len(lines) == 3, f"header + one row per Board, got {lines}"
+
+
+def test_a_board_whose_scraper_never_constructed_gets_no_floor(monkeypatch, tmp_path):
+    """The floor must cost a fetch, not a failure to start one.
+
+    `get_scraper` raises on an unknown ATS or a malformed slug. Registering the Board as
+    in-flight before that call leaked the key — nothing ever popped it — so the teardown costed
+    an instantly-failed Board the shard's entire remaining hour, and the ADR-0064 value gate then
+    dropped it permanently on a number it never earned.
+    """
+
+    def fake_get(ats, slug, name=None, **_):
+        if slug == "unbuildable":
+            raise ValueError(f"unknown ats: {ats}")
+        return FakeScraper([make_job("x:ok:1")])
+
+    monkeypatch.setattr(harvest, "get_scraper", fake_get)
+    scrape_all(
+        [CompanyRef("x", "unbuildable"), CompanyRef("x", "ok")], jobs_dir=tmp_path
+    )
+
+    rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
+    assert not any(r.unfinished for r in rows.values()), (
+        f"a Board that never started a fetch was costed as if it had: {rows}"
+    )

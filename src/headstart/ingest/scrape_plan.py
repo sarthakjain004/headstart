@@ -36,10 +36,12 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
 
 from headstart import log
-from headstart.board_cost import costs_for
+from headstart.board_cost import BoardCost, costs_for
 from headstart.board_cost import load as load_cost_ledger
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import board_identity, load_active_companies
@@ -86,6 +88,74 @@ _DETAIL_ATS = frozenset(
 )
 _DETAIL_WEIGHT = 6.0
 _EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to size by
+
+# The value gate (ADR-0064). A shard's wall clock is set by its single slowest Board — LPT
+# balances the *sum*, but a Board is indivisible, so the makespan floor is the biggest item and
+# no amount of re-packing moves it. Measured on run 32133497258: every shard finished 1,200 of
+# its ~1,340 Boards in 6-9 min, then sat on a handful of giants for the rest of the hour, and in
+# eight of fifteen shards the wall clock was within a minute of that one Board.
+#
+# So the lever is which giants are worth an hour. Only 12 Boards in a 68,715-row ledger cost
+# more than 15 min, and their tech yield per minute of shard time splits cleanly in two: hcltech
+# 124-146, EY 24, walmart 20, target 7.1, paradox 5.7 — then a gap — compass 1.3, viacomcbs 0.9,
+# REWE 0.5, lidl 0.3, dollartree 0.2, advanceauto 0.03, cbscorporation 0.01. Anything in the gap
+# separates the same two sets, which is why this is a threshold and not a tuned parameter.
+_GATE_FLOOR_S = 900.0  # 15 min: below it a Board cannot threaten a 60 min makespan
+_GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap above
+# A gated Board is not scraped, so its cost and score freeze — and evidence that cannot change
+# makes the gate a one-way door. Expiring the measurement re-admits it for one run every so
+# often, where it is measured again and judged on what it is now. The cost of being wrong is
+# then one shard-hour a fortnight, not a Board lost forever.
+_GATE_RECHECK_DAYS = 14
+
+
+def _gated_boards(
+    identities: list[tuple[str, str]],
+    cost_rows: Mapping[str, BoardCost],
+    scores: Mapping[str, float],
+    *,
+    today: str | None = None,
+) -> dict[str, float]:
+    """Boards whose measured hour buys too little tech to be worth a shard's makespan.
+
+    ``identities`` pairs each Board's **cost** key (``{ats}:{slug}``) with its **priority** key
+    (``board_identity``); the two ledgers are keyed differently and reading one with the other's
+    key is what left every Workday board unscored (ADR-0049). Returns ``{cost_key: tech per
+    minute}`` — the number, not just the verdict, so the caller can log why each Board went.
+
+    Only ever judges a Board on **its own** measurement. An unmeasured Board is costed from its
+    ATS's median by :func:`costs_for`, and gating on that would drop a Board for its ATS's
+    reputation before it ever had a record of its own.
+    """
+    today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    gated: dict[str, float] = {}
+    for cost_key, priority_key in identities:
+        row = cost_rows.get(cost_key)
+        if row is None or row.seconds <= _GATE_FLOOR_S:
+            continue
+        if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
+            continue  # measurement expired — re-admit it and measure again
+        tech_per_min = scores.get(priority_key, 0.0) / (row.seconds / 60)
+        if tech_per_min < _GATE_MIN_TECH_PER_MIN:
+            gated[cost_key] = tech_per_min
+    return gated
+
+
+def _days_since(updated_at: str, today: str) -> float:
+    """Days between two ``YYYY-MM-DD`` stamps; ``inf`` if the stored one is unreadable.
+
+    Unreadable reads as ancient on purpose: the gate then re-admits the Board and re-measures
+    it, which is the safe direction — a bad date must never be grounds for dropping work.
+    """
+    fmt = "%Y-%m-%d"
+    try:
+        then = datetime.strptime(updated_at, fmt)
+        now = datetime.strptime(today, fmt)
+    except (TypeError, ValueError):
+        return float("inf")
+    return float((now - then).days)
+
+
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`
 _TARGET_SECONDS = 600.0  # ~10 min of measured work per shard; a 20k slice → ~14 shards
 _TARGET_BOARDS = (
@@ -221,6 +291,27 @@ def main() -> int:
             "confirmed-gone board(s)"
         )
     scores = load_scores(Path(args.priority))
+    # Loaded before the slice is picked, not after: the value gate (ADR-0064) needs measured
+    # seconds to decide what is worth a shard's makespan, and a Board dropped after selection
+    # would still have taken a slot from something that would have been scraped.
+    cost_rows = load_cost_ledger(Path(args.cost))
+    gated = _gated_boards(
+        [(f"{c.ats}:{c.slug}", board_identity(c)) for c in companies],
+        cost_rows,
+        scores,
+    )
+    if gated:
+        companies = [c for c in companies if f"{c.ats}:{c.slug}" not in gated]
+        # Named, every run, not just counted. This gate removes work on purpose, and the only
+        # way that stays honest is if the list is in front of whoever reads the run — a Board
+        # gated in error is invisible everywhere else, because nothing downstream misses it.
+        worst = sorted(gated.items(), key=lambda kv: kv[1])
+        _log.warning(
+            f"value gate: skipped {len(gated)} Board(s) costing over "
+            f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
+            f"jobs/min — "
+            + observability.named_sample([f"{k} ({d:.2f}/min)" for k, d in worst])
+        )
     unsettled = board_description_gap.load(Path(args.gap))
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)
     n = len(companies)
@@ -257,7 +348,6 @@ def main() -> int:
     # and so is keyed by `board_key()` (ADR-0049). Conflating them is what left every Workday
     # and Personio board permanently unscored.
     keys = [f"{c.ats}:{c.slug}" for c in companies]  # cost ledger
-    cost_rows = load_cost_ledger(Path(args.cost))
     measured = bool(cost_rows)  # branch once; every later format choice reads this
     if measured:
         costs = costs_for(keys, cost_rows)

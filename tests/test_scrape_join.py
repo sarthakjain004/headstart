@@ -163,3 +163,43 @@ def test_a_raise_and_a_truncation_both_land(tmp_path):
     }
     written = js.write_unauthoritative_boards([report], tmp_path / "e.json")
     assert set(written) == {"workday:x/Careers", "eightfold:nvidia.eightfold.ai"}
+
+
+def test_the_join_names_the_boards_the_run_deferred(caplog):
+    """A shard names its own losses; the join is where a Board that keeps being deferred stops
+    looking like one shard's bad luck. Finding `workday:dollartree/dollartreeus` on 2026-08-18
+    took downloading the assignment artifact and the banked fragment and diffing them — the
+    reports carried the answer the whole time and nothing read it (ADR-0064).
+    """
+    import logging
+
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
+    reports = [
+        {
+            "shard": "13",
+            "killed_by_budget": True,
+            "undone": 1,
+            "seconds": 3599.0,
+            "deferred": [
+                "workday:https://dollartree.wd5.myworkdayjobs.com/dollartreeus"
+            ],
+        },
+        {"shard": "1", "killed_by_budget": False, "undone": 0, "seconds": 600.0},
+    ]
+
+    js._report_shards(reports, 1000, 5)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("deferred boards: workday:https://dollartree" in m for m in messages)
+
+
+def test_the_join_says_nothing_about_deferred_boards_on_a_clean_run(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
+    js._report_shards(
+        [{"shard": "0", "killed_by_budget": False, "undone": 0, "seconds": 100.0}],
+        10,
+        1,
+    )
+    assert not any("deferred boards:" in r.getMessage() for r in caplog.records)

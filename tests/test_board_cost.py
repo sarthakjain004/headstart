@@ -13,6 +13,7 @@ from headstart.board_cost import (
     ats_medians,
     costs_for,
     load,
+    ShardCost,
     read_shard_rows,
     save,
     update,
@@ -26,27 +27,27 @@ def _rows(**kw: float) -> dict[str, BoardCost]:
 
 
 def test_first_measurement_is_adopted_not_blended():
-    rows = update({}, {"workday:acme": (120.0, 300)})
+    rows = update({}, {"workday:acme": ShardCost(120.0, 300)})
     assert rows["workday:acme"].seconds == 120.0  # no history to blend against
 
 
 def test_second_measurement_ewma_blends_with_history():
     prev = _rows(**{"workday:acme": 100.0})
-    rows = update(prev, {"workday:acme": (200.0, 300)}, current_weight=0.5)
+    rows = update(prev, {"workday:acme": ShardCost(200.0, 300)}, current_weight=0.5)
     assert rows["workday:acme"].seconds == 150.0
 
 
 def test_unscraped_boards_carry_unchanged():
     # partial-harvest rule: a run must not decay a Board it never timed
     prev = _rows(**{"lever:a": 30.0, "workday:b": 90.0})
-    rows = update(prev, {"lever:a": (10.0, 5)}, current_weight=0.5)
+    rows = update(prev, {"lever:a": ShardCost(10.0, 5)}, current_weight=0.5)
     assert rows["workday:b"] == prev["workday:b"]
     assert rows["lever:a"].seconds == 20.0
 
 
 def test_zero_seconds_never_poisons_the_ewma():
     prev = _rows(**{"workday:acme": 100.0})
-    rows = update(prev, {"workday:acme": (0.0, 0)})
+    rows = update(prev, {"workday:acme": ShardCost(0.0, 0)})
     assert rows["workday:acme"].seconds == 100.0
 
 
@@ -75,8 +76,40 @@ def test_costs_for_falls_back_when_ledger_is_empty():
 def test_read_shard_rows_skips_a_torn_final_line(tmp_path):
     # a shard killed mid-write by its time budget leaves a partial row; the rest must survive
     p = tmp_path / "board_cost.csv"
-    p.write_text("board,seconds,jobs\nlever:a,12.5,3\nworkday:b,", encoding="utf-8")
-    assert read_shard_rows(p) == {"lever:a": (12.5, 3)}
+    p.write_text(
+        "board,seconds,jobs,unfinished\nlever:a,12.5,3,0\nworkday:b,", encoding="utf-8"
+    )
+    assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}
+
+
+def test_read_shard_rows_reads_a_fragment_written_before_the_unfinished_column(
+    tmp_path,
+):
+    """An in-flight upgrade must not drop a whole shard's measurements. The old three-column
+    fragment is all-measured — the column is absent, not false."""
+    p = tmp_path / "board_cost.csv"
+    p.write_text("board,seconds,jobs\nlever:a,12.5,3\n", encoding="utf-8")
+    assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}
+
+
+def test_an_unfinished_row_raises_the_price_and_never_lowers_it(tmp_path):
+    """The floor is a bound, not a measurement (ADR-0064). Blending it records less than the
+    kill proved — which for dollartree was the difference between 1,766 s and the 3,120 s it
+    demonstrably burned, and 1,766 s is low enough to be packed into another shard next run."""
+    prev = {"workday:dollartree": BoardCost(411.9, 24017, "2026-08-17")}
+    rows = update(prev, {"workday:dollartree": ShardCost(3120.0, 0, unfinished=True)})
+    assert rows["workday:dollartree"].seconds == 3120.0
+    assert rows["workday:dollartree"].jobs == 24017, (
+        "an unfinished run banked no listing; a 0 would erase the last full scrape's count"
+    )
+
+
+def test_an_unfinished_row_below_the_stored_cost_leaves_it_alone(tmp_path):
+    """A shard killed early proves only a small bound. Taking it as the measurement would let
+    an unlucky kill make an expensive Board look cheap — the opposite of the point."""
+    prev = {"workday:big": BoardCost(2000.0, 900, "2026-08-17")}
+    rows = update(prev, {"workday:big": ShardCost(30.0, 0, unfinished=True)})
+    assert rows["workday:big"].seconds == 2000.0
 
 
 def test_read_shard_rows_missing_file_is_empty():
@@ -92,3 +125,16 @@ def test_save_load_round_trip_sorted_cost_desc(tmp_path):
 
 def test_load_missing_file_is_empty():
     assert load("/nonexistent/board_cost.csv") == {}
+
+
+def test_a_floor_row_torn_mid_write_is_dropped_not_read_as_measured(tmp_path):
+    """The floor rows are written last, at teardown, so a torn tail is most likely one of them —
+    and a floor read as a measurement is EWMA-blended, which is exactly what the floor exists to
+    prevent. The header tells the two apart: this file has the column, so a row without it is
+    torn, not old."""
+    p = tmp_path / "board_cost.csv"
+    p.write_text(
+        "board,seconds,jobs,unfinished\nlever:a,12.5,3,0\nworkday:big,3120.0,0",
+        encoding="utf-8",
+    )
+    assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}
