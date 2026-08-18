@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import sys
 
 from headstart.ingest import update_descriptions as ud
 
@@ -57,7 +58,7 @@ def test_a_failed_fetch_is_repaired_from_the_store(tmp_path):
 
     # next run: the detail fetch 405s, so the scrape emits the Job with no description at all
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=False)])
-    filled, _, _ = ud.reconcile(jobs, store)
+    filled, _, _, _ = ud.reconcile(jobs, store)
 
     assert filled == 1
     assert _rows(jobs)[0]["description"] == "We are hiring."
@@ -98,7 +99,7 @@ def test_a_detail_that_answered_with_no_description_is_settled(tmp_path):
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=True)])
 
-    _, _, settled = ud.reconcile(jobs, store)
+    _, _, settled, _ = ud.reconcile(jobs, store)
 
     assert settled == 1
     assert ud.read_store(store) == {"eightfold:acme:1": None}
@@ -111,7 +112,7 @@ def test_a_failed_fetch_is_not_settled(tmp_path):
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=False)])
 
-    _, _, settled = ud.reconcile(jobs, store)
+    _, _, settled, _ = ud.reconcile(jobs, store)
 
     assert settled == 0
     assert ud.read_store(store) == {}
@@ -194,3 +195,98 @@ def test_the_next_fragment_follows_the_highest_sequence(tmp_path):
     out = ud._write_fragment(store, [{"id": "eightfold:acme:2", "description": "y"}])
 
     assert out.name == "10001.jsonl.gz"
+
+
+# --- the ADR-0062 re-derivation marking -----------------------------------------------------
+
+
+def test_reconcile_reports_the_ids_it_settled(tmp_path):
+    """Both entry kinds are marked: a text entry gives the cascade something new to read, and an
+    authoritative null is equally a settled answer it can derive from."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(
+        jobs,
+        [
+            _job("eightfold:acme:1", "We are hiring.", detail_fetched=True),
+            _job(
+                "eightfold:acme:2", None, detail_fetched=True
+            ),  # settled as having none
+            _job("eightfold:acme:3", None, detail_fetched=False),  # a failed fetch
+        ],
+    )
+
+    _, learned, settled, ids = ud.reconcile(jobs, store)
+
+    assert (learned, settled) == (1, 1)
+    assert set(ids) == {"eightfold:acme:1", "eightfold:acme:2"}, (
+        "the failed fetch settles nothing, so it must not be queued for re-derivation"
+    )
+
+
+def test_an_unchanged_description_is_not_requeued(tmp_path):
+    """The queue must drain. A Board re-scraped with the same text has nothing new to derive
+    from, so re-marking it every run would make the queue grow without bound."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(jobs, [_job("eightfold:acme:1", "We are hiring.", detail_fetched=True)])
+    ud.reconcile(jobs, store)
+
+    _corpus(jobs, [_job("eightfold:acme:1", "We are hiring.", detail_fetched=True)])
+    _, _, _, ids = ud.reconcile(jobs, store)
+
+    assert ids == []
+
+
+def test_an_edited_description_is_requeued(tmp_path):
+    """A changed input must reach the cascade again — the numbers were derived from the old text."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(jobs, [_job("eightfold:acme:1", "3+ years.", detail_fetched=True)])
+    ud.reconcile(jobs, store)
+
+    _corpus(jobs, [_job("eightfold:acme:1", "8+ years.", detail_fetched=True)])
+    _, _, _, ids = ud.reconcile(jobs, store)
+
+    assert ids == ["eightfold:acme:1"]
+
+
+def test_only_already_embedded_jobs_are_queued_to_rederive(tmp_path, monkeypatch):
+    """A Job first embedded this run has its metadata written from this very description, so it
+    needs no repair. Queueing every `learned` id would put every new Job on every listing-only
+    Board in the queue — tens of thousands per run — and a non-empty queue makes the merge load the
+    whole description store every run instead of only on a sweep."""
+    jobs_dir = tmp_path / "tech"
+    _corpus(
+        jobs_dir / "eightfold.jsonl",
+        [
+            _job("eightfold:acme:old", "3+ years.", detail_fetched=True),
+            _job("eightfold:acme:new", "5+ years.", detail_fetched=True),
+        ],
+    )
+    prior_meta = tmp_path / "meta.jsonl"
+    prior_meta.write_text(
+        json.dumps({"id": "eightfold:acme:old"}) + "\n", encoding="utf-8"
+    )
+    queue = tmp_path / "pending_rederive.txt"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--jobs",
+            str(jobs_dir),
+            "--store",
+            str(tmp_path / "store"),
+            "--held-details",
+            str(tmp_path / "held.txt.gz"),
+            "--pending-rederive",
+            str(queue),
+            "--prior-meta",
+            str(prior_meta),
+        ],
+    )
+    ud.main()
+
+    assert queue.read_text(encoding="utf-8").split() == ["eightfold:acme:old"]

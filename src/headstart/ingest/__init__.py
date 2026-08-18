@@ -65,6 +65,15 @@ HELD_DETAILS_PATH = REPO_ROOT / "data" / "state" / "held_details.txt.gz"
 # replacement lands, `index` re-adds the rows) and each previously declared the path itself.
 PENDING_UPGRADES_PATH = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 
+# The ADR-0062 re-derivation queue: Job ids whose description the store settled *this run*, whose
+# stored metadata therefore still carries numbers derived without that text. `update_descriptions`
+# appends, `update_meta` re-derives them and clears the file. It lives under data/state rather than
+# riding the corpus artifact alone so a lost artifact or a failed merge retries next run instead of
+# stranding those rows until the next DERIVATIONS_VERSION bump — the marking is the only signal
+# that they need repair, and nothing regenerates it (once settled, a description is never "newly
+# settled" again).
+PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
+
 
 def read_id_list(path: Path) -> set[str]:
     """The non-blank lines of a newline-delimited id file; empty when it does not exist.
@@ -79,3 +88,17 @@ def read_id_list(path: Path) -> set[str]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     }
+
+
+def append_id_list(path: Path, ids: list[str]) -> None:
+    """Append ids to a newline-delimited id file, creating it and its parents.
+
+    Append rather than rewrite because the queue accumulates across runs until its consumer
+    clears it: a run that settles descriptions must not discard what an earlier run settled and
+    `update_meta` has not repaired yet.
+    """
+    if not ids:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("".join(f"{i}\n" for i in ids))

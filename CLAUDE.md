@@ -200,7 +200,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
   One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
   `scrape_run`, `scrape_join`, `filter_tech`, `update_descriptions` (the ADR-0050 description
-  store, after the tech filter and before `embed_plan`), `update_ledgers` (`priority`/`cost`/
+  store, after the tech filter and before `embed_plan`), `update_ledgers` (`priority`/`cost`/`gap`/
   `failures` subcommands), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `role_trends` (the ADR-0040 trends ledger, after prune). `index compact` is a subcommand of the

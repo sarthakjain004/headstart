@@ -65,27 +65,21 @@ _TARGET_SECONDS = (
 )  # per-shard makespan target; sized so a big backlog saturates the lanes
 
 
-def _detail_pass_atses() -> set[str]:
-    """ATSes whose ``description`` comes from a per-Job detail fetch, so it can go missing."""
-    from headstart.scrapers.registry import SCRAPERS
-
-    return {ats for ats, scraper in SCRAPERS.items() if scraper.has_detail_pass}
-
-
 def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
     """``(embedded ids, ids whose vector was built without a description)`` — both empty on a
     first run (no meta.jsonl yet).
 
-    The second set is what makes a title-only vector repairable (ADR-0050). ``has_description``
-    is read straight from the row where present. Where it is **absent** — every row written
-    before ADR-0050 — it is inferred: assume degraded on an ATS with a detail pass, and assume
-    fine on a listing-only one, whose description arrives with the listing and so cannot have
-    been lost. That inference bounds the migration to ~22k re-embeds instead of ~186k; without
-    it, repairing ~16,771 degraded vectors would re-encode the whole store.
+    The second set is what makes a title-only vector repairable (ADR-0050), and it is now read
+    straight from ``has_description`` on every row. It used to be **inferred** where the flag was
+    absent — every row written before ADR-0050 — by assuming degraded on any ATS with a detail
+    pass. That guess conflated "this ATS fetches descriptions separately" with "that fetch
+    failed", and measurement killed it: of the 152,383 rows it condemned, ``experience_source ==
+    "regex"`` proves 66,296 were built from a description after all, while ADR-0050 measured the
+    genuinely title-only population at ~16,771. ``update_meta`` now backfills the real flag
+    (ADR-0062), so there is nothing left to guess about.
     """
     if not path.exists():
         return set(), set()
-    detail_pass = _detail_pass_atses()
     ids: set[str] = set()
     degraded: set[str] = set()
     with path.open(encoding="utf-8") as fh:
@@ -95,8 +89,7 @@ def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
                 continue
             row = json.loads(line)
             ids.add(row["id"])
-            flag = row.get("has_description")
-            if flag is False or (flag is None and row.get("ats") in detail_pass):
+            if row.get("has_description") is False:
                 degraded.add(row["id"])
     return ids, degraded
 

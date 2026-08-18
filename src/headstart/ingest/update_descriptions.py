@@ -46,12 +46,18 @@ import json
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT
+from headstart.ingest import (
+    HELD_DETAILS_PATH,
+    PENDING_REDERIVE_PATH,
+    REPO_ROOT,
+    append_id_list,
+)
 
 _log = log.get(__name__, __spec__)
 
 _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _STORE = REPO_ROOT / "data" / "descriptions"
+_PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _BASE = "base.jsonl.gz"
 _MISSING = object()  # distinguishes "no entry" from an entry whose value is None
 
@@ -112,11 +118,18 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     return out
 
 
-def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
+def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int, list[str]]:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
-    Returns ``(filled, learned, settled)`` — corpus rows repaired from the store, descriptions
-    newly stored or changed, and postings recorded as authoritatively having none.
+    Returns ``(filled, learned, settled, rederive_ids)`` — corpus rows repaired from the store,
+    descriptions newly stored or changed, postings recorded as authoritatively having none, and
+    the ids behind those last two.
+
+    ``rederive_ids`` is the ADR-0062 marking. A Job whose description settles *now* still carries
+    metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
+    skips ids it has embedded, and ``update_meta``'s version sweep only fires on a
+    ``DERIVATIONS_VERSION`` bump. Both entry kinds belong in it — a text entry gives the cascade
+    something new to read, and an authoritative ``null`` is equally a settled answer.
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
@@ -157,7 +170,50 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
-    return filled, len(learned) - settled, settled
+    return filled, len(learned) - settled, settled, [r["id"] for r in learned]
+
+
+def _embedded_ids(meta_path: Path) -> set[str]:
+    """Ids the embedding store already holds — empty when there is no store yet (first run)."""
+    ids: set[str] = set()
+    if not meta_path.exists():
+        return ids
+    with meta_path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                ids.add(json.loads(line)["id"])
+    return ids
+
+
+def _ats_settled_ids(ats_dir: Path) -> set[str]:
+    """One ATS's settled ids, values skipped.
+
+    Reading through :func:`read_store` instead would materialise every description (~1 GB of text)
+    to look at the keys. Both callers below want only the keys, in different shapes.
+    """
+    ids: set[str] = set()
+    for path in _fragments(ats_dir):
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    ids.add(json.loads(line)["id"])
+    return ids
+
+
+def settled_ids(store_root: Path) -> set[str]:
+    """Every Job id the store settles, across every ATS — the ADR-0062 gap ledger's input.
+
+    Same membership question :func:`write_held_details` publishes for the scrape, answered in
+    memory for callers that need the set rather than the file.
+    """
+    ids: set[str] = set()
+    if not store_root.is_dir():
+        return ids
+    for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
+        ids |= _ats_settled_ids(ats_dir)
+    return ids
 
 
 def write_held_details(store_root: Path, out_path: Path) -> int:
@@ -169,17 +225,11 @@ def write_held_details(store_root: Path, out_path: Path) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     with gzip.open(out_path, "wt", encoding="utf-8") as dst:
+        # Streamed per ATS rather than through `settled_ids`: duplicates across fragments are
+        # collapsed per ATS, which is all the dedupe this needs, and holding one ATS's keys at a
+        # time keeps the whole store's id set off the heap.
         for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
-            # Ids only — reading through `read_store` would materialise every description (~1 GB
-            # of text) to emit the keys. Duplicates across fragments are collapsed per ATS, which
-            # is all the dedupe this needs; the values never matter here.
-            seen: set[str] = set()
-            for path in _fragments(ats_dir):
-                with gzip.open(path, "rt", encoding="utf-8") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if line:
-                            seen.add(json.loads(line)["id"])
+            seen = _ats_settled_ids(ats_dir)
             for job_id in seen:
                 dst.write(job_id + "\n")
             written += len(seen)
@@ -220,6 +270,17 @@ def main() -> int:
         "--held-details", default=str(HELD_DETAILS_PATH), help="skip-list to publish"
     )
     ap.add_argument(
+        "--pending-rederive",
+        default=str(PENDING_REDERIVE_PATH),
+        help="queue of ids whose description settled this run, for update_meta (ADR-0062)",
+    )
+    ap.add_argument(
+        "--prior-meta",
+        default=str(_PRIOR_META),
+        help="the embedding store's metadata; only Jobs it already holds are queued to "
+        "re-derive (a Job first embedded this run needs no repair)",
+    )
+    ap.add_argument(
         "--compact",
         action="store_true",
         help="fold each ATS's fragments into its base file and stop",
@@ -236,16 +297,33 @@ def main() -> int:
     if not jobs.is_dir():
         _log.warning(f"no tech corpus at {jobs} — nothing to reconcile")
         return 0
+    # Only Jobs the store *already holds* can need re-derivation. A Job first embedded this run gets
+    # its metadata written by `doc_prep.to_meta` from this very description, so queueing it would
+    # re-run the cascade on a value it just produced — and every new Job on every listing-only Board
+    # is "learned", which is tens of thousands per run. Left unfiltered the queue is never small,
+    # and a non-empty queue makes the merge load the whole ~1 GB description store every run rather
+    # than only on a sweep.
+    embedded = _embedded_ids(Path(args.prior_meta))
+    _log.info(f"prior store: {len(embedded):,} already-embedded ids")
+
+    queued = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
-        filled, learned, settled = reconcile(path, store / ats)
+        filled, learned, settled, rederive = reconcile(path, store / ats)
+        rederive = [i for i in rederive if i in embedded]
+        # Appended per ATS rather than accumulated and written once: the queue is what stops these
+        # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must
+        # not lose the ids of the ATSes already reconciled.
+        append_id_list(Path(args.pending_rederive), rederive)
+        queued += len(rederive)
         _log.info(
             f"{ats}: filled {filled:,} from the store, learned {learned:,}, "
-            f"settled {settled:,} as having none"
+            f"settled {settled:,} as having none, queued {len(rederive):,} to re-derive"
         )
     _log.info(
         f"skip-list: {write_held_details(store, Path(args.held_details)):,} Jobs held"
     )
+    _log.info(f"re-derive queue: {queued:,} newly settled -> {args.pending_rederive}")
     return 0
 
 
