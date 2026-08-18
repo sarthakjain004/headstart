@@ -113,17 +113,6 @@ _DESC_PATTERNS = [
         "experience" + _GAP + r"(\d{1,2})\s*(?:to|-|–|—)\s*(\d{1,2})\s*\+?\s*" + _YEARS,
         re.I,
     ),
-    # The work-word pattern's RANGE counterpart. Without it "2-4 years of hands-on development"
-    # fell through to the single-value patterns, which matched at the "4" and served a 2-year job
-    # as requiring 4 — the ceiling reported as the floor.
-    re.compile(
-        r"(\d{1,2})\s*(?:to|-|–|—|or)\s*(\d{1,2})\s*\+?\s*"
-        + _YEARS
-        + _CONN
-        + _WORDS
-        + _WORK,
-        re.I,
-    ),
     # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
     re.compile(r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _GAP + "experience", re.I),
     # reversed single: "experience of 5+ years", "Experience: 5 years"
@@ -132,9 +121,11 @@ _DESC_PATTERNS = [
     re.compile(r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _CONN + _WORDS + _WORK, re.I),
 ]
 
-# Indices of the two work-word patterns. Only they can reach corporate narrative, because only they
-# match without the literal word "experience" nearby — so only they carry the guards below.
-_WORK_WORD_PATTERNS = {2, 5}
+# The work-word patterns: the ones that match without the literal word "experience" nearby, so only
+# they can reach corporate narrative, and only they carry the guards below. **Derived, not written
+# down** — the "ranges before single values" ordering means a new range phrasing has to be inserted
+# rather than appended, and a hardcoded index set would silently re-bind to the wrong pattern.
+_WORK_WORD_PATTERNS = {i for i, p in enumerate(_DESC_PATTERNS) if _WORK in p.pattern}
 
 # Company age, founder tenure, benefits: "N years" that is never a requirement. These read as
 # requirements to a work-word pattern ("spent the last 15 years building …") and were previously
@@ -144,13 +135,17 @@ _NARRATIVE_BEFORE = re.compile(
     r"vest\w*|sabbatical|tenure|runway)\b[\w\s,'’-]{0,25}$",
     re.I,
 )
-_NARRATIVE_AFTER = re.compile(r"^\s*(?:ago\b|at\s+[A-Z])", re.I)
+# Case-sensitive **on purpose**: "at Palantir" is tenure, but "at a startup" / "at the company" are
+# ordinary requirement prose, and under re.I the `[A-Z]` would match both and discard a real number.
+_NARRATIVE_AFTER = re.compile(r"^\s*(?:[Aa][Gg][Oo]\b|at\s+[A-Z])")
 
 # A range separator sitting immediately before the number a single-value pattern matched — i.e. the
 # match is a range's ceiling. Variable width, so `re` cannot express it as a lookbehind; it is
-# applied as an explicit backward look instead. This is the general safety net behind the range
-# patterns above, and it catches separators none of them enumerate ("2 ~ 4 years").
-_RANGE_TAIL = re.compile(r"(\d{1,2})\s*(?:-|–|—|~|to|or)\s*$", re.I)
+# applied as an explicit backward look instead. This is what actually fixes the ceiling-as-floor
+# bug, for every pattern at once and for separators the range patterns never enumerate: "2 ~ 4",
+# "between 2 and 4". `and` is safe here only because the digit must sit immediately before it —
+# "3 year and 10 year anniversary" has "year" in between, so it does not read as a range.
+_RANGE_TAIL = re.compile(r"(\d{1,2})\s*(?:-|–|—|~|to|or|and)\s*$", re.I)
 
 
 def _is_narrative(text: str, match: re.Match) -> bool:
