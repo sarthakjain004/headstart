@@ -17,6 +17,11 @@ response finally settles, **including a 4xx/5xx**, so the caller classifies the 
 branches on 404, the detail-fetchers map non-200 to None, etc.). It raises ``RequestsError`` only
 when a transient network failure never settles, or immediately on DNS. Retry lives here once;
 classification stays with the callers.
+
+Retry is not the last rung. An ATS that meters per origin can wall a shard outright, and no number
+of attempts from the same IP recovers that — so a scraper may opt a request into the **spare-egress
+fallback** (``egress_group``), which escalates from "try again" to "try from somewhere else"
+(:mod:`headstart.warp`). Only the opted-in ATS moves; everything else keeps its direct route.
 """
 
 from __future__ import annotations
@@ -30,9 +35,16 @@ from typing import Any
 from curl_cffi import requests as _requests
 from curl_cffi.requests import RequestsError  # re-exported for callers' except blocks
 
-from headstart import log
+from headstart import log, warp
 
-__all__ = ["fetch", "fetch_async", "session", "RequestsError"]
+__all__ = [
+    "fetch",
+    "fetch_async",
+    "session",
+    "RequestsError",
+    "walled_groups",
+    "reset_walled",
+]
 
 _log = log.get(__name__)
 
@@ -82,6 +94,60 @@ def reset_retry_stats() -> None:
     """Zero the counters — a stage calls this once so its totals describe its own work."""
     with _retries_lock:
         _retries.clear()
+
+
+# --- spare egress ------------------------------------------------------------------------------
+# An ATS that meters per origin hands each shard its own budget (ADR-0047). When a shard spends
+# one, every remaining Board of that ATS on that shard is lost for the run — so the wall statuses
+# escalate one step further than a retry: onto a second egress IP (Cloudflare WARP, `warp`).
+#
+# Keyed on the **ATS**, not the host. Eightfold's edge meters across all of a tenant's siblings, so
+# per-host marking would make each of a shard's Boards rediscover the same wall in turn, spending
+# three attempts each to learn what the first one already proved.
+#
+# Opt-in per scraper (`BaseScraper.egress_fallback_on`): a caller that names no group behaves
+# exactly as before, which keeps this invisible to every ATS that has never walled us.
+_WALL_STATUSES = frozenset({403, 405})
+_walled: set[str] = set()
+_walled_lock = threading.Lock()
+
+
+def walled_groups() -> frozenset[str]:
+    """The egress groups that have hit a wall in this process (diagnostics, tests)."""
+    with _walled_lock:
+        return frozenset(_walled)
+
+
+def reset_walled() -> None:
+    """Forget which groups are walled — a stage calls this so its state is its own (tests)."""
+    with _walled_lock:
+        _walled.clear()
+
+
+def _mark_walled(group: str, status: int) -> None:
+    """Record that ``group``'s origin budget is spent, once per process, and say so loudly."""
+    with _walled_lock:
+        if group in _walled:
+            return
+        _walled.add(group)
+    _log.warning(
+        f"{group}: origin returned {status} — spending this shard's spare egress for the "
+        f"rest of the run"
+    )
+
+
+def _egress_proxy(group: str | None) -> str | None:
+    """The proxy ``group`` should now be routed through, or None to stay on the direct route.
+
+    None until the group is walled, so the fast path costs one set lookup, and None *after* it is
+    walled if WARP cannot be brought up — in which case the caller degrades to today's behaviour.
+    """
+    if group is None:
+        return None
+    with _walled_lock:
+        if group not in _walled:
+            return None
+    return warp.proxy_url()
 
 
 def _retry_reason(why: str) -> str:
@@ -143,17 +209,39 @@ def _note_retry(
     return delay
 
 
-def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
+def fetch(
+    method: str,
+    url: str,
+    *,
+    attempts: int = _ATTEMPTS,
+    egress_group: str | None = None,
+    egress_on: frozenset[int] = _WALL_STATUSES,
+    **kwargs: Any,
+):
     """Make a request over the pooled session, retrying transient failures with backoff.
 
     Returns the settled response — any status, including 4xx/5xx — for the caller to classify.
     Retries 403/405/429/5xx and transient network errors (timeout, connection reset), honouring a
     ``Retry-After`` delta over the local backoff curve; does *not* retry a DNS failure. Raises
     ``RequestsError`` if a transient network error never settles (or immediately on DNS).
+
+    ``egress_group`` opts this request into the spare-egress fallback: a response in ``egress_on``
+    marks that group walled, and this and every later request naming it are routed through WARP for
+    the rest of the process (see the *spare egress* block above). Omitting it — every caller that
+    has not opted in — leaves behaviour byte-for-byte unchanged.
+
+    Marking is deliberately **not** conditional on retry budget. A wall seen on the final attempt
+    still fails *this* request, but it is exactly as informative about the origin as one seen on
+    the first, and recording it is what spares every subsequent Board of that ATS the same three
+    attempts.
     """
     for attempt in range(attempts):
+        proxy = _egress_proxy(egress_group)
+        routed = (
+            {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
+        )
         try:
-            response = session().request(method, url, **kwargs)
+            response = session().request(method, url, **routed)
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
@@ -161,6 +249,8 @@ def fetch(method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any):
                 _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
             )
             continue
+        if egress_group is not None and response.status_code in egress_on:
+            _mark_walled(egress_group, response.status_code)
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
             time.sleep(
                 _note_retry(

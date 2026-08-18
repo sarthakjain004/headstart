@@ -55,6 +55,18 @@ class BaseScraper(ABC):
     #: one. Set it when you add a detail pass, or that ATS's degraded vectors go unrepaired.
     has_detail_pass: bool = False
 
+    #: HTTP statuses at which this ATS should stop being requested over the shard's own egress IP
+    #: and move to a spare one (Cloudflare WARP; see :mod:`headstart.warp`). ``None`` — every
+    #: scraper unless it says otherwise — keeps the direct route no matter what comes back, which
+    #: is the behaviour every ATS had before this existed.
+    #:
+    #: Set it only for an ATS measured to meter **per origin**, where a wall is about the shard's
+    #: IP rather than about the request: Eightfold's edge answers 403/405 once a shard's budget is
+    #: spent, and the same Boards serve 200 from a different IP moments later (ADR-0063). A status
+    #: that means "this request is wrong" — a 401, a 404 — must never appear here; rotating egress
+    #: would not fix it and would spend a second budget learning that.
+    egress_fallback_on: frozenset[int] | None = None
+
     #: Job ids whose per-job detail fetch can be skipped because we already hold it (ADR-0048;
     #: re-keyed onto the description store by ADR-0050). ``None`` means fetch every detail. The
     #: pipeline's scrape stage sets this via :func:`~headstart.scrapers.registry.get_scraper`;
@@ -123,6 +135,17 @@ class BaseScraper(ABC):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         """Turn a raw API/page response into normalized Jobs."""
 
+    def _egress(self) -> dict[str, Any]:
+        """``http.fetch`` kwargs opting this scraper into the spare-egress fallback, or ``{}``.
+
+        Empty for every scraper that leaves :attr:`egress_fallback_on` unset, so the call it feeds
+        is identical to the one made before this existed. Keyed on :attr:`ats` rather than the
+        Board, because the metering that motivates it is per origin across all of an ATS's tenants.
+        """
+        if not self.egress_fallback_on:
+            return {}
+        return {"egress_group": self.ats, "egress_on": self.egress_fallback_on}
+
     def _get(self, url: str | None = None) -> str:
         """GET a board URL as text via the reliable-fetch seam (retry lives there). Defaults to
         ``self.url()``; pass an explicit ``url`` to fetch a secondary endpoint (e.g. Keka's careers
@@ -136,6 +159,7 @@ class BaseScraper(ABC):
                 "Accept": "application/json, text/html",
             },
             timeout=30,
+            **self._egress(),
         )
         response.raise_for_status()
         return response.text

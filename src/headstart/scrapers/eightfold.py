@@ -87,6 +87,11 @@ class EightfoldScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}/careers/sitemap.xml"
 
+    #: 403 and 405 are the two shapes this edge returns once a shard's per-origin budget is spent
+    #: — the same host answers both across runs, which is why neither is read as a tenant property
+    #: (ADR-0063). Both therefore escalate to the spare egress rather than to a fourth attempt.
+    egress_fallback_on = frozenset({403, 405})
+
     def _get(self, url: str | None = None, accept: str = "application/json") -> Any:
         return http.fetch(
             "GET",
@@ -97,6 +102,7 @@ class EightfoldScraper(BaseScraper):
                 "Referer": f"https://{self.slug}/careers",
             },
             timeout=30,
+            **self._egress(),
         )
 
     # --- shared entry -------------------------------------------------------------------------
