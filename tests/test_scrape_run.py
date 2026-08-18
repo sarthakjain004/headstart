@@ -302,3 +302,95 @@ def test_progress_records_every_board_that_did_not_raise():
 
     assert progress.boards_ok == ["greenhouse:busy", "greenhouse:quiet"]
     assert set(progress.errors) == {"greenhouse:dead"}
+
+
+def test_a_budget_kill_names_the_boards_it_deferred(tmp_path, caplog):
+    """A count sends the next person to diff artifacts; a name ends the question.
+
+    Finding that `workday:dollartree/dollartreeus` was eating a shard every run on 2026-08-18
+    took downloading the assignment artifact and the banked fragment and diffing them. The shard
+    knew the answer the whole time.
+    """
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=3)
+    progress.on_board("lever:done", 1, None, 1.0)
+
+    scrape_run._report(
+        progress,
+        tmp_path,
+        elapsed=3600.0,
+        predicted=25.0,
+        serial=150.0,
+        killed=True,
+        shard="13",
+        deferred=["workday:https://dollartree.wd5.myworkdayjobs.com/dollartreeus"],
+    )
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("deferred: workday:https://dollartree" in m for m in messages)
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert report["deferred"] == [
+        "workday:https://dollartree.wd5.myworkdayjobs.com/dollartreeus"
+    ]
+
+
+def test_the_deferred_warning_summarises_a_long_tail(tmp_path, caplog):
+    """A shard killed early defers hundreds of Boards, and naming them all is noise, not signal."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=100)
+    scrape_run._report(
+        progress,
+        tmp_path,
+        elapsed=3600.0,
+        predicted=None,
+        serial=None,
+        killed=True,
+        deferred=[f"lever:c{i}" for i in range(25)],
+    )
+
+    line = next(m for m in (r.getMessage() for r in caplog.records) if "deferred:" in m)
+    assert "+15 more" in line
+    assert line.count(",") == scrape_run._DEFERRED_SHOWN  # 9 separators + the tail's
+
+
+def test_a_clean_finish_defers_nothing(tmp_path, caplog):
+    """The list must be empty when every Board landed — an empty deferred list is the evidence
+    that a green run really did finish its slice, so a stray name here would read as loss."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=1)
+    progress.on_board("lever:a", 1, None, 1.0)
+
+    scrape_run._report(
+        progress, tmp_path, elapsed=10.0, predicted=None, serial=None, killed=False
+    )
+
+    assert not any("deferred:" in r.getMessage() for r in caplog.records)
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert report["deferred"] == []
+
+
+def test_main_derives_the_deferred_list_from_the_assignment(tmp_path, monkeypatch):
+    """End-to-end: the names in the report come from the assignment minus what reported back,
+    so the shard needs no extra bookkeeping to say what it lost."""
+
+    def killed(*_a, **_k):
+        raise SystemExit("signal 15")
+
+    _run_main(tmp_path, monkeypatch, killed)
+
+    report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
+    assert report["deferred"] == [
+        "lever:acme"
+    ]  # nothing completed, so all of it was lost
+
+
+def test_main_defers_nothing_when_every_board_reported(tmp_path, monkeypatch):
+    def finished(companies, jobs_dir, progress_every=200, on_board=None, **_):
+        for c in companies:
+            on_board(f"{c.ats}:{c.slug}", 1, None, 0.5)
+        return _Result(len(companies))
+
+    _run_main(tmp_path, monkeypatch, finished)
+
+    report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
+    assert report["deferred"] == []

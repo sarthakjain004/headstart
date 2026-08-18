@@ -77,6 +77,9 @@ _SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler mater
 # waiting on the pool's atexit join. Any other value is a real failure and exits as itself.
 _BUDGET_KILLED = 100
 
+# How many deferred Board keys the kill warning names before it summarises the rest.
+_DEFERRED_SHOWN = 10
+
 
 class _Progress:
     """What the shard has done so far, kept outside ``scrape_all`` on purpose.
@@ -205,12 +208,14 @@ def _report(
     serial: float | None,
     killed: bool,
     shard: str | None = None,
+    deferred: list[str] | None = None,
 ) -> None:
     """Everything this shard learned, on every exit path — clean finish or time budget.
 
     Runs in a `finally`, so it must not raise: the shard's fragment is already on disk and
     reaching the join matters more than its telemetry.
     """
+    deferred = deferred or []
     spread = observability.percentiles(progress.seconds)
     retries = http.retry_stats()
     actual_min = elapsed / 60
@@ -220,6 +225,14 @@ def _report(
             f"{progress.done}/{progress.assigned} boards done, {progress.undone} deferred "
             "to the next run"
         )
+        # Which Boards, not just how many. A count sends the next person to diff the assignment
+        # artifact against the fragment's cost rows to learn which Board ate the shard — that is
+        # how `workday:dollartree/dollartreeus` was found on 2026-08-18, and it should have been
+        # one log line. Capped: a shard killed early defers hundreds and the list is then noise.
+        if deferred:
+            shown = ", ".join(deferred[:_DEFERRED_SHOWN])
+            rest = len(deferred) - _DEFERRED_SHOWN
+            _log.warning("deferred: " + shown + (f", +{rest} more" if rest > 0 else ""))
     if progress.errors:
         _log.warning(
             f"{len(progress.errors)} board errors: {_error_summary(progress.errors)}"
@@ -256,6 +269,9 @@ def _report(
         predicted_minutes=predicted,
         serial_minutes=serial,
         killed_by_budget=killed,
+        # The Boards this shard never finished, named. `undone` counts them; the join can only
+        # say *which* Board a run keeps losing if the names survive the runner.
+        deferred=deferred,
         board_seconds=spread,
         retries=dict(retries),
         # the full map, not the top-3 digest the log line carries: the join can only
@@ -343,8 +359,21 @@ def main() -> int:
     except SystemExit:
         killed = True
     finally:
+        # Assignment minus everything that reported back — the Boards this shard never finished,
+        # in the order the planner listed them (priority-desc), so the first name is the most
+        # expensive thing lost. `progress` holds one entry per Board that completed, success or
+        # error alike, which makes the difference exactly the deferred set.
+        seen = set(progress.boards_ok) | set(progress.errors)
+        deferred = [k for c in companies if (k := f"{c.ats}:{c.slug}") not in seen]
         _report(
-            progress, outdir, time.monotonic() - start, predicted, serial, killed, shard
+            progress,
+            outdir,
+            time.monotonic() - start,
+            predicted,
+            serial,
+            killed,
+            shard,
+            deferred,
         )
     return _BUDGET_KILLED if killed else 0
 

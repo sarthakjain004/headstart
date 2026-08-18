@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from collections.abc import Callable, Container
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -193,6 +194,14 @@ def scrape_all(
     # board that hangs 30s before raising costs 30s, and the packer must know that.
     elapsed: dict[str, float] = {}
 
+    # Boards currently mid-fetch: {board: the monotonic clock it started at}. Only the ones still
+    # here when the harvest goes down matter — those are the Boards a time budget killed
+    # unfinished, and they are exactly the Boards `elapsed` can never hold a timing for. Guarded
+    # by a lock rather than relying on dict atomicity because the teardown path reads it while
+    # abandoned threads are still popping their own keys (ADR-0064).
+    in_flight: dict[str, float] = {}
+    in_flight_lock = threading.Lock()
+
     # Boards that returned a list they know is short: "ats:slug" -> why. Filled beside `elapsed`
     # rather than raised, because the partial Jobs are real and must still be written (ADR-0053).
     truncated: dict[str, str] = {}
@@ -200,6 +209,8 @@ def scrape_all(
     def run_one(company: CompanyRef) -> list[Job]:
         start = time.monotonic()
         key = f"{company.ats}:{company.slug}"
+        with in_flight_lock:
+            in_flight[key] = start
         scraper = get_scraper(
             company.ats, company.slug, company.name, have_details=have_details
         )
@@ -207,6 +218,8 @@ def scrape_all(
             return scraper.fetch()
         finally:
             elapsed[key] = time.monotonic() - start
+            with in_flight_lock:
+                in_flight.pop(key, None)
             # Read after fetch, in `finally`: a scraper that truncated and *then* raised still
             # reported something worth carrying.
             if scraper.truncated:
@@ -269,6 +282,22 @@ def scrape_all(
         # exited, and `JobWriter` is written only from that loop and flushed per Board, so no
         # straggler is mid-write when we stop waiting.
         executor.shutdown(wait=False, cancel_futures=True)
+        # Cost the Boards that never finished, before the writer closes. Whatever is still in
+        # flight here was killed mid-fetch, and the seconds it burned are a *floor* on its true
+        # cost — the one thing a kill proves. Without this the packer never learns: a Board too
+        # big to finish writes no row, keeps its stale estimate, is packed cheap again, and kills
+        # a shard again, every run (ADR-0064).
+        #
+        # Snapshot under the lock: the abandoned threads are still running and still popping
+        # their own keys. A Board that finishes between this snapshot and the write has already
+        # written its own measured row, so the floor is skipped for it — `elapsed` is the record
+        # of that, and it is only ever added to.
+        with in_flight_lock:
+            unfinished = sorted(in_flight.items())
+        for key, started_at in unfinished:
+            if key in elapsed:
+                continue  # it landed after all; its measured row is the honest one
+            writer.record_cost(key, time.monotonic() - started_at, 0)
         writer.close()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done
