@@ -69,3 +69,4 @@ supersedes it and note the supersession in both.
 | [0059](0059-two-board-keyspaces.md) | The priority ledger keys on `board_key`, the cost ledger on `{ats}:{slug}` | 2026-08-18 |
 | [0060](0060-narrative-guards-for-the-work-word-patterns.md) | The work-word patterns carry narrative guards and their own requirement ceiling | 2026-08-18 |
 | [0061](0061-refreshable-metadata.md) | Stored metadata is refreshable — facts reconcile, derivations re-derive on a version bump | 2026-08-18 |
+| [0062](0062-drain-the-description-gap.md) | Drain the description gap by aiming the slice, and record what each vector actually saw | 2026-08-18 |

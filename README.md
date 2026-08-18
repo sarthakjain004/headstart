@@ -7,9 +7,9 @@ HeadStart discovers which companies host boards on which ATS, validates those bo
 them through **21 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
 two ways: a static dashboard over a curated feed, and an **AI semantic-search layer** (local
 embeddings + vector search with structured filters) running live on a free-tier Hugging Face
-Space over a **280,571-row** index of the tech corpus.
+Space over a **285,065-row** index of the tech corpus.
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 45 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 62 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).
@@ -39,7 +39,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>100,572 live of 176,733<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>100,254 live of 176,733<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -47,9 +47,9 @@ flowchart TB
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
         P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>20 enabled scrapers → fragments"]
-        P3["<b>join</b><br/>1 VM · 40m<br/>union · tech-filter<br/>priority · cost · plan embed"]
+        P3["<b>join</b><br/>1 VM · 40m<br/>union · tech-filter · descriptions<br/>priority · cost · failures · gap · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
-        P5["<b>merge</b><br/>1 VM · 48m · single writer<br/>concat · sync · prune · compact · trends"]
+        P5["<b>merge</b><br/>1 VM · 48m · single writer<br/>concat · meta refresh · sync · prune · trends"]
         P1 --> P2 --> P3 --> P4 --> P5
     end
 
@@ -110,25 +110,32 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 100,572 live boards reduce to 66,751 a run can even consider:
+that matters. The 100,254 live boards reduce to 66,433 a run can even consider:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 100,572 | |
+| live rows in the ledger | 100,254 | |
 | − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
 | − case-variant dedupe | −8,391 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.EXCLUDED_BOARDS` | −13 | vendor test/sandbox boards, confirmed by reading their postings |
 | − `config.PARKED_BOARDS` | −1 | real boards withheld for now — Accenture's 48,369-job Workday board outruns any shard budget |
-| = selectable | **66,751** | |
+| = selectable | **66,433** | |
 
-Of those, **49,628 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
-the 17,123 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
+Of those, **49,622 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+the 16,811 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
 and a random 70% exploration tail drawn from everything else, so newly-productive boards can never
 starve. The tail is random over *everything* not in the head, not over unscraped boards alone, so
 it re-samples known boards too; that is what keeps eviction working on boards outside the head.
+
+A slice of that exploration tail — `GAP_FRAC`, 5%, so ~700 boards — is reserved for boards holding
+**unsettled descriptions** (ADR-0062): jobs already in the store whose text we have never held, and
+whose experience numbers therefore cannot be repaired without scraping the board again. There are
+12,436 such boards holding 179,205 jobs, and the priority ordering would otherwise never reach
+them. `data/state/board_description_gap.csv` is recomputed every run, so a board leaves it as soon
+as its descriptions settle and the reservation cancels itself once the backlog drains.
 Boards a run skips are simply left alone — eviction is scoped to boards actually present in the
 scrape (ADR-0014), so a partial harvest never damages what it didn't look at.
 
@@ -145,9 +152,9 @@ to the next stage, and the unfinished boards and Docs simply reappear in the nex
 
 Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
 full set to `data/jobs/{ats}.jsonl`; a recall-biased regex filter (`headstart.tech_filter`) derives
-the tech subset in `data/jobs/tech/{ats}.jsonl` — **197,561 of 990,173 scraped rows, 20.0%**, in
-run 31579689498, though the rate swings hard by ATS (Freshteam 44.0%, Ashby 42.0%, SuccessFactors
-10.0%, Workday 8.0%). A non-tech job
+the tech subset in `data/jobs/tech/{ats}.jsonl` — **241,602 of 1,261,562 scraped rows, 19.2%**, in
+run 32114156695 (2026-08-18), though the rate swings hard by ATS (Freshteam 56.4%, Ashby 42.4%,
+Eightfold 40.8%, SuccessFactors 11.8%, Workday 11.8%). A non-tech job
 creeping in is fine; dropping a tech job is not, so a two-part verification gate guards recall: a
 deterministic self-consistency check plus an independent LLM reasoning gate
 (`scripts/filter/verify_tech.py`) that judges a sample of the *dropped* pile and flags any real
@@ -168,9 +175,10 @@ than scraped. Its scraper class and tests stay intact; re-enable by removing it 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **176,733 boards**: 100,572 live, 47,801 dead, 28,360 unknown. Of the
-21 scrapers, 18 currently have rows in the served table — `join` is disabled, and `oracle` and
-`sensehq` are single-company unlocks with nothing indexed yet.
+liveness pipeline has probed **176,733 boards**: 100,254 live, 47,494 dead, 28,985 unknown. Of the
+21 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
+nothing indexed yet, and `join`'s remaining 1,093 rows are a residue of the era before it was
+disabled: no slice will scrape them again, so they leave by eviction rather than refresh.
 
 ## AI semantic search
 
@@ -194,9 +202,15 @@ Filters drive a deterministic where-clause; the query drives the embedding. `/se
   years-of-experience is extracted to a numeric range by a deterministic cascade so `min_years`
   is a real filter (ADR-0009, ADR-0018).
 - **Freshness:** the index is reconciled incrementally, never rebuilt — `index sync` adds new
-  vectors and evicts postings that vanished from a scraped board, `index prune` sweeps rows on
-  dead boards and case-variant duplicates, `index compact` rewrites the table to reclaim orphan
-  fragments (ADR-0014, ADR-0019, ADR-0023).
+  vectors, evicts postings that vanished from a scraped board, and carries corrected metadata into
+  rows it already holds; `index prune` sweeps rows on dead boards and case-variant duplicates
+  (ADR-0014, ADR-0019, ADR-0023, ADR-0061). `index compact` rewrites the whole table to reclaim
+  orphan fragments and so runs in `cleanup-index`, **not** in the 2-hourly run — rewriting ~1.9 GB
+  every two hours is what the storage budget cannot afford.
+- **Correctness over time:** stored metadata is not frozen at embed time. Facts (salary, location,
+  remote…) are re-observed from each scrape, and the derived experience numbers are recomputed when
+  the extractor changes or when a description arrives after the fact (ADR-0061, ADR-0062) — so a
+  fix reaches rows already embedded instead of new jobs only.
 - **Signed in:** the whole UI sits behind Google sign-in once `SECRET_KEY` and `GOOGLE_CLIENT_ID`
   are set (ADR-0042) — a signed cookie, `SameSite=Lax` instead of CSRF tokens, which is also why
   the app only works at its own URL and not inside the huggingface.co Spaces iframe. Signing in
@@ -232,7 +246,7 @@ fails if this table drifts from it.
 | `salary` | string | raw, for display (`"INR 3 - 5 (Annual)"`) |
 | `department` | string | raw ATS text |
 | `url` | string | the job-detail link |
-| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 29%** of a 1,000-row live sample (2026-08-12) |
+| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 13.4%** of rows (measured over all 481,396 stored rows, 2026-08-18; an earlier 1,000-row sample read 29%, which the full count corrects) |
 | `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once, and null on rows added before the column existed (ADR-0031). Measured **null on 77%** of that same sample, so the "new since" filter currently reaches under a quarter of the table |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
 
@@ -304,15 +318,21 @@ registered; bot walls (403/429) stay advisory.
   (Telegram enrolment), `digest`, `shortlist`, `space_query`, `run`.
 - `src/headstart/ingest/` — **the 2-hourly pipeline run**, one module per stage step, invoked as
   `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
-  `filter_tech`, `update_ledgers` (`priority`/`cost`), `embed_plan`, `embed_run`, `embed_merge`,
-  `index` (`sync`/`prune`/`compact`), `role_trends` (ADR-0040). `.github/workflows/pipeline.yml`
-  runs exactly these. Its pipeline-only helpers live here too: `binpack.py` (LPT packing shared by
-  both planners), `doc_prep.py` (doc prep shared by embedder and planner), `index_plan.py` (the
-  pure add/evict and prune planners), `observability.py` (run context, step summaries and the
-  per-shard reports the join aggregates), `state_fetch.py`.
+  `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`
+  (`priority`/`cost`/`failures`/`gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta`
+  (ADR-0061), `index` (`sync` then `prune`), `role_trends` (ADR-0040).
+  `.github/workflows/pipeline.yml` runs exactly these — `index compact` is a subcommand of the same
+  module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
+  `binpack.py` (LPT packing shared by both planners), `doc_prep.py` (doc prep shared by embedder and
+  planner), `index_plan.py` (the pure add/evict and prune planners), `shard_speedup.py` (the
+  measured fan-out speedup the makespan divides by, ADR-0054), the per-board ledgers
+  `board_failures.py` (ADR-0058) and `board_description_gap.py` (ADR-0062), `role_assignments.py`
+  (ADR-0057), `observability.py` (run context, step summaries and the per-shard reports the join
+  aggregates), `state_fetch.py` (ADR-0030).
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
-  `scrape/` (one-off pulls), `filter/` (recall verification), plus the AI layer in `embed/`
-  (local index tools), `enrich/`, `eval/`, `ui/`.
+  `scrape/` (one-off pulls), `filter/` (recall verification), plus `alerts/`, `bench/`
+  (performance measurement), and the AI layer in `embed/` (local index tools), `enrich/`, `eval/`,
+  `ui/`.
 - `data/` — `validate/liveness/` is git-tracked and authoritative. **Everything else under `data/`
   is gitignored and lives in the HF dataset**, not in the repo: `state/`, `embeddings/`,
   `lancedb/`, `jobs/`. Pull them from HF before trusting any local copy.

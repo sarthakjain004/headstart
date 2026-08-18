@@ -1,6 +1,7 @@
 # ADR-0061: Stored metadata is refreshable — facts reconcile from the corpus, derivations re-derive on a version bump
 
-**Status:** accepted · **Date:** 2026-08-18 · **Relates to:**
+**Status:** accepted, amended by [ADR-0062](0062-drain-the-description-gap.md) · **Date:** 2026-08-18
+· **Relates to:**
 [ADR-0007](0007-search-metadata-canonical-typed.md), [ADR-0025](0025-parallelize-nightly-pipeline.md),
 [ADR-0048](0048-skip-details-we-already-hold.md), [ADR-0050](0050-persist-descriptions-across-runs.md)
 · **Closes:** #162
@@ -30,7 +31,7 @@ derivation is `f(code, facts)` — recomputable at will, so a code fix must reac
 | column | class | refresh path |
 |---|---|---|
 | `vector` | fact (about the embedded doc) | frozen; only the ADR-0050 upgrade path replaces it |
-| `has_description` | **fact about the vector** — records whether the *embedded doc* carried text; the upgrade planner keys on it | frozen with the vector; refreshing it from the store would hide title-only vectors from the upgrade path forever |
+| `has_description` | **fact about the vector** — records whether the *embedded doc* carried text; the upgrade planner keys on it | frozen with the vector where a row *has* one; refreshing it from the store would hide title-only vectors from the upgrade path forever. **Amended by ADR-0062:** where the flag is absent (every pre-ADR-0050 row) there is nothing to protect, and it is backfilled once — from `experience_source == "regex"` where that proves the Doc carried text, otherwise from the same inference `embed_plan` was making anyway |
 | `first_seen` | fact (table-owned) | never rewritten (ADR-0031) |
 | `id`, `ats` | identity | never rewritten |
 | `title` | fact, **display-refreshed** | fact reconcile; the vector keeps encoding the old title until a doc-drift upgrade exists ([ADR-0021](0021-re-embed-on-content-change.md)'s hook) — a current title over a slightly stale vector beats a stale title |
@@ -107,7 +108,10 @@ grows with the size of the sweep.
 ## The description gap this exposes
 
 The sweep can only repair rows whose text the store settles, and **127,501 of 263,769 served rows
-(48.3%) have no store entry at all** — every one of them carrying no `has_description`, i.e.
+(48.3%) have no store entry at all** — **amended by
+[ADR-0062](0062-drain-the-description-gap.md): these were read from a snapshot last written
+2026-07-25 and describe the embedding store, not the served table. Re-measured 2026-08-18 the store
+holds 481,396 rows and 195,475 unsettled ones; the per-ATS split below is stale in the same way** — every one of them carrying no `has_description`, i.e.
 embedded before ADR-0050 and never revisited since. Measured by ATS, closing that gap is far
 smaller than it sounds:
 
@@ -134,10 +138,17 @@ this ships with `DERIVATIONS_VERSION = 1` against an absent watermark, so the fi
 backfill, re-deriving every settled row with whatever extractor is current (including PR #164's
 fix, in whichever order the two PRs merge). It repairs the 136,268 rows whose text we hold; the
 other 127,501 are **not** self-closing: once the Board-selection change settles their
-descriptions, nothing re-derives them until the next version bump, and `embed_plan` will not
-re-embed them either (they are not `degraded` — they carry a description now). Whichever change
-settles a description must therefore also mark it for re-derivation; that is part of the
-Board-selection work, not a free consequence of this one. Scrape-fact edits (salary, remote, location …) now reach the
+descriptions, nothing re-derives them until the next version bump. Whichever change settles a
+description must therefore also mark it for re-derivation; that is part of the Board-selection
+work, not a free consequence of this one — [ADR-0062](0062-drain-the-description-gap.md) does it
+with a queue in `data/state/`.
+
+> **Amended by ADR-0062.** This paragraph originally added "and `embed_plan` will not re-embed them
+> either (they are not `degraded` — they carry a description now)". That was wrong for most of them.
+> `embed_plan` inferred `degraded` from the ATS whenever `has_description` was absent, which every
+> one of these rows is — so settling their descriptions *would* have queued them for re-embedding:
+> 151,538 rows, against ADR-0050's deliberately-bounded ~22k migration. ADR-0062 replaces that
+> inference with the recorded flag, cutting the degraded set to 86,087. Scrape-fact edits (salary, remote, location …) now reach the
 served table in the next run instead of never. `verify-search-filters` remains the harness that
 would catch a reconcile writing wrong columns, and the README served-table schema is untouched —
 no column was added, removed, or retyped.
