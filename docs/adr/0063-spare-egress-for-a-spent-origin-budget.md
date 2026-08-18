@@ -243,3 +243,25 @@ shard report distinguishes "we did not rotate" from "we were not allowed to yet"
 low recovery rate means the whole WARP range is refused, not just one IP — at which point this
 mechanism is not the answer and the per-host concurrency bound (the measured root cause) is.
 
+
+## Amendment, 2026-08-18: the eager install is bounded
+
+The contract above was *installed eagerly, connected lazily, never fatal* — `continue-on-error`
+plus a `proxy_url()` that returns None meant a runner without WARP kept its direct route. Run
+`32157275202` showed the hole in that reasoning: `continue-on-error` covers the install *failing*,
+not *hanging*. Four shards sat ~72 minutes inside `apt-get update` (the `set -x` trace ends on
+that exact line; `pkg.cloudflareclient.com` itself was healthy when probed — Release and
+Packages.gz in under 0.5 s — but its index is `cf-cache-status: DYNAMIC`, so fifteen
+simultaneously-starting shards all reach origin), blew the 72-minute job cap, and were cancelled
+with their scrape step still `skipped`. Five of fifteen shards produced nothing; the join ran on
+ten; the run stayed green. The unbounded convenience step cost more scrape coverage in one run
+than the fallback it installs has ever recovered.
+
+So the contract gains a third leg: **bounded**. Every layer carries its own ceiling (curl
+`--max-time`/`--retry`, apt `Acquire::http::Timeout`/`Acquire::Retries` under `timeout`, a bounded
+`systemctl start`, bounded `warp-cli` calls), the install gets two attempts, `apt-get update` is
+scoped to the Cloudflare source list so no unrelated mirror is on the critical path (measured in
+`ubuntu:24.04` with a blackholed mirror: full update 13 s, narrowed 1 s, the package still
+resolves), and the step's `timeout-minutes` is the backstop, budgeted in `pipeline.yml` against
+the sum of the layers. A shard that still ends up without WARP scrapes over its direct route —
+which is the degradation this ADR promised all along; it just never priced the install itself.
