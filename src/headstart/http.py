@@ -100,6 +100,18 @@ def reset_retry_stats() -> None:
 #   egress_on    -> "these statuses, seen here, are what marks the group walled"
 # A request naming a group with an empty `egress_on` therefore rides the spare egress but can never
 # trigger it — which is what the API-availability probe wants (ADR-0063).
+#
+# There are two routes, not three: **direct, then a rotating spare egress.** The spare egress is
+# not a fixed second IP you fall onto and stay on — it is a supply of IPs. A wall on the direct
+# route moves the group onto it; a wall seen *through* it means that IP is spent too, so it moves
+# again. It keeps moving for as long as it keeps being refused.
+#
+# Rotation is bounded by a cooldown rather than by an attempt number, because "keep rotating" and
+# "restart the daemon every few seconds" are the same instruction without one: each rotation is a
+# `systemctl restart warp-svc` costing seconds, and a shard meeting 429s continuously would spend
+# its budget bouncing the tunnel instead of scraping. Concurrent workers coalesce onto a single
+# rotation (a generation counter in `spare_egress`); the cooldown is what bounds *successive* ones,
+# and it also buys each new IP a fair trial before we give up on it.
 
 
 def _retry_reason(why: str) -> str:
@@ -214,6 +226,10 @@ def fetch(
         if egress_group is not None and response.status_code in egress_on:
             spare_egress.mark_walled(egress_group, response.status_code)
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
+            # Already riding the spare egress and still walled: the second IP is spent too, so the
+            # last rung moves again rather than spending a third attempt on a known-bad route.
+            if proxy and egress_group is not None and response.status_code in egress_on:
+                spare_egress.rotate()
             time.sleep(
                 _note_retry(
                     method,

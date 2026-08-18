@@ -8,6 +8,11 @@ grew with it and the budget went from comfortable to spent. This module is the o
 answer (ADR-0063) — when a shard *does* spend a budget, it can pick up a second one instead of
 losing every Board it has left.
 
+Think of it as **direct, then a rotating spare egress** — two routes, not a ladder of three. The
+spare egress is a *supply* of IPs rather than one fallback address: :func:`proxy_for` puts a walled
+group onto it, and :func:`rotate` moves it again each time that IP is refused too, for as long as
+the refusals continue (bounded by :data:`_ROTATION_COOLDOWN`).
+
 Cloudflare WARP is the implementation, not the concept: the module is named for what it provides so
 that swapping the provider is an edit here rather than a rename everywhere.
 
@@ -34,6 +39,7 @@ negotiation on the critical path. An unregistered client simply fails to connect
 
 from __future__ import annotations
 
+import socket
 import subprocess
 import threading
 import time
@@ -43,11 +49,13 @@ from headstart import log
 
 __all__ = [
     "proxy_url",
+    "rotate",
     "proxy_for",
     "mark_walled",
     "note_routed",
     "walled_groups",
     "traffic",
+    "rotations",
     "report",
     "reset",
 ]
@@ -62,12 +70,10 @@ _PORT = 40000
 #: bounded because this sits on the scrape's critical path.
 _CALL_TIMEOUT = 30.0
 
-#: Per ``status`` call. Much shorter than :data:`_CALL_TIMEOUT` because this one is polled: at the
-#: state-changing timeout a few unlucky polls could outlast the connect deadline they are meant to
-#: enforce, and every walled worker waits behind it.
-_STATUS_TIMEOUT = 5.0
-
 #: How long to wait for ``status`` to report Connected after ``connect`` returns.
+#: One SOCKS5 handshake attempt.
+_HANDSHAKE_TIMEOUT = 1.0
+
 _CONNECT_TIMEOUT = 20.0
 _POLL = 1.0
 
@@ -102,16 +108,40 @@ def _run(*args: str) -> bool:
     return True
 
 
-def _connected() -> bool:
-    """Whether ``warp-cli status`` currently reports a connected tunnel."""
-    proc = _call("status", timeout=_STATUS_TIMEOUT)
-    return proc is not None and "Connected" in (proc.stdout or "")
+def _socks5_ready() -> bool:
+    """Whether a working no-auth SOCKS5 proxy actually answers on the port.
+
+    A real handshake (RFC 1928: send ``05 01 00``, expect ``05 00``) rather than ``warp-cli
+    status``, because "Connected" is a statement about the tunnel, not about the listener. Two
+    ways that gap bites: the daemon reports Connected a beat before the SOCKS5 port is accepting,
+    and *any* stale listener on the port — an old WARP, a dev tool — would otherwise be adopted
+    and then fail every request during negotiation. Borrowed from a sibling project that hit
+    exactly that.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(_HANDSHAKE_TIMEOUT)
+            sock.connect(("127.0.0.1", _PORT))
+            sock.sendall(b"\x05\x01\x00")
+            return sock.recv(2) == b"\x05\x00"
+    except OSError:
+        return False
+
+
+def _await_socks5() -> bool:
+    """Wait for the SOCKS5 listener to answer, up to :data:`_CONNECT_TIMEOUT`."""
+    deadline = time.monotonic() + _CONNECT_TIMEOUT
+    while time.monotonic() < deadline:
+        if _socks5_ready():
+            return True
+        time.sleep(_POLL)
+    return False
 
 
 def _connect() -> str | None:
     """Put WARP in proxy mode and connect it. The SOCKS5 URL, or None if any step fails.
 
-    Status is polled rather than trusted from ``connect``'s exit code: the call returns as soon as
+    Readiness is a real SOCKS5 handshake, not ``connect``'s exit code: the call returns as soon as
     the request is accepted, and handing out a proxy that is not carrying traffic yet would turn
     the first Board after the wall into a second failure.
     """
@@ -121,14 +151,11 @@ def _connect() -> str | None:
         return None
     if not _run("connect"):
         return None
-    deadline = time.monotonic() + _CONNECT_TIMEOUT
-    while time.monotonic() < deadline:
-        if _connected():
-            return f"socks5://127.0.0.1:{_PORT}"
-        time.sleep(_POLL)
+    if _await_socks5():
+        return f"socks5://127.0.0.1:{_PORT}"
     _log.warning(
-        f"spare egress: dialled but no Connected status within {_CONNECT_TIMEOUT:.0f}s "
-        f"— staying on the direct route"
+        f"spare egress: dialled but the SOCKS5 listener did not answer within "
+        f"{_CONNECT_TIMEOUT:.0f}s — staying on the direct route"
     )
     return None
 
@@ -228,6 +255,16 @@ def report() -> list[str]:
     """
     counts = traffic()
     lines = []
+    spins = rotations()
+    if spins:
+        lines.append(
+            "spare egress rotations: "
+            + ", ".join(
+                f"{why} {spins[why]}"
+                for why in ("attempted", "succeeded", "failed", "throttled")
+                if spins.get(why)
+            )
+        )
     for group in sorted(walled_groups()):
         routed = counts.get(group, Counter())["routed"]
         recovered = counts.get(group, Counter())["recovered"]
@@ -256,12 +293,133 @@ def proxy_for(group: str | None) -> str | None:
     with _walled_lock:
         if group not in _walled:
             return None
+    # Wait out an in-flight rotation rather than handing back a port the restart has taken away.
+    # Bounded: if a rotation overruns, going direct beats blocking the whole shard behind it.
+    _gate.wait(timeout=_CONNECT_TIMEOUT)
     return proxy_url()
+
+
+#: Rotations are coalesced on a generation counter: sixteen worker threads meeting a walled spare
+#: egress at once must produce **one** restart, not sixteen. A thread snapshots the generation
+#: before queueing on the lock; if it changed while it waited, a peer already rotated and this
+#: thread rides that new IP instead of bouncing the daemon again.
+_rotation_lock = threading.Lock()
+_rotation_generation = 0
+_rotations: Counter[str] = Counter()
+_last_rotation = 0.0
+
+#: Minimum seconds between successive rotations. Rotation is cyclic — every wall seen *through*
+#: the spare egress asks for another IP — so without a floor a shard meeting 429s continuously
+#: would spend its 60-minute budget restarting `warp-svc` rather than scraping.
+#:
+#: 20s matches the quiet window the sibling project settled on for a freshly-rotated IP; it is
+#: **not** independently measured here, and it is the first number to revisit if the shard report
+#: shows many rotations with a low recovery rate. Sized above the restart-plus-handshake cost so a
+#: new IP always gets a trial before the next rotation is allowed.
+_ROTATION_COOLDOWN = 20.0
+
+#: Pause after `systemctl restart` before re-arming proxy mode — the unit is back before the daemon
+#: is listening.
+_RESTART_SETTLE = 2.0
+
+#: Held closed for the duration of a rotation. Without it, peers keep firing at a SOCKS5 port that
+#: the restart has just taken away — each one a RequestsError that burns an attempt and can lose a
+#: Board. The sibling project calls this the rotation gate and it is the half of the design that
+#: coalescing alone does not cover.
+_gate = threading.Event()
+_gate.set()
+
+
+def rotate() -> bool:
+    """Move to a different egress IP. True if a fresh SOCKS5 listener came back.
+
+    **Why ``systemctl restart warp-svc`` rather than ``warp-cli disconnect`` + ``connect``**: the
+    CLI pair is a no-op for rotation. A registration is sticky to its WARP edge node, so
+    disconnect/connect returns the *same* egress IP — measured in a sibling project on 2026-05-29
+    (``104.28.232.96`` before and after; a daemon restart moved it to ``104.28.200.91``).
+    ``resilience.md`` records the symptom ("rotation can be a no-op"); this is the working answer.
+
+    ``sudo -n`` so a runner without passwordless sudo fails immediately rather than blocking on a
+    TTY prompt nobody will answer. **Every** exit path re-opens the gate and leaves the process
+    able to dial again: a rotation that cannot happen must cost one bounded attempt, never the
+    spare egress itself.
+    """
+    global _rotation_generation, _proxy, _last_rotation, _resolved
+    seen = _rotation_generation
+    with _rotation_lock:
+        if _rotation_generation != seen:
+            return _proxy is not None  # a peer rotated while we queued; ride its IP
+        since = time.monotonic() - _last_rotation
+        if _last_rotation and since < _ROTATION_COOLDOWN:
+            _rotations["throttled"] += 1
+            return _proxy is not None  # too soon — give the current IP its fair trial
+        _last_rotation = time.monotonic()
+        _rotations["attempted"] += 1
+        _gate.clear()  # peers stop firing at a port the restart is about to take away
+        _log.warning("spare egress: rotating egress IP (systemctl restart warp-svc)")
+        try:
+            if not _restart_daemon():
+                _rotations["failed"] += 1
+                return False
+            # `systemctl restart` returns once the *unit* is back, but warp-svc needs a moment to
+            # come up and reconnect. Re-arming immediately means all three calls land on a daemon
+            # that is not listening yet, fail silently, and the handshake wait below then burns its
+            # whole deadline for nothing. The sibling project sleeps here for the same reason.
+            time.sleep(_RESTART_SETTLE)
+            _run("mode", "proxy")
+            _run("proxy", "port", str(_PORT))
+            _run("connect")
+            if not _await_socks5():
+                # Do NOT pin the process to the direct route. Clearing `_resolved` alongside
+                # `_proxy` is what lets a later caller re-dial; leaving it set would make one bad
+                # rotation permanent, which is strictly worse than never having rotated.
+                _log.warning(
+                    "spare egress: rotated but SOCKS5 did not come back — direct for now, "
+                    "will re-dial"
+                )
+                _rotations["failed"] += 1
+                with _lock:
+                    _proxy = None
+                    _resolved = False
+                return False
+            _rotation_generation += 1
+            _rotations["succeeded"] += 1
+            _log.warning(
+                f"spare egress: rotated to a fresh egress IP (#{_rotation_generation})"
+            )
+            return True
+        finally:
+            _gate.set()  # one place, so no exit path can strand the shard behind a closed gate
+
+
+def _restart_daemon() -> bool:
+    """``sudo -n systemctl restart warp-svc``. False — logged, never raised — on any failure."""
+    try:
+        proc = subprocess.run(
+            ["sudo", "-n", "systemctl", "restart", "warp-svc"],
+            capture_output=True,
+            text=True,
+            timeout=_CALL_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.warning(f"spare egress: rotation unavailable ({type(exc).__name__})")
+        return False
+    if proc.returncode != 0:
+        detail = (proc.stderr or "").strip().replace("\n", " ")[:160]
+        _log.warning(f"spare egress: rotation failed (exit {proc.returncode}) {detail}")
+        return False
+    return True
+
+
+def rotations() -> Counter[str]:
+    """Attempted/succeeded/failed rotation counts, for the shard report."""
+    with _rotation_lock:
+        return Counter(_rotations)
 
 
 def reset() -> None:
     """Forget the cached proxy *and* the walled groups, so the next call probes again (tests)."""
-    global _resolved, _proxy
+    global _resolved, _proxy, _last_rotation, _rotation_generation
     with _lock:
         _resolved = False
         _proxy = None
@@ -269,3 +427,8 @@ def reset() -> None:
         _walled.clear()
     with _traffic_lock:
         _traffic.clear()
+    with _rotation_lock:
+        _rotations.clear()
+        _last_rotation = 0.0
+        _rotation_generation = 0
+    _gate.set()
