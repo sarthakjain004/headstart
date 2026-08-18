@@ -134,16 +134,20 @@ def test_chrome_launch_is_retried_then_reported(monkeypatch):
 
     monkeypatch.setattr(bh, "_chrome_factory", _DiesOnStart)
     monkeypatch.setattr(bh, "_browser", None)
-    with pytest.raises(RuntimeError, match="failed to start"):
-        with bh.origin("https://acme.darwinbox.in/careers"):
-            pass
+    with (
+        pytest.raises(RuntimeError, match="failed to start"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        pass
     assert len(attempts) == bh._LAUNCH_ATTEMPTS
 
 
 def test_tab_is_closed_even_when_the_caller_raises(fresh):
-    with pytest.raises(ValueError, match="caller bug"):
-        with bh.origin("https://acme.darwinbox.in/careers"):
-            raise ValueError("caller bug")
+    with (
+        pytest.raises(ValueError, match="caller bug"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        raise ValueError("caller bug")
     assert fresh.tabs[0].closed
 
 
@@ -161,9 +165,11 @@ def test_a_failed_navigation_returns_its_slot_and_closes_its_tab(fresh, monkeypa
     monkeypatch.setattr(bh, "_TAB_WIDTH", 1)  # one slot: a leak makes the retry hang
 
     for _ in range(3):
-        with pytest.raises(TimeoutError):
-            with bh.origin("https://acme.darwinbox.in/careers"):
-                pass
+        with (
+            pytest.raises(TimeoutError),
+            bh.origin("https://acme.darwinbox.in/careers"),
+        ):
+            pass
 
     # Three boards, three tabs, all closed — and the third only ran because the first two
     # handed their slot back.
@@ -179,6 +185,8 @@ def test_missing_pydoll_says_so_instead_of_blaming_chrome_startup(monkeypatch):
 
     monkeypatch.setattr(bh, "_chrome_factory", _no_pydoll)
     monkeypatch.setattr(bh, "_browser", None)
-    with pytest.raises(bh.BrowserUnavailable, match="needs pydoll"):
-        with bh.origin("https://acme.darwinbox.in/careers"):
-            pass
+    with (
+        pytest.raises(bh.BrowserUnavailable, match="needs pydoll"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        pass

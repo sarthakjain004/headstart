@@ -295,7 +295,7 @@ INFRA = BLOCK  # back-compat alias: probe_ats.py filters subdomain labels agains
 
 def _run(cmd, timeout=90):
     try:
-        return subprocess.run(
+        return subprocess.run(  # noqa: PLW1510
             cmd,
             capture_output=True,
             text=True,
@@ -303,7 +303,7 @@ def _run(cmd, timeout=90):
             errors="replace",
             timeout=timeout,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -367,7 +367,7 @@ def num_pages(cdx, target):
         return 0
     try:
         return int(json.loads(body).get("pages", 1))
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 1
 
 
@@ -398,7 +398,7 @@ def tenant_from(kind, match):
 
 def query_target(cdx, ats, spec, target, done, tenants, crawl):
     """Query one target across all its pages, extracting tenants. Returns False on throttle."""
-    pats = [re.compile(p, re.I) for p in spec["patterns"]]
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
     pages = num_pages(cdx, target)
     if pages is None:
         return False
@@ -419,7 +419,7 @@ def query_target(cdx, ats, spec, target, done, tenants, crawl):
         for line in body.splitlines():
             try:
                 u = json.loads(line)["url"]
-            except Exception:
+            except Exception:  # noqa: BLE001, S112
                 continue
             for pat in pats:
                 for m in pat.finditer(u):

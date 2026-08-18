@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http  # noqa: E402 - needs src on sys.path first
+from headstart import http  # needs src on sys.path first
 
 UA = "HeadStart-discovery/0.1 (ATS board confirmation)"
 # The scraper's own job-URL shape: /job/{slug}/{numeric id}/ (scrapers/successfactors.py _JOB_PATH)
@@ -73,7 +73,7 @@ def _stream(url: str, cap: int = PROBE_CAP) -> tuple[int, str]:
                 verify=False,
                 stream=True,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             if getattr(exc, "code", None) == _DNS:
                 return -1, ""
             if attempt == _ATTEMPTS - 1:
@@ -87,7 +87,7 @@ def _stream(url: str, cap: int = PROBE_CAP) -> tuple[int, str]:
                 size += len(chunk)
                 if size >= cap:
                     break
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass  # torn mid-stream: keep what arrived, it may already prove the shape
         finally:
             r.close()
@@ -156,7 +156,7 @@ def main() -> int:
     all_f = None
     all_w = None
     if args.all_out:
-        all_f = Path(args.all_out).open("w", newline="", encoding="utf-8")
+        all_f = Path(args.all_out).open("w", newline="", encoding="utf-8")  # noqa: SIM115
         all_w = csv.writer(all_f)
         all_w.writerow(["host", "verdict", "jobs", "surface"])
 

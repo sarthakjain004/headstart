@@ -194,7 +194,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     for company in load_active_companies(ledger_dir, min_jobs=0):
         try:
             keep.add(get_scraper(company.ats, company.slug, company.name).board_key())
-        except Exception:  # noqa: BLE001 - a malformed ledger row shouldn't sink the whole set
+        except Exception:  # noqa: BLE001, S112 - a malformed ledger row shouldn't sink the whole set
             continue
     return keep
 
@@ -328,8 +328,6 @@ def plan_prune(index_ids: Iterable[str], keep: set[str]) -> tuple[list[str], lis
     duplicate: list[str] = []
     for (canon, _), ids in groups.items():
         if len(ids) > 1:
-            kept = next(
-                (i for i in ids if i.startswith(live[canon] + ":")), sorted(ids)[0]
-            )
+            kept = next((i for i in ids if i.startswith(live[canon] + ":")), min(ids))
             duplicate.extend(i for i in ids if i != kept)
     return off_board, duplicate

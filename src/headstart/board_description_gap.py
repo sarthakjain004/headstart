@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 FIELDS = ("board", "unsettled", "updated_at")
 
 
-def key_for(company: "CompanyRef") -> str:
+def key_for(company: CompanyRef) -> str:
     """This Board's key in the ledger — the one form every reader and writer must agree on."""
     from headstart.config import board_identity
 

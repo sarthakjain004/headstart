@@ -70,7 +70,7 @@ def main() -> None:
     columns: dict[str, list] = {f.name: [] for f in schema if f.name != "vector"}
     for meta in metas:
         exp = experience.get(meta["id"], {})
-        for name in columns:
+        for name in columns:  # noqa: PLC0206
             if name == "min_years":
                 columns[name].append(exp.get("min_years"))
             elif name == "max_years":

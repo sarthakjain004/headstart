@@ -20,18 +20,17 @@ import csv
 import re
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 UA = "Mozilla/5.0 (compatible; HeadStart-discovery/0.1; careers-board discovery)"
 TIMEOUT = 20
 BOARD_RE = re.compile(
     r"([a-z0-9][a-z0-9-]*)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Z]{2}/)?([A-Za-z0-9_.\-]+)",
-    re.I,
+    re.IGNORECASE,
 )
 # Path segments Workday serves that are not careers sites.
 NOT_A_SITE = {
@@ -65,9 +64,9 @@ def fetch(url):
     except urllib.error.HTTPError as e:
         try:
             return f"{e.url}\n" + e.read(200_000).decode("utf-8", "replace")
-        except Exception:
+        except Exception:  # noqa: BLE001
             return ""
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ""
 
 

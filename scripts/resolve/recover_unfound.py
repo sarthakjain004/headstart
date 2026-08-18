@@ -19,7 +19,7 @@ from pathlib import Path
 from curl_cffi.requests import AsyncSession
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import COMPANY_BUDGET, CONCURRENCY, SEED, run  # noqa: E402
+from fingerprint import COMPANY_BUDGET, CONCURRENCY, SEED, run
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 COVERAGE = ROOT / "data" / "resolve" / "coverage.csv"
@@ -45,7 +45,7 @@ async def main():
         async with sem:
             try:
                 return await asyncio.wait_for(run(session, row), COMPANY_BUDGET)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return row["name"], row["domain"], set()
 
     async with AsyncSession() as session:

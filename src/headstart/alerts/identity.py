@@ -48,7 +48,7 @@ def verify(
         raise IdentityError("no sign-in credential was sent")
     try:
         claims = (verifier or _google_verifier)(credential, client_id)
-    except Exception as exc:  # noqa: BLE001 — every rejection reads the same to the caller
+    except Exception as exc:  # every rejection reads the same to the caller
         raise IdentityError(
             f"sign-in could not be verified: {type(exc).__name__}"
         ) from exc

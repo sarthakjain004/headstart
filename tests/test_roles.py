@@ -9,7 +9,7 @@ import pytest
 
 np = pytest.importorskip("numpy")  # CI's quality job installs base deps only
 
-from headstart import roles  # noqa: E402
+from headstart import roles
 
 
 def test_band_edges():

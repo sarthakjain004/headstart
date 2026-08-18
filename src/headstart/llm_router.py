@@ -67,5 +67,5 @@ def ask(prompt: str) -> str:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             reply = json.load(resp)
         return reply["choices"][0]["message"]["content"]
-    except Exception as exc:  # noqa: BLE001 — every failure mode maps to the same caller answer
+    except Exception as exc:  # every failure mode maps to the same caller answer
         raise RouterUnavailable(f"{type(exc).__name__}: {exc}") from exc

@@ -47,7 +47,7 @@ def warp_on() -> bool:
             "https://www.cloudflare.com/cdn-cgi/trace", timeout=10
         ) as r:
             return "warp=on" in r.read().decode("utf-8", "replace")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -119,7 +119,7 @@ async def main() -> int:
                 op = j.get("operationName")
                 opid = j.get("extensions", {}).get("operationId")
                 variables = j.get("variables")
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             hdrs = {k.lower() for k in req.get("headers", {})}
             captured.append(
@@ -132,7 +132,7 @@ async def main() -> int:
                     "url": url,
                 }
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     opts = ChromiumOptions()
@@ -142,7 +142,7 @@ async def main() -> int:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         await tab.enable_network_events()
         await tab.on("Network.requestWillBeSent", on_req)

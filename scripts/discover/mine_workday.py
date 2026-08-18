@@ -32,7 +32,7 @@ CTX = ssl._create_unverified_context()
 socket.setdefaulttimeout(TIMEOUT)
 
 HOST_RE = re.compile(r"^([a-z0-9][a-z0-9-]*)\.(wd\d+)\.myworkdayjobs\.com$")
-LOCALE_RE = re.compile(r"^[a-z]{2}[-_][a-z]{2}$", re.I)
+LOCALE_RE = re.compile(r"^[a-z]{2}[-_][a-z]{2}$", re.IGNORECASE)
 SKIP_SITE = {"job", "wday", "cxs", "api", "assets"}
 
 
@@ -42,7 +42,7 @@ def get(url):
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=TIMEOUT, context=CTX) as r:
                 return r.read().decode("utf-8", "replace")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return None
 
@@ -127,7 +127,7 @@ def main():
     def do(page):
         text = get(f"{base}&page={page}")
         if text is None:
-            return None
+            return
         found = [r for r in (extract(u) for u in text.split("\n") if u) if r]
         with lock:
             for slug, url in found:

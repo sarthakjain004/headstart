@@ -17,7 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "discover"))
 
-import wayback_feeder as wf  # noqa: E402
+import wayback_feeder as wf
 
 
 @pytest.mark.parametrize(

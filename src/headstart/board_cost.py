@@ -20,11 +20,11 @@ per-Board scrape time varies by orders of magnitude across ATSes.
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
-from typing import Iterable, Mapping
 
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
@@ -149,7 +149,7 @@ def update(
     being priced honestly (ADR-0064). Its ``jobs`` count is left as it was, because the Board
     banked no complete listing this run and a 0 there would erase what the last full scrape saw.
     """
-    today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = today or datetime.now(UTC).strftime("%Y-%m-%d")
     rows = dict(prev)
     for board, now in measured.items():
         if (

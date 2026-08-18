@@ -10,7 +10,7 @@ import logging
 
 import pytest
 
-import headstart.http as http
+from headstart import http
 
 
 class _Resp:

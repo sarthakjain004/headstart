@@ -58,10 +58,8 @@ import sys
 import datadome_slider
 from datadome_slider import audio_ready
 from pydoll.browser import Chrome
-
 from run_wellfound import (
     EXP,
-    OUT as BOARD_CSV,
     ROOT,
     _captcha_frame_html,
     _flag,
@@ -70,15 +68,21 @@ from run_wellfound import (
     _options,
     is_hard_block,
 )
-from run_wellfound_company_jobs import COLS, OUT as ROSTER_CSV
+from run_wellfound import (
+    OUT as BOARD_CSV,
+)
+from run_wellfound_company_jobs import COLS
+from run_wellfound_company_jobs import OUT as ROSTER_CSV
 from run_wellfound_sweep import warp_on
 
 sys.path.insert(0, str(ROOT / "src"))
-from headstart.tech_filter import is_tech  # noqa: E402
+from headstart.tech_filter import is_tech
 
 OUT = ROOT / "data" / "jobs" / "wellfound_full.csv"
 
-LD_RE = re.compile(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', re.S)
+LD_RE = re.compile(
+    r'<script type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
+)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\n{3,}")
 
@@ -89,7 +93,7 @@ def ld_jobposting(page_html: str) -> dict | None:
     for m in LD_RE.finditer(page_html):
         try:
             d = json.loads(m.group(1))
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
         if isinstance(d, dict) and d.get("@type") == "JobPosting":
             return d
@@ -131,7 +135,7 @@ def description_html(page_html: str) -> str | None:
     if not m:
         return None
     tag, start, depth = m.group(1), m.end(), 1
-    token = re.compile(r"</?%s\b[^>]*>" % re.escape(tag), re.I)
+    token = re.compile(rf"</?{re.escape(tag)}\b[^>]*>", re.IGNORECASE)
     i = start
     while depth:
         t = token.search(page_html, i)
@@ -285,7 +289,7 @@ async def main() -> int:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         for i, row in enumerate(todo):
             out = dict(row)
@@ -300,7 +304,7 @@ async def main() -> int:
             else:
                 try:
                     page_html = await load_detail(tab, row["url"], browser)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     print(
                         f"  [{i + 1}] {row['url']} fetch error: {type(e).__name__}",
                         flush=True,

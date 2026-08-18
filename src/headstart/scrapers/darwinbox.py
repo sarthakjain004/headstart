@@ -33,7 +33,7 @@ recruitment_enabled:false) return an empty list.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from headstart import http
@@ -45,7 +45,7 @@ _TLDS = ("in", "com")
 _UA = "headstart/0.1 (job-board reader)"
 
 
-def _iso_date(raw: str | int | float | None) -> str | None:
+def _iso_date(raw: str | float | None) -> str | None:
     """Darwinbox posts dates as '21-Apr-2026' — normalize to ISO. Non-ISO strings sort
     lexicographically ABOVE ISO date cutoffs, so left raw they leak through every
     posted-within filter; unparseable values pass through unchanged.
@@ -59,11 +59,11 @@ def _iso_date(raw: str | int | float | None) -> str | None:
     if isinstance(raw, (int, float)):
         try:
             seconds = raw / 1000 if raw > 1e11 else raw
-            return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y-%m-%d")
+            return datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%d")
         except (ValueError, OverflowError, OSError):
             return None
     try:
-        return datetime.strptime(raw, "%d-%b-%Y").strftime("%Y-%m-%d")
+        return datetime.strptime(raw, "%d-%b-%Y").strftime("%Y-%m-%d")  # noqa: DTZ007
     except ValueError:
         return raw
 

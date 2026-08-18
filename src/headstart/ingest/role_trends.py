@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -267,7 +267,7 @@ def main() -> int:
         columns.append("first_seen")
     rows = table.search().select(columns).limit(n).to_arrow()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
     counts, non_tech, assigned = count_groups(

@@ -8,7 +8,7 @@ import os
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Container, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from headstart import http, log
@@ -181,7 +181,7 @@ class BaseScraper(ABC):
         return json.loads(self._get())
 
     def fetch(self) -> list[Job]:
-        scraped_at = datetime.now(timezone.utc).isoformat()
+        scraped_at = datetime.now(UTC).isoformat()
         return self.parse(self.fetch_raw(), scraped_at)
 
     @staticmethod

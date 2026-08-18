@@ -25,11 +25,11 @@ sys.path.insert(0, str(ROOT / "scripts" / "scrape"))
 # installs base deps only).
 pytest.importorskip("pydoll")
 
-from run_wellfound_job_details import (  # noqa: E402
+from run_wellfound_job_details import (
     description_html,
+    html_to_text,
     is_challenged,
     ld_jobposting,
-    html_to_text,
     posting_matches,
 )
 

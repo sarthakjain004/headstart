@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 FIELDS = ("speedup", "shards", "updated_at")
@@ -131,7 +131,7 @@ def save(path: str | Path, ratio: float, shards: int) -> None:
             {
                 "speedup": f"{ratio:.4f}",
                 "shards": shards,
-                "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "updated_at": datetime.now(UTC).strftime("%Y-%m-%d"),
             }
         )
 

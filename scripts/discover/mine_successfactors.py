@@ -48,13 +48,14 @@ SF_DOMAINS = ("successfactors.eu", "successfactors.com", "sapsf.com")
 _CAREER = re.compile(
     r"https?://(career[a-z0-9]*\.(?:successfactors\.(?:eu|com)|sapsf\.com))/career\?"
     r".*?(?:career_)?company=([A-Za-z0-9_.-]+)",
-    re.I,
+    re.IGNORECASE,
 )
 # an id that starts with a digit or the C{digits} customer-number form is opaque -> not derivable
 _OPAQUE = re.compile(r"^C?\d")
 # trailing environment/instance suffixes on a name-like id: BurberryProd, atlascopcoP, algomasteelT
 _SUFFIX = re.compile(
-    r"(prod|prd|production|test|tst|stage|stg|dev|corp|global|ext|eu|us|dp|p|t)+$", re.I
+    r"(prod|prd|production|test|tst|stage|stg|dev|corp|global|ext|eu|us|dp|p|t)+$",
+    re.IGNORECASE,
 )
 
 # candidate vanity host shapes, cheapest-first (matches the confirmed 26-board pool spread)
@@ -71,7 +72,7 @@ def wb_get(url: str) -> str | None:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=120, context=CTX) as r:
                 return r.read().decode("utf-8", "replace")
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
     return None
 
@@ -119,7 +120,7 @@ def is_rmk(host: str) -> str | None:
             if r.status != 200:
                 return None
             body = r.read(200_000).decode("utf-8", "replace")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     if _RMK_RSS in body or "<rss" in body:
         return host

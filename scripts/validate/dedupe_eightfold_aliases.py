@@ -52,14 +52,14 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import liveness  # noqa: E402
-from headstart.scrapers.eightfold import group_id_for, sitemap_ids_for  # noqa: E402
+from headstart import liveness
+from headstart.scrapers.eightfold import group_id_for, sitemap_ids_for
 
 LEDGER = ROOT / "data" / "validate" / "liveness" / "eightfold.csv"
 
@@ -149,7 +149,7 @@ def main() -> int:
         print("dry run — pass --apply to write the ledger")
         return 0
 
-    today = date.today().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     for _winner, loser in to_bury:
         row = ledger[loser]
         ledger[loser] = liveness.Verdict(

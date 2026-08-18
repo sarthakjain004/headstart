@@ -62,66 +62,82 @@ HOST_PATTERNS = [
         "greenhouse",
         re.compile(
             r"(?:boards|job-boards|boards-api)\.greenhouse\.io/(?:embed/job_board\?for=|v1/boards/)?([A-Za-z0-9_.-]+)",
-            re.I,
+            re.IGNORECASE,
         ),
     ),
     (
         "lever",
         re.compile(
-            r"(?:jobs|api)\.(?:eu\.)?lever\.co/(?:v0/postings/)?([A-Za-z0-9_.-]+)", re.I
+            r"(?:jobs|api)\.(?:eu\.)?lever\.co/(?:v0/postings/)?([A-Za-z0-9_.-]+)",
+            re.IGNORECASE,
         ),
     ),
-    ("ashby", re.compile(r"(?:jobs|api)\.ashbyhq\.com/([A-Za-z0-9_.-]+)", re.I)),
+    (
+        "ashby",
+        re.compile(r"(?:jobs|api)\.ashbyhq\.com/([A-Za-z0-9_.-]+)", re.IGNORECASE),
+    ),
     (
         "smartrecruiters",
         re.compile(
             r"(?:jobs|api|careers)\.smartrecruiters\.com/(?:v1/companies/)?([A-Za-z0-9_.-]+)",
-            re.I,
+            re.IGNORECASE,
         ),
     ),
-    ("workable", re.compile(r"apply\.workable\.com/([A-Za-z0-9_.-]+)", re.I)),
-    ("workable", re.compile(r"\b([A-Za-z0-9_-]+)\.workable\.com", re.I)),
-    ("recruitee", re.compile(r"\b([A-Za-z0-9_-]+)\.recruitee\.com", re.I)),
-    ("bamboohr", re.compile(r"\b([A-Za-z0-9_-]+)\.bamboohr\.com", re.I)),
-    ("teamtailor", re.compile(r"\b([A-Za-z0-9_-]+)\.teamtailor\.com", re.I)),
-    ("personio", re.compile(r"\b([A-Za-z0-9_-]+)\.jobs\.personio\.(?:de|com)", re.I)),
-    ("icims", re.compile(r"(?:careers-)?([A-Za-z0-9_-]+)\.icims\.com", re.I)),
-    ("jobvite", re.compile(r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)", re.I)),
-    ("jazzhr", re.compile(r"\b([A-Za-z0-9_-]+)\.applytojob\.com", re.I)),
-    ("taleo", re.compile(r"\b([A-Za-z0-9_-]+)\.taleo\.net", re.I)),
+    ("workable", re.compile(r"apply\.workable\.com/([A-Za-z0-9_.-]+)", re.IGNORECASE)),
+    ("workable", re.compile(r"\b([A-Za-z0-9_-]+)\.workable\.com", re.IGNORECASE)),
+    ("recruitee", re.compile(r"\b([A-Za-z0-9_-]+)\.recruitee\.com", re.IGNORECASE)),
+    ("bamboohr", re.compile(r"\b([A-Za-z0-9_-]+)\.bamboohr\.com", re.IGNORECASE)),
+    ("teamtailor", re.compile(r"\b([A-Za-z0-9_-]+)\.teamtailor\.com", re.IGNORECASE)),
+    (
+        "personio",
+        re.compile(r"\b([A-Za-z0-9_-]+)\.jobs\.personio\.(?:de|com)", re.IGNORECASE),
+    ),
+    ("icims", re.compile(r"(?:careers-)?([A-Za-z0-9_-]+)\.icims\.com", re.IGNORECASE)),
+    ("jobvite", re.compile(r"jobs\.jobvite\.com/([A-Za-z0-9_.-]+)", re.IGNORECASE)),
+    ("jazzhr", re.compile(r"\b([A-Za-z0-9_-]+)\.applytojob\.com", re.IGNORECASE)),
+    ("taleo", re.compile(r"\b([A-Za-z0-9_-]+)\.taleo\.net", re.IGNORECASE)),
     (
         "successfactors",
-        re.compile(r"\b([A-Za-z0-9_-]+)\.(?:sapsf|successfactors)\.(?:com|eu)", re.I),
+        re.compile(
+            r"\b([A-Za-z0-9_-]+)\.(?:sapsf|successfactors)\.(?:com|eu)", re.IGNORECASE
+        ),
     ),
     (
         "oracle",
-        re.compile(r"\b([A-Za-z0-9_-]+)\.fa\.(?:[a-z0-9-]+\.)*oraclecloud\.com", re.I),
+        re.compile(
+            r"\b([A-Za-z0-9_-]+)\.fa\.(?:[a-z0-9-]+\.)*oraclecloud\.com", re.IGNORECASE
+        ),
     ),
     (
         "zohorecruit",
-        re.compile(r"\b([A-Za-z0-9_-]+)\.zohorecruit\.(?:com|in|eu|com\.au)", re.I),
+        re.compile(
+            r"\b([A-Za-z0-9_-]+)\.zohorecruit\.(?:com|in|eu|com\.au)", re.IGNORECASE
+        ),
     ),
-    ("darwinbox", re.compile(r"\b([A-Za-z0-9_-]+)\.darwinbox\.(?:in|com)", re.I)),
-    ("keka", re.compile(r"\b([A-Za-z0-9_-]+)\.keka\.com", re.I)),
-    ("trakstar", re.compile(r"\b([A-Za-z0-9_-]+)\.hire\.trakstar\.com", re.I)),
-    ("ripplehire", re.compile(r"\b([A-Za-z0-9_-]+)\.ripplehire\.com", re.I)),
-    ("sense", re.compile(r"\b([A-Za-z0-9_-]+)\.sensehq\.com", re.I)),
-    ("freshteam", re.compile(r"\b([A-Za-z0-9_-]+)\.freshteam\.com", re.I)),
-    ("comeet", re.compile(r"\b([A-Za-z0-9_-]+)\.comeet\.co\b", re.I)),
-    ("breezy", re.compile(r"\b([A-Za-z0-9_-]+)\.breezy\.hr", re.I)),
-    ("pinpoint", re.compile(r"\b([A-Za-z0-9_-]+)\.pinpointhq\.com", re.I)),
-    ("join", re.compile(r"join\.com/(?:companies/)?([A-Za-z0-9_.-]+)", re.I)),
-    ("rippling", re.compile(r"ats\.rippling\.com/([A-Za-z0-9_.-]+)", re.I)),
+    (
+        "darwinbox",
+        re.compile(r"\b([A-Za-z0-9_-]+)\.darwinbox\.(?:in|com)", re.IGNORECASE),
+    ),
+    ("keka", re.compile(r"\b([A-Za-z0-9_-]+)\.keka\.com", re.IGNORECASE)),
+    ("trakstar", re.compile(r"\b([A-Za-z0-9_-]+)\.hire\.trakstar\.com", re.IGNORECASE)),
+    ("ripplehire", re.compile(r"\b([A-Za-z0-9_-]+)\.ripplehire\.com", re.IGNORECASE)),
+    ("sense", re.compile(r"\b([A-Za-z0-9_-]+)\.sensehq\.com", re.IGNORECASE)),
+    ("freshteam", re.compile(r"\b([A-Za-z0-9_-]+)\.freshteam\.com", re.IGNORECASE)),
+    ("comeet", re.compile(r"\b([A-Za-z0-9_-]+)\.comeet\.co\b", re.IGNORECASE)),
+    ("breezy", re.compile(r"\b([A-Za-z0-9_-]+)\.breezy\.hr", re.IGNORECASE)),
+    ("pinpoint", re.compile(r"\b([A-Za-z0-9_-]+)\.pinpointhq\.com", re.IGNORECASE)),
+    ("join", re.compile(r"join\.com/(?:companies/)?([A-Za-z0-9_.-]+)", re.IGNORECASE)),
+    ("rippling", re.compile(r"ats\.rippling\.com/([A-Za-z0-9_.-]+)", re.IGNORECASE)),
 ]
 
 # Workday boards need instance+site, so they are handled separately (not via the
 # slug-token machinery): from full myworkdayjobs URLs and from Feashliaa-style
 # ``company|wdN|site`` pipe tuples.
 WORKDAY_URL = re.compile(
-    r"([A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com(?:/[A-Za-z0-9_-]+)?)", re.I
+    r"([A-Za-z0-9-]+\.wd\d+\.myworkdayjobs\.com(?:/[A-Za-z0-9_-]+)?)", re.IGNORECASE
 )
 WORKDAY_PIPE = re.compile(
-    r"\b([a-z0-9][a-z0-9-]{0,60})\|(wd\d+)\|([A-Za-z0-9_-]+)", re.I
+    r"\b([a-z0-9][a-z0-9-]{0,60})\|(wd\d+)\|([A-Za-z0-9_-]+)", re.IGNORECASE
 )
 
 # canonical URL templates for providers whose board is a simple function of slug
@@ -266,7 +282,7 @@ def valid_slug(s: str) -> bool:
         return False
     if not SLUG_RE.match(s):
         return False
-    if s.isdigit() and len(s) > 4:  # drop bare numeric junk ids
+    if s.isdigit() and len(s) > 4:  # drop bare numeric junk ids  # noqa: SIM103
         return False
     return True
 
@@ -389,7 +405,7 @@ def filename_keyed_slugs(ats: str, path: Path):
     if suf == ".json":
         try:
             return _json_slugs(json.loads(raw))
-        except Exception:
+        except Exception:  # noqa: BLE001
             return []
     if suf == ".csv":
         rows = [
@@ -448,7 +464,7 @@ def columnar_scan(path: Path, text: str):
     elif suf == ".json":
         try:
             data = json.loads(text)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return
         items = (
             data
@@ -517,7 +533,7 @@ def main() -> int:
         source = rel[1] if len(rel) > 1 else rel[0]  # the <source-slug> folder
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
 
         # strategy 1: URL scan (every file)

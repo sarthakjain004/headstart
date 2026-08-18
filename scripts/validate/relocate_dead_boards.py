@@ -37,17 +37,17 @@ import argparse
 import collections
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_liveness import PROBES  # noqa: E402 - needs the paths above first
+from check_liveness import PROBES  # needs the paths above first
 
-from headstart import liveness  # noqa: E402
-from headstart.scrapers.registry import SCRAPERS  # noqa: E402
+from headstart import liveness
+from headstart.scrapers.registry import SCRAPERS
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
@@ -199,7 +199,7 @@ def main() -> int:
         return ledgers[ats]
 
     moved, stayed_dead, dead_only = [], [], []
-    today = date.today().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     for n, jid in enumerate(ids, 1):
         old_ats, _, slug = jid.partition(":")
         hits = search(slug, args.workers)

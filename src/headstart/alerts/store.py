@@ -32,7 +32,7 @@ import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .access import normalize
@@ -70,7 +70,7 @@ ALLOWED_SEARCH_FILTERS = frozenset(
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def subscription_id(email: str) -> str:
@@ -87,7 +87,7 @@ def chat_subscription_id(chat_id: str) -> str:
     Namespaced with a `telegram:` prefix before hashing so it can never collide with an
     address's id — the two live in one directory, and a collision would silently hand one
     person another's Watermark and unsubscribe token."""
-    return hashlib.sha256(f"telegram:{chat_id}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"telegram:{chat_id}".encode()).hexdigest()[:16]
 
 
 def _kept(search_filters: dict[str, Any]) -> dict[str, str]:
@@ -136,7 +136,7 @@ class Subscription:
         query: str,
         search_filters: dict[str, Any],
         when: str | None = None,
-    ) -> "Subscription":
+    ) -> Subscription:
         """A new Subscription whose Watermark starts *now*, so its first Digest carries
         only what appears after signup — nobody is mailed the backlog."""
         stamp = when or now_iso()
@@ -153,7 +153,7 @@ class Subscription:
     @classmethod
     def for_chat(
         cls, chat_id: str, query: str = "", when: str | None = None
-    ) -> "Subscription":
+    ) -> Subscription:
         """A Subscription the Telegram bot created, keyed by chat rather than by address.
 
         `email` stays empty on purpose: there is no verified address behind a chat, and
@@ -175,7 +175,7 @@ class Subscription:
             telegram=str(chat_id),
         )
 
-    def revised(self, query: str, search_filters: dict[str, Any]) -> "Subscription":
+    def revised(self, query: str, search_filters: dict[str, Any]) -> Subscription:
         """This Subscription with a new Query and Search filters, keeping everything else.
 
         Re-subscribing must not mint a fresh `unsubscribe_token`: every Digest already
@@ -189,7 +189,7 @@ class Subscription:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Subscription":
+    def from_dict(cls, data: dict[str, Any]) -> Subscription:
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in known})
 
@@ -226,7 +226,7 @@ class SavedSet:
         query: str,
         search_filters: dict[str, Any],
         when: str | None = None,
-    ) -> "SavedSet":
+    ) -> SavedSet:
         return cls(
             id=secrets.token_hex(4),
             account=subscription_id(email),
@@ -238,7 +238,7 @@ class SavedSet:
 
     def revised(
         self, name: str, query: str, search_filters: dict[str, Any]
-    ) -> "SavedSet":
+    ) -> SavedSet:
         """This set with new content; identity, email flag and created_at stay."""
         return replace(
             self,
@@ -251,7 +251,7 @@ class SavedSet:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SavedSet":
+    def from_dict(cls, data: dict[str, Any]) -> SavedSet:
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in known})
 
@@ -298,7 +298,7 @@ class SavedJob:
         remote: bool = False,
         salary: str = "",
         when: str | None = None,
-    ) -> "SavedJob":
+    ) -> SavedJob:
         """A new star. The display fields arrive from the browser (they are what its card
         showed), so each is length-bounded here — the same discipline `_kept` applies to
         filters — and the URL scheme is checked again at render time by the UI."""
@@ -320,7 +320,7 @@ class SavedJob:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SavedJob":
+    def from_dict(cls, data: dict[str, Any]) -> SavedJob:
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in known})
 
@@ -365,10 +365,10 @@ class Profile:
     updated_at: str = ""
 
     @classmethod
-    def blank(cls, email: str) -> "Profile":
+    def blank(cls, email: str) -> Profile:
         return cls(account=subscription_id(email))
 
-    def revised(self, fields: dict[str, Any], when: str | None = None) -> "Profile":
+    def revised(self, fields: dict[str, Any], when: str | None = None) -> Profile:
         """This Profile with new career fields, bounded at the door; identity never comes
         from the caller. The ``query`` sentence is scrubbed by the route before it gets
         here (profile_extract.scrub_query — not importable from this package in the
@@ -389,7 +389,7 @@ class Profile:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Profile":
+    def from_dict(cls, data: dict[str, Any]) -> Profile:
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in known})
 

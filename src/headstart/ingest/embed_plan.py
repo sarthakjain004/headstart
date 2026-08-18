@@ -32,7 +32,7 @@ from headstart import log
 from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
 from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT
-from headstart.ingest.binpack import (  # noqa: F401 (lpt_pack re-exported for tests)
+from headstart.ingest.binpack import (
     lpt_pack,
     shard_count,
 )

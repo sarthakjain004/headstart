@@ -77,6 +77,6 @@ def send(
     }
     try:
         reply = (post or _post)(ENDPOINT, body, headers)
-    except Exception as exc:  # noqa: BLE001 — refusal and unreachable are one outcome here
+    except Exception as exc:  # refusal and unreachable are one outcome here
         raise MailError(f"{type(exc).__name__}: {exc}") from exc
     return str(reply.get("id") or "")

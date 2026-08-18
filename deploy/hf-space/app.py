@@ -15,7 +15,7 @@ import hmac
 import json
 import os
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
@@ -57,7 +57,9 @@ snapshot_download(
 )
 
 print("loading encoder ...", flush=True)
-from sentence_transformers import SentenceTransformer  # noqa: E402 - after the cheap fail-fast download
+from sentence_transformers import (
+    SentenceTransformer,
+)
 
 _model = SentenceTransformer(search.MODEL, trust_remote_code=True, device="cpu")
 _table = lancedb.connect(_STATE / "data" / "lancedb").open_table(search.PROD_TABLE)
@@ -680,8 +682,8 @@ def trends():
         already parses a trailing ``Z`` natively (3.11+), so nothing needs stripping first."""
         dt = datetime.fromisoformat(raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat(timespec="seconds")
 
     try:
         since = _norm_stamp(request.args["since"]) if "since" in request.args else None

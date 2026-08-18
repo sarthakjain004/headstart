@@ -149,8 +149,7 @@ def update(
     """
     rows = dict(prev)
     for board in produced:  # alive: any output clears the streak
-        if board in rows:
-            del rows[board]
+        rows.pop(board, None)
     for board, reason in gone.items():
         if board in produced:  # partial output beats a per-page 404
             continue

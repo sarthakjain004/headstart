@@ -30,7 +30,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +38,7 @@ _DEFAULT_BASE = "https://imposeidon-headstart-search.hf.space"
 _REPORT_DIR = _ROOT / "data" / "eval" / "filter_checks"
 
 sys.path.insert(0, str(_ROOT / "src"))
-from headstart import geo  # noqa: E402 - after the sys.path insert above
+from headstart import geo
 
 # Deliberately OUTSIDE the repo: this is a live credential for a real account, and a file
 # in the tree is one `git add` away from being published.
@@ -184,7 +184,7 @@ def _probe(base: str, path: str, params: dict) -> tuple[int, object]:
 def _iso_within(posted_at: str | None, days: int) -> bool:
     if not posted_at or not re.match(r"^\d{4}-\d{2}-\d{2}", posted_at):
         return False
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
     return posted_at >= cutoff
 
 
@@ -194,9 +194,7 @@ def _seen_within(first_seen: str | None, hours: int) -> bool:
     never appear inside a window."""
     if not first_seen:
         return False
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(
-        timespec="seconds"
-    )
+    cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
     return first_seen >= cutoff
 
 
@@ -324,7 +322,7 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
     # Custom date ranges (ADR-0031's neighbours: both ends optional, both inclusive). These
     # are the Matches tab's own recency controls and had no coverage at all — the window
     # filters above exercise a different code path (a computed cutoff, not user-typed text).
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     d7 = (today - timedelta(days=7)).isoformat()
     d30 = (today - timedelta(days=30)).isoformat()
     d90 = (today - timedelta(days=90)).isoformat()
@@ -362,9 +360,7 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
     # The alerts Watermark cutoff (ADR-0035), and the only recency filter that is STRICTLY
     # greater — a Digest that re-selected the row its Watermark came from would mail a
     # duplicate, so equality here is a real defect, not an off-by-one nicety.
-    moment = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat(
-        timespec="seconds"
-    )
+    moment = (datetime.now(UTC) - timedelta(hours=48)).isoformat(timespec="seconds")
     cases.append(
         (
             f"first_seen_after={moment}",
@@ -594,7 +590,7 @@ def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
     for ats in atses:
         try:
             rows = _get(base, {"q": "software engineer", "ats": ats, "k": 5})
-        except Exception:
+        except Exception:  # noqa: BLE001
             rows = []
         samples[ats] = rows
 
@@ -689,7 +685,7 @@ def main() -> int:
     for q in QUERIES[:4]:
         try:
             seen |= {r.get("ats") for r in _get(args.base, {"q": q, "k": 100})}
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     atses = sorted(a for a in seen if a)
     print(f"[setup] ATSes present in results: {atses}", file=sys.stderr, flush=True)
@@ -707,7 +703,7 @@ def main() -> int:
 
     report = {
         "base": args.base,
-        "ran_at": datetime.now(timezone.utc).isoformat(),
+        "ran_at": datetime.now(UTC).isoformat(),
         # who, deliberately not recorded: the report is a shareable artifact and the
         # address behind the session is not part of what was verified
         "signed_in": bool(who),
@@ -746,7 +742,7 @@ def main() -> int:
         },
     }
     _REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    out = _REPORT_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    out = _REPORT_DIR / f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
     out.write_text(json.dumps(report, indent=1))
     print(f"report -> {out}", file=sys.stderr, flush=True)
     print(json.dumps(report["summary"], indent=1))

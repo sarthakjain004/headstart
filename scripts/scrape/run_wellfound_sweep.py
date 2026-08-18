@@ -19,11 +19,11 @@ import asyncio
 import csv
 import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from pydoll.browser import Chrome
 import datadome_slider
 from datadome_slider import audio_ready
+from pydoll.browser import Chrome
 from run_wellfound import COLS, EXP, OUT, HardBlocked, _flag, _options, scrape_url
 
 # Keep in sync with docs/wellfound/target-roles.md
@@ -56,7 +56,7 @@ def warp_on() -> bool:
             "https://www.cloudflare.com/cdn-cgi/trace", timeout=10
         ) as r:
             return "warp=on" in r.read().decode("utf-8", "replace")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -84,7 +84,7 @@ async def main() -> int:
     )  # 0-based index into the (filtered) board list
     start_page = _flag("--start-page", 1)  # resume the start board from this page
     roles_arg = _flag("--roles", "")  # comma-sep role slugs; empty = all ROLES
-    scraped_at = datetime.now(timezone.utc).isoformat()
+    scraped_at = datetime.now(UTC).isoformat()
     selected = (
         [s.strip() for s in roles_arg.split(",") if s.strip()] if roles_arg else ROLES
     )
@@ -116,7 +116,7 @@ async def main() -> int:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         for i in range(start_board, len(boards)):
             label, url = boards[i]

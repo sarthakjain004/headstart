@@ -28,7 +28,7 @@ ATS = re.compile(
     r"|[a-z0-9-]+\.hire\.trakstar\.com|[a-z0-9-]+\.skillate\.com"
     r"|smartrecruiters\.com/[\w-]+|[a-z0-9-]+\.eightfold\.ai"
     r"|careers-[a-z0-9-]+\.icims\.com|[a-z0-9-]+\.zwayam\.com|[a-z0-9-]+\.turbohire\.co",
-    re.I,
+    re.IGNORECASE,
 )
 
 TARGETS = [
@@ -65,7 +65,7 @@ def net_urls(logs):
     for e in logs:
         try:
             out.append(e["params"]["request"]["url"])
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return out
 
@@ -74,22 +74,22 @@ async def scan(browser, name, domain, paths):
     tab = await browser.new_tab()
     try:
         await tab.enable_network_events()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     found = set()
     for url in [f"https://{domain}/"] + [f"https://{domain}{p}" for p in paths]:
         try:
             await tab.go_to(url, timeout=30)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         await asyncio.sleep(SETTLE)
         try:
             dom = await tab.page_source
-        except Exception:
+        except Exception:  # noqa: BLE001
             dom = ""
         try:
             logs = await tab.get_network_logs()
-        except Exception:
+        except Exception:  # noqa: BLE001
             logs = []
         blob = dom + "\n" + "\n".join(net_urls(logs))
         for m in ATS.finditer(blob):
@@ -98,7 +98,7 @@ async def scan(browser, name, domain, paths):
             break
     try:
         await tab.close()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return name, domain, sorted(found)[:5]
 
@@ -111,7 +111,7 @@ async def main():
             async with Chrome(options=opts()) as browser:
                 await browser.start()
                 n, d, hits = await scan(browser, name, domain, paths)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             n, d, hits = name, domain, []
             print(f"  {name:12} ({domain}): ERR {type(e).__name__}", flush=True)
             continue

@@ -9,7 +9,7 @@ import logging
 
 import pytest
 
-import headstart.log as log
+from headstart import log
 
 
 def _record(name="headstart.ingest.scrape_run", level=logging.INFO, msg="hello"):

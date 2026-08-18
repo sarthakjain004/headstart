@@ -43,7 +43,7 @@ import random
 import sys
 import time
 import tomllib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart.config import CompanyRef
@@ -75,7 +75,7 @@ def _load_rows(csv_path: Path) -> list[tuple[CompanyRef, int]]:
                 tenant, url = r.get("tenant", ""), r.get("url", "")
                 try:
                     slug = scraper.slug_from(tenant, url)
-                except Exception:  # noqa: BLE001 - a malformed row shouldn't crash the batch
+                except Exception:  # noqa: BLE001, S112 - a malformed row shouldn't crash the batch
                     continue
                 jobs = (r.get("jobs") or "").strip()
                 out.append(
@@ -151,7 +151,7 @@ def _error_kind(message: str) -> str:
 def _setup_logging(source: str) -> Path:
     """Log to the console *and* a timestamped file under data/jobs/logs/; return the file path."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     logfile = LOG_DIR / f"scrape-{source}-{stamp}.log"
     logging.basicConfig(
         level=logging.INFO,

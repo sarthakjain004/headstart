@@ -30,7 +30,7 @@ import json
 import random
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import datadome_slider  # same dir; sys.path[0] as a script
@@ -50,7 +50,7 @@ EXP = ROOT / "experiment" / "wellfound-datadome" / "artifacts"
 DEBUG_HTML = EXP / "last-run_role-page.html"
 DEBUG_JSON = EXP / "last-run_nextdata.json"
 
-NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 
 # Stealth launch flags: drop the obvious automation tells without the cost of a heavier
 # anti-detect browser. Headful (default) keeps the UA + client hints genuine and consistent.
@@ -108,7 +108,7 @@ async def _human_pause(tab) -> None:
     try:
         await asyncio.wait_for(_act(), 10)
         await asyncio.sleep(0.4 + random.random() * 0.8)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -163,7 +163,7 @@ async def _captcha_frame_html(tab, browser) -> str:
 
         frame = await _attach_captcha_frame(tab, browser)
         return await _safe_source(frame) if frame is not None else ""
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"    [block-check] frame read failed: {type(e).__name__}", flush=True)
         return ""
 
@@ -217,7 +217,7 @@ def _epoch_to_iso(secs) -> str | None:
     """Wellfound's liveStartAt is a Unix epoch in seconds."""
     if not isinstance(secs, (int, float)):
         return None
-    return datetime.fromtimestamp(secs, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(secs, tz=UTC).isoformat()
 
 
 def _yoe(lo, hi) -> str | None:
@@ -483,7 +483,7 @@ async def scrape(
 ) -> int:
     """Single-board scrape: open one Chrome + the CSV, scrape `base_url`, stream rows."""
     opts = _options(headless, proxy)
-    scraped_at = datetime.now(timezone.utc).isoformat()
+    scraped_at = datetime.now(UTC).isoformat()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     EXP.mkdir(parents=True, exist_ok=True)
     seen: set[str] = set()
@@ -496,7 +496,8 @@ async def scrape(
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
-        except Exception:  # non-fatal: DataDome is the real gate here
+        # non-fatal: DataDome is the real gate here
+        except Exception:  # noqa: BLE001, S110
             pass
         added, ok = await scrape_url(
             tab,

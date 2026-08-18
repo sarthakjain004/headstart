@@ -24,7 +24,7 @@ DOCKERFILE = REPO / "deploy" / "hf-space" / "Dockerfile"
 # before it reaches `deploy/hf-space/`, so the synced DIRECTORIES (alerts/, templates/, static/)
 # never match here and are not checked; they ride their own `COPY <dir> ./<dir>` lines, and
 # their failure mode is louder — a missing package breaks the import, not one silent feature.
-_SYNCED_FILE = re.compile(r"^\s*cp\s+\S+\s+deploy/hf-space/([\w.-]+)\s*$", re.M)
+_SYNCED_FILE = re.compile(r"^\s*cp\s+\S+\s+deploy/hf-space/([\w.-]+)\s*$", re.MULTILINE)
 
 
 def _copied_into_image() -> set[str]:

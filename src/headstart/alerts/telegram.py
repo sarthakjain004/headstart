@@ -91,7 +91,7 @@ def send(
             reply = call(
                 f"{API}/bot{token}/{method}", body, {"Content-Type": content_type}
             )
-        except Exception as exc:  # noqa: BLE001 — refusal and unreachable are one outcome
+        except Exception as exc:  # refusal and unreachable are one outcome
             raise TelegramError(f"{method}: {type(exc).__name__}: {exc}") from exc
         # Telegram answers HTTP 200 with `"ok": false` for application-level refusals — a
         # blocked bot, an unknown chat id — so a status code alone reads those as sent.

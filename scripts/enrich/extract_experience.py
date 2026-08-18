@@ -20,7 +20,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _INPUT = _ROOT / "data" / "jobs" / "wellfound.csv"
 _OUT = _ROOT / "data" / "enrich" / "wellfound_experience.jsonl"
 _SNIPPET = re.compile(
-    r".{0,18}\d{1,2}\s*\+?\s*years?.{0,28}", re.I
+    r".{0,18}\d{1,2}\s*\+?\s*years?.{0,28}", re.IGNORECASE
 )  # for eyeballing matches only
 
 
