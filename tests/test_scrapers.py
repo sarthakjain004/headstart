@@ -517,6 +517,144 @@ def test_workday_remote_falls_back_to_location():
     assert [j.remote for j in jobs] == [True, False, False]
 
 
+def test_workday_repairs_a_rollup_location_from_the_detail():
+    """`locationsText` is a rollup on multi-location postings, and we shipped it verbatim.
+
+    Measured 2026-08-18 over 800 listing rows on 40 boards: 9.5% carry "N Locations" (23.1% on
+    the eight boards holding the biggest description gaps — capitalone 13/20, nvidia 11/20). The
+    detail response we already fetch for the description carries the real places, and its count
+    matched the rollup in 45/45 sampled postings. Joined, not just the primary: the location
+    filter is a substring LIKE (ADR-0024), so every place a posting is open in should match it.
+    """
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "5 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {
+                "location": "London",
+                "additionalLocations": ["Dublin", "Warsaw", "Paris", "Berlin"],
+            },
+        },
+        {
+            "title": "B",
+            "locationsText": "Austin, TX",
+            "bulletFields": ["R2"],
+            "_detail": {"location": "Somewhere Else"},
+        },
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "London; Dublin; Warsaw; Paris; Berlin"
+    assert jobs[1].location == "Austin, TX", (
+        "a real listing location is authoritative — the detail must not override it"
+    )
+
+
+def test_workday_fills_a_missing_location_from_the_detail():
+    """Accenture ships `locationsText: null` on every posting sampled (60/60 across three
+    offsets), so that whole board carries no location at all. The repair keys on missing *or*
+    rollup — a rollup-only regex would leave the largest board in the pool unfixed."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": None,
+            "bulletFields": ["R1"],
+            "_detail": {"location": "Pune, PDC2C"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Pune, PDC2C"
+
+
+def test_workday_rollup_no_longer_asserts_a_posting_is_not_remote():
+    """The knock-on that made the rollup worse than cosmetic.
+
+    `is_remote("2 Locations")` returns False, not None — so a rollup didn't merely lose the
+    place, it positively asserted the job was on-site. Listing `remoteType` covered only 10/200
+    sampled postings, so the rollup decided for ~95% of them, and 4 of 45 sampled rollups hid an
+    explicitly remote location.
+    """
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "2 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {
+                "location": "US, CA, Remote",
+                "additionalLocations": ["US, Remote"],
+            },
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].remote is True
+
+
+def test_workday_reads_remote_type_from_the_detail_when_the_listing_is_silent():
+    """The detail carries `remoteType` on 50/200 sampled postings against 10/200 in the listing,
+    and `_extract_detail` discarded it. A decisive listing value still wins."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Austin, TX",
+            "bulletFields": ["R1"],
+            "_detail": {"remoteType": "Remote"},
+        },
+        {
+            "title": "B",
+            "locationsText": "Austin, TX",
+            "remoteType": "On-site",
+            "bulletFields": ["R2"],
+            "_detail": {"remoteType": "Remote"},
+        },
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert [j.remote for j in jobs] == [True, False]
+
+
+def test_workday_extract_detail_carries_the_location_fields():
+    """The parse-side repair is worthless if the fetch side drops the fields. One extractor
+    serves both the sync and the async detail paths, so this pins both."""
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobPostingInfo": {
+                    "jobDescription": "<p>hi</p>",
+                    "location": "London",
+                    "additionalLocations": ["Dublin"],
+                    "remoteType": "Remote Available",
+                }
+            }
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    got = WorkdayScraper._extract_detail(_Response())
+    assert got["location"] == "London"
+    assert got["additionalLocations"] == ["Dublin"]
+    assert got["remoteType"] == "Remote Available"
+
+
+def test_workday_keeps_the_rollup_when_the_detail_never_arrived():
+    """A failed detail fetch leaves `_detail` empty and the Job is still kept (module
+    docstring). Better a rollup string than None — it is what the listing said."""
+    raw = [{"title": "A", "locationsText": "3 Locations", "bulletFields": ["R1"]}]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "3 Locations"
+
+
 def test_freshteam_parse():
     jobs = get_scraper("freshteam", "12min", "12min").parse(
         _load("freshteam_12min.json"), SCRAPED_AT
@@ -1721,3 +1859,36 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
 
     assert GreenhouseScraper.egress_fallback_on == frozenset()
     assert GreenhouseScraper("acme")._egress() == {}
+
+
+def test_workday_a_surviving_rollup_leaves_remote_unknown():
+    """The half of the repair that a detail fetch failure would otherwise skip.
+
+    When no detail arrives the rollup string stays — better than None — but it must not decide
+    remoteness: `is_remote("3 Locations")` returns False, asserting on-site when the honest
+    answer is that we cannot tell. Getting this wrong locks in the exact harm the repair exists
+    to remove, on the one path where nothing else can correct it.
+    """
+    raw = [{"title": "A", "locationsText": "3 Locations", "bulletFields": ["R1"]}]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "3 Locations"
+    assert jobs[0].remote is None
+
+
+def test_workday_a_malformed_additional_locations_does_not_explode_into_letters():
+    """`or []` over a bare string iterates it character by character. Live data is list-of-str
+    in every posting sampled, so this guards the shape rather than a seen failure."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "2 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {"location": "London", "additionalLocations": "Dublin"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "London"

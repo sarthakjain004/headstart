@@ -286,7 +286,9 @@ class WorkdayScraper(BaseScraper):
     def _extract_detail(response: Any) -> dict[str, Any] | None:
         """The useful jobPostingInfo fields from a posting-detail response (None on non-200):
         the raw-HTML description, plus startDate/timeType — the list payload only carries a
-        relative posted date ("30+ Days Ago") and no employment type."""
+        relative posted date ("30+ Days Ago") and no employment type — plus the real
+        location(s) and remoteType, which the list payload rolls up or omits (see
+        :func:`_location_from`)."""
         if response.status_code != 200:
             return None
         info = response.json().get("jobPostingInfo") or {}
@@ -294,6 +296,9 @@ class WorkdayScraper(BaseScraper):
             "description": info.get("jobDescription"),
             "startDate": info.get("startDate"),
             "timeType": info.get("timeType"),
+            "location": info.get("location"),
+            "additionalLocations": info.get("additionalLocations"),
+            "remoteType": info.get("remoteType"),
         }
 
     def _job_detail(self, external_path: str | None) -> dict[str, Any] | None:
@@ -411,11 +416,18 @@ class WorkdayScraper(BaseScraper):
             external_path = item.get("externalPath") or ""
             ats_id = _posting_key(item)
             detail = item.get("_detail") or {}
-            location = item.get("locationsText")
-            # ``remoteType`` is absent on ~99% of listings; when it's silent, the location
-            # string decides ("Remote - Colombia", "US, Remote"). A decisive remoteType wins.
+            location = _location_from(item.get("locationsText"), detail)
+            # ``remoteType`` is absent on ~99% of listings; when it's silent, the detail's own
+            # remoteType is tried (present on 25% of them against the listing's 5%), and only
+            # then does the location string decide ("Remote - Colombia", "US, Remote"). A
+            # decisive listing remoteType still wins over both.
             remote = _remote_from(item.get("remoteType"))
             if remote is None:
+                remote = _remote_from(detail.get("remoteType"))
+            if remote is None and not _is_rollup(location):
+                # A rollup that survived — the detail never arrived — must not decide this.
+                # ``is_remote("3 Locations")`` returns False, which asserts on-site when the
+                # honest answer is that we cannot tell.
                 remote = is_remote(location)
             jobs.append(
                 Job(
@@ -456,6 +468,50 @@ def _slice_label(applied: dict[str, list[str]]) -> str:
         )
         or "the unfiltered query"
     )
+
+
+# "5 Locations" — what a multi-location posting's ``locationsText`` says instead of a place.
+_LOCATION_ROLLUP = re.compile(r"^\s*\d+\s+locations?\s*$", re.IGNORECASE)
+
+
+def _is_rollup(text: Any) -> bool:
+    """Is this ``locationsText`` a count of places rather than a place?"""
+    return isinstance(text, str) and bool(_LOCATION_ROLLUP.match(text))
+
+
+def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
+    """The posting's real location(s), preferring the listing and repairing it from the detail.
+
+    ``locationsText`` is a *rollup* on multi-location postings ("5 Locations") and null outright
+    on some tenants — measured 2026-08-18 across 800 listing rows on 40 boards: 9.5% rolled up
+    (23.1% on the largest boards), and Accenture null on 60/60. Shipping either is worse than
+    cosmetic: it is what the location filter matches on (ADR-0024) and what remote detection
+    falls back to, and ``is_remote("2 Locations")`` returns *False* — asserting on-site rather
+    than admitting it does not know.
+
+    The detail response is already fetched for the description, so the repair costs no request:
+    its ``location`` plus ``additionalLocations`` gave a real place for 45/45 sampled rollups,
+    the count matching the rollup every time. All of them are joined, not just the primary —
+    the filter is a substring ``LIKE``, so a posting open in five cities should match all five
+    (measured spread: 154/200 single-location, max 5, joined length p90 60 chars).
+    """
+    listing = listed.strip() if isinstance(listed, str) and listed.strip() else None
+    if listing and not _is_rollup(listing):
+        return listing
+    primary = detail.get("location")
+    if not isinstance(primary, str) or not primary.strip():
+        # No detail (a failed fetch keeps the Job anyway) — the rollup is still what the
+        # listing said, and saying "5 Locations" beats saying nothing.
+        return listing
+    # `isinstance(..., list)` on the container, not only its items: `or []` over a bare string
+    # iterates it character by character and would join "Dublin" as "D; u; b; l; i; n".
+    extra = detail.get("additionalLocations")
+    places = [
+        p.strip()
+        for p in (extra if isinstance(extra, list) else [])
+        if isinstance(p, str) and p.strip()
+    ]
+    return "; ".join([primary.strip(), *places])
 
 
 def _remote_from(remote_type: Any) -> bool | None:
