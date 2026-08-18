@@ -318,6 +318,13 @@ jobs:
         # update costs one run of memory, and quarantine fails open on a missing file.
         continue-on-error: true
         run: python -m headstart.ingest.update_ledgers failures
+      - name: Update board description-gap ledger (ADR-0062)
+        # Counts, per Board, the embedded Jobs whose description the store has never settled —
+        # the Boards the next run's scrape-plan reserves part of its exploration tail for. Must
+        # run AFTER update_descriptions, so this run's newly-stored text is already excluded.
+        # Never fatal, like the other two: a missing ledger only costs one run of backfill pace.
+        continue-on-error: true
+        run: python -m headstart.ingest.update_ledgers gap
       - name: Plan the embed fan-out
         id: plan
         run: |

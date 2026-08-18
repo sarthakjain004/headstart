@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 FIELDS = ("board", "score", "last_tech_jobs", "updated_at")
 CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on history)
 EXPLORE_FRAC = 0.7  # slice share reserved for random exploration of unscored boards
+GAP_FRAC = (
+    0.05  # share of that exploration tail reserved for the description gap (ADR-0062)
+)
 PRUNE_BELOW = 0.05  # decayed rows below this drop out (~3 zero-tech scrapes)
 
 
@@ -103,21 +106,60 @@ def update(
     return rows
 
 
+def _gap_picks(
+    companies: list["CompanyRef"],
+    unsettled: Mapping[str, int],
+    taken: set[str],
+    slots: int,
+) -> list["CompanyRef"]:
+    """The gap quota's boards: cheapest class first, then most unsettled Jobs (ADR-0062).
+
+    Listing-only ATSes come first because their descriptions arrive *with the listing* — one
+    request per Board settles every Job on it — while a detail-pass ATS needs a fetch per Job.
+    Draining the cheap half first buys a third of the backlog for a few percent of the cost and
+    keeps the makespan risk away from the first runs. Within a class, the Board holding the most
+    unsettled Jobs goes first, so each slot repairs as many rows as it can.
+    """
+    from headstart.config import board_identity
+    from headstart.board_description_gap import key_for
+    from headstart.scrapers.registry import detail_pass_atses
+
+    detail_pass = detail_pass_atses()
+    candidates = [
+        c
+        for c in companies
+        if key_for(c) in unsettled and board_identity(c) not in taken
+    ]
+    # `False < True`, so listing-only sorts ahead of detail-pass. An ATS missing from the registry
+    # cannot be scraped at all, so where it lands is moot — it is treated as the expensive class
+    # rather than special-cased.
+    candidates.sort(key=lambda c: (c.ats in detail_pass, -unsettled[key_for(c)]))
+    return candidates[:slots]
+
+
 def pick_boards(
     companies: list["CompanyRef"],
     scores: Mapping[str, float],
     max_boards: int,
     *,
     explore_frac: float = EXPLORE_FRAC,
+    unsettled: Mapping[str, int] | None = None,
+    gap_frac: float = GAP_FRAC,
     rng: random.Random | None = None,
 ) -> list["CompanyRef"]:
-    """The run's slice: scored boards first (score desc), then random exploration.
+    """The run's slice: scored boards first (score desc), a gap quota, then random exploration.
 
     The head gets ``max_boards - round(max_boards * explore_frac)`` slots of scored boards
     (stable sort over a shuffle = random tiebreak); the exploration tail fills the rest from
     the remaining boards. A short scored list rolls its unused head slots into exploration.
     With no scores (bootstrap) or ``max_boards=0`` semantics this degrades to the previous
     behavior: pure shuffle + cap, or every board (scored-first when scores exist).
+
+    ``unsettled`` is the ADR-0062 description-gap ledger, ``{board: Jobs whose description we
+    have never settled}``. When given, ``round(tail * gap_frac)`` of the *exploration* slots are
+    reserved for those Boards — the priority head is never touched, because a random exploration
+    pick is strictly worse than a Board we already know is worth visiting. It self-cancels: an
+    empty or absent ledger reserves nothing and the slice is byte-identical to before.
     """
     from headstart.config import board_identity
 
@@ -137,8 +179,10 @@ def pick_boards(
     # Personio — every one scoring 0.0 whatever it had earned, reachable only through the random
     # exploration tail. No board loses a score from this change; 4,611 regain one.
     known = [c for c in shuffled if scores.get(board_identity(c), 0.0) > 0.0]
-    if not known:
-        return shuffled[:max_boards] if max_boards else shuffled
+    # Sorting an empty list is a no-op, so the bootstrap case (no ledger yet) falls through the
+    # same path rather than returning early. It has to: the gap quota is reserved out of the
+    # exploration slots, and an early return skipped it entirely whenever nothing was scored —
+    # which is exactly the state a fresh or lost priority ledger leaves behind.
     known.sort(
         key=lambda c: scores[board_identity(c)], reverse=True
     )  # stable: shuffle breaks ties
@@ -149,7 +193,14 @@ def pick_boards(
 
     head = known[: max_boards - round(max_boards * explore_frac)]
     head_set = {board_identity(c) for c in head}
-    tail = [c for c in shuffled if board_identity(c) not in head_set][
-        : max_boards - len(head)
+    explore_slots = max_boards - len(head)
+    gap = (
+        _gap_picks(shuffled, unsettled, head_set, round(explore_slots * gap_frac))
+        if unsettled
+        else []
+    )
+    picked = head_set | {board_identity(c) for c in gap}
+    tail = [c for c in shuffled if board_identity(c) not in picked][
+        : explore_slots - len(gap)
     ]
-    return head + tail
+    return head + gap + tail

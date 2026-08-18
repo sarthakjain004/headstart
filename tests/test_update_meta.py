@@ -247,3 +247,198 @@ def test_refresh_no_ops_without_a_store(tmp_path):
     assert (
         um.refresh(tmp_path / "absent", tmp_path, tmp_path, tmp_path / "wm.json") == 0
     )
+
+
+# --- the ADR-0062 re-derivation queue -------------------------------------------------------
+
+
+def test_a_queued_row_is_rederived_at_an_unchanged_version(tmp_path):
+    """The gap this closes: a Board is finally scraped, its description settles — and nothing
+    would otherwise revisit the row. `embed_plan` skips ids it has embedded and the sweep only
+    fires on a version bump, so the queue is the row's only route back to the cascade."""
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "at least 7 years of experience required"}
+    )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(
+        watermark, um.DERIVATIONS_VERSION
+    )  # already swept: no sweep here
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("greenhouse:acme:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert row["min_years"] == 7, "the newly-settled description must reach the cascade"
+    assert queue.read_text(encoding="utf-8").strip() == "", (
+        "a consumed queue is emptied so the next run does not redo it"
+    )
+
+
+def test_an_unqueued_row_is_left_alone_at_an_unchanged_version(tmp_path):
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "at least 7 years of experience required"}
+    )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"  # never written
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert row["min_years"] == 4  # the embed-time value, untouched
+
+
+def test_a_lost_description_store_keeps_the_queue_for_the_next_run(tmp_path):
+    """The mirror of the watermark guard. Re-deriving with no text would wipe the very floors the
+    queue exists to repair, and clearing it would make that permanent."""
+    store, jobs, desc = _store_and_corpus(tmp_path)  # no description store at all
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("greenhouse:acme:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    row = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert row["min_years"] == 4, "no text loaded, so the floor must not be recomputed"
+    assert queue.read_text(encoding="utf-8").strip() == "greenhouse:acme:1"
+
+
+def test_refresh_row_rederive_flag_is_independent_of_sweep():
+    meta = _meta(min_years=None, experience_source=None)
+    row, _, changed = um.refresh_row(
+        meta,
+        None,
+        {"greenhouse:acme:1": "5+ years of experience"},
+        False,
+        rederive=True,
+    )
+    assert changed
+    assert row["min_years"] == 5
+
+
+# --- the ADR-0062 has_description backfill ---------------------------------------------------
+
+_DETAIL = frozenset({"workday", "eightfold", "zoho"})
+
+
+def test_a_description_derived_floor_proves_the_vector_saw_a_description():
+    """The evidence that overrules the inference: `regex` means the stored floor was read out of
+    a description, so one existed when the Doc was built — 43.7% of the detail-pass gap rows."""
+    row = {"ats": "workday", "experience_source": "regex"}
+    assert um.has_description_for(row, _DETAIL) is True
+
+
+def test_without_proof_the_backfill_matches_the_old_inference():
+    assert um.has_description_for({"ats": "workday"}, _DETAIL) is False
+    assert um.has_description_for({"ats": "greenhouse"}, _DETAIL) is True
+    assert (
+        um.has_description_for(
+            {"ats": "workday", "experience_source": "seniority"}, _DETAIL
+        )
+        is False
+    )
+
+
+def test_refresh_backfills_only_rows_that_lack_the_flag(tmp_path):
+    store = tmp_path / "store"
+    store.mkdir()
+    rows = [
+        _meta(id="workday:a:1", ats="workday", experience_source="regex"),
+        _meta(id="workday:a:2", ats="workday", experience_source="seniority"),
+        _meta(id="greenhouse:b:1", ats="greenhouse", experience_source=None),
+        _meta(id="workday:a:3", ats="workday", has_description=False),
+    ]
+    for r in rows[:3]:
+        del r["has_description"]  # pre-ADR-0050 rows carry no flag at all
+    (store / "meta.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+
+    out = [
+        json.loads(line)
+        for line in (store / "meta.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [r["has_description"] for r in out] == [True, False, True, False]
+
+
+def test_backfill_never_overwrites_an_existing_flag(tmp_path):
+    """A row that already carries the flag records what its own Doc contained. Overwriting it from
+    evidence about the *store* is exactly what ADR-0061 froze it against."""
+    store = tmp_path / "store"
+    store.mkdir()
+    row = _meta(
+        id="workday:a:1",
+        ats="workday",
+        has_description=False,
+        experience_source="regex",
+    )
+    (store / "meta.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+
+    out = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert out["has_description"] is False
+
+
+def test_backfill_reads_the_row_as_it_was_before_this_refresh(tmp_path):
+    """The bug this pins: a pre-ADR-0050 Workday row embedded title-only, whose description settles
+    now. The cascade rewrites experience_source to 'regex' from text the vector never saw — reading
+    that back as proof would mark it has_description True and hide a genuinely degraded vector from
+    the upgrade path forever, which is exactly what ADR-0061 froze the field against."""
+    store = tmp_path / "store"
+    store.mkdir()
+    row = _meta(
+        id="workday:a:1", ats="workday", experience_source="seniority", min_years=0
+    )
+    del row["has_description"]  # pre-ADR-0050
+    (store / "meta.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+
+    import gzip
+
+    desc = tmp_path / "descriptions"
+    (desc / "workday").mkdir(parents=True)
+    with gzip.open(desc / "workday" / "base.jsonl.gz", "wt", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps({"id": "workday:a:1", "description": "8+ years of experience"})
+            + "\n"
+        )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("workday:a:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    out = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert out["min_years"] == 8, "the settled description must still reach the cascade"
+    assert out["has_description"] is False, (
+        "the vector was built before this text existed, so it stays degraded and repairable"
+    )
+
+
+def test_a_consumed_queue_is_emptied_not_unlinked(tmp_path):
+    """The merge uploads data/state without --delete, so a local unlink never reaches the dataset
+    (data/state/embedded_ids.txt.gz is still on HF though nothing writes it). An unlinked queue
+    would be re-fetched and re-appended by every later join, forever."""
+    store, jobs, desc = _store_and_corpus(
+        tmp_path, {"greenhouse:acme:1": "5+ years of experience"}
+    )
+    watermark = tmp_path / "wm.json"
+    um.write_watermark(watermark, um.DERIVATIONS_VERSION)
+    queue = tmp_path / "pending_rederive.txt"
+    queue.write_text("greenhouse:acme:1\n", encoding="utf-8")
+
+    um.refresh(store, jobs, desc, watermark, queue)
+
+    assert queue.exists(), "the file must survive so it overwrites the remote copy"
+    assert queue.read_text(encoding="utf-8").strip() == ""
