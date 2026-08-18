@@ -95,6 +95,18 @@ def read_shards(fragments: Path) -> list[dict]:
     return out
 
 
+def named_sample(items: list[str], cap: int = 10) -> str:
+    """``a, b, c, +N more`` — a warning that names what it is about, without becoming a dump.
+
+    A count sends the reader to diff two artifacts to learn *which* Board a run lost; a full
+    list of several hundred is skipped. Every caller wants the same compromise, so they share
+    one, and they agree on the cap by sharing its default.
+    """
+    shown = ", ".join(items[:cap])
+    rest = len(items) - cap
+    return shown + (f", +{rest} more" if rest > 0 else "")
+
+
 def percentiles(values: list[float]) -> dict[str, float]:
     """p50/p90/p99/max — the shape that separates a sum-bound stage from a floor-bound one.
 
