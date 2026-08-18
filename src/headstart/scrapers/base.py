@@ -67,7 +67,7 @@ class BaseScraper(ABC):
     #: would not fix it and would spend a second budget learning that.
     #:
     #: Only requests made through :meth:`_get` carry the opt-in. A scraper that calls
-    #: ``http.fetch`` directly (most of them do, for their detail passes) must pass
+    #: ``http.fetch`` or ``http.fetch_async`` directly (most of them do, for their detail passes) must pass
     #: ``**self._egress()`` itself, or setting this is silently inert.
     egress_fallback_on: frozenset[int] = frozenset()
 

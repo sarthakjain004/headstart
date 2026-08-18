@@ -308,6 +308,7 @@ class EightfoldScraper(BaseScraper):
             self._details_url(group_id, position_id),
             headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
             timeout=30,
+            **self._egress(),
         )
         return _description_of(r) if r.status_code == 200 else None
 
@@ -377,6 +378,7 @@ class EightfoldScraper(BaseScraper):
             job_url,
             headers={"User-Agent": _USER_AGENT, "Accept": "text/html"},
             timeout=30,
+            **self._egress(),
         )
         return _jobposting(r.text) if r.status_code == 200 else None
 

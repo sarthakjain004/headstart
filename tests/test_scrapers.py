@@ -1894,3 +1894,82 @@ def test_workday_a_malformed_additional_locations_does_not_explode_into_letters(
         "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
     ).parse(raw, SCRAPED_AT)
     assert jobs[0].location == "London"
+
+
+def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):
+    """The detail pass is the traffic that spends the Origin budget — workday.py's own header
+    documents 3.02M 429-retries and 51.7% of descriptions lost to it — yet only the *listing*
+    calls carried the egress opt-in. A wall the listing marks must route the detail fetches,
+    sync and async both, or ADR-0063 protects the cheap requests and abandons the expensive ones.
+    """
+    import asyncio
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    seen: list[tuple[str, str | None]] = []
+
+    def fake_fetch(method, url, *, egress_group=None, egress_on=frozenset(), **kw):
+        seen.append(("sync", egress_group))
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"jobPostingInfo": {}}
+
+        return _R()
+
+    async def fake_fetch_async(
+        session, method, url, *, egress_group=None, egress_on=frozenset(), **kw
+    ):
+        seen.append(("async", egress_group))
+
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"jobPostingInfo": {}}
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch", fake_fetch)
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    s._job_detail("/job/x")
+    asyncio.run(s._job_detail_async(None, "/job/x"))
+
+    assert seen == [("sync", "workday"), ("async", "workday")]
+
+
+def test_eightfold_async_surfaces_opt_into_the_spare_egress(monkeypatch):
+    import asyncio
+
+    from headstart import http
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    seen: list[str | None] = []
+
+    async def fake_fetch_async(
+        session, method, url, *, egress_group=None, egress_on=frozenset(), **kw
+    ):
+        seen.append(egress_group)
+
+        class _R:
+            status_code = 200
+            text = ""
+
+            @staticmethod
+            def json():
+                return {}
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    s = EightfoldScraper("jobs.example.com", "Example")
+    asyncio.run(s._description_async(None, "g", "1"))
+    asyncio.run(s._jsonld_async(None, "https://jobs.example.com/careers/job/1"))
+
+    assert seen == ["eightfold", "eightfold"]
