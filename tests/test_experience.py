@@ -157,6 +157,81 @@ def test_description_ignores_non_experience_year_mentions():
     assert from_description("$60,000-70,000/year") is None
 
 
+# --- Tier 2: a range's floor is the floor -------------------------------------------------------
+# The work-word patterns had no range counterpart, so "2-4 years of hands-on development" fell
+# through to a single-value pattern, which matched at the "4" and served the CEILING as the FLOOR.
+# That both mislabels the job and hides it from the `min_years <= your_years` filter for exactly
+# the candidate who qualifies. Measured at 2,672 jobs across the description store before the fix.
+
+
+def test_description_range_without_the_word_experience():
+    # the reported bug: the range pattern must win before any single value can bind to the top
+    assert from_description(
+        "2-4 years of hands-on software development"
+    ) == ExperienceSpan(2, 4, "regex")
+    assert from_description("1-3 years in a Field Engineering role") == ExperienceSpan(
+        1, 3, "regex"
+    )
+
+
+def test_description_range_with_trailing_plus():
+    # "5-8+ years" — the ceiling carries the "+", and the gap to "experience" exceeds the anchor
+    assert from_description(
+        "- 5-8+ years of all-source investigative or targeting experience"
+    ) == ExperienceSpan(5, 8, "regex")
+
+
+def test_description_recovers_floor_for_unenumerated_separator():
+    # the backward look is the safety net behind the range patterns: no pattern lists "~"
+    assert from_description("2 ~ 4 years of experience") == ExperienceSpan(
+        2, 4, "regex"
+    )
+
+
+def test_description_accepts_yrs_abbreviation():
+    assert from_description("2-4 yrs of experience") == ExperienceSpan(2, 4, "regex")
+    assert from_description("5 + yrs building production APIs") == ExperienceSpan(
+        5, None, "regex"
+    )
+
+
+def test_description_optional_connector_captures_bare_gerund():
+    # "N years building/working/hands-on …" with no of/in/as connector
+    assert from_description(
+        "4+ years building distributed & scalable systems"
+    ) == ExperienceSpan(4, None, "regex")
+    assert from_description(
+        "2+ years data center or IT infrastructure experience"
+    ) == ExperienceSpan(2, None, "regex")
+
+
+def test_description_rejects_company_narrative():
+    # Loosening the connector reopened this class, so the exclusion is now explicit. Company age,
+    # founder tenure and benefits are never requirements.
+    assert (
+        from_description("has spent the last 15 years building modern infrastructure")
+        is None
+    )
+    assert (
+        from_description("Founded in New Zealand 12 years ago, we are working with")
+        is None
+    )
+    assert (
+        from_description(
+            "The founding team spent a combined 40+ years at Palantir building"
+        )
+        is None
+    )
+    assert from_description("1-month sabbatical after 3 years of service") is None
+
+
+def test_description_narrative_does_not_mask_a_real_requirement():
+    # a guarded rejection must fall through to the next occurrence, not abandon the description
+    assert from_description(
+        "Founded 12 years ago. Requirements: 5+ years building production systems"
+    ) == ExperienceSpan(5, None, "regex")
+
+
 # --- Tier 3: seniority fallback, calibrated to data (ADR-0018) ------------------------------------
 
 
