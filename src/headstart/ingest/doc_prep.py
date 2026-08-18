@@ -9,22 +9,20 @@ doc-text builder, and the token-length **Bucket** are byte-identical across the 
 live here once instead of being hand-copied. ``embed_run.py`` re-exports these for its own
 callers and tests.
 
-Pure and ML-free: langdetect + regex only, no torch/sentence-transformers, so the planner and
-unit tests import it without the encoder stack. Tokenization (the one step that needs the
-model's tokenizer) stays with each caller; this module only classifies a known token count into
-a Bucket.
+Pure and ML-free: regex only at import time, no torch/sentence-transformers, so the planner and
+unit tests import it without the encoder stack. ``langdetect`` is the one non-base dependency and
+is imported *inside* :func:`is_english`, so everything else here — ``META_FIELDS``,
+``DERIVATIONS_VERSION``, ``to_meta`` — is importable on a base install too. Tokenization (the one
+step that needs the model's tokenizer) stays with each caller; this module only classifies a known
+token count into a Bucket.
 """
 
 from __future__ import annotations
 
 import re
 
-from langdetect import DetectorFactory, LangDetectException, detect
-
 from headstart.experience import extract
 from headstart.search import DOC_PREFIX
-
-DetectorFactory.seed = 0  # make langdetect deterministic
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 _MD_SYNTAX = re.compile(
@@ -40,7 +38,7 @@ _MAX_SEQ_TOKENS = _BUCKETS[-1]
 
 # The canonical typed metadata that rides next to each vector (ADR-0007); the corpus reader
 # already yields canonical Job dicts, so this is pure selection — no per-source adapting.
-_META_FIELDS = (
+META_FIELDS = (
     "id",
     "ats",
     "company",
@@ -79,7 +77,19 @@ def clean_markdown(text: str) -> str:
 
 
 def is_english(title: str, description: str) -> bool:
-    """English gate. Detect on title + a description sample (full text is needless and slow)."""
+    """English gate. Detect on title + a description sample (full text is needless and slow).
+
+    ``langdetect`` is imported here rather than at module scope so the rest of this module —
+    ``META_FIELDS``, ``DERIVATIONS_VERSION``, ``to_meta`` — stays importable on a base install.
+    CI's quality job installs base deps only, and a top-level import made every consumer of those
+    constants uninstallable there, which is how the ADR-0061 refresh tests came to be skipped.
+    The import is cached after the first call, so the per-Doc cost is a dict lookup.
+    """
+    from langdetect import DetectorFactory, LangDetectException, detect
+
+    DetectorFactory.seed = (
+        0  # deterministic; idempotent, so setting it per call is free
+    )
     try:
         return detect(f"{title} {description[:500]}") == "en"
     except LangDetectException:
@@ -92,6 +102,13 @@ def build_doc(job: dict) -> str:
     return f"{DOC_PREFIX}{title}\n\n{body}"
 
 
+# How many times the *derived* columns' definition has changed (ADR-0061). Bump this in the same
+# change that alters what `extract` returns, and `update_meta` re-derives every already-stored row
+# whose description we hold — otherwise a fix reaches new Jobs only, because `embed_plan` skips ids
+# it has already embedded. Only the derivations below depend on it; facts refresh unconditionally.
+DERIVATIONS_VERSION = 1
+
+
 def to_meta(job: dict) -> dict:
     """Canonical typed metadata (ADR-0007) + the inline experience numbers (ADR-0019).
 
@@ -99,8 +116,11 @@ def to_meta(job: dict) -> dict:
     then seniority floor — ADR-0018) with the ``experience_source`` tier tag carried alongside;
     all three are None when nothing matched. ``employment_type`` / ``salary`` stay raw strings —
     display-only until normalized (ADR-0019).
+
+    The derived three are re-computable from the facts beside them, which is what lets
+    ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
     """
-    meta = {field: job.get(field) for field in _META_FIELDS}
+    meta = {field: job.get(field) for field in META_FIELDS}
     # Whether the Doc we are about to embed actually carried a description (ADR-0050). Recorded
     # because a vector built from a bare title is indistinguishable from a good one afterwards,
     # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.

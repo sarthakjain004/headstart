@@ -81,11 +81,27 @@ def _upgrade_list(tmp_path: Path, ids: list[str] | None) -> Path:
 
 
 def _sync(
-    tmp_path: Path, monkeypatch, ids: list[str], upgrades: list[str] | None = None
+    tmp_path: Path,
+    monkeypatch,
+    ids: list[str],
+    upgrades: list[str] | None = None,
+    meta_over: dict | None = None,
 ) -> int:
-    """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree."""
+    """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree.
+
+    ``meta_over`` restates every store row's metadata after it is written, which is how a run that
+    follows an ``update_meta`` refresh looks to sync (ADR-0061).
+    """
     store, source, db = tmp_path / "store", tmp_path / "corpus", tmp_path / "db"
     _write_store(store, ids)
+    if meta_over:
+        path = store / "meta.jsonl"
+        rows = [
+            json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        for row in rows:
+            row.update(meta_over)
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
     _write_corpus(source, ids)
     monkeypatch.setattr(idx, "_STORE", store)
     # An empty ledger dir: no live Boards, so board resolution falls back to `board_of` — the
@@ -285,3 +301,44 @@ def test_log_reasons_flattens_and_clips_so_one_board_stays_one_line(caplog):
     assert lines[0].endswith("…")
     assert len(lines[0]) < 260
     assert lines[1] == "scope-excluded Board: lever:b — no reason recorded"
+
+
+# --- ADR-0061: refreshed store metadata reaches rows already indexed -----------------------------
+
+
+def test_sync_pushes_refreshed_metadata_into_rows_it_already_holds(
+    tmp_path, monkeypatch
+):
+    """The propagation half of ADR-0061. Without it, `update_meta`'s corrections sit in the store
+    unread, because `plan_sync` only ever adds ids the table lacks."""
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids)
+    first = _rows(tmp_path)["greenhouse:a:1"]
+
+    # The store now carries a corrected floor and an edited salary, as update_meta would leave
+    # them. The corpus is unchanged, so plan_sync has nothing to add.
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ids,
+        meta_over={"min_years": 3, "experience_source": "regex", "salary": "EUR 90k"},
+    )
+
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    rows = table.search().limit(10).to_list()
+    assert len(rows) == 1  # a refresh replaces a row, it does not duplicate it
+    assert (rows[0]["min_years"], rows[0]["experience_source"]) == (3, "regex")
+    assert rows[0]["salary"] == "EUR 90k"
+    # first_seen must survive: re-stamping would resurface every refreshed Job to the alerts
+    # watermark as a brand-new listing (ADR-0031).
+    assert rows[0]["first_seen"] == first
+
+
+def test_sync_refresh_writes_nothing_when_the_table_already_matches(
+    tmp_path, monkeypatch, caplog
+):
+    ids = ["greenhouse:a:1", "greenhouse:a:2"]
+    _sync(tmp_path, monkeypatch, ids)
+    caplog.set_level("INFO")
+    _sync(tmp_path, monkeypatch, ids)
+    assert any("already matches the store" in r.getMessage() for r in caplog.records)
