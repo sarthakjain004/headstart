@@ -316,3 +316,73 @@ def test_refresh_row_rederive_flag_is_independent_of_sweep():
     )
     assert changed
     assert row["min_years"] == 5
+
+
+# --- the ADR-0062 has_description backfill ---------------------------------------------------
+
+_DETAIL = frozenset({"workday", "eightfold", "zoho"})
+
+
+def test_a_description_derived_floor_proves_the_vector_saw_a_description():
+    """The evidence that overrules the inference: `regex` means the stored floor was read out of
+    a description, so one existed when the Doc was built — 43.7% of the detail-pass gap rows."""
+    row = {"ats": "workday", "experience_source": "regex"}
+    assert um.has_description_for(row, _DETAIL) is True
+
+
+def test_without_proof_the_backfill_matches_the_old_inference():
+    assert um.has_description_for({"ats": "workday"}, _DETAIL) is False
+    assert um.has_description_for({"ats": "greenhouse"}, _DETAIL) is True
+    assert (
+        um.has_description_for(
+            {"ats": "workday", "experience_source": "seniority"}, _DETAIL
+        )
+        is False
+    )
+
+
+def test_refresh_backfills_only_rows_that_lack_the_flag(tmp_path):
+    store = tmp_path / "store"
+    store.mkdir()
+    rows = [
+        _meta(id="workday:a:1", ats="workday", experience_source="regex"),
+        _meta(id="workday:a:2", ats="workday", experience_source="seniority"),
+        _meta(id="greenhouse:b:1", ats="greenhouse", experience_source=None),
+        _meta(id="workday:a:3", ats="workday", has_description=False),
+    ]
+    for r in rows[:3]:
+        del r["has_description"]  # pre-ADR-0050 rows carry no flag at all
+    (store / "meta.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+
+    out = [
+        json.loads(line)
+        for line in (store / "meta.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [r["has_description"] for r in out] == [True, False, True, False]
+
+
+def test_backfill_never_overwrites_an_existing_flag(tmp_path):
+    """A row that already carries the flag records what its own Doc contained. Overwriting it from
+    evidence about the *store* is exactly what ADR-0061 froze it against."""
+    store = tmp_path / "store"
+    store.mkdir()
+    row = _meta(
+        id="workday:a:1",
+        ats="workday",
+        has_description=False,
+        experience_source="regex",
+    )
+    (store / "meta.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+
+    out = json.loads((store / "meta.jsonl").read_text(encoding="utf-8").strip())
+    assert out["has_description"] is False

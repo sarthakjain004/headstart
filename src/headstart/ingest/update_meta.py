@@ -29,9 +29,14 @@ cascade for exactly those rows and clears the file. Without it, closing the desc
 repair the *text* and leave every number behind it stale until the next version bump.
 
 **What is deliberately never rewritten:** ``vector`` (a fact about the embedded doc — only the
-ADR-0050 upgrade path replaces it), ``has_description`` (a fact about *that vector*: the upgrade
-planner keys on it, so refreshing it from the store would hide every title-only vector from the
-path meant to repair it), and ``id`` / ``ats``.
+ADR-0050 upgrade path replaces it), ``has_description`` where a row already carries one (a fact
+about *that vector*: the upgrade planner keys on it, so refreshing it from the store would hide
+every title-only vector from the path meant to repair it), and ``id`` / ``ats``.
+
+**``has_description`` is, however, backfilled where it is absent** (ADR-0062). Every pre-ADR-0050
+row lacks it, which is why ``embed_plan`` has had to guess from the ATS — over-approximating the
+degraded set by ~9x. See :func:`has_description_for`: written once, from evidence where there is
+any and from the same inference where there is none, so the guess stops being re-made every run.
 
 The rewrite preserves **row order and count**, because ``meta.jsonl`` is row-aligned with
 ``embeddings.f32`` and ``index._load_store`` hard-errors on drift. It is written to a temp file and
@@ -70,6 +75,36 @@ FACT_FIELDS = tuple(f for f in META_FIELDS if f not in _IDENTITY)
 
 #: Recomputed from facts whenever the extractor's version moves.
 DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
+
+
+def detail_pass_atses() -> frozenset[str]:
+    """ATSes whose descriptions need a per-Job fetch, so a lost fetch means a title-only vector."""
+    from headstart.scrapers.registry import SCRAPERS
+
+    return frozenset(a for a, s in SCRAPERS.items() if s.has_detail_pass)
+
+
+def has_description_for(row: dict, detail_pass: frozenset[str]) -> bool:
+    """What ``has_description`` should be on a row written before ADR-0050 recorded it (ADR-0062).
+
+    Every pre-ADR-0050 row carries no ``has_description``, so ``embed_plan`` has had to *infer*
+    whether its vector was built from a description — assuming degraded on any detail-pass ATS.
+    That inference conflates two very different rows: one embedded without a description (the
+    vector is title-only and re-embedding repairs it) and one embedded *with* a description we
+    simply never persisted, since pre-ADR-0050 the text was read once at embed time and discarded.
+    The second is fine and re-embedding it changes nothing.
+
+    ``experience_source == "regex"`` settles that for a row outright: the stored floor was read
+    *out of a description*, so one existed when the Doc was built. Measured against the live store
+    this proves 66,175 of 151,538 detail-pass gap rows — 43.7% — are not degraded at all, against
+    an ADR-0050 measurement putting the genuinely title-only population at ~16,771 index-wide.
+
+    Where there is no such proof, this returns exactly what the inference already concluded, so
+    recording it changes no behaviour — it only stops the guess from being re-made every run.
+    """
+    if row.get("experience_source") == "regex":
+        return True
+    return row.get("ats") not in detail_pass
 
 
 def read_watermark(path: Path) -> int:
@@ -242,8 +277,9 @@ def refresh(
         + (f"; {len(descriptions)} settled descriptions" if descriptions else "")
     )
 
+    detail_pass = detail_pass_atses()
     tmp = meta_path.with_suffix(".jsonl.refresh")
-    rows = fact_hits = derived_hits = 0
+    rows = fact_hits = derived_hits = backfilled = 0
     try:
         with (
             meta_path.open(encoding="utf-8") as src,
@@ -264,6 +300,11 @@ def refresh(
                 rows += 1
                 fact_hits += fact_changed
                 derived_hits += derived_changed
+                # Written once, on the rows that never had it. A row that carries the flag keeps
+                # it: it is a fact about the vector, and only a re-embed may change it.
+                if row.get("has_description") is None:
+                    row["has_description"] = has_description_for(row, detail_pass)
+                    backfilled += 1
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 if rows % 50_000 == 0:
                     _log.info(f"  {rows} rows refreshed")
@@ -275,7 +316,8 @@ def refresh(
         raise
     _log.info(
         f"refreshed {rows} rows: {fact_hits} with changed facts, "
-        f"{derived_hits} with changed derivations"
+        f"{derived_hits} with changed derivations, "
+        f"{backfilled} given a has_description they never had"
     )
     if sweep and not descriptions:
         # The merge job downloads the description store on `continue-on-error`, so an empty one

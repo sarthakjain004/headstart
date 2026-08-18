@@ -199,18 +199,20 @@ def test_prior_rows_reads_the_flag_where_it_exists(tmp_path):
     assert degraded == {"eightfold:acme:2"}
 
 
-def test_prior_rows_infers_the_flag_only_for_detail_pass_atses(tmp_path):
-    """Rows written before ADR-0050 carry no flag. Inferring 'degraded' for all of them would
-    re-embed ~186k Docs to repair ~16,771; a listing-only ATS re-supplies its description on
-    every scrape and so cannot have lost one, which bounds the migration to ~22k."""
+def test_prior_rows_no_longer_guesses_from_the_ats(tmp_path):
+    """An absent flag used to mean 'assume degraded on a detail-pass ATS'. That guess conflated
+    "this ATS fetches descriptions separately" with "that fetch failed": it condemned 152,383
+    rows, of which `experience_source == "regex"` proves 66,296 were built from a description,
+    against ~16,771 genuinely title-only index-wide. `update_meta` backfills the real flag
+    (ADR-0062), so only an explicit False is degraded now."""
     meta = tmp_path / "meta.jsonl"
     meta.write_text(
-        _meta_row("eightfold:acme:1", "eightfold")  # detail pass -> assume degraded
-        + _meta_row("greenhouse:acme:2", "greenhouse"),  # listing-only -> assume fine
+        _meta_row("eightfold:acme:1", "eightfold")  # detail pass, but no flag
+        + _meta_row("greenhouse:acme:2", "greenhouse"),
         encoding="utf-8",
     )
     _, degraded = pe._prior_rows(meta)
-    assert degraded == {"eightfold:acme:1"}
+    assert degraded == set(), "an absent flag is not evidence of a title-only vector"
 
 
 def test_a_degraded_row_is_re_embedded_once_its_description_arrives(
