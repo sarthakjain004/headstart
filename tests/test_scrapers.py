@@ -1646,3 +1646,35 @@ def test_zoho_slug_from_keeps_only_the_host():
     assert ZohoScraper.slug_from("acme", f"https://{host}/jobs/Careers/123") == host
     assert ZohoScraper.slug_from("acme", f"https://{host}/jobs?utm_source=x") == host
     assert get_scraper("zoho", host).url() == f"https://{host}/jobs/Careers"
+
+
+def test_eightfold_api_availability_probe_is_exempt_from_spare_egress(monkeypatch):
+    """The first `/api/pcsx/search` page asks "does this tenant expose the API at all?", and for
+    the ~40% that do not the answer is a steady 403 followed by a healthy 200 on the sitemap.
+
+    Letting that mark the ATS walled (ADR-0063) would dial the spare egress on nearly every shard,
+    on the normal path, and route every other Eightfold Board through it for nothing. Every *other*
+    request must still opt in — so this asserts the split, not just the exemption.
+    """
+    import headstart.http as http
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    seen: list[tuple[str, dict]] = []
+
+    class _Resp:
+        status_code = 403
+        headers: dict = {}
+        text = ""
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append((url, kw)), _Resp())[1]
+    )
+    scraper = EightfoldScraper("symetra.eightfold.ai")
+
+    scraper._get(scraper._search_url("symetra.com", 0), egress=False)
+    assert "egress_group" not in seen[-1][1]  # the availability probe
+
+    scraper._get("https://symetra.eightfold.ai/careers/sitemap.xml")
+    assert (
+        seen[-1][1]["egress_group"] == "eightfold"
+    )  # a real wall surface still escalates

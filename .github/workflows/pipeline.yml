@@ -170,7 +170,7 @@ jobs:
         # lazily — only a board that actually hits the wall pays for it.
       - run: pip install -e ".[scrape]"
       - name: Install Cloudflare WARP (spare egress, ADR-0063)
-        # Installed eagerly, connected lazily — `headstart.warp` only dials once an ATS has
+        # Installed eagerly, connected lazily — `headstart.spare_egress` only dials once an ATS has
         # actually walled this shard. Installing on demand instead would land an apt-get inside
         # the first ten minutes of the shard, which is the window Eightfold's Boards occupy and
         # exactly the time the fallback exists to save.

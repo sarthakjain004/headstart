@@ -230,6 +230,13 @@ def _report(
             + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
             + f" (total {sum(retries.values())})"
         )
+    # Which ATSes cost this shard its Origin budget (ADR-0063). Reported for the same reason the
+    # retry classes are: without it, a shard that spent its spare egress logs exactly like one that
+    # never needed it, and whether the fallback is firing — or firing far more than expected — is
+    # the only run-over-run signal this feature has.
+    walled = http.walled_groups()
+    if walled:
+        _log.warning(f"spare egress spent on: {', '.join(sorted(walled))}")
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
         if predicted

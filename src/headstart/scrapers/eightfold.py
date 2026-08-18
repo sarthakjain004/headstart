@@ -84,15 +84,22 @@ class EightfoldScraper(BaseScraper):
     detail_streams = _DETAIL_STREAMS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
-    def url(self) -> str:
-        return f"https://{self.slug}/careers/sitemap.xml"
-
     #: 403 and 405 are the two shapes this edge returns once a shard's per-origin budget is spent
     #: — the same host answers both across runs, which is why neither is read as a tenant property
     #: (ADR-0063). Both therefore escalate to the spare egress rather than to a fourth attempt.
     egress_fallback_on = frozenset({403, 405})
 
-    def _get(self, url: str | None = None, accept: str = "application/json") -> Any:
+    def url(self) -> str:
+        return f"https://{self.slug}/careers/sitemap.xml"
+
+    def _get(
+        self,
+        url: str | None = None,
+        accept: str = "application/json",
+        egress: bool = True,
+    ) -> Any:
+        """GET one Eightfold URL. ``egress=False`` exempts the request from the spare-egress
+        fallback — for the one call whose non-200 means something other than a wall."""
         return http.fetch(
             "GET",
             url or self.url(),
@@ -102,7 +109,7 @@ class EightfoldScraper(BaseScraper):
                 "Referer": f"https://{self.slug}/careers",
             },
             timeout=30,
-            **self._egress(),
+            **(self._egress() if egress else {}),
         )
 
     # --- shared entry -------------------------------------------------------------------------
@@ -153,7 +160,12 @@ class EightfoldScraper(BaseScraper):
         truncated. The API hands back ``data.count``, so how short the list is comes out
         *exactly* rather than inferred — which is the whole point: ``index sync`` can then skip
         the Board instead of reading the gap as delistings and evicting them (ADR-0053)."""
-        first = self._get(self._search_url(group_id, 0))
+        # Exempt from the spare-egress fallback (ADR-0063). A non-200 *here* is how this scraper
+        # asks "does this tenant expose the API at all?", and for the ~40% that do not it is a
+        # steady 403 answered by a healthy 200 on the sitemap right after. Letting that mark the
+        # ATS walled would dial the spare egress on nearly every shard, on the normal path, and
+        # route every other Eightfold Board through it for no reason.
+        first = self._get(self._search_url(group_id, 0), egress=False)
         if first.status_code != 200:
             return None
         try:

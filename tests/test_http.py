@@ -186,8 +186,8 @@ def test_retries_log_debug_records(monkeypatch, caplog):
 
 # --- spare egress (ADR-0063) ---------------------------------------------------------------------
 # The escalation past retry: a wall status moves an opted-in ATS onto a second egress IP. These
-# stub `warp.proxy_url` rather than dialling anything, so what is asserted is the routing decision
-# — which request carries a proxy and which does not — not WARP itself (see test_warp.py).
+# stub `spare_egress.proxy_url` rather than dialling anything, so what is asserted is the routing decision
+# — which request carries a proxy and which does not — not the tunnel itself (see test_spare_egress.py).
 
 
 @pytest.fixture(autouse=True)
@@ -198,8 +198,13 @@ def _clean_egress():
     http.reset_walled()
 
 
+#: What Eightfold declares. Passed explicitly everywhere below, because `fetch` deliberately has no
+#: default for it — the scraper that knows the ATS is the one that knows what a wall looks like.
+_WALL = frozenset({403, 405})
+
+
 def _warp(monkeypatch, url="socks5://127.0.0.1:40000"):
-    monkeypatch.setattr(http.warp, "proxy_url", lambda: url)
+    monkeypatch.setattr(http.spare_egress, "proxy_url", lambda: url)
 
 
 def _proxied(calls):
@@ -219,7 +224,10 @@ def test_without_egress_group_a_wall_changes_nothing(monkeypatch):
 def test_wall_marks_the_group_and_routes_the_retry(monkeypatch):
     _warp(monkeypatch)
     calls = _stub(monkeypatch, [403, 200])
-    assert http.fetch("GET", "u", egress_group="eightfold").status_code == 200
+    assert (
+        http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
+        == 200
+    )
     assert http.walled_groups() == frozenset({"eightfold"})
     # the first attempt goes direct (nothing known yet); the retry is the one that moves
     assert _proxied(calls) == [False, True]
@@ -234,8 +242,8 @@ def test_a_later_request_starts_on_the_spare_egress(monkeypatch):
     # rediscover the wall by spending its own three attempts
     _warp(monkeypatch)
     calls = _stub(monkeypatch, [405, 200, 200])
-    http.fetch("GET", "board-1", egress_group="eightfold")
-    http.fetch("GET", "board-2", egress_group="eightfold")
+    http.fetch("GET", "board-1", egress_group="eightfold", egress_on=_WALL)
+    http.fetch("GET", "board-2", egress_group="eightfold", egress_on=_WALL)
     assert _proxied(calls) == [False, True, True]
 
 
@@ -244,7 +252,10 @@ def test_wall_on_the_final_attempt_still_marks(monkeypatch):
     # early wall — not recording it would make every later Board repeat the same three attempts
     _warp(monkeypatch)
     _stub(monkeypatch, [405, 405, 405])
-    assert http.fetch("GET", "u", egress_group="eightfold").status_code == 405
+    assert (
+        http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
+        == 405
+    )
     assert http.walled_groups() == frozenset({"eightfold"})
 
 
@@ -253,7 +264,7 @@ def test_transient_but_non_wall_status_does_not_move_egress(monkeypatch):
     # would buy nothing
     _warp(monkeypatch)
     calls = _stub(monkeypatch, [500, 200])
-    http.fetch("GET", "u", egress_group="eightfold")
+    http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL)
     assert http.walled_groups() == frozenset()
     assert _proxied(calls) == [False, False]
 
@@ -272,8 +283,21 @@ def test_no_warp_available_stays_on_the_direct_route(monkeypatch):
     # the degradation that makes this safe to ship: a runner without WARP behaves as it does today
     _warp(monkeypatch, url=None)
     calls = _stub(monkeypatch, [403, 403, 403])
-    assert http.fetch("GET", "u", egress_group="eightfold").status_code == 403
+    assert (
+        http.fetch("GET", "u", egress_group="eightfold", egress_on=_WALL).status_code
+        == 403
+    )
     assert http.walled_groups() == frozenset(
         {"eightfold"}
     )  # still recorded, for the log line
     assert _proxied(calls) == [False, False, False]
+
+
+def test_a_group_with_no_wall_statuses_never_marks(monkeypatch):
+    """`fetch` has no default `egress_on`, so a caller that names a group but no statuses opts
+    into nothing. Asserted rather than assumed: this is the shape a mis-wired scraper would take."""
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [403, 200])
+    http.fetch("GET", "u", egress_group="eightfold")
+    assert http.walled_groups() == frozenset()
+    assert _proxied(calls) == [False, False]

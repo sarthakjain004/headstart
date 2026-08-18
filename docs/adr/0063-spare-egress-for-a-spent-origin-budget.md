@@ -2,7 +2,7 @@
 
 **Status:** accepted · **Date:** 2026-08-18 · **Relates to:**
 [ADR-0026](0026-parallelize-nightly-scrape.md),
-[ADR-0053](0053-report-a-truncated-board.md),
+[ADR-0053](0053-scope-eviction-on-scrape-outcome.md),
 [ADR-0056](0056-darwinbox-browser-escalation.md) · **Amends:**
 [ADR-0047](0047-pace-against-the-origin.md)
 
@@ -63,7 +63,7 @@ WARP in proxy mode — for the rest of that shard's run.**
   spares every subsequent Board.
 - **Opt-in per scraper** via `BaseScraper.egress_fallback_on`. Eightfold declares `{403, 405}`.
   Every other ATS keeps its direct route unconditionally.
-- **Lazy connect, eager install.** `headstart.warp` dials only once something has actually walled,
+- **Lazy connect, eager install.** `headstart.spare_egress` dials only once something has actually walled,
   and caches the outcome — including failure — for the process. `pipeline.yml` installs and
   registers `warp-cli` before the scrape, because an on-demand `apt-get` would land inside the
   first ten minutes of the shard, which is precisely the window Eightfold's Boards occupy and the
@@ -75,10 +75,28 @@ WARP in proxy mode — for the rest of that shard's run.**
   artifact upload, the HF push and the GitHub API. Proxy mode moves only the clients pointed at the
   SOCKS5 port.
 
+The **API-availability probe is exempt**. Eightfold's first `/api/pcsx/search` page is how the
+scraper asks whether a tenant exposes the API at all, and ~40% of them answer a steady 403 there
+and a healthy 200 on the sitemap immediately after (8 of 18 hosts probed). That 403 is a routing
+signal, not a wall; marking on it would dial the spare egress on nearly every shard, on the normal
+path. Only the surfaces where a non-200 really means "this IP is refused" — the careers page, the
+sitemap, and pagination past the first page — opt in.
+
 Verified before building, per the live-API rule in `CLAUDE.md`: all 8 probed Eightfold hosts —
 including the persistently API-disabled ones — serve **200 on both surfaces through a WARP egress**
-(`104.28.252.175`), which falsifies the one risk `resilience.md` flags about WARP's shared ranges.
-Eightfold is fronted by AWS CloudFront, not Cloudflare, and does not block the range.
+(`104.28.252.175`), which falsifies the one risk `.claude/skills/ats-gap-search/resilience.md`
+flags about WARP's shared ranges. Eightfold is fronted by AWS CloudFront, not Cloudflare, and does
+not block the range.
+
+**Reconciling the darwinbox measurement.** `docs/darwinbox/cloudflare-wall.md` already tried WARP
+and rejected it: "as the first arm it passed 6/40 (15%)", and "it also re-routes every ATS on the
+runner, not just darwinbox". Both objections survive and neither applies here. The pass rate was
+measured against *darwinbox's* Cloudflare wall, which that document concludes is a client-fingerprint
+problem rather than an egress one — Eightfold's is an origin budget, which is precisely the case an
+IP change does address, and the 8/8 probe above measures that separately. The re-routing objection
+is answered by construction: `egress_group` moves only the ATS that walled, and WARP runs in proxy
+mode, so darwinbox, Workday and every other ATS on the same runner keep their direct route. This
+decision therefore does **not** reopen WARP for darwinbox.
 
 ## Consequences
 
@@ -86,7 +104,8 @@ Eightfold is fronted by AWS CloudFront, not Cloudflare, and does not block the r
 Board errors per run should go to roughly zero. That also shrinks the ADR-0053 truncation set,
 since `HTTP 405 on page N` mid-pagination is the same wall arriving later in the same Board.
 
-**The politeness question is real and is answered narrowly.** `resilience.md` states that rotating
+**The politeness question is real and is answered narrowly.**
+`.claude/skills/ats-gap-search/resilience.md` states that rotating
 an IP to dodge a 429 is ineffective and impolite, and ADR-0026 makes per-host politeness binding.
 This decision does not weaken either: it applies only to statuses an ATS returns *instead of* a
 rate-limit signal, only where the same request demonstrably succeeds from another IP moments later,

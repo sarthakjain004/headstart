@@ -1,23 +1,27 @@
-#!/usr/bin/env python3
-"""Cloudflare WARP as a shard's spare egress IP, for an origin whose budget it has spent.
+"""The **Spare egress**: a second network origin for a shard that has spent an ATS's budget.
 
 ADR-0047 established that an ATS metering **per origin** gives each parallel Actions shard its own
 budget, because the shards get distinct egress IPs — and that the way to spend those budgets evenly
 is to cap how many of one ATS's Boards a single shard may take. That cap is *relative*
 (``ceil(n/m)``), so it distributes load without bounding it: when the slice grew, per-shard load
 grew with it and the budget went from comfortable to spent. This module is the other half of the
-answer — when a shard *does* spend a budget, it can pick up a second one instead of losing the
-Boards it has left.
+answer (ADR-0063) — when a shard *does* spend a budget, it can pick up a second one instead of
+losing every Board it has left.
 
-WARP is used in **proxy mode**, never VPN mode. VPN mode routes the whole machine through
-Cloudflare, which on a runner means the artifact upload, the HF push and the GitHub API calls too;
-proxy mode touches only the clients that point at the SOCKS5 port, so the scrape moves and nothing
-else does.
+Cloudflare WARP is the implementation, not the concept: the module is named for what it provides so
+that swapping the provider is an edit here rather than a rename everywhere.
+
+WARP runs in **proxy mode**, never VPN mode. VPN mode routes the whole machine through Cloudflare,
+which on a runner means the artifact upload, the HF push and the GitHub API calls too; proxy mode
+touches only the clients that point at the SOCKS5 port, so the scrape moves and nothing else does.
+That distinction is also what answers the objection recorded in ``docs/darwinbox/cloudflare-wall.md``
+— that WARP "re-routes every ATS on the runner, not just darwinbox" — since ``http`` routes only the
+ATS that actually walled.
 
 **Connecting is lazy and one-shot per process.** :func:`proxy_url` is called only once an origin has
 actually walled us (``http`` decides that), so a run where nothing walls never starts WARP at all.
 The outcome is cached either way — including failure, so a runner with no ``warp-cli`` pays the
-probe once and every later caller degrades in a dict lookup.
+probe once and every later caller degrades in a lock-and-return.
 
 **It degrades, it does not raise.** A missing binary, an unregistered client, a refused connection:
 all of them return None and leave the caller on its direct route, which is exactly the behaviour we
@@ -44,9 +48,14 @@ _log = log.get(__name__)
 #: itself, and a constant keeps the probe in `resilience.md` copy-pasteable against a live run.
 _PORT = 40000
 
-#: Per-``warp-cli`` call. Generous because ``connect`` does real network setup, but bounded because
-#: this sits on the scrape's critical path — the whole point is to lose one Board's time, not many.
+#: Per state-changing ``warp-cli`` call. Generous because ``connect`` does real network setup, but
+#: bounded because this sits on the scrape's critical path.
 _CALL_TIMEOUT = 30.0
+
+#: Per ``status`` call. Much shorter than :data:`_CALL_TIMEOUT` because this one is polled: at the
+#: state-changing timeout a few unlucky polls could outlast the connect deadline they are meant to
+#: enforce, and every walled worker waits behind it.
+_STATUS_TIMEOUT = 5.0
 
 #: How long to wait for ``status`` to report Connected after ``connect`` returns.
 _CONNECT_TIMEOUT = 20.0
@@ -57,17 +66,24 @@ _resolved = False
 _proxy: str | None = None
 
 
-def _run(*args: str) -> bool:
-    """One ``warp-cli`` call. True on exit 0; False — logged, never raised — on anything else."""
+def _call(*args: str, timeout: float) -> subprocess.CompletedProcess[str] | None:
+    """One ``warp-cli`` invocation, or None if it could not be run at all. Never raises."""
     try:
-        proc = subprocess.run(
+        return subprocess.run(
             ["warp-cli", "--accept-tos", *args],
             capture_output=True,
             text=True,
-            timeout=_CALL_TIMEOUT,
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         _log.info(f"warp-cli {' '.join(args)}: unavailable ({type(exc).__name__})")
+        return None
+
+
+def _run(*args: str) -> bool:
+    """A state-changing ``warp-cli`` call. True on exit 0; False — logged, never raised — else."""
+    proc = _call(*args, timeout=_CALL_TIMEOUT)
+    if proc is None:
         return False
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip().replace("\n", " ")[:160]
@@ -78,16 +94,8 @@ def _run(*args: str) -> bool:
 
 def _connected() -> bool:
     """Whether ``warp-cli status`` currently reports a connected tunnel."""
-    try:
-        proc = subprocess.run(
-            ["warp-cli", "--accept-tos", "status"],
-            capture_output=True,
-            text=True,
-            timeout=_CALL_TIMEOUT,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return "Connected" in (proc.stdout or "")
+    proc = _call("status", timeout=_STATUS_TIMEOUT)
+    return proc is not None and "Connected" in (proc.stdout or "")
 
 
 def _connect() -> str | None:
@@ -109,17 +117,21 @@ def _connect() -> str | None:
             return f"socks5://127.0.0.1:{_PORT}"
         time.sleep(_POLL)
     _log.info(
-        f"warp: no Connected status within {_CONNECT_TIMEOUT:.0f}s — staying direct"
+        f"spare egress: no Connected status within {_CONNECT_TIMEOUT:.0f}s — staying direct"
     )
     return None
 
 
 def proxy_url() -> str | None:
-    """This process's WARP SOCKS5 proxy, connecting it on first call. None when unavailable.
+    """This process's spare-egress proxy, connecting it on first call. None when unavailable.
 
     Thread-safe and idempotent: the scrape calls this from every worker thread that meets a wall,
     and only the first one does any work. The result — including None — is cached for the life of
     the process, so a shard never re-probes a WARP that is not there.
+
+    The lock is held across the connect, so concurrent walled workers wait for the outcome rather
+    than racing to dial three tunnels. They lose little by waiting: without a spare egress every
+    one of them was going to fail anyway, which is why the timeouts above are what bound this.
     """
     global _resolved, _proxy
     with _lock:
@@ -128,7 +140,7 @@ def proxy_url() -> str | None:
         _proxy = _connect()
         _resolved = True
         if _proxy:
-            _log.warning(f"warp: connected, spare egress available on {_proxy}")
+            _log.warning(f"spare egress: connected, available on {_proxy}")
         return _proxy
 
 

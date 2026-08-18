@@ -21,7 +21,7 @@ classification stays with the callers.
 Retry is not the last rung. An ATS that meters per origin can wall a shard outright, and no number
 of attempts from the same IP recovers that — so a scraper may opt a request into the **spare-egress
 fallback** (``egress_group``), which escalates from "try again" to "try from somewhere else"
-(:mod:`headstart.warp`). Only the opted-in ATS moves; everything else keeps its direct route.
+(:mod:`headstart.spare_egress`). Only the opted-in ATS moves; everything else keeps its direct route.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from typing import Any
 from curl_cffi import requests as _requests
 from curl_cffi.requests import RequestsError  # re-exported for callers' except blocks
 
-from headstart import log, warp
+from headstart import log, spare_egress
 
 __all__ = [
     "fetch",
@@ -106,8 +106,9 @@ def reset_retry_stats() -> None:
 # three attempts each to learn what the first one already proved.
 #
 # Opt-in per scraper (`BaseScraper.egress_fallback_on`): a caller that names no group behaves
-# exactly as before, which keeps this invisible to every ATS that has never walled us.
-_WALL_STATUSES = frozenset({403, 405})
+# exactly as before, which keeps this invisible to every ATS that has never walled us. The statuses
+# come with the group rather than being defaulted here — the scraper that knows the ATS is the one
+# that knows what a wall looks like on it, and a default would be a second place to edit.
 _walled: set[str] = set()
 _walled_lock = threading.Lock()
 
@@ -147,7 +148,7 @@ def _egress_proxy(group: str | None) -> str | None:
     with _walled_lock:
         if group not in _walled:
             return None
-    return warp.proxy_url()
+    return spare_egress.proxy_url()
 
 
 def _retry_reason(why: str) -> str:
@@ -215,7 +216,7 @@ def fetch(
     *,
     attempts: int = _ATTEMPTS,
     egress_group: str | None = None,
-    egress_on: frozenset[int] = _WALL_STATUSES,
+    egress_on: frozenset[int] = frozenset(),
     **kwargs: Any,
 ):
     """Make a request over the pooled session, retrying transient failures with backoff.
@@ -226,9 +227,14 @@ def fetch(
     ``RequestsError`` if a transient network error never settles (or immediately on DNS).
 
     ``egress_group`` opts this request into the spare-egress fallback: a response in ``egress_on``
-    marks that group walled, and this and every later request naming it are routed through WARP for
-    the rest of the process (see the *spare egress* block above). Omitting it — every caller that
-    has not opted in — leaves behaviour byte-for-byte unchanged.
+    marks that group walled, and this and every later request naming it are routed through the
+    spare egress for the rest of the process (see the block above). Omitting it — every caller that
+    has not opted in — leaves behaviour byte-for-byte unchanged, and so does passing a group with
+    an empty ``egress_on``.
+
+    ``egress_on`` is expected to be a subset of :data:`_TRANSIENT`. A status outside it would be
+    marked but never retried, so this request would settle on the wall it just reported — the mark
+    would still help the *next* Board, but the caller should not expect a second attempt.
 
     Marking is deliberately **not** conditional on retry budget. A wall seen on the final attempt
     still fails *this* request, but it is exactly as informative about the origin as one seen on

@@ -56,7 +56,7 @@ class BaseScraper(ABC):
     has_detail_pass: bool = False
 
     #: HTTP statuses at which this ATS should stop being requested over the shard's own egress IP
-    #: and move to a spare one (Cloudflare WARP; see :mod:`headstart.warp`). ``None`` — every
+    #: and move to a spare one (Cloudflare WARP; see :mod:`headstart.spare_egress`). ``None`` — every
     #: scraper unless it says otherwise — keeps the direct route no matter what comes back, which
     #: is the behaviour every ATS had before this existed.
     #:

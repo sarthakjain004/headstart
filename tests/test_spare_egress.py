@@ -1,4 +1,4 @@
-"""Tests for the spare-egress lifecycle (headstart.warp).
+"""Tests for the spare-egress lifecycle (headstart.spare_egress).
 
 Every path here is a *degradation* path, which is the point: this module sits on the scrape's
 critical path and its whole contract is that a missing, unregistered or broken WARP costs the run
@@ -6,14 +6,15 @@ nothing beyond the Boards it was already going to lose. So the assertions are mo
 None, raised nothing" — plus the two behaviours that would be actively harmful to get wrong:
 picking VPN mode over proxy mode, and handing out a proxy before the tunnel is up.
 
-`subprocess` is stubbed throughout; nothing here dials Cloudflare.
+`subprocess` is stubbed throughout; nothing here dials Cloudflare. The module is aliased to `warp`
+locally only to keep these assertions short.
 """
 
 import subprocess
 
 import pytest
 
-import headstart.warp as warp
+import headstart.spare_egress as warp
 
 
 @pytest.fixture(autouse=True)

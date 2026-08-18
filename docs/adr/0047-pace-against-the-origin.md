@@ -1,6 +1,6 @@
 # ADR-0047: Retry the wall, spread the load — and why pacing cannot fix it
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0026
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0026 · **Amended by:** [ADR-0063](0063-spare-egress-for-a-spent-origin-budget.md)
 
 ## Context
 
