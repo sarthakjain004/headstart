@@ -154,11 +154,11 @@ jobs:
       actions: read
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    # inner 60m -> scrape step 66m -> job: 66m + the WARP step's own 7m cap + ~5m for setup,
+    # inner 60m -> scrape step 66m -> job: 66m + the WARP step's own 8m cap + ~5m for setup,
     # checkout, pip, board download and fragment upload. The WARP slice is counted explicitly
     # because on 2026-08-18 it silently consumed the whole 6m slack this comment used to promise
     # to the upload (run 32157275202, five shards lost).
-    timeout-minutes: 78
+    timeout-minutes: 79
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -190,11 +190,13 @@ jobs:
         # bounded slice of the budget and the shard scrapes regardless. The layers are budgeted
         # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
         # 2 attempts x (32s curl + 45s update + 60s install) + 5s sleep + 15s systemctl
-        # + 15s daemon wait + 30s registration + 15s status = 354s, under the 420s cap with
-        # ~1 min slack. p50 install is 24 s (run 32146017194's 15 shards); the cap only bites
+        # + 75s daemon wait (15 probes x a 5s ceiling) + 30s registration + 15s status = 414s,
+        # under an 8 min cap. Every call in the step now carries a ceiling, so that sum is a
+        # real bound rather than an assumption that local IPC always answers promptly — and the
+        # cap keeps ~1.5 min over it, because a bound with six seconds of headroom is a coin flip. p50 install is 24 s (run 32146017194's 15 shards); the cap only bites
         # when a host wedges.
         continue-on-error: true
-        timeout-minutes: 7
+        timeout-minutes: 8
         run: |
           set -x
           # Every network call carries its own ceiling, and the mirror gets a second chance: the
@@ -240,7 +242,7 @@ jobs:
           # The daemon answers a beat after the unit starts; registering against a dead socket is
           # the one failure that would otherwise look like "WARP unavailable" on every later call.
           for _ in $(seq 1 15); do
-            warp-cli --accept-tos status >/dev/null 2>&1 && break
+            timeout 5 warp-cli --accept-tos status >/dev/null 2>&1 && break
             sleep 1
           done
           timeout 30 warp-cli --accept-tos registration new || true
