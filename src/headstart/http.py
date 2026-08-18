@@ -270,11 +270,13 @@ async def fetch_async(
     they kept hammering the walled IP while the sync path had already moved (run 32146017194:
     37,688 sync requests carried, every async one still direct).
 
-    Two deliberate blocking choices, safe because ``fan_out_async`` runs one event loop per Board
-    inside its own worker thread: ``proxy_for``'s bounded gate-wait may pause this loop during a
-    rotation — every stream on it targets the walled origin, so waiting *is* the work — and
-    ``rotate()`` (a ``systemctl`` round-trip) is pushed to a thread so the pause it imposes is the
-    gate's bounded wait, not an unbounded subprocess.
+    Three deliberate blocking choices, safe because ``fan_out_async`` runs one event loop per
+    Board inside its own worker thread: ``proxy_for``'s bounded gate-wait may pause this loop
+    during a rotation — every stream on it targets the walled origin, so waiting *is* the work;
+    when this path is the *first* to see the wall, ``proxy_for`` dials WARP inline on the loop
+    thread (bounded by the dial's own timeouts) for the same reason; and ``rotate()`` (a
+    ``systemctl`` round-trip) is pushed to a thread so the pause it imposes is the gate's bounded
+    wait, not an unbounded subprocess.
     """
     for attempt in range(attempts):
         proxy = spare_egress.proxy_for(egress_group)

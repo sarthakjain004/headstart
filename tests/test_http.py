@@ -452,3 +452,32 @@ def test_async_wall_through_the_proxy_rotates(monkeypatch):
     )
     # attempt 1 walls the group (direct), attempt 2 rides the proxy and is walled again -> rotate
     assert rotations == [True]
+
+
+def test_a_wall_marked_by_the_async_path_routes_the_sync_path(monkeypatch):
+    """The registry works in both directions — the docstring says "and vice versa", so a test
+    says it too. An eightfold sitemap fallback (sync) must ride a wall its detail pass saw."""
+    _warp(monkeypatch)
+    session, _acalls = _astub(monkeypatch, [429, 429, 429])
+    asyncio.run(
+        http.fetch_async(
+            session, "GET", "detail", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    calls = _stub(monkeypatch, [200])
+    http.fetch("GET", "listing", egress_group="workday", egress_on=frozenset({429}))
+    assert _proxied(calls) == [True]
+
+
+def test_async_wall_on_the_final_attempt_still_marks(monkeypatch):
+    """Async twin of the sync guarantee: the last attempt's wall is exactly as informative as
+    the first's, and not recording it makes every later Board repeat the same three attempts."""
+    _warp(monkeypatch)
+    session, _calls = _astub(monkeypatch, [429, 429, 429])
+    response = asyncio.run(
+        http.fetch_async(
+            session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    assert response.status_code == 429
+    assert http.spare_egress.walled_groups() == frozenset({"workday"})
