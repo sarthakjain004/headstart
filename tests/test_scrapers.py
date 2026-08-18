@@ -1859,3 +1859,36 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
 
     assert GreenhouseScraper.egress_fallback_on == frozenset()
     assert GreenhouseScraper("acme")._egress() == {}
+
+
+def test_workday_a_surviving_rollup_leaves_remote_unknown():
+    """The half of the repair that a detail fetch failure would otherwise skip.
+
+    When no detail arrives the rollup string stays — better than None — but it must not decide
+    remoteness: `is_remote("3 Locations")` returns False, asserting on-site when the honest
+    answer is that we cannot tell. Getting this wrong locks in the exact harm the repair exists
+    to remove, on the one path where nothing else can correct it.
+    """
+    raw = [{"title": "A", "locationsText": "3 Locations", "bulletFields": ["R1"]}]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "3 Locations"
+    assert jobs[0].remote is None
+
+
+def test_workday_a_malformed_additional_locations_does_not_explode_into_letters():
+    """`or []` over a bare string iterates it character by character. Live data is list-of-str
+    in every posting sampled, so this guards the shape rather than a seen failure."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "2 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {"location": "London", "additionalLocations": "Dublin"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "London"

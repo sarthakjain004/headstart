@@ -424,7 +424,10 @@ class WorkdayScraper(BaseScraper):
             remote = _remote_from(item.get("remoteType"))
             if remote is None:
                 remote = _remote_from(detail.get("remoteType"))
-            if remote is None:
+            if remote is None and not _is_rollup(location):
+                # A rollup that survived — the detail never arrived — must not decide this.
+                # ``is_remote("3 Locations")`` returns False, which asserts on-site when the
+                # honest answer is that we cannot tell.
                 remote = is_remote(location)
             jobs.append(
                 Job(
@@ -471,6 +474,11 @@ def _slice_label(applied: dict[str, list[str]]) -> str:
 _LOCATION_ROLLUP = re.compile(r"^\s*\d+\s+locations?\s*$", re.IGNORECASE)
 
 
+def _is_rollup(text: Any) -> bool:
+    """Is this ``locationsText`` a count of places rather than a place?"""
+    return isinstance(text, str) and bool(_LOCATION_ROLLUP.match(text))
+
+
 def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
     """The posting's real location(s), preferring the listing and repairing it from the detail.
 
@@ -487,23 +495,23 @@ def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
     the filter is a substring ``LIKE``, so a posting open in five cities should match all five
     (measured spread: 154/200 single-location, max 5, joined length p90 60 chars).
     """
-    if (
-        isinstance(listed, str)
-        and listed.strip()
-        and not _LOCATION_ROLLUP.match(listed)
-    ):
-        return listed
+    listing = listed.strip() if isinstance(listed, str) and listed.strip() else None
+    if listing and not _is_rollup(listing):
+        return listing
     primary = detail.get("location")
     if not isinstance(primary, str) or not primary.strip():
         # No detail (a failed fetch keeps the Job anyway) — the rollup is still what the
         # listing said, and saying "5 Locations" beats saying nothing.
-        return listed if isinstance(listed, str) and listed.strip() else None
-    extra = [
+        return listing
+    # `isinstance(..., list)` on the container, not only its items: `or []` over a bare string
+    # iterates it character by character and would join "Dublin" as "D; u; b; l; i; n".
+    extra = detail.get("additionalLocations")
+    places = [
         p.strip()
-        for p in (detail.get("additionalLocations") or [])
+        for p in (extra if isinstance(extra, list) else [])
         if isinstance(p, str) and p.strip()
     ]
-    return "; ".join([primary.strip(), *extra])
+    return "; ".join([primary.strip(), *places])
 
 
 def _remote_from(remote_type: Any) -> bool | None:
