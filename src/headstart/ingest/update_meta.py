@@ -37,11 +37,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 from headstart import log
-from headstart.experience import extract
+from headstart.experience import extract, from_field, from_seniority
 from headstart.ingest import REPO_ROOT
-from headstart.ingest.doc_prep import DERIVATIONS_VERSION
+from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
 
 _log = log.get(__name__, __spec__)
@@ -51,21 +52,15 @@ _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
 
-#: Columns re-observed from the scrape every run. `title` is here for display: the vector keeps
-#: encoding the title it was built from until a doc-drift upgrade exists (ADR-0021), and a current
-#: title over a slightly stale vector beats a stale title. `id`/`ats` are identity, never refreshed.
-FACT_FIELDS = (
-    "company",
-    "title",
-    "location",
-    "remote",
-    "employment_type",
-    "experience",
-    "salary",
-    "department",
-    "url",
-    "posted_at",
-)
+#: Identity: what a row *is*, never re-observed, so it can never be rewritten onto another Job.
+_IDENTITY = ("id", "ats")
+
+#: Columns re-observed from the scrape every run — **derived** from the canonical metadata list, so
+#: a new served column is refreshed automatically instead of needing a second edit here that whoever
+#: adds it has no reason to know about. `title` is included for display: the vector keeps encoding
+#: the title it was built from until a doc-drift upgrade exists (ADR-0021), and a current title over
+#: a slightly stale vector beats a stale title.
+FACT_FIELDS = tuple(f for f in META_FIELDS if f not in _IDENTITY)
 
 #: Recomputed from facts whenever the extractor's version moves.
 DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
@@ -140,13 +135,15 @@ def refresh_row(
     if not (sweep or inputs_moved):
         return row, facts_changed, False
 
-    settled = row["id"] in descriptions
-    if not settled and not inputs_moved:
-        # No held text: re-deriving would run the cascade against a description this row was never
-        # given, which can only lose information. Leave the embed-time values (#162's 127,501).
+    if (
+        row["id"] in descriptions
+    ):  # the full cascade, against the text this row was derived from
+        span = extract(row.get("experience"), descriptions[row["id"]], row.get("title"))
+    else:
+        span = _rederive_without_text(row, meta)
+    if span is _KEEP:
         return row, facts_changed, False
 
-    span = extract(row.get("experience"), descriptions.get(row["id"]), row.get("title"))
     derived = {
         "min_years": span.min_years if span else None,
         "max_years": span.max_years if span else None,
@@ -155,6 +152,32 @@ def refresh_row(
     changed = any(row.get(f) != derived[f] for f in DERIVED_FIELDS)
     row.update(derived)
     return row, facts_changed, changed
+
+
+#: Sentinel for "leave this row's derivations exactly as they are" — distinct from ``None``, which
+#: is a real cascade result meaning "nothing matched, so serve no number".
+_KEEP = object()
+
+
+def _rederive_without_text(row: dict, meta: dict) -> Any:
+    """The cascade for a row whose description we do **not** hold (:data:`_KEEP` to leave it).
+
+    Descriptions are only loaded during a sweep, and even then 48% of served rows have no entry —
+    so this runs on any ordinary run where a Board edited a title or the raw experience field.
+    Running the full cascade here would pass ``description=None`` and *wipe* a floor that came from
+    the description, turning a cosmetic title edit into a lost number and growing the very
+    `experience_source: none` share this module exists to shrink.
+
+    So only the tiers that do not need the text may speak: a parseable field wins outright
+    (ADR-0018's ordering), a description-sourced value is kept because nothing here can improve on
+    it, and otherwise the seniority floor is re-read from the new title.
+    """
+    field = from_field(row.get("experience"))
+    if field is not None:
+        return field
+    if meta.get("experience_source") == "regex":
+        return _KEEP
+    return from_seniority(row.get("experience"), row.get("title"))
 
 
 def refresh(
@@ -177,34 +200,31 @@ def refresh(
 
     tmp = meta_path.with_suffix(".jsonl.refresh")
     rows = fact_hits = derived_hits = 0
-    with (
-        meta_path.open(encoding="utf-8") as src,
-        tmp.open("w", encoding="utf-8") as out,
-    ):
-        for line in src:
-            line = line.strip()
-            if not line:
-                continue
-            meta = json.loads(line)
-            row, fact_changed, derived_changed = refresh_row(
-                meta, facts.get(meta["id"]), descriptions, sweep
-            )
-            rows += 1
-            fact_hits += fact_changed
-            derived_hits += derived_changed
-            out.write(json.dumps(row, ensure_ascii=False) + "\n")
-            if rows % 50_000 == 0:
-                _log.info(f"  {rows} rows refreshed")
-
-    # Row count is the alignment invariant with embeddings.f32; a mismatch means a bug in this
-    # loop, and swapping the file in would corrupt the store rather than fail loudly.
-    written = sum(1 for _ in tmp.open(encoding="utf-8"))
-    if written != rows:
+    try:
+        with (
+            meta_path.open(encoding="utf-8") as src,
+            tmp.open("w", encoding="utf-8") as out,
+        ):
+            for line in src:
+                line = line.strip()
+                if not line:
+                    continue
+                meta = json.loads(line)
+                row, fact_changed, derived_changed = refresh_row(
+                    meta, facts.get(meta["id"]), descriptions, sweep
+                )
+                rows += 1
+                fact_hits += fact_changed
+                derived_hits += derived_changed
+                out.write(json.dumps(row, ensure_ascii=False) + "\n")
+                if rows % 50_000 == 0:
+                    _log.info(f"  {rows} rows refreshed")
+        tmp.replace(meta_path)
+    except BaseException:
+        # The merge job uploads `data/embeddings/jobs` wholesale and without `--delete`, so a
+        # half-written temp file left behind here would be published to HF and stay there.
         tmp.unlink(missing_ok=True)
-        log.fail(
-            _log, f"refresh wrote {written} rows for {rows} read — refusing to swap"
-        )
-    tmp.replace(meta_path)
+        raise
     _log.info(
         f"refreshed {rows} rows: {fact_hits} with changed facts, "
         f"{derived_hits} with changed derivations"
@@ -224,6 +244,7 @@ def refresh(
 
 
 def main() -> int:
+    log.setup()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", type=Path, default=_STORE)
     parser.add_argument("--source", type=Path, default=_JOBS)

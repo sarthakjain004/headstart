@@ -36,6 +36,7 @@ derivation is `f(code, facts)` — recomputable at will, so a code fix must reac
 | `title` | fact, **display-refreshed** | fact reconcile; the vector keeps encoding the old title until a doc-drift upgrade exists ([ADR-0021](0021-re-embed-on-content-change.md)'s hook) — a current title over a slightly stale vector beats a stale title |
 | `company`, `location`, `remote`, `employment_type`, `experience` (raw), `salary`, `department`, `url`, `posted_at` | facts | **fact reconcile**: every run, jobs in this run's corpus that are already in the store get these fields overwritten from the fresh scrape row |
 | `min_years`, `max_years`, `experience_source` | derivations | **version sweep**: recomputed from held facts when the extractor changes |
+| `description` | fact — **not stored in meta at all** | lives in the ADR-0050 store; an *edited* description still propagates nowhere, because doc-drift detection (ADR-0021) remains deferred |
 
 **The stage: `headstart.ingest.update_meta`**, in the merge job between `embed_merge` and
 `index sync` — inside the store's single-writer window (ADR-0025), with everything already on
@@ -68,6 +69,10 @@ that re-adds the row anyway). No watermark bookkeeping on the sync side: the inv
 *the table's metadata always equals the store's*, and sync self-heals any drift, whichever pass —
 or bug — produced it. The diff is a projection read of ~264k rows without vectors, a few MB;
 reported as its own `refreshed N` line so it can never inflate the ADR-#161 add/evict accounting.
+The scan is ~16 columns over ~264k rows — hundreds of MB of Python dicts, not "a few MB"; it is
+survivable on the merge runner but is the real cost of making the reconcile unconditional, and the
+rewrite is issued in `_ADD_CHUNK` batches so neither the row list nor the delete-before-add window
+grows with the size of the sweep.
 
 ## Costs, measured against the constraints that shaped earlier ADRs
 
@@ -77,7 +82,11 @@ reported as its own `refreshed N` line so it can never inflate the ADR-#161 add/
   is *not* copied here because meta has no equivalent of its 174 MB/run rewrite problem.
 - **Lance table writes**: the reconcile writes append-class fragments sized to the diff, exactly
   like sync's adds (the discipline that moved `compact` to `cleanup-index`). A version bump makes
-  one large diff, once; the next `cleanup-index` compaction absorbs it.
+  one large diff, once; the next `cleanup-index` compaction absorbs it. **Unmeasured**, and the
+  risk is real: facts are re-observed for every corpus∩store row, so one volatile fact field would
+  turn this into a near-full-table rewrite every run — the amplification ADR-0031 rejected. The
+  first runs after merge must be watched for exactly that, and the `refreshed N` line is what to
+  watch.
 - **Hot-path cost when idle**: the fact pass touches only corpus∩store ids; the sweep is one
   integer compare; the sync diff is one columnar read. No new network fetches in any job.
 
@@ -105,8 +114,11 @@ smaller than it sounds:
 | | jobs | boards | what settles them |
 |---|---|---|---|
 | listing-only ATSes (greenhouse, ashby, lever, workable, recruitee, keka, personio, darwinbox, teamtailor, freshteam) | 34,170 | 5,491 | the description arrives free in the listing — one request per Board |
-| detail-pass ATSes (workday, smartrecruiters, zoho, eightfold, ripplehire, join, rippling, trakstar, successfactors) | 93,331 | 5,299 | the listing plus a per-Job fetch |
+| detail-pass ATSes (workday, smartrecruiters, zoho, eightfold, ripplehire, rippling, trakstar, successfactors) | 93,331 | 5,299 | the listing plus a per-Job fetch |
 | **total** | **127,501** | **10,790** | |
+
+`join`'s 1,093 rows are in that count but unreachable — it is in `registry.DISABLED_ATS`, so no
+Board selection will ever scrape it; those rows leave the index by eviction rather than repair.
 
 10,790 Boards is **half a normal 20,000-Board slice**, and every one of the 127,501 rows carries a
 stored `url`, so none is unreachable. The reason it has never happened is only that the slice is
@@ -121,8 +133,11 @@ An extractor fix now reaches every served row within one pipeline run of merging
 this ships with `DERIVATIONS_VERSION = 1` against an absent watermark, so the first run *is* the
 backfill, re-deriving every settled row with whatever extractor is current (including PR #164's
 fix, in whichever order the two PRs merge). It repairs the 136,268 rows whose text we hold; the
-other 127,501 are repaired once the Board-selection change above settles their descriptions, with
-no further code needed — the next version bump picks them up. Scrape-fact edits (salary, remote, location …) now reach the
+other 127,501 are **not** self-closing: once the Board-selection change settles their
+descriptions, nothing re-derives them until the next version bump, and `embed_plan` will not
+re-embed them either (they are not `degraded` — they carry a description now). Whichever change
+settles a description must therefore also mark it for re-derivation; that is part of the
+Board-selection work, not a free consequence of this one. Scrape-fact edits (salary, remote, location …) now reach the
 served table in the next run instead of never. `verify-search-filters` remains the harness that
 would catch a reconcile writing wrong columns, and the README served-table schema is untouched —
 no column was added, removed, or retyped.

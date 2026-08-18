@@ -118,6 +118,34 @@ def test_no_sweep_leaves_derivations_alone():
     assert row["min_years"] == 99  # only a version bump may touch it
 
 
+def test_a_cosmetic_title_edit_never_wipes_a_description_derived_floor():
+    """The regression this module could most easily cause. Descriptions are only loaded during a
+    sweep, so an ordinary run that re-derives on a title edit would run the cascade with no text
+    and null a floor that came from the description — growing the `experience_source: none` share
+    the whole design exists to shrink."""
+    meta = _meta(title="Backend Engineer", min_years=7, experience_source="regex")
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["title"] = "Backend Engineer (Remote)"  # a Board tidying its listing
+    row, facts_changed, derived_changed = um.refresh_row(meta, facts, {}, sweep=False)
+    assert facts_changed  # the new title is served
+    assert not derived_changed
+    assert (row["min_years"], row["experience_source"]) == (
+        7,
+        "regex",
+    )  # floor survives
+
+
+def test_a_title_edit_may_still_move_a_seniority_derived_floor():
+    """The other half: a seniority floor came from the title, so a new title legitimately re-reads
+    it — no held description is needed to do that correctly."""
+    meta = _meta(title="Engineer", min_years=0, experience_source="seniority")
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["title"] = "Staff Engineer"
+    row, _, derived_changed = um.refresh_row(meta, facts, {}, sweep=False)
+    assert derived_changed
+    assert (row["min_years"], row["experience_source"]) == (7, "seniority")
+
+
 def test_changed_experience_field_rederives_without_a_sweep():
     # The raw field is a cascade input, so a Board editing it must move the numbers even at an
     # unchanged version — otherwise the served floor contradicts the served raw string.

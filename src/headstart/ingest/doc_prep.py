@@ -40,7 +40,7 @@ _MAX_SEQ_TOKENS = _BUCKETS[-1]
 
 # The canonical typed metadata that rides next to each vector (ADR-0007); the corpus reader
 # already yields canonical Job dicts, so this is pure selection — no per-source adapting.
-_META_FIELDS = (
+META_FIELDS = (
     "id",
     "ats",
     "company",
@@ -110,7 +110,7 @@ def to_meta(job: dict) -> dict:
     The derived three are re-computable from the facts beside them, which is what lets
     ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
     """
-    meta = {field: job.get(field) for field in _META_FIELDS}
+    meta = {field: job.get(field) for field in META_FIELDS}
     # Whether the Doc we are about to embed actually carried a description (ADR-0050). Recorded
     # because a vector built from a bare title is indistinguishable from a good one afterwards,
     # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.

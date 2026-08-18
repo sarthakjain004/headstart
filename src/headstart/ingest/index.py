@@ -305,7 +305,11 @@ def _refresh_metadata(
     ]
     indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name])
 
-    stale: list[dict] = []
+    # Only ids and their stamps are held across the scan; a row's replacement is materialised one
+    # batch at a time. Carrying a vector per stale row would be ~25 KB each — a first sweep of
+    # ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so an OOM there
+    # would leave those rows deleted with nothing put back.
+    stale: list[tuple[str, str | None]] = []
     for row in indexed:
         job_id = row["id"]
         index = row_of.get(job_id)
@@ -314,17 +318,29 @@ def _refresh_metadata(
         stored = metas[index]
         if all(row.get(field) == stored.get(field) for field in columns):
             continue
-        fresh = {field: stored.get(field) for field in columns}
-        fresh[_FIRST_SEEN_FIELD.name] = row[_FIRST_SEEN_FIELD.name]
-        fresh["vector"] = vectors[index].tolist()
-        stale.append(fresh)
+        stale.append((job_id, row[_FIRST_SEEN_FIELD.name]))
 
     if not stale:
         _log.info("metadata refresh: table already matches the store")
         return 0
-    # Delete-then-add, the same shape `_take_upgrades` uses: LanceDB has no partial-row update, and
-    # a merge-insert would rewrite the vector column for every touched row anyway.
-    apply_sync(table, stale, [row["id"] for row in stale])
+
+    # Delete-then-add per batch, the same shape and bound as the add loop below: LanceDB has no
+    # partial-row update, and a merge-insert would rewrite the vector column for every touched row
+    # anyway. Batching also keeps the window in which rows are deleted-but-not-yet-re-added to one
+    # chunk rather than the whole sweep.
+    for start in range(0, len(stale), _ADD_CHUNK):
+        batch = stale[start : start + _ADD_CHUNK]
+        rows = []
+        for job_id, first_seen in batch:
+            index = row_of[job_id]
+            fresh = {field: metas[index].get(field) for field in columns}
+            fresh[_FIRST_SEEN_FIELD.name] = first_seen
+            fresh["vector"] = vectors[index].tolist()
+            rows.append(fresh)
+        apply_sync(table, rows, [job_id for job_id, _ in batch])
+        _log.info(
+            f"metadata refresh: {min(start + _ADD_CHUNK, len(stale))}/{len(stale)}"
+        )
     _log.info(
         f"metadata refresh: rewrote {len(stale)} rows to match the store (ADR-0061)"
     )
