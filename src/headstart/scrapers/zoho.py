@@ -44,9 +44,12 @@ class ZohoScraper(BaseScraper):
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
-        return url.split("://", 1)[-1].rstrip(
-            "/"
-        )  # the careers host, e.g. acme.zohorecruit.in
+        # Host only, e.g. acme.zohorecruit.in — the same normalisation personio needs, for the
+        # same reason: `url()` appends `/jobs/Careers`, so a stored job deep link would put that
+        # suffix inside the path or query and fetch something that is not the board. Zoho's
+        # ledger carries 44 pathy / 19 query rows; none is live today, so this is a latent
+        # version of the bug that cost personio 678 ParseErrors a run, not an active one.
+        return url.split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
 
     def url(self) -> str:
         return f"https://{self.slug}/jobs/Careers"

@@ -115,11 +115,20 @@ def pick_boards(
     With no scores (bootstrap) or ``max_boards=0`` semantics this degrades to the previous
     behavior: pure shuffle + cap, or every board (scored-first when scores exist).
     """
+    from headstart.config import board_identity
+
     rng = rng or random.Random()
     shuffled = list(companies)
     rng.shuffle(shuffled)
 
-    key = lambda c: f"{c.ats}:{c.slug}"  # noqa: E731 - matches corpus.board_of
+    # `board_identity`, not `f"{ats}:{slug}"`. The ledger is written by `update_ledgers priority`
+    # from `corpus.board_of(job_id)`, which yields the **board_key** shape — and Workday and
+    # Personio override `board_key()` (a Workday slug is a whole careers URL, a Personio slug the
+    # whole host). The old `f"{ats}:{slug}"` therefore never matched their rows: measured against
+    # the live ledger, 13,714 of 66,745 boards — 20.5%, every Workday and every Personio — scored
+    # 0.0 no matter what they had earned, so they could only ever enter a slice through the random
+    # exploration tail. The line even carried a comment claiming it matched `corpus.board_of`.
+    key = board_identity  # noqa: E731 - one keyspace with the ledger (ADR-0049)
     known = [c for c in shuffled if scores.get(key(c), 0.0) > 0.0]
     if not known:
         return shuffled[:max_boards] if max_boards else shuffled

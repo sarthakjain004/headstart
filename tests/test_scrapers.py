@@ -1632,3 +1632,17 @@ def test_zoho_raises_when_the_page_shape_changes(monkeypatch):
         ZohoScraper._records('<input value="{not json" id="jobs" />')
     # ...while a page with no jobs input at all is simply an empty board.
     assert ZohoScraper._records("<html>no jobs here</html>") == []
+
+
+def test_zoho_slug_from_keeps_only_the_host():
+    """Same shape as the personio bug: `url()` appends `/jobs/Careers`, so a stored job deep link
+    would put that suffix inside the path or query and fetch something that is not the board.
+    Latent rather than active — zoho's 44 pathy / 19 query ledger rows are all dead today."""
+    from headstart.scrapers.zoho import ZohoScraper
+
+    host = "acme.zohorecruit.in"
+    assert ZohoScraper.slug_from("acme", f"https://{host}") == host
+    assert ZohoScraper.slug_from("acme", f"https://{host}/") == host
+    assert ZohoScraper.slug_from("acme", f"https://{host}/jobs/Careers/123") == host
+    assert ZohoScraper.slug_from("acme", f"https://{host}/jobs?utm_source=x") == host
+    assert get_scraper("zoho", host).url() == f"https://{host}/jobs/Careers"
