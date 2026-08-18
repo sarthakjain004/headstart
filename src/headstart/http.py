@@ -248,17 +248,41 @@ def fetch(
 
 
 async def fetch_async(
-    session: Any, method: str, url: str, *, attempts: int = _ATTEMPTS, **kwargs: Any
+    session: Any,
+    method: str,
+    url: str,
+    *,
+    attempts: int = _ATTEMPTS,
+    egress_group: str | None = None,
+    egress_on: frozenset[int] = frozenset(),
+    **kwargs: Any,
 ):
     """Async counterpart to :func:`fetch`: the same retry policy over a caller-supplied
     ``AsyncSession``, so concurrent same-host requests ride as multiplexed HTTP/2 streams on one
     connection. Returns the settled response for the caller to classify; retries 403/405/429/5xx
     and transient network errors with backoff (honouring ``Retry-After``); raises
     ``RequestsError`` on DNS or if it never settles.
+
+    ``egress_group``/``egress_on`` carry the spare-egress fallback (ADR-0063) with :func:`fetch`'s
+    exact semantics — one shared wall registry, so a wall the sync listing pass marks routes the
+    async detail pass and vice versa. This path is where the seam matters most: the detail passes
+    are the many-streams-per-host traffic that spends an Origin budget, and until this existed
+    they kept hammering the walled IP while the sync path had already moved (run 32146017194:
+    37,688 sync requests carried, every async one still direct).
+
+    Two deliberate blocking choices, safe because ``fan_out_async`` runs one event loop per Board
+    inside its own worker thread: ``proxy_for``'s bounded gate-wait may pause this loop during a
+    rotation — every stream on it targets the walled origin, so waiting *is* the work — and
+    ``rotate()`` (a ``systemctl`` round-trip) is pushed to a thread so the pause it imposes is the
+    gate's bounded wait, not an unbounded subprocess.
     """
     for attempt in range(attempts):
+        proxy = spare_egress.proxy_for(egress_group)
+        routed = (
+            {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
+        )
         try:
-            response = await session.request(method, url, **kwargs)
+            response = await session.request(method, url, **routed)
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
                 raise
@@ -266,7 +290,17 @@ async def fetch_async(
                 _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
             )
             continue
+        if proxy and egress_group is not None:
+            spare_egress.note_routed(
+                egress_group, recovered=response.status_code == 200
+            )
+        if egress_group is not None and response.status_code in egress_on:
+            spare_egress.mark_walled(egress_group, response.status_code)
         if response.status_code in _TRANSIENT and attempt < attempts - 1:
+            # Same last rung as the sync path: walled *through* the spare egress means this IP is
+            # spent too, so move again rather than spend the final attempt on a known-bad route.
+            if proxy and egress_group is not None and response.status_code in egress_on:
+                await asyncio.to_thread(spare_egress.rotate)
             await asyncio.sleep(
                 _note_retry(
                     method,
