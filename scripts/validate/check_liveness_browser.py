@@ -82,12 +82,12 @@ import argparse
 import asyncio
 import sys
 from collections import Counter
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from headstart import liveness  # noqa: E402
+from headstart import liveness
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
 
@@ -267,7 +267,7 @@ async def _probe(tab, spec: dict, tenant: str, url: str) -> tuple[str, int | Non
         await tab.go_to(target, timeout=_NAV_TIMEOUT_S)
         try:
             await tab.find(css_selector=spec["ready"], timeout=8, raise_exc=False)
-        except Exception:  # noqa: BLE001 - a missing anchor is not a verdict
+        except Exception:  # noqa: BLE001, S110
             pass
         await asyncio.sleep(_RENDER_SETTLE_MS / 1000)
         count = _script_value(
@@ -372,7 +372,7 @@ def main() -> int:
 
     # Past its TTL, not merely matching the status: without this the run re-probes the same
     # head-of-ledger rows every time and a 21k backlog never advances.
-    today = date.today()
+    today = datetime.now(UTC).date()
     rows = [
         v
         for v in ledger.values()

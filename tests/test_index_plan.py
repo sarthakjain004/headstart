@@ -17,8 +17,8 @@ from headstart.ingest.index_plan import (
     live_keep_set,
     plan_prune,
     plan_sync,
-    resolve_board,
     read_unauthoritative_boards,
+    resolve_board,
 )
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -147,9 +147,12 @@ def test_the_drain_takes_the_oldest_rows_first():
 def test_the_drain_is_deterministic_without_stamps():
     board = "greenhouse:x"
     indexed = _board(board, 40)
-    kwargs = dict(
-        index_ids=indexed, fresh_ids=indexed[:5], scraped_boards=[board], live={}
-    )
+    kwargs = {
+        "index_ids": indexed,
+        "fresh_ids": indexed[:5],
+        "scraped_boards": [board],
+        "live": {},
+    }
     assert plan_sync(**kwargs).delete == plan_sync(**kwargs).delete
 
 

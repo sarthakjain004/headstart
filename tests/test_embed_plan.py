@@ -20,7 +20,7 @@ pytest.importorskip(
 
 # Imported after the gate above, not at the top: on CI's base-deps-only install the module's
 # langdetect dependency is absent, and this must skip rather than error.
-import headstart.ingest.embed_plan as pe  # noqa: E402
+import headstart.ingest.embed_plan as pe
 
 
 class _FakeTok:

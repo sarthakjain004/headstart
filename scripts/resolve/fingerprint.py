@@ -237,7 +237,7 @@ PATTERNS = {
 WORKDAY = re.compile(
     HOST
     + r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?([a-zA-Z0-9_-]+)",
-    re.I,
+    re.IGNORECASE,
 )
 # Both locale shapes Workday serves: "en-US" and the bare "es". Matching only the hyphenated
 # form let /es/ through, and the site capture swallowed the language code — e.g. Rappi's boards
@@ -246,7 +246,7 @@ WORKDAY = re.compile(
 # letters too (Knight Frank's board is .../KF), and rejecting those would drop live boards.
 LOCALE = re.compile(
     r"^(?:[a-z]{2}-[a-z]{2}|en|es|fr|de|pt|it|ja|zh|ko|nl|ru|ar|pl|tr|sv|da|fi|cs|hu|th|vi|id)$",
-    re.I,
+    re.IGNORECASE,
 )
 
 # ATSes whose board id keeps its capitals. The SmartRecruiters postings API itself is
@@ -267,7 +267,7 @@ def detect(html):
     hits = set()
     for ats, pats in PATTERNS.items():
         for p in pats:
-            for m in re.finditer(p, html, re.I):
+            for m in re.finditer(p, html, re.IGNORECASE):
                 raw = m.group(1) or ""
                 tok = raw if ats in CASE_SENSITIVE else raw.lower()
                 # require len 3-60: a 1-2 char token is almost always garbage from a minified
@@ -275,7 +275,7 @@ def detect(html):
                 # The split() check also screens host-shaped tokens (personio/eightfold), where
                 # the blocked word is the leading label: "www.eightfold.ai" is not a tenant.
                 lo = tok.lower()
-                if tok and 3 <= len(tok) <= 60:
+                if tok and 3 <= len(tok) <= 60:  # noqa: SIM102
                     if lo not in BLOCK and lo.split(".")[0] not in BLOCK:
                         hits.add((ats, tok))
     for m in WORKDAY.finditer(html):
@@ -314,7 +314,7 @@ async def fetch(session, url, cap=900000, retries=0):
             if not any(x in ct for x in ("html", "text", "javascript", "json", "xml")):
                 return ""
             return r.content[:cap].decode("utf-8", "replace")
-        except Exception:
+        except Exception:  # noqa: BLE001
             await asyncio.sleep(0.5 * (attempt + 1))
             continue  # transient (timeout, conn) — retry
     return ""
@@ -410,7 +410,7 @@ async def probe_slugs(session, name, domain):
             d = json.loads(raw)
             if count(d) > 0:
                 hits.add((ats, s))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return hits
 
@@ -508,9 +508,9 @@ async def main():
         async with sem:
             try:
                 return await asyncio.wait_for(run(session, row), COMPANY_BUDGET)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return row["name"], row["domain"], set(), "timeout"
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return row["name"], row["domain"], set(), "error"
 
     async with AsyncSession() as session:

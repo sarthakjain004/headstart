@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from headstart.board_cost import (
     BoardCost,
+    ShardCost,
     ats_medians,
     costs_for,
     load,
-    ShardCost,
     read_shard_rows,
     save,
     update,

@@ -16,7 +16,7 @@ pytest.importorskip("langdetect")
 
 # Imported after the gates above, not at the top: the module pulls the ML stack, which
 # the quality CI job does not install — this must skip rather than error.
-import headstart.ingest.embed_run as ej  # noqa: E402
+import headstart.ingest.embed_run as ej
 
 
 def _job(**overrides) -> dict:

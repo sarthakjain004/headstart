@@ -33,9 +33,9 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_liveness import PROBES  # noqa: E402 - needs the paths above first
+from check_liveness import PROBES
 
-from headstart import liveness  # noqa: E402
+from headstart import liveness
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
 

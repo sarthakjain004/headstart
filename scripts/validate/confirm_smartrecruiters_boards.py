@@ -113,7 +113,7 @@ def _fetch(
                 time.sleep(1 + attempt)
                 continue
             return e.code, ""
-        except Exception:
+        except Exception:  # noqa: BLE001
             time.sleep(1 + attempt)
     return None, ""
 

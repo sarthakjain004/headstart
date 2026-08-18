@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from headstart.models import host_of  # noqa: E402 - needs src on sys.path first
+from headstart.models import host_of
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = REPO_ROOT / "data" / "validate" / "liveness"
@@ -51,7 +51,7 @@ def is_polluted(url: str) -> bool:
     """Whether this `url` carries anything past the host. A trailing slash does not count —
     it is harmless and rewriting it would churn thousands of rows for nothing."""
     rest = (url or "").split("://", 1)[-1]
-    host, sep, tail = rest.partition("/")
+    _host, sep, tail = rest.partition("/")
     return bool("?" in rest or (sep and tail.strip("/")))
 
 

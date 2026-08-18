@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "scr
 # installs base deps only).
 pytest.importorskip("pydoll")
 
-from datadome_slider import _clean_transcript  # noqa: E402
+from datadome_slider import _clean_transcript
 
 
 @pytest.mark.parametrize(

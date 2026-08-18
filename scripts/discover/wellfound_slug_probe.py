@@ -25,9 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "validate"))
 sys.path.insert(0, str(ROOT / "src"))
-from check_liveness import LIVE, PROBES  # noqa: E402 - needs the path above first
+from check_liveness import LIVE, PROBES
 
-from headstart import liveness  # noqa: E402
+from headstart import liveness
 
 GAP = ROOT / "data" / "resolve" / "wellfound_ledger_gap.csv"
 OUT = ROOT / "data" / "discover" / "wellfound_resolved_tenants.csv"
@@ -114,7 +114,7 @@ def main() -> int:
         url = URL[ats].format(t=tenant)
         try:
             verdict, n = PROBES[ats](tenant, url)
-        except Exception:
+        except Exception:  # noqa: BLE001
             verdict, n = "unknown", None
         return ats, company, tenant, url, verdict, n
 

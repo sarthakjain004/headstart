@@ -7,7 +7,6 @@ matter as much as the happy ones.
 
 from __future__ import annotations
 
-
 from headstart.ingest import observability
 
 

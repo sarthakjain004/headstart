@@ -30,9 +30,9 @@ import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fingerprint import SEED, detect, load_seed, open_results  # noqa: E402
-from pydoll.browser import Chrome  # noqa: E402
-from pydoll.browser.options import ChromiumOptions  # noqa: E402
+from fingerprint import SEED, detect, load_seed, open_results
+from pydoll.browser import Chrome
+from pydoll.browser.options import ChromiumOptions
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_OUT = ROOT / "data" / "resolve" / "fingerprint_headless_results.csv"
@@ -85,16 +85,18 @@ def net_urls(logs):
     for e in logs:
         try:
             out.append(e["params"]["request"]["url"])
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     return out
 
 
 def careers_links(dom, base):
     seen, out = set(), []
-    for h in re.findall(r'href=["\']([^"\']+)["\']', dom, re.I):
+    for h in re.findall(r'href=["\']([^"\']+)["\']', dom, re.IGNORECASE):
         if re.search(
-            r'career|/jobs?(?:[/"\'?]|$)|join-us|work-with|life-at|hiring', h, re.I
+            r'career|/jobs?(?:[/"\'?]|$)|join-us|work-with|life-at|hiring',
+            h,
+            re.IGNORECASE,
         ):
             u = urllib.parse.urljoin(base, h)
             if u not in seen:
@@ -108,16 +110,16 @@ def careers_links(dom, base):
 async def scan_page(tab, url):
     try:
         await tab.go_to(url, timeout=NAV_TIMEOUT)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     await asyncio.sleep(SETTLE)
     try:
         dom = await tab.page_source
-    except Exception:
+    except Exception:  # noqa: BLE001
         dom = ""
     try:
         logs = await tab.get_network_logs()
-    except Exception:
+    except Exception:  # noqa: BLE001
         logs = []
     return detect(dom) | detect("\n".join(net_urls(logs))), dom
 
@@ -128,7 +130,7 @@ async def fingerprint_company(browser, sem, row):
         tab = await browser.new_tab()
         try:
             await tab.enable_network_events()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         try:
             base = f"https://{domain}/"
@@ -160,7 +162,7 @@ async def fingerprint_company(browser, sem, row):
         finally:
             try:
                 await tab.close()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
 

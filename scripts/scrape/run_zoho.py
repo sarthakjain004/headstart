@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart.scrapers.zoho import ZohoScraper  # noqa: E402
+from headstart.scrapers.zoho import ZohoScraper
 
 SRC = ROOT / "data" / "ats-tenants-merged" / "zoho.csv"
 OUT = ROOT / "data" / "jobs" / "zoho.csv"
@@ -31,7 +31,7 @@ def scrape(row):
     host = host_of(row["url"], row["tenant"])
     try:
         return host, ZohoScraper(host, row["tenant"]).fetch(), None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return host, [], type(exc).__name__
 
 

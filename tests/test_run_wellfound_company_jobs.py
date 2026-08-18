@@ -19,11 +19,11 @@ sys.path.insert(0, str(ROOT / "scripts" / "scrape"))
 # installs base deps only).
 pytest.importorskip("pydoll")
 
-import asyncio  # noqa: E402
-import json  # noqa: E402
+import asyncio
+import json
 
-import run_wellfound_company_jobs as cj  # noqa: E402
-from run_wellfound_company_jobs import (  # noqa: E402
+import run_wellfound_company_jobs as cj
+from run_wellfound_company_jobs import (
     PER_PAGE,
     _job_type,
     parse_company_page,
@@ -172,7 +172,7 @@ def test_recommended_companies_listings_are_not_claimed_as_this_companys():
     """The staple-3 corruption: a company page caches ~20 recommended startups, and scooping
     every JobListing on it filed Checkfront's 'Staff Software Engineer' under Staple."""
     html = _page("acme", [1, 2], total=2, others=[900, 901])
-    jobs, total, found = parse_company_page(html, "acme", "t")
+    jobs, _total, found = parse_company_page(html, "acme", "t")
     assert found is True
     assert [j["id"] for j in jobs] == ["wellfound:acme:1", "wellfound:acme:2"]
     assert {j["company"] for j in jobs} == {"Acme"}
@@ -229,7 +229,7 @@ def _walk(monkeypatch, pages: dict[int, str], seen: set[str] | None = None) -> _
 def test_walks_past_page_one_when_total_count_is_missing(monkeypatch):
     """The staple-3 regression: totalCount absent must not mean 'one page'."""
     pages = {
-        1: _page("acme", list(range(0, 20)), None),
+        1: _page("acme", list(range(20)), None),
         2: _page("acme", list(range(20, 40)), None),
         3: _page("acme", [], None),
     }
@@ -240,7 +240,7 @@ def test_walks_past_page_one_when_total_count_is_missing(monkeypatch):
 
 def test_walks_past_page_one_when_total_count_is_zero(monkeypatch):
     pages = {
-        1: _page("acme", list(range(0, 20)), 0),
+        1: _page("acme", list(range(20)), 0),
         2: _page("acme", list(range(20, 35)), 0),  # short page = last page
     }
     sink = _walk(monkeypatch, pages)
@@ -249,7 +249,7 @@ def test_walks_past_page_one_when_total_count_is_zero(monkeypatch):
 
 def test_stops_when_a_page_repeats_rather_than_looping_forever(monkeypatch):
     """Past the end the role board wraps to page 1; a repeat must terminate the walk."""
-    first = _page("acme", list(range(0, 20)), None)
+    first = _page("acme", list(range(20)), None)
     pages = {1: first, 2: first, 3: first}
     sink = _walk(monkeypatch, pages)
     assert len(sink.rows) == 20
@@ -260,7 +260,7 @@ def test_undercounting_total_does_not_truncate_the_walk(monkeypatch):
     """totalCount is display-only. Deepgram's page disagreed with itself (77 vs 78); capping
     pages by it would drop the tail — the same trusted-but-wrong count the board truncated on."""
     pages = {
-        1: _page("acme", list(range(0, 20)), 25),  # claims 25 -> 2 pages
+        1: _page("acme", list(range(20)), 25),  # claims 25 -> 2 pages
         2: _page("acme", list(range(20, 40)), 25),  # but a full page: keep going
         3: _page("acme", list(range(40, 45)), 25),
     }
@@ -277,13 +277,11 @@ def test_undercounting_total_does_not_truncate_the_walk(monkeypatch):
 
 def test_resume_walks_through_already_captured_pages_to_the_unseen_tail(monkeypatch):
     pages = {
-        1: _page("acme", list(range(0, 20)), None),
+        1: _page("acme", list(range(20)), None),
         2: _page("acme", list(range(20, 40)), None),
         3: _page("acme", list(range(40, 55)), None),  # short page = last
     }
-    already = {
-        f"wellfound:acme:{i}" for i in range(0, 40)
-    }  # pages 1-2 captured last run
+    already = {f"wellfound:acme:{i}" for i in range(40)}  # pages 1-2 captured last run
     sink = _walk(monkeypatch, pages, seen=already)
     assert [r["id"] for r in sink.rows] == [
         f"wellfound:acme:{i}" for i in range(40, 55)
@@ -294,7 +292,7 @@ def test_resume_walks_through_already_captured_pages_to_the_unseen_tail(monkeypa
 def test_a_soft_blocked_company_is_not_reported_complete(monkeypatch):
     """Only a walk that reached the end may be recorded done; otherwise --append retires a
     company that never finished, keeping whatever partial set it happened to get."""
-    pages = {1: _page("acme", list(range(0, 20)), None), 2: "<html>blocked</html>"}
+    pages = {1: _page("acme", list(range(20)), None), 2: "<html>blocked</html>"}
     sink = _walk(monkeypatch, pages)
     assert sink.complete is False
     assert len(sink.rows) == 20
@@ -323,7 +321,7 @@ def test_mid_walk_page_that_stops_rendering_the_company_is_not_reported_complete
 ):
     """Same hole one page in: the tail is unread, so this is truncation, not an ending."""
     pages = {
-        1: _page("acme", list(range(0, 20)), None),
+        1: _page("acme", list(range(20)), None),
         2: _page("someone-else", [900], total=1),
     }
     sink = _walk(monkeypatch, pages)

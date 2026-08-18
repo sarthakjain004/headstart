@@ -156,7 +156,7 @@ def _run(coro, timeout: float):
 
 def _ensure_started() -> None:
     """The process's one Chrome, started on first use, with a launch retry."""
-    global _loop, _browser, _gate, _atexit_registered
+    global _loop, _browser, _atexit_registered
     with _lock:
         if _browser is not None:
             return
@@ -199,7 +199,7 @@ def shutdown() -> None:
     if browser is not None and _loop is not None:
         try:
             _run(browser.__aexit__(None, None, None), timeout=15)
-        except Exception:  # noqa: BLE001 - shutdown must never mask the run's real outcome
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
@@ -228,7 +228,7 @@ class _Page:
             try:
                 r = _run(_go(), timeout=_FETCH_TIMEOUT_S)
                 break
-            except Exception:  # noqa: BLE001 - client-side fault; one stated retry
+            except Exception:
                 if attempt == 2:
                     raise
         if r.status_code != 200:
@@ -263,7 +263,7 @@ def origin(page_url: str):
             if tab is not None:
                 try:
                     await tab.close()
-                except BaseException:  # noqa: BLE001 - already failing; don't mask the cause
+                except BaseException:  # noqa: BLE001, S110
                     pass
             _gate.release()
             raise
@@ -280,5 +280,5 @@ def origin(page_url: str):
     finally:
         try:
             _run(_close(tab), timeout=15)
-        except Exception:  # noqa: BLE001 - a tab that won't close must not fail the board
+        except Exception:  # noqa: BLE001, S110
             pass

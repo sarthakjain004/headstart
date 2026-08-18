@@ -18,7 +18,7 @@ import time
 from collections.abc import Callable, Container
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -331,7 +331,7 @@ def build_feed(jobs_dir: str | Path, errors: dict[str, str]) -> dict[str, Any]:
                 seen.add(job["id"])
                 jobs.append(job)
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "count": len(jobs),
         "errors": errors,
         "jobs": jobs,

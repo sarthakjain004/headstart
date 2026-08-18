@@ -48,16 +48,16 @@ from collections import Counter, defaultdict
 from headstart import log
 
 __all__ = [
-    "proxy_url",
-    "rotate",
-    "proxy_for",
     "mark_walled",
     "note_routed",
-    "walled_groups",
-    "traffic",
-    "rotations",
+    "proxy_for",
+    "proxy_url",
     "report",
     "reset",
+    "rotate",
+    "rotations",
+    "traffic",
+    "walled_groups",
 ]
 
 _log = log.get(__name__)
@@ -87,6 +87,7 @@ def _call(*args: str, timeout: float) -> subprocess.CompletedProcess[str] | None
     try:
         return subprocess.run(
             ["warp-cli", "--accept-tos", *args],
+            check=False,  # the caller reads returncode; a raise here would defeat "never raises"
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -397,6 +398,7 @@ def _restart_daemon() -> bool:
     try:
         proc = subprocess.run(
             ["sudo", "-n", "systemctl", "restart", "warp-svc"],
+            check=False,  # failure is logged and returned as False, never raised
             capture_output=True,
             text=True,
             timeout=_CALL_TIMEOUT,

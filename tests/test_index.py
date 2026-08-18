@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -21,10 +21,10 @@ pytest.importorskip("lancedb")  # [embed] extra — not installed in CI's qualit
 pytest.importorskip("numpy")
 pytest.importorskip("pyarrow")
 
-import lancedb  # noqa: E402
-import numpy as np  # noqa: E402
+import lancedb
+import numpy as np
 
-import headstart.ingest.index as idx  # noqa: E402
+import headstart.ingest.index as idx
 
 _DIM = 4
 
@@ -156,7 +156,7 @@ class _PinnedClock:
     def __init__(self, moment: datetime) -> None:
         self.moment = moment
 
-    def now(self, tz=None) -> datetime:  # noqa: ARG002 — mirrors datetime.now(tz)
+    def now(self, tz=None) -> datetime:
         return self.moment
 
 
@@ -165,12 +165,12 @@ def test_each_run_stamps_with_its_own_time(tmp_path, monkeypatch):
     makes "new in the last 2 hours" mean anything. Pinned rather than slept, so it can't flake on
     the one-second resolution of the stamp."""
     monkeypatch.setattr(
-        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc))
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 9, 0, tzinfo=UTC))
     )
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
 
     monkeypatch.setattr(
-        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc))
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 11, 0, tzinfo=UTC))
     )
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
 
@@ -246,12 +246,12 @@ def test_an_upgraded_row_keeps_its_original_first_seen(tmp_path, monkeypatch):
     filterable (`seen_within`, and the alerts watermark), so on the first run that would re-notify
     subscribers about tens of thousands of jobs they have already seen."""
     monkeypatch.setattr(
-        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc))
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 1, 9, 0, tzinfo=UTC))
     )
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
 
     monkeypatch.setattr(
-        idx, "datetime", _PinnedClock(datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc))
+        idx, "datetime", _PinnedClock(datetime(2026, 1, 2, 9, 0, tzinfo=UTC))
     )
     _sync(
         tmp_path,

@@ -57,7 +57,7 @@ for dom in CANDIDATES:
     for line in body.splitlines():
         try:
             u = json.loads(line)["url"]
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
         m = re.match(r"https?://([^/]+)", u)
         if m and m.group(1).lower().endswith("." + dom):

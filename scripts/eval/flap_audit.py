@@ -51,7 +51,7 @@ _RED_THRESHOLD = 0.10  # overall already-known-adds rate above this is RED
 def _gh(args: list[str]) -> str:
     """Run ``gh`` with one retry — api.github.com is flaky from this machine."""
     for attempt in (1, 2):
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True, cwd=_ROOT)
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, cwd=_ROOT)  # noqa: PLW1510
         if proc.returncode == 0:
             return proc.stdout
         if attempt == 1:

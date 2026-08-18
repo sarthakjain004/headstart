@@ -18,7 +18,7 @@ dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerpr
 # them actually RUN in CI rather than silently importorskip-ing: the Space's filter builder
 # and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All three
 # are small and pure-Python — this does not pull the ML stack into the quality job.
-dev = ["pytest", "ruff==0.15.22", "flask", "xlsxwriter", "openpyxl"]
+dev = ["pytest", "ruff==0.16.2", "flask", "xlsxwriter", "openpyxl"]
 # The scrape fan-out's browser escalation (ADR-0056): darwinbox's Cloudflare wall admits a real
 # Chrome and nothing else, so the shards need pydoll. Imported lazily (browser_http) — only a
 # board that actually hits the wall starts a browser; the quality job never installs this.
@@ -48,3 +48,15 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py312"
+
+[tool.ruff.lint]
+# Ruff 0.16 widened its default rule set from 59 rules to 413, so this repo now enforces the
+# wide set deliberately rather than by inheritance. One rule is switched off, with its reason:
+ignore = [
+    # EXE001 wants a file carrying a shebang to be executable. Nothing here ever is: the repo
+    # has `core.fileMode = false`, git records every file `100644`, and every entry point is
+    # invoked as `python -m headstart.…` (the workflows) or `python scripts/…` — there is not a
+    # single `./script.py` call in the workflows or docs. The shebangs document the interpreter,
+    # and 75 mode bits git will not even record is not a fix.
+    "EXE001",
+]

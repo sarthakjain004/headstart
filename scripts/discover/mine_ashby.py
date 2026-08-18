@@ -141,7 +141,7 @@ def get(url: str, tries: int = 6) -> str | None:
             # 2026-07-27) — see docs/discovery/common-crawl-mining.md.
             if r.status_code == 400 and "invalid" in (r.text or "").lower():
                 return ""
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(min(4 * 2**attempt, 90))
     return None
@@ -248,7 +248,7 @@ def _range(url: str, start: int, end: int) -> bytes | None:
             )
             if r.status_code in (200, 206):
                 return r.content
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         time.sleep(min(3 * 2**attempt, 45))
     return None
@@ -283,7 +283,7 @@ def _cc_blocks(crawl_id: str, prefix: bytes) -> list[tuple[str, int, int]] | Non
     try:
         head = requests.head(idx, timeout=60, headers={"User-Agent": UA})
         size = int(head.headers.get("content-length") or 0)
-    except Exception:
+    except Exception:  # noqa: BLE001
         size = 0
     if not size:
         return None
@@ -377,7 +377,7 @@ def commoncrawl_s3(seen: set[str], done: set[str], crawls: list[dict]) -> None:
                 break
             try:
                 text = gzip.decompress(raw).decode("utf-8", "replace")
-            except Exception:
+            except Exception:  # noqa: BLE001, S112
                 continue
             found |= slugs_from(text)
         if not ok:
@@ -432,7 +432,7 @@ def commoncrawl(seen: set[str], done: set[str]) -> None:
                 continue
             try:
                 npages = int(json.loads(npages_txt or "{}").get("pages", 0))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 npages = int(npages_txt.strip()) if npages_txt.strip().isdigit() else 0
             if not npages:
                 print(f"  [cc] {cid} {host}: 0 pages", flush=True)

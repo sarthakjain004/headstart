@@ -45,7 +45,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http  # noqa: E402 - needs src on sys.path first
+from headstart import http
 
 UA = "HeadStart-discovery/0.1 (careers-board discovery; polite)"
 # Keka renders these at HTTP 200: unknown slug -> "Invalid Tenant", disabled portal ->
@@ -99,7 +99,8 @@ def resolve_pod(label: str, resolver) -> tuple[str, str]:
     try:
         ans = resolver.resolve(f"{label}.keka.com", "CNAME")
         return label, str(ans[0].target).rstrip(".")
-    except Exception as exc:  # NXDOMAIN/NoAnswer/timeout are all "no usable signal"
+    # NXDOMAIN/NoAnswer/timeout are all "no usable signal"
+    except Exception as exc:  # noqa: BLE001
         return label, f"ERR:{type(exc).__name__}"
 
 
@@ -197,7 +198,7 @@ def verify(label: str, pol: _Politeness) -> tuple[str, str, int | None]:
     """
     try:
         r = _get(f"https://{label}.keka.com/careers/api/jobs/default/active", pol)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return label, "unknown", None
     if r.status_code in (404, 410):
         return label, "dead", None
@@ -208,7 +209,7 @@ def verify(label: str, pol: _Politeness) -> tuple[str, str, int | None]:
         return label, "dead", None
     try:
         data = json.loads(body)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return label, "unknown", None
     if not isinstance(data, list):
         return label, "unknown", None

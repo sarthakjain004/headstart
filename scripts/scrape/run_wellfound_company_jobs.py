@@ -34,19 +34,18 @@ import asyncio
 import csv
 import random
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import datadome_slider
 from datadome_slider import audio_ready
 from pydoll.browser import Chrome
-
 from run_wellfound import (
     COLS as BOARD_COLS,
+)
+from run_wellfound import (
     EXP,
-    OUT as BOARD_CSV,
     ROOT,
     HardBlocked,
-    apollo_cache,
     _ats_provider,
     _captcha_frame_html,
     _currency,
@@ -58,7 +57,11 @@ from run_wellfound import (
     _load_page,
     _options,
     _yoe,
+    apollo_cache,
     is_hard_block,
+)
+from run_wellfound import (
+    OUT as BOARD_CSV,
 )
 from run_wellfound_sweep import warp_on
 
@@ -334,7 +337,7 @@ async def main() -> int:
     delay = _flag("--delay", 4.0)
     jitter = _flag("--jitter", 2.0)
 
-    scraped_at = datetime.now(timezone.utc).isoformat()
+    scraped_at = datetime.now(UTC).isoformat()
     slugs = board_slugs()
     if not slugs:
         print(
@@ -379,7 +382,7 @@ async def main() -> int:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         for i, slug in enumerate(todo):
             print(f"\n=== [{i + 1}/{len(todo)}] {slug} ===", flush=True)

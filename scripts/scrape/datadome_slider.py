@@ -27,7 +27,7 @@ from pydoll.protocol.input.types import MouseButton, MouseEventType, PointerType
 
 try:  # audio fallback dep — offline STT; optional so the module loads without it
     from faster_whisper import WhisperModel
-except Exception:
+except Exception:  # noqa: BLE001
     WhisperModel = None
 
 _NUMWORDS = {
@@ -174,7 +174,7 @@ async def _capture(tab, oopif, outdir: Path, tag: str) -> dict | None:
         (outdir / f"{tag}-state.json").write_text(
             json.dumps(state, indent=1), encoding="utf-8"
         )
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     for obj, name in (
         (oopif, f"{tag}-captcha-dom.html"),
@@ -182,11 +182,11 @@ async def _capture(tab, oopif, outdir: Path, tag: str) -> dict | None:
     ):
         try:
             (outdir / name).write_text(await obj.page_source, encoding="utf-8")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     try:
         await tab.take_screenshot(path=str(outdir / f"{tag}.png"))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return state
 
@@ -238,7 +238,7 @@ async def _eval(frame, js):
     """
     try:
         r = await frame.execute_script(js, return_by_value=True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"    [eval] call failed: {type(e).__name__}: {e}", flush=True)
         return None
     details = r.get("result", {}).get("exceptionDetails")
@@ -262,7 +262,7 @@ async def _safe_source(tab) -> str:
     for _ in range(5):
         try:
             return await tab.page_source
-        except Exception:
+        except Exception:  # noqa: BLE001
             await asyncio.sleep(0.5)
     return ""
 
@@ -289,7 +289,7 @@ async def _oopif_offset(tab) -> tuple[float, float]:
             if "captcha-delivery" in (el.get_attribute("src") or ""):
                 b = await el.get_bounds_using_js()
                 return b.get("x", 0) or 0, b.get("y", 0) or 0
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return 0.0, 0.0
 
@@ -378,8 +378,8 @@ async def _mouse(tab, event, x, y, *, force=0.0, button=None, clicks=0):
     await tab._execute_command(
         InputCommands.dispatch_mouse_event(
             type=event,
-            x=int(round(x)),
-            y=int(round(y)),
+            x=round(x),
+            y=round(y),
             button=button,
             click_count=clicks,
             force=force,
@@ -469,7 +469,7 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
             (Path(artifacts_dir) / "captcha-iframe-dom.html").write_text(
                 await oopif.page_source, encoding="utf-8"
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     # audio-first may have left the audio tab active; switch back to the slider. Same reasoning
     # as the audio toggle: a real click, because the handler ignores untrusted ones.
@@ -479,11 +479,14 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
             if not await _click_trusted(tab, oopif, "#captcha__puzzle__button"):
                 await oopif.execute_script(_IMAGE_TAB_JS)
             await asyncio.sleep(1.0)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # One directory per solve, so a failure's evidence can't be overwritten by the next challenge.
     run_dir = (
-        Path(artifacts_dir) / "failures" / datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        Path(artifacts_dir)
+        / "failures"
+        # local wall clock on purpose: this names a directory a human reads back
+        / datetime.now().strftime("%Y-%m-%d_%H%M%S")  # noqa: DTZ005
         if artifacts_dir
         else None
     )
@@ -534,7 +537,7 @@ async def _try_slider(tab, browser, artifacts_dir, attempts: int) -> bool:
                     ),
                     encoding="utf-8",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             print(f"    [capture] evidence -> {run_dir}", flush=True)
     return not challenged(await _safe_source(tab))
@@ -575,11 +578,11 @@ async def solve_slider(
             if await _solve_audio(tab, browser, artifacts_dir):
                 print("    audio challenge cleared", flush=True)
                 return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Print the message, not just the class: "audio path errored: AttributeError" gave
             # no way to tell which attribute, and hid the async-property bug above for two runs.
             print(f"    audio path errored: {type(e).__name__}: {e}", flush=True)
-    if drag_attempts and challenged(await _safe_source(tab)):
+    if drag_attempts and challenged(await _safe_source(tab)):  # noqa: SIM102
         if await _try_slider(tab, browser, artifacts_dir, drag_attempts):
             return True
     if manual_wait_secs and challenged(await _safe_source(tab)):
@@ -624,7 +627,7 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
     if not await _click_trusted(tab, frame, "#captcha__audio__button"):
         try:
             await frame.execute_script(_AUDIO_TAB_JS)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     # Wait for the panel to actually be on screen. Proceeding blind is what produced
     # `ElementNotVisible` on every challenge: the answer boxes exist in the DOM from the start,
@@ -644,7 +647,7 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
             (Path(artifacts_dir) / "captcha-audio-dom.html").write_text(
                 await frame.page_source, encoding="utf-8"
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     src = None
     for sel in ({"tag_name": "audio"}, {"tag_name": "source"}):
@@ -663,16 +666,16 @@ async def _solve_audio(tab, browser, artifacts_dir=None) -> bool:
                 "Referer": "https://geo.captcha-delivery.com/",
             },
         )
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: ASYNC210
             mp3.write_bytes(r.read())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"    audio download failed: {type(e).__name__}", flush=True)
         return False
     try:  # run blocking Whisper off the loop, bounded so a slow/hung model load can't freeze us
         answer = await asyncio.wait_for(
             asyncio.to_thread(_transcribe, str(mp3)), timeout=90
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"    whisper failed/timed out: {type(e).__name__}", flush=True)
         return False
     print(f"    audio transcript -> {answer!r}", flush=True)

@@ -12,8 +12,9 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import ClassVar
 
-import headstart.ingest.scrape_run as scrape_run
+from headstart.ingest import scrape_run
 
 
 class _Result:
@@ -268,8 +269,8 @@ def test_a_clean_finish_returns_zero(tmp_path, monkeypatch):
     """The sentinel must not leak into the ordinary path."""
 
     class _R:
-        errors: dict = {}
-        truncated: dict = {}
+        errors: ClassVar[dict] = {}
+        truncated: ClassVar[dict] = {}
         unique = 0
         boards = 1
 
