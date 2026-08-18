@@ -6,6 +6,7 @@ and sleep is neutralized, so each test asserts exactly what fetch retries, what 
 and what it hands back for the caller to classify.
 """
 
+import asyncio
 import logging
 
 import pytest
@@ -352,3 +353,131 @@ def test_a_wall_on_the_direct_route_never_rotates(monkeypatch):
     _stub(monkeypatch, [429, 429, 429])
     http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
     assert rotations == []
+
+
+# --- spare egress on the async path (ADR-0063, second gap) ----------------------------------------
+# `fetch_async` is where the detail passes live — Workday's 100-stream description fetch and
+# Eightfold's detail/JSON-LD fan-outs — which is exactly the traffic that spends an Origin budget.
+# Run 32146017194 measured 37,688 Workday requests carried by the spare egress on the *sync* path
+# while every async detail request kept hammering the walled IP: the async path never grew the
+# egress seam. These mirror the sync tests above, plus the one production shape the sync tests
+# cannot express — a wall marked by the listing (sync) routing the detail pass (async).
+
+
+def _astub(monkeypatch, outcomes):
+    """Async twin of `_stub`: a fake AsyncSession yielding the next outcome per call."""
+    calls = []
+
+    class _AsyncSession:
+        async def request(self, method, url, **kwargs):
+            outcome = outcomes[len(calls)]
+            calls.append((method, url, kwargs))
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return _Resp(outcome) if isinstance(outcome, int) else _Resp(*outcome)
+
+    async def _sleep(seconds):
+        pass
+
+    monkeypatch.setattr(http.asyncio, "sleep", _sleep)
+    return _AsyncSession(), calls
+
+
+def test_async_without_egress_group_a_wall_changes_nothing(monkeypatch):
+    _warp(monkeypatch)
+    session, calls = _astub(monkeypatch, [403, 200])
+    assert asyncio.run(http.fetch_async(session, "GET", "u")).status_code == 200
+    assert _proxied(calls) == [False, False]
+    assert http.spare_egress.walled_groups() == frozenset()
+
+
+def test_async_wall_marks_the_group_and_routes_the_retry(monkeypatch):
+    _warp(monkeypatch)
+    session, calls = _astub(monkeypatch, [429, 200])
+    response = asyncio.run(
+        http.fetch_async(
+            session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    assert response.status_code == 200
+    assert http.spare_egress.walled_groups() == frozenset({"workday"})
+    assert _proxied(calls) == [False, True]
+    assert calls[1][2]["proxies"] == {
+        "http": "socks5://127.0.0.1:40000",
+        "https": "socks5://127.0.0.1:40000",
+    }
+
+
+def test_a_wall_marked_by_the_sync_path_routes_the_async_path(monkeypatch):
+    """The production shape, and the reason the seam must be one registry: the *listing* (sync)
+    is what sees the 429 first, and the *detail pass* (async) is the hundred-stream traffic that
+    most needs to stop hitting the spent IP."""
+    _warp(monkeypatch)
+    _stub(monkeypatch, [429, 429, 429])
+    http.fetch("GET", "listing", egress_group="workday", egress_on=frozenset({429}))
+
+    session, calls = _astub(monkeypatch, [200])
+    asyncio.run(
+        http.fetch_async(
+            session, "GET", "detail", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    assert _proxied(calls) == [True], "the async request must start on the spare egress"
+
+
+def test_async_recovery_is_counted(monkeypatch):
+    """`spare egress carried N request(s), M recovered` is the only evidence ADR-0063 works; a
+    path that routes but does not count reads as a proxy that carried nothing."""
+    _warp(monkeypatch)
+    session, _calls = _astub(monkeypatch, [429, 200])
+    asyncio.run(
+        http.fetch_async(
+            session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    assert http.spare_egress.traffic()["workday"]["recovered"] == 1
+
+
+def test_async_wall_through_the_proxy_rotates(monkeypatch):
+    _warp(monkeypatch)
+    rotations = []
+    monkeypatch.setattr(
+        http.spare_egress, "rotate", lambda: rotations.append(True) or True
+    )
+    session, _calls = _astub(monkeypatch, [429, 429, 200])
+    asyncio.run(
+        http.fetch_async(
+            session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    # attempt 1 walls the group (direct), attempt 2 rides the proxy and is walled again -> rotate
+    assert rotations == [True]
+
+
+def test_a_wall_marked_by_the_async_path_routes_the_sync_path(monkeypatch):
+    """The registry works in both directions — the docstring says "and vice versa", so a test
+    says it too. An eightfold sitemap fallback (sync) must ride a wall its detail pass saw."""
+    _warp(monkeypatch)
+    session, _acalls = _astub(monkeypatch, [429, 429, 429])
+    asyncio.run(
+        http.fetch_async(
+            session, "GET", "detail", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    calls = _stub(monkeypatch, [200])
+    http.fetch("GET", "listing", egress_group="workday", egress_on=frozenset({429}))
+    assert _proxied(calls) == [True]
+
+
+def test_async_wall_on_the_final_attempt_still_marks(monkeypatch):
+    """Async twin of the sync guarantee: the last attempt's wall is exactly as informative as
+    the first's, and not recording it makes every later Board repeat the same three attempts."""
+    _warp(monkeypatch)
+    session, _calls = _astub(monkeypatch, [429, 429, 429])
+    response = asyncio.run(
+        http.fetch_async(
+            session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
+        )
+    )
+    assert response.status_code == 429
+    assert http.spare_egress.walled_groups() == frozenset({"workday"})
