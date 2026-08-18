@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Refresh the embedding store's **metadata** so a fix reaches rows already embedded (ADR-0061).
+
+    python -m headstart.ingest.update_meta        # the pipeline step, in the merge job
+
+Every column of ``data/embeddings/jobs/meta.jsonl`` used to be written exactly once, at embed time,
+and ``embed_plan`` skips ids it has already embedded — so nothing ever re-read a Job after its first
+embedding. A corrected extractor reached new Jobs only, and a Board that edited a posting's salary
+served the old one forever. This is the ADR-0048 trap in general form; ADR-0050 solved it for
+description *text*, and this module solves it for everything derived from or observed alongside it.
+
+Two passes, over the same single rewrite:
+
+**Facts** — ``salary``, ``location``, ``remote``, … are *observed*, so they are re-observed: for any
+Job in this run's corpus that the store already holds, the scrape's values overwrite the stored
+ones. Cheap, and it runs every time.
+
+**Derivations** — ``min_years`` / ``max_years`` / ``experience_source`` are ``f(code, facts)``, so a
+change in the code has to reach every row. :data:`doc_prep.DERIVATIONS_VERSION` is compared against
+the watermark in ``data/state/derivations.json``; when the code is newer, every row whose
+description the ADR-0050 store *settles* is re-derived through the full cascade. Rows the store has
+never settled are left alone — recomputing without the text a value came from could only downgrade
+it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
+
+**What is deliberately never rewritten:** ``vector`` (a fact about the embedded doc — only the
+ADR-0050 upgrade path replaces it), ``has_description`` (a fact about *that vector*: the upgrade
+planner keys on it, so refreshing it from the store would hide every title-only vector from the
+path meant to repair it), and ``id`` / ``ats``.
+
+The rewrite preserves **row order and count**, because ``meta.jsonl`` is row-aligned with
+``embeddings.f32`` and ``index._load_store`` hard-errors on drift. It is written to a temp file and
+renamed, so a kill mid-write leaves the previous store intact.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from headstart import log
+from headstart.experience import extract
+from headstart.ingest import REPO_ROOT
+from headstart.ingest.doc_prep import DERIVATIONS_VERSION
+from headstart.ingest.update_descriptions import read_store
+
+_log = log.get(__name__, __spec__)
+
+_STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
+_JOBS = REPO_ROOT / "data" / "jobs" / "tech"
+_DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
+_WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
+
+#: Columns re-observed from the scrape every run. `title` is here for display: the vector keeps
+#: encoding the title it was built from until a doc-drift upgrade exists (ADR-0021), and a current
+#: title over a slightly stale vector beats a stale title. `id`/`ats` are identity, never refreshed.
+FACT_FIELDS = (
+    "company",
+    "title",
+    "location",
+    "remote",
+    "employment_type",
+    "experience",
+    "salary",
+    "department",
+    "url",
+    "posted_at",
+)
+
+#: Recomputed from facts whenever the extractor's version moves.
+DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
+
+
+def read_watermark(path: Path) -> int:
+    """The derivations version the stored metadata was last written at (0 when never stamped)."""
+    if not path.exists():
+        return 0
+    try:
+        return int(json.loads(path.read_text(encoding="utf-8"))["version"])
+    except (ValueError, KeyError, TypeError):
+        # A truncated or hand-edited watermark must re-derive, not silently skip: claiming a
+        # sweep already ran is the one failure that leaves wrong values served indefinitely.
+        _log.warning(f"{path} is unreadable — treating the store as un-swept")
+        return 0
+
+
+def write_watermark(path: Path, version: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": version}) + "\n", encoding="utf-8")
+
+
+def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
+    """``{Job id: {fact field: value}}`` from this run's tech corpus."""
+    facts: dict[str, dict] = {}
+    for path in sorted(jobs_dir.glob("*.jsonl")):
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                job = json.loads(line)
+                facts[job["id"]] = {f: job.get(f) for f in FACT_FIELDS}
+    return facts
+
+
+def held_descriptions(store_dir: Path) -> dict[str, str | None]:
+    """Every settled description across the ADR-0050 store, keyed by Job id."""
+    held: dict[str, str | None] = {}
+    if store_dir.is_dir():
+        for ats_dir in sorted(p for p in store_dir.iterdir() if p.is_dir()):
+            held.update(read_store(ats_dir))
+    return held
+
+
+def refresh_row(
+    meta: dict,
+    facts: dict | None,
+    descriptions: dict[str, str | None],
+    sweep: bool,
+) -> tuple[dict, bool, bool]:
+    """One row's refresh. Returns ``(row, facts_changed, derivations_changed)``.
+
+    Pure, so the whole policy is unit-testable without a store on disk.
+    """
+    row = dict(meta)
+    facts_changed = False
+    if facts:
+        for field in FACT_FIELDS:
+            if row.get(field) != facts[field]:
+                row[field] = facts[field]
+                facts_changed = True
+
+    # Re-derive when the code moved, or when this row's own inputs just did. `experience` (the raw
+    # field) and `title` are two of the three cascade inputs, so a change in either can change the
+    # answer even at an unchanged version.
+    inputs_moved = facts_changed and (
+        row.get("experience") != meta.get("experience")
+        or row.get("title") != meta.get("title")
+    )
+    if not (sweep or inputs_moved):
+        return row, facts_changed, False
+
+    settled = row["id"] in descriptions
+    if not settled and not inputs_moved:
+        # No held text: re-deriving would run the cascade against a description this row was never
+        # given, which can only lose information. Leave the embed-time values (#162's 127,501).
+        return row, facts_changed, False
+
+    span = extract(row.get("experience"), descriptions.get(row["id"]), row.get("title"))
+    derived = {
+        "min_years": span.min_years if span else None,
+        "max_years": span.max_years if span else None,
+        "experience_source": span.source if span else None,
+    }
+    changed = any(row.get(f) != derived[f] for f in DERIVED_FIELDS)
+    row.update(derived)
+    return row, facts_changed, changed
+
+
+def refresh(
+    store: Path, jobs_dir: Path, descriptions_dir: Path, watermark: Path
+) -> int:
+    meta_path = store / "meta.jsonl"
+    if not meta_path.exists():
+        _log.info("no store yet — nothing to refresh")
+        return 0
+
+    stored_version = read_watermark(watermark)
+    sweep = DERIVATIONS_VERSION > stored_version
+    facts = corpus_facts(jobs_dir)
+    descriptions = held_descriptions(descriptions_dir) if sweep else {}
+    _log.info(
+        f"derivations v{stored_version} stored, v{DERIVATIONS_VERSION} in code — "
+        f"{'SWEEPING' if sweep else 'no sweep'}; corpus facts for {len(facts)} Jobs"
+        + (f"; {len(descriptions)} settled descriptions" if sweep else "")
+    )
+
+    tmp = meta_path.with_suffix(".jsonl.refresh")
+    rows = fact_hits = derived_hits = 0
+    with (
+        meta_path.open(encoding="utf-8") as src,
+        tmp.open("w", encoding="utf-8") as out,
+    ):
+        for line in src:
+            line = line.strip()
+            if not line:
+                continue
+            meta = json.loads(line)
+            row, fact_changed, derived_changed = refresh_row(
+                meta, facts.get(meta["id"]), descriptions, sweep
+            )
+            rows += 1
+            fact_hits += fact_changed
+            derived_hits += derived_changed
+            out.write(json.dumps(row, ensure_ascii=False) + "\n")
+            if rows % 50_000 == 0:
+                _log.info(f"  {rows} rows refreshed")
+
+    # Row count is the alignment invariant with embeddings.f32; a mismatch means a bug in this
+    # loop, and swapping the file in would corrupt the store rather than fail loudly.
+    written = sum(1 for _ in tmp.open(encoding="utf-8"))
+    if written != rows:
+        tmp.unlink(missing_ok=True)
+        log.fail(
+            _log, f"refresh wrote {written} rows for {rows} read — refusing to swap"
+        )
+    tmp.replace(meta_path)
+    _log.info(
+        f"refreshed {rows} rows: {fact_hits} with changed facts, "
+        f"{derived_hits} with changed derivations"
+    )
+    if sweep and not descriptions:
+        # The merge job downloads the description store on `continue-on-error`, so an empty one
+        # here means the artifact was lost, not that nothing is held. Stamping now would record a
+        # sweep that never read a single description and leave every row unswept for good.
+        _log.warning(
+            "sweep found no held descriptions — the store is missing, not empty; leaving the "
+            f"watermark at v{stored_version} so the next run retries"
+        )
+    elif sweep:
+        write_watermark(watermark, DERIVATIONS_VERSION)
+        _log.info(f"watermark -> v{DERIVATIONS_VERSION}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--store", type=Path, default=_STORE)
+    parser.add_argument("--source", type=Path, default=_JOBS)
+    parser.add_argument("--descriptions", type=Path, default=_DESCRIPTIONS)
+    parser.add_argument("--watermark", type=Path, default=_WATERMARK)
+    args = parser.parse_args()
+    return refresh(args.store, args.source, args.descriptions, args.watermark)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

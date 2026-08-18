@@ -278,6 +278,59 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     return taken
 
 
+def _refresh_metadata(
+    table: Any,
+    metas: list[dict],
+    vectors: Any,
+    row_of: dict[str, int],
+    just_added: set[str],
+) -> int:
+    """Bring the table's metadata back in line with the store's, for rows already indexed (ADR-0061).
+
+    ``update_meta`` rewrites the store; without this the corrected values would sit there unread,
+    because ``plan_sync`` only ever *adds* ids the table lacks. Rows are compared on the served
+    metadata columns alone and rewritten only where they differ, so a run in which nothing changed
+    writes nothing.
+
+    Deliberately unconditional rather than gated on a version watermark: the invariant is "the
+    table's metadata equals the store's", so this also self-heals drift from any other cause. Rows
+    added moments ago in this same sync are skipped — they were built from these very dicts.
+
+    ``first_seen`` is carried across (re-stamping would resurface every refreshed Job as a new
+    listing to the alerts watermark, ADR-0031), and the vector is taken from the store, which is
+    where the row's own vector came from.
+    """
+    columns = [
+        f for f in table.schema.names if f not in ("vector", _FIRST_SEEN_FIELD.name)
+    ]
+    indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name])
+
+    stale: list[dict] = []
+    for row in indexed:
+        job_id = row["id"]
+        index = row_of.get(job_id)
+        if index is None or job_id in just_added:
+            continue
+        stored = metas[index]
+        if all(row.get(field) == stored.get(field) for field in columns):
+            continue
+        fresh = {field: stored.get(field) for field in columns}
+        fresh[_FIRST_SEEN_FIELD.name] = row[_FIRST_SEEN_FIELD.name]
+        fresh["vector"] = vectors[index].tolist()
+        stale.append(fresh)
+
+    if not stale:
+        _log.info("metadata refresh: table already matches the store")
+        return 0
+    # Delete-then-add, the same shape `_take_upgrades` uses: LanceDB has no partial-row update, and
+    # a merge-insert would rewrite the vector column for every touched row anyway.
+    apply_sync(table, stale, [row["id"] for row in stale])
+    _log.info(
+        f"metadata refresh: rewrote {len(stale)} rows to match the store (ADR-0061)"
+    )
+    return len(stale)
+
+
 def sync(args: argparse.Namespace) -> int:
     metas, vectors = _load_store()
     row_of = {meta["id"]: i for i, meta in enumerate(metas)}
@@ -398,6 +451,8 @@ def sync(args: argparse.Namespace) -> int:
         apply_sync(table, rows, ())
         _log.info(f"added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}")
 
+    refreshed = _refresh_metadata(table, metas, vectors, row_of, plan.add)
+
     final = table.count_rows()
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
     observability.summary(
@@ -406,6 +461,11 @@ def sync(args: argparse.Namespace) -> int:
             f"- added **{len(plan.add):,}**, evicted **{len(plan.delete):,}**",
             f"- served table now holds **{final:,}** rows",
         ]
+        + (
+            [f"- refreshed metadata on **{refreshed:,}** rows (ADR-0061)"]
+            if refreshed
+            else []
+        )
         + (
             [
                 f"- collapse guard withheld **{withheld:,}** evictions across "

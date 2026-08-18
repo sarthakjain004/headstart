@@ -92,6 +92,13 @@ def build_doc(job: dict) -> str:
     return f"{DOC_PREFIX}{title}\n\n{body}"
 
 
+# How many times the *derived* columns' definition has changed (ADR-0061). Bump this in the same
+# change that alters what `extract` returns, and `update_meta` re-derives every already-stored row
+# whose description we hold — otherwise a fix reaches new Jobs only, because `embed_plan` skips ids
+# it has already embedded. Only the derivations below depend on it; facts refresh unconditionally.
+DERIVATIONS_VERSION = 1
+
+
 def to_meta(job: dict) -> dict:
     """Canonical typed metadata (ADR-0007) + the inline experience numbers (ADR-0019).
 
@@ -99,6 +106,9 @@ def to_meta(job: dict) -> dict:
     then seniority floor — ADR-0018) with the ``experience_source`` tier tag carried alongside;
     all three are None when nothing matched. ``employment_type`` / ``salary`` stay raw strings —
     display-only until normalized (ADR-0019).
+
+    The derived three are re-computable from the facts beside them, which is what lets
+    ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
     """
     meta = {field: job.get(field) for field in _META_FIELDS}
     # Whether the Doc we are about to embed actually carried a description (ADR-0050). Recorded

@@ -466,6 +466,15 @@ jobs:
         # take out the vector it had just written. `index sync` then replaces the table row and
         # carries its `first_seen` across.
         run: python -m headstart.ingest.embed_merge
+      - name: Refresh stored metadata (ADR-0061)
+        # Re-observes the scrape facts on Jobs the store already holds, and re-derives the
+        # experience numbers when `doc_prep.DERIVATIONS_VERSION` moves. Must run BEFORE sync —
+        # sync is what carries the corrected values into the served table. Never fatal: a skipped
+        # refresh costs one run of staleness, which is the status quo it is fixing, whereas
+        # failing here would drop the run's scrape and evictions too.
+        if: needs.scrape-plan.outputs.run == 'true'
+        continue-on-error: true
+        run: python -m headstart.ingest.update_meta
       - name: Sync the jobs table
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index sync
