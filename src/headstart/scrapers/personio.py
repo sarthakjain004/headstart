@@ -12,7 +12,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart.models import Job, html_to_text, is_remote
+from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 
@@ -46,7 +46,7 @@ class PersonioScraper(BaseScraper):
         # `...?language=de` lands inside the query string, so Personio serves the ordinary HTML
         # job page with a 200 and the XML parse dies on it — 678 ParseErrors over 19 runs, and a
         # liveness prober sharing this split marked all 312 such boards live with 0 positions.
-        host = (url or "").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
+        host = host_of(url)
         return host if "personio" in host else f"{tenant}.jobs.personio.de"
 
     @property

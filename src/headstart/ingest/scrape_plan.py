@@ -214,7 +214,7 @@ def main() -> int:
     scores = load_scores(Path(args.priority))
     companies = pick_boards(companies, scores, args.max_boards)
     n = len(companies)
-    priority = sum(1 for c in companies if scores.get(f"{c.ats}:{c.slug}", 0.0) > 0.0)
+    priority = sum(1 for c in companies if scores.get(board_identity(c), 0.0) > 0.0)
     _log.info(f"slice: {n} boards ({priority} priority + {n - priority} exploration)")
 
     out_dir = Path(args.out_dir)
@@ -231,7 +231,11 @@ def main() -> int:
 
     # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
     # heuristic only until the first run has populated it.
-    keys = [f"{c.ats}:{c.slug}" for c in companies]
+    # Two keyspaces, deliberately: the cost ledger is written by `harvest` under `{ats}:{slug}`
+    # and read back the same way, while the priority ledger is written from `corpus.board_of`
+    # and so is keyed by `board_key()` (ADR-0049). Conflating them is what left every Workday
+    # and Personio board permanently unscored.
+    keys = [f"{c.ats}:{c.slug}" for c in companies]  # cost ledger
     cost_rows = load_cost_ledger(Path(args.cost))
     measured = bool(cost_rows)  # branch once; every later format choice reads this
     if measured:
@@ -245,7 +249,8 @@ def main() -> int:
         )
     else:
         costs = [
-            _coldstart_cost(c.ats, scores.get(k, 0.0)) for c, k in zip(companies, keys)
+            _coldstart_cost(c.ats, scores.get(board_identity(c), 0.0))
+            for c in companies
         ]
         sizing_total, sizing_target = float(n), float(args.target_boards)
         _log.info(
@@ -267,7 +272,7 @@ def main() -> int:
     for k in range(m):
         # priority-desc within a shard: a time-boxed shard scrapes its highest-value boards first
         shard_boards[k].sort(
-            key=lambda i: scores.get(f"{companies[i].ats}:{companies[i].slug}", 0.0),
+            key=lambda i: scores.get(board_identity(companies[i]), 0.0),
             reverse=True,
         )
         path = out_dir / f"shard-{k}.jsonl"

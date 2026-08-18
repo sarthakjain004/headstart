@@ -50,7 +50,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - run: pip install -e ".[embed]" huggingface_hub
       - name: Download the current lancedb
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

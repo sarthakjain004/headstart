@@ -115,7 +115,7 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.gate.outputs.run == 'true'
-        run: pip install -e . "huggingface_hub[cli]"
+        run: pip install -e . huggingface_hub
       - name: Download the priority ledger (light; empty on first run)
         if: steps.gate.outputs.run == 'true'
         env:
@@ -220,14 +220,23 @@ jobs:
         # other ATS: nothing opens a window unless a darwinbox board hits the wall.
         run: |
           command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
+          # `|| echo` alone swallowed EVERY non-zero exit, so an OOM, a segfault or a real
+          # crash printed the same benign "time budget reached" and left the step green —
+          # indistinguishable from the designed outcome. 124 is the only code `timeout` uses
+          # for a kill; anything else is a genuine failure and must surface. The fragment is
+          # uploaded by an `always()` step either way, so failing here loses no banked work,
+          # and `fail-fast: false` keeps the other shards running.
           timeout 60m xvfb-run -a python -m headstart.ingest.scrape_run \
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
-            || echo "scrape time budget reached — banking partial fragment"
+            || { rc=$?; [ "$rc" -eq 124 ] \
+                 && echo "scrape time budget reached — banking partial fragment" \
+                 || { echo "::error::scrape shard exited $rc — a crash, not the time budget"; exit "$rc"; }; }
         timeout-minutes: 66
       - name: Upload the shard fragment
-        # always(): the `|| echo` above already absorbs the inner timeout, so this is the belt to
-        # that braces — if the *step* timeout ever fires instead, the Boards that did finish are
+        # always(): the guard above absorbs the inner time budget (exit 124) and fails the step on
+        # anything else, so this is the belt to that braces — on either exit, and if the *step*
+        # timeout ever fires instead, the Boards that did finish are
         # on disk and must still reach the join rather than being thrown away.
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -256,7 +265,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[embed]" "huggingface_hub[cli]"
+      - run: pip install -e ".[embed]" huggingface_hub
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -382,10 +391,13 @@ jobs:
         # EmbeddingStore flushes vectors then metadata per batch, embed_merge truncates any
         # half-written tail, and the dropped Docs simply reappear in the next run's plan.
         run: |
+          # Same reasoning as the scrape budget: only 124 is the budget: anything else crashed.
           timeout 180m python -m headstart.ingest.embed_run \
             --assignment "data/embeddings/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/embeddings/fragments/shard-${{ matrix.shard }}" \
-            || echo "embed time budget reached — banking partial fragment"
+            || { rc=$?; [ "$rc" -eq 124 ] \
+                 && echo "embed time budget reached — banking partial fragment" \
+                 || { echo "::error::embed shard exited $rc — a crash, not the time budget"; exit "$rc"; }; }
         timeout-minutes: 188
       - name: Upload the shard fragment
         # always(): same reasoning as the scrape upload — vectors already flushed to disk must
@@ -417,7 +429,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - if: needs.scrape-plan.outputs.run == 'true'
-        run: pip install -e ".[embed]" "huggingface_hub[cli]"
+        run: pip install -e ".[embed]" huggingface_hub
       - name: Download the prior store + LanceDB (empty on first run)
         if: needs.scrape-plan.outputs.run == 'true'
         env:

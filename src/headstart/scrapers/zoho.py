@@ -16,7 +16,7 @@ import json
 import re
 from typing import Any
 
-from headstart.models import Job, html_to_text
+from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import BaseScraper
 
 _JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
@@ -44,9 +44,12 @@ class ZohoScraper(BaseScraper):
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
-        return url.split("://", 1)[-1].rstrip(
-            "/"
-        )  # the careers host, e.g. acme.zohorecruit.in
+        # Host only, e.g. acme.zohorecruit.in — the same normalisation personio needs, for the
+        # same reason: `url()` appends `/jobs/Careers`, so a stored job deep link would put that
+        # suffix inside the path or query and fetch something that is not the board. Zoho's
+        # ledger carries 44 pathy / 19 query rows; none is live today, so this is a latent
+        # version of the bug that cost personio 678 ParseErrors a run, not an active one.
+        return host_of(url)
 
     def url(self) -> str:
         return f"https://{self.slug}/jobs/Careers"

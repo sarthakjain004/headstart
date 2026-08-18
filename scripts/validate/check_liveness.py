@@ -27,6 +27,13 @@ body-unparseable, ...), reported per ATS at the end of each pass — see the fai
 block below. Without it UNKNOWN is a black hole, and the responses differ completely: a 429 means
 back off, a parse failure means the probe itself is wrong, a timeout means retry more patiently.
 
+A confirmed bot-wall challenge (see block-triage in .claude/skills/ats-gap-search/resilience.md)
+gets one more attempt through `cloudscraper` — the legacy-JS-challenge solver — before the host's
+gate trips its cooldown; curl_cffi's Chrome TLS impersonation clears most walls alone, so this only
+fires on the ones it doesn't. Optional (`pip install cloudscraper`), kept out of pyproject's base
+dependencies so CI's quality job (base deps only) stays green — the checker degrades to the
+original curl_cffi-only behaviour when it's absent.
+
 Run:   python scripts/validate/check_liveness.py                       # all ATSes, respect TTLs
        python scripts/validate/check_liveness.py zoho workday          # only these ATSes
        python scripts/validate/check_liveness.py --force               # re-probe everything
@@ -50,9 +57,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http, liveness  # noqa: E402 - needs src on sys.path first
+from headstart.models import host_of  # noqa: E402 - one host rule, shared with the scrapers
 from headstart.scrapers.workday import (  # noqa: E402 - the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
+
+try:  # bot-wall fallback (see _cloudscraper_fetch below) — optional, not a base dependency
+    import cloudscraper
+except ImportError:
+    cloudscraper = None
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
@@ -265,6 +278,7 @@ _CHALLENGE_STATUSES = (403, 429, 503)
 _ctx = threading.local()  # the ATS the calling worker is probing
 _reasons = Counter()  # (ats, reason) -> count
 _reasons_lock = threading.Lock()
+_cs_cleared = Counter()  # ats -> count of challenges cloudscraper cleared this pass
 
 # curl error codes worth telling apart (libcurl's own numbering).
 _CURL = {
@@ -282,6 +296,13 @@ def _note(reason):
     """Record why a probe didn't settle, against the ATS the worker is on."""
     with _reasons_lock:
         _reasons[(getattr(_ctx, "ats", "?"), reason)] += 1
+
+
+def _note_cs_cleared():
+    """Record that cloudscraper cleared a wall curl_cffi couldn't — a save, not a failure, so it
+    is tracked separately from `_note` and never counted against the failed-requests report."""
+    with _reasons_lock:
+        _cs_cleared[getattr(_ctx, "ats", "?")] += 1
 
 
 def _net_reason(exc):
@@ -318,6 +339,18 @@ def _report_reasons(unknown_boards):
         print(f"    {ats:<16} {total:>6}  {detail}", flush=True)
 
 
+def _report_cs_cleared():
+    """Print how many bot-wall challenges cloudscraper cleared this pass, worst ATS first —
+    silent when it never fired (not installed, or curl_cffi never hit a wall)."""
+    with _reasons_lock:
+        snapshot = dict(_cs_cleared)
+        _cs_cleared.clear()
+    if not snapshot:
+        return
+    detail = ", ".join(f"{ats}={n}" for ats, n in Counter(snapshot).most_common())
+    print(f"  cloudscraper cleared a wall: {detail}", flush=True)
+
+
 def _retry_after_s(value):
     """Retry-After header -> seconds (int form or HTTP-date form), None if absent/garbled."""
     if not value:
@@ -334,30 +367,89 @@ def _retry_after_s(value):
         return None
 
 
+def _through_gate(gate, fn):
+    """Run `fn()` under `gate`'s discipline (in-flight cap + spacing), or ungated if `gate` is
+    None. Returns None without calling `fn` when the gate's breaker is open — the same
+    short-circuit `_fetch` already applies to its primary request, shared here with the
+    cloudscraper fallback so it can never burst a walled host outside the gate's pacing.
+    """
+    if gate is None:
+        return fn()
+    if gate.blocked():
+        return None
+    with gate.sem:
+        gate.wait_turn()
+        return fn()
+
+
+def _cs_session():
+    """This thread's cloudscraper session — created once and reused, mirroring http.session()'s
+    per-thread curl_cffi pool (a session isn't safe to share across threads)."""
+    s = getattr(_ctx, "cs_session", None)
+    if s is None:
+        s = cloudscraper.create_scraper()
+        _ctx.cs_session = s
+    return s
+
+
+def _cloudscraper_fetch(method, url, **kw):
+    """One request through cloudscraper's legacy-JS-challenge solver — tried only after curl_cffi's
+    Chrome impersonation has already hit a confirmed bot wall (resilience.md: "curl_cffi, then
+    cloudscraper"). Returns the response, or None on any failure, so the caller falls back to the
+    original walled response and its normal breaker handling.
+
+    Strips our own User-Agent (it just announces "HeadStart-liveness" to the wall) so
+    cloudscraper's browser-consistent UA/TLS pairing — the thing that actually lets it solve the
+    challenge — isn't overridden by a request-level header.
+    """
+    headers = {
+        k: v
+        for k, v in (kw.pop("headers", None) or {}).items()
+        if k.lower() != "user-agent"
+    }
+    try:
+        return _cs_session().request(
+            method, url, timeout=TIMEOUT, verify=False, headers=headers or None, **kw
+        )
+    except Exception as e:
+        _note(f"cloudscraper-{type(e).__name__}")
+        return None
+
+
 def _fetch(method, url, **kw):
     """One request, paced by its host's gate. Returns the response, or None when the host's
     circuit breaker is open (callers treat None as a transient failure -> UNKNOWN).
 
     An ungated host still runs at full concurrency — but its 429, if one comes, now reaches the
     gate logic and creates a gate, so the limit is discovered rather than hand-maintained.
+
+    A confirmed bot-wall challenge gets one more attempt through cloudscraper (still under the
+    same gate) before the breaker trips: if it clears the wall, that response is returned and the
+    gate is left alone — there is no wall left to cool down from. If cloudscraper can't clear it
+    either (not installed, or itself walled), this falls through to the original trip-the-breaker
+    behaviour, so the checker degrades gracefully whether cloudscraper is present or effective.
     """
     netloc = urllib.parse.urlsplit(url).netloc
     gate = _gate_for(netloc)
-    if gate is None:
-        r = http.fetch(
+    r = _through_gate(
+        gate,
+        lambda: http.fetch(
             method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
-        )
-    else:
-        if gate.blocked():
-            return None
-        with gate.sem:
-            gate.wait_turn()
-            r = http.fetch(
-                method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
-            )
+        ),
+    )
+    if r is None:
+        return None
+    challenged = r.status_code in _CHALLENGE_STATUSES and _is_challenge(r)
+    if challenged and cloudscraper is not None:
+        cs = _through_gate(gate, lambda: _cloudscraper_fetch(method, url, **kw))
+        if cs is not None and not (
+            cs.status_code in _CHALLENGE_STATUSES and _is_challenge(cs)
+        ):
+            _note_cs_cleared()
+            return cs
     if r.status_code == 429:
         _on_429(gate or _ensure_gate(netloc, "429"), r)
-    elif r.status_code in _CHALLENGE_STATUSES and _is_challenge(r):
+    elif challenged:
         _note(f"challenge-{r.status_code}")
         (gate or _ensure_gate(netloc, str(r.status_code))).trip(
             _CHALLENGE_COOLDOWN_S, f"{r.status_code}, bot-wall challenge"
@@ -589,7 +681,11 @@ def _zoho_count(text):
 
 
 def p_zoho(t, u):
-    status, body = _get(f"{u.rstrip('/')}/jobs/Careers")
+    # Host only, matching ZohoScraper.slug_from — same latent shape as the personio bug above.
+    # Zoho's ledger carries 44 pathy / 19 query rows; none is live today, so this is not yet
+    # costing coverage, but the identical `/jobs/Careers` suffix would land inside a query.
+    host = host_of(u)
+    status, body = _get(f"https://{host}/jobs/Careers")
     if status == "dns" or status in (404, 410):
         return DEAD, None
     if status != 200:
@@ -997,7 +1093,13 @@ def p_trakstar(t, u):
 
 
 def p_personio(t, u):
-    host = (u or "").split("://", 1)[-1].rstrip("/") or f"{t}.jobs.personio.de"
+    # Host only, matching PersonioScraper.slug_from. 634 rows in this ledger carry a job deep
+    # link with tracking params in `url` (cc_miner stored the raw capture), and `rstrip("/")`
+    # left the path and query in place: the probe then fetched `.../job/186062?language=de/xml`,
+    # where the `/xml` lands INSIDE the query string, so Personio served the ordinary HTML job
+    # page with a 200 and this counted zero `<position>` entries. Every one of the 312 such rows
+    # is recorded live with jobs=0 — probed as alive while the scraper could never read them.
+    host = host_of(u) or f"{t}.jobs.personio.de"
     status, body = _get(f"https://{host}/xml")
     if status == "dns" or status in (404, 410):
         return DEAD, None
@@ -1207,6 +1309,7 @@ def main():
             flush=True,
         )
         _report_reasons(len(unknowns))
+        _report_cs_cleared()
         return unknowns
 
     for n, (timeout, cap) in enumerate(PASSES, 1):

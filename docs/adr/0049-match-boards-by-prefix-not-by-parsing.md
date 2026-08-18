@@ -110,6 +110,13 @@ are **not** audited here and at least two compare a derived key against a real o
 mis-*score* a colon-bearing Board rather than evicting anything — it sinks to the tail of a
 priority order — so neither is urgent, and neither is fixed here.
 
+> **Update (2026-08-18, ADR-0059):** the `pick_boards` half turned out to be worse than
+> "mis-scores a colon-bearing Board". `{ats}:{slug}` is not the real key *at all* for the two
+> ATSes that override `board_key()`, so no Workday or Personio row ever matched — 20.1% of the
+> scrape list, scored 0.0 whatever it had earned. It now keys on `config.board_identity`. What
+> remains of the caveat here is only the colon-bearing native id, which writes a phantom ledger
+> Board no real key matches. `embed_run.order_by_priority` was already self-consistent.
+
 The scan walks the id once and does a slice plus a `lower()` per colon, against one `rsplit` for
 the old rule — measured at 0.16 s → 0.30 s over 300,000 ids, which is not measurable next to the
 LanceDB work around it. It now runs on the sync path too, not just prune. Sync also pays for the

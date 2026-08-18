@@ -42,7 +42,7 @@ jobs:
             echo "HF_TOKEN secret not set - skipping. See docs/adr/0020-free-tier-deployment.md."
             exit 0
           fi
-          pip install "huggingface_hub[cli]"
+          pip install huggingface_hub
           # these live in src/headstart (single source of truth, unit-tested there); the
           # standalone Space app imports them as sibling modules
           cp src/headstart/geo.py deploy/hf-space/geo.py
