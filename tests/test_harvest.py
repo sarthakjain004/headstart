@@ -456,4 +456,3 @@ def test_a_board_whose_scraper_never_constructed_gets_no_floor(monkeypatch, tmp_
     assert not any(r.unfinished for r in rows.values()), (
         f"a Board that never started a fetch was costed as if it had: {rows}"
     )
-    assert [k for k, r in rows.items() if r.unfinished] == []

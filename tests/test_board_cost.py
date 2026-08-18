@@ -125,3 +125,16 @@ def test_save_load_round_trip_sorted_cost_desc(tmp_path):
 
 def test_load_missing_file_is_empty():
     assert load("/nonexistent/board_cost.csv") == {}
+
+
+def test_a_floor_row_torn_mid_write_is_dropped_not_read_as_measured(tmp_path):
+    """The floor rows are written last, at teardown, so a torn tail is most likely one of them —
+    and a floor read as a measurement is EWMA-blended, which is exactly what the floor exists to
+    prevent. The header tells the two apart: this file has the column, so a row without it is
+    torn, not old."""
+    p = tmp_path / "board_cost.csv"
+    p.write_text(
+        "board,seconds,jobs,unfinished\nlever:a,12.5,3,0\nworkday:big,3120.0,0",
+        encoding="utf-8",
+    )
+    assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}

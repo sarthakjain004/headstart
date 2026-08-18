@@ -93,7 +93,7 @@ drawing it.
   names them again across the whole fan-out — where a Board deferred run after run reads as a
   pattern rather than as one shard's bad luck. Finding dollartree took downloading two artifacts
   and diffing them; the reports knew the answer the whole time and nothing read it.
-* `scrape_plan._starved_boards` gates on value density, before slice selection — a Board dropped
+* `scrape_plan._gated_boards` gates on value density, before slice selection — a Board dropped
   after selection has already taken a slot from something scrapable.
 
 Three properties the gate must have, each of which cost a failure mode elsewhere:

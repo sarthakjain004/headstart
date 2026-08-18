@@ -49,7 +49,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from headstart import log
-from headstart.board_cost import ats_medians, read_shard_rows
+from headstart.board_cost import ShardCost, ats_medians, read_shard_rows
 from headstart.board_cost import load as load_cost
 from headstart.board_cost import save as save_cost
 from headstart.board_cost import update as update_cost
@@ -97,7 +97,7 @@ def priority(args: argparse.Namespace) -> int:
 
 
 def cost(args: argparse.Namespace) -> int:
-    measured: dict[str, tuple[float, int]] = {}
+    measured: dict[str, ShardCost] = {}
     shards = 0
     if args.fragments.is_dir():
         for path in sorted(args.fragments.glob(f"*/{COST_FILENAME}")):

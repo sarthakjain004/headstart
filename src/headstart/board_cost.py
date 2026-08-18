@@ -106,12 +106,21 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
         return {}
     out: dict[str, ShardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
+        reader = csv.DictReader(fh)
+        # Whether the *file* has the column, not whether a row does. A row missing it means two
+        # different things: in a pre-``unfinished`` fragment the row is a complete measurement,
+        # but in a current one it is a tail torn mid-write — and a torn floor row read as a
+        # measurement gets EWMA-blended, which is the one thing the floor exists to prevent.
+        has_flag = "unfinished" in (reader.fieldnames or ())
+        for row in reader:
             try:
+                flag = row.get("unfinished")
+                if has_flag and flag is None:
+                    continue  # torn tail row
                 out[row["board"]] = ShardCost(
                     seconds=float(row["seconds"]),
                     jobs=int(row["jobs"]),
-                    unfinished=bool(int(row.get("unfinished") or 0)),
+                    unfinished=bool(int(flag or 0)),
                 )
             except (TypeError, ValueError):
                 continue  # half-written tail row
