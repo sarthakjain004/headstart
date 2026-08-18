@@ -142,3 +142,51 @@ the run degrades to exactly the fatal errors we have today — no worse, but no 
 detail pass is not routed. Both symptoms this addresses — the fatal Board error and the
 mid-pagination truncation — occur on the sync path, so this is a real limit rather than a gap in
 the fix; widening it means giving `fan_out_async` a proxied session.
+
+---
+
+## Amendment, 2026-08-18: Workday opts in on 429 — provisional
+
+The Consequences above say a 429 deliberately does not trigger the spare egress, on the grounds
+that it is the origin's polite signal and ADR-0026 makes honouring it binding. **Workday is now
+opted in on 429 anyway, as a bounded experiment.** Recording the reversal rather than leaving the
+paragraph above quietly false.
+
+**What changed the argument.** The ten-run diagnosis measured Workday's metering to be per
+**(source IP × instance host)**, not global: a shard's failure rate on an instance tracks *its own*
+load on that instance, monotonically, on every instance tested.
+
+| per-shard Boards on the instance | wd1 | wd5 | wd3 |
+|---|---|---|---|
+| 0–9 | 0.0% | 25.0% | 10.8% |
+| 10–19 | 17.9% | 25.3% | 17.5% |
+| 20–29 | 28.2% | 32.2% | — |
+| 30–39 | 34.4% | 35.7% | — |
+| 40–49 | 36.0% | — | — |
+
+Under that model a second egress is a second *allocation* — the same logic ADR-0047 already uses
+when it spreads an ATS across shards to spend one budget per IP — rather than a way of ignoring the
+first. Retry and `Retry-After` are still honoured ahead of it; this is only what happens once the
+ladder is spent and the Board would otherwise be lost.
+
+**What is genuinely unlike the Eightfold case, and why this is provisional:**
+
+- **A 429 is a signal; a 403/405 is a wall.** Eightfold tells us nothing and refuses; Workday tells
+  us exactly what it wants. Moving IP in response to the second is a weaker justification than the
+  first, and reasonable people would draw this line differently.
+- **The blast radius is far larger.** Eightfold's wall touched 18–30 Boards per run. Workday 429s
+  are pervasive, so the group will be marked walled within the first minutes of nearly every shard
+  and stay there — meaning most Workday listing traffic rides a shared Cloudflare range every run.
+- **It moves the fatals, not the load.** `async_fanout_enabled()` is on by default, so Workday's
+  detail pass runs on `fetch_async`, which this design does not route. Only the sync listing POST
+  can lose a Board (a failed detail returns None), so the spare egress catches the measured symptom
+  while ~95% of request volume stays on the direct IP. That is favourable for the experiment — the
+  spare egress carries little — but it means this does **not** reduce the pressure that causes the
+  429s.
+
+**Exit criterion.** Watch the shard report's `recovered` rate. A high routed count with a low
+recovery rate means the spare egress is saturated too, and this comes back out. The measured root
+cause — a concurrency bound that is per *Board* while the budget is per *host*
+(`harvest._default_workers`: peak ≈ `workers × detail_streams`, ~400 in flight, ~150 to one
+instance) — is untouched by this amendment and remains the real fix.
+

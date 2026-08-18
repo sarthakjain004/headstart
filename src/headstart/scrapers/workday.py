@@ -110,6 +110,19 @@ class WorkdayScraper(BaseScraper):
     ats = "workday"
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_STREAMS
+
+    #: **Provisional experiment** (ADR-0063, amended). Unlike Eightfold's 403/405 — a hard wall
+    #: with no signal — a 429 is the origin telling us politely to slow down, and ADR-0026 makes
+    #: honouring that binding. It is here anyway because the metering was measured to be per
+    #: (source IP x instance host): a shard's failure rate tracks *its own* load on that instance
+    #: (wd1 17.9% at 10-19 Boards, 36.0% at 40-49), so a second egress is a second allocation
+    #: rather than a way of ignoring the first. Retry and `Retry-After` are still honoured first;
+    #: this is only what happens after the ladder is spent.
+    #:
+    #: Expect it to fire on nearly every shard — Workday 429s are pervasive, where Eightfold's
+    #: wall touched 18-30 Boards a run. Watch the shard report's recovered rate; if it is low, the
+    #: spare egress is saturated too and this should come back out.
+    egress_fallback_on = frozenset({429})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(self, slug: str, company: str | None = None) -> None:
@@ -166,6 +179,7 @@ class WorkdayScraper(BaseScraper):
                 response = http.fetch(
                     "POST",
                     probe_url,
+                    **self._egress(),
                     json={
                         "appliedFacets": {},
                         "limit": 1,
@@ -218,7 +232,7 @@ class WorkdayScraper(BaseScraper):
             "Accept": "application/json",
         }
         response = http.fetch(
-            "POST", self.url(), json=body, headers=headers, timeout=30
+            "POST", self.url(), json=body, headers=headers, timeout=30, **self._egress()
         )
         if response.status_code == 404 and not raise_gone:
             return None  # one page of a live board — the caller reports the gap
@@ -292,6 +306,7 @@ class WorkdayScraper(BaseScraper):
                 self._detail_url(external_path),
                 timeout=30,
                 headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+                **self._egress(),
             )
         except http.RequestsError:
             return None  # a missing detail must not drop the job
