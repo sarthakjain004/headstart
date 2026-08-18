@@ -130,3 +130,110 @@ def test_pick_boards_scores_workday_and_personio_by_their_board_key():
         "all three are scored, so all three sort by score — a board the lookup misses "
         "would fall to the unscored exploration tail instead"
     )
+
+
+# ── the ADR-0062 description-gap quota ────────────────────────────────────────────────────
+
+
+def test_gap_quota_reserves_slots_from_the_exploration_tail():
+    companies = _companies(100)
+    scores = {f"lever:c{i}": float(100 - i) for i in range(20)}
+    # every unscored board is gap-ful, so the quota is what limits how many are picked
+    unsettled = {f"lever:c{i}": 10 for i in range(20, 100)}
+
+    picked = pick_boards(
+        companies, scores, 40, unsettled=unsettled, gap_frac=0.5, rng=random.Random(7)
+    )
+
+    head_n = 40 - round(40 * EXPLORE_FRAC)
+    explore_slots = 40 - head_n
+    assert len(picked) == 40
+    gap = [c for c in picked[head_n:] if f"lever:{c.slug}" in unsettled]
+    assert len(gap) >= round(explore_slots * 0.5)
+    assert len({c.slug for c in picked}) == 40  # the quota never double-picks
+
+
+def test_gap_quota_leaves_the_priority_head_untouched():
+    companies = _companies(60)
+    scores = {f"lever:c{i}": float(100 - i) for i in range(10)}
+    unsettled = {f"lever:c{i}": 99 for i in range(10, 60)}
+
+    with_gap = pick_boards(
+        companies, scores, 20, unsettled=unsettled, rng=random.Random(11)
+    )
+    without = pick_boards(companies, scores, 20, rng=random.Random(11))
+
+    head_n = 20 - round(20 * EXPLORE_FRAC)
+    assert [c.slug for c in with_gap[:head_n]] == [c.slug for c in without[:head_n]], (
+        "the quota comes out of exploration; a scored board must never lose its slot to it"
+    )
+
+
+def test_gap_quota_drains_listing_only_atses_before_detail_pass():
+    """Cheapest class first: a listing-only Board settles every Job on it in one request, while a
+    detail-pass Board needs a fetch per Job. Draining the cheap half first buys most of the
+    backlog for a fraction of the cost."""
+    detail = [CompanyRef(ats="workday", slug=f"d{i}") for i in range(10)]
+    listing = [CompanyRef(ats="greenhouse", slug=f"l{i}") for i in range(10)]
+    # the detail boards hold far more unsettled Jobs, so only the class ordering can put the
+    # listing boards first
+    unsettled = {f"workday:d{i}": 500 for i in range(10)}
+    unsettled |= {f"greenhouse:l{i}": 1 for i in range(10)}
+
+    # 20 candidates for 10 slots, so the quota genuinely has to choose
+    picked = pick_boards(
+        detail + listing,
+        {},
+        10,
+        unsettled=unsettled,
+        gap_frac=1.0,
+        rng=random.Random(5),
+    )
+
+    assert len(picked) == 10
+    assert [c.ats for c in picked] == ["greenhouse"] * 10, (
+        "every listing-only board must drain before any detail-pass board, even though the "
+        "detail boards each hold 500x the unsettled Jobs"
+    )
+
+
+def test_gap_quota_orders_by_unsettled_count_within_a_class():
+    companies = [CompanyRef(ats="greenhouse", slug=f"c{i}") for i in range(20)]
+    unsettled = {f"greenhouse:c{i}": i for i in range(20)}
+
+    picked = pick_boards(
+        companies, {}, 10, unsettled=unsettled, gap_frac=1.0, rng=random.Random(3)
+    )
+
+    counts = [unsettled[f"greenhouse:{c.slug}"] for c in picked]
+    assert counts == sorted(counts, reverse=True)
+    assert counts[0] == 19
+
+
+def test_gap_quota_matches_a_board_whose_ledger_casing_differs():
+    """The ledger is written lowercase because a Job id's casing and the liveness ledger's need
+    not agree (ADR-0049/ADR-0023). Measured against a real store, 1,693 of 13,708 gap Boards —
+    45,375 Jobs, 23% of the backlog — matched the live slice only case-insensitively, so an
+    as-observed lookup strands every one of them and the quota silently under-fills."""
+    board = CompanyRef(ats="workday", slug="ngc/Northrop_Grumman_External_Site")
+    picked = pick_boards(
+        [board],
+        {},
+        1,
+        unsettled={"workday:ngc/northrop_grumman_external_site": 1740},
+        gap_frac=1.0,
+        rng=random.Random(1),
+    )
+    assert [c.slug for c in picked] == ["ngc/Northrop_Grumman_External_Site"]
+
+
+def test_absent_gap_ledger_leaves_the_slice_byte_identical():
+    """The self-cancelling property: once the backlog drains the ledger empties, and the slice
+    must return to exactly what it was before this existed."""
+    companies = _companies(80)
+    scores = {f"lever:c{i}": float(80 - i) for i in range(30)}
+
+    before = pick_boards(companies, scores, 25, rng=random.Random(42))
+    empty = pick_boards(companies, scores, 25, unsettled={}, rng=random.Random(42))
+
+    assert [c.slug for c in before] == [c.slug for c in empty]

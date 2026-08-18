@@ -9,6 +9,7 @@ workflow treats their failures differently: a cost- or failures-ledger failure i
     python -m headstart.ingest.update_ledgers priority   # ADR-0022
     python -m headstart.ingest.update_ledgers cost       # ADR-0027
     python -m headstart.ingest.update_ledgers failures   # consecutive-gone quarantine
+    python -m headstart.ingest.update_ledgers gap        # ADR-0062
 
 **priority** runs after the tech filter: every Board present in the harvest snapshot
 (``data/jobs``) gets its EWMA score refreshed from its tech-subset count (``data/jobs/tech``);
@@ -28,6 +29,12 @@ the Board leaves the next run's scrape slice; any successful scrape clears it. T
 nothing else closes: the liveness ledger is only written by manual probes, and the priority ledger
 carries an unscraped-looking Board unchanged.
 
+**gap** runs after ``update_descriptions``, and is the one ledger read from the *stored* corpus
+rather than this run's: it counts, per Board, the embedded Jobs whose description the ADR-0050
+store has never settled. Those Jobs' derived columns cannot be repaired without the text, so the
+next run's ``scrape_plan`` reserves part of its exploration tail for the Boards holding them
+(ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes.
+
 Seed the priority ledger from a full local corpus with::
 
     python -m headstart.ingest.update_ledgers priority --jobs data/jobs/tech
@@ -36,6 +43,7 @@ Seed the priority ledger from a full local corpus with::
 from __future__ import annotations
 
 import argparse
+import json
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,7 +58,13 @@ from headstart.board_priority import save as save_priority
 from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
-from headstart.ingest import REPO_ROOT, board_failures, observability
+from headstart.ingest import (
+    REPO_ROOT,
+    board_description_gap,
+    board_failures,
+    observability,
+)
+from headstart.ingest.update_descriptions import settled_ids
 
 _log = log.get(__name__, __spec__)
 
@@ -60,6 +74,9 @@ _FRAGMENTS = REPO_ROOT / "data" / "scrape" / "fragments"
 _PRIORITY_LEDGER = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST_LEDGER = REPO_ROOT / "data" / "state" / "board_cost.csv"
 _FAILURES_LEDGER = REPO_ROOT / "data" / "state" / "board_failures.csv"
+_GAP_LEDGER = REPO_ROOT / "data" / "state" / "board_description_gap.csv"
+_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
+_DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 
 
 def priority(args: argparse.Namespace) -> int:
@@ -149,6 +166,64 @@ def failures(args: argparse.Namespace) -> int:
     return 0
 
 
+def gap(args: argparse.Namespace) -> int:
+    from headstart.scrapers.registry import DISABLED_ATS
+
+    if not args.meta.exists():
+        _log.warning(f"gap: no {args.meta} yet — nothing embedded, so no gap to record")
+        return 0
+
+    held = settled_ids(args.descriptions)
+    if not held:
+        # The join fetches the description store on a warn-only fallback, so an empty one here
+        # means the download failed, not that nothing is settled. Writing the ledger now would
+        # mark *every* embedded Board as gap-ful and hand the next run's scrape a slice built
+        # from a missing file — worse than no boost at all.
+        _log.warning(
+            f"gap: {args.descriptions} holds nothing — the store is missing, not empty; "
+            "leaving the ledger as it is"
+        )
+        return 0
+
+    counts: Counter[str] = Counter()
+    rows = unreachable = 0
+    with args.meta.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            rows += 1
+            if rows % 100_000 == 0:
+                _log.info(f"  gap: scanned {rows:,} stored rows")
+            if row["id"] in held:
+                continue
+            # A disabled ATS is never in any scrape slice, so its rows can only leave the index by
+            # eviction — counting them would reserve slots no Board selection can ever spend.
+            if row.get("ats") in DISABLED_ATS:
+                unreachable += 1
+                continue
+            # Lowercased, like every other Board-key comparison in the plan path (ADR-0049): the
+            # liveness ledger's casing and the one baked into a Job id need not agree, and the
+            # slice looks this up through `board_identity`. Measured against a real store, 1,693
+            # of 13,708 gap Boards — 45,375 Jobs, 23% of the backlog — matched the live slice
+            # only case-insensitively, so keying this as-observed would strand every one of them.
+            # It also folds ADR-0023's case-variant pairs (`.../External` and `.../external` are
+            # one Board) into a single row instead of two half-counts.
+            counts[board_of(row["id"]).lower()] += 1
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    board_description_gap.save(args.ledger, dict(counts), today=today)
+    jobs = sum(counts.values())
+    _log.info(
+        f"gap: {rows:,} stored rows | {len(held):,} settled | {jobs:,} unsettled across "
+        f"{len(counts):,} boards ({unreachable:,} on a disabled ATS, unreachable) -> {args.ledger}"
+    )
+    for board, n in counts.most_common(10):
+        _log.info(f"  {n:6,} unsettled  {board}")
+    return 0
+
+
 def main() -> int:
     log.setup()
     ap = argparse.ArgumentParser(
@@ -200,6 +275,31 @@ def main() -> int:
         help="failures ledger to update (default: data/state/board_failures.csv)",
     )
     p_failures.set_defaults(fn=failures)
+
+    p_gap = sub.add_parser(
+        "gap",
+        help="count stored Jobs whose description is unsettled, per Board (ADR-0062)",
+    )
+    p_gap.add_argument(
+        "--meta",
+        type=Path,
+        default=_META,
+        help="the embedding store's metadata, one row per embedded Job "
+        "(default: data/embeddings/jobs/meta.jsonl)",
+    )
+    p_gap.add_argument(
+        "--descriptions",
+        type=Path,
+        default=_DESCRIPTIONS,
+        help="the ADR-0050 description store (default: data/descriptions)",
+    )
+    p_gap.add_argument(
+        "--ledger",
+        type=Path,
+        default=_GAP_LEDGER,
+        help="gap ledger to write (default: data/state/board_description_gap.csv)",
+    )
+    p_gap.set_defaults(fn=gap)
 
     args = ap.parse_args()
     return args.fn(args)

@@ -160,6 +160,26 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int]:
     return filled, len(learned) - settled, settled
 
 
+def settled_ids(store_root: Path) -> set[str]:
+    """Every Job id the store settles, across every ATS — values never materialised.
+
+    Same membership question :func:`write_held_details` publishes for the scrape, answered in
+    memory for callers that need the set rather than the file (the ADR-0062 gap ledger). Reading
+    through :func:`read_store` instead would pull ~1 GB of description text to look at the keys.
+    """
+    ids: set[str] = set()
+    if not store_root.is_dir():
+        return ids
+    for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
+        for path in _fragments(ats_dir):
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        ids.add(json.loads(line)["id"])
+    return ids
+
+
 def write_held_details(store_root: Path, out_path: Path) -> int:
     """Publish every id the store has settled — the scrape's detail skip-list (ADR-0050).
 

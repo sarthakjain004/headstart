@@ -3,7 +3,8 @@
 
 Runs once, before the scrape matrix. It selects this run's board slice exactly as the monolith
 ``scrape`` does (``pick_boards``: priority-first + a random exploration tail, capped at
-``--max-boards``), then splits the *selected* boards across a dynamic number of shards:
+``--max-boards``, with part of that tail reserved for Boards holding unsettled descriptions —
+ADR-0062), then splits the *selected* boards across a dynamic number of shards:
 
 - **Which board goes where** is an LPT bin-pack by each Board's **measured scrape seconds**
   (``board_cost.csv``, ADR-0027), so the shards' wall times balance. A Board with no measurement
@@ -45,6 +46,7 @@ from headstart.config import board_identity, load_active_companies
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
+    board_description_gap,
     board_failures,
     observability,
     shard_speedup,
@@ -62,6 +64,7 @@ _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST = REPO_ROOT / "data" / "state" / "board_cost.csv"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
 _FAILURES = REPO_ROOT / "data" / "state" / "board_failures.csv"
+_GAP = REPO_ROOT / "data" / "state" / "board_description_gap.csv"
 
 _OUT = REPO_ROOT / "data" / "scrape" / "assignments"
 
@@ -173,6 +176,12 @@ def main() -> int:
         f"{board_failures.QUARANTINE_AT} strikes are skipped (absent skips nothing)",
     )
     ap.add_argument(
+        "--gap",
+        default=str(_GAP),
+        help="board_description_gap.csv (ADR-0062); part of the exploration tail is reserved "
+        "for its Boards, so their descriptions can finally be settled. Absent reserves nothing",
+    )
+    ap.add_argument(
         "--target-seconds",
         type=float,
         default=_TARGET_SECONDS,
@@ -212,10 +221,22 @@ def main() -> int:
             "confirmed-gone board(s)"
         )
     scores = load_scores(Path(args.priority))
-    companies = pick_boards(companies, scores, args.max_boards)
+    unsettled = board_description_gap.load(Path(args.gap))
+    companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)
     n = len(companies)
     priority = sum(1 for c in companies if scores.get(board_identity(c), 0.0) > 0.0)
-    _log.info(f"slice: {n} boards ({priority} priority + {n - priority} exploration)")
+    # Gap boards are counted after the pick rather than from the ledger: the quota is capped by
+    # the slots available, and a Board already in the priority head is not re-picked for it.
+    gap_picked = sum(
+        1
+        for c in companies
+        if scores.get(board_identity(c), 0.0) <= 0.0
+        and board_identity(c).lower() in unsettled
+    )
+    _log.info(
+        f"slice: {n} boards ({priority} priority + {n - priority} exploration, of which "
+        f"{gap_picked} hold unsettled descriptions from {len(unsettled)} gap boards)"
+    )
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
