@@ -296,6 +296,14 @@ just eyeball the number). Calibrate any seniority→years mapping against real n
 
 ## Agent skills
 
+**Invoke a skill through the Skill tool whenever one applies — never reproduce its process from
+memory.** A skill's value is its exact procedure (which sub-agents it spawns, what each one is
+told, how findings are aggregated); improvising "roughly what the skill does" silently drops the
+parts that matter. This was learned on `code-review`: its two axes exist as two *independent
+parallel sub-agents* so neither pollutes the other, and a hand-rolled single-agent imitation
+quietly merged them. If a skill fits the task, invoke it and follow it as written; if it doesn't
+quite fit, say so rather than approximating it.
+
 ### Issue tracker
 
 Issues are tracked in this repo's GitHub Issues via the `gh` CLI; external PRs are not a triage

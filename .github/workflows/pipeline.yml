@@ -154,7 +154,11 @@ jobs:
       actions: read
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 72 # inner 60m -> step 66m -> job 72m; 6 min covers setup + fragment upload
+    # inner 60m -> scrape step 66m -> job: 66m + the WARP step's own 8m cap + ~5m for setup,
+    # checkout, pip, board download and fragment upload. The WARP slice is counted explicitly
+    # because on 2026-08-18 it silently consumed the whole 6m slack this comment used to promise
+    # to the upload (run 32157275202, five shards lost).
+    timeout-minutes: 79
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -177,24 +181,72 @@ jobs:
         #
         # Never fatal: `continue-on-error` plus `warp.proxy_url()` returning None means a runner
         # without WARP keeps its direct route, which is the behaviour every shard had before this.
+        #
+        # `continue-on-error` covers the install *failing*; `timeout-minutes` covers it *hanging*,
+        # which is the failure that actually happened. Run 32157275202: four shards sat ~72 min
+        # in this apt-get, hit the 72 min job cap, and were cancelled with their scrape step still
+        # `skipped` — 5 of 15 shards produced nothing, the join ran on 10, and the run was green.
+        # The step is a convenience for a fallback most shards never dial, so it gets a small
+        # bounded slice of the budget and the shard scrapes regardless. The layers are budgeted
+        # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
+        # 2 attempts x (32s curl + 45s update + 60s install) + 5s sleep + 15s systemctl
+        # + 75s daemon wait (15 probes x a 5s ceiling) + 30s registration + 15s status = 414s,
+        # under an 8 min cap. Every call in the step now carries a ceiling, so that sum is a
+        # real bound rather than an assumption that local IPC always answers promptly — and the
+        # cap keeps ~1.5 min over it, because a bound with six seconds of headroom is a coin flip. p50 install is 24 s (run 32146017194's 15 shards); the cap only bites
+        # when a host wedges.
         continue-on-error: true
+        timeout-minutes: 8
         run: |
           set -x
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg \
-            | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
-            | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq cloudflare-warp
-          sudo systemctl start warp-svc || true
+          # Every network call carries its own ceiling, and the mirror gets a second chance: the
+          # observed failure was a wedge, not a refusal, and a wedge that clears is exactly what a
+          # retry is for. `timeout-minutes` above is the backstop if both attempts wedge.
+          install_warp() {
+            curl -fsSL --max-time 15 --retry 1 --retry-delay 2 \
+              https://pkg.cloudflareclient.com/pubkey.gpg \
+              | sudo gpg --yes --dearmor \
+                -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg || return 1
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
+              | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+            # apt's own ceilings, not just the outer `timeout`: the measured hang was exactly
+            # here, and on its defaults apt will wait out a server that accepts the connection
+            # and then trickles essentially forever.
+            #
+            # Narrowed to the list just added, so no unrelated Ubuntu mirror is on the critical
+            # path of a Cloudflare install at all — `update` otherwise walks every configured
+            # repo, which is how one slow host stalls the whole step. `List-Cleanup=0` keeps the
+            # runner image's existing indexes, which are what resolve dependencies below.
+            # Measured in ubuntu:24.04 with an unrelated mirror blackholed: full update 13 s,
+            # narrowed 1 s, and `cloudflare-warp` still resolves and installs after it.
+            #
+            # Best-effort, deliberately: skipping `update` outright would not work (a new repo's
+            # package is unknown until its index arrives), so the `install` below is the honest
+            # test of whether we got what we need, and it fails fast and cheap when we did not.
+            sudo timeout 45 apt-get update -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+              -o Acquire::Retries=2 \
+              -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/cloudflare-client.list \
+              -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
+            sudo timeout 60 apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::Retries=2 cloudflare-warp || return 1
+          }
+          if ! install_warp; then
+            echo "warp install attempt 1 failed — retrying" >&2
+            sleep 5
+            install_warp || echo "warp install attempt 2 failed — degrading to direct" >&2
+          fi
+          # Both attempts spent: fall through. `warp-cli` is absent, `spare_egress.proxy_url()`
+          # returns None, and the shard keeps the direct route it had before ADR-0063.
+          sudo timeout 15 systemctl start warp-svc || true
           # The daemon answers a beat after the unit starts; registering against a dead socket is
           # the one failure that would otherwise look like "WARP unavailable" on every later call.
           for _ in $(seq 1 15); do
-            warp-cli --accept-tos status >/dev/null 2>&1 && break
+            timeout 5 warp-cli --accept-tos status >/dev/null 2>&1 && break
             sleep 1
           done
-          warp-cli --accept-tos registration new || true
-          warp-cli --accept-tos status || true
+          timeout 30 warp-cli --accept-tos registration new || true
+          timeout 15 warp-cli --accept-tos status || true
       - name: Download this shard's board list
         # Not fatal on its own — the step below retries and is the one that decides. The action
         # has no retry, and one `ListArtifacts: ETIMEDOUT` here killed shard 13 on 2026-08-13
