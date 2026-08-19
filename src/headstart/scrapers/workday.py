@@ -434,11 +434,22 @@ class WorkdayScraper(BaseScraper):
         streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
         own small gather rather than a call to it — see :meth:`_paginate_async`). Pages whose
         ``_post_async`` 404s mid-crawl are skipped as before, but one warning now reports how
-        many went missing — the tripwire for a partial board."""
+        many went missing — the tripwire for a partial board.
+
+        Falls back to the old one-at-a-time :meth:`_post` loop when
+        :meth:`~BaseScraper.async_fanout_enabled` says no (``HEADSTART_ASYNC_FANOUT=0``): that
+        is this codebase's one incident-response kill switch for async traffic against an ATS
+        (ADR-0016), already honoured by this file's own detail pass and five other scrapers'.
+        Pagination staying async regardless would leave "stop all async requests to Workday"
+        only half true, on what is now the *larger* share of that traffic.
+        """
         offsets = range(_PAGE_LIMIT, total, _PAGE_LIMIT)
         if not offsets:
             return
-        missing = asyncio.run(self._paginate_async(applied, offsets, absorb))
+        if self.async_fanout_enabled():
+            missing = asyncio.run(self._paginate_async(applied, offsets, absorb))
+        else:
+            missing = self._paginate_sync(applied, offsets, absorb)
         if missing:
             _log.warning(
                 f"{self.board_key()}: {missing} page(s) 404ed mid-crawl — "
@@ -490,6 +501,20 @@ class WorkdayScraper(BaseScraper):
         for result in results:
             if isinstance(result, BaseException):
                 raise result
+        return missing
+
+    def _paginate_sync(
+        self, applied: dict[str, list[str]], offsets: range, absorb
+    ) -> int:
+        """The pre-concurrency fallback: walk ``offsets`` one at a time via the sync
+        :meth:`_post`, exactly as :meth:`_paginate` did before it fanned out. Only reached
+        when :meth:`~BaseScraper.async_fanout_enabled` is off."""
+        missing = 0
+        for offset in offsets:
+            payload = self._post(applied, offset=offset)
+            if payload is None:
+                missing += 1
+            absorb((payload or {}).get("jobPostings") or [])
         return missing
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

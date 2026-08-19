@@ -818,6 +818,32 @@ def test_workday_paginate_raises_on_a_non_404_error_mid_crawl(monkeypatch):
     assert s.truncated is None
 
 
+def test_workday_paginate_falls_back_to_sync_when_async_fanout_is_off(monkeypatch):
+    """HEADSTART_ASYNC_FANOUT=0 is this codebase's one incident-response kill switch for async
+    traffic against an ATS (ADR-0016) — the detail pass already obeys it, and pagination must
+    too, or "stop all async requests to Workday" is only half true."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    seen_offsets: list[int] = []
+
+    def fake_post(applied, offset, **_):
+        seen_offsets.append(offset)
+        return {"jobPostings": [{"bulletFields": [f"R{offset}"]}]}
+
+    def boom_post_async(*a, **k):
+        raise AssertionError("must not touch the async path when fanout is off")
+
+    monkeypatch.setattr(s, "_post", fake_post)
+    monkeypatch.setattr(s, "_post_async", boom_post_async)
+    absorbed = []
+    s._paginate({}, 100, absorbed.extend)
+
+    assert seen_offsets == [20, 40, 60, 80]
+    assert [p["bulletFields"][0] for p in absorbed] == ["R20", "R40", "R60", "R80"]
+
+
 def test_trakstar_parse():
     # raw is {html: listing, postings: {code: detail-page JSON-LD JobPosting}}
     jobs = get_scraper("trakstar", "exotel", "Exotel").parse(
