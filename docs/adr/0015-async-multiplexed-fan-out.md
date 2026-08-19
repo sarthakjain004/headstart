@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-03
+- **Amended by:** [ADR-0070](0070-smartrecruiters-does-not-cap-a-board-at-100-postings.md) — measured: SmartRecruiters does *not* cap a board at 100 postings, so the "per-board detail count is bounded" premise below is false
 
 ## Context
 

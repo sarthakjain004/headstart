@@ -34,6 +34,14 @@ class SmartRecruitersScraper(BaseScraper):
         # one HTTP/2 connection by default (ADR-0016); a failed fetch leaves ``_description`` None.
         data = json.loads(self._get())
         postings = data.get("content") or []
+        # The payload reports the board's true size, so a short list is knowingly short and must
+        # say so or `index sync` evicts everything behind the page as a delisting (ADR-0053).
+        # Measured 2026-08-20: dominos totalFound=24556 behind a 100-posting page.
+        total = data.get("totalFound")
+        if isinstance(total, int) and total > len(postings):
+            self.mark_truncated(
+                f"read {len(postings)} of {total} postings — the rest unread"
+            )
         if self.async_fanout_enabled():
             descriptions = self.fan_out_async(
                 postings,
