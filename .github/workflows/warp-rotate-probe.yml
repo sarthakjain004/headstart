@@ -1,0 +1,84 @@
+# Diagnostic only — never scheduled. Delete once a rotation mechanism is chosen.
+#
+# `warp-install-probe` measured that `systemctl restart warp-svc` — what `spare_egress.rotate()`
+# does — returns the *same* egress IP 19 times out of 30. A restart reconnects with the same
+# registration, so WARP plausibly hands back the same assignment; a new registration is a new
+# identity and should draw a new one.
+#
+# Each job dials WARP, then rotates four times by its arm's method, recording the egress IP after
+# each. The number that matters is how many of those four rotations actually produced an address
+# different from the one before it — a rotation that returns the same IP is a no-op the retry
+# budget pays for.
+name: warp-rotate-probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rotate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        method: [restart, reregister]
+    steps:
+      - name: Install WARP without the GUI dependency stack
+        run: |
+          set -x
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq equivs >/dev/null
+          cd /tmp
+          for p in libwebkit2gtk-4.1-0 libayatana-appindicator3-1; do
+            printf 'Section: misc\nPriority: optional\nStandards-Version: 3.9.2\nPackage: %s-headless-stub\nProvides: %s\nDescription: stub for headless warp-svc\n A no-op package satisfying a GUI dependency warp-svc never calls.\n' "$p" "$p" > "$p.ctl"
+            equivs-build "$p.ctl" >/dev/null
+          done
+          sudo dpkg -i /tmp/*headless-stub*.deb >/dev/null
+          cd -
+          curl -fsSL --max-time 15 --retry 1 --retry-delay 2 https://pkg.cloudflareclient.com/pubkey.gpg \
+            | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo timeout 45 apt-get update -qq \
+            -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
+            -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/cloudflare-client.list \
+            -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
+          sudo timeout 90 apt-get install -y -qq \
+            -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 cloudflare-warp
+
+      - name: Rotate four times by ${{ matrix.method }} and record every egress IP
+        run: |
+          set -x
+          dial() {
+            timeout 30 warp-cli --accept-tos mode proxy || true
+            timeout 30 warp-cli --accept-tos proxy port 40000 || true
+            timeout 30 warp-cli --accept-tos connect || true
+            for _ in $(seq 1 20); do timeout 2 bash -c '</dev/tcp/127.0.0.1/40000' 2>/dev/null && break; sleep 1; done
+          }
+          egress() { curl -fsS --max-time 20 --proxy socks5://127.0.0.1:40000 https://api.ipify.org || echo FAILED; }
+
+          sudo timeout 15 systemctl start warp-svc || true
+          for _ in $(seq 1 15); do timeout 5 warp-cli --accept-tos status >/dev/null 2>&1 && break; sleep 1; done
+          timeout 30 warp-cli --accept-tos registration new || true
+          dial
+          prev=$(egress); echo "ROT n=0 ip=$prev secs=0"
+
+          for n in 1 2 3 4; do
+            start=$SECONDS
+            if [ "${{ matrix.method }}" = restart ]; then
+              sudo timeout 30 systemctl restart warp-svc || true
+              sleep 3
+              for _ in $(seq 1 15); do timeout 5 warp-cli --accept-tos status >/dev/null 2>&1 && break; sleep 1; done
+            else
+              # A new identity rather than a reconnect of the old one.
+              timeout 30 warp-cli --accept-tos registration delete || true
+              timeout 30 warp-cli --accept-tos registration new || true
+            fi
+            dial
+            ip=$(egress)
+            echo "ROT n=$n ip=$ip secs=$(( SECONDS - start )) new=$([ "$ip" != "$prev" ] && [ "$ip" != FAILED ] && echo YES || echo NO)"
+            prev=$ip
+          done
