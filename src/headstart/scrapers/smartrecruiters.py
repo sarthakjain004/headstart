@@ -16,9 +16,8 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
-_UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 8
 
 
@@ -80,7 +79,7 @@ class SmartRecruitersScraper(BaseScraper):
                 "GET",
                 self._detail_url(posting_id),
                 timeout=30,
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError:
             return None  # a missing description must not drop the job
@@ -98,7 +97,7 @@ class SmartRecruitersScraper(BaseScraper):
                 "GET",
                 self._detail_url(posting_id),
                 timeout=30,
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError:
             return None

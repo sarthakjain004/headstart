@@ -30,7 +30,7 @@ import hashlib
 import json
 import re
 import secrets
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -641,9 +641,21 @@ class Store:
         paths = [
             p for p in _list_files(self._repo, self._token) if p.startswith(prefix)
         ]
+        # `as_completed` per the repo's streaming rule. Be honest about what it buys here:
+        # nothing measurable. `Executor.map` also submits every task up front, and this function
+        # emits nothing per item — it must return the whole sorted list — so no read was ever
+        # held up (measured: 2.00s vs 2.01s with one slow read among six).
+        #
+        # It does cost something, which is why the sort key is a pair. `starred_at` is
+        # second-precision, so a burst of stars ties exactly — the case ADR-0044 calls normal —
+        # and `sort` being stable means ties keep arrival order. Under `map` that was the
+        # listing order; under `as_completed` it is thread-completion order, and the Saved tab
+        # reshuffled on every reload. Tie-breaking on `id` makes the order a property of the
+        # records rather than of whichever read finished first.
         with ThreadPoolExecutor(max_workers=8) as pool:
-            out = [job for job in pool.map(self._read_saved, paths) if job]
-        out.sort(key=lambda j: j.starred_at, reverse=True)
+            futures = [pool.submit(self._read_saved, path) for path in paths]
+            out = [job for job in (f.result() for f in as_completed(futures)) if job]
+        out.sort(key=lambda j: (j.starred_at, j.id), reverse=True)
         return out
 
     def _read_saved(self, path: str) -> SavedJob | None:

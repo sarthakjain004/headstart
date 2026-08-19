@@ -38,11 +38,10 @@ from typing import Any
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _log = log.get(__name__)
 
-_USER_AGENT = "headstart/0.1 (job-board reader)"
 
 _CLASSIFY_BYTES = 64 * 1024  # enough sitemap head to tell urlset from RSS
 _SITEMAP_CAP = 30 * 1024 * 1024  # runaway guard; largest observed urlset is ~3 MB
@@ -105,7 +104,7 @@ class SuccessFactorsScraper(BaseScraper):
         response = http.fetch(
             "GET",
             self.url(),
-            headers={"User-Agent": _USER_AGENT},
+            headers={"User-Agent": USER_AGENT},
             timeout=30,
             stream=True,
         )
@@ -149,7 +148,7 @@ class SuccessFactorsScraper(BaseScraper):
             response = http.fetch(
                 "GET",
                 f"https://{self.slug}/search/?startrow={startrow}",
-                headers={"User-Agent": _USER_AGENT},
+                headers={"User-Agent": USER_AGENT},
                 timeout=30,
             )
             if response.status_code != 200:
@@ -187,7 +186,7 @@ class SuccessFactorsScraper(BaseScraper):
         response = http.fetch(  # retry seam, as in `_fetch_sitemap`
             "GET",
             self.url(),
-            headers={"User-Agent": _USER_AGENT},
+            headers={"User-Agent": USER_AGENT},
             timeout=_RSS_TIMEOUT,
             stream=True,
         )
@@ -285,7 +284,7 @@ class SuccessFactorsScraper(BaseScraper):
 
     def _job_fields(self, url: str) -> dict[str, Any] | None:
         response = http.fetch(
-            "GET", url, headers={"User-Agent": _USER_AGENT}, timeout=30
+            "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
         )
         if response.status_code != 200:
             return None
@@ -293,7 +292,7 @@ class SuccessFactorsScraper(BaseScraper):
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
         response = await http.fetch_async(
-            session, "GET", url, headers={"User-Agent": _USER_AGENT}, timeout=30
+            session, "GET", url, headers={"User-Agent": USER_AGENT}, timeout=30
         )
         if response.status_code != 200:
             return None

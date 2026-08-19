@@ -266,3 +266,33 @@ def test_detail_scrapers_declare_their_async_stream_width(ats, slug):
     s = get_scraper(ats, slug)
     assert s.has_detail_pass is True
     assert s.detail_workers is not None
+
+
+def test_no_scraper_declares_its_own_user_agent():
+    """One User-Agent, declared once in base.
+
+    Matched on the *declaration*, not on the shared literal. The first version of this test
+    grepped for base's exact string, so it caught a harmless identical copy and waved through
+    the case its own docstring named — a scraper declaring a **different** UA, which is how a
+    set of strings silently disagrees.
+    """
+    import ast
+    import pathlib
+
+    scrapers = pathlib.Path(__file__).resolve().parents[1] / "src/headstart/scrapers"
+    assert scrapers.is_dir(), f"scraper package not found at {scrapers}"
+    files = [p for p in sorted(scrapers.glob("*.py")) if p.name != "base.py"]
+    assert len(files) > 15, f"only found {len(files)} scrapers — the glob is wrong"
+
+    names = {"UA", "_UA", "USER_AGENT", "_USER_AGENT", "AGENT", "_AGENT"}
+    offenders = []
+    for path in files:
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in names:
+                    offenders.append(f"{path.name}:{target.id}")
+    assert offenders == [], (
+        f"declared their own User-Agent instead of importing it: {offenders}"
+    )
