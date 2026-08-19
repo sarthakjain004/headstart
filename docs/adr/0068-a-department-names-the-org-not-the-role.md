@@ -1,4 +1,4 @@
-# ADR-0067: A department names the org, not the role
+# ADR-0068: A department names the org, not the role
 
 - Status: Accepted
 - Date: 2026-08-19

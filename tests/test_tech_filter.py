@@ -111,7 +111,7 @@ def test_reasons_are_meaningful():
 
 
 def test_hardware_department_cannot_veto_a_tech_title():
-    """ADR-0067: a hardware *org* employs engineers whose work is code.
+    """ADR-0068: a hardware *org* employs engineers whose work is code.
 
     None of these matches a strong signal — which is why they fall to the generic tier, and why
     ADR-0017's self-consistency gate ("no dropped job may match a strong signal") is structurally

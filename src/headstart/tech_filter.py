@@ -107,7 +107,7 @@ _NON_SOFTWARE = re.compile(
 #     department. A hardware org employs the engineers whose work is code — RTL design, design
 #     verification, physical design are all HDL/EDA, i.e. software by any reading — so "Hardware
 #     Engineering" in `department` says who the role reports to, not what it is. Measured over the
-#     332,383-row pre-filter snapshot this recovers 287 rows, 0 lost (ADR-0067).
+#     332,383-row pre-filter snapshot this recovers 287 rows, 0 lost (ADR-0068).
 #
 #     `sales` is deliberately NOT here: a "Solutions Engineer" under Sales is the pre-sales role
 #     this filter already classifies non-tech when the title says so ("Sales Engineer"), so there
