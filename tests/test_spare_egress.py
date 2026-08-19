@@ -304,15 +304,26 @@ def test_a_throttled_caller_waits_for_the_fresh_ip_rather_than_riding_the_spent_
     monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 5.0)
 
     assert spare_egress.rotate() is True
-    started = time.monotonic()
+    armed_at = spare_egress._last_rotation  # the instant the code armed the cooldown
+    called_at = time.monotonic()
     second = spare_egress.rotate()
-    waited = time.monotonic() - started
+    released_at = time.monotonic()
 
     assert second is True  # it waited, and came back to a fresh IP
     counts = spare_egress.rotations()
     assert counts["throttled"] == 1  # it was throttled...
     assert counts["attempted"] == 2  # ...and still rotated, after waiting the floor out
-    assert waited >= 0.05
+    # Two assertions, because they say different things and the old single one said neither
+    # reliably. It timed from a `monotonic()` taken *after* the first rotate returned — a second
+    # origin, a fraction of a millisecond later than `_last_rotation` — which left the comparison
+    # sitting exactly on the boundary. Over 300 measured trials the whole margin came from
+    # `Condition.wait` overshoot and its minimum was 0.345 ms, which is how CI produced
+    # 0.04998673 against a 0.05 floor. Timing from `armed_at` removes the straddle.
+    assert released_at - armed_at >= spare_egress._ROTATION_COOLDOWN
+    # ...and that this caller was actually made to block, which the line above cannot show on its
+    # own: had the cooldown already been spent, returning at once would satisfy it and still be
+    # correct. Here the first rotate armed it, so the second must have waited.
+    assert released_at > called_at
 
 
 def test_the_wait_for_a_fresh_ip_is_bounded(monkeypatch):

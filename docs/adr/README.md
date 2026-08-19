@@ -53,6 +53,7 @@ supersedes it and note the supersession in both.
 | [0042](0042-signed-in-ui-saved-sets.md) | Sign-in-required UI: Accounts, Saved sets, Saved jobs on the per-record store | 2026-08-11 |
 | [0043](0043-saved-sets-subscription-projection.md) | Saved sets as per-record files; the Subscription is the emailing set's projection | 2026-08-12 |
 | [0044](0044-saved-jobs-display-copies.md) | Saved jobs as per-record display copies, keyed by the job id | 2026-08-12 |
+| [0045](0045-per-shard-run-reports.md) | Per-shard run reports, and a run-level summary | 2026-08-12 |
 | [0046](0046-index-collapse-guard.md) | A collapse guard on index eviction | 2026-08-13 |
 | [0047](0047-pace-against-the-origin.md) | Retry the wall, spread the load — and why pacing cannot fix it | 2026-08-13 |
 | [0048](0048-skip-details-we-already-hold.md) | Do not re-fetch a detail we already hold | 2026-08-13 |
@@ -71,6 +72,8 @@ supersedes it and note the supersession in both.
 | [0061](0061-refreshable-metadata.md) | Stored metadata is refreshable — facts reconcile, derivations re-derive on a version bump | 2026-08-18 |
 | [0062](0062-drain-the-description-gap.md) | Drain the description gap by aiming the slice, and record what each vector actually saw | 2026-08-18 |
 | [0063](0063-spare-egress-for-a-spent-origin-budget.md) | A shard that spends an origin's budget picks up a spare egress IP | 2026-08-18 |
+| [0064](0064-a-boards-hour-must-buy-tech-jobs.md) | A Board's hour must buy tech jobs | 2026-08-18 |
+| [0065](0065-wait-for-the-fresh-ip-rather-than-riding-the-spent-one.md) | Wait for the fresh IP rather than riding the spent one | 2026-08-19 |
 | [0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md) | Widen experience recall under a rule that no existing Tier-2 answer may change | 2026-08-19 |
 | [0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) | The spare egress buys a different IP, not a fresh budget | 2026-08-19 |
 | [0068](0068-a-department-names-the-org-not-the-role.md) | The tech gate's disqualifier reads the title; a department vetoes only through a discipline that names the role | 2026-08-19 |
