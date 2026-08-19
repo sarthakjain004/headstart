@@ -71,3 +71,4 @@ supersedes it and note the supersession in both.
 | [0061](0061-refreshable-metadata.md) | Stored metadata is refreshable — facts reconcile, derivations re-derive on a version bump | 2026-08-18 |
 | [0062](0062-drain-the-description-gap.md) | Drain the description gap by aiming the slice, and record what each vector actually saw | 2026-08-18 |
 | [0063](0063-spare-egress-for-a-spent-origin-budget.md) | A shard that spends an origin's budget picks up a spare egress IP | 2026-08-18 |
+| [0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md) | Widen experience recall under a rule that no existing Tier-2 answer may change | 2026-08-19 |

@@ -1,6 +1,11 @@
 # ADR-0060: The work-word patterns carry narrative guards and their own requirement ceiling
 
-**Status:** accepted · **Date:** 2026-08-18 · **Amends:**
+**Status:** accepted · **Amended by:**
+[ADR-0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md) (the guard set is now a
+flag carried beside each pattern, not derived from the pattern text; the premise that anchored
+patterns cannot reach narrative was measured false, so the idiom, ceiling-phrase and 20-year
+requirement guards now apply to every pattern — 1,066 descriptions were being answered above 20
+years and none was a real requirement) · **Date:** 2026-08-18 · **Amends:**
 [ADR-0013](0013-experience-plausibility-guards.md) (its consequence "both tiers enforce identical
 plausibility rules" no longer holds in full) · **Relates to:**
 [ADR-0009](0009-experience-extraction.md), [ADR-0018](0018-experience-seniority-fallback.md)
