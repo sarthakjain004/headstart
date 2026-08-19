@@ -414,6 +414,21 @@ _gate = threading.Event()
 _gate.set()
 
 
+def generation() -> int:
+    """How many rotations have succeeded in this process.
+
+    A caller that snapshots this before a request and finds it changed afterwards knows the egress
+    moved *underneath* that request — so a connection error it then sees is our own restart tearing
+    the tunnel down, not the origin refusing.
+
+    Read without :data:`_rotation_lock` deliberately: that lock is held across the whole
+    ``systemctl restart``, so acquiring it here would park every caller for the seconds this exists
+    to detect. Only the *change* matters, never the value, and an int read is atomic enough for
+    that — a caller that reads a stale generation simply does not claim the refund.
+    """
+    return _rotation_generation
+
+
 def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
     """Move to a different egress IP, waiting out the cooldown if one is in force.
 
