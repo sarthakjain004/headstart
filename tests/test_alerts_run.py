@@ -310,3 +310,65 @@ def test_the_spreadsheet_carries_more_than_the_message(monkeypatch, no_xlsx):
     assert run.send_one(_sub(), _Store(), "https://s", CONFIG) == 30
     assert body_rows["n"] == 30, "the message is capped"
     assert xlsx_rows["n"] == 75, "the spreadsheet carries every fresh row"
+
+
+def test_an_account_with_sets_keeps_its_projection_against_the_allowlist():
+    """ADR-0069: once an Account keeps Saved sets, the sets endpoints own the Subscription.
+
+    ADR-0043 made them "the only writer that keeps the two in step", which is why /subscribe
+    409s while sets are live — but the alerts run re-projected from the Invite on every run,
+    so an allowlist entry carrying its own query silently overwrote the emailing set's, and
+    the Matches tab showed a set the Digest was not delivering.
+    """
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="what the set says",
+        watermark=AFTER,
+        unsubscribe_token="keep-me",
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(
+        Invite("ada@example.com", "what the allowlist says", {"remote": "true"}),
+        store,
+        frozenset({stored.id}),
+    )
+
+    assert sub.query == "what the set says", "the set's projection must survive the run"
+    assert sub.search_filters == stored.search_filters
+    assert store.saved == [], "a read-only pass must not write"
+
+
+def test_an_account_without_sets_is_unaffected():
+    """The allowlist stays the owner's edit path for everyone who never signed in."""
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="old query",
+        watermark=AFTER,
+        unsubscribe_token="keep-me",
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(
+        Invite("ada@example.com", "new query"), store, frozenset()
+    )
+
+    assert sub.query == "new query"
+    assert sub.watermark == AFTER and sub.unsubscribe_token == "keep-me"
+
+
+def test_an_account_with_sets_but_no_subscription_is_not_minted_one():
+    """Enabling email is a Matches-tab action (ADR-0043). An Invite must not start mail for
+    somebody who signed in, made sets, and never turned email on."""
+    store = _InviteStore()
+
+    sub = run.subscription_for(
+        Invite("ada@example.com", "a query"),
+        store,
+        frozenset({subscription_id("ada@example.com")}),
+    )
+
+    assert sub is None
+    assert store.saved == []

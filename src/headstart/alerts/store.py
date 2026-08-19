@@ -204,8 +204,9 @@ class SavedSet:
     ``emails`` marks the one set per Account whose new matches are delivered. The
     **Subscription record is a projection of that set** — same Query and filters, plus the
     delivery machinery (Watermark, unsubscribe token) that must survive edits. The sets
-    endpoints in the Space app are the only writer that keeps the two in step; nothing in
-    the alerts run knows sets exist.
+    endpoints in the Space app are the only writer that keeps the two in step. The alerts run
+    yields to them: it learns only *whether* an Account has sets, never their contents, and
+    leaves such an Account's Subscription read-only (ADR-0069).
     """
 
     id: str
@@ -584,6 +585,21 @@ class Store:
             except Exception as exc:  # noqa: BLE001 — a malformed record is data, not a crash
                 print(f"[alerts] skipping unreadable {path}: {exc}", flush=True)
         out.sort(key=lambda s: s.created_at)
+        return out
+
+    def accounts_with_sets(self) -> set[str]:
+        """Every Account id that keeps at least one Saved set.
+
+        Answered from the file listing alone — no record is read, because the caller only
+        needs existence. One listing per run rather than one per Invite: `_list_files` is a
+        live API call, and the alerts run would otherwise repeat it for every invited address.
+        """
+        out: set[str] = set()
+        for path in _list_files(self._repo, self._token):
+            rest = path[len(SETS_PREFIX) :] if path.startswith(SETS_PREFIX) else ""
+            account, _, tail = rest.partition("/")
+            if tail and _ID.fullmatch(account):
+                out.add(account)
         return out
 
     def get_set(self, account: str, set_id: str) -> SavedSet | None:
