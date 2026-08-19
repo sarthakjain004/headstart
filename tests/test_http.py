@@ -192,8 +192,15 @@ def test_retries_log_debug_records(monkeypatch, caplog):
 
 
 @pytest.fixture(autouse=True)
-def _clean_egress():
-    """Walled groups are process-global; leaking one would make later tests route unexpectedly."""
+def _clean_egress(monkeypatch):
+    """Walled groups are process-global; leaking one would make later tests route unexpectedly.
+
+    The rotation cooldown is neutralized here because `rotate` now *waits* it out rather than
+    returning: left at its real value, every test that walls twice would sit out a real 5 seconds
+    to assert something about routing. The cooldown itself is policy, and it is tested where it
+    lives, in test_spare_egress.py.
+    """
+    monkeypatch.setattr(http.spare_egress, "_ROTATION_COOLDOWN", 0.0)
     http.spare_egress.reset()
     yield
     http.spare_egress.reset()
@@ -304,18 +311,52 @@ def test_a_group_with_no_wall_statuses_never_marks(monkeypatch):
     assert _proxied(calls) == [False, False]
 
 
-def test_proxied_requests_are_counted_for_the_shard_report(monkeypatch):
-    # `routed` vs `recovered` is what tells a working fallback from a proxy carrying nothing
+def test_proxied_requests_are_counted_at_both_levels(monkeypatch):
+    """Attempts say what the fallback cost; settled requests say what it bought.
+
+    Counting only attempts made a request that walled twice before succeeding score 1/3 rather
+    than 1/1, so every retry pushed the "recovery rate" down and a working spare egress looked
+    like a failing one.
+    """
     _warp(monkeypatch)
+    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None: True)
     _stub(monkeypatch, [403, 200, 405, 405, 405])
     http.fetch(
         "GET", "u", egress_group="eightfold", egress_on=_WALL
-    )  # direct 403 -> mark; retry
+    )  # direct 403 -> mark; retry over the proxy -> 200
     http.fetch(
         "GET", "v", egress_group="eightfold", egress_on=_WALL
-    )  # already walled: 3 tries
+    )  # already walled: 3 tries, all refused
+    counts = http.spare_egress.traffic()["eightfold"]
     # attempt 1 of the first fetch went direct (nothing known yet); the other four were carried
-    assert http.spare_egress.traffic()["eightfold"] == {"routed": 4, "recovered": 1}
+    assert counts["routed"] == 4
+    # but only two *requests* settled: one rescued, one still walled after every attempt
+    assert (counts["requests"], counts["rescued"], counts["walled"]) == (2, 1, 1)
+
+
+def test_a_non_wall_status_is_not_counted_against_the_spare_egress(monkeypatch):
+    """A Board serving stale URLs that all 404 must not read as a refused IP range.
+
+    `eightfold:nttdata.eightfold.ai` migrated off the ATS while its sitemap kept serving; its
+    16,304 detail fetches all 404 through the proxy. Scored as failures to recover they dragged
+    that shard's rate to 1% and looked exactly like the signal for abandoning the spare egress.
+    """
+    _warp(monkeypatch)
+    _stub(monkeypatch, [403, 404])
+    http.fetch(
+        "GET", "u", egress_group="eightfold", egress_on=_WALL
+    )  # wall, then a real 404
+    counts = http.spare_egress.traffic()["eightfold"]
+    assert counts["other"] == 1
+    assert (
+        counts["walled"] == 0 and counts["rescued"] == 0
+    )  # excluded, not counted against
+    # nothing was ever walled *through* the proxy, so there is no rate to report — which is the
+    # honest answer. The old counter called this 0% recovery and read as a refused IP range.
+    line = http.spare_egress.report()[0]
+    assert (
+        "rescued 0/0 walled request(s) (n/a)" in line and "1 settled non-wall" in line
+    )
 
 
 def test_the_ladder_is_direct_then_spare_egress_then_rotate(monkeypatch):
@@ -330,7 +371,9 @@ def test_the_ladder_is_direct_then_spare_egress_then_rotate(monkeypatch):
         http.spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000"
     )
     monkeypatch.setattr(
-        http.spare_egress, "rotate", lambda: (rotations.append(1), True)[1]
+        http.spare_egress,
+        "rotate",
+        lambda board=None: (rotations.append(board), True)[1],
     )
     calls = _stub(monkeypatch, [429, 429, 200])
 
@@ -348,7 +391,9 @@ def test_a_wall_on_the_direct_route_never_rotates(monkeypatch):
         http.spare_egress, "proxy_url", lambda: None
     )  # no WARP available
     monkeypatch.setattr(
-        http.spare_egress, "rotate", lambda: (rotations.append(1), True)[1]
+        http.spare_egress,
+        "rotate",
+        lambda board=None: (rotations.append(board), True)[1],
     )
     _stub(monkeypatch, [429, 429, 429])
     http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
@@ -435,14 +480,14 @@ def test_async_recovery_is_counted(monkeypatch):
             session, "GET", "u", egress_group="workday", egress_on=frozenset({429})
         )
     )
-    assert http.spare_egress.traffic()["workday"]["recovered"] == 1
+    assert http.spare_egress.traffic()["workday"]["rescued"] == 1
 
 
 def test_async_wall_through_the_proxy_rotates(monkeypatch):
     _warp(monkeypatch)
     rotations = []
     monkeypatch.setattr(
-        http.spare_egress, "rotate", lambda: rotations.append(True) or True
+        http.spare_egress, "rotate", lambda board=None: rotations.append(board) or True
     )
     session, _calls = _astub(monkeypatch, [429, 429, 200])
     asyncio.run(
@@ -451,7 +496,79 @@ def test_async_wall_through_the_proxy_rotates(monkeypatch):
         )
     )
     # attempt 1 walls the group (direct), attempt 2 rides the proxy and is walled again -> rotate
-    assert rotations == [True]
+    assert rotations == [None]  # no board named by this caller
+
+
+def test_a_fresh_ip_buys_the_attempt_the_wait_would_have_cost(monkeypatch):
+    """`rotate` now blocks until a fresh IP exists, so charging the request for that wait would let
+    it exhaust its budget queueing and never try a working route — the opposite of the point."""
+    _warp(monkeypatch)
+    generation = [0]
+    monkeypatch.setattr(
+        http.spare_egress,
+        "rotate",
+        lambda board=None: generation.__setitem__(0, generation[0] + 1) or True,
+    )
+    monkeypatch.setattr(http.spare_egress, "rotation_generation", lambda: generation[0])
+    calls = _stub(monkeypatch, [429, 429, 429, 429, 200])
+
+    resp = http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert resp.status_code == 200
+    assert len(calls) == 5  # 3 base attempts, plus the 2 the rotations earned
+
+
+def test_the_earned_attempts_are_capped(monkeypatch):
+    """A Board every IP refuses would otherwise retry forever, one rotation at a time."""
+    _warp(monkeypatch)
+    generation = [0]
+    monkeypatch.setattr(
+        http.spare_egress,
+        "rotate",
+        lambda board=None: generation.__setitem__(0, generation[0] + 1) or True,
+    )
+    monkeypatch.setattr(http.spare_egress, "rotation_generation", lambda: generation[0])
+    calls = _stub(monkeypatch, [429] * 8)
+
+    resp = http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert resp.status_code == 429
+    assert len(calls) == http._ATTEMPTS + http._MAX_ROTATION_WAITS == 5
+
+
+def test_a_wait_that_produced_no_fresh_ip_earns_nothing(monkeypatch):
+    """Only a generation change is evidence of a new route. A rotation that timed out onto the
+    same spent IP must not extend the budget, or a hard wall becomes an unbounded retry loop."""
+    _warp(monkeypatch)
+    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None: True)
+    monkeypatch.setattr(
+        http.spare_egress, "rotation_generation", lambda: 7
+    )  # never moves
+    calls = _stub(monkeypatch, [429] * 5)
+
+    http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert len(calls) == http._ATTEMPTS  # the base budget, unextended
+
+
+def test_the_board_that_spent_the_ip_is_named_to_rotate(monkeypatch):
+    """Attribution the shard report could not make before: which Boards drank the IP supply."""
+    _warp(monkeypatch)
+    named = []
+    monkeypatch.setattr(
+        http.spare_egress, "rotate", lambda board=None: named.append(board) or True
+    )
+    _stub(monkeypatch, [429, 429, 200])
+
+    http.fetch(
+        "GET",
+        "u",
+        egress_group="workday",
+        egress_on=frozenset({429}),
+        egress_board="workday:dollartree/dollartreeus",
+    )
+
+    assert named == ["workday:dollartree/dollartreeus"]
 
 
 def test_a_wall_marked_by_the_async_path_routes_the_sync_path(monkeypatch):

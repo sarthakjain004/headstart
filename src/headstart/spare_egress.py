@@ -50,11 +50,14 @@ from headstart import log
 __all__ = [
     "mark_walled",
     "note_routed",
+    "note_settled",
     "proxy_for",
     "proxy_url",
     "report",
     "reset",
     "rotate",
+    "rotation_causes",
+    "rotation_generation",
     "rotations",
     "traffic",
     "walled_groups",
@@ -210,19 +213,29 @@ def walled_groups() -> frozenset[str]:
         return frozenset(_walled)
 
 
-#: Per group: how many requests the spare egress carried, and how many of those came back 200.
-#: Counted for the same reason ``http.retry_stats`` is — without it a shard that routed everything
-#: successfully and one whose proxy silently carried nothing log identically, and "did the fallback
-#: work?" is the only question this feature has. Recovery *rate* is the number to watch: a high
-#: routed count with a low recovery rate means the spare egress is walled too, which is the signal
-#: to stop trusting it rather than to route more.
+#: Per group, at two levels, because they answer different questions. ``routed`` counts *attempts*
+#: — the traffic the spare egress cost. ``requests``/``rescued``/``walled``/``other`` count settled
+#: *requests* — what it bought. Counted for the same reason ``http.retry_stats`` is: without them a
+#: shard that routed everything successfully and one whose proxy silently carried nothing log
+#: identically, and "did the fallback work?" is the only question this feature has.
+#:
+#: The number to watch is ``rescued / (rescued + walled)``: of the requests the spare egress was
+#: asked to rescue from a wall, how many it actually rescued. A high attempt count against a low
+#: rescue rate means the spare egress is walled too — the signal to stop trusting it rather than to
+#: route more.
 _traffic: defaultdict[str, Counter[str]] = defaultdict(Counter)
 _traffic_lock = threading.Lock()
+
+#: Every status each origin has refused us with. Accumulated rather than kept at the first, because
+#: an ATS can wall in more than one shape (Eightfold answers both 403 and 405) and a shape missing
+#: here would be scored as an ordinary non-200 rather than as a wall.
+_wall_statuses: defaultdict[str, set[int]] = defaultdict(set)
 
 
 def mark_walled(group: str, status: int) -> None:
     """Record that ``group``'s origin budget is spent, once per process, and say so loudly."""
     with _walled_lock:
+        _wall_statuses[group].add(status)  # every shape this origin refuses us with
         if group in _walled:
             return
         _walled.add(group)
@@ -232,13 +245,39 @@ def mark_walled(group: str, status: int) -> None:
     )
 
 
-def note_routed(group: str, *, recovered: bool) -> None:
-    """Count one request carried by the spare egress, and whether it came back 200."""
+def note_routed(group: str) -> None:
+    """Count one *attempt* carried by the spare egress — what it cost, not what it bought."""
+    with _traffic_lock:
+        _traffic[group]["routed"] += 1
+
+
+def note_settled(group: str, status: int) -> None:
+    """Count one *request* the spare egress carried to a final status, bucketed by what that
+    status says about the egress itself.
+
+    Three buckets, because a single "recovered" counter conflated failures calling for opposite
+    responses. It counted per *attempt*, so a request that walled twice before succeeding scored
+    1/3 rather than 1/1 and every retry pushed the rate down. And it scored every non-200 as a
+    failure to recover, so a Board serving stale URLs that all 404 — `eightfold:nttdata.eightfold.ai`,
+    whose tenant migrated off the ATS — read identically to a refused IP range. Both errors argue
+    for abandoning a spare egress that is working.
+
+    ``walled`` is the only bucket that indicts the egress: a request still refused, after every
+    attempt, with a status this origin walls us with. A status the group has not walled us with
+    lands in ``other`` and is left out of the rate rather than counted against it — the safe way
+    to be wrong.
+    """
+    with _walled_lock:
+        walls = frozenset(_wall_statuses.get(group, ()))
     with _traffic_lock:
         counts = _traffic[group]
-        counts["routed"] += 1
-        if recovered:
-            counts["recovered"] += 1
+        counts["requests"] += 1
+        if status == 200:
+            counts["rescued"] += 1
+        elif status in walls:
+            counts["walled"] += 1
+        else:
+            counts["other"] += 1
 
 
 def traffic() -> dict[str, Counter[str]]:
@@ -262,22 +301,38 @@ def report() -> list[str]:
             "spare egress rotations: "
             + ", ".join(
                 f"{why} {spins[why]}"
-                for why in ("attempted", "succeeded", "failed", "throttled")
+                for why in (
+                    "attempted",
+                    "succeeded",
+                    "failed",
+                    "throttled",
+                    "abandoned",
+                )
                 if spins.get(why)
             )
         )
+    causes = rotation_causes()
+    if causes:
+        top = ", ".join(f"{board} {n:,}" for board, n in causes.most_common(5))
+        rest = len(causes) - 5
+        lines.append(
+            "rotation demand by board: " + top + (f", +{rest} more" if rest > 0 else "")
+        )
     for group in sorted(walled_groups()):
-        routed = counts.get(group, Counter())["routed"]
-        recovered = counts.get(group, Counter())["recovered"]
+        seen = counts.get(group, Counter())
+        routed = seen["routed"]
         if not routed:
             lines.append(
                 f"{group}: walled, but no spare egress was available — Boards lost"
             )
             continue
-        rate = 100 * recovered / routed
+        rescued, still_walled, other = seen["rescued"], seen["walled"], seen["other"]
+        asked = rescued + still_walled
+        rate = f"{100 * rescued / asked:.0f}%" if asked else "n/a"
+        tail = f", {other:,} settled non-wall" if other else ""
         lines.append(
-            f"{group}: walled; spare egress carried {routed} request(s), "
-            f"{recovered} recovered ({rate:.0f}%)"
+            f"{group}: walled; spare egress rescued {rescued:,}/{asked:,} walled "
+            f"request(s) ({rate}); {routed:,} attempt(s) carried{tail}"
         )
     return lines
 
@@ -305,19 +360,44 @@ def proxy_for(group: str | None) -> str | None:
 #: before queueing on the lock; if it changed while it waited, a peer already rotated and this
 #: thread rides that new IP instead of bouncing the daemon again.
 _rotation_lock = threading.Lock()
+#: Signalled on every successful rotation. This is what lets a throttled caller *wait* for the
+#: fresh IP instead of spending its attempt on the spent one: that attempt would have failed, and
+#: a failed attempt is worth less than the seconds waiting costs.
+_rotated = threading.Condition(_rotation_lock)
 _rotation_generation = 0
 _rotations: Counter[str] = Counter()
+#: Which Board each rotation request came from. Every caller of :func:`rotate` has just been
+#: refused *through* the spare egress, so this is the set of Boards actually consuming the IP
+#: supply — the attribution the shard report could not make before, and the one that decides
+#: whether the answer is more egress capacity (#174) or a Board that should not be scraped at all.
+#: Demand rather than grants: a Board asking 20,000 times and getting 40 IPs is the one to look at,
+#: and the grant count would show it as unremarkable.
+_rotation_causes: Counter[str] = Counter()
 _last_rotation = 0.0
 
 #: Minimum seconds between successive rotations. Rotation is cyclic — every wall seen *through*
 #: the spare egress asks for another IP — so without a floor a shard meeting 429s continuously
 #: would spend its 60-minute budget restarting `warp-svc` rather than scraping.
 #:
-#: 20s matches the quiet window the sibling project settled on for a freshly-rotated IP; it is
-#: **not** independently measured here, and it is the first number to revisit if the shard report
-#: shows many rotations with a low recovery rate. Sized above the restart-plus-handshake cost so a
-#: new IP always gets a trial before the next rotation is allowed.
-_ROTATION_COOLDOWN = 20.0
+#: **5s, measured.** The 20s this started at came from a sibling project and was never measured
+#: here. The first three runs to report rotation counts (`32178532129`, `32189304871`,
+#: `32198367156`) put the real cost of a rotation at **2.05s median, 4.06s max** across 2,030 of
+#: them — so 20s sat an order of magnitude above the thing it was bounding. It also refused 99.6%
+#: of rotation requests (160,360 throttled against 699 granted on one run), which is what collapsed
+#: the recovery rate once #172 raised proxied traffic from ~1.4 to ~55 req/s per shard.
+#:
+#: 5s keeps ~2.4x headroom over the measured median, clears the observed max, caps a waiter's queue
+#: delay at roughly what the retry backoff already costs it, and lifts the per-shard ceiling from
+#: ~66 rotations to ~264. It does **not** close the supply gap alone: demand is ~3,700
+#: rotations/shard, and serial rotation cannot reach that at any cooldown (#174).
+_ROTATION_COOLDOWN = 5.0
+
+#: How long one caller will wait for a fresh IP before giving up and riding the current one.
+#: A waiter that arrives just after a rotation must be able to sit out a full cooldown *and* the
+#: rotation it is waiting for, so this is sized above `_ROTATION_COOLDOWN` plus the measured 4.06s
+#: worst case. Bounded because a Board that every IP refuses — a migrated tenant whose stale URLs
+#: all 404, say — must not be able to hold a worker for the shard's whole budget.
+_ROTATION_WAIT_CAP = 10.0
 
 #: Pause after `systemctl restart` before re-arming proxy mode — the unit is back before the daemon
 #: is listening.
@@ -331,8 +411,11 @@ _gate = threading.Event()
 _gate.set()
 
 
-def rotate() -> bool:
+def rotate(board: str | None = None) -> bool:
     """Move to a different egress IP. True if a fresh SOCKS5 listener came back.
+
+    ``board`` is the Board whose wall prompted this, recorded so the shard report can name what
+    spent the IP supply rather than only how much of it went.
 
     **Why ``systemctl restart warp-svc`` rather than ``warp-cli disconnect`` + ``connect``**: the
     CLI pair is a no-op for rotation. A registration is sticky to its WARP edge node, so
@@ -340,22 +423,50 @@ def rotate() -> bool:
     (``104.28.232.96`` before and after; a daemon restart moved it to ``104.28.200.91``).
     ``resilience.md`` records the symptom ("rotation can be a no-op"); this is the working answer.
 
+    **A throttled caller waits rather than returning.** Every caller here has just been refused
+    *through* the spare egress, so the current IP is known-bad; returning it immediately spends an
+    attempt that will fail. Waiting out the remaining cooldown costs seconds and buys a route that
+    can actually answer. The wait is bounded by :data:`_ROTATION_WAIT_CAP` and ends early if a peer
+    rotates first, so no caller queues behind a rotation that is not coming.
+
     ``sudo -n`` so a runner without passwordless sudo fails immediately rather than blocking on a
     TTY prompt nobody will answer. **Every** exit path re-opens the gate and leaves the process
     able to dial again: a rotation that cannot happen must cost one bounded attempt, never the
     spare egress itself.
     """
     global _rotation_generation, _proxy, _last_rotation, _resolved
+    if board:
+        with _rotation_lock:
+            _rotation_causes[board] += 1
     seen = _rotation_generation
-    with _rotation_lock:
+    deadline = time.monotonic() + _ROTATION_WAIT_CAP
+    with _rotated:
         if _rotation_generation != seen:
             return _proxy is not None  # a peer rotated while we queued; ride its IP
-        since = time.monotonic() - _last_rotation
-        if _last_rotation and since < _ROTATION_COOLDOWN:
-            _rotations["throttled"] += 1
-            return _proxy is not None  # too soon — give the current IP its fair trial
+        throttled = False
+        while _last_rotation and time.monotonic() - _last_rotation < _ROTATION_COOLDOWN:
+            # Too soon to rotate — but handing back the spent IP is exactly what this call was
+            # trying to avoid, and that attempt would have been refused. Wait for the next IP
+            # instead. Counted once per caller, not once per wakeup, so `throttled` stays a count
+            # of callers made to wait rather than of times the condition woke.
+            if not throttled:
+                _rotations["throttled"] += 1
+                throttled = True
+            remaining = min(
+                _ROTATION_COOLDOWN - (time.monotonic() - _last_rotation),
+                deadline - time.monotonic(),
+            )
+            if remaining <= 0:
+                _rotations["abandoned"] += 1
+                return _proxy is not None  # cap spent; the current IP is all there is
+            generation = _rotation_generation
+            _rotated.wait(remaining)
+            if _rotation_generation != generation:
+                return _proxy is not None  # a peer rotated while we waited; ride its IP
         _last_rotation = time.monotonic()
         _rotations["attempted"] += 1
+        if board:
+            _log.warning(f"spare egress: {board} walled the current IP — rotating")
         _gate.clear()  # peers stop firing at a port the restart is about to take away
         _log.warning("spare egress: rotating egress IP (systemctl restart warp-svc)")
         try:
@@ -391,6 +502,7 @@ def rotate() -> bool:
             return True
         finally:
             _gate.set()  # one place, so no exit path can strand the shard behind a closed gate
+            _rotated.notify_all()  # and release the waiters onto whatever this produced
 
 
 def _restart_daemon() -> bool:
@@ -419,6 +531,23 @@ def rotations() -> Counter[str]:
         return Counter(_rotations)
 
 
+def rotation_causes() -> Counter[str]:
+    """Per Board, how many times it asked the spare egress for a fresh IP."""
+    with _rotation_lock:
+        return Counter(_rotation_causes)
+
+
+def rotation_generation() -> int:
+    """Bumped exactly when a fresh egress IP enters service.
+
+    Read by ``http`` on either side of a :func:`rotate` call: a request that waited and got a new
+    IP has earned a retry the wait should not also charge it for, and only a generation change
+    distinguishes that from a wait that timed out onto the same spent route.
+    """
+    with _rotation_lock:
+        return _rotation_generation
+
+
 def reset() -> None:
     """Forget the cached proxy *and* the walled groups, so the next call probes again (tests)."""
     global _resolved, _proxy, _last_rotation, _rotation_generation
@@ -427,10 +556,12 @@ def reset() -> None:
         _proxy = None
     with _walled_lock:
         _walled.clear()
+        _wall_statuses.clear()
     with _traffic_lock:
         _traffic.clear()
     with _rotation_lock:
         _rotations.clear()
+        _rotation_causes.clear()
         _last_rotation = 0.0
         _rotation_generation = 0
     _gate.set()

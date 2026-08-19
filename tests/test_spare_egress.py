@@ -10,6 +10,8 @@ picking VPN mode over proxy mode, and handing out a proxy before the tunnel is u
 """
 
 import subprocess
+import threading
+import time
 
 import pytest
 
@@ -130,14 +132,42 @@ def test_failure_is_cached_too(monkeypatch):
 # log identically, and "did the fallback work?" is the only question this feature has.
 
 
-def test_report_gives_the_recovery_rate_per_group():
+def test_report_rates_rescues_over_walls_not_over_attempts():
+    """The headline is `rescued / (rescued + walled)` — of the requests the spare egress was asked
+    to rescue, how many it did. Attempts are reported too, but as cost, not as the denominator."""
     spare_egress.mark_walled("eightfold", 405)
-    for ok in (True, True, True, False):
-        spare_egress.note_routed("eightfold", recovered=ok)
-    assert spare_egress.traffic()["eightfold"] == {"routed": 4, "recovered": 3}
+    for _ in range(9):
+        spare_egress.note_routed("eightfold")  # attempts, including retries
+    for status in (200, 200, 200, 405):
+        spare_egress.note_settled("eightfold", status)  # settled requests
     (line,) = spare_egress.report()
     assert "eightfold: walled" in line
-    assert "4 request(s)" in line and "3 recovered (75%)" in line
+    assert "rescued 3/4 walled request(s) (75%)" in line
+    assert "9 attempt(s) carried" in line
+
+
+def test_a_status_the_origin_never_walled_with_is_left_out_of_the_rate():
+    """404s from a Board whose tenant migrated away are not evidence about the egress. Counted
+    against it they read as a refused IP range and argue for switching the fallback off."""
+    spare_egress.mark_walled("eightfold", 405)
+    spare_egress.note_routed("eightfold")
+    for status in (200, 404, 404):
+        spare_egress.note_settled("eightfold", status)
+    (line,) = spare_egress.report()
+    assert "rescued 1/1 walled request(s) (100%)" in line  # not 1/3
+    assert "2 settled non-wall" in line
+
+
+def test_every_wall_shape_counts_as_a_wall_not_just_the_first():
+    """Eightfold answers both 403 and 405. `mark_walled` returns early after the first, so a set
+    kept only at that point would score the other shape as an ordinary non-200."""
+    spare_egress.mark_walled("eightfold", 403)
+    spare_egress.mark_walled(
+        "eightfold", 405
+    )  # early-returns, but must still record the shape
+    spare_egress.note_routed("eightfold")
+    spare_egress.note_settled("eightfold", 405)
+    assert spare_egress.traffic()["eightfold"]["walled"] == 1
 
 
 def test_report_names_the_worst_case_a_traffic_counter_would_hide():
@@ -165,10 +195,12 @@ def test_mark_walled_warns_once_per_group(caplog):
 
 def test_reset_clears_traffic_as_well_as_walls():
     spare_egress.mark_walled("eightfold", 403)
-    spare_egress.note_routed("eightfold", recovered=True)
+    spare_egress.note_routed("eightfold")
+    spare_egress.note_settled("eightfold", 200)
     spare_egress.reset()
     assert spare_egress.walled_groups() == frozenset()
     assert spare_egress.traffic() == {}
+    assert spare_egress.rotation_causes() == {}
 
 
 def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog):
@@ -239,16 +271,88 @@ def test_rotation_without_sudo_degrades(monkeypatch):
     assert spare_egress.rotations()["failed"] == 1
 
 
-def test_the_cooldown_bounds_successive_rotations(monkeypatch):
-    """ "Keep rotating on every 429" and "restart the daemon every few seconds" are the same
-    instruction without a floor."""
+def test_a_throttled_caller_waits_for_the_fresh_ip_rather_than_riding_the_spent_one(
+    monkeypatch,
+):
+    """The cooldown still bounds how often the daemon restarts — but a caller that hits it now
+    *waits* instead of being handed back the IP it was just refused by.
+
+    Every caller here has been walled *through* the spare egress, so returning early spends an
+    attempt on a route already known to be dead. Waiting costs seconds and buys a live one.
+    """
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.05)
+    monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 5.0)
+
     assert spare_egress.rotate() is True
-    assert spare_egress.rotate() is True  # throttled, but still reports a usable proxy
+    started = time.monotonic()
+    assert spare_egress.rotate() is True
+    waited = time.monotonic() - started
+
     counts = spare_egress.rotations()
-    assert counts["attempted"] == 1 and counts["throttled"] == 1
+    assert counts["throttled"] == 1  # it was throttled...
+    assert counts["attempted"] == 2  # ...and still rotated, after waiting the floor out
+    assert waited >= 0.05
+
+
+def test_the_wait_for_a_fresh_ip_is_bounded(monkeypatch):
+    """A Board that every IP refuses must not be able to hold a worker for the shard's budget."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 30.0)
+    monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 0.05)
+
+    assert spare_egress.rotate() is True
+    started = time.monotonic()
+    assert spare_egress.rotate() is True  # gives up and reports the current proxy
+    assert time.monotonic() - started < 5.0  # not the 30s cooldown
+
+    counts = spare_egress.rotations()
+    assert counts["abandoned"] == 1 and counts["attempted"] == 1
+
+
+def test_a_waiter_is_released_by_a_peers_rotation(monkeypatch):
+    """Sixteen workers meeting one wall must not each sit out their own full cooldown: the first
+    rotation serves all of them, and the generation counter is how a waiter learns that."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 30.0)
+    monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 30.0)
+    spare_egress.rotate()  # arms the cooldown, so the next caller must wait
+
+    released = threading.Event()
+    waiter = threading.Thread(target=lambda: (spare_egress.rotate(), released.set()))
+    waiter.start()
+    time.sleep(0.2)
+    assert not released.is_set()  # genuinely parked on the condition
+
+    with spare_egress._rotated:  # a peer produces a fresh IP and announces it
+        spare_egress._rotation_generation += 1
+        spare_egress._rotated.notify_all()
+
+    assert released.wait(5)  # milliseconds, not the 30s it was waiting for
+    waiter.join()
+
+
+def test_the_report_names_the_boards_that_spent_the_ip_supply(monkeypatch):
+    """A count says the supply ran out; only the attribution says which Boards drank it, which is
+    what decides between more egress capacity and a Board that should not be scraped."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    spare_egress.mark_walled("workday", 429)
+    for _ in range(3):
+        spare_egress.rotate("workday:dollartree/dollartreeus")
+    spare_egress.rotate("workday:kohls/kohlscareers")
+
+    line = next(x for x in spare_egress.report() if x.startswith("rotation demand"))
+    assert "workday:dollartree/dollartreeus 3" in line
+    assert "workday:kohls/kohlscareers 1" in line
 
 
 def test_the_gate_reopens_on_every_failure_path(monkeypatch):
