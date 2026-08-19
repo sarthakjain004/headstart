@@ -861,6 +861,66 @@ def test_trakstar_parse():
     assert j.posted_at == "2026-02-01"  # JSON-LD datePosted; the listing card has none
 
 
+class _TrakstarDetailResp:
+    def __init__(self, status_code=200, text=""):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_trakstar_extract_posting_prefers_jsonld_when_present():
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    page = """<html><head>
+    <script type="application/ld+json">
+    {"@context": "http://schema.org", "@type": "JobPosting",
+     "title": "Backend Engineer", "datePosted": "2026-03-01",
+     "description": "&lt;p&gt;Build the platform.&lt;/p&gt;"}
+    </script></head><body>
+    <div class="jobdesciption"><p>Ignored -- JSON-LD wins when both are present.</p></div>
+    </body></html>"""
+    posting = TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page))
+    assert posting["datePosted"] == "2026-03-01"
+    assert posting["description"] == "&lt;p&gt;Build the platform.&lt;/p&gt;"
+
+
+def test_trakstar_extract_posting_falls_back_to_html_when_jsonld_absent():
+    """Some tenant boards (m800, managementapps, rivian, cityflo, dripcapital -- #179) never
+    emit the JSON-LD block at all; the description still renders into the page's own
+    `.jobdesciption` container (that's the tenant template's own spelling). Shaped like the
+    real cityflo/dripcapital markup, live-fetched 2026-08-19, whose body is wrapped in a
+    nested <div> that a naive non-greedy regex truncates (verified: it loses >1000 chars on
+    the real dripcapital page)."""
+    from headstart.models import html_to_text
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    page = """<html><body>
+    <div class="jobdesciption">
+        <div class="s-vgBottom2 u-fontSize14 u-colorGray4">
+    <p>Build the payments platform end to end.</p>
+    <p>Requirements: 3+ years of Python experience.</p>
+    </div>
+        </div>
+    <section class="bottomspace-double">apply here</section>
+    </body></html>"""
+    posting = TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page))
+    assert posting is not None
+    assert "datePosted" not in posting  # not present anywhere on these pages
+    text = html_to_text(posting["description"])
+    assert text == (
+        "Build the payments platform end to end. Requirements: 3+ years of Python experience."
+    )
+    assert (
+        "apply here" not in text
+    )  # stops at the container's own close, not a later one
+
+
+def test_trakstar_extract_posting_none_when_neither_jsonld_nor_html_present():
+    from headstart.scrapers.trakstar import TrakstarScraper
+
+    page = "<html><body><p>No JSON-LD and no .jobdesciption div here.</p></body></html>"
+    assert TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page)) is None
+
+
 def test_recruitee_url_ignores_the_customers_vanity_domain():
     """The API's `careers_url` is whatever domain the customer configured, and a third of
     those do not serve the board (transperfect.com/o/… 404s while the job is open). Build the
