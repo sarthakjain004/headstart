@@ -53,10 +53,32 @@ class _FakeTab:
         self.closed = True
 
 
+class _FakeProcessManager:
+    """Stands in for pydoll's ``BrowserProcessManager`` — tracks whether it was reaped."""
+
+    def __init__(self) -> None:
+        self.stopped = 0
+
+    def stop_process(self) -> None:
+        self.stopped += 1
+
+
+class _FakeTempDirManager:
+    """Stands in for pydoll's ``TempDirectoryManager`` — tracks whether it was reaped."""
+
+    def __init__(self) -> None:
+        self.cleaned = 0
+
+    def cleanup(self) -> None:
+        self.cleaned += 1
+
+
 class _FakeChrome:
     def __init__(self) -> None:
         self.tabs: list[_FakeTab] = []
         self.started = False
+        self._browser_process_manager = _FakeProcessManager()
+        self._temp_directory_manager = _FakeTempDirManager()
 
     async def __aenter__(self):
         return self
@@ -140,6 +162,31 @@ def test_chrome_launch_is_retried_then_reported(monkeypatch):
     ):
         pass
     assert len(attempts) == bh._LAUNCH_ATTEMPTS
+
+
+def test_a_failed_launch_reaps_its_process_and_temp_dir(monkeypatch):
+    """Each failed attempt must kill its own Chrome process and remove its own temp profile dir
+    before the next attempt starts — otherwise a leaked process and dir sit until Python's own
+    GC finalizer races a still-dying Chrome for the directory (the "Directory not empty" OSError
+    seen in production logs), and the leaked process competes with the retry for CPU/memory.
+    """
+    instances: list[_FakeChrome] = []
+
+    class _DiesOnStart(_FakeChrome):
+        async def start(self):
+            instances.append(self)
+            raise OSError("xvfb had a bad day")
+
+    monkeypatch.setattr(bh, "_chrome_factory", _DiesOnStart)
+    monkeypatch.setattr(bh, "_browser", None)
+    with (
+        pytest.raises(RuntimeError, match="failed to start"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        pass
+    assert len(instances) == bh._LAUNCH_ATTEMPTS
+    assert all(i._browser_process_manager.stopped == 1 for i in instances)
+    assert all(i._temp_directory_manager.cleaned == 1 for i in instances)
 
 
 def test_tab_is_closed_even_when_the_caller_raises(fresh):
