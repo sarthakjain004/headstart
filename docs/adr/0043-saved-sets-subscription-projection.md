@@ -1,6 +1,8 @@
 # ADR-0043: Saved sets are per-record files; the Subscription is the emailing set's projection
 
-**Status:** accepted · **Date:** 2026-08-12
+**Status:** accepted · **Date:** 2026-08-12 · **Amended by:**
+[ADR-0069](0069-sets-own-their-projection-against-the-allowlist.md) (the alerts run now yields to
+these endpoints rather than being unaware of sets — it learns only whether an Account has any)
 
 ## Context
 
