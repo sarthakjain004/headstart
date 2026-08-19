@@ -295,16 +295,21 @@ class BaseScraper(ABC):
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results
 
-    def report_detail_gaps(self, results: Sequence[Any], what: str) -> None:
+    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
         """Log how many of a detail pass's results came back empty (None) — the gaps behind
         ADR-0021's null fields. One INFO line per Board, only when something is missing; the
         failure was isolated per item (the fan_out contract), so this line is usually the
-        only trace the gap leaves."""
+        only trace the gap leaves.
+
+        Returns how many were missing, so a scraper whose detail pass is *load-bearing* — one
+        where `parse` drops the Job without it — can mark the Board truncated on the same count
+        (ADR-0053). Most callers only enrich a field and rightly ignore it."""
         missing = sum(1 for r in results if r is None)
         if missing:
             log.get(f"headstart.scrapers.{self.ats}").info(
                 f"{self.board_key()}: {missing}/{len(results)} {what} missing"
             )
+        return missing
 
     @staticmethod
     def async_fanout_enabled() -> bool:

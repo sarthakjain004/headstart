@@ -325,7 +325,15 @@ class EightfoldScraper(BaseScraper):
             fields = self.fan_out(
                 listed, lambda u: self._jsonld(u), workers=_DETAIL_WORKERS
             )
-        self.report_detail_gaps(fields, "detail fields")
+        lost = self.report_detail_gaps(fields, "detail fields")
+        if lost:
+            # On this surface the per-job page *is* the Job — `parse` drops the ones that did
+            # not arrive — so the list is knowingly short and must say so or `index sync` reads
+            # the gap as a delisting (ADR-0053). It matters most here: this is the fallback
+            # taken whenever the API 403s, i.e. exactly when fetches are most likely to fail.
+            self.mark_truncated(
+                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
+            )
         return [
             # The per-job page *is* this path's detail fetch, so reaching it settles whether a
             # description exists — same two-state rule as the API path (ADR-0050).

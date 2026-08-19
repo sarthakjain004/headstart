@@ -14,6 +14,9 @@ from typing import Any
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
+_PAGE_SIZE = 10  # the API's fixed page size (0-indexed ?page=N)
+_MAX_PAGES = 100  # our own ceiling — reaching it means the board went unread
+
 
 class SenseHQScraper(BaseScraper):
     ats = "sensehq"
@@ -34,7 +37,15 @@ class SenseHQScraper(BaseScraper):
             batch = data.get("rows", [])
             rows.extend(batch)
             self._page += 1
-            if len(batch) < 10 or len(rows) >= data.get("count", 0) or self._page > 100:
+            if len(batch) < _PAGE_SIZE or len(rows) >= data.get("count", 0):
+                break
+            if self._page > _MAX_PAGES:
+                # A separate exit from the two above, because it means something different: the
+                # board did not end, we stopped reading it (ADR-0053).
+                self.mark_truncated(
+                    f"hit the {_MAX_PAGES}-page cap at {len(rows)} of "
+                    f"{data.get('count', 0)} jobs — the rest unread"
+                )
                 break
         return {"data": {"rows": rows}}
 
