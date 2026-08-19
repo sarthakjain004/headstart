@@ -195,6 +195,15 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   guard on #160 looked obviously correct and died on contact: 9 of 12 boards the ledger already
   calls dead answer `GET /` with 200. The same discipline applies to any claim about rate limits,
   pagination, or response shape — measure it, don't reason about it.
+- **An agent working this repo can reach the open internet directly — use that, don't assume it
+  away.** Verified 2026-08-19: direct fetches from a Claude Code session against arbitrary ATS
+  hosts (Workday, Eightfold, SuccessFactors, Lever) all reached real content, not a network-egress
+  block. Default to hitting the real endpoint yourself rather than reasoning from logs, docs, or a
+  prior session's evidence. If a specific host genuinely looks blocked, rate-limited, or gives a
+  response that doesn't smell like the real thing, don't guess past it — the pipeline's
+  `workflow_dispatch` (manual trigger) can get a real answer from inside Actions instead. But treat
+  that as a deliberate, asked-for decision, not a default fallback: a full run rewrites ~1.86 GB of
+  LFS data, and storage is this workflow's own documented binding cost constraint.
 
 ## Repo Conventions
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
@@ -259,10 +268,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   `2026-06-21_datadome-slider_warp.png`), not `out.json` or `test2.html`. If no existing
   folder fits, create a clearly-named one rather than misfiling.
 - **The HF dataset is the source of truth for pipeline data — never trust the local copy.**
-  `data/state/`, `data/embeddings/`, `data/lancedb/`, and `data/jobs/` are all gitignored: they
-  live in the private HF dataset `imPoseidon/headstart-index`, and whatever sits in the working
-  tree is a stale snapshot from whenever it was last pulled. Before reading, reasoning about, or
-  quoting a number from any of them, refresh from HF first:
+  `data/state/`, `data/embeddings/`, and `data/lancedb/` are all gitignored: they live in the
+  private HF dataset `imPoseidon/headstart-index`, and whatever sits in the working tree is a
+  stale snapshot from whenever it was last pulled. Before reading, reasoning about, or quoting a
+  number from any of them, refresh from HF first:
 
   ```bash
   python -c "from huggingface_hub import snapshot_download; snapshot_download(
@@ -275,6 +284,12 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   for the store's `count`, `data/state/board_priority.csv` (~1 MB) for the board ledger.
   **Exception:** `data/validate/liveness/` is committed to git, so the repo is authoritative for
   it — do not look for it on HF. See `docs/agents/deployment.md`.
+  **`data/jobs/` is gitignored but NOT on HF at all** (verified 2026-08-19: zero `data/jobs/*`
+  entries in the dataset's file list, only `descriptions/`, `embeddings/`, `lancedb/`, `state/`
+  exist there) — it's ephemeral scrape/filter-stage output, local to whichever machine or CI run
+  produced it, with no durable source to refresh from. A `snapshot_download` against
+  `data/jobs/*` is a silent no-op, not a stale-data warning — don't reach for it expecting fresh
+  data; use `data/descriptions/` (the ADR-0050 store) or `data/state/` for anything durable.
 
 ### Adding or changing a scraper: run the filter harness first
 
