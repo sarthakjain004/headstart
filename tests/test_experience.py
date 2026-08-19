@@ -249,15 +249,35 @@ def test_narrative_at_guard_is_case_sensitive():
     ) == ExperienceSpan(4, None, "regex")
 
 
-def test_work_word_guard_indices_are_derived_not_hardcoded():
-    # The guards must bind to the work-word patterns themselves. A hardcoded index set silently
-    # re-binds when a range phrasing is inserted (ordering forces insertion, not appending).
-    from headstart.experience import _DESC_PATTERNS, _WORK, _WORK_WORD_PATTERNS
+def test_unguarded_patterns_cannot_match_without_the_word_experience():
+    # The guard flag is the only thing between a pattern and corporate narrative. A pattern may
+    # therefore go unguarded only if it cannot fire at all unless "experience" is literally there.
+    # Asserted behaviourally rather than by inspecting the pattern string: the work-word pattern
+    # contains "experience" inside an alternation while still needing guards, so any structural
+    # check reports it as safe.
+    from headstart.experience import _DESC_PATTERNS
 
-    assert _WORK_WORD_PATTERNS == {
-        i for i, p in enumerate(_DESC_PATTERNS) if _WORK in p.pattern
-    }
-    assert _WORK_WORD_PATTERNS, "guards would be inert if this were empty"
+    narrative = [
+        "Founded 12 years ago by a team of engineers",
+        "spent 15 years building great products",
+        "we have been growing for 8 years in the market",
+        "shipping software for 9 years (10 years including beta)",
+    ]
+    for pattern, guarded in _DESC_PATTERNS:
+        if guarded:
+            continue
+        for line in narrative:
+            assert not pattern.search(line), (
+                f"{pattern.pattern} matched {line!r} unguarded"
+            )
+
+
+def test_some_patterns_are_guarded():
+    from headstart.experience import _DESC_PATTERNS
+
+    assert any(guarded for _, guarded in _DESC_PATTERNS), (
+        "guards would be inert if empty"
+    )
 
 
 def test_description_narrative_does_not_mask_a_real_requirement():
@@ -311,3 +331,122 @@ def test_number_always_beats_seniority():
     )
     # a field number beats a senior title
     assert extract("2+", None, "Senior Engineer") == ExperienceSpan(2, None, "field")
+
+
+# --- widened recall, measured against the served table (see the PR) -------------------------------
+
+
+def test_description_reads_an_open_in_phrase_without_a_work_word():
+    # `_WORK` can only enumerate domains someone thought of; the misses are a long tail.
+    assert from_description("5-7+ years in IT operations including server support") == (
+        ExperienceSpan(5, 7, "regex")
+    )
+    assert from_description(
+        "3+ years in product marketing, delivering go-to-market"
+    ) == (ExperienceSpan(3, None, "regex"))
+
+
+def test_description_reads_a_bare_gerund():
+    assert from_description("5+ years shipping production C++ in robotics") == (
+        ExperienceSpan(5, None, "regex")
+    )
+    assert from_description("4+ years specializing in Flutter") == ExperienceSpan(
+        4, None, "regex"
+    )
+
+
+def test_description_reads_a_trailing_parenthetical():
+    assert from_description("In-depth knowledge of PHP (3+ years).") == ExperienceSpan(
+        3, None, "regex"
+    )
+    assert from_description("M365 administration activities (3-5 years)") == (
+        ExperienceSpan(3, 5, "regex")
+    )
+    assert from_description(
+        "customer-facing work (typically 8+ years, but flexible)"
+    ) == (ExperienceSpan(8, None, "regex"))
+
+
+def test_widened_patterns_still_reject_narrative():
+    assert from_description("Clay spent 18 years at Google, where he led Labs") is None
+    assert from_description("Appen has led AI training data for over 30 years") is None
+    assert from_description("In just two years, we achieved unicorn status") is None
+
+
+def test_field_tolerates_a_stated_bound():
+    assert from_field(">3 years") == ExperienceSpan(3, None, "field")
+    assert from_field(">2yrs") == ExperienceSpan(2, None, "field")
+    assert from_field("Minimum 3 years") == ExperienceSpan(3, None, "field")
+    assert from_field("Not Applicable") is None
+
+
+def test_seniority_reads_snake_case_labels():
+    # `\b` cannot end a label whose next character is `_`, so these never matched before.
+    assert from_seniority("student_college") == ExperienceSpan(0, None, "seniority")
+    assert from_seniority("student_school") == ExperienceSpan(0, None, "seniority")
+    assert from_seniority("senior_manager") == ExperienceSpan(5, None, "seniority")
+    assert from_seniority("senior_executive") == ExperienceSpan(5, None, "seniority")
+
+
+def test_seniority_reads_mid_level_synonyms():
+    assert from_seniority(None, "Middle Mobile Engineer") == ExperienceSpan(
+        3, None, "seniority"
+    )
+    assert from_seniority(None, "Medior Developer") == ExperienceSpan(
+        3, None, "seniority"
+    )
+    # "Middle East" is a region, not a level
+    assert from_seniority(None, "Sales Engineer, Middle East") is None
+
+
+def test_seniority_reads_l_prefixed_and_worded_levels():
+    assert from_seniority(None, "DEVELOPER L3") == ExperienceSpan(5, None, "seniority")
+    assert from_seniority(None, "TEST ENGINEER L4") == ExperienceSpan(
+        7, None, "seniority"
+    )
+    assert from_seniority(None, "Managed Services Engineer (L1)") == ExperienceSpan(
+        0, None, "seniority"
+    )
+    assert from_seniority(None, "Level 1 Support Engineer") == ExperienceSpan(
+        0, None, "seniority"
+    )
+    # the bare-numeral and roman forms keep the mapping they had
+    assert from_seniority(None, "Data Scientist III") == ExperienceSpan(
+        5, None, "seniority"
+    )
+    assert from_seniority(None, "SDE II") == ExperienceSpan(3, None, "seniority")
+
+
+def test_description_rejects_narrative_idioms_after_the_number():
+    # These read as requirements to the widened patterns; only what FOLLOWS the number says
+    # otherwise, which is what `_NARRATIVE_BEFORE` cannot see.
+    assert (
+        from_description("on the Cloud 100 for four years in a row and teaming up")
+        is None
+    )
+    assert (
+        from_description("$165K salary, competitive equity (4 year vest), NYC") is None
+    )
+    assert (
+        from_description("Within ~1 year of graduating, or recently graduated") is None
+    )
+
+
+def test_ambiguous_idioms_are_not_guarded():
+    # "running" and "in business" read as narrative often enough to be tempting, but each costs
+    # more real requirements than it saves (see `_NARRATIVE_SPAN`).
+    assert from_description("4+ years running distributed systems at scale") == (
+        ExperienceSpan(4, None, "regex")
+    )
+    assert from_description("3+ years in business development or sales") == (
+        ExperienceSpan(3, None, "regex")
+    )
+
+
+def test_narrative_idiom_guard_does_not_eat_real_requirements():
+    assert from_description(
+        "6+ years of shipping features for native Android apps"
+    ) == (ExperienceSpan(6, None, "regex"))
+    assert from_description("A minimum of four years of relevant experience") == (
+        ExperienceSpan(4, None, "regex")
+    )

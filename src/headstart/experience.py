@@ -49,7 +49,15 @@ class ExperienceSpan:
 # --- Tier 1: parse a structured field like "5+", "3 to 5", "3-5" -------------------------------
 # \d{1,3} (not {1,2}) so a 3-digit value is captured whole and the plausibility guard can reject it
 # ("100" must not truncate to a plausible-looking "10"); anything real is < 100 anyway.
-_FIELD = re.compile(r"^\s*(\d{1,3})\s*(?:\+|(?:to|-|–|—)\s*(\d{1,3}))?", re.IGNORECASE)
+#
+# The leading qualifier is optional because a handful of boards type the bound into the field
+# rather than selecting it: ">3 years", ">2yrs", "Minimum 3 years". It is a floor either way, which
+# is what `min_years` already means, so the prefix is consumed rather than interpreted.
+_FIELD = re.compile(
+    r"^\s*(?:min(?:imum)?\.?\s*)?(?:[>\u2265~]\s*)?(\d{1,3})\s*"
+    r"(?:\+|(?:to|-|\u2013|\u2014)\s*(\d{1,3}))?",
+    re.IGNORECASE,
+)
 
 
 def from_field(value: str | None) -> ExperienceSpan | None:
@@ -77,15 +85,87 @@ def from_field(value: str | None) -> ExperienceSpan | None:
 # "Experience · 7 years" match. Tried in order; **ranges before single values**, which is what stops
 # a single-value pattern binding to the top of a range (see `_RANGE_TAIL` for the rest of that fix).
 #
+# Typographic punctuation, folded to its ASCII twin before matching. **Every mapping is one
+# character to one character**, so `str.translate` preserves offsets exactly and the narrative
+# guards — which slice `text` around `match.start()` — keep pointing at what they did before.
+#
+# Measured over the 328,930-description store: the non-breaking hyphen U+2011 alone blocks 209
+# otherwise-matchable spans ("8+ years of hands‑on software development experience", where `_WORK`
+# already has `hands[\s-]?on` and only the exotic hyphen defeats it), and the en/em dashes another
+# 46. Folding is preferred over widening each character class because these characters are *noise*
+# in a requirement, not signal — the alternative is threading the same six code points through
+# `_GAP`, `_WORDS`, `_WORK` and `_RANGE_TAIL` and re-deriving the risk in each.
+_FOLD = str.maketrans(
+    {
+        "\u2011": "-",  # non-breaking hyphen — by far the most common blocker
+        "\u2012": "-",  # figure dash
+        "\u2013": "-",  # en dash
+        "\u2014": "-",  # em dash
+        "\u2015": "-",  # horizontal bar
+        "\u2212": "-",  # minus sign
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\uf0b7": "\u2022",  # Word's Wingdings bullet, pasted straight out of a .docx
+        "\u30fb": "\u2022",  # katakana middle dot, used as a bullet on JP boards
+    }
+)
+
+
 # `_GAP` stays at 30 deliberately. Widening it to 45 would gain the "N+ years <noun phrase>
 # experience" class, but `search` returns the LEFTMOST match, so a wider gap also changes *which*
 # requirement wins on a description stating several — measured at 2,690 jobs, mean +5.7 years. That
 # is a semantic choice about multi-requirement postings (is the floor the first stated, or the
 # largest?), not part of the range fix, so it is left to its own decision.
-_GAP = r"[\w\s.'’:/()&,·•+-]{0,30}?"  # what may sit between the number and "experience"
+_GAP = (
+    r"[\w\s.'’\":/()&,·•+-]{0,30}?"  # what may sit between the number and "experience"
+)
 _YEARS = (
     r"(?:years?|yrs?)"  # "yrs" is common enough in the corpus to be worth accepting
 )
+
+# Number words, because a requirement is as often written out as digitised: "A minimum of four
+# years of relevant experience", "Minimum five years of experience designing software", "Two years
+# of civil engineering experience". 5,911 descriptions in the store state their requirement this
+# way and matched nothing at all before. Capped at twelve — beyond that a requirement is written in
+# digits in every example read, and each extra word widens what the work-word patterns can reach.
+#
+# Ranges get it too ("four to seven years", "Three to six years"), which is why the number group is
+# substituted into both slots rather than only the first.
+#
+# **Run as a second pass, not folded into the first.** Two reasons, and they point the same way.
+# Correctness: a description that already yields a digit match keeps exactly the answer it had
+# before, so this can only ever add a reading where there was none — measured as 0 changed values
+# against the whole store. Cost: the alternation defeats the literal-prefix scan `re` uses on
+# `\d{1,2}`, and paying that on every description rather than only the ~38% that miss measured 6.5x
+# slower end to end (0.31s -> 2.02s per 3,000 descriptions).
+_WORD_NUM = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+_DIGITS = r"(\d{1,2})"
+# Hand-factored rather than `"|".join(_WORD_NUM)`: `re` does not build a trie out of an alternation,
+# so sharing each first letter across its branches is what keeps the second pass affordable
+# (measured 0.75s -> 0.47s per 3,000 descriptions on the pattern this appears in).
+_DIGITS_OR_WORDS = r"(\d{1,2}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(?:ight|leven)|nine|one)"
+
+
+def _years(token: str) -> int:
+    """A matched number token as an int, whether it arrived as digits or as a word."""
+    return _WORD_NUM.get(token.lower(), 0) or int(token)
+
+
 # The work-context words that make a bare "N years …" a requirement rather than prose.
 _WORK = (
     r"(?:experience|work\w*|hands[\s-]?on|professional|industry|relevant|engineer\w*|"
@@ -99,39 +179,120 @@ _CONN = r"\s+(?:of|in|as)?\s*"
 _WORDS = (
     r"(?:[\w'’/&.-]+[\s,]+){0,4}?"  # filler between the connector and the work word
 )
-_DESC_PATTERNS = [
-    # number-first range then "experience": "7 to 12 years of experience", "3-5 years' experience"
-    re.compile(
-        r"(\d{1,2})\s*(?:to|-|–|—|or)\s*(\d{1,2})\s*\+?\s*"
-        + _YEARS
-        + _GAP
-        + "experience",
-        re.IGNORECASE,
-    ),
-    # "experience" then a range (reversed): "Experience: 8 – 12 Years"
-    re.compile(
-        "experience" + _GAP + r"(\d{1,2})\s*(?:to|-|–|—)\s*(\d{1,2})\s*\+?\s*" + _YEARS,
-        re.IGNORECASE,
-    ),
-    # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
-    re.compile(
-        r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _GAP + "experience", re.IGNORECASE
-    ),
-    # reversed single: "experience of 5+ years", "Experience: 5 years"
-    re.compile(
-        "experience" + _GAP + r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS, re.IGNORECASE
-    ),
-    # "5+ years in software testing", "7 years of professional engineering", "4+ years building …"
-    re.compile(
-        r"(\d{1,2})\s*(?:\+|plus)?\s*" + _YEARS + _CONN + _WORDS + _WORK, re.IGNORECASE
-    ),
-]
 
-# The work-word patterns: the ones that match without the literal word "experience" nearby, so only
-# they can reach corporate narrative, and only they carry the guards below. **Derived, not written
-# down** — the "ranges before single values" ordering means a new range phrasing has to be inserted
-# rather than appended, and a hardcoded index set would silently re-bind to the wrong pattern.
-_WORK_WORD_PATTERNS = {i for i, p in enumerate(_DESC_PATTERNS) if _WORK in p.pattern}
+
+def _desc_patterns(num: str) -> list[tuple[re.Pattern[str], bool]]:
+    """The Tier-2 pattern set, over whichever number group is passed in.
+
+    Built by a factory so the digits-only pass and the digits-or-words pass cannot drift apart:
+    a phrasing added here is added to both, and the **ranges-before-single-values** ordering that
+    stops a single-value pattern binding to a range's ceiling is stated once.
+
+    Each entry pairs the pattern with whether it needs the narrative guards. A pattern that
+    requires the literal word "experience" cannot reach company history and is left unguarded;
+    every pattern that matches without it can, and is guarded. The flag is carried here rather
+    than recovered afterwards by looking for `_WORK` inside `pattern.pattern` — that sniff was
+    true only while the work-word patterns were the sole unguarded-context ones, and silently
+    reported False for any new pattern built from something other than `_WORK`.
+    """
+    return [
+        # number-first range then "experience": "7 to 12 years of experience", "3-5 years' experience"
+        (
+            re.compile(
+                num
+                + r"\s*(?:to|-|–|—|or)\s*"
+                + num
+                + r"\s*\+?\s*"
+                + _YEARS
+                + _GAP
+                + "experience",
+                re.IGNORECASE,
+            ),
+            False,
+        ),
+        # "experience" then a range (reversed): "Experience: 8 – 12 Years"
+        (
+            re.compile(
+                "experience"
+                + _GAP
+                + num
+                + r"\s*(?:to|-|–|—)\s*"
+                + num
+                + r"\s*\+?\s*"
+                + _YEARS,
+                re.IGNORECASE,
+            ),
+            False,
+        ),
+        # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
+        (
+            re.compile(
+                num + r"\s*(?:\+|plus)?\s*" + _YEARS + _GAP + "experience",
+                re.IGNORECASE,
+            ),
+            False,
+        ),
+        # reversed single: "experience of 5+ years", "Experience: 5 years"
+        (
+            re.compile(
+                "experience" + _GAP + num + r"\s*(?:\+|plus)?\s*" + _YEARS,
+                re.IGNORECASE,
+            ),
+            False,
+        ),
+        # "5+ years in software testing", "7 years of professional engineering", "4+ years building …"
+        (
+            re.compile(
+                num + r"\s*(?:\+|plus)?\s*" + _YEARS + _CONN + _WORDS + _WORK,
+                re.IGNORECASE,
+            ),
+            True,
+        ),
+        # "5+ years in <anything>" — the same shape as the pattern above with the work vocabulary
+        # dropped. `_WORK` can only ever enumerate the domains someone thought of, and the misses
+        # are a long tail no list closes: "3+ years in product marketing", "7+ years in hardware
+        # quality", "5+ years in system and network administration". The literal "in" is what
+        # replaces the vocabulary as the anchor — it is the connector requirement prose uses and
+        # company history does not ("In just two years, we achieved …" has no "years in").
+        (
+            re.compile(
+                num + r"\s*(?:\+|plus)?\s*" + _YEARS + r"\s+in\s+[a-z]", re.IGNORECASE
+            ),
+            True,
+        ),
+        # "5+ years shipping production C++", "4+ years specializing in Flutter". `_WORK` already
+        # carries the common verbs (build/design/develop/lead/manage/test), so a bare gerund is
+        # what is left: shipping, deploying, crafting, administering, enabling, conducting.
+        (
+            re.compile(
+                num + r"\s*(?:\+|plus)?\s*" + _YEARS + r"\s+(?:of\s+)?[a-z]+ing\b",
+                re.IGNORECASE,
+            ),
+            True,
+        ),
+        # A trailing parenthetical, which is how a requirement stated as prose gets its number:
+        # "In-depth knowledge of PHP (3+ years)", "Proven experience in C++ … (3+ years)",
+        # "Microsoft 365 administration and migration activities (3-5 years)". The number sits
+        # after the thing it qualifies, so no forward-looking pattern reaches it.
+        (
+            re.compile(
+                r"\((?:typically\s+|approx\.?\s+|around\s+|min\.?\s+|minimum\s+(?:of\s+)?)?"
+                + num
+                + r"\s*(?:\+|(?:-|to)\s*"
+                + num
+                + r")?\s*\+?\s*"
+                + _YEARS
+                + r"\b[^)]{0,30}\)",
+                re.IGNORECASE,
+            ),
+            True,
+        ),
+    ]
+
+
+_DESC_PATTERNS = _desc_patterns(_DIGITS)
+#: Second pass, tried only when :data:`_DESC_PATTERNS` finds nothing (see `_WORD_NUM`).
+_WORD_PATTERNS = _desc_patterns(_DIGITS_OR_WORDS)
 
 # Company age, founder tenure, benefits: "N years" that is never a requirement. These read as
 # requirements to a work-word pattern ("spent the last 15 years building …") and were previously
@@ -151,7 +312,28 @@ _NARRATIVE_AFTER = re.compile(r"^\s*(?:[Aa][Gg][Oo]\b|at\s+[A-Z])")
 # bug, for every pattern at once and for separators the range patterns never enumerate: "2 ~ 4",
 # "between 2 and 4". `and` is safe here only because the digit must sit immediately before it —
 # "3 year and 10 year anniversary" has "year" in between, so it does not read as a range.
-_RANGE_TAIL = re.compile(r"(\d{1,2})\s*(?:-|–|—|~|to|or|and)\s*$", re.IGNORECASE)
+_RANGE_TAIL = re.compile(
+    _DIGITS_OR_WORDS + r"\s*(?:-|–|—|~|to|or|and)\s*$", re.IGNORECASE
+)
+
+
+# Fixed idioms in which "N years" is never a requirement, however the surrounding sentence reads:
+# an award streak ("on the Cloud 100 for four years in a row"), an equity schedule ("competitive
+# equity (4 year vest)"), a graduation window ("within ~1 year of graduating"). Unlike
+# `_NARRATIVE_BEFORE`, which keys on a word appearing *before* the number, these are recognisable
+# only from what follows it — and they are checked for **every** pattern, guarded or not, because
+# the idiom is what makes the number not a requirement, not which pattern happened to find it.
+#
+# Deliberately only these three. "N years running" and "N years in business" were tried and
+# reverted: measured against the served table they cost 4 and 6 real requirements respectively
+# ("4+ years running distributed systems at scale", "3+ years in business development") to buy
+# roughly two narrative rejections each. An idiom earns a place here only if it is unambiguous —
+# a phrase that is *usually* narrative is a net loss, because the requirement reading is the one
+# a candidate is filtering on.
+_NARRATIVE_SPAN = re.compile(
+    r"\b(?:years?|yrs?)\b[\s\w'’()-]{0,18}?\b(?:in\s+a\s+row|vest\w*|of\s+graduat\w*)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_narrative(text: str, match: re.Match) -> bool:
@@ -166,17 +348,27 @@ def from_description(text: str | None) -> ExperienceSpan | None:
     """Tier 2 — mine the description with experience-anchored regex (for sources without a field)."""
     if not text:
         return None
-    for index, pattern in enumerate(_DESC_PATTERNS):
+    text = text.translate(_FOLD)
+    return _scan(text, _DESC_PATTERNS) or _scan(text, _WORD_PATTERNS)
+
+
+def _scan(
+    text: str, patterns: list[tuple[re.Pattern[str], bool]]
+) -> ExperienceSpan | None:
+    """One pass of the Tier-2 patterns over already-folded text."""
+    for pattern, guarded in patterns:
         # finditer, not search: a guarded rejection must fall through to the next *occurrence*, so
         # "Founded 12 years ago. Requires 5+ years building …" still yields 5 rather than nothing.
         for match in pattern.finditer(text):
-            lo = int(match.group(1))
+            lo = _years(match.group(1))
             hi = (
-                int(match.group(2))
+                _years(match.group(2))
                 if match.lastindex and match.lastindex >= 2 and match.group(2)
                 else None
             )
-            if index in _WORK_WORD_PATTERNS and (
+            if _NARRATIVE_SPAN.search(text[match.start() : match.end() + 25]):
+                continue
+            if guarded and (
                 _is_narrative(text, match) or lo > _MAX_PLAUSIBLE_REQUIREMENT
             ):
                 continue
@@ -185,8 +377,8 @@ def from_description(text: str | None) -> ExperienceSpan | None:
                 tail = _RANGE_TAIL.search(
                     text[max(0, match.start(1) - 12) : match.start(1)]
                 )
-                if tail and int(tail.group(1)) < lo:
-                    lo, hi = int(tail.group(1)), lo
+                if tail and _years(tail.group(1)) < lo:
+                    lo, hi = _years(tail.group(1)), lo
             if lo > _MAX_PLAUSIBLE_YEARS:
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
@@ -213,14 +405,21 @@ _SENIORITY = [
     (re.compile(r"\b(lead|staff|architect|expert)\b", re.IGNORECASE), 7),
     (
         re.compile(
-            r"\b(senior|mid[\s-]?senior|\bsr\b|experienced|executive)\b", re.IGNORECASE
+            r"\b(senior\w*|mid[\s-]?senior|\bsr\b|experienced|executive)\b",
+            re.IGNORECASE,
         ),
         5,
     ),
-    (re.compile(r"\b(associate|mid[\s_-]?level|intermediate)\b", re.IGNORECASE), 3),
     (
         re.compile(
-            r"\b(intern|internship|trainee|graduate|\bgrad\b|student|entry[\s_-]?level|junior|\bjr\b|apprentice|fresher|early[\s-]?career)\b",
+            r"\b(associate|mid[\s_-]?level|intermediate|medior|middle(?!\s+east))\b",
+            re.IGNORECASE,
+        ),
+        3,
+    ),
+    (
+        re.compile(
+            r"\b(intern|internship|trainee|graduate|\bgrad\b|student\w*|entry[\s_-]?level|junior|\bjr\b|apprentice|fresher|early[\s-]?career)\b",
             re.IGNORECASE,
         ),
         0,
@@ -230,11 +429,23 @@ _SENIORITY = [
 
 # Numeric / roman level suffixes on the title ("Software Engineer 1", "Data Scientist III", "SDE II")
 # also encode seniority: I/1 = entry, II/2 = mid, III/3 = senior, IV/V = staff.
+#
+# The ladder is as often written with an `L`/`IC` prefix or the word "Level" — "DEVELOPER L3",
+# "TEST ENGINEER L4", "Security Managed Services Engineer (L1)", "Operating Engineer Level 1".
+# Measured over the served table, those spellings sit on 1,274 titles the cascade covers no other
+# way. They get the SAME mapping as the bare numeral deliberately: this is one spelling of the
+# ordinal `_LEVEL_YEARS` already trusts, not a new claim about what a level means. Ladders do
+# disagree on where L3 sits, but that disagreement applies identically to "Developer 3" and is
+# therefore an argument about `_LEVEL_YEARS`, not about which spellings reach it.
 _LEVEL = re.compile(
     r"\b(?:engineer|developer|programmer|analyst|scientist|architect|sde|swe)\s*"
-    r"(iii|ii|iv|i|v|[1-5])\b",
+    r"(?:\(\s*)?(?:l|ic|level\s*)?(iii|ii|iv|i|v|[1-5])\b",
     re.IGNORECASE,
 )
+# "Level 1 Support Engineer" states the same ordinal before the role noun, so `_LEVEL` cannot see
+# it. Kept separate and spelled out in full — a bare "L1" anywhere in a title is too easy to
+# collide with a product or grade code, whereas the word "Level" is unambiguous.
+_LEVEL_WORD = re.compile(r"\blevel\s*([1-5])\b", re.IGNORECASE)
 _LEVEL_YEARS = {
     "i": 0,
     "1": 0,
@@ -260,7 +471,7 @@ def from_seniority(
     for pattern, years in _SENIORITY:
         if pattern.search(text):
             return ExperienceSpan(years, None, "seniority")
-    match = _LEVEL.search(title or "")
+    match = _LEVEL.search(title or "") or _LEVEL_WORD.search(title or "")
     if match:
         return ExperienceSpan(_LEVEL_YEARS[match.group(1).lower()], None, "seniority")
     return None
