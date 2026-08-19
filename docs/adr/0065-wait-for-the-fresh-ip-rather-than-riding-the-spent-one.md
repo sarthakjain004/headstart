@@ -44,9 +44,9 @@ Three changes, plus what we deliberately did not do.
 
 **1. Rate rescues over walls, per settled request.** `note_routed` counts attempts (cost);
 `note_settled` counts settled requests into `rescued` / `walled` / `other`, where `walled` means
-refused, after every attempt, with a status this origin has actually walled us with. The headline
-is `rescued / (rescued + walled)`. A status the group never walled with is excluded from the rate
-rather than counted against it — the safe way to be wrong.
+refused, after every attempt, with a status **that request** treats as a wall (its own `egress_on`).
+The headline is `rescued / (rescued + walled)`. Anything else is excluded from the rate rather than
+counted against it — the safe way to be wrong.
 
 **2. Cooldown 20 s → 5 s.** The 20 s came from a sibling project and was never measured here; it
 sat an order of magnitude above the 2.05 s median it was bounding. 5 s keeps ~2.4× headroom, clears
@@ -60,11 +60,19 @@ out and then finds itself eligible still performs one rotation, so the worst cas
 one rotation round-trip. The async path starts that clock on the event loop (`wait_deadline`)
 rather than inside `rotate`, so time spent queueing for an executor thread counts against it too.
 
-Because the wait would otherwise consume the attempt it was queueing to spend, a caller that
-**waited** *and* came back to a **fresh** IP earns one attempt back, capped at
-`_MAX_EARNED_ATTEMPTS = 2`. Both halves are load-bearing: a caller that waited the cap out has
-gained nothing to retry with, and one that rotated without waiting was never charged the attempt
-this would give back.
+Because the wait would otherwise consume the attempt it was queueing to spend, a caller that comes
+back to a **fresh** IP earns one attempt back, capped at `_MAX_EARNED_ATTEMPTS = 2`. `rotate`
+returns exactly that one bit, and it doubles as "this call cost the caller time": no path reaches a
+fresh IP without paying about the same for it — rotating it yourself is the measured 2.05 s with
+the gate closed, waiting out the cooldown is its remainder, and queueing on the rotation lock is
+the peer's whole rotation, since that lock is held across the restart. A caller that waited the cap
+out and is still on the spent route earns nothing: it has no new route to retry on, and crediting
+it would turn a hard wall into a retry loop.
+
+An earlier draft carried a separate `waited` flag alongside `fresh` and keyed the credit on both.
+It was wrong in a way worth recording: a caller that blocked on the rotation lock for a peer's
+entire rotation reported `waited=False` and earned nothing, while one that blocked the same
+seconds on the condition earned an attempt. Two flags that must always agree are one flag.
 
 **We did not reduce the detail pass's concurrency.** `_DETAIL_STREAMS`/`_DETAIL_WORKERS` are
 untouched: reducing demand would trade recall for a metric, and outcomes were improving throughout
@@ -74,16 +82,19 @@ inherent to waiting rather than a width change, it is bounded by the cap above, 
 was spending the attempt on a route already known to be refused.
 
 `rotate` also now takes the Board that walled it, so the shard report names *which* Boards spent
-the IP supply rather than only how much of it went, and it returns a `Rotation(usable, fresh,
-waited)` rather than a bare bool — the caller needs all three to decide whether a wait earned
-anything.
+the IP supply rather than only how much of it went. Its bool return changes meaning — from "is
+there a proxy to ride", which no production caller ever read, to "is a fresh IP now in service",
+which is the bit the retry budget turns on.
 
 `note_settled` classifies against **the request's own** `egress_on`, not a set accumulated per
 group. Eightfold's API-availability probe opts out of marking because its steady 403 means "this
 tenant has no API"; scored against the group's wall shapes it would land in `walled` and deflate
 the rate — reintroducing, one layer down, the misattribution this change exists to remove. A
-request that never settles on a status at all (a transport failure through the proxy) is counted
-as `other`, so it stays visible rather than vanishing from the denominator.
+request that never settles on a status at all (a transport failure through the proxy) is counted as
+`other`. That keeps it out of the rate — it is not evidence either way about a wall — while still
+showing up in `requests` and in the report's `settled non-wall` tail, so a spare egress whose
+listener is down is visible rather than simply absent. `network` retries went from 250 fleet-wide
+before #172 to 52k–61k after, so that path is not hypothetical.
 
 ## Consequences
 

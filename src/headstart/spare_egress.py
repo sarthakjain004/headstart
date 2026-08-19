@@ -44,12 +44,10 @@ import subprocess
 import threading
 import time
 from collections import Counter, defaultdict
-from typing import NamedTuple
 
 from headstart import log
 
 __all__ = [
-    "Rotation",
     "mark_walled",
     "note_routed",
     "note_settled",
@@ -404,20 +402,6 @@ _ROTATION_COOLDOWN = 5.0
 _ROTATION_WAIT_CAP = 10.0
 
 
-class Rotation(NamedTuple):
-    """What one :func:`rotate` call did.
-
-    ``usable`` is the plain "is there a proxy to ride" the caller used to get back on its own.
-    ``fresh`` and ``waited`` exist because ``http`` grants a request an extra attempt when a wait
-    cost it one, and that needs both: a caller that waited and got nothing has earned no retry,
-    and one that rotated without ever waiting was charged nothing to earn one back with.
-    """
-
-    usable: bool
-    fresh: bool = False
-    waited: bool = False
-
-
 #: Pause after `systemctl restart` before re-arming proxy mode — the unit is back before the daemon
 #: is listening.
 _RESTART_SETTLE = 2.0
@@ -430,8 +414,17 @@ _gate = threading.Event()
 _gate.set()
 
 
-def rotate(board: str | None = None, *, deadline: float | None = None) -> Rotation:
+def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
     """Move to a different egress IP, waiting out the cooldown if one is in force.
+
+    **True iff a fresh egress IP is now in service** — whether this call produced it or a peer did
+    while this one queued. That single bit is also the answer to "did this call cost the caller
+    time?", which is what ``http`` needs to decide whether to give an attempt back: every path that
+    ends on a fresh IP paid for it, and they all cost about the same. Rotating it yourself is the
+    measured 2.05s with the gate closed; waiting out the cooldown is its remainder; queueing on the
+    rotation lock is the peer's whole rotation, since that lock is held across the restart. No path
+    gets a fresh IP free, and none pays without getting one — so a separate "did you wait" flag
+    could only disagree with this one, and an earlier draft's did.
 
     ``deadline`` bounds the wait; pass :func:`wait_deadline`'s value to start that clock earlier
     than this call (the async path does, so executor-queue time counts against the cap too).
@@ -465,8 +458,7 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> Rotati
         deadline = wait_deadline()
     with _rotated:
         if _rotation_generation != seen:
-            # A peer rotated while we queued: the IP is fresh, but we paid nothing for it.
-            return Rotation(_proxy is not None, fresh=True)
+            return True  # a peer rotated while we queued — its IP is fresh, ride it
         throttled = False
         while _last_rotation and time.monotonic() - _last_rotation < _ROTATION_COOLDOWN:
             # Too soon to rotate — but handing back the spent IP is exactly what this call was
@@ -481,15 +473,12 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> Rotati
                 deadline - time.monotonic(),
             )
             if remaining <= 0:
-                _rotations["abandoned"] += (
-                    1  # cap spent; the current IP is all there is
-                )
-                return Rotation(_proxy is not None, waited=True)
+                _rotations["abandoned"] += 1  # cap spent; no fresh IP for this caller
+                return False
             generation = _rotation_generation
             _rotated.wait(remaining)
             if _rotation_generation != generation:
-                # A peer rotated while we waited — the wait bought this, so it counts as earned.
-                return Rotation(_proxy is not None, fresh=True, waited=True)
+                return True  # a peer rotated while we waited; ride its IP
         _last_rotation = time.monotonic()
         _rotations["attempted"] += 1
         if board:
@@ -499,7 +488,7 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> Rotati
         try:
             if not _restart_daemon():
                 _rotations["failed"] += 1
-                return Rotation(False, waited=throttled)
+                return False
             # `systemctl restart` returns once the *unit* is back, but warp-svc needs a moment to
             # come up and reconnect. Re-arming immediately means all three calls land on a daemon
             # that is not listening yet, fail silently, and the handshake wait below then burns its
@@ -520,13 +509,13 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> Rotati
                 with _lock:
                     _proxy = None
                     _resolved = False
-                return Rotation(False, waited=throttled)
+                return False
             _rotation_generation += 1
             _rotations["succeeded"] += 1
             _log.warning(
                 f"spare egress: rotated to a fresh egress IP (#{_rotation_generation})"
             )
-            return Rotation(True, fresh=True, waited=throttled)
+            return True
         finally:
             _gate.set()  # one place, so no exit path can strand the shard behind a closed gate
             _rotated.notify_all()  # and release the waiters onto whatever this produced

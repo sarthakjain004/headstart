@@ -141,15 +141,13 @@ def _rotate_for(board: str | None, earned: int, deadline: float | None = None) -
     Sync, and called from the async path through ``asyncio.to_thread``, so the two retry loops
     share one policy rather than drifting apart.
 
-    An attempt is earned only when the caller **waited** *and* came back to a **fresh** IP. Both
-    halves matter: a caller that waited the cap out is still on the spent route and has gained
-    nothing to retry with, and a caller that rotated without ever waiting was never charged the
-    attempt this gives back — crediting it would hand the hardest-walled Boards a bigger retry
-    budget than anything else gets.
+    An attempt is earned only when a **fresh** IP came back. `rotate` returns exactly that, and it
+    doubles as "this call cost the caller time": no path reaches a fresh IP without paying for it
+    (see `rotate`). A caller that waited the cap out and is still on the spent route gets nothing —
+    it has no new route to retry on, and crediting it would turn a hard wall into a retry loop.
     """
-    outcome = spare_egress.rotate(board, deadline=deadline)
-    earned_one = outcome.waited and outcome.fresh
-    return 1 if earned_one and earned < _MAX_EARNED_ATTEMPTS else 0
+    fresh = spare_egress.rotate(board, deadline=deadline)
+    return 1 if fresh and earned < _MAX_EARNED_ATTEMPTS else 0
 
 
 def _retry_after(response: Any) -> float | None:

@@ -262,9 +262,7 @@ def test_rotate_restarts_the_daemon_rather_than_reconnecting(monkeypatch):
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     calls = _rotating(monkeypatch)
-    assert spare_egress.rotate() == spare_egress.Rotation(
-        True, fresh=True, waited=False
-    )
+    assert spare_egress.rotate() is True
     assert ["sudo", "-n", "systemctl", "restart", "warp-svc"] in calls
     assert not any(c[-1] == "disconnect" for c in calls)
     assert spare_egress.rotations()["succeeded"] == 1
@@ -277,7 +275,7 @@ def test_a_failed_rotation_does_not_pin_the_process_to_the_direct_route(monkeypa
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     _rotating(monkeypatch, comes_back=False)
-    assert spare_egress.rotate().usable is False
+    assert spare_egress.rotate() is False
     assert spare_egress._resolved is False  # a later caller re-dials
     assert spare_egress.rotations()["failed"] == 1
 
@@ -286,7 +284,7 @@ def test_rotation_without_sudo_degrades(monkeypatch):
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     _rotating(monkeypatch, restart_ok=False)
-    assert spare_egress.rotate().usable is False
+    assert spare_egress.rotate() is False
     assert spare_egress.rotations()["failed"] == 1
 
 
@@ -305,12 +303,12 @@ def test_a_throttled_caller_waits_for_the_fresh_ip_rather_than_riding_the_spent_
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.05)
     monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 5.0)
 
-    assert spare_egress.rotate().fresh is True
+    assert spare_egress.rotate() is True
     started = time.monotonic()
     second = spare_egress.rotate()
     waited = time.monotonic() - started
 
-    assert second == spare_egress.Rotation(True, fresh=True, waited=True)
+    assert second is True  # it waited, and came back to a fresh IP
     counts = spare_egress.rotations()
     assert counts["throttled"] == 1  # it was throttled...
     assert counts["attempted"] == 2  # ...and still rotated, after waiting the floor out
@@ -325,13 +323,13 @@ def test_the_wait_for_a_fresh_ip_is_bounded(monkeypatch):
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 30.0)
     monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 0.05)
 
-    assert spare_egress.rotate().fresh is True
+    assert spare_egress.rotate() is True
     started = time.monotonic()
     given_up = spare_egress.rotate()  # gives up and reports the current proxy
     assert time.monotonic() - started < 5.0  # not the 30s cooldown
 
-    # waited, but got nothing for it — so `http` must not credit it an attempt
-    assert given_up == spare_egress.Rotation(True, fresh=False, waited=True)
+    # waited, but got no fresh IP for it — so `http` must not credit it an attempt
+    assert given_up is False
     counts = spare_egress.rotations()
     assert counts["abandoned"] == 1 and counts["attempted"] == 1
 
