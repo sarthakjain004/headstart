@@ -228,8 +228,15 @@ jobs:
               -o Acquire::Retries=2 \
               -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/cloudflare-client.list \
               -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
+            # `Acquire::https::Timeout` was missing here even though the .deb itself is fetched
+            # over https, same as `update` above. 9 shard-instances (32189304871, 32209088634 x5,
+            # 32221139989 x2, 32230467076) show this exact line eating the full outer `timeout 60`
+            # on *both* attempts with zero apt output — apt never got a chance to hit its own
+            # `Acquire::Retries` because nothing bounded the https stall. Same wedge `update` was
+            # fixed for, one line down, still open.
             sudo timeout 60 apt-get install -y -qq \
-              -o Acquire::http::Timeout=10 -o Acquire::Retries=2 cloudflare-warp || return 1
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+              -o Acquire::Retries=2 cloudflare-warp || return 1
           }
           if ! install_warp; then
             echo "warp install attempt 1 failed — retrying" >&2
