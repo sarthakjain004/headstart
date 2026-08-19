@@ -304,15 +304,19 @@ def test_a_throttled_caller_waits_for_the_fresh_ip_rather_than_riding_the_spent_
     monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 5.0)
 
     assert spare_egress.rotate() is True
-    started = time.monotonic()
+    armed_at = spare_egress._last_rotation
     second = spare_egress.rotate()
-    waited = time.monotonic() - started
 
     assert second is True  # it waited, and came back to a fresh IP
     counts = spare_egress.rotations()
     assert counts["throttled"] == 1  # it was throttled...
     assert counts["attempted"] == 2  # ...and still rotated, after waiting the floor out
-    assert waited >= 0.05
+    # Measured on the clock the code itself uses. Timing this from a `monotonic()` taken after
+    # the first rotate returned compares against a *later* origin than `_last_rotation`, so the
+    # elapsed figure is structurally short of the cooldown by that gap — it read 0.04998673 on
+    # CI against a 0.05 floor. The loop's actual contract is that it does not rotate until a
+    # full cooldown has passed since the last one, which is exactly this.
+    assert spare_egress._last_rotation - armed_at >= spare_egress._ROTATION_COOLDOWN
 
 
 def test_the_wait_for_a_fresh_ip_is_bounded(monkeypatch):
