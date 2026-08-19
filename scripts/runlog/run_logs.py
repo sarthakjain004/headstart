@@ -16,11 +16,18 @@ source echo means the workflow's own script text appears in every job log. A gre
 looked like a new phenomenon when it was only new *logging*. Every read goes through
 :func:`clean`, which drops those lines before anything else sees them. Do not bypass it.
 
-Used as a library by the analysers beside it:
+**Shared log-line patterns live here, not in the analysers.** `DONE` in particular was copied into
+two analysers and silently *diverged* — one parsed seven groups, the other four — so a change to
+the emitter would have fixed one and left the other quietly wrong. Any pattern more than one
+analyser reads belongs in this module.
+
+Used as a library by the analysers beside it. :meth:`Run.stage` is a **generator**: it yields each
+shard as its log lands rather than returning a list, so a caller prints as work completes instead
+of buffering the whole stage.
 
     from run_logs import Run
     run = Run(32272854468)
-    for shard, text in run.stage("scrape"):
+    for shard, job, text in run.stage("scrape"):
         ...
 
 Also runs standalone to dump a stage's cleaned log:
@@ -36,7 +43,8 @@ import json
 import re
 import subprocess
 import sys
-import tempfile
+import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -47,18 +55,42 @@ REPO = "sarthakjain004/headstart"
 # anything, or you measure the script text instead of the run.
 ECHO = "\x1b[36;1m"
 
+# Cached logs are R&D captures, so they live where CLAUDE.md puts those and where the repo's
+# other gh-log analyser (`scripts/eval/flap_audit.py`) already puts its own.
+ROOT = Path(__file__).resolve().parents[2]
+CACHE_ROOT = ROOT / "experiment" / "runlog" / "artifacts"
+
+# How many logs to fetch at once. Not exposed as a flag: the ceiling is GitHub's rate limiter,
+# not anything a caller knows better than this module.
+WORKERS = 8
+
 _SHARDED = re.compile(r"^(.*?) \((\d+)\)$")
 # Strip the ISO timestamp GitHub prefixes to every raw line, keeping the app's own clock.
 _STAMP = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z ")
 
+# --- shared emitter patterns (single source of truth; see the module docstring) ---------------
+# `scrape_run._report`. The `predicted`/`actual` tail is absent when the planner had no estimate,
+# so groups 6-7 are optional and callers must treat them as such.
+DONE = re.compile(
+    r"\[scrape_run\] done: (\d+) jobs from (\d+) boards in (\d+)s \((\d+) board errors\)"
+    r" \| board seconds (\{[^}]+\})(?: \| predicted ([\d.]+) min, actual/predicted ([\d.]+)x)?"
+)
 
-def gh(path: str) -> str:
-    out = subprocess.run(
-        ["gh", "api", path], capture_output=True, text=True, check=False
+
+def gh(path: str, attempts: int = 2) -> str:
+    """`gh api`, retried once. api.github.com is intermittently flaky from a laptop, and a
+    single 404 on a freshly-finished run should not kill a whole analysis."""
+    for attempt in range(1, attempts + 1):
+        out = subprocess.run(
+            ["gh", "api", path], capture_output=True, text=True, check=False
+        )
+        if out.returncode == 0:
+            return out.stdout
+        if attempt < attempts:
+            time.sleep(2)
+    sys.exit(
+        f"gh api {path} failed after {attempts} attempts: {out.stderr.strip()[:300]}"
     )
-    if out.returncode != 0:
-        sys.exit(f"gh api {path} failed: {out.stderr.strip()}")
-    return out.stdout
 
 
 def clean(text: str) -> str:
@@ -80,11 +112,12 @@ class Run:
     def __init__(self, run_id: int, repo: str = REPO, cache: Path | None = None):
         self.id = run_id
         self.repo = repo
-        self.cache = cache or Path(tempfile.gettempdir()) / f"runlog-{run_id}"
+        self.cache = cache or CACHE_ROOT / str(run_id)
         self.cache.mkdir(parents=True, exist_ok=True)
         meta = json.loads(gh(f"repos/{repo}/actions/runs/{run_id}"))
         self.head = meta["head_sha"][:7]
         self.created = meta["created_at"]
+        self.conclusion = meta.get("conclusion")
         self.jobs = [j for j in self._jobs() if j["started_at"] and j["completed_at"]]
 
     def _jobs(self) -> list[dict]:
@@ -132,20 +165,20 @@ class Run:
         jobs = [j for j in self.jobs if self.stage_of(j["name"]) == stage]
         return sorted(jobs, key=lambda j: self.shard_of(j["name"]) or 0)
 
-    def stage(self, stage: str, workers: int = 8) -> list[tuple[int | None, dict, str]]:
-        """`(shard, job, cleaned_log)` for a stage, fetched concurrently, shard-ordered.
+    def stage(self, stage: str) -> Iterator[tuple[int | None, dict, str]]:
+        """Yield `(shard, job, cleaned_log)` as each log lands — completion order, not shard order.
 
-        Concurrent with `as_completed` rather than a blocking map so one slow log cannot hold
-        up the rest, per the repo's streaming rule.
+        A generator rather than a list so callers stream: the repo forbids buffering a batch and
+        printing only at the end, since one slow item then stalls all visibility and a crash loses
+        everything. Callers that need a ranked table should print each shard on arrival and rank
+        afterwards, not withhold output until the fetch completes.
         """
         jobs = self.stage_jobs(stage)
-        got: list[tuple[int | None, dict, str]] = []
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             futures = {pool.submit(self.log, j): j for j in jobs}
             for fut in as_completed(futures):
                 job = futures[fut]
-                got.append((self.shard_of(job["name"]), job, fut.result()))
-        return sorted(got, key=lambda r: (r[0] is None, r[0] or 0))
+                yield self.shard_of(job["name"]), job, fut.result()
 
     def stages(self) -> list[str]:
         seen: list[str] = []
@@ -154,19 +187,6 @@ class Run:
             if s not in seen:
                 seen.append(s)
         return seen
-
-
-def resolve_ids(args: argparse.Namespace) -> list[int]:
-    """Run ids from positionals and/or `--latest`, in the order given."""
-    ids = list(args.run_ids)
-    if args.latest:
-        runs = json.loads(
-            gh(
-                f"repos/{args.repo}/actions/workflows/{args.latest}/runs?per_page={args.n}"
-            )
-        )["workflow_runs"]
-        ids += [r["id"] for r in runs]
-    return ids
 
 
 def common_args(description: str) -> argparse.ArgumentParser:
@@ -187,7 +207,14 @@ def common_args(description: str) -> argparse.ArgumentParser:
 
 
 def runs_from(args: argparse.Namespace) -> list[Run]:
-    ids = resolve_ids(args)
+    ids = list(args.run_ids)
+    if args.latest:
+        runs = json.loads(
+            gh(
+                f"repos/{args.repo}/actions/workflows/{args.latest}/runs?per_page={args.n}"
+            )
+        )["workflow_runs"]
+        ids += [r["id"] for r in runs]
     if not ids:
         sys.exit("give at least one run id, or --latest WORKFLOW")
     cache = Path(args.cache_dir) if args.cache_dir else None

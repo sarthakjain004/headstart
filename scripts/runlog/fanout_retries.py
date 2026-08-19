@@ -24,6 +24,11 @@ quantitative, so it shows *how badly* a shard was degraded rather than that it w
 be broken by a logging change — which matters here, because a previous investigation was misled
 when new log wording made an old phenomenon look new.
 
+**Sample size: 4 degraded shards, all from one run (32261793515), against 26 healthy ones.** The
+separation is wide — healthy shards top out at 0.37, degraded ones start at 1489 — but four is a
+small n drawn from a single run, so treat `DIRECT_RATIO` as calibrated, not proven. A shard landing
+in the ambiguous band between the thresholds is reported as `?` rather than forced to a verdict.
+
 **A caution the measurement earned.** `spare_egress.rotations()` counts tunnel restarts, and a
 restart that returns the same address counts the same as one that does not (ADR-0067: rotation
 yields a genuinely different IP only ~11 times in 30, because the colo never moves and carries a
@@ -48,10 +53,30 @@ SPENT = re.compile(
     r"\[spare_egress\] (\w+): origin returned (\d+) — spending this shard"
 )
 
-# Above this, a shard's retries are dominated by rate-limiting rather than proxy flakiness —
-# the fingerprint of running direct. Chosen off the measured gap: healthy shards sit under 0.6,
-# degraded ones over 1000. Anything between is genuinely ambiguous and says so.
+# Above DIRECT_RATIO a shard's retries are dominated by rate-limiting rather than proxy
+# flakiness — the fingerprint of running direct. Below WARP_RATIO it looks proxied. The measured
+# gap is enormous (healthy max 0.37, degraded min 1489), so the band between them is empty in the
+# sample and a shard landing there is reported as unknown rather than forced to a verdict.
 DIRECT_RATIO = 5.0
+WARP_RATIO = 1.0
+
+
+def direct_ratio(counts: dict[str, int]) -> float | None:
+    """429-per-network, the egress fingerprint. `None` when the shard spent too few retries of
+    either class to say anything — a shard with no network *and* no rate-limit retries is silent,
+    not direct, and calling it direct was a real false positive this guard exists to stop."""
+    net, lim = counts.get("network", 0), counts.get("429-ratelimit", 0)
+    if net == 0:
+        return None if lim == 0 else float("inf")
+    return lim / net
+
+
+def verdict_of(ratio: float | None) -> str:
+    if ratio is None:
+        return "?"
+    if ratio > DIRECT_RATIO:
+        return "DIRECT"
+    return "warp" if ratio < WARP_RATIO else "?"
 
 
 def parse_retries(text: str) -> tuple[dict[str, int], int] | None:
@@ -100,12 +125,19 @@ def report(run: Run) -> None:
         flush=True,
     )
     for r in rows:
-        net = r["counts"].get("network", 0)
-        lim = r["counts"].get("429-ratelimit", 0)
-        ratio = lim / net if net else float("inf")
-        verdict = "DIRECT" if ratio > DIRECT_RATIO else "warp"
-        flag = "" if (verdict == "DIRECT") == r["logged_degraded"] else " !MISMATCH"
-        shown = "inf" if net == 0 else f"{ratio:.2f}"
+        ratio = direct_ratio(r["counts"])
+        verdict = verdict_of(ratio)
+        # Only a confident verdict can disagree with the log line; "?" is an abstention.
+        flag = (
+            ""
+            if verdict == "?" or (verdict == "DIRECT") == r["logged_degraded"]
+            else " !MISMATCH"
+        )
+        shown = (
+            "-"
+            if ratio is None
+            else ("inf" if ratio == float("inf") else f"{ratio:.2f}")
+        )
         print(
             "".join(
                 [f"{r['shard']:>4}"] + [f"{r['counts'].get(k, 0):>16}" for k in keys]
@@ -120,16 +152,7 @@ def report(run: Run) -> None:
         flush=True,
     )
 
-    direct = [
-        r
-        for r in rows
-        if (
-            r["counts"].get("429-ratelimit", 0) / r["counts"]["network"]
-            if r["counts"].get("network")
-            else float("inf")
-        )
-        > DIRECT_RATIO
-    ]
+    direct = [r for r in rows if verdict_of(direct_ratio(r["counts"])) == "DIRECT"]
     logged = [r for r in rows if r["logged_degraded"]]
     print(
         f"  egress: {len(direct)}/{len(rows)} shards look DIRECT by retry ratio; "

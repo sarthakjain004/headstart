@@ -19,10 +19,16 @@ reader to diff the assignment artifact against the fragment to learn which board
 which is how `workday:dollartree/dollartreeus` was found by hand. The names collapse that to a
 grep.
 
-**Quarantines** (`update_ledgers: quarantined ats:slug (N strikes, ...)`) are boards struck off
-after consecutive failures (ADR-0058). These are the durable outcome — a quarantined board stops
-being scraped — so a sudden burst is worth reading as a symptom of the run rather than of the
-boards.
+**Quarantines** are boards struck off after consecutive failures (ADR-0058). These are the durable
+outcome — a quarantined board stops being scraped — so a sudden burst is worth reading as a symptom
+of the run rather than of the boards.
+
+**Count them from the `failures:` line, never by counting `quarantined` lines.** `update_ledgers`
+emits `for board in sorted(quarantined)[:20]` — a capped, *alphabetically sorted* sample. Counting
+those lines reported 20 quarantines for a run whose own `failures:` line said **114**, a 5.7x
+undercount, and made the per-ATS breakdown a 20-row alphabetical prefix (all `ashby`) rather than a
+distribution. The sample is still worth printing, but only as a sample, and its ATS mix says
+nothing about the whole.
 
 **Read the error count against the shard's egress state, not on its own.** A shard that lost its
 spare egress eats rate-limit walls that surface here as errors and deferrals, so a spike can be an
@@ -37,26 +43,39 @@ from __future__ import annotations
 
 import re
 
-from run_logs import Run, common_args, runs_from, unstamp
+from run_logs import DONE, Run, common_args, runs_from, unstamp
 
-DONE = re.compile(
-    r"\[scrape_run\] done: (\d+) jobs from (\d+) boards in (\d+)s \((\d+) board errors\)"
-)
 ERR_DIGEST = re.compile(r"\d+ board errors: (.+)")
 KILLED = re.compile(r"time budget reached after ([\d.]+) min")
 DEFERRED = re.compile(r"\[scrape_run\] deferred: (.+)")
 QUARANTINE = re.compile(
     r"\[update_ledgers\]\s+quarantined\s+(\S+) \((\d+) strikes, ([^)]+)\)"
 )
+# The authoritative totals. The per-board `quarantined` lines above are capped at 20 by the
+# emitter, so this line is the only honest source for "how many".
+FAILURES = re.compile(
+    r"\[update_ledgers\] failures: (\d+) board\(s\) reported gone \(404/410\) across (\d+) shard\(s\)"
+    r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
+)
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
 
 
 def scrape_errors(run: Run) -> None:
     rows, digests, kills, deferrals, classes = [], [], [], [], {}
+    print(
+        f"{'sh':>4}{'jobs':>9}{'boards':>8}{'errors':>8}{'err/1k boards':>15}  (arrival order)",
+        flush=True,
+    )
     for shard, _job, text in run.stage("scrape"):
         m = DONE.search(text)
         if m:
-            rows.append((shard, int(m.group(1)), int(m.group(2)), int(m.group(4))))
+            jobs_n, boards_n, errs_n = int(m.group(1)), int(m.group(2)), int(m.group(4))
+            rows.append((shard, jobs_n, boards_n, errs_n))
+            rate = 1000 * errs_n / boards_n if boards_n else 0
+            print(
+                f"{shard:>4}{jobs_n:>9,}{boards_n:>8}{errs_n:>8}{rate:>15.1f}",
+                flush=True,
+            )
         for d in ERR_DIGEST.findall(text):
             digests.append((shard, unstamp(d)))
         for k in KILLED.findall(text):
@@ -67,13 +86,6 @@ def scrape_errors(run: Run) -> None:
             classes[f[2]] = classes.get(f[2], 0) + 1
 
     if rows:
-        print(
-            f"{'sh':>4}{'jobs':>9}{'boards':>8}{'errors':>8}{'err/1k boards':>15}",
-            flush=True,
-        )
-        for shard, jobs, boards, errs in rows:
-            rate = 1000 * errs / boards if boards else 0
-            print(f"{shard:>4}{jobs:>9,}{boards:>8}{errs:>8}{rate:>15.1f}", flush=True)
         tot_err = sum(r[3] for r in rows)
         tot_b = sum(r[2] for r in rows)
         print(
@@ -112,24 +124,31 @@ def quarantines(run: Run) -> None:
     jobs = run.stage_jobs("join")
     if not jobs:
         return
-    found = QUARANTINE.findall(run.log(jobs[0]))
-    if not found:
-        print("\n  no boards quarantined this run", flush=True)
+    text = run.log(jobs[0])
+    totals = FAILURES.search(text)
+    if totals:
+        gone, shards, ledger, cleared, quarantined, at = totals.groups()
+        print(
+            f"\n  failures: {gone} board(s) reported gone across {shards} shard(s) | "
+            f"{ledger} ledger rows ({cleared} cleared) | "
+            f"**{quarantined}** at/over {at} strikes (quarantined)",
+            flush=True,
+        )
+    sample = QUARANTINE.findall(text)
+    if not sample:
+        print("  no quarantine lines logged this run", flush=True)
         return
-    by_ats: dict[str, int] = {}
-    for slug, _strikes, _why in found:
-        by_ats[slug.split(":", 1)[0]] = by_ats.get(slug.split(":", 1)[0], 0) + 1
+    # Deliberately NOT counted as a total, and no per-ATS breakdown: the emitter caps this at 20
+    # and sorts alphabetically, so its ATS mix is an artefact of the alphabet.
     print(
-        f"\n  {len(found)} board(s) quarantined: "
-        + ", ".join(
-            f"{k} {v}" for k, v in sorted(by_ats.items(), key=lambda kv: -kv[1])
-        ),
+        f"  sample of the quarantined boards (emitter caps this list at 20, sorted by name — "
+        f"{len(sample)} shown, not a total):",
         flush=True,
     )
-    for slug, strikes, why in found[:10]:
-        print(f"    {slug} ({strikes} strikes, {why})", flush=True)
-    if len(found) > 10:
-        print(f"    +{len(found) - 10} more", flush=True)
+    for board, strikes, why in sample[:10]:
+        print(f"    {board} ({strikes} strikes, {why})", flush=True)
+    if len(sample) > 10:
+        print(f"    +{len(sample) - 10} more in the sample", flush=True)
 
 
 def main() -> None:
