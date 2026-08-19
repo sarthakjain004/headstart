@@ -43,8 +43,8 @@ from headstart.board_priority import load_scores
 from headstart.corpus import board_of, iter_jobs
 from headstart.ingest import REPO_ROOT, observability
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
-    _BUCKETS,
-    _MAX_SEQ_TOKENS,
+    BUCKETS,
+    MAX_SEQ_TOKENS,
     bucket_for,
     build_doc,
     is_english,
@@ -69,11 +69,11 @@ _FLOAT_BYTES = 4  # float32
 #    frees it: repeating one shape holds driver memory flat, while every new shape adds ~2-3 GB
 #    for 4k-token batches until allocations are refused and the process wedges. Since padding to
 #    the batch's longest doc makes nearly every batch a fresh shape, the whole run must use a
-#    finite shape set: docs are grouped into token-length _BUCKETS (measured with the real
+#    finite shape set: docs are grouped into token-length BUCKETS (measured with the real
 #    tokenizer, not estimated — bilingual tails tokenize at ~1 token/char), each bucket gets a
 #    fixed batch size from the budget, every batch is padded to exactly that count with repeats
 #    of its first doc, and one pin doc of exactly the bucket's token length rides along so the
-#    tokenizer pads every batch to the bucket length. Shapes per run: len(_BUCKETS).
+#    tokenizer pads every batch to the bucket length. Shapes per run: len(BUCKETS).
 #
 # Finding 2 is a property of the *Metal driver*, so the shape pinning it motivates is applied
 # only on MPS. A CPU run — the CI pipeline, whose shards land on GPU-less GitHub VMs
@@ -88,7 +88,7 @@ _FLOAT_BYTES = 4  # float32
 # doc transiently demands ~50 GB on this stack. 4,096 is inside the envelope the Wellfound run
 # proved safe, and only ~0.01% of tech-corpus docs are longer (their boilerplate tails get
 # truncated). This consciously narrows ADR-0005's "no truncation" to "up to 4k tokens".
-# _BUCKETS / _MAX_SEQ_TOKENS moved to headstart.ingest.doc_prep (shared with the planner); the
+# BUCKETS / MAX_SEQ_TOKENS moved to headstart.ingest.doc_prep (shared with the planner); the
 # batch-sizing budget below is encode-side and stays here.
 _ATTN_BUDGET = 128_000_000  # tokens²; ~2/3 of the observed 8 × 4800² ≈ 9 GB anchor
 _BATCH_CAP = 32
@@ -118,7 +118,7 @@ def encode_batch(batch_docs: list[str], n: int, pin: str | None) -> list[str]:
     ``pin`` set (MPS): pin the shape to ``(n + 1, bucket)`` — repeats of the first doc fill a
     short final chunk, and the pin doc makes the tokenizer pad every sequence to the bucket
     length. ``pin`` None (CPU): the real docs alone, since only the Metal driver needs a finite
-    shape set and the padding is otherwise just extra forward passes (see the _BUCKETS comment).
+    shape set and the padding is otherwise just extra forward passes (see the BUCKETS comment).
     Either way the caller keeps the first ``len(batch_docs)`` vectors."""
     if pin is None:
         return batch_docs
@@ -131,7 +131,7 @@ def make_pin_doc(tokenizer, bucket: int) -> str:
 
     def measure(text: str) -> int:
         return len(
-            tokenizer(text, truncation=True, max_length=_MAX_SEQ_TOKENS)["input_ids"]
+            tokenizer(text, truncation=True, max_length=MAX_SEQ_TOKENS)["input_ids"]
         )
 
     doc = "a " * bucket  # "a" is one token; specials add a couple more
@@ -225,8 +225,8 @@ def _load_model() -> tuple[SentenceTransformer, str, int, int]:
     if device == "mps":
         model = model.half()  # fp16 on the GPU: ~2x faster + half the memory; vectors upcast to f32 on store
     model.max_seq_length = min(
-        model.max_seq_length, _MAX_SEQ_TOKENS
-    )  # see _MAX_SEQ_TOKENS
+        model.max_seq_length, MAX_SEQ_TOKENS
+    )  # see MAX_SEQ_TOKENS
     dim = model.get_sentence_embedding_dimension()
     budget = _ATTN_BUDGET if device == "mps" else _ATTN_BUDGET // 4
     return model, device, dim, budget
@@ -276,7 +276,7 @@ def _encode_groups(
     budget: int,
     tokens: list[int],
 ) -> tuple[int, int]:
-    """Encode bucket-by-bucket, shapes pinned on MPS only (see the _BUCKETS comment), isolating
+    """Encode bucket-by-bucket, shapes pinned on MPS only (see the BUCKETS comment), isolating
     per-batch failures (A3) and persisting per batch (A1). Smallest bucket first: under the CI
     time budget (pipeline.yml wraps this in ``timeout``), short docs embed at docs/sec while
     4096-token docs cost minutes each on CPU — ascending order banks the most docs before the
@@ -290,7 +290,7 @@ def _encode_groups(
     start = time.monotonic()
     wedged = False
     pin_shapes = device == "mps"  # only the Metal driver needs a finite shape set
-    for bucket in _BUCKETS:
+    for bucket in BUCKETS:
         idxs = groups[bucket]
         if not idxs or wedged:
             continue
@@ -365,7 +365,7 @@ def _run_assignment(
     docs: list[str] = []
     metas: list[dict] = []
     tokens: list[int] = []
-    groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
+    groups: dict[int, list[int]] = {b: [] for b in BUCKETS}
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -376,14 +376,14 @@ def _run_assignment(
             if (
                 bucket not in groups
             ):  # a stray/out-of-range bucket -> top one, never dropped
-                bucket = _BUCKETS[-1]
+                bucket = BUCKETS[-1]
             groups[bucket].append(len(docs))
             tokens.append(int(rec.get("tokens") or bucket))
             docs.append(rec["doc"])
             metas.append(rec["meta"])
     _log.info(
         f"assignment: {len(docs)} docs from {path} | "
-        + ", ".join(f"≤{b}:{len(groups[b])}" for b in _BUCKETS)
+        + ", ".join(f"≤{b}:{len(groups[b])}" for b in BUCKETS)
     )
 
     store = EmbeddingStore(
@@ -478,16 +478,16 @@ def main() -> None:
     tok_lens: list[int] = []
     for s in range(0, len(docs), 1024):
         enc = model.tokenizer(
-            docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS
+            docs[s : s + 1024], truncation=True, max_length=MAX_SEQ_TOKENS
         )
         tok_lens.extend(len(ids) for ids in enc["input_ids"])
         _log.info(f"tokenized {len(tok_lens)}/{len(docs)}")
-    groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
+    groups: dict[int, list[int]] = {b: [] for b in BUCKETS}
     for idx, n_tok in enumerate(tok_lens):
         groups[bucket_for(n_tok)].append(idx)
     scores = load_scores(_PRIORITY)
     if scores:
-        for b in _BUCKETS:
+        for b in BUCKETS:
             groups[b] = order_by_priority(groups[b], metas, scores)
         _log.info("priority ordering applied within buckets")
 

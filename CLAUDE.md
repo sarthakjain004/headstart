@@ -7,10 +7,13 @@ HeadStart surfaces job openings read directly from company ATS boards.
   started, but the target is companies worldwide — don't scope discovery, scrapers, or data
   to India.
 - **Roles: software-engineering / tech openings.** Only tech roles are embedded, indexed, and shown.
-  Two layers optimise two different costs (ADR-0017). The **source query**, where an ATS cheaply
-  supports it (Lever `?department=`, Workday `jobFamilyGroup` facet), trims *scraping* volume — a
-  best-effort reducer, never authoritative (taxonomies are inconsistent and it would drop tech jobs
-  mis-filed under odd departments). The **authoritative tech gate is a recall-biased post-hoc filter**
+  Two layers were designed to optimise two different costs (ADR-0017). The **source query**, where
+  an ATS cheaply supports it, would trim *scraping* volume — but it is **not currently wired on any
+  scraper**, and it would only ever be a best-effort reducer, never authoritative (taxonomies are
+  inconsistent and it would drop tech jobs mis-filed under odd departments). Don't read the existing
+  ATS query params as that layer: Lever is fetched as a plain `?mode=json` board, and Workday's
+  `jobFamilyGroup` facet is the 2,000-cap subdivision whose *union covers the full board*, so it
+  reduces nothing. The **authoritative tech gate is a recall-biased post-hoc filter**
   (`headstart.tech_filter`): the scrape writes the full set to `data/jobs/{ats}.jsonl`, the filter
   keeps the tech subset in `data/jobs/tech/{ats}.jsonl`, and everything downstream (feed, embedding,
   index, UI) reads that. Post-hoc saves no scraping, but it is the only layer that is uniform across
@@ -209,8 +212,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
   One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
   `scrape_run`, `scrape_join`, `filter_tech`, `update_descriptions` (the ADR-0050 description
-  store, after the tech filter and before `embed_plan`), `update_ledgers` (`priority`/`cost`/`gap`/
-  `failures` subcommands), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
+  store, after the tech filter and before `embed_plan`), `update_ledgers` (four subcommands, invoked in
+  this order: `priority`, `cost`, `failures`, `gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `role_trends` (the ADR-0040 trends ledger, after prune). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
@@ -219,7 +222,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `doc_prep`, `index_plan`, `observability`, `shard_speedup`); logic
+  live there too (`binpack`, `board_failures`, `doc_prep`, `index_plan`, `observability`,
+  `role_assignments`, `shard_speedup`); logic
   the curated-feed path (`python -m headstart` → `headstart.harvest`) also reaches stays in
   `headstart` proper
   (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
