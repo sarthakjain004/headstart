@@ -52,6 +52,14 @@ _TRANSIENT = {
     504,
 }  # retryable HTTP statuses (403/405 = bot-wall blips, see ADR-0047)
 _ATTEMPTS = 3
+
+#: Extra attempts a request may earn back after a rotation wait cost it one. `spare_egress.rotate`
+#: now waits for a fresh IP instead of handing back the spent one, and that wait is only worth
+#: having if the attempt it was queueing to spend survives it — otherwise a request burns its whole
+#: budget waiting and never tries a working route. Named for what it caps: *earned attempts*, not
+#: waits. A request may wait more often than this and earn nothing, which is the intended shape —
+#: a Board that every IP refuses must run out of budget rather than retry forever.
+_MAX_EARNED_ATTEMPTS = 2
 # Cap on an honoured Retry-After: past this, waiting costs more than the request buys, and a
 # shard's whole budget is 60 minutes.
 _MAX_RETRY_AFTER = 30.0
@@ -127,6 +135,21 @@ def _retry_reason(why: str) -> str:
     return "network"
 
 
+def _rotate_for(board: str | None, earned: int, deadline: float | None = None) -> int:
+    """Move to a fresh egress IP; return the extra attempts this request thereby earned (0 or 1).
+
+    Sync, and called from the async path through ``asyncio.to_thread``, so the two retry loops
+    share one policy rather than drifting apart.
+
+    An attempt is earned only when a **fresh** IP came back. `rotate` returns exactly that, and it
+    doubles as "this call cost the caller time": no path reaches a fresh IP without paying for it
+    (see `rotate`). A caller that waited the cap out and is still on the spent route gets nothing —
+    it has no new route to retry on, and crediting it would turn a hard wall into a retry loop.
+    """
+    fresh = spare_egress.rotate(board, deadline=deadline)
+    return 1 if fresh and earned < _MAX_EARNED_ATTEMPTS else 0
+
+
 def _retry_after(response: Any) -> float | None:
     """The response's ``Retry-After`` in seconds, when it gives one as a delta and it is sane.
 
@@ -180,6 +203,7 @@ def fetch(
     attempts: int = _ATTEMPTS,
     egress_group: str | None = None,
     egress_on: frozenset[int] = frozenset(),
+    egress_board: str | None = None,
     **kwargs: Any,
 ):
     """Make a request over the pooled session, retrying transient failures with backoff.
@@ -205,42 +229,48 @@ def fetch(
     the first, and recording it is what spares every subsequent Board of that ATS the same three
     attempts.
     """
-    for attempt in range(attempts):
+    budget, attempt, proxied = attempts, 0, False
+    while attempt < budget:
         proxy = spare_egress.proxy_for(egress_group)
+        proxied = proxied or proxy is not None
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
         )
         try:
             response = session().request(method, url, **routed)
         except RequestsError as exc:
-            if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
+            if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
+                if proxied and egress_group is not None:
+                    spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             time.sleep(
-                _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
+                _note_retry(method, url, attempt, budget, f"failed ({exc})", None)
             )
+            attempt += 1
             continue
         if proxy and egress_group is not None:
-            spare_egress.note_routed(
-                egress_group, recovered=response.status_code == 200
-            )
+            spare_egress.note_routed(egress_group)
         if egress_group is not None and response.status_code in egress_on:
             spare_egress.mark_walled(egress_group, response.status_code)
-        if response.status_code in _TRANSIENT and attempt < attempts - 1:
+        if response.status_code in _TRANSIENT and attempt < budget - 1:
             # Already riding the spare egress and still walled: the second IP is spent too, so the
             # last rung moves again rather than spending a third attempt on a known-bad route.
             if proxy and egress_group is not None and response.status_code in egress_on:
-                spare_egress.rotate()
+                budget += _rotate_for(egress_board, budget - attempts)
             time.sleep(
                 _note_retry(
                     method,
                     url,
                     attempt,
-                    attempts,
+                    budget,
                     f"-> {response.status_code}",
                     _retry_after(response),
                 )
             )
+            attempt += 1
             continue
+        if proxied and egress_group is not None:
+            spare_egress.note_settled(egress_group, response.status_code, egress_on)
         return response
     raise AssertionError(
         "unreachable: the final attempt returns or raises"
@@ -255,6 +285,7 @@ async def fetch_async(
     attempts: int = _ATTEMPTS,
     egress_group: str | None = None,
     egress_on: frozenset[int] = frozenset(),
+    egress_board: str | None = None,
     **kwargs: Any,
 ):
     """Async counterpart to :func:`fetch`: the same retry policy over a caller-supplied
@@ -278,41 +309,54 @@ async def fetch_async(
     ``systemctl`` round-trip) is pushed to a thread so the pause it imposes is the gate's bounded
     wait, not an unbounded subprocess.
     """
-    for attempt in range(attempts):
+    budget, attempt, proxied = attempts, 0, False
+    while attempt < budget:
         proxy = spare_egress.proxy_for(egress_group)
+        proxied = proxied or proxy is not None
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
         )
         try:
             response = await session.request(method, url, **routed)
         except RequestsError as exc:
-            if getattr(exc, "code", None) == _DNS or attempt == attempts - 1:
+            if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
+                if proxied and egress_group is not None:
+                    spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             await asyncio.sleep(
-                _note_retry(method, url, attempt, attempts, f"failed ({exc})", None)
+                _note_retry(method, url, attempt, budget, f"failed ({exc})", None)
             )
+            attempt += 1
             continue
         if proxy and egress_group is not None:
-            spare_egress.note_routed(
-                egress_group, recovered=response.status_code == 200
-            )
+            spare_egress.note_routed(egress_group)
         if egress_group is not None and response.status_code in egress_on:
             spare_egress.mark_walled(egress_group, response.status_code)
-        if response.status_code in _TRANSIENT and attempt < attempts - 1:
+        if response.status_code in _TRANSIENT and attempt < budget - 1:
             # Same last rung as the sync path: walled *through* the spare egress means this IP is
             # spent too, so move again rather than spend the final attempt on a known-bad route.
             if proxy and egress_group is not None and response.status_code in egress_on:
-                await asyncio.to_thread(spare_egress.rotate)
+                # The deadline starts here, on the loop, not inside `rotate` — otherwise time
+                # spent queueing for an executor thread would not count against the wait cap.
+                budget += await asyncio.to_thread(
+                    _rotate_for,
+                    egress_board,
+                    budget - attempts,
+                    spare_egress.wait_deadline(),
+                )
             await asyncio.sleep(
                 _note_retry(
                     method,
                     url,
                     attempt,
-                    attempts,
+                    budget,
                     f"-> {response.status_code}",
                     _retry_after(response),
                 )
             )
+            attempt += 1
             continue
+        if proxied and egress_group is not None:
+            spare_egress.note_settled(egress_group, response.status_code, egress_on)
         return response
     raise AssertionError("unreachable")  # pragma: no cover

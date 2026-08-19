@@ -146,6 +146,9 @@ class BaseScraper(ABC):
         is identical to the one made before this existed. Keyed on :attr:`ats` rather than the
         Board, because the metering that motivates it is per origin across all of an ATS's tenants.
 
+        The Board rides along anyway as ``egress_board``: it steers nothing, and exists only so the
+        shard report can name *which* Boards spent the IP supply. Grouping is still per ATS.
+
         ``marks_wall=False`` keeps the **routing** and drops only the **marking**: the request still
         rides the spare egress once the ATS is walled, but its own failures can never be what walls
         it. That is for a request whose non-200 means something other than "this IP is refused" —
@@ -157,6 +160,7 @@ class BaseScraper(ABC):
         return {
             "egress_group": self.ats,
             "egress_on": self.egress_fallback_on if marks_wall else frozenset(),
+            "egress_board": self.board_key(),
         }
 
     def _get(self, url: str | None = None) -> str:
