@@ -26,7 +26,7 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _ITEM = "js-careers-page-job-list-item"
 _CODE = re.compile(r'data-href="/jobs/([^/"]+)/?"')
@@ -42,7 +42,6 @@ _JSONLD = re.compile(
 # the rendered description container present on every detail page template, JSON-LD or not
 _DESC_DIV = re.compile(r'<div class="jobdesciption">', re.IGNORECASE)
 _DIV_TAG = re.compile(r"<div\b|</div\s*>", re.IGNORECASE)
-_UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 4  # detail pages sit behind DataDome — keep the concurrency gentle
 
 
@@ -97,7 +96,7 @@ class TrakstarScraper(BaseScraper):
                 "GET",
                 self._detail_url(code),
                 timeout=30,
-                headers={"User-Agent": _UA},
+                headers={"User-Agent": USER_AGENT},
             )
         except http.RequestsError:
             return None  # a missing posting must not drop the job
@@ -111,7 +110,7 @@ class TrakstarScraper(BaseScraper):
                 "GET",
                 self._detail_url(code),
                 timeout=30,
-                headers={"User-Agent": _UA},
+                headers={"User-Agent": USER_AGENT},
             )
         except http.RequestsError:
             return None

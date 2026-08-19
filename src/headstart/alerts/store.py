@@ -30,7 +30,7 @@ import hashlib
 import json
 import re
 import secrets
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -622,8 +622,12 @@ class Store:
         paths = [
             p for p in _list_files(self._repo, self._token) if p.startswith(prefix)
         ]
+        # as_completed, not pool.map: the repo's streaming rule exists so one slow read cannot
+        # hold up the rest, and this is up to MAX_SAVED HF reads behind a user-facing tab. The
+        # sort below wants the whole list anyway, so completion order costs nothing.
         with ThreadPoolExecutor(max_workers=8) as pool:
-            out = [job for job in pool.map(self._read_saved, paths) if job]
+            futures = [pool.submit(self._read_saved, path) for path in paths]
+            out = [job for job in (f.result() for f in as_completed(futures)) if job]
         out.sort(key=lambda j: j.starred_at, reverse=True)
         return out
 

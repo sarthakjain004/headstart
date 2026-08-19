@@ -23,7 +23,7 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _PAGE_SIZE = 100
@@ -31,7 +31,6 @@ _PAGE_SIZE = 100
 # path resolves to it rather than to the 100-stream default (base.fan_out_async, ADR-0047).
 _DETAIL_WORKERS = 8
 _MAX_PAGES = 200  # our own ceiling — the natural exit is the tenant's own job count
-_UA = "headstart/0.1 (job-board reader)"
 
 
 class RippleHireScraper(BaseScraper):
@@ -46,7 +45,7 @@ class RippleHireScraper(BaseScraper):
         # step 1: the careers URL redirects to /candidate/?token=… — grab the token (the pooled
         # session follows the redirect and keeps the session cookie for the search call)
         response = http.fetch(
-            "GET", self.url(), headers={"User-Agent": _UA}, timeout=30
+            "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=30
         )
         # An HTTP error here must raise, not read as an empty board (ADR-0058 needs the 404).
         # A 200 that redirects somewhere without a token still returns [] — that is the
@@ -58,7 +57,7 @@ class RippleHireScraper(BaseScraper):
         token = m.group(1)
         api = f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
         headers = {
-            "User-Agent": _UA,
+            "User-Agent": USER_AGENT,
             "Accept": "application/json",
             "X-Requested-With": "XMLHttpRequest",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -121,7 +120,7 @@ class RippleHireScraper(BaseScraper):
             data = http.fetch(
                 "GET",
                 self._detail_url(token, job_seq),
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             ).json()
         except (http.RequestsError, json.JSONDecodeError):
@@ -137,7 +136,7 @@ class RippleHireScraper(BaseScraper):
                 session,
                 "GET",
                 self._detail_url(token, job_seq),
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
             data = response.json()

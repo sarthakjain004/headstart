@@ -37,7 +37,7 @@ from typing import Any
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _log = log.get(__name__)
 
@@ -74,7 +74,6 @@ INSTANCES = (
     "wd117",
 )
 
-_USER_AGENT = "headstart/0.1 (job-board reader)"
 _PAGE_LIMIT = 20  # Workday hard-caps `limit` at 20 (higher returns 400).
 _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide.
 _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceiling.
@@ -199,7 +198,7 @@ class WorkdayScraper(BaseScraper):
                         "searchText": "",
                     },
                     headers={
-                        "User-Agent": _USER_AGENT,
+                        "User-Agent": USER_AGENT,
                         "Content-Type": "application/json",
                         "Accept": "application/json",
                     },
@@ -239,7 +238,7 @@ class WorkdayScraper(BaseScraper):
             "searchText": "",
         }
         headers = {
-            "User-Agent": _USER_AGENT,
+            "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -265,7 +264,7 @@ class WorkdayScraper(BaseScraper):
             "searchText": "",
         }
         headers = {
-            "User-Agent": _USER_AGENT,
+            "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -354,7 +353,7 @@ class WorkdayScraper(BaseScraper):
                 "GET",
                 self._detail_url(external_path),
                 timeout=30,
-                headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 **self._egress(),
             )
         except http.RequestsError:
@@ -373,7 +372,7 @@ class WorkdayScraper(BaseScraper):
                 "GET",
                 self._detail_url(external_path),
                 timeout=30,
-                headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 **self._egress(),
             )
         except http.RequestsError:

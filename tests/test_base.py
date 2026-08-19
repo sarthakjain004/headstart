@@ -266,3 +266,22 @@ def test_detail_scrapers_declare_their_async_stream_width(ats, slug):
     s = get_scraper(ats, slug)
     assert s.has_detail_pass is True
     assert s.detail_workers is not None
+
+
+def test_no_scraper_redeclares_the_user_agent():
+    """One User-Agent, declared once in base.
+
+    Nine scrapers carried their own copy of the same literal — a set of strings that can
+    silently disagree, and the kind of drift only a reader comparing files would ever notice.
+    """
+    import pathlib
+
+    from headstart.scrapers.base import USER_AGENT
+
+    scrapers = pathlib.Path(__file__).resolve().parents[1] / "src/headstart/scrapers"
+    offenders = [
+        p.name
+        for p in scrapers.glob("*.py")
+        if p.name != "base.py" and USER_AGENT in p.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"re-declared the shared User-Agent: {offenders}"

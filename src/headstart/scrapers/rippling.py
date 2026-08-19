@@ -14,10 +14,9 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _API = "https://api.rippling.com/platform/api/ats/v1/board"
-_UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 8
 
 
@@ -60,7 +59,7 @@ class RipplingScraper(BaseScraper):
         resp = http.fetch(
             "GET",
             self.url(),
-            headers={"User-Agent": _UA, "Accept": "application/json"},
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             timeout=30,
         )
         # Raise, don't return [] — a swallowed listing error reads as an empty board and
@@ -108,7 +107,7 @@ class RipplingScraper(BaseScraper):
             resp = http.fetch(
                 "GET",
                 self._detail_url(uuid),
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
         except http.RequestsError:
@@ -124,7 +123,7 @@ class RipplingScraper(BaseScraper):
                 session,
                 "GET",
                 self._detail_url(uuid),
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
         except http.RequestsError:
