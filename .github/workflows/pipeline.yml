@@ -34,29 +34,42 @@ name: nightly-pipeline
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 on:
   schedule:
-    # Hourly at :30, which still includes 21:30, the compulsory nightly. This is a BACK-TO-BACK
-    # cadence, not an hourly one (ADR-0068): the concurrency group below serializes runs, so a
-    # cron that fires mid-run parks a run as *pending* and it starts the instant the current one
-    # ends. Because mean run duration (68 min, measured over the 12 runs to 2026-08-19) exceeds
-    # the 60-min interval, a successor is almost always already queued — the effective cadence is
-    # run duration, not the cron.
+    # Hourly at :30 EXCEPT 04:30/05:30/06:30, and still including 21:30, the compulsory nightly.
+    # This is a BACK-TO-BACK cadence, not an hourly one (ADR-0071): the concurrency group below
+    # serializes runs, so a cron that fires mid-run parks a run as *pending* and it starts the
+    # instant the current one ends. Because mean run duration (74.1 min over the 11 successful
+    # scheduled runs to 2026-08-19; min 55.3, max 87.3, only 1 of 11 under 60) exceeds the 60-min
+    # interval, a successor is almost always already queued — the effective cadence is run
+    # duration, not the cron.
     #
-    # The 2h cadence this replaced left a measured **52 min idle per cycle** (mean start-to-start
-    # 120 min against a 68 min run), capping throughput at 12.0 runs/day where back-to-back gives
-    # ~21. Do not read the hourly cron as "24 runs/day": runs cannot overlap, so duration sets the
-    # ceiling and a slow run simply defers its successor.
+    # The 2h cadence this replaced left a measured **46.7 min idle per cycle** (mean
+    # start-to-start 120.8 min against a 74.1 min run), capping throughput at 11.9 runs/day where
+    # back-to-back gives ~19.4. Do not read this as "21 runs/day" from the 21 fires: runs cannot
+    # overlap, so duration sets the ceiling and a slow run simply defers its successor.
+    #
+    # THE 04:30-06:30 HOLE IS LOAD-BEARING — do not fill it in. `squash-dataset-history` (04:00)
+    # and `cleanup-index` (06:00) share this workflow's concurrency group on purpose, so that
+    # neither ever races a run mid-upload. GitHub allows only ONE pending run per group and
+    # cancels the older one when a newer arrives, so a pipeline cron landing while a maintenance
+    # run is still pending *cancels that maintenance run*. This is not hypothetical: the squash is
+    # created ~04:2x and measured to sit pending 37-55 min before starting (05:02-05:24 across the
+    # five runs to 2026-08-19), because it waits out the pipeline run in flight. An unbroken hourly
+    # cron would have fired at 04:30 and 05:30 inside every one of those windows and silently
+    # disabled the daily squash — while this cadence simultaneously halves the storage headroom
+    # that depends on it. Skipping three fires costs nothing: 21 fires still exceed the ~19.4
+    # runs/day the duration ceiling allows.
     #
     # STORAGE BUDGET — the binding constraint, not compute. Each run rewrites ~1.86 GB of LFS
     # blobs (embeddings.f32 948 MB + jobs.lance 755 MB + meta.jsonl 154 MB) and HF retains every
     # prior revision, so the 100 GB dataset quota buys ~54 runs before it must be reclaimed with
     # `super_squash_history` (done 2026-07-27: 263 commits -> 1, 96.8 GB -> 11.1 GB). At ~21
-    # runs/day that is ~2.5 days of quota, which is survivable only because
-    # `squash-dataset-history` already runs **daily** at 04:00 UTC — one day's burn is ~39 GB
+    # runs/day that is ~2.9 days of quota, which is survivable only because
+    # `squash-dataset-history` already runs **daily** at 04:00 UTC — one day's burn is ~36 GB
     # against a 100 GB quota. That daily squash is now load-bearing: if it is disabled or moved to
     # a longer interval, this cadence must come back down with it. Check
     # `repo_info(...).used_storage` before assuming headroom (26.6 GB on 2026-08-19); a full quota
     # fails the push mid-run and leaves the dataset half-written.
-    - cron: "30 * * * *" # hourly at :30; concurrency turns this into back-to-back
+    - cron: "30 0-3,7-23 * * *" # hourly at :30, less the 04:30-06:30 maintenance hole
   workflow_dispatch:
     inputs:
       max_boards:
@@ -75,7 +88,7 @@ on:
         # cleared the tail is ordinary random resampling, not exploration.
         # Trade-off: the scored head shrinks 14,000 -> 6,000, so top-yield Boards are revisited
         # less often per run. That slows Eviction (a Job only leaves the index when its Board is
-        # re-scraped and the posting is gone), partly offset by the 2h cadence.
+        # re-scraped and the posting is gone), partly offset by the back-to-back cadence.
         # Sizing: that slice carries ~59k more tech postings than the old 8,000, i.e. ~39k new
         # Docs/run, ~126 min of embed across 15 shards at the post-pin-fix 2.89 s/Doc. Overshoot
         # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
@@ -85,6 +98,9 @@ permissions:
   contents: read
 
 concurrency:
+  # Shared with `squash-dataset-history` and `cleanup-index` on purpose: none of the three may
+  # race another on HF dataset state. Only ONE run may be pending per group and a newer arrival
+  # cancels the older, which is why the cron above reserves 04:30-06:30 — see ADR-0071.
   group: nightly-pipeline # never let two runs race on the dataset state
   cancel-in-progress: false
 
