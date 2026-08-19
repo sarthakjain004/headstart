@@ -40,10 +40,7 @@ def _js_unescape(s: str) -> str:
 
 class ZohoScraper(BaseScraper):
     ats = "zoho"
-    # Declared on the class, not just passed to fan_out: fan_out_async resolves its stream width
-    # from this attribute, so leaving it implicit would run the async path 100-wide against a host
-    # the sync path deliberately holds to 6 (base.fan_out_async, ADR-0047).
-    detail_workers = _DETAIL_WORKERS
+    detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     @staticmethod

@@ -27,15 +27,15 @@ from headstart.scrapers.base import BaseScraper
 
 _TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _PAGE_SIZE = 100
+# The width this detail pass has always run at — `fan_out`'s default, stated here so the async
+# path resolves to it rather than to the 100-stream default (base.fan_out_async, ADR-0047).
+_DETAIL_WORKERS = 8
 _UA = "headstart/0.1 (job-board reader)"
 
 
 class RippleHireScraper(BaseScraper):
     ats = "ripplehire"
-    # The width this detail pass has always run at (fan_out's default), now stated rather than
-    # inherited: fan_out_async resolves its stream count from this attribute, so leaving it
-    # implicit would open the async path 100-wide against one tenant host (ADR-0047).
-    detail_workers = 8
+    detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:

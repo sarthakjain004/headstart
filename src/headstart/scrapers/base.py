@@ -184,8 +184,10 @@ class BaseScraper(ABC):
     async def _get_async(self, session: Any, url: str | None = None) -> str:
         """Async counterpart to :meth:`_get` over the shared multiplexed ``AsyncSession``.
 
-        Same headers, same egress marking and the same raise-on-definitive-error contract, so a
-        detail pass reads identically on either path (ADR-0015, ADR-0016).
+        Carries :meth:`_get`'s headers, egress marking and raise-on-definitive-error, and pairs
+        with it the way :meth:`fan_out_async` pairs with :meth:`fan_out`. **A subclass that
+        overrides `_get` must override this too** — eightfold's adds a Referer and marks the
+        wall, so it cannot ride this one.
         """
         response = await http.fetch_async(
             session,

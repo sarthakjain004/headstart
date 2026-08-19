@@ -133,15 +133,16 @@ class Verdict:
 def classify(title: str | None, department: str | None = None) -> Verdict:
     """Decide whether a job is a software/tech role, with the reason (recall-biased; see module doc)."""
     dept = (department or "").strip()
-    name = (title or "").strip()
-    text = f"{name} {dept}"
-    # A department vetoes only through a discipline that names the role; strip the org-only words
-    # first, so "Hardware and Mechanical Engineering" still vetoes on `mechanical`.
-    dept_discipline = _ORG_NOT_ROLE.sub(" ", dept)
+    title_text = (title or "").strip()
+    text = f"{title_text} {dept}"
     if _STRONG.search(text):
         return Verdict(True, "strong-software-signal")
     if _GENERIC.search(text):
-        if _NON_SOFTWARE.search(name) or _NON_SOFTWARE.search(dept_discipline):
+        # A department vetoes only through a discipline that names the role; strip the org-only
+        # words first, so "Hardware and Mechanical Engineering" still vetoes on `mechanical`.
+        if _NON_SOFTWARE.search(title_text) or _NON_SOFTWARE.search(
+            _ORG_NOT_ROLE.sub(" ", dept)
+        ):
             return Verdict(False, "generic-token-but-non-software")
         return Verdict(True, "generic-tech-token")
     if dept and _TECH_DEPT.search(dept):

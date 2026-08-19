@@ -60,19 +60,33 @@ often), and the measurement confirms it: no job that was kept becomes dropped, w
 [ADR-0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md) property — a recall
 widening that cannot change an existing answer.
 
-Recovered, by class: design verification (`Design Verification Engineer`, `Senior Staff Design
-Verification Engineer`), physical/RTL design (`RTL Design Engineer`, `Physical Design Engineer`),
-and reliability/support (`Senior Reliability Engineer`, `L3 Support Engineer`). Creep admitted
-alongside them: `Senior Battery Engineer`, `Thermal Design Engineer`, `Staff System Safety
-Engineer` — non-software roles that happen to sit in a hardware org. Under ADR-0017's constraint
-that trade is the correct direction, and it is small.
+**Most of what it recovers is creep, and that should be stated plainly.** Of the 287, only **67**
+carry any silicon/software token in the title on a deliberately generous reading
+(`rtl|verification|physical design|asic|fpga|soc|firmware|embedded|silicon|dft|eda|verilog|vhdl|driver|software|systems`);
+a strict EDA-only reading puts it at 34. The other ~220 are hardware production and manufacturing
+roles that merely sit in a hardware org: `Senior Failure Analysis Engineer`, `Senior Production
+Process Engineer`, `Thermal Design Engineer`, `Senior Battery Engineer`, `Compliance Engineer`,
+`Senior Product Sourcing Engineer`.
 
-**Three wider variants were measured and rejected**, all monotone:
+The recovery is also concentrated rather than broad: **126 of 287 (44%) come from one employer**,
+Anduril — a defence hardware manufacturer whose `Hardware Operations : Supply Chain` org supplies
+most of the creep. The genuine silicon roles come from the chip companies behind it (cerebras 12,
+furiosa-ai 11, arraylabs 10, d-matrix 9, mythic-ai 9).
+
+So the honest summary is: **~67 real software roles bought at the price of ~220 non-software ones.**
+Under ADR-0017's constraint — "a non-tech job creeping through is acceptable, dropping a real tech
+job is not" — that trade is the correct *direction*, and the absolute numbers are small against a
+332k-row corpus. But it is not the mostly-silicon recovery an earlier draft of this ADR described,
+and a later reader deciding whether to widen further should start from these proportions.
+
+**Three wider variants were measured and rejected**, all monotone. All three are measured under
+the *strip* semantics this ADR ships, not the discard semantics — the distinction is worth 14 rows
+on the hardware-only variant (287 vs 301) and matters here too:
 
 | variant | recovered | why rejected |
 | --- | --- | --- |
 | disqualifier reads the title only | 1,234 | admits `Konstrukteur Maschinenbau`, `O-Calc or SPIDACalc Engineer`, `Transmission Line Engineer (PLS-CADD expert)`, `Servicetechniker` — clearly non-software |
-| strip `sales` and `hardware` | 700 | inherits the sales contradiction below |
+| strip `sales` and `hardware` | 686 | inherits the sales contradiction below |
 | strip `sales` only | 399 | recovers `GTM Engineer` (38), `Solutions Engineer` (27), `Go-To-Market Engineer` — arguably the same pre-sales class `Sales Engineer` is already pinned as non-tech |
 
 **The measurement basis is weaker than [ADR-0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md)'s and this is a real limitation.** ADR-0066 measured against the served table pulled
