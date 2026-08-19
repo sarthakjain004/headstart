@@ -180,6 +180,34 @@ def test_eightfold_stale_sitemap_falls_through_to_pcsx_and_settles_dead(monkeypa
     )
 
 
+def test_eightfold_confirming_fetch_rejects_vendor_fallthrough(monkeypatch):
+    # a sampled job URL that 200s onto Eightfold's own generic careers page (no real tenant board
+    # behind it) carries the VENDOR's _EF_GROUP_ID, not the tenant's — same fallthrough
+    # _eightfold_pcsx already guards against, so it must not count as confirmed either
+    vendor_page = b'<script>_EF_GROUP_ID = "eightfold.ai";</script>'
+    stub = _eightfold_stub(
+        {
+            "https://acme.eightfold.ai/careers/job/1-a?domain=acme.com": (
+                200,
+                vendor_page,
+            ),
+            "https://acme.eightfold.ai/careers/job/2-b?domain=acme.com": (
+                200,
+                vendor_page,
+            ),
+            "https://acme.eightfold.ai/careers/job/3-c?domain=acme.com": (
+                200,
+                vendor_page,
+            ),
+        }
+    )
+    monkeypatch.setattr(cl, "_get", stub)
+    assert cl.p_eightfold("acme.eightfold.ai", "https://acme.eightfold.ai/") == (
+        cl.DEAD,
+        None,
+    )
+
+
 def _workday_post_stub(live_instance=None, total=3, dead_status=422):
     """Stub _post for p_workday: 200+{total} on the CXS URL for `live_instance`, else dead_status."""
 

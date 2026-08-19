@@ -1071,12 +1071,16 @@ def _eightfold_confirm_live(text):
     is a 200, 3.9MB of ``/careers/job/...`` URLs — every one sampled 404s, and its ``/careers``
     page 307s to ``careers.services.global.ntt``, i.e. the tenant isn't on Eightfold anymore. A
     live job page carries its own ``_EF_GROUP_ID`` — the same marker ``_eightfold_pcsx`` reads off
-    the careers page — so a 200 that doesn't carry it (a redirect to some unrelated page) doesn't
-    count as confirmed either.
+    the careers page — so a 200 that doesn't carry it, or that carries a vendor group id
+    (``_EF_VENDOR_GROUPS``, the same fallthrough ``_eightfold_pcsx`` guards against), doesn't count
+    as confirmed either.
     """
     for job_url in _EF_JOB_LOC.findall(text)[:_EF_CONFIRM_SAMPLE]:
         status, body = _get(job_url)
-        if status == 200 and _EF_GROUP_ID.search(body.decode("utf-8", "replace")):
+        if status != 200:
+            continue
+        m = _EF_GROUP_ID.search(body.decode("utf-8", "replace"))
+        if m and m.group(1).lower() not in _EF_VENDOR_GROUPS:
             return True
     return False
 
