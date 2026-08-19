@@ -309,7 +309,7 @@ registered; bot walls (403/429) stay advisory.
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
   feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
   `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`
-  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus `telegram.py`, the
+  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus `telegram_bot_api.py`, the
   polling client the enrolment bot uses.
 - `src/headstart/alerts/` — job alerts (ADR-0035, ADR-0038) plus the signed-in per-account
   records: `store` (Subscriptions, Saved sets, Saved jobs and Profiles — the name now undersells

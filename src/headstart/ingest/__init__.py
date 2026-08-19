@@ -16,7 +16,7 @@ The run is two symmetric halves — **plan → run → gather** — so each modu
     embed_merge     stage 5  concatenate the embed fragments onto the store
     update_meta     stage 5  re-observe the stored facts, re-derive on a version bump (ADR-0061)
     index           stage 5  sync -> prune the LanceDB table (`compact` is NOT in this run —
-                             it moved to the every-2-days `cleanup-index` workflow)
+                             it moved to the `cleanup-index` workflow)
     role_trends     stage 5  count the served stock into role families (ADR-0040)
 
 One more entry point is not a stage but opens three of them (and ``cleanup-index``)::

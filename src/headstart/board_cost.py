@@ -179,8 +179,9 @@ def _ats_of(cost_key: str) -> str:
 
     Not ``corpus.board_of``'s key space. The two look alike and are not interchangeable:
     this ledger is keyed the way `harvest` and `scrape_plan` build the scrape list, and
-    ADR-0059 records a stale "matches corpus.board_of" comment of exactly this shape
-    zeroing 13,402 Boards.
+    ADR-0059 records a stale "matches corpus.board_of" comment of exactly this shape: of the
+    13,402 Boards whose keys could not match, the 4,611 that held a priority row were scored
+    0.0.
     """
     return cost_key.split(":", 1)[0]
 

@@ -6,7 +6,8 @@ name: nightly-pipeline
 #     → scrape (matrix, ≤15 shards, each scrapes its boards into a fragment)
 #       → join (union fragments → tech-filter → descriptions → ledgers → plan the embed fan-out)
 #         → embed (matrix, ≤15 shards, each embeds its Docs into a fragment)
-#           → merge (single writer: concatenate → sync → prune → meta → upload → restart).
+#           → merge (single writer: concatenate → meta → sync → prune → trends → upload
+#             → restart).
 # Inert (green no-op) until the repo's HF_TOKEN secret is set: the gate in scrape-plan drives
 # `run`, and every downstream job/step is gated on it.
 #
@@ -582,7 +583,7 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         run: python -m headstart.ingest.role_trends
-      # No compaction here — it moved to the every-2-days `cleanup-index` run. `index compact`
+      # No compaction here — it moved to the `cleanup-index` run. `index compact`
       # rebuilds the table into ONE new .lance file, so every run minted a brand-new ~755 MB blob
       # that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB quota filled in ~45
       # runs. Lance appends instead: `sync`/`prune` write small new fragments and leave the big
@@ -607,7 +608,7 @@ jobs:
             --repo-type dataset --commit-message "nightly: embedding store"
           # Deliberately NOT --delete: nothing compacts here any more, so no local fragment is
           # superseded and every remote one is still live data. Passing --delete would make this a
-          # full-table replace again — the exact cost this change removes. The every-2-days
+          # full-table replace again — the exact cost this change removes. The daily
           # `cleanup-index` run compacts and re-uploads *with* --delete, which is where superseded
           # fragments get reaped.
           up "$HF_DATASET" data/lancedb data/lancedb \
