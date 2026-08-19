@@ -105,7 +105,7 @@ def main() -> int:
     ap.add_argument(
         "--shards",
         default=str(_SHARDS),
-        help="dir of scrape fragment dirs (default: data/jobs/fragments)",
+        help="dir of scrape fragment dirs (default: data/scrape/fragments)",
     )
     ap.add_argument(
         "--out", default=str(_OUT), help="unioned snapshot dir (default: data/jobs)"

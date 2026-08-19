@@ -4,7 +4,7 @@
 or a bot token — the same shape as `mail.send`, for the same reason: one POST to a documented
 JSON endpoint needs only stdlib urllib, which keeps this importable in CI's quality job.
 
-**Deliberately not `headstart.telegram.TelegramClient`.** That client swallows a failed send
+**Deliberately not `headstart.telegram_bot_api.TelegramClient`.** That client swallows a failed send
 so one blocked chat cannot abort the polling loop, which is right for a bot answering
 commands and exactly wrong here: the alerts run advances a Watermark only once delivery is
 accepted, so a swallowed failure would silently skip that person's window forever. Same API,

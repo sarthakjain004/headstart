@@ -72,7 +72,7 @@ The extrapolation held: `embed_plan`'s `_S_PER_DOC` (0.8 / 1.7 / 4.4 / 18.0) pre
 
 **These rates are now stale by design.** They were measured while every batch also encoded a pin
 doc plus count-padding — an MPS-only shape workaround that no longer runs on CPU (see the
-`_BUCKETS` comment in `embed_run.py`). Dropping it should cut ~27% overall and ~50% from the
+`BUCKETS` comment in `embed_run.py`). Dropping it should cut ~27% overall and ~50% from the
 ≤4096 Bucket, whose batch size of 1 meant each Doc was encoded alongside a full-length pin.
 Re-measure with the recipe below after the next run and update `_S_PER_DOC`; until then the
 planner's makespan prediction reads high.
@@ -287,7 +287,7 @@ gh run view <run-id> --log | grep -E "\[embed\]"
 ## Files
 
 - [`src/headstart/ingest/embed_run.py`](../../src/headstart/ingest/embed_run.py) — the embed step; see the
-  `_BUCKETS` / `_ATTN_BUDGET` / `batch_size_for` block for the bucketing logic itself.
+  `BUCKETS` / `_ATTN_BUDGET` / `batch_size_for` block for the bucketing logic itself.
 - [`.github/workflows/pipeline.yml`](../../.github/workflows/pipeline.yml) — the nightly job
   that runs it, its `timeout 100m` budget, and the `--resume` continuation.
 - [`docs/adr/0005-embedding-model.md`](../adr/0005-embedding-model.md) — why

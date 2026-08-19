@@ -1,10 +1,20 @@
-"""Minimal Telegram Bot API client (stdlib only)."""
+"""Telegram Bot API polling client for the access bot (stdlib only).
+
+Named for the API it wraps, not for "telegram", because `alerts/telegram.py` is the alert
+*sender* and the two are not interchangeable (ADR-0038): that one fails loudly so a broken
+transport shows up as a failed run. The only caller is `alerts.bot`, which polls
+:meth:`TelegramClient.get_updates` for /start, /allow and /deny.
+"""
 
 from __future__ import annotations
 
 import json
 import urllib.request
 from typing import Any
+
+from headstart import log
+
+_log = log.get(__name__, __spec__)
 
 
 class TelegramClient:
@@ -35,4 +45,4 @@ class TelegramClient:
                 {"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
             )
         except Exception as exc:  # noqa: BLE001
-            print(f"send to {chat_id} failed: {exc}")
+            _log.warning("send to %s failed: %s", chat_id, exc)
