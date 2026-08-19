@@ -26,6 +26,10 @@ def _clean():
     spare_egress.reset()
 
 
+#: What Eightfold declares as a wall — passed per request, exactly as `http` passes `egress_on`.
+_EF_WALL = frozenset({403, 405})
+
+
 class _Proc:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode = returncode
@@ -139,7 +143,7 @@ def test_report_rates_rescues_over_walls_not_over_attempts():
     for _ in range(9):
         spare_egress.note_routed("eightfold")  # attempts, including retries
     for status in (200, 200, 200, 405):
-        spare_egress.note_settled("eightfold", status)  # settled requests
+        spare_egress.note_settled("eightfold", status, _EF_WALL)  # settled requests
     (line,) = spare_egress.report()
     assert "eightfold: walled" in line
     assert "rescued 3/4 walled request(s) (75%)" in line
@@ -152,22 +156,35 @@ def test_a_status_the_origin_never_walled_with_is_left_out_of_the_rate():
     spare_egress.mark_walled("eightfold", 405)
     spare_egress.note_routed("eightfold")
     for status in (200, 404, 404):
-        spare_egress.note_settled("eightfold", status)
+        spare_egress.note_settled("eightfold", status, _EF_WALL)
     (line,) = spare_egress.report()
     assert "rescued 1/1 walled request(s) (100%)" in line  # not 1/3
     assert "2 settled non-wall" in line
 
 
-def test_every_wall_shape_counts_as_a_wall_not_just_the_first():
-    """Eightfold answers both 403 and 405. `mark_walled` returns early after the first, so a set
-    kept only at that point would score the other shape as an ordinary non-200."""
-    spare_egress.mark_walled("eightfold", 403)
-    spare_egress.mark_walled(
-        "eightfold", 405
-    )  # early-returns, but must still record the shape
+def test_a_request_that_opted_out_of_marking_cannot_be_scored_as_walled():
+    """Eightfold's API-availability probe passes an empty `egress_on`: its steady 403 means "this
+    tenant has no API", not "this IP is refused". Scoring it against the *group's* wall shapes
+    would put it in `walled` and deflate the rate — the misattribution this metric exists to end.
+    """
+    spare_egress.mark_walled("eightfold", 403)  # the group is walled on 403...
     spare_egress.note_routed("eightfold")
-    spare_egress.note_settled("eightfold", 405)
-    assert spare_egress.traffic()["eightfold"]["walled"] == 1
+    spare_egress.note_settled(
+        "eightfold", 403, frozenset()
+    )  # ...but this request opted out
+    counts = spare_egress.traffic()["eightfold"]
+    assert counts["walled"] == 0 and counts["other"] == 1
+
+
+def test_a_request_that_never_settled_is_counted_but_not_blamed():
+    """A transport failure through the proxy returns no status at all. Left uncounted it is
+    invisible to the rate the exit criterion now reads — and `network` retries went from 250
+    fleet-wide to ~55,000 after #172, so this is not a hypothetical path."""
+    spare_egress.mark_walled("workday", 429)
+    spare_egress.note_settled("workday", None, frozenset({429}))
+    counts = spare_egress.traffic()["workday"]
+    assert counts["requests"] == 1 and counts["other"] == 1
+    assert counts["walled"] == 0
 
 
 def test_report_names_the_worst_case_a_traffic_counter_would_hide():
@@ -196,7 +213,7 @@ def test_mark_walled_warns_once_per_group(caplog):
 def test_reset_clears_traffic_as_well_as_walls():
     spare_egress.mark_walled("eightfold", 403)
     spare_egress.note_routed("eightfold")
-    spare_egress.note_settled("eightfold", 200)
+    spare_egress.note_settled("eightfold", 200, _EF_WALL)
     spare_egress.reset()
     assert spare_egress.walled_groups() == frozenset()
     assert spare_egress.traffic() == {}
@@ -245,7 +262,9 @@ def test_rotate_restarts_the_daemon_rather_than_reconnecting(monkeypatch):
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     calls = _rotating(monkeypatch)
-    assert spare_egress.rotate() is True
+    assert spare_egress.rotate() == spare_egress.Rotation(
+        True, fresh=True, waited=False
+    )
     assert ["sudo", "-n", "systemctl", "restart", "warp-svc"] in calls
     assert not any(c[-1] == "disconnect" for c in calls)
     assert spare_egress.rotations()["succeeded"] == 1
@@ -258,7 +277,7 @@ def test_a_failed_rotation_does_not_pin_the_process_to_the_direct_route(monkeypa
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     _rotating(monkeypatch, comes_back=False)
-    assert spare_egress.rotate() is False
+    assert spare_egress.rotate().usable is False
     assert spare_egress._resolved is False  # a later caller re-dials
     assert spare_egress.rotations()["failed"] == 1
 
@@ -267,7 +286,7 @@ def test_rotation_without_sudo_degrades(monkeypatch):
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
     _rotating(monkeypatch, restart_ok=False)
-    assert spare_egress.rotate() is False
+    assert spare_egress.rotate().usable is False
     assert spare_egress.rotations()["failed"] == 1
 
 
@@ -286,11 +305,12 @@ def test_a_throttled_caller_waits_for_the_fresh_ip_rather_than_riding_the_spent_
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.05)
     monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 5.0)
 
-    assert spare_egress.rotate() is True
+    assert spare_egress.rotate().fresh is True
     started = time.monotonic()
-    assert spare_egress.rotate() is True
+    second = spare_egress.rotate()
     waited = time.monotonic() - started
 
+    assert second == spare_egress.Rotation(True, fresh=True, waited=True)
     counts = spare_egress.rotations()
     assert counts["throttled"] == 1  # it was throttled...
     assert counts["attempted"] == 2  # ...and still rotated, after waiting the floor out
@@ -305,11 +325,13 @@ def test_the_wait_for_a_fresh_ip_is_bounded(monkeypatch):
     monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 30.0)
     monkeypatch.setattr(spare_egress, "_ROTATION_WAIT_CAP", 0.05)
 
-    assert spare_egress.rotate() is True
+    assert spare_egress.rotate().fresh is True
     started = time.monotonic()
-    assert spare_egress.rotate() is True  # gives up and reports the current proxy
+    given_up = spare_egress.rotate()  # gives up and reports the current proxy
     assert time.monotonic() - started < 5.0  # not the 30s cooldown
 
+    # waited, but got nothing for it — so `http` must not credit it an attempt
+    assert given_up == spare_egress.Rotation(True, fresh=False, waited=True)
     counts = spare_egress.rotations()
     assert counts["abandoned"] == 1 and counts["attempted"] == 1
 

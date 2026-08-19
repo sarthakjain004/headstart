@@ -53,13 +53,13 @@ _TRANSIENT = {
 }  # retryable HTTP statuses (403/405 = bot-wall blips, see ADR-0047)
 _ATTEMPTS = 3
 
-#: Extra attempts a request may earn by waiting out a rotation cooldown. `spare_egress.rotate` now
-#: waits for a fresh IP instead of handing back the spent one, and that wait is only worth having
-#: if the attempt it was queueing to spend survives it — otherwise a request burns its whole budget
-#: waiting and never tries a working route. Capped, because a Board that *every* IP refuses (a
-#: migrated tenant whose stale URLs all 404, say) would otherwise hold a worker for the shard's
-#: whole budget rather than failing and freeing it.
-_MAX_ROTATION_WAITS = 2
+#: Extra attempts a request may earn back after a rotation wait cost it one. `spare_egress.rotate`
+#: now waits for a fresh IP instead of handing back the spent one, and that wait is only worth
+#: having if the attempt it was queueing to spend survives it — otherwise a request burns its whole
+#: budget waiting and never tries a working route. Named for what it caps: *earned attempts*, not
+#: waits. A request may wait more often than this and earn nothing, which is the intended shape —
+#: a Board that every IP refuses must run out of budget rather than retry forever.
+_MAX_EARNED_ATTEMPTS = 2
 # Cap on an honoured Retry-After: past this, waiting costs more than the request buys, and a
 # shard's whole budget is 60 minutes.
 _MAX_RETRY_AFTER = 30.0
@@ -135,18 +135,21 @@ def _retry_reason(why: str) -> str:
     return "network"
 
 
-def _rotate_for(board: str | None, earned: int) -> int:
+def _rotate_for(board: str | None, earned: int, deadline: float | None = None) -> int:
     """Move to a fresh egress IP; return the extra attempts this request thereby earned (0 or 1).
 
     Sync, and called from the async path through ``asyncio.to_thread``, so the two retry loops
-    share one policy rather than drifting apart. Only a *generation change* earns the extra
-    attempt: that is what separates "waited and got a new IP" from "waited the cap out and is
-    still on the spent one", and the second deserves no credit.
+    share one policy rather than drifting apart.
+
+    An attempt is earned only when the caller **waited** *and* came back to a **fresh** IP. Both
+    halves matter: a caller that waited the cap out is still on the spent route and has gained
+    nothing to retry with, and a caller that rotated without ever waiting was never charged the
+    attempt this gives back — crediting it would hand the hardest-walled Boards a bigger retry
+    budget than anything else gets.
     """
-    before = spare_egress.rotation_generation()
-    spare_egress.rotate(board)
-    fresh = spare_egress.rotation_generation() != before
-    return 1 if fresh and earned < _MAX_ROTATION_WAITS else 0
+    outcome = spare_egress.rotate(board, deadline=deadline)
+    earned_one = outcome.waited and outcome.fresh
+    return 1 if earned_one and earned < _MAX_EARNED_ATTEMPTS else 0
 
 
 def _retry_after(response: Any) -> float | None:
@@ -239,6 +242,8 @@ def fetch(
             response = session().request(method, url, **routed)
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
+                if proxied and egress_group is not None:
+                    spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             time.sleep(
                 _note_retry(method, url, attempt, budget, f"failed ({exc})", None)
@@ -267,7 +272,7 @@ def fetch(
             attempt += 1
             continue
         if proxied and egress_group is not None:
-            spare_egress.note_settled(egress_group, response.status_code)
+            spare_egress.note_settled(egress_group, response.status_code, egress_on)
         return response
     raise AssertionError(
         "unreachable: the final attempt returns or raises"
@@ -317,6 +322,8 @@ async def fetch_async(
             response = await session.request(method, url, **routed)
         except RequestsError as exc:
             if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
+                if proxied and egress_group is not None:
+                    spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             await asyncio.sleep(
                 _note_retry(method, url, attempt, budget, f"failed ({exc})", None)
@@ -331,8 +338,13 @@ async def fetch_async(
             # Same last rung as the sync path: walled *through* the spare egress means this IP is
             # spent too, so move again rather than spend the final attempt on a known-bad route.
             if proxy and egress_group is not None and response.status_code in egress_on:
+                # The deadline starts here, on the loop, not inside `rotate` — otherwise time
+                # spent queueing for an executor thread would not count against the wait cap.
                 budget += await asyncio.to_thread(
-                    _rotate_for, egress_board, budget - attempts
+                    _rotate_for,
+                    egress_board,
+                    budget - attempts,
+                    spare_egress.wait_deadline(),
                 )
             await asyncio.sleep(
                 _note_retry(
@@ -347,6 +359,6 @@ async def fetch_async(
             attempt += 1
             continue
         if proxied and egress_group is not None:
-            spare_egress.note_settled(egress_group, response.status_code)
+            spare_egress.note_settled(egress_group, response.status_code, egress_on)
         return response
     raise AssertionError("unreachable")  # pragma: no cover

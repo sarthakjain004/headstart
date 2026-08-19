@@ -19,7 +19,7 @@ It is not. Three completed runs on `465cd74` (`32178532129`, `32189304871`, `321
 | Rotation demand (`attempted + throttled`) | 153,800 / 163,543 / 161,059 per run |
 | Rotations granted | 654 / 677 / 699 — **0.41–0.43%** |
 | Rotations **failed** | **0** |
-| Inter-rotation gap | median **20.1–20.8 s** against a 20.0 s cooldown; 98–100% under 25 s |
+| Inter-rotation gap | median **20.1–20.8 s** against a 20.0 s cooldown; 80–100% under 25 s |
 | Granted vs ceiling (`duration / cooldown`) | 699 of 929 — 75% of the physical maximum |
 | Cost of one rotation | **2.05 s median, 4.06 s max** (n=2,030) |
 | Proxied req/s per shard | **1.4 before #172 → 52–64 after** |
@@ -54,17 +54,36 @@ the observed 4.06 s max, and lifts the per-shard ceiling from ~66 rotations to ~
 
 **3. A throttled caller waits for the fresh IP instead of being handed the spent one.** Every
 caller of `rotate` has just been refused *through* the spare egress, so the current IP is known
-bad and returning it spends an attempt that will fail. The wait is bounded
-(`_ROTATION_WAIT_CAP`, 10 s) and ends early when a peer rotates first. Because the wait would
-otherwise consume the attempt it was queueing to spend, a rotation that actually changes the egress
-generation buys one extra attempt, capped at `_MAX_ROTATION_WAITS = 2`.
+bad and returning it spends an attempt that will fail. The wait is bounded by `_ROTATION_WAIT_CAP`
+(10 s) and ends early when a peer rotates first. The cap bounds the *wait*: a caller that waits it
+out and then finds itself eligible still performs one rotation, so the worst case is the cap plus
+one rotation round-trip. The async path starts that clock on the event loop (`wait_deadline`)
+rather than inside `rotate`, so time spent queueing for an executor thread counts against it too.
 
-**We did not throttle the detail pass's concurrency.** Reducing demand would trade recall for a
-metric, and the outcome numbers were improving throughout (description gap 188,612 → 181,428, board
-errors 131 → 116).
+Because the wait would otherwise consume the attempt it was queueing to spend, a caller that
+**waited** *and* came back to a **fresh** IP earns one attempt back, capped at
+`_MAX_EARNED_ATTEMPTS = 2`. Both halves are load-bearing: a caller that waited the cap out has
+gained nothing to retry with, and one that rotated without waiting was never charged the attempt
+this would give back.
+
+**We did not reduce the detail pass's concurrency.** `_DETAIL_STREAMS`/`_DETAIL_WORKERS` are
+untouched: reducing demand would trade recall for a metric, and outcomes were improving throughout
+(description gap 188,612 → 181,428, board errors 131 → 116). The honest caveat: a request waiting
+for a fresh IP holds its stream slot, so *in-flight* requests do dip during a wait. That is
+inherent to waiting rather than a width change, it is bounded by the cap above, and the alternative
+was spending the attempt on a route already known to be refused.
 
 `rotate` also now takes the Board that walled it, so the shard report names *which* Boards spent
-the IP supply rather than only how much of it went.
+the IP supply rather than only how much of it went, and it returns a `Rotation(usable, fresh,
+waited)` rather than a bare bool — the caller needs all three to decide whether a wait earned
+anything.
+
+`note_settled` classifies against **the request's own** `egress_on`, not a set accumulated per
+group. Eightfold's API-availability probe opts out of marking because its steady 403 means "this
+tenant has no API"; scored against the group's wall shapes it would land in `walled` and deflate
+the rate — reintroducing, one layer down, the misattribution this change exists to remove. A
+request that never settles on a status at all (a transport failure through the proxy) is counted
+as `other`, so it stays visible rather than vanishing from the denominator.
 
 ## Consequences
 
@@ -74,8 +93,8 @@ the IP supply rather than only how much of it went.
 - The rotation gate closes ~4× more often (2.05 s in every 5 s at saturation, ~41% worst case), so
   `proxy_for`'s bounded gate-wait is paid more often. Watch `network` retries, already up from 250
   fleet-wide pre-#172 to 52k–61k.
-- Requests can now take up to 5 attempts instead of 3, bounded, and only when rotations are
-  genuinely producing new IPs.
+- Requests can now take up to 5 attempts instead of 3, bounded, and only when a wait genuinely
+  produced a new IP.
 - **This does not close the supply gap.** Demand is ~3,700 rotations/shard; serial rotation cannot
   reach that at any cooldown. Parallel egress capacity is the structural answer — filed as #174.
 

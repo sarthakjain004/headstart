@@ -319,7 +319,15 @@ def test_proxied_requests_are_counted_at_both_levels(monkeypatch):
     like a failing one.
     """
     _warp(monkeypatch)
-    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None: True)
+    # a rotation nobody waited for, so the retry budget stays at its base 3 — this test is about
+    # what the counters record, not about the earned-attempt policy
+    monkeypatch.setattr(
+        http.spare_egress,
+        "rotate",
+        lambda board=None, **_: http.spare_egress.Rotation(
+            True, fresh=True, waited=False
+        ),
+    )
     _stub(monkeypatch, [403, 200, 405, 405, 405])
     http.fetch(
         "GET", "u", egress_group="eightfold", egress_on=_WALL
@@ -373,7 +381,10 @@ def test_the_ladder_is_direct_then_spare_egress_then_rotate(monkeypatch):
     monkeypatch.setattr(
         http.spare_egress,
         "rotate",
-        lambda board=None: (rotations.append(board), True)[1],
+        lambda board=None, **_: (
+            rotations.append(board),
+            http.spare_egress.Rotation(True, fresh=True, waited=True),
+        )[1],
     )
     calls = _stub(monkeypatch, [429, 429, 200])
 
@@ -393,7 +404,10 @@ def test_a_wall_on_the_direct_route_never_rotates(monkeypatch):
     monkeypatch.setattr(
         http.spare_egress,
         "rotate",
-        lambda board=None: (rotations.append(board), True)[1],
+        lambda board=None, **_: (
+            rotations.append(board),
+            http.spare_egress.Rotation(True, fresh=True, waited=True),
+        )[1],
     )
     _stub(monkeypatch, [429, 429, 429])
     http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
@@ -487,7 +501,12 @@ def test_async_wall_through_the_proxy_rotates(monkeypatch):
     _warp(monkeypatch)
     rotations = []
     monkeypatch.setattr(
-        http.spare_egress, "rotate", lambda board=None: rotations.append(board) or True
+        http.spare_egress,
+        "rotate",
+        lambda board=None, **_: (
+            rotations.append(board)
+            or http.spare_egress.Rotation(True, fresh=True, waited=True)
+        ),
     )
     session, _calls = _astub(monkeypatch, [429, 429, 200])
     asyncio.run(
@@ -503,13 +522,13 @@ def test_a_fresh_ip_buys_the_attempt_the_wait_would_have_cost(monkeypatch):
     """`rotate` now blocks until a fresh IP exists, so charging the request for that wait would let
     it exhaust its budget queueing and never try a working route — the opposite of the point."""
     _warp(monkeypatch)
-    generation = [0]
     monkeypatch.setattr(
         http.spare_egress,
         "rotate",
-        lambda board=None: generation.__setitem__(0, generation[0] + 1) or True,
+        lambda board=None, **_: http.spare_egress.Rotation(
+            True, fresh=True, waited=True
+        ),
     )
-    monkeypatch.setattr(http.spare_egress, "rotation_generation", lambda: generation[0])
     calls = _stub(monkeypatch, [429, 429, 429, 429, 200])
 
     resp = http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
@@ -521,29 +540,32 @@ def test_a_fresh_ip_buys_the_attempt_the_wait_would_have_cost(monkeypatch):
 def test_the_earned_attempts_are_capped(monkeypatch):
     """A Board every IP refuses would otherwise retry forever, one rotation at a time."""
     _warp(monkeypatch)
-    generation = [0]
     monkeypatch.setattr(
         http.spare_egress,
         "rotate",
-        lambda board=None: generation.__setitem__(0, generation[0] + 1) or True,
+        lambda board=None, **_: http.spare_egress.Rotation(
+            True, fresh=True, waited=True
+        ),
     )
-    monkeypatch.setattr(http.spare_egress, "rotation_generation", lambda: generation[0])
     calls = _stub(monkeypatch, [429] * 8)
 
     resp = http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
 
     assert resp.status_code == 429
-    assert len(calls) == http._ATTEMPTS + http._MAX_ROTATION_WAITS == 5
+    assert len(calls) == http._ATTEMPTS + http._MAX_EARNED_ATTEMPTS == 5
 
 
 def test_a_wait_that_produced_no_fresh_ip_earns_nothing(monkeypatch):
-    """Only a generation change is evidence of a new route. A rotation that timed out onto the
-    same spent IP must not extend the budget, or a hard wall becomes an unbounded retry loop."""
+    """A caller that waited the cap out is still on the spent route and has gained nothing to
+    retry with. Crediting it would turn a hard wall into an unbounded retry loop."""
     _warp(monkeypatch)
-    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None: True)
     monkeypatch.setattr(
-        http.spare_egress, "rotation_generation", lambda: 7
-    )  # never moves
+        http.spare_egress,
+        "rotate",
+        lambda board=None, **_: http.spare_egress.Rotation(
+            True, fresh=False, waited=True
+        ),
+    )
     calls = _stub(monkeypatch, [429] * 5)
 
     http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
@@ -551,12 +573,36 @@ def test_a_wait_that_produced_no_fresh_ip_earns_nothing(monkeypatch):
     assert len(calls) == http._ATTEMPTS  # the base budget, unextended
 
 
+def test_a_rotation_nobody_waited_for_earns_nothing(monkeypatch):
+    """The extra attempt repays a wait. A caller whose cooldown had already expired rotated
+    without being charged anything, so crediting it would hand the hardest-walled Boards a bigger
+    retry budget than every other request gets."""
+    _warp(monkeypatch)
+    monkeypatch.setattr(
+        http.spare_egress,
+        "rotate",
+        lambda board=None, **_: http.spare_egress.Rotation(
+            True, fresh=True, waited=False
+        ),
+    )
+    calls = _stub(monkeypatch, [429] * 5)
+
+    http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert len(calls) == http._ATTEMPTS
+
+
 def test_the_board_that_spent_the_ip_is_named_to_rotate(monkeypatch):
     """Attribution the shard report could not make before: which Boards drank the IP supply."""
     _warp(monkeypatch)
     named = []
     monkeypatch.setattr(
-        http.spare_egress, "rotate", lambda board=None: named.append(board) or True
+        http.spare_egress,
+        "rotate",
+        lambda board=None, **_: (
+            named.append(board)
+            or http.spare_egress.Rotation(True, fresh=True, waited=True)
+        ),
     )
     _stub(monkeypatch, [429, 429, 200])
 
