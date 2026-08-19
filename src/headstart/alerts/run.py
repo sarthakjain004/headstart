@@ -153,9 +153,12 @@ def subscription_for(
     # An entry may carry `filters` without a `query` (ADR-0035). Gating on `invite.query` meant
     # editing only the filters never took effect; fall back to the query already stored rather
     # than blanking it.
-    # Same for the filters: a bare-string entry parses to `search_filters={}`, which is the
-    # absence of a statement, not a statement of emptiness — writing it back blanked what the
-    # person chose at sign-in on every run.
+    # Same for the filters: a bare-string entry parses to `search_filters={}`, and writing that
+    # back blanked what the person chose at sign-in, every run. Read `{}` as silence rather than
+    # as a stated empty set. The trade is that the allowlist can no longer *clear* someone's
+    # filters — `{"filters": {}}`, an absent key, and a key the allowlist rejects all reach here
+    # as `{}`, so they are indistinguishable. Clearing stays available where it was chosen, via
+    # `POST /subscribe`. This is exactly symmetric with the `invite.query` line above.
     wanted_query = invite.query or existing.query
     wanted_filters = invite.search_filters or existing.search_filters
     if wanted_query != existing.query or wanted_filters != existing.search_filters:
@@ -200,7 +203,7 @@ def main() -> int:
     store = Store(os.environ["SUBSCRIBERS_REPO"], os.environ["SUBSCRIBERS_TOKEN"])
     # Each transport is read but not demanded: a repo with only Telegram configured should
     # run Telegram and skip the email Subscriptions, not refuse to start (ADR-0038).
-    config = transports.secrets(os.environ)
+    config = transports.config_from(os.environ)
 
     invites = store.invites()
     chats = telegram_subscriptions(store)

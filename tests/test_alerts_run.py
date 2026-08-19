@@ -427,3 +427,59 @@ def test_an_invite_can_still_replace_the_filters_it_states():
 
     assert sub.search_filters == {"etype": "FULL_TIME"}
     assert store.saved == [sub]
+
+
+def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
+    """The production path, not just the helper: `main`'s config must carry a new channel's
+    secret without `run` naming it (ADR-0038).
+
+    Both helper tests passed with `main` still holding a hard-coded name tuple, so the defect
+    survived its own regression suite — this is the test that actually fails without the fix.
+    """
+    from headstart.alerts import transports
+
+    extra = transports.Transport(
+        name="slack",
+        selects=lambda sub: False,
+        send=lambda *a, **k: None,
+        needs=("SLACK_WEBHOOK_URL",),
+    )
+    monkeypatch.setattr(transports, "TRANSPORTS", (*transports.TRANSPORTS, extra))
+    for name, value in {
+        "SUBSCRIBERS_REPO": "repo",
+        "SUBSCRIBERS_TOKEN": "tok",
+        "SLACK_WEBHOOK_URL": "https://hooks.example",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    class _Repo:
+        def __init__(self, *a, **k):
+            pass
+
+        def invites(self):
+            return [Invite("ada@example.com", "backend engineer")]
+
+        def get(self, sub_id):
+            return None
+
+        def put(self, sub):
+            pass
+
+        def accounts_with_sets(self):
+            return frozenset()
+
+        def subscriptions(self):
+            return []
+
+    seen = {}
+
+    def _capture(sub, store, space, config):
+        seen.update(config)
+        return 0
+
+    monkeypatch.setattr(run, "Store", _Repo)
+    monkeypatch.setattr(run, "telegram_subscriptions", lambda store: [])
+    monkeypatch.setattr(run, "send_one", _capture)
+
+    assert run.main() == 0
+    assert seen.get("SLACK_WEBHOOK_URL") == "https://hooks.example"

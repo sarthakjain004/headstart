@@ -142,7 +142,7 @@ def test_the_payload_total_reaches_the_renderer_so_counts_are_not_understated():
     assert seen == {}
 
 
-def test_secrets_covers_every_transport_without_run_naming_one(monkeypatch):
+def test_config_from_covers_every_transport_without_run_naming_one(monkeypatch):
     """ADR-0038: "adding Slack or a webhook is one literal and one tuple entry; `run` never
     learns a channel exists."
 
@@ -158,15 +158,15 @@ def test_secrets_covers_every_transport_without_run_naming_one(monkeypatch):
     )
     monkeypatch.setattr(transports, "TRANSPORTS", (*transports.TRANSPORTS, extra))
 
-    config = transports.secrets({"SLACK_WEBHOOK_URL": "https://hooks.example"})
+    config = transports.config_from({"SLACK_WEBHOOK_URL": "https://hooks.example"})
 
     assert extra.missing(config) == []
 
 
-def test_secrets_reads_but_does_not_demand():
+def test_config_from_reads_but_does_not_demand():
     """A repo with only Telegram configured runs Telegram and skips email, rather than
     refusing to start (ADR-0038)."""
-    config = transports.secrets({"TELEGRAM_BOT_TOKEN": "t"})
+    config = transports.config_from({"TELEGRAM_BOT_TOKEN": "t"})
 
     assert config["TELEGRAM_BOT_TOKEN"] == "t"
     assert config["RESEND_API_KEY"] == ""
