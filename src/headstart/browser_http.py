@@ -14,11 +14,13 @@ Interface::
 
 Everything else is hidden: one headful Chrome per process (headless is a flat block on darwinbox),
 lazily started with a launch retry (Chrome under xvfb dies at startup often enough that 2 of 9
-probe legs were lost to it), a dedicated asyncio loop in a daemon thread so harvest's worker
-threads can call this synchronously, a tab-count semaphore (probe-measured width), heavy
-subresource blocking per tab (no media, no JS — arm A renders nothing, and Turnstile never runs),
-and a hard per-board navigation deadline. HTTP answers are never retried — a retried 403 is not a
-pass; the one retry is for pydoll's own occasional evaluate-shape hiccup, a client-side fault.
+probe legs were lost to it — each failed attempt's OS process and temp profile dir are reaped
+before the next attempt starts, rather than leaked for the life of the shard), a dedicated asyncio
+loop in a daemon thread so harvest's worker threads can call this synchronously, a tab-count
+semaphore (probe-measured width), heavy subresource blocking per tab (no media, no JS — arm A
+renders nothing, and Turnstile never runs), and a hard per-board navigation deadline. HTTP answers
+are never retried — a retried 403 is not a pass; the one retry is for pydoll's own occasional
+evaluate-shape hiccup, a client-side fault.
 
 Requires a display: production wraps the scrape in ``xvfb-run`` (pipeline.yml); locally a real
 window opens. Chrome starts only when the first caller actually reaches ``origin()``, so shards
@@ -170,8 +172,22 @@ def _ensure_started() -> None:
             global _gate
             _gate = asyncio.Semaphore(_TAB_WIDTH)
             browser = _chrome_factory()
-            await browser.__aenter__()
-            await browser.start()
+            try:
+                await browser.__aenter__()
+                await browser.start()
+            except BaseException:
+                # start() never returned, so nothing else calls stop()/cleanup() on this
+                # instance: its OS process and temp profile dir would otherwise leak until
+                # Python's own GC finalizer tears the dir down — racing a process that may
+                # still be alive and writing into it (the "Directory not empty" OSError seen
+                # in production logs). Reap both now, before the next attempt competes with
+                # a leaked process for the same CPU/memory.
+                try:
+                    browser._browser_process_manager.stop_process()
+                    browser._temp_directory_manager.cleanup()
+                except Exception:  # noqa: BLE001, S110 - already failing; don't mask the cause
+                    pass
+                raise
             return browser
 
         last: Exception | None = None
