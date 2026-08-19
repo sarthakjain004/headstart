@@ -74,11 +74,21 @@ class JoinScraper(BaseScraper):
                 timeout=30,
             ).json()
             if isinstance(data, list):
-                break  # a bare list is the API's validation-error shape, not items
+                # The API's validation-error shape, not items. Whatever remained is unread, so
+                # this is a truncation too, not an end (ADR-0053).
+                self.mark_truncated(
+                    f"validation-error response at page {page} — {len(items)} jobs read"
+                )
+                break
             items.extend(data.get("items") or [])
             if page >= (data.get("pagination") or {}).get("pageCount", 1):
                 break
             page += 1
+        if page > _MAX_PAGES:
+            # Only reachable by exhausting the cap — every natural end breaks out above.
+            self.mark_truncated(
+                f"hit the {_MAX_PAGES}-page cap at {len(items)} jobs — the rest unread"
+            )
         # Fill each posting's description concurrently (bounded); a failed fetch leaves it None.
         if self.async_fanout_enabled():
             descriptions = self.fan_out_async(

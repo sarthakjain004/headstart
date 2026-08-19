@@ -2192,3 +2192,178 @@ def test_successfactors_listing_surfaces_go_through_the_retry_seam(monkeypatch):
         sf.http, "fetch", lambda *a, **k: _StreamedBody([b"<rss></rss>"])
     )
     scraper._rss_job_urls()  # must not touch the raw session either
+
+
+def test_successfactors_marks_truncation_when_detail_pages_are_lost(monkeypatch):
+    """ADR-0053: a Board whose returned list is knowingly short must say so.
+
+    Every SuccessFactors field comes from the job page, so `parse` drops a Job whose page did
+    not arrive. `report_detail_gaps` counted those losses into a log line and stopped there —
+    nothing reached `truncated`, so `index sync` saw a shorter list and evicted the difference
+    as delistings. The Jobs were still posted; only their detail fetch had failed.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2, 3)],
+            None,
+        ),
+    )
+    # the middle page 404s; the other two read fine
+    monkeypatch.setattr(
+        scraper,
+        "_job_fields",
+        lambda url: None if url.endswith("/2/") else {"title": "Engineer"},
+    )
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    raw = scraper.fetch_raw()
+
+    assert len(scraper.parse(raw, "2026-01-01")) == 2, "the lost page's Job is dropped"
+    assert scraper.truncated and "unreadable" in scraper.truncated
+
+
+def test_eightfold_sitemap_fallback_marks_truncation_when_pages_are_lost(monkeypatch):
+    """Same ADR-0053 hole on the surface eightfold takes whenever the API 403s."""
+    from headstart.scrapers import eightfold as ef
+
+    scraper = ef.EightfoldScraper("acme")
+    urls = [f"https://acme.eightfold.ai/careers/job/{i}" for i in (1, 2, 3)]
+    monkeypatch.setattr(scraper, "_job_urls", lambda: urls)
+    monkeypatch.setattr(
+        scraper,
+        "_jsonld",
+        lambda u: None if u.endswith("/2") else {"title": "Engineer"},
+    )
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    records = scraper._sitemap_records()
+
+    assert sum(1 for r in records if r["fields"] is None) == 1
+    assert scraper.truncated and "unreadable" in scraper.truncated
+
+
+def test_sensehq_marks_its_page_cap_but_not_a_board_that_ended(monkeypatch):
+    """ADR-0053: stopping at a cap is not the same as reaching the end.
+
+    Both directions matter. Unmarked, a capped board reads as complete and `index sync` evicts
+    everything past the cap; marked wrongly, a healthy board is exempt from eviction forever and
+    its closed postings are served indefinitely.
+    """
+    from headstart.scrapers import sensehq as sh
+
+    # a board that ends naturally: one short page
+    ended = sh.SenseHQScraper("acme")
+    monkeypatch.setattr(
+        type(ended),
+        "_get",
+        lambda self: json.dumps({"data": {"rows": [{"id": 1}], "count": 1}}),
+    )
+    ended.fetch_raw()
+    assert ended.truncated is None, "a board that ended must stay evictable"
+
+    # a board that never ends: every page full, count always out of reach
+    capped = sh.SenseHQScraper("acme")
+    monkeypatch.setattr(
+        type(capped),
+        "_get",
+        lambda self: json.dumps(
+            {"data": {"rows": [{"id": i} for i in range(10)], "count": 10_000}}
+        ),
+    )
+    capped.fetch_raw()
+    assert capped.truncated and "100-page cap" in capped.truncated
+
+
+def test_darwinbox_marks_its_page_cap(monkeypatch):
+    """The same cap exists on darwinbox's curl and browser paths (ADR-0053)."""
+    from headstart.scrapers import darwinbox as db
+
+    s = db.DarwinboxScraper("acme")
+    full = [{"id": i} for i in range(db._PAGE_SIZE)]
+    monkeypatch.setattr(s, "_alljobs", lambda host, page: full)
+    monkeypatch.setattr(s, "_portal_is_v2", lambda host: True)
+    jobs = s.fetch_raw()
+
+    assert len(jobs) == db._PAGE_SIZE * 99
+    assert s.truncated and "99-page cap" in s.truncated
+
+
+def test_successfactors_does_not_mark_a_board_whose_pages_all_arrived(monkeypatch):
+    """The other direction of ADR-0053: a Board wrongly marked truncated is exempt from
+    eviction indefinitely, so its closed postings are served forever."""
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2)],
+            None,
+        ),
+    )
+    monkeypatch.setattr(scraper, "_job_fields", lambda url: {"title": "Engineer"})
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    scraper.fetch_raw()
+
+    assert scraper.truncated is None
+
+
+def test_eightfold_sitemap_fallback_does_not_mark_a_complete_board(monkeypatch):
+    """Same negative direction on eightfold's fallback surface."""
+    from headstart.scrapers import eightfold as ef
+
+    scraper = ef.EightfoldScraper("acme")
+    monkeypatch.setattr(
+        scraper, "_job_urls", lambda: ["https://acme.eightfold.ai/careers/job/1"]
+    )
+    monkeypatch.setattr(scraper, "_jsonld", lambda u: {"title": "Engineer"})
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    scraper._sitemap_records()
+
+    assert scraper.truncated is None
+
+
+class _RippleResp:
+    """One RippleHire response, standing in for both the token GET and the search POST."""
+
+    def __init__(self, page, total):
+        self.url = "https://acme.ripplehire.com/candidate/?token=TOK"
+        self.text = "token=TOK"
+        self.status_code = 200
+        self._page, self._total = page, total
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"jobVoList": self._page, "totalJobCount": self._total}
+
+
+def test_ripplehire_marks_its_page_cap_but_not_a_board_that_ended(monkeypatch):
+    """ADR-0053, both directions. ripplehire's natural exit is the tenant's own job count;
+    exhausting the page cap means the board did not end, we stopped reading it."""
+    from headstart.scrapers import ripplehire as rh
+
+    def _board(total, per_page):
+        # jobDesc is already set, so the detail pass has nothing to fetch
+        page = [{"jobSeq": i, "jobDesc": "x"} for i in range(per_page)]
+        monkeypatch.setattr(rh.http, "fetch", lambda *a, **k: _RippleResp(page, total))
+        return rh.RippleHireScraper("acme")
+
+    ended = _board(total=1, per_page=1)
+    ended.fetch_raw()
+    assert ended.truncated is None, "a board that reached its count must stay evictable"
+
+    capped = _board(total=10**9, per_page=rh._PAGE_SIZE)
+    capped.fetch_raw()
+    assert capped.truncated and f"{rh._MAX_PAGES}-page cap" in capped.truncated
