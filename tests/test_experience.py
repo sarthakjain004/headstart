@@ -255,15 +255,15 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
     # Asserted behaviourally rather than by inspecting the pattern string: the work-word pattern
     # contains "experience" inside an alternation while still needing guards, so any structural
     # check reports it as safe.
-    from headstart.experience import _DESC_PATTERNS
+    from headstart.experience import _DESC_PATTERNS, _WORD_PATTERNS
 
     narrative = [
         "Founded 12 years ago by a team of engineers",
         "spent 15 years building great products",
-        "we have been growing for 8 years in the market",
         "shipping software for 9 years (10 years including beta)",
     ]
-    for pattern, guarded in _DESC_PATTERNS:
+    # both passes, because the factory's whole point is that they cannot drift apart
+    for pattern, guarded in [*_DESC_PATTERNS, *_WORD_PATTERNS]:
         if guarded:
             continue
         for line in narrative:
@@ -272,12 +272,45 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
             )
 
 
-def test_some_patterns_are_guarded():
-    from headstart.experience import _DESC_PATTERNS
+def test_both_passes_carry_the_same_guard_flags():
+    # `_desc_patterns` is a factory so the digits pass and the words pass stay in lockstep; if one
+    # gained a pattern the other did not, or the flags diverged, the guards would apply unevenly.
+    from headstart.experience import _DESC_PATTERNS, _WORD_PATTERNS
 
-    assert any(guarded for _, guarded in _DESC_PATTERNS), (
-        "guards would be inert if empty"
+    assert [p.guarded for p in _DESC_PATTERNS] == [p.guarded for p in _WORD_PATTERNS]
+    assert any(p.guarded for p in _DESC_PATTERNS), "guards would be inert if empty"
+    assert not all(p.guarded for p in _DESC_PATTERNS), (
+        "an unguarded anchored pattern is what lets '25 years of experience' through"
     )
+
+
+def test_fold_covers_every_character_the_patterns_stopped_handling():
+    # The Tier-2 patterns dropped their typographic variants once folding was introduced, so they
+    # are correct only while `_FOLD` maps each one. Pin that: this is a silent failure otherwise.
+    from headstart.experience import _FOLD
+
+    for ch, expected in [
+        ("\u2011", "-"),
+        ("\u2012", "-"),
+        ("\u2013", "-"),
+        ("\u2014", "-"),
+        ("\u2015", "-"),
+        ("\u2212", "-"),
+        ("\u2018", "'"),
+        ("\u2019", "'"),
+        ("\u201c", '"'),
+        ("\u201d", '"'),
+    ]:
+        assert ch.translate(_FOLD) == expected
+
+
+def test_fold_is_offset_preserving():
+    # The narrative guards slice `text` by `match.start()`, so a mapping that changed length would
+    # silently move every guard window. Every replacement must be exactly one character.
+    from headstart.experience import _FOLD
+
+    for src, dst in _FOLD.items():
+        assert isinstance(dst, str) and len(dst) == 1, (chr(src), dst)
 
 
 def test_description_narrative_does_not_mask_a_real_requirement():
@@ -449,4 +482,36 @@ def test_narrative_idiom_guard_does_not_eat_real_requirements():
     ) == (ExperienceSpan(6, None, "regex"))
     assert from_description("A minimum of four years of relevant experience") == (
         ExperienceSpan(4, None, "regex")
+    )
+
+
+def test_narrative_idiom_binds_to_the_number_its_pattern_matched():
+    # Searching a window re-anchors on whatever "years" comes first in it, letting an idiom that
+    # qualifies a different number two sentences away disqualify this one.
+    assert from_description(
+        "5+ years of experience. Equity (4 year vest) and 401k."
+    ) == ExperienceSpan(5, None, "regex")
+
+
+def test_in_a_row_does_not_swallow_a_hyphenated_noun():
+    # `\b` is satisfied by the hyphen, so "a row-level security team" read as the award idiom.
+    assert from_description(
+        "10+ years of experience in a row-level security team"
+    ) == ExperienceSpan(10, None, "regex")
+
+
+def test_gerund_needs_an_object():
+    # "three years running" is the streak idiom; "running <something>" is a real requirement.
+    assert from_description("fastest-growing company three years running") is None
+    assert from_description("4+ years running distributed systems") == ExperienceSpan(
+        4, None, "regex"
+    )
+
+
+def test_up_to_is_a_ceiling_not_a_floor():
+    # "up to N years" states a maximum — reading it as min_years is wrong in every case, and it is
+    # how retention boilerplate and fixed-term contracts phrase a duration.
+    assert from_description("Your data is kept for up to 2 years in our pool") is None
+    assert (
+        from_description("a training position of up to three years in duration") is None
     )
