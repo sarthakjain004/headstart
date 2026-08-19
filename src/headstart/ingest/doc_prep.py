@@ -33,8 +33,8 @@ _WS = re.compile(r"\s+")
 # Token-length Buckets (ADR-0005): a Doc is sorted into the smallest Bucket that holds it,
 # measured with the real tokenizer. Shared so the planner buckets a Doc exactly as the encoder
 # will pad it. The encode-side batch sizing (batch_size_for / _ATTN_BUDGET) stays in embed_run.
-_BUCKETS = (512, 1024, 2048, 4096)
-_MAX_SEQ_TOKENS = _BUCKETS[-1]
+BUCKETS = (512, 1024, 2048, 4096)
+MAX_SEQ_TOKENS = BUCKETS[-1]
 
 # The canonical typed metadata that rides next to each vector (ADR-0007); the corpus reader
 # already yields canonical Job dicts, so this is pure selection — no per-source adapting.
@@ -63,10 +63,10 @@ PLANNER_ONLY_FIELDS = ("has_description",)
 
 def bucket_for(n_tokens: int) -> int:
     """The smallest bucket that holds a doc of ``n_tokens`` (over-cap docs go to the top one)."""
-    for bucket in _BUCKETS:
+    for bucket in BUCKETS:
         if n_tokens <= bucket:
             return bucket
-    return _BUCKETS[-1]
+    return BUCKETS[-1]
 
 
 def clean_markdown(text: str) -> str:

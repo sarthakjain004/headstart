@@ -1,18 +1,21 @@
 name: nightly-pipeline
 
-# Nightly ingest for the free-tier deployment (ADR-0020), fully parallelized (ADR-0025 embed,
+# 2-hourly ingest for the free-tier deployment (ADR-0020), fully parallelized (ADR-0025 embed,
 # ADR-0026 scrape):
 #   scrape-plan (select slice → bin-pack boards into shards)
 #     → scrape (matrix, ≤15 shards, each scrapes its boards into a fragment)
-#       → join (union fragments → tech-filter → priority → plan the embed fan-out)
+#       → join (union fragments → tech-filter → descriptions → ledgers → plan the embed fan-out)
 #         → embed (matrix, ≤15 shards, each embeds its Docs into a fragment)
-#           → merge (single writer: concatenate → sync → prune → compact → upload → restart).
+#           → merge (single writer: concatenate → meta → sync → prune → trends → upload
+#             → restart).
 # Inert (green no-op) until the repo's HF_TOKEN secret is set: the gate in scrape-plan drives
 # `run`, and every downstream job/step is gated on it.
 #
 # Time budget (sized 2026-07-25 against measured run 30131376268 — see
 # docs/AI_Integration/embedding-throughput.md for the arithmetic):
-#   expected ~171 min, worst case 358 min (sum of job timeouts), against a 360-min cron interval.
+#   expected ~171 min, worst case 358 min (sum of job timeouts). The cron is 2-hourly, i.e.
+#   shorter than a run — the `concurrency` group below queues cycles rather than racing them;
+#   see the note at the cron for the measured run-duration ceiling.
 # Every stage timeout is one of two kinds, and they are set on opposite principles:
 #   - scrape / embed BANK PARTIAL WORK, so their inner `timeout Nm ... || echo` is a *work budget*
 #     sized at ~3x the balanced makespan. Truncation is cheap and deliberate: the fragment uploads
@@ -542,7 +545,7 @@ jobs:
           retention-days: 1
 
   # ── Stage 5: the single writer (unchanged from Phase 1). Pulls the prior store + LanceDB from HF,
-  # concatenates the embed fragments, then sync → prune → compact → upload → restart. Runs even when
+  # concatenates the embed fragments, then sync → prune → upload → restart. Runs even when
   # embed was skipped (eviction/prune still needed); every step gated on the run flag.
   merge:
     needs: [scrape-plan, join, embed]
@@ -571,7 +574,7 @@ jobs:
         # continue-on-error: `join` is the one un-bankable stage, so if it timed out this artifact
         # is missing. Proceeding degrades to a safe no-op rather than a hard failure — with no
         # corpus, `plan_sync` sees an empty fresh-id set *and* an empty scraped-Board set, so it
-        # adds and evicts nothing (verified), while prune/compact still run and the store is
+        # adds and evicts nothing (verified), while prune still runs and the store is
         # re-uploaded unchanged. The scrape work is lost either way; failing here would lose the
         # dead-Board sweep too.
         if: needs.scrape-plan.outputs.run == 'true'
@@ -582,7 +585,7 @@ jobs:
           path: data
       - name: Download all embed fragments
         # continue-on-error: merge must still run if every embed shard failed. It then adds no new
-        # vectors but the scrape's evictions, the priority ledger, and prune/compact still land —
+        # vectors but the scrape's evictions, the priority ledger, and prune still land —
         # losing a run's scrape work to a missing embed artifact would be the worst outcome.
         if: needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0'
         continue-on-error: true
@@ -620,7 +623,7 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         run: python -m headstart.ingest.role_trends
-      # No compaction here — it moved to the every-2-days `cleanup-index` run. `index compact`
+      # No compaction here — it moved to the `cleanup-index` run. `index compact`
       # rebuilds the table into ONE new .lance file, so every run minted a brand-new ~755 MB blob
       # that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB quota filled in ~45
       # runs. Lance appends instead: `sync`/`prune` write small new fragments and leave the big
@@ -645,7 +648,7 @@ jobs:
             --repo-type dataset --commit-message "nightly: embedding store"
           # Deliberately NOT --delete: nothing compacts here any more, so no local fragment is
           # superseded and every remote one is still live data. Passing --delete would make this a
-          # full-table replace again — the exact cost this change removes. The every-2-days
+          # full-table replace again — the exact cost this change removes. The daily
           # `cleanup-index` run compacts and re-uploads *with* --delete, which is where superseded
           # fragments get reaped.
           up "$HF_DATASET" data/lancedb data/lancedb \

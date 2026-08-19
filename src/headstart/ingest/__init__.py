@@ -9,12 +9,14 @@ The run is two symmetric halves — **plan → run → gather** — so each modu
     filter_tech     stage 3  keep the tech subset (ADR-0017)
     update_descriptions
                     stage 3  persist fetched descriptions, repair the ones the scrape lost
-    update_ledgers  stage 3  blend this run's measurements into the priority/cost ledgers
+    update_ledgers  stage 3  blend this run's measurements into the four ledgers, in the
+                             order the run invokes them: priority, cost, failures, gap
     embed_plan      stage 3  diff, tokenize, bin-pack the new Docs into embed shards
     embed_run       stage 4  (matrix) embed one shard's Docs into a fragment
     embed_merge     stage 5  concatenate the embed fragments onto the store
     update_meta     stage 5  re-observe the stored facts, re-derive on a version bump (ADR-0061)
-    index           stage 5  sync -> prune -> compact the LanceDB table
+    index           stage 5  sync -> prune the LanceDB table (`compact` is NOT in this run —
+                             it moved to the `cleanup-index` workflow)
     role_trends     stage 5  count the served stock into role families (ADR-0040)
 
 One more entry point is not a stage but opens three of them (and ``cleanup-index``)::
@@ -29,6 +31,8 @@ points from being scattered across five ``scripts/`` subdirs mixed in with R&D s
 Alongside them, the helper modules with no consumer outside this package::
 
     binpack        LPT packing + shard sizing, shared by both planners
+    board_failures The consecutive-gone quarantine ledger (ADR-0058), written in the join
+                   and read by scrape_plan
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
     index_plan     Pure add-evict and prune planners for the jobs table (no LanceDB import)
     observability  Run context, step summaries, and the shard-report round trip

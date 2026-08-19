@@ -99,7 +99,7 @@ def test_english_gate():
 
 
 def test_bucket_for_boundaries():
-    assert ej.bucket_for(1) == ej._BUCKETS[0]
+    assert ej.bucket_for(1) == ej.BUCKETS[0]
     assert ej.bucket_for(512) == 512
     assert ej.bucket_for(513) == 1024
     assert ej.bucket_for(4096) == 4096
@@ -108,14 +108,14 @@ def test_bucket_for_boundaries():
 
 def test_batch_sizes_hold_attention_budget():
     # invariant: every bucket's fixed batch keeps n × bucket² within the attention budget
-    for bucket in ej._BUCKETS:
+    for bucket in ej.BUCKETS:
         n = ej.batch_size_for(bucket)
         assert 1 <= n <= ej._BATCH_CAP
         assert n == 1 or n * bucket * bucket <= ej._ATTN_BUDGET
 
 
 def test_batch_size_shrinks_with_bucket():
-    sizes = [ej.batch_size_for(b) for b in ej._BUCKETS]
+    sizes = [ej.batch_size_for(b) for b in ej.BUCKETS]
     assert sizes == sorted(sizes, reverse=True)
     assert sizes[-1] < sizes[0]  # long-doc buckets really do get smaller batches
 

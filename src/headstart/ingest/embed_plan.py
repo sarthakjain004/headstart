@@ -37,7 +37,7 @@ from headstart.ingest.binpack import (
     shard_count,
 )
 from headstart.ingest.doc_prep import (
-    _MAX_SEQ_TOKENS,
+    MAX_SEQ_TOKENS,
     bucket_for,
     build_doc,
     is_english,
@@ -106,7 +106,7 @@ def _token_lengths(tok, docs: list[str]) -> list[int]:
     """Exact token counts (same truncation as embed_run), batched with a progress stream."""
     lengths: list[int] = []
     for s in range(0, len(docs), 1024):
-        enc = tok(docs[s : s + 1024], truncation=True, max_length=_MAX_SEQ_TOKENS)
+        enc = tok(docs[s : s + 1024], truncation=True, max_length=MAX_SEQ_TOKENS)
         lengths.extend(len(ids) for ids in enc["input_ids"])
         _log.info(f"tokenized {len(lengths)}/{len(docs)}")
     return lengths

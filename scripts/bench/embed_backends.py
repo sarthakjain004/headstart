@@ -32,7 +32,7 @@ import time
 
 import numpy as np
 
-from headstart.ingest.doc_prep import _BUCKETS, _MAX_SEQ_TOKENS
+from headstart.ingest.doc_prep import BUCKETS, MAX_SEQ_TOKENS
 from headstart.ingest.embed_run import _length_sorted, batch_size_for
 from headstart.search import DOC_PREFIX, MODEL
 
@@ -114,7 +114,7 @@ def _load(label: str):
     )
     if dtype == "bfloat16":
         model = model.bfloat16()
-    model.max_seq_length = min(model.max_seq_length, _MAX_SEQ_TOKENS)
+    model.max_seq_length = min(model.max_seq_length, MAX_SEQ_TOKENS)
     return model
 
 
@@ -122,18 +122,18 @@ def _encode_bucketed(model, docs: list[str], lengths: list[int], budget: int):
     """Encode exactly as production does: grouped by Bucket, batched by ``batch_size_for``,
     length-sorted within the batch (ADR-0029). Returns (vectors_in_input_order, seconds)."""
     order: list[int] = []
-    groups: dict[int, list[int]] = {b: [] for b in _BUCKETS}
+    groups: dict[int, list[int]] = {b: [] for b in BUCKETS}
     for i, n_tok in enumerate(lengths):
-        for b in _BUCKETS:
+        for b in BUCKETS:
             if n_tok <= b:
                 groups[b].append(i)
                 break
         else:
-            groups[_BUCKETS[-1]].append(i)
+            groups[BUCKETS[-1]].append(i)
 
     out: list[np.ndarray] = []
     start = time.monotonic()
-    for bucket in _BUCKETS:
+    for bucket in BUCKETS:
         if not groups[bucket]:
             continue
         n = batch_size_for(bucket, budget)
@@ -211,7 +211,7 @@ def main() -> int:
     )
     docs = _make_docs(lengths, tokenizer)
     actual = [
-        len(tokenizer(d, truncation=True, max_length=_MAX_SEQ_TOKENS)["input_ids"])
+        len(tokenizer(d, truncation=True, max_length=MAX_SEQ_TOKENS)["input_ids"])
         for d in docs
     ]
     total_tokens = sum(actual)

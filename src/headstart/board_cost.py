@@ -174,9 +174,16 @@ def update(
     return rows
 
 
-def _ats_of(board_key: str) -> str:
-    """The ATS half of an ``{ats}:{slug}`` Board key (``corpus.board_of``'s key space)."""
-    return board_key.split(":", 1)[0]
+def _ats_of(cost_key: str) -> str:
+    """The ATS half of a cost key — the **scrape-list** ``{ats}:{slug}`` (ADR-0059).
+
+    Not ``corpus.board_of``'s key space. The two look alike and are not interchangeable:
+    this ledger is keyed the way `harvest` and `scrape_plan` build the scrape list, and
+    ADR-0059 records a stale "matches corpus.board_of" comment of exactly this shape: of the
+    13,402 Boards whose keys could not match, the 4,611 that held a priority row were scored
+    0.0.
+    """
+    return cost_key.split(":", 1)[0]
 
 
 def ats_medians(rows: Mapping[str, BoardCost]) -> dict[str, float]:
