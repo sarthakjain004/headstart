@@ -41,6 +41,16 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "careers-test". Safe to drop because their production board is in the ledger too
         # (`careers.capgemini.com`, 1338 postings) — this removes the duplicate, not the jobs.
         "successfactors:careers-test.capgemini.com",
+        # LTIMindtree's retired vanity host. Its TLS cert is SAP's own unconfigured-vanity
+        # placeholder (CN=certificate-not-found.jobs2web.com, no SAN for this hostname) —
+        # verified live 2026-08-19, failing the same way in all 6 recent pipeline runs. Its
+        # CNAME chain (-> larsenturbo.jobs2web.com -> rmk12.jobs2web.com) is identical to
+        # `careers.ltm.com`, and requesting that jobs2web host with `Host: careers.ltimindtree.com`
+        # 301s to `careers.ltm.com/xml/sitemap.xml` — same SuccessFactors tenant, now served
+        # under its current vanity domain, which is already live in the ledger with a valid
+        # cert (`careers.ltm.com`, 49 postings, comparable to this host's last-good 55). Safe to
+        # drop: it removes the permanently broken duplicate, not LTIMindtree's jobs.
+        "successfactors:careers.ltimindtree.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
