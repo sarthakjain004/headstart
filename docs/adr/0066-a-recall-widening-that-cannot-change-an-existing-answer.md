@@ -3,8 +3,9 @@
 - Status: Accepted
 - Date: 2026-08-19
 - Extends [ADR-0009](0009-experience-extraction.md) and [ADR-0018](0018-experience-seniority-fallback.md)
-- **Amends [ADR-0060](0060-narrative-guards-for-the-work-word-patterns.md)** on two points: how the
-  guard set is selected, and its rejected alternative "guard every pattern uniformly"
+- **Amends [ADR-0060](0060-narrative-guards-for-the-work-word-patterns.md)** on three points: how
+  the guard set is selected, its rejected alternative "guard every pattern uniformly", and the
+  restriction of the 20-year requirement ceiling to the work-word patterns
 - **Amends [ADR-0018](0018-experience-seniority-fallback.md)**: Tier 2 no longer requires a work
   token after the connector
 
@@ -82,14 +83,34 @@ to fire on narrative at all.
 
 **ADR-0060 is also amended on its rejected alternative.** It declined to *"guard every pattern
 uniformly"* on the premise that *"the experience-anchored patterns cannot reach narrative (the
-literal word 'experience' has to be nearby)"*. That premise does not hold. Measured on the served
-table, an anchored pattern reads `"we pair eight years of cloud-operating experience with one of
-the world's largest infrastructure capital bases"` as a requirement of 8 — company narrative that
-happens to contain the anchor word. `_NARRATIVE_SPAN` therefore applies to **every** pattern,
-guarded or not, because a fixed idiom is what makes the number not a requirement regardless of
-which pattern found it. ADR-0060's reasoning still stands for the guards it was about:
-`_NARRATIVE_BEFORE`, `_NARRATIVE_AFTER` and the 20-year ceiling remain work-word-only, so
-`"25 years of experience"` in an anchored field is still read.
+literal word 'experience' has to be nearby)"*. That premise does not hold, and the decisive case is
+`_CEILING_BEFORE`: `"Candidates with up to 3 years of experience"` fires an *anchored* pattern and
+was served as `min_years=3` — a posting addressed to juniors, hidden from every junior. The anchor
+word being present says nothing about whether the number is a requirement.
+
+`_NARRATIVE_SPAN` and `_CEILING_BEFORE` therefore apply to **every** pattern, guarded or not.
+
+**So does the 20-year requirement ceiling, which is the third amendment to ADR-0060.** That ADR
+restricted `_MAX_PLAUSIBLE_REQUIREMENT` to the work-word patterns because *"'25 years of
+experience' is a real, if rare, requirement"*. Measured, it is not rare — it is nonexistent. 1,066
+descriptions in the store receive a Tier-2 answer above 20 years, and hand-reading the top 30 found
+no real requirement among them: *"PayPal has been revolutionizing commerce globally for more than
+25 years"*, *"a federal contractor with more than 30 years of experience providing environmental,
+construction, facility management"*, *"the founding team brings over 30 years of cybersecurity
+experience"* — and two that are not tenures at all, *"a 21 year old UMich grad"* and *"Age Limit:
+Below 26 Years"*. The anchor word says nothing about genre; the magnitude does. This is the largest
+single correction in the change, and it is a pre-existing defect the review surfaced rather than
+one this work introduced.
+
+`_NARRATIVE_BEFORE` and `_NARRATIVE_AFTER` do stay guarded-pattern-only, as ADR-0060 decided: they
+key on surrounding words rather than magnitude, and an anchored pattern genuinely cannot reach the
+founder-tenure phrasings they target.
+
+This is a partial fix, not a complete one. Anchored patterns can reach narrative by routes no fixed
+idiom catches — `"we pair eight years of cloud-operating experience with one of the world's largest
+infrastructure capital bases"` still reads as 8, and this change introduces it by teaching Tier 2
+spelled-out numbers. Recognising that class needs sentence-level judgement about genre, which is
+what the deferred LLM tier is for; enumerating more idioms would repeat the `running` mistake below.
 
 **ADR-0018's work-token anchor is dropped for one pattern.** ADR-0018 specified `N years of/in/as
 <work word>`, *"anchored to `of/in/as` + a work token so `per year` / `N years ago` don't match"*.

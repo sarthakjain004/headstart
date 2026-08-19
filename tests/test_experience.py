@@ -255,7 +255,7 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
     # Asserted behaviourally rather than by inspecting the pattern string: the work-word pattern
     # contains "experience" inside an alternation while still needing guards, so any structural
     # check reports it as safe.
-    from headstart.experience import _DESC_PATTERNS, _WORD_PATTERNS
+    from headstart.experience import _DESC_PATTERNS, _NUM_WORD_PATTERNS
 
     narrative = [
         "Founded 12 years ago by a team of engineers",
@@ -263,7 +263,7 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
         "shipping software for 9 years (10 years including beta)",
     ]
     # both passes, because the factory's whole point is that they cannot drift apart
-    for pattern, guarded in [*_DESC_PATTERNS, *_WORD_PATTERNS]:
+    for pattern, guarded in [*_DESC_PATTERNS, *_NUM_WORD_PATTERNS]:
         if guarded:
             continue
         for line in narrative:
@@ -275,9 +275,11 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
 def test_both_passes_carry_the_same_guard_flags():
     # `_desc_patterns` is a factory so the digits pass and the words pass stay in lockstep; if one
     # gained a pattern the other did not, or the flags diverged, the guards would apply unevenly.
-    from headstart.experience import _DESC_PATTERNS, _WORD_PATTERNS
+    from headstart.experience import _DESC_PATTERNS, _NUM_WORD_PATTERNS
 
-    assert [p.guarded for p in _DESC_PATTERNS] == [p.guarded for p in _WORD_PATTERNS]
+    assert [p.guarded for p in _DESC_PATTERNS] == [
+        p.guarded for p in _NUM_WORD_PATTERNS
+    ]
     assert any(p.guarded for p in _DESC_PATTERNS), "guards would be inert if empty"
     assert not all(p.guarded for p in _DESC_PATTERNS), (
         "an unguarded anchored pattern is what lets '25 years of experience' through"
@@ -300,6 +302,8 @@ def test_fold_covers_every_character_the_patterns_stopped_handling():
         ("\u2019", "'"),
         ("\u201c", '"'),
         ("\u201d", '"'),
+        ("\uf0b7", "\u2022"),
+        ("\u30fb", "\u2022"),
     ]:
         assert ch.translate(_FOLD) == expected
 
@@ -514,4 +518,63 @@ def test_up_to_is_a_ceiling_not_a_floor():
     assert from_description("Your data is kept for up to 2 years in our pool") is None
     assert (
         from_description("a training position of up to three years in duration") is None
+    )
+
+
+def test_range_tail_needs_a_word_boundary():
+    # `_DIGITS_OR_WORDS` spells numbers out, so without a leading `\b` any word ENDING in one
+    # supplies a bogus floor and silently turns a correct single value into a range.
+    assert from_description(
+        "GET THE JOB DONE - 5+ years of full stack engineering experience"
+    ) == ExperienceSpan(5, None, "regex")
+    assert from_description("Everyone - 6+ years of backend experience") == (
+        ExperienceSpan(6, None, "regex")
+    )
+    assert from_description("on the phone - 8+ years of support experience") == (
+        ExperienceSpan(8, None, "regex")
+    )
+
+
+def test_narrative_idiom_spans_a_range():
+    # Anchoring the idiom check on the captured number puts it on a range's floor, so the check
+    # has to be able to step over the rest of the range to reach the idiom.
+    assert from_description("stock (2 to 4 year vest)") is None
+
+
+def test_ceiling_applies_to_anchored_patterns_too():
+    # This fires an experience-anchored (unguarded) pattern, so a guarded-only check misses it.
+    assert from_description("Candidates with up to 3 years of experience") is None
+
+
+def test_ceiling_must_sit_immediately_before_the_number():
+    # A nearby-window check rejects real requirements that merely share a sentence with "up to".
+    assert from_description(
+        "Bonus up to 20 percent and 6+ years in backend systems"
+    ) == ExperienceSpan(6, None, "regex")
+    assert from_description(
+        "up to date knowledge and 5+ years building services"
+    ) == ExperienceSpan(5, None, "regex")
+
+
+def test_requirement_ceiling_applies_to_anchored_patterns_too():
+    # Measured: 1,066 descriptions produced a Tier-2 answer above 20 years and none was a real
+    # requirement — company age, founder tenure, or a literal age. The anchor word says nothing
+    # about genre; the magnitude does.
+    assert (
+        from_description("PayPal has been revolutionizing commerce for 25 years")
+        is None
+    )
+    assert (
+        from_description(
+            "a federal contractor with more than 30 years of experience providing services"
+        )
+        is None
+    )
+    assert (
+        from_description("Built on more than 50 years of experience, MacKay has")
+        is None
+    )
+    # and the ordinary range is untouched
+    assert from_description("8+ years of hands-on experience") == ExperienceSpan(
+        8, None, "regex"
     )

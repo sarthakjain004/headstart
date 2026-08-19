@@ -309,6 +309,16 @@ Then `--misses <ats>` dumps a sample of the still-missed descriptions to **read 
 about what phrasing to add (that read-then-widen loop is how ADR-0018's patterns were found — don't
 just eyeball the number). Calibrate any seniority→years mapping against real numbers in the data.
 
+**That script's data source is stale by construction** — `data/jobs/tech/` is ephemeral stage output
+that never reaches HF (see the freshest-data rule above), so it reports on whatever this machine last
+scraped and is missing whole ATSes. It remains the right quick gauge, but measure a coverage *claim*
+against the served LanceDB table joined to `data/descriptions/`, both of which have a durable source.
+
+**And measure changed values, not only coverage.** A pattern change can silently move an answer
+Tier 2 already produced, and a coverage total hides that completely: a review caught `_RANGE_TAIL`
+turning "GET THE JOB DONE - 5+ years" into 1-5 (off the "one" in "DONE") while coverage went *up*.
+Bucket every record by old-tier → new-tier **and** report same-tier value changes (ADR-0066).
+
 ## Agent skills
 
 **Invoke a skill through the Skill tool whenever one applies — never reproduce its process from

@@ -9,7 +9,7 @@ number always wins; the seniority label is only a fallback when no number is sta
                             title, e.g. "Senior Engineer") to a floor-years estimate. Fallback only.
 
 Each tier is a pure function returning an :class:`ExperienceSpan` or ``None``. Widen recall by
-adding to ``_desc_patterns`` (the factory feeding both Tier-2 passes) or ``_SENIORITY``; a future
+adding to ``_tier2_patterns`` (the factory feeding both Tier-2 passes) or ``_SENIORITY``; a future
 LLM tier is another ``from_*`` chained in :func:`extract`. Keeping each tier pure keeps the whole
 thing unit-testable without I/O.
 
@@ -38,10 +38,18 @@ _MAX_PLAUSIBLE_YEARS = (
     50  # reject absurd matches ("100 years"), almost always a parse error
 )
 
-# A stated *requirement* above this is never real — it is corporate narrative the work-word
-# patterns can otherwise reach ("a combined 40+ years at Palantir building …"). Deliberately far
-# below _MAX_PLAUSIBLE_YEARS, which guards arithmetic absurdity rather than genre; applied only to
-# the two work-word patterns, so "25 years of experience" still parses where it is anchored.
+# A stated *requirement* above this is never real — it is corporate narrative ("a combined 40+ years
+# at Palantir building …"). Deliberately far below _MAX_PLAUSIBLE_YEARS, which guards arithmetic
+# absurdity rather than genre.
+#
+# Applied to **every** pattern, not only the guarded ones. ADR-0060 restricted it on the grounds
+# that "25 years of experience" is "a real, if rare, requirement" where a pattern is anchored on
+# the word. Measured over the description store, that is not so: 1,066 descriptions receive a
+# Tier-2 answer above 20 years and a hand-read of the top 30 found **no real requirement among
+# them** — "PayPal has been revolutionizing commerce for more than 25 years", "federal contractor
+# with more than 30 years of experience", "the founding team brings over 30 years", and two that
+# are ages rather than tenures at all ("a 21 year old UMich grad", "Age Limit: Below 26 Years").
+# The anchor word says nothing about genre; the magnitude does.
 _MAX_PLAUSIBLE_REQUIREMENT = 20
 
 
@@ -100,12 +108,26 @@ def from_field(value: str | None) -> ExperienceSpan | None:
 # character to one character**, so `str.translate` preserves offsets exactly and the narrative
 # guards — which slice `text` around `match.start()` — keep pointing at what they did before.
 #
-# Measured over the 328,930-description store: the non-breaking hyphen U+2011 alone blocks 209
-# otherwise-matchable spans ("8+ years of hands‑on software development experience", where `_WORK`
-# already has `hands[\s-]?on` and only the exotic hyphen defeats it), and the en/em dashes another
-# 46. Folding is preferred over widening each character class because these characters are *noise*
-# in a requirement, not signal — the alternative is threading the same six code points through
-# `_GAP`, `_WORDS`, `_WORK` and `_RANGE_TAIL` and re-deriving the risk in each.
+# Measured over the 328,930-description store — `present` counts descriptions containing the
+# character, `decisive` counts those whose Tier-2 answer changes or disappears without the mapping:
+#
+#     U+2011 non-breaking hyphen  present 17,252   decisive   262
+#     U+2013 en dash              present108,751   decisive 15,882
+#     U+2019 right single quote   present231,810   decisive  5,953
+#     U+2014 em dash              present 97,008   decisive    19
+#     U+201C/D double quotes      present ~33,000  decisive     7 each
+#     U+2018 left single quote    present  9,226   decisive     3
+#     U+F0B7 Word bullet          present    551   decisive     2
+#     U+2212 minus sign           present     47   decisive     1
+#     U+2012 figure dash          present     11   decisive     0
+#     U+2015 horizontal bar       present     53   decisive     0
+#     U+30FB katakana dot         present  1,052   decisive     0
+#
+# The three zero-scoring entries are kept: each is the same character class as one that does pay
+# (a dash, a bullet), costs nothing at run time, and would otherwise be a silent gap the next
+# corpus could fall into. Folding is preferred over widening each character class because these
+# characters are *noise* in a requirement, not signal — the alternative is threading twelve code
+# points through `_GAP`, `_WORDS`, `_WORK` and `_RANGE_TAIL` and re-deriving the risk in each.
 _FOLD = str.maketrans(
     {
         "\u2011": "-",  # non-breaking hyphen — by far the most common blocker
@@ -149,9 +171,11 @@ _YEARS = (
 # substituted into both slots rather than only the first.
 #
 # **Run as a second pass, not folded into the first.** Two reasons, and they point the same way.
-# Correctness: a description that already yields a digit match keeps exactly the answer it had
-# before, so this can only ever add a reading where there was none — measured as 0 changed values
-# against the whole store. Cost: the alternation defeats the literal-prefix scan `re` uses on
+# Correctness: these *patterns* cannot change a digit answer, because they never run when one
+# exists. (One shared piece does reach the digit pass — `_RANGE_TAIL` learns spelled-out floors, so
+# "three to 5 years" reads 3-5 where it read 5. That is the ceiling-as-floor fix applied to one
+# more spelling, and it is why `_RANGE_TAIL` needs its leading `\b`.) Cost: the alternation
+# defeats the literal-prefix scan `re` uses on
 # `\d{1,2}`, and paying that on every description rather than only the ~38% that miss measured 6.5x
 # slower end to end (0.31s -> 2.02s per 3,000 descriptions).
 _WORD_NUM = {
@@ -205,7 +229,7 @@ class _Tier2Pattern(NamedTuple):
     guarded: bool
 
 
-def _desc_patterns(num: str) -> list[_Tier2Pattern]:
+def _tier2_patterns(num: str) -> list[_Tier2Pattern]:
     """The Tier-2 pattern set, over whichever number group is passed in.
 
     Built by a factory so the digits-only pass and the digits-or-words pass cannot drift apart:
@@ -318,16 +342,16 @@ def _desc_patterns(num: str) -> list[_Tier2Pattern]:
     ]
 
 
-_DESC_PATTERNS = _desc_patterns(_DIGITS)
+_DESC_PATTERNS = _tier2_patterns(_DIGITS)
 #: Second pass, tried only when :data:`_DESC_PATTERNS` finds nothing (see `_WORD_NUM`).
-_WORD_PATTERNS = _desc_patterns(_DIGITS_OR_WORDS)
+_NUM_WORD_PATTERNS = _tier2_patterns(_DIGITS_OR_WORDS)
 
 # Company age, founder tenure, benefits: "N years" that is never a requirement. These read as
 # requirements to a work-word pattern ("spent the last 15 years building …") and were previously
 # excluded only as a side effect of demanding an of/in/as connector.
 _NARRATIVE_BEFORE = re.compile(
     r"\b(?:spent|combined|celebrat\w*|founded|established|history|anniversar\w*|"
-    r"vest\w*|sabbatical|tenure|runway|up\s+to)\b[\w\s,'-]{0,25}$",
+    r"vest\w*|sabbatical|tenure|runway)\b[\w\s,'-]{0,25}$",
     re.IGNORECASE,
 )
 # Case-sensitive **on purpose**: "at Palantir" is tenure, but "at a startup" / "at the company" are
@@ -340,7 +364,12 @@ _NARRATIVE_AFTER = re.compile(r"^\s*(?:[Aa][Gg][Oo]\b|at\s+[A-Z])")
 # bug, for every pattern at once and for separators the range patterns never enumerate: "2 ~ 4",
 # "between 2 and 4". `and` is safe here only because the digit must sit immediately before it —
 # "3 year and 10 year anniversary" has "year" in between, so it does not read as a range.
-_RANGE_TAIL = re.compile(_DIGITS_OR_WORDS + r"\s*(?:-|~|to|or|and)\s*$", re.IGNORECASE)
+# The leading `\b` is load-bearing: `_DIGITS_OR_WORDS` spells numbers out, and without a boundary
+# any word *ending* in one supplies a floor — "GET THE JOB DONE - 5+ years" read 1-5 off "d-ONE",
+# "Everyone - 6+ years" read 1-6, "on the phone - 8+ years" read 1-8.
+_RANGE_TAIL = re.compile(
+    r"\b" + _DIGITS_OR_WORDS + r"\s*(?:-|~|to|or|and)\s*$", re.IGNORECASE
+)
 
 
 # Fixed idioms in which "N years" is never a requirement, however the surrounding sentence reads:
@@ -362,10 +391,21 @@ _RANGE_TAIL = re.compile(_DIGITS_OR_WORDS + r"\s*(?:-|~|to|or|and)\s*$", re.IGNO
 # vest)" lost its 5 to the vest schedule two sentences away. Anchoring is what ties the idiom to
 # the match. `row(?![\w-])` because `\b` is satisfied by the hyphen in "a row-level security team".
 _NARRATIVE_SPAN = re.compile(
-    r"\S{1,8}\s*\+?\s*(?:years?|yrs?)\b"
+    r"\S{1,8}(?:\s*(?:to|-|or)\s*\S{1,8})?\s*\+?\s*(?:years?|yrs?)\b"
     r"[\s\w'()-]{0,18}?\b(?:in\s+a\s+row(?![\w-])|vest\w*|of\s+graduat\w*)\b",
     re.IGNORECASE,
 )
+
+
+# "up to N years" states a *ceiling*, so reading it as `min_years` inverts the posting — a job open
+# to "candidates with up to 3 years of experience" was being served as requiring 3, hiding it from
+# the juniors it addresses. Checked for every pattern, guarded or not, because that inversion does
+# not depend on which pattern found the number: the example above fires an experience-anchored one.
+#
+# It must sit *immediately* before the number, not merely nearby: a 25-character window turns
+# "Bonus up to 20 percent and 6+ years in backend systems" and "up to date knowledge and 5+ years
+# building services" into rejections of a real requirement.
+_CEILING_BEFORE = re.compile(r"\bup\s+to\s*$", re.IGNORECASE)
 
 
 def _is_narrative(text: str, match: re.Match) -> bool:
@@ -381,7 +421,7 @@ def from_description(text: str | None) -> ExperienceSpan | None:
     if not text:
         return None
     text = text.translate(_FOLD)
-    return _scan(text, _DESC_PATTERNS) or _scan(text, _WORD_PATTERNS)
+    return _scan(text, _DESC_PATTERNS) or _scan(text, _NUM_WORD_PATTERNS)
 
 
 def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
@@ -396,19 +436,24 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 if match.lastindex and match.lastindex >= 2 and match.group(2)
                 else None
             )
-            if _NARRATIVE_SPAN.match(text[match.start(1) : match.end() + 20]):
-                continue
-            if guarded and (
-                _is_narrative(text, match) or lo > _MAX_PLAUSIBLE_REQUIREMENT
+            if _NARRATIVE_SPAN.match(
+                text[match.start(1) : match.end() + 20]
+            ) or _CEILING_BEFORE.search(
+                text[max(0, match.start(1) - 10) : match.start(1)]
             ):
+                continue
+            if lo > _MAX_PLAUSIBLE_REQUIREMENT:
+                continue
+            if guarded and _is_narrative(text, match):
                 continue
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).
                 tail = _RANGE_TAIL.search(
                     text[max(0, match.start(1) - 12) : match.start(1)]
                 )
-                if tail and _years_from_token(tail.group(1)) < lo:
-                    lo, hi = _years_from_token(tail.group(1)), lo
+                floor = _years_from_token(tail.group(1)) if tail else None
+                if floor is not None and floor < lo:
+                    lo, hi = floor, lo
             if lo > _MAX_PLAUSIBLE_YEARS:
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
