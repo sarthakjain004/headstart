@@ -99,7 +99,10 @@ class SuccessFactorsScraper(BaseScraper):
         urlset cut at ``_SITEMAP_CAP`` lists only the jobs that fit. Reported, not recorded, for
         the same reason :meth:`_search_job_urls` reports — ``fetch_raw`` decides which surface is
         the Board's answer (ADR-0053)."""
-        response = http.session().request(
+        # Through the retry seam, not the raw session: a 429/5xx here used to settle on the
+        # first try, and `_fetch_sitemap` maps a non-200 to ("other", "", None) — so a throttled
+        # fetch read as an empty Board and `index sync` evicted its rows (ADR-0047, ADR-0053).
+        response = http.fetch(
             "GET",
             self.url(),
             headers={"User-Agent": _USER_AGENT},
@@ -163,6 +166,14 @@ class SuccessFactorsScraper(BaseScraper):
                 break
             seen.update({i: u for u, i in fresh})
             startrow += max(len(found), _SEARCH_STEP_FLOOR)
+        else:
+            # Ran out of pages rather than reaching the end. Eightfold and Workday both mark
+            # their equivalent ceilings; this one returned None and the short list read as the
+            # whole Board (ADR-0053).
+            return [(u, i) for i, u in seen.items()], (
+                f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
+                f"{len(seen)} postings read, the rest unread"
+            )
         return [(u, i) for i, u in seen.items()], None
 
     def _rss_job_urls(self) -> tuple[list[tuple[str, str]], str | None]:
@@ -173,7 +184,7 @@ class SuccessFactorsScraper(BaseScraper):
         an aborted feed and a feed cut at ``_SITEMAP_CAP`` both list a knowingly short board.
         Reported rather than recorded for the same reason :meth:`_search_job_urls` reports
         (ADR-0053)."""
-        response = http.session().request(
+        response = http.fetch(  # retry seam, as in `_fetch_sitemap`
             "GET",
             self.url(),
             headers={"User-Agent": _USER_AGENT},

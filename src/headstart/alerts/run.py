@@ -126,11 +126,15 @@ def subscription_for(invite: Invite, store: Store) -> Subscription | None:
         return fresh
 
     revised = existing
-    if invite.query and (
-        invite.query != existing.query
+    # An entry may carry `filters` without a `query` (ADR-0035). Gating on `invite.query` meant
+    # editing only the filters never took effect; fall back to the query already stored rather
+    # than blanking it.
+    wanted_query = invite.query or existing.query
+    if (
+        wanted_query != existing.query
         or invite.search_filters != existing.search_filters
     ):
-        revised = existing.revised(invite.query, invite.search_filters)
+        revised = existing.revised(wanted_query, invite.search_filters)
     # The allowlist owns the transport outright — there is no self-serve way to set a chat
     # id, so the file is the only thing that can ever be right about it.
     if invite.telegram != revised.telegram:

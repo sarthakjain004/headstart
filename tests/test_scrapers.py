@@ -1647,6 +1647,34 @@ def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_th
     assert scraper.truncated is None  # the caller decides, not the walk
 
 
+def test_successfactors_search_walk_reports_its_page_ceiling(monkeypatch):
+    """Exhausting _MAX_SEARCH_PAGES is a knowingly short list, and must say so (ADR-0053).
+
+    It used to fall out of the loop returning ``cut_short=None`` — indistinguishable from a walk
+    that reached the end — so a capped Board read as complete and `index sync` evicted whatever
+    sat past the ceiling. Eightfold and Workday both mark their equivalent caps.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    monkeypatch.setattr(sf, "_MAX_SEARCH_PAGES", 3)
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    n = iter(range(100))
+    # every page yields a fresh posting, so the walk never reaches its natural end
+    monkeypatch.setattr(
+        sf.http,
+        "fetch",
+        lambda *a, **k: _SearchPage(200, f'<a href="/job/x/{next(n)}/">a</a>'),
+    )
+
+    found, why = scraper._search_job_urls()
+
+    assert len(found) == 3
+    assert why and "ceiling" in why
+    assert (
+        scraper.truncated is None
+    )  # the caller decides which surface answers, not the walk
+
+
 def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):
     """The bug this pins: the ``/search/`` walk 503s on its *first* page, so it lists nothing and
     the RSS stream answers with the complete board. Carrying the walk's truncation onto that
