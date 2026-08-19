@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-07-03
+- **Amended by:** [ADR-0068](0068-a-department-names-the-org-not-the-role.md) (the non-software
+  disqualifier reads the title, and a department vetoes only through a discipline that names the
+  role — reading it from `title + department` let an org label drop real tech jobs, a class the
+  self-consistency gate below is structurally unable to see)
 
 ## Context
 

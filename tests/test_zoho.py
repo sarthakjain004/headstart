@@ -99,6 +99,9 @@ def _detail_page(desc_html):
 
 
 def test_zoho_fetch_raw_detail_pass(monkeypatch):
+    monkeypatch.setenv(
+        "HEADSTART_ASYNC_FANOUT", "0"
+    )  # keep the detail pass on the sync path
     # only the published, description-less record triggers a detail fetch
     records = [
         {"id": "1", "Posting_Title": "Backend Engineer"},

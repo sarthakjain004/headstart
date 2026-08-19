@@ -1,5 +1,7 @@
 import logging
 
+import pytest
+
 from headstart.scrapers.base import BaseScraper
 
 
@@ -189,3 +191,78 @@ def test_eightfold_opts_in_on_the_two_wall_statuses():
 
     assert EightfoldScraper.egress_fallback_on == frozenset({403, 405})
     assert EightfoldScraper("x.eightfold.ai")._egress()["egress_group"] == "eightfold"
+
+
+def _zoho_board(monkeypatch):
+    """A zoho board with exactly one description-less record, so fetch_raw runs a detail pass."""
+    from headstart.scrapers.registry import get_scraper
+
+    page = (
+        '<input type="hidden" value="'
+        + "[{&quot;id&quot;:&quot;1&quot;,&quot;Posting_Title&quot;:&quot;Backend Engineer&quot;}]"
+        + '" id="jobs">'
+    )
+    s = get_scraper("zoho", "acme.zohorecruit.com")
+    monkeypatch.setattr(type(s), "_get", lambda self, url=None: page)
+    return s
+
+
+def test_zoho_detail_pass_takes_the_async_path_by_default(monkeypatch):
+    """ADR-0016: async is the default for *every* detail-fetch scraper.
+
+    Asserted at the seam — which fan-out the scraper actually enters — because
+    `async_fanout_enabled()` is a staticmethod reading only the env: it returns the same answer
+    for a scraper that never consults it, so asserting on it alone passes over the very
+    regression this pins (zoho and ripplehire called `fan_out` unconditionally).
+    """
+    s = _zoho_board(monkeypatch)
+    took = []
+    monkeypatch.setattr(
+        type(s),
+        "fan_out_async",
+        lambda self, items, fn, **k: took.append("async") or ["<p>x</p>"],
+    )
+    monkeypatch.setattr(
+        type(s),
+        "fan_out",
+        lambda self, items, fn, **k: took.append("sync") or ["<p>x</p>"],
+    )
+    monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
+
+    s.fetch_raw()
+
+    assert took == ["async"]
+
+
+def test_zoho_detail_pass_falls_back_to_sync_when_the_kill_switch_is_off(monkeypatch):
+    """HEADSTART_ASYNC_FANOUT=0 is the one incident-response switch for async traffic to an ATS."""
+    s = _zoho_board(monkeypatch)
+    took = []
+    monkeypatch.setattr(
+        type(s),
+        "fan_out_async",
+        lambda self, items, fn, **k: took.append("async") or ["<p>x</p>"],
+    )
+    monkeypatch.setattr(
+        type(s),
+        "fan_out",
+        lambda self, items, fn, **k: took.append("sync") or ["<p>x</p>"],
+    )
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    s.fetch_raw()
+
+    assert took == ["sync"]
+
+
+@pytest.mark.parametrize(
+    "ats,slug", [("zoho", "acme.zohorecruit.com"), ("ripplehire", "acme")]
+)
+def test_detail_scrapers_declare_their_async_stream_width(ats, slug):
+    """fan_out_async resolves its width from `detail_workers`; undeclared, it opens 100 streams
+    against one tenant host (ADR-0047)."""
+    from headstart.scrapers.registry import get_scraper
+
+    s = get_scraper(ats, slug)
+    assert s.has_detail_pass is True
+    assert s.detail_workers is not None

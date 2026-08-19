@@ -293,6 +293,10 @@ def test_ripplehire_parse():
 
 
 def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
+    monkeypatch.setenv(
+        "HEADSTART_ASYNC_FANOUT", "0"
+    )  # keep the detail pass on the sync path
+
     # the search list always carries jobDesc: null — the detail JSON must fill it
     class _Resp:
         def __init__(self, url="", payload=None):
@@ -1643,6 +1647,34 @@ def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_th
     assert scraper.truncated is None  # the caller decides, not the walk
 
 
+def test_successfactors_search_walk_reports_its_page_ceiling(monkeypatch):
+    """Exhausting _MAX_SEARCH_PAGES is a knowingly short list, and must say so (ADR-0053).
+
+    It used to fall out of the loop returning ``cut_short=None`` — indistinguishable from a walk
+    that reached the end — so a capped Board read as complete and `index sync` evicted whatever
+    sat past the ceiling. Eightfold and Workday both mark their equivalent caps.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    monkeypatch.setattr(sf, "_MAX_SEARCH_PAGES", 3)
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    n = iter(range(100))
+    # every page yields a fresh posting, so the walk never reaches its natural end
+    monkeypatch.setattr(
+        sf.http,
+        "fetch",
+        lambda *a, **k: _SearchPage(200, f'<a href="/job/x/{next(n)}/">a</a>'),
+    )
+
+    found, why = scraper._search_job_urls()
+
+    assert len(found) == 3
+    assert why and "ceiling" in why
+    assert (
+        scraper.truncated is None
+    )  # the caller decides which surface answers, not the walk
+
+
 def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):
     """The bug this pins: the ``/search/`` walk 503s on its *first* page, so it lists nothing and
     the RSS stream answers with the complete board. Carrying the walk's truncation onto that
@@ -2132,3 +2164,31 @@ def test_eightfold_async_surfaces_opt_into_the_spare_egress(monkeypatch):
     asyncio.run(s._jsonld_async(None, "https://jobs.example.com/careers/job/1"))
 
     assert seen == ["eightfold", "eightfold"]
+
+
+def test_successfactors_listing_surfaces_go_through_the_retry_seam(monkeypatch):
+    """ADR-0047: retry and Retry-After live in `http.fetch`, not the raw pooled session.
+
+    Both listing surfaces called `http.session().request(...)` directly, so a 429 settled on the
+    first try — and `_fetch_sitemap` maps a non-200 to ("other", "", None), so a throttled read
+    presented as an empty Board and `index sync` evicted its rows. Pinned by making the raw
+    session unusable: anything still bypassing the seam raises.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    def _no_raw_session():
+        raise AssertionError("bypassed http.fetch — the retry seam (ADR-0047)")
+
+    monkeypatch.setattr(sf.http, "session", _no_raw_session)
+    monkeypatch.setattr(
+        sf.http, "fetch", lambda *a, **k: _StreamedBody([b"<urlset></urlset>"])
+    )
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+
+    kind, _text, cut_short = scraper._fetch_sitemap()
+
+    assert kind and cut_short is None
+    monkeypatch.setattr(
+        sf.http, "fetch", lambda *a, **k: _StreamedBody([b"<rss></rss>"])
+    )
+    scraper._rss_job_urls()  # must not touch the raw session either

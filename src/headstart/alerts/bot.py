@@ -152,7 +152,10 @@ def _master_command(
 
     if command == "allow":
         waiting = registry.pending.pop(argument, None)
-        if waiting is None:
+        # A denied chat is deliberately not in `pending` — /deny removed it and its /start is
+        # answered without re-queueing, so requiring a pending entry here made ADR-0038's
+        # "the master can change their mind" unreachable.
+        if waiting is None and argument not in registry.denied:
             return [(master, f"{argument} isn't waiting on anything.")]
         # Idempotent: the registry is saved after the store, so a crash in between replays
         # this `/allow` next run. Minting a second record would reset that person's
@@ -165,7 +168,7 @@ def _master_command(
                 argument
             )  # the master is allowed to change their mind
         return [
-            (master, f"Approved {waiting.describe()}."),
+            (master, f"Approved {waiting.describe() if waiting else argument}."),
             (argument, "You're in.\n\n" + HELP),
         ]
 

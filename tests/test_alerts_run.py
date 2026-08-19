@@ -150,6 +150,33 @@ def test_an_invite_without_a_query_and_no_record_is_skipped():
     assert run.subscription_for(Invite("ada@example.com"), _InviteStore()) is None
 
 
+def test_an_invite_can_edit_filters_without_restating_the_query():
+    """ADR-0035: "an allowlist entry may now be an object carrying `query` and `filters`".
+
+    The revision was gated on `invite.query` being truthy, so an entry that changed only its
+    filters was a no-op forever — and the stored query must not be blanked to apply them.
+    """
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="backend engineer",
+        watermark=AFTER,
+        unsubscribe_token="keep-me",
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(
+        Invite("ada@example.com", None, {"remote": "true"}), store
+    )
+
+    assert sub.search_filters == {"remote": "true"}
+    assert sub.query == "backend engineer", (
+        "an absent query must not blank the stored one"
+    )
+    assert sub.watermark == AFTER
+    assert sub.unsubscribe_token == "keep-me"
+
+
 def test_an_invite_query_revises_a_stored_subscription_keeping_watermark_and_token():
     stored = Subscription(
         id=subscription_id("ada@example.com"),

@@ -264,10 +264,33 @@ def test_a_denial_sticks_so_the_master_is_not_re_prompted():
 
 
 def test_the_master_can_change_their_mind_after_a_denial():
-    registry = Registry(master=MASTER, denied=[ADA], pending={ADA: Pending(ADA)})
+    """ADR-0038: "/allow clears the entry, so the master can change their mind".
+
+    Driven through the real flow rather than from a hand-built state. The previous version
+    seeded `denied=[ADA]` *and* `pending={ADA: ...}` together — a combination the bot cannot
+    produce, since /deny pops the chat out of pending and a denied /start never re-queues it —
+    so it passed while /allow was in fact unreachable for every denied chat.
+    """
+    registry = Registry(master=MASTER)
     store = _Store()
+
+    bot.handle(_update(ADA, "/start"), registry, store)
+    bot.handle(_update(MASTER, f"/deny {ADA}"), registry, store)
+    bot.handle(_update(ADA, "/start"), registry, store)  # denied: not re-queued
+    assert registry.denied == [ADA] and ADA not in registry.pending
 
     bot.handle(_update(MASTER, f"/allow {ADA}"), registry, store)
 
     assert registry.denied == [], "an approval clears the refusal"
     assert store.get(chat_subscription_id(ADA)) is not None
+
+
+def test_allow_still_rejects_an_id_that_never_asked():
+    registry = Registry(master=MASTER)
+    store = _Store()
+
+    replies = bot.handle(_update(MASTER, "/allow 99999"), registry, store)
+
+    assert [chat for chat, _ in replies] == [MASTER]
+    assert "isn't waiting" in replies[0][1]
+    assert store.get(chat_subscription_id("99999")) is None
