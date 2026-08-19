@@ -49,8 +49,9 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # board, 2000 postings). wd5 now 303-redirects every jobs query to a Workday
         # maintenance page; our client follows it to a 200 of maintenance-page HTML, so
         # response.json() throws JSONDecodeError on every run (confirmed live 2026-08-19, not
-        # just historical logs). The ledger carries this one dead URL under three tenant-key
-        # casings/formats; one lowercased entry here covers all three.
+        # just historical logs). The ledger carries this dead URL under three duplicate rows
+        # (the match is on `slug_from`'s URL, not the `tenant` column, so only the URL's two
+        # casings matter) — the lowercased key here covers both.
         "workday:https://walmart.wd5.myworkdayjobs.com/non-workdayinternal",
     }
 )
