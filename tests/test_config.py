@@ -176,6 +176,20 @@ def test_excluded_boards_match_regardless_of_slug_casing(tmp_path):
     assert load_active_companies(ledger) == []
 
 
+def test_excluded_boards_drops_walmart_non_workday_internal():
+    """Against the real ledger, not a fixture — the ledger carries this dead wd5 board under
+    three tenant-key casings/formats (`non-workdayinternal`, `walmart/non-workdayinternal`,
+    `walmart.wd5.myworkdayjobs.com/non-workdayinternal`), and one lowercased EXCLUDED_BOARDS
+    entry must drop all three, not just the one it was copied from."""
+    ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
+    slugs = {
+        c.slug.lower()
+        for c in load_active_companies(ledger, min_jobs=0)
+        if c.ats == "workday"
+    }
+    assert "https://walmart.wd5.myworkdayjobs.com/non-workdayinternal" not in slugs
+
+
 def test_load_active_companies_min_jobs(tmp_path):
     ledger = tmp_path / "liveness"
     _write_ledger(
