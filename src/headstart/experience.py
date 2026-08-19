@@ -195,7 +195,8 @@ _WORD_NUM = {
 _DIGITS = r"(\d{1,3})"
 # Hand-factored rather than `"|".join(_WORD_NUM)`: `re` does not build a trie out of an alternation,
 # so sharing each first letter across its branches is what keeps the second pass affordable
-# (measured 0.75s -> 0.47s per 3,000 descriptions on the pattern this appears in).
+# (measured 0.75s -> 0.47s per 3,000 descriptions on the pattern this appears in, when the
+# digit branch was `\d{1,2}`; re-measured at `\d{1,3}` the pass is 1.193s -> 1.201s, unchanged).
 _DIGITS_OR_WORDS = r"(\d{1,3}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(?:ight|leven)|nine|one)"
 
 
@@ -442,6 +443,8 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 text[max(0, match.start(1) - 10) : match.start(1)]
             ):
                 continue
+            if lo > _MAX_PLAUSIBLE_REQUIREMENT:
+                continue
             if guarded and _is_narrative(text, match):
                 continue
             if hi is None:
@@ -452,11 +455,6 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 floor = _years_from_token(tail.group(1)) if tail else None
                 if floor is not None and floor < lo:
                     lo, hi = floor, lo
-            # After recovery, never before it: until the floor is back, `lo` may still be the
-            # range's ceiling, and judging genre on a ceiling throws away a real requirement
-            # ("between 2 and 25 years" is a 2-year ask, not narrative).
-            if lo > _MAX_PLAUSIBLE_REQUIREMENT:
-                continue
             if lo > _MAX_PLAUSIBLE_YEARS:
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
