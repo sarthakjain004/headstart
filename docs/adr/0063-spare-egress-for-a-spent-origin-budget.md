@@ -1,6 +1,10 @@
 # ADR-0063: A shard that spends an origin's budget picks up a spare egress IP
 
-**Status:** accepted · **Date:** 2026-08-18 · **Relates to:**
+**Status:** accepted · **Amended by:**
+[ADR-0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) (measured: the spare
+egress yields a *different* IP from a 1–3 address pool fixed by the runner's colo, not an unspent
+origin budget — and 30 jobs sharing 11 WARP IPs is worse diversity than the 30 distinct direct IPs
+they came from) · **Date:** 2026-08-18 · **Relates to:**
 [ADR-0026](0026-parallelize-nightly-scrape.md),
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md),
 [ADR-0056](0056-darwinbox-browser-escalation.md) · **Amends:**
