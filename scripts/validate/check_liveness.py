@@ -1052,6 +1052,39 @@ def _eightfold_pcsx(t):
     return LIVE, int(data.get("count") or 0)
 
 
+_EF_JOB_LOC = re.compile(
+    r"<loc>\s*([^<\s]*/careers/job/[^<\s]+?)\s*</loc>", re.IGNORECASE
+)
+# A confirming fetch is one cheap job URL, not every one — this predicate runs across hundreds of
+# boards a pass. 3 protects against a single already-filled posting false-negativing an otherwise
+# healthy, high-churn board (a thousands-of-postings retail tenant like Starbucks turns over daily)
+# without meaningfully adding to the request budget.
+_EF_CONFIRM_SAMPLE = 3
+
+
+def _eightfold_confirm_live(text):
+    """True once one of the sitemap's own listed job URLs actually resolves.
+
+    The sitemap 200ing with a plausible ``/careers/job/`` count is not proof the board still
+    exists: a tenant that has fully migrated off Eightfold can leave the sitemap serving 200 with
+    thousands of now-dead job URLs behind. Measured 2026-08-19: ``nttdata.eightfold.ai``'s sitemap
+    is a 200, 3.9MB of ``/careers/job/...`` URLs — every one sampled 404s, and its ``/careers``
+    page 307s to ``careers.services.global.ntt``, i.e. the tenant isn't on Eightfold anymore. A
+    live job page carries its own ``_EF_GROUP_ID`` — the same marker ``_eightfold_pcsx`` reads off
+    the careers page — so a 200 that doesn't carry it, or that carries a vendor group id
+    (``_EF_VENDOR_GROUPS``, the same fallthrough ``_eightfold_pcsx`` guards against), doesn't count
+    as confirmed either.
+    """
+    for job_url in _EF_JOB_LOC.findall(text)[:_EF_CONFIRM_SAMPLE]:
+        status, body = _get(job_url)
+        if status != 200:
+            continue
+        m = _EF_GROUP_ID.search(body.decode("utf-8", "replace"))
+        if m and m.group(1).lower() not in _EF_VENDOR_GROUPS:
+            return True
+    return False
+
+
 def p_eightfold(t, u):
     # The public PCSX board: /careers/sitemap.xml lists every job as a /careers/job/ URL (or a
     # sitemap_index of child sitemaps — for the count we just probe the first child). A 200 that
@@ -1071,7 +1104,12 @@ def p_eightfold(t, u):
         return DEAD, None
     n = text.count("/careers/job/")
     if n:
-        return LIVE, n
+        # The count alone isn't proof the board still resolves (see _eightfold_confirm_live) — a
+        # stale sitemap 200s exactly like a live one. If none of the sample confirms, this surface
+        # is as good as gone: fall through the same as a 404/410 sitemap already does.
+        if _eightfold_confirm_live(text):
+            return LIVE, n
+        return _eightfold_pcsx(t)
     child = re.search(
         r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", text, re.IGNORECASE
     )
@@ -1081,7 +1119,10 @@ def p_eightfold(t, u):
             ctext = cbody.decode("utf-8", "replace")
             if _eightfold_is_vendor_board(ctext):
                 return DEAD, None
-            return LIVE, ctext.count("/careers/job/")
+            cn = ctext.count("/careers/job/")
+            if not cn or _eightfold_confirm_live(ctext):
+                return LIVE, cn
+            return _eightfold_pcsx(t)
     if "<urlset" in text or "<sitemapindex" in text:
         return LIVE, 0  # valid but empty board
     return DEAD, None

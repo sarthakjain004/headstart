@@ -94,6 +94,120 @@ def test_join_live_company_counts_jobs(monkeypatch):
     assert cl.p_join("acme", "https://join.com/companies/acme") == (cl.LIVE, 5)
 
 
+# --- p_eightfold: a sitemap 200 with a plausible job count isn't proof the board still resolves,
+# only a confirming fetch of one of its own listed job URLs is (nttdata.eightfold.ai, 2026-08-19:
+# migrated off Eightfold months ago, but its sitemap still 200s with 16k stale /careers/job/ URLs
+# that all 404 on fetch) ------------------------------------------------------------------------
+
+_EF_SITEMAP = (
+    b"<urlset><url><loc>https://acme.eightfold.ai/careers/job/1-a?domain=acme.com</loc></url>"
+    b"<url><loc>https://acme.eightfold.ai/careers/job/2-b?domain=acme.com</loc></url>"
+    b"<url><loc>https://acme.eightfold.ai/careers/job/3-c?domain=acme.com</loc></url></urlset>"
+)
+_EF_JOB_PAGE_LIVE = b'<script>_EF_GROUP_ID = "acme.com";</script>'
+
+
+def _eightfold_stub(
+    job_responses, careers_response=(200, b"<html>no group id here</html>")
+):
+    """Stub _get for p_eightfold: the sitemap URL serves _EF_SITEMAP; each job URL in
+    `job_responses` (keyed by its exact /careers/job/... path) serves its mapped (status, body);
+    the /careers page (the _eightfold_pcsx fallback) serves `careers_response`."""
+
+    def _get(url, headers=None):
+        if url.endswith("/careers/sitemap.xml"):
+            return 200, _EF_SITEMAP
+        if url.endswith("/careers"):
+            return careers_response
+        for path, response in job_responses.items():
+            if url == path:
+                return response
+        raise AssertionError(f"unexpected URL in eightfold stub: {url}")
+
+    return _get
+
+
+def test_eightfold_confirmed_live_counts_the_sitemap(monkeypatch):
+    stub = _eightfold_stub(
+        {
+            "https://acme.eightfold.ai/careers/job/1-a?domain=acme.com": (
+                200,
+                _EF_JOB_PAGE_LIVE,
+            )
+        }
+    )
+    monkeypatch.setattr(cl, "_get", stub)
+    assert cl.p_eightfold("acme.eightfold.ai", "https://acme.eightfold.ai/") == (
+        cl.LIVE,
+        3,
+    )
+
+
+def test_eightfold_second_sample_confirms_after_first_404s(monkeypatch):
+    # the first-listed job is gone, but the board is otherwise healthy — the small sample must not
+    # give up on the first miss
+    stub = _eightfold_stub(
+        {
+            "https://acme.eightfold.ai/careers/job/1-a?domain=acme.com": (404, b""),
+            "https://acme.eightfold.ai/careers/job/2-b?domain=acme.com": (
+                200,
+                _EF_JOB_PAGE_LIVE,
+            ),
+        }
+    )
+    monkeypatch.setattr(cl, "_get", stub)
+    assert cl.p_eightfold("acme.eightfold.ai", "https://acme.eightfold.ai/") == (
+        cl.LIVE,
+        3,
+    )
+
+
+def test_eightfold_stale_sitemap_falls_through_to_pcsx_and_settles_dead(monkeypatch):
+    # every sampled job URL 404s (a migrated tenant's sitemap, still 200ing with dead links) and
+    # the /careers page carries no _EF_GROUP_ID (redirected off Eightfold entirely) -> DEAD, not
+    # a false LIVE off the stale count
+    stub = _eightfold_stub(
+        {
+            "https://acme.eightfold.ai/careers/job/1-a?domain=acme.com": (404, b""),
+            "https://acme.eightfold.ai/careers/job/2-b?domain=acme.com": (404, b""),
+            "https://acme.eightfold.ai/careers/job/3-c?domain=acme.com": (404, b""),
+        }
+    )
+    monkeypatch.setattr(cl, "_get", stub)
+    assert cl.p_eightfold("acme.eightfold.ai", "https://acme.eightfold.ai/") == (
+        cl.DEAD,
+        None,
+    )
+
+
+def test_eightfold_confirming_fetch_rejects_vendor_fallthrough(monkeypatch):
+    # a sampled job URL that 200s onto Eightfold's own generic careers page (no real tenant board
+    # behind it) carries the VENDOR's _EF_GROUP_ID, not the tenant's — same fallthrough
+    # _eightfold_pcsx already guards against, so it must not count as confirmed either
+    vendor_page = b'<script>_EF_GROUP_ID = "eightfold.ai";</script>'
+    stub = _eightfold_stub(
+        {
+            "https://acme.eightfold.ai/careers/job/1-a?domain=acme.com": (
+                200,
+                vendor_page,
+            ),
+            "https://acme.eightfold.ai/careers/job/2-b?domain=acme.com": (
+                200,
+                vendor_page,
+            ),
+            "https://acme.eightfold.ai/careers/job/3-c?domain=acme.com": (
+                200,
+                vendor_page,
+            ),
+        }
+    )
+    monkeypatch.setattr(cl, "_get", stub)
+    assert cl.p_eightfold("acme.eightfold.ai", "https://acme.eightfold.ai/") == (
+        cl.DEAD,
+        None,
+    )
+
+
 def _workday_post_stub(live_instance=None, total=3, dead_status=422):
     """Stub _post for p_workday: 200+{total} on the CXS URL for `live_instance`, else dead_status."""
 
