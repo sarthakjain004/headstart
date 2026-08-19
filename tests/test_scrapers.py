@@ -293,6 +293,10 @@ def test_ripplehire_parse():
 
 
 def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
+    monkeypatch.setenv(
+        "HEADSTART_ASYNC_FANOUT", "0"
+    )  # keep the detail pass on the sync path
+
     # the search list always carries jobDesc: null — the detail JSON must fill it
     class _Resp:
         def __init__(self, url="", payload=None):

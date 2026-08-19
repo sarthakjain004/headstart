@@ -40,6 +40,10 @@ def _js_unescape(s: str) -> str:
 
 class ZohoScraper(BaseScraper):
     ats = "zoho"
+    # Declared on the class, not just passed to fan_out: fan_out_async resolves its stream width
+    # from this attribute, so leaving it implicit would run the async path 100-wide against a host
+    # the sync path deliberately holds to 6 (base.fan_out_async, ADR-0047).
+    detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     @staticmethod
@@ -70,9 +74,13 @@ class ZohoScraper(BaseScraper):
         ]
         details = {}
         if empty:
-            fetched = self.fan_out(
-                empty, self._detail_description, workers=_DETAIL_WORKERS
-            )
+            # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
+            if self.async_fanout_enabled():
+                fetched = self.fan_out_async(empty, self._detail_description_async)
+            else:
+                fetched = self.fan_out(
+                    empty, self._detail_description, workers=_DETAIL_WORKERS
+                )
             self.report_detail_gaps(fetched, "description backfills")
             details = {jid: d for jid, d in zip(empty, fetched) if d}
         return {"page": page, "details": details}
@@ -92,9 +100,12 @@ class ZohoScraper(BaseScraper):
             return []
         return json.loads(html.unescape(match.group(1)))
 
-    def _detail_description(self, jid: str) -> str | None:
-        """GET one job's detail page and pull Job_Description from its embedded record."""
-        page = self._get(f"https://{self.slug}/jobs/Careers/{jid}")
+    def _detail_url(self, jid: str) -> str:
+        return f"https://{self.slug}/jobs/Careers/{jid}"
+
+    @staticmethod
+    def _description_of(page: str) -> str | None:
+        """Job_Description from a detail page's embedded record (None when absent/unparseable)."""
         m = _DETAIL_JOBS.search(page)
         if not m:
             return None
@@ -103,6 +114,16 @@ class ZohoScraper(BaseScraper):
         except json.JSONDecodeError:
             return None
         return (records[0].get("Job_Description") or None) if records else None
+
+    def _detail_description(self, jid: str) -> str | None:
+        """GET one job's detail page and pull Job_Description from its embedded record."""
+        return self._description_of(self._get(self._detail_url(jid)))
+
+    async def _detail_description_async(self, session: Any, jid: str) -> str | None:
+        """Same as :meth:`_detail_description` over the shared multiplexed ``AsyncSession``."""
+        return self._description_of(
+            await self._get_async(session, self._detail_url(jid))
+        )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         # raw is fetch_raw's {page, details}; a bare page string means no detail pass

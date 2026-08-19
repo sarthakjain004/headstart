@@ -12,7 +12,8 @@ Precedence (first match wins):
 
   1. a strong, unambiguous software signal  -> tech      (overrides any disqualifier)
   2. a generic role token (engineer/developer/…) *with* a non-software qualifier (mechanical,
-     sales, civil, …)                        -> not tech
+     sales, civil, …) in the title, or in a
+     department that names a discipline       -> not tech
   3. a generic role token alone              -> tech      (recall: keep the ambiguous ones)
   4. a clearly-technical department          -> tech      (recall booster for vague titles)
   5. otherwise                               -> not tech
@@ -85,8 +86,14 @@ _STRONG = re.compile("|".join(_STRONG_TERMS), re.IGNORECASE)
 _GENERIC = re.compile(r"\b(engineer|engineering|developer|programmer)\b", re.IGNORECASE)
 
 # 3. Non-software qualifiers that turn a generic "…engineer" into a non-tech role. Kept to the
-#    unambiguous non-software engineering disciplines + sales, so the disqualifier never drops a
-#    genuine software role (which would already have tripped a strong signal above anyway).
+#    unambiguous non-software engineering disciplines + sales.
+#
+#    This is read from the title, and from the department only after _ORG_NOT_ROLE is stripped —
+#    see there. It used to be read from the concatenation, on the premise that the disqualifier
+#    "never drops a genuine software role (which would already have tripped a strong signal above
+#    anyway)". That premise is untrue by construction: a title tripping a strong signal returns
+#    before this branch, so the only titles the disqualifier ever sees are the ambiguous ones the
+#    strong list does not cover — and for those, an org label was deciding the answer.
 _NON_SOFTWARE = re.compile(
     r"\b("
     r"sales|mechanical|civil|chemical|electrical|industrial|biomedical|biochemical|structural"
@@ -95,6 +102,17 @@ _NON_SOFTWARE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+
+# 3b. Non-software words that name the ORG rather than the role, and so must not veto from a
+#     department. A hardware org employs the engineers whose work is code — RTL design, design
+#     verification, physical design are all HDL/EDA, i.e. software by any reading — so "Hardware
+#     Engineering" in `department` says who the role reports to, not what it is. Measured over the
+#     332,383-row pre-filter snapshot this recovers 287 rows, 0 lost (ADR-0067).
+#
+#     `sales` is deliberately NOT here: a "Solutions Engineer" under Sales is the pre-sales role
+#     this filter already classifies non-tech when the title says so ("Sales Engineer"), so there
+#     the department corroborates rather than misleads.
+_ORG_NOT_ROLE = re.compile(r"\bhardware\b", re.IGNORECASE)
 
 # 4. Departments that clearly denote software/tech — a recall booster for otherwise-vague titles.
 _TECH_DEPT = re.compile(
@@ -115,11 +133,15 @@ class Verdict:
 def classify(title: str | None, department: str | None = None) -> Verdict:
     """Decide whether a job is a software/tech role, with the reason (recall-biased; see module doc)."""
     dept = (department or "").strip()
-    text = f"{(title or '').strip()} {dept}"
+    name = (title or "").strip()
+    text = f"{name} {dept}"
+    # A department vetoes only through a discipline that names the role; strip the org-only words
+    # first, so "Hardware and Mechanical Engineering" still vetoes on `mechanical`.
+    dept_discipline = _ORG_NOT_ROLE.sub(" ", dept)
     if _STRONG.search(text):
         return Verdict(True, "strong-software-signal")
     if _GENERIC.search(text):
-        if _NON_SOFTWARE.search(text):
+        if _NON_SOFTWARE.search(name) or _NON_SOFTWARE.search(dept_discipline):
             return Verdict(False, "generic-token-but-non-software")
         return Verdict(True, "generic-tech-token")
     if dept and _TECH_DEPT.search(dept):

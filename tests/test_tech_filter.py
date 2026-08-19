@@ -110,6 +110,41 @@ def test_reasons_are_meaningful():
     assert classify("Wedding Coordinator").reason == "no-tech-signal"
 
 
+def test_hardware_department_cannot_veto_a_tech_title():
+    """ADR-0067: a hardware *org* employs engineers whose work is code.
+
+    None of these matches a strong signal — which is why they fall to the generic tier, and why
+    ADR-0017's self-consistency gate ("no dropped job may match a strong signal") is structurally
+    blind to the whole class. Before the fix the department alone decided them.
+    """
+    assert (
+        is_tech("Design Verification Engineer", department="Hardware Engineering")
+        is True
+    )
+    assert is_tech("RTL Design Engineer", department="Hardware") is True
+    assert is_tech("Physical Design Engineer", department="Hardware") is True
+
+
+def test_a_real_discipline_still_vetoes_from_the_department():
+    """Only the org-only word is stripped; a discipline beside it still decides."""
+    assert is_tech("Engineer", department="Mechanical Engineering") is False
+    assert (
+        is_tech("Engineer", department="Hardware and Mechanical Engineering") is False
+    )
+
+
+def test_sales_department_still_vetoes():
+    """Deliberate: under Sales, "Solutions Engineer" is the pre-sales role `Sales Engineer` names."""
+    assert is_tech("Solutions Engineer", department="Sales") is False
+
+
+def test_non_software_title_is_still_dropped():
+    """The disqualifier keeps its job when the qualifier is in the title, where it names the role."""
+    assert is_tech("Sales Engineer", department="Sales") is False
+    assert is_tech("Mechanical Engineer", department="Engineering") is False
+    assert is_tech("Civil Engineer", department="Infrastructure") is False
+
+
 def test_tech_department_rescues_vague_title():
     assert is_tech("Intern", department="Engineering") is True
     assert is_tech("Intern", department="Marketing") is False

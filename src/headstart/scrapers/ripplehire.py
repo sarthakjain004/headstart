@@ -32,6 +32,10 @@ _UA = "headstart/0.1 (job-board reader)"
 
 class RippleHireScraper(BaseScraper):
     ats = "ripplehire"
+    # The width this detail pass has always run at (fan_out's default), now stated rather than
+    # inherited: fan_out_async resolves its stream count from this attribute, so leaving it
+    # implicit would open the async path 100-wide against one tenant host (ADR-0047).
+    detail_workers = 8
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def url(self) -> str:
@@ -81,27 +85,55 @@ class RippleHireScraper(BaseScraper):
                 break
         # detail pass: the list never carries jobDesc — fill it from the per-job detail JSON
         need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
-        descriptions = self.fan_out(
-            need, lambda j: self._job_description(token, j["jobSeq"])
-        )
+        # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
+        if self.async_fanout_enabled():
+            descriptions = self.fan_out_async(
+                need,
+                lambda session, j: self._job_description_async(
+                    session, token, j["jobSeq"]
+                ),
+            )
+        else:
+            descriptions = self.fan_out(
+                need, lambda j: self._job_description(token, j["jobSeq"])
+            )
         self.report_detail_gaps(descriptions, "descriptions")
         for j, desc in zip(need, descriptions):
             j["jobDesc"] = desc
         return jobs
 
-    def _job_description(self, token: str, job_seq: Any) -> str | None:
-        """GET one job's detail JSON and return jobVO.jobDesc (None on failure)."""
-        url = (
+    def _detail_url(self, token: str, job_seq: Any) -> str:
+        return (
             f"https://{self.slug}.ripplehire.com/candidate/candidatejobdetail"
             f"?token={token}&jobSeq={job_seq}&source=CAREERSITE&lang=en"
         )
+
+    def _job_description(self, token: str, job_seq: Any) -> str | None:
+        """GET one job's detail JSON and return jobVO.jobDesc (None on failure). Sync path."""
         try:
             data = http.fetch(
                 "GET",
-                url,
+                self._detail_url(token, job_seq),
                 headers={"User-Agent": _UA, "Accept": "application/json"},
                 timeout=30,
             ).json()
+        except (http.RequestsError, json.JSONDecodeError):
+            return None  # a missing description must not drop the job
+        return (data.get("jobVO") or {}).get("jobDesc") or None
+
+    async def _job_description_async(
+        self, session: Any, token: str, job_seq: Any
+    ) -> str | None:
+        """Same as :meth:`_job_description` over the shared multiplexed ``AsyncSession``."""
+        try:
+            response = await http.fetch_async(
+                session,
+                "GET",
+                self._detail_url(token, job_seq),
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=30,
+            )
+            data = response.json()
         except (http.RequestsError, json.JSONDecodeError):
             return None  # a missing description must not drop the job
         return (data.get("jobVO") or {}).get("jobDesc") or None

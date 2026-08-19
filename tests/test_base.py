@@ -1,5 +1,7 @@
 import logging
 
+import pytest
+
 from headstart.scrapers.base import BaseScraper
 
 
@@ -189,3 +191,30 @@ def test_eightfold_opts_in_on_the_two_wall_statuses():
 
     assert EightfoldScraper.egress_fallback_on == frozenset({403, 405})
     assert EightfoldScraper("x.eightfold.ai")._egress()["egress_group"] == "eightfold"
+
+
+@pytest.mark.parametrize(
+    "ats,slug", [("zoho", "acme.zohorecruit.com"), ("ripplehire", "acme")]
+)
+def test_every_detail_scraper_obeys_the_async_kill_switch(ats, slug, monkeypatch):
+    """ADR-0016: async is the default for *every* detail-fetch scraper, and
+    HEADSTART_ASYNC_FANOUT=0 is the one incident-response kill switch.
+
+    zoho and ripplehire called `fan_out` unconditionally, so the switch was inert for them —
+    "stop all async traffic to this ATS" silently did nothing. Asserted on the seam rather than
+    the network: the scraper must consult the policy and declare a width, because fan_out_async
+    resolves its stream count from `detail_workers` and would otherwise open 100 streams
+    against one tenant host (ADR-0047).
+    """
+    from headstart.scrapers.registry import get_scraper
+
+    s = get_scraper(ats, slug)
+    assert s.has_detail_pass is True
+    assert s.detail_workers is not None, (
+        "async width would fall back to the 100-stream default"
+    )
+    assert hasattr(s, "_detail_description_async") or hasattr(
+        s, "_job_description_async"
+    )
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    assert s.async_fanout_enabled() is False
