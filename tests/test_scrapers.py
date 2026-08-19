@@ -262,14 +262,9 @@ def test_smartrecruiters_description_joins_requirement_sections():
 def _sr_offline(monkeypatch, scraper, payload):
     """Run `fetch_raw` against `payload` with the detail pass stubbed out."""
     monkeypatch.setattr(scraper, "_get", lambda: json.dumps(payload))
+    monkeypatch.setattr(scraper, "fan_out", lambda items, fn, **kw: [None] * len(items))
     monkeypatch.setattr(
-        scraper, "fan_out", lambda items, fn, **kw: [None] * len(items), raising=False
-    )
-    monkeypatch.setattr(
-        scraper,
-        "fan_out_async",
-        lambda items, fn, **kw: [None] * len(items),
-        raising=False,
+        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
     )
     return scraper.fetch_raw()
 
@@ -310,6 +305,28 @@ def test_smartrecruiters_complete_board_is_not_marked_truncated(monkeypatch):
             "limit": 100,
             "totalFound": 3,
             "content": [{"id": str(n)} for n in range(3)],
+        },
+    )
+
+    assert scraper.truncated is None
+
+
+def test_smartrecruiters_a_board_of_exactly_one_page_is_not_truncated(monkeypatch):
+    """`totalFound == len(content) == limit` separates the two candidate signals.
+
+    The rejected `len(content) == limit` heuristic would mark this board and strip it from the
+    eviction scope forever; `totalFound` is exact, so it does not. No board in the liveness ledger
+    sits at exactly 100 today — this pins the distinction rather than a live shape.
+    """
+    scraper = get_scraper("smartrecruiters", "exactly", "Exactly")
+    _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": 100,
+            "content": [{"id": str(n)} for n in range(100)],
         },
     )
 

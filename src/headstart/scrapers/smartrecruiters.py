@@ -37,8 +37,10 @@ class SmartRecruitersScraper(BaseScraper):
         # The payload reports the board's true size, so a short list is knowingly short and must
         # say so or `index sync` evicts everything behind the page as a delisting (ADR-0053).
         # Measured 2026-08-20: dominos totalFound=24556 behind a 100-posting page.
-        total = data.get("totalFound")
-        if isinstance(total, int) and total > len(postings):
+        # `totalFound` is always present and always an int — verified live across 15 boards
+        # 2026-08-20, a dead slug included: it answers {"totalFound": 0}.
+        total = data.get("totalFound") or 0
+        if total > len(postings):
             self.mark_truncated(
                 f"read {len(postings)} of {total} postings — the rest unread"
             )
