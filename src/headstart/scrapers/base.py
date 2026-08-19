@@ -14,7 +14,9 @@ from typing import Any, TypeVar
 from headstart import http, log
 from headstart.models import Job
 
-_USER_AGENT = "headstart/0.1 (job-board reader)"
+#: The one User-Agent every scraper sends. Public because nine of them re-declared
+#: this same literal locally, which is a set of strings that can silently disagree.
+USER_AGENT = "headstart/0.1 (job-board reader)"
 _T = TypeVar("_T")
 _R = TypeVar("_R")
 
@@ -172,7 +174,7 @@ class BaseScraper(ABC):
             "GET",
             url or self.url(),
             headers={
-                "User-Agent": _USER_AGENT,
+                "User-Agent": USER_AGENT,
                 "Accept": "application/json, text/html",
             },
             timeout=30,
@@ -194,7 +196,7 @@ class BaseScraper(ABC):
             "GET",
             url or self.url(),
             headers={
-                "User-Agent": _USER_AGENT,
+                "User-Agent": USER_AGENT,
                 "Accept": "application/json, text/html",
             },
             timeout=30,

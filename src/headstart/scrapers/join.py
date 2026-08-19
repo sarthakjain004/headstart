@@ -17,9 +17,8 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
-_UA = "headstart/0.1 (job-board reader)"
 _NEXT = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 _PAGE_SIZE = 5  # 2026-07: the API rejects larger values ("pageSize: Invalid value")
 _MAX_PAGES = 2000  # 2000 * 5 = 10k jobs ceiling per company
@@ -47,7 +46,9 @@ class JoinScraper(BaseScraper):
         hid dead boards from the ADR-0058 quarantine as "alive with zero jobs". A 200 page
         without __NEXT_DATA__ still returns ``{}`` — that is the page's shape, not an error.
         """
-        resp = http.fetch("GET", self.url(), headers={"User-Agent": _UA}, timeout=30)
+        resp = http.fetch(
+            "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=30
+        )
         resp.raise_for_status()
         m = _NEXT.search(resp.text)
         if not m:
@@ -70,7 +71,7 @@ class JoinScraper(BaseScraper):
             data = http.fetch(
                 "GET",
                 api,
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             ).json()
             if isinstance(data, list):
@@ -131,7 +132,7 @@ class JoinScraper(BaseScraper):
             resp = http.fetch(
                 "GET",
                 self._detail_url(jid),
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
         except http.RequestsError:
@@ -147,7 +148,7 @@ class JoinScraper(BaseScraper):
                 session,
                 "GET",
                 self._detail_url(jid),
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
             )
         except http.RequestsError:

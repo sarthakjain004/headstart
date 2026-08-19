@@ -38,14 +38,13 @@ from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
 _MAX_PAGES = (
     99  # our own ceiling, not the server's — reaching it means the board went unread
 )
 _TLDS = ("in", "com")
-_UA = "headstart/0.1 (job-board reader)"
 
 
 def _iso_date(raw: str | float | None) -> str | None:
@@ -98,7 +97,7 @@ class DarwinboxScraper(BaseScraper):
             api,
             json=body,
             timeout=30,
-            headers={"User-Agent": _UA, "Accept": "application/json"},
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
         response.raise_for_status()
         return response.json().get("data") or []
@@ -113,7 +112,7 @@ class DarwinboxScraper(BaseScraper):
                 "GET",
                 f"{host}/ms/candidateapi/companyinfo?companyId=main",
                 timeout=20,
-                headers={"User-Agent": _UA, "Accept": "application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
             company = (response.json().get("message") or {}).get("company") or {}
             return bool(company.get("new_careers", True))

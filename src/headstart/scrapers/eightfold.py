@@ -34,11 +34,10 @@ from typing import Any
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _log = log.get(__name__)
 
-_USER_AGENT = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # Async-path multiplexing width, below the shared default of 100 (ADR-0047). Eightfold's edge
 # meters per origin across *all* tenants; measured against a live board, details lost 78.6% at
@@ -104,7 +103,7 @@ class EightfoldScraper(BaseScraper):
             "GET",
             url or self.url(),
             headers={
-                "User-Agent": _USER_AGENT,
+                "User-Agent": USER_AGENT,
                 "Accept": accept,
                 "Referer": f"https://{self.slug}/careers",
             },
@@ -306,7 +305,7 @@ class EightfoldScraper(BaseScraper):
             session,
             "GET",
             self._details_url(group_id, position_id),
-            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             timeout=30,
             **self._egress(),
         )
@@ -384,7 +383,7 @@ class EightfoldScraper(BaseScraper):
             session,
             "GET",
             job_url,
-            headers={"User-Agent": _USER_AGENT, "Accept": "text/html"},
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
             timeout=30,
             **self._egress(),
         )
