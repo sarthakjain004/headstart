@@ -1,6 +1,10 @@
 # ADR-0065: Wait for the fresh IP rather than riding the spent one
 
-**Status:** Accepted · **Date:** 2026-08-19 · **Supersedes nothing; amends ADR-0063**
+**Status:** Accepted · **Amended by:**
+[ADR-0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) (waiting for the fresh
+IP still beats riding the spent one, but measurement showed the "fresh" IP is the same address
+about half the time — the refund buys a coin flip, not a new budget) · **Date:** 2026-08-19 ·
+**Supersedes nothing; amends ADR-0063**
 
 ## Context
 

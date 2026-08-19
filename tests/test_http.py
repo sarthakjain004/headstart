@@ -607,3 +607,134 @@ def test_async_wall_on_the_final_attempt_still_marks(monkeypatch):
     )
     assert response.status_code == 429
     assert http.spare_egress.walled_groups() == frozenset({"workday"})
+
+
+# --- a connection we severed ourselves is not the request's fault ---------------------------------
+
+
+def test_a_connection_our_rotation_severed_earns_its_attempt_back(monkeypatch):
+    """The restart tore down the tunnel this request was riding. The origin never got a say, so
+    the attempt that died with it should not count against the request's budget."""
+    _warp(monkeypatch)
+    state = {"n": 0}
+    monkeypatch.setattr(http.spare_egress, "generation", lambda: state["n"])
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_for", lambda g: "socks5://127.0.0.1:40000"
+    )
+    calls = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            calls.append(url)
+            state["n"] += 1  # a peer rotated while this request was in flight
+            if len(calls) <= http._ATTEMPTS:
+                raise _err(None)
+            return _Resp(200)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(http.time, "sleep", lambda *a: None)
+
+    resp = http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert resp.status_code == 200
+    assert len(calls) == http._ATTEMPTS + 1  # the refund bought exactly one more
+
+
+def test_a_direct_request_earns_nothing_from_someone_elses_rotation(monkeypatch):
+    """WARP runs in proxy mode, so restarting it cannot sever a connection that never went through
+    it — but the rotation counter is process-global and moves for every ATS at once. Without the
+    `proxied` gate the common direct request claims a free attempt off an unrelated ATS."""
+    state = {"n": 0}
+    monkeypatch.setattr(http.spare_egress, "generation", lambda: state["n"])
+    calls = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            calls.append(url)
+            state["n"] += 1  # some other ATS rotated; nothing to do with this request
+            raise _err(None)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(http.time, "sleep", lambda *a: None)
+
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u")  # direct: no egress_group, so no proxy
+
+    assert len(calls) == http._ATTEMPTS
+
+
+def test_a_connection_error_with_no_rotation_earns_nothing(monkeypatch):
+    """Without a rotation the error is the network's, not ours — the budget stands unchanged."""
+    _warp(monkeypatch)
+    monkeypatch.setattr(http.spare_egress, "generation", lambda: 7)
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_for", lambda g: "socks5://127.0.0.1:40000"
+    )
+    calls = _stub(monkeypatch, [_err(None)] * 8)
+
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert len(calls) == http._ATTEMPTS
+
+
+def test_rotation_severed_refunds_are_capped(monkeypatch):
+    """Rotations that keep landing mid-request must still run the budget out."""
+    _warp(monkeypatch)
+    state = {"n": 0}
+    monkeypatch.setattr(http.spare_egress, "generation", lambda: state["n"])
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_for", lambda g: "socks5://127.0.0.1:40000"
+    )
+    calls = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            calls.append(url)
+            state["n"] += 1  # every single request is crossed by a rotation
+            raise _err(None)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(http.time, "sleep", lambda *a: None)
+
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u", egress_group="workday", egress_on=frozenset({429}))
+
+    assert len(calls) == http._ATTEMPTS + http._MAX_EARNED_ATTEMPTS
+
+
+def test_the_async_path_refunds_a_severed_connection_too(monkeypatch):
+    """`fetch_async` hand-duplicates the sync loop, which is exactly where the two drift apart."""
+    _warp(monkeypatch)
+    state = {"n": 0}
+    monkeypatch.setattr(http.spare_egress, "generation", lambda: state["n"])
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_for", lambda g: "socks5://127.0.0.1:40000"
+    )
+    calls = []
+
+    class _AsyncSession:
+        async def request(self, method, url, **kwargs):
+            calls.append(url)
+            state["n"] += 1
+            if len(calls) <= http._ATTEMPTS:
+                raise _err(None)
+            return _Resp(200)
+
+    async def _sleep(*_a):
+        return None
+
+    monkeypatch.setattr(http.asyncio, "sleep", _sleep)
+
+    resp = asyncio.run(
+        http.fetch_async(
+            _AsyncSession(),
+            "GET",
+            "u",
+            egress_group="workday",
+            egress_on=frozenset({429}),
+        )
+    )
+
+    assert resp.status_code == 200
+    assert len(calls) == http._ATTEMPTS + 1
