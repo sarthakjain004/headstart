@@ -730,7 +730,7 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
 
 
 def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
-    # a mid-crawl 404 (None from _post) skips that page but keeps the rest, and one
+    # a mid-crawl 404 (None from _post_async) skips that page but keeps the rest, and one
     # WARNING reports the gap — the tripwire for a partial board
     from headstart.scrapers.workday import WorkdayScraper
 
@@ -741,17 +741,107 @@ def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
         60: {"jobPostings": [{"bulletFields": ["R60"]}]},
         80: {"jobPostings": [{"bulletFields": ["R80"]}]},
     }
-    monkeypatch.setattr(s, "_post", lambda applied, offset, **_: pages[offset])
+
+    async def fake_post_async(session, applied, offset):
+        return pages[offset]
+
+    monkeypatch.setattr(s, "_post_async", fake_post_async)
     absorbed = []
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
     s._paginate({}, 100, absorbed.extend)
-    # the surviving pages are absorbed, in offset order
-    assert [p["bulletFields"][0] for p in absorbed] == ["R20", "R60", "R80"]
+    # the surviving pages are all absorbed — fanned out concurrently now, so not guaranteed to
+    # land in offset order (the postings they build are deduplicated/looked up by id, never by
+    # position, so this doesn't need to assert order to prove the pagination is correct)
+    assert sorted(p["bulletFields"][0] for p in absorbed) == ["R20", "R60", "R80"]
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     assert warnings[0].name == "headstart.scrapers.workday"
     assert "1 page(s) 404ed" in warnings[0].getMessage()
     assert "workday:acme/ext" in warnings[0].getMessage()  # the board key
+
+
+def test_workday_paginate_fans_out_bounded_by_page_streams(monkeypatch):
+    """`_paginate` no longer walks offsets one at a time — it fans them out concurrently,
+    bounded to `_PAGE_STREAMS` in flight at once (mirrors `fan_out_async`'s bounded-semaphore
+    shape). Prove both halves of that: genuinely concurrent (more than one in flight at a time)
+    and genuinely bounded (never past the width)."""
+    import asyncio
+
+    from headstart.scrapers import workday as workday_mod
+    from headstart.scrapers.workday import WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    in_flight = 0
+    max_in_flight = 0
+
+    async def fake_post_async(session, applied, offset):
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        # yield so sibling pages can overlap before this one finishes
+        await asyncio.sleep(0)
+        in_flight -= 1
+        return {"jobPostings": [{"bulletFields": [f"R{offset}"]}]}
+
+    monkeypatch.setattr(s, "_post_async", fake_post_async)
+    # comfortably more pages than the stream width, so the bound actually gets exercised
+    total = workday_mod._PAGE_LIMIT * (workday_mod._PAGE_STREAMS + 11)
+    absorbed = []
+    s._paginate({}, total, absorbed.extend)
+
+    assert len(absorbed) == len(
+        range(workday_mod._PAGE_LIMIT, total, workday_mod._PAGE_LIMIT)
+    )
+    assert 1 < max_in_flight <= workday_mod._PAGE_STREAMS
+
+
+def test_workday_paginate_raises_on_a_non_404_error_mid_crawl(monkeypatch):
+    """A 404 mid-crawl is a soft, expected gap (the test above). Anything else — a persisting
+    5xx, a connection failure — must still fail the whole crawl, same as the old sequential
+    loop's unhandled `_post` exception (ADR-0058: a listing error must raise, never read as an
+    empty/partial board). `_paginate_async` must not fold this into another `missing` count the
+    way `fan_out_async`'s per-item contract would have."""
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    async def fake_post_async(session, applied, offset):
+        if offset == 40:
+            raise http.RequestsError("HTTP Error 500: Internal Server Error")
+        return {"jobPostings": [{"bulletFields": [f"R{offset}"]}]}
+
+    monkeypatch.setattr(s, "_post_async", fake_post_async)
+    with pytest.raises(http.RequestsError, match="500"):
+        s._paginate({}, 100, lambda batch: None)
+    # an error, not a truncation — matches `_post`'s own contract
+    assert s.truncated is None
+
+
+def test_workday_paginate_falls_back_to_sync_when_async_fanout_is_off(monkeypatch):
+    """HEADSTART_ASYNC_FANOUT=0 is this codebase's one incident-response kill switch for async
+    traffic against an ATS (ADR-0016) — the detail pass already obeys it, and pagination must
+    too, or "stop all async requests to Workday" is only half true."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+    seen_offsets: list[int] = []
+
+    def fake_post(applied, offset, **_):
+        seen_offsets.append(offset)
+        return {"jobPostings": [{"bulletFields": [f"R{offset}"]}]}
+
+    def boom_post_async(*a, **k):
+        raise AssertionError("must not touch the async path when fanout is off")
+
+    monkeypatch.setattr(s, "_post", fake_post)
+    monkeypatch.setattr(s, "_post_async", boom_post_async)
+    absorbed = []
+    s._paginate({}, 100, absorbed.extend)
+
+    assert seen_offsets == [20, 40, 60, 80]
+    assert [p["bulletFields"][0] for p in absorbed] == ["R20", "R40", "R60", "R80"]
 
 
 def test_trakstar_parse():
@@ -1687,6 +1777,12 @@ def test_workday_keeps_the_none_path_for_a_subdivided_slice(monkeypatch):
     assert scraper.truncated and "jobFamilyGroup=Eng" in scraper.truncated
 
 
+async def _fake_post_async(session, applied, offset):
+    """A page beyond the first that just says "nothing here" — enough for tests that only
+    care whether `_paginate`'s concurrent fan-out runs, not what it finds."""
+    return {"jobPostings": []}
+
+
 def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
     """``total`` stuck at exactly 2,000 means the real total is higher; with no facet left to
     split there is no second query to reach the rest, so the crawl paginates 2,000 of a
@@ -1697,6 +1793,8 @@ def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
         "_post",
         lambda applied, offset, **_: {"total": 2000, "jobPostings": [], "facets": []},
     )
+    # total > _PAGE_LIMIT reaches `_paginate`'s concurrent fan-out, which pages via `_post_async`.
+    monkeypatch.setattr(scraper, "_post_async", _fake_post_async)
 
     scraper._exhaust({}, lambda batch: None, depth=0)
 
@@ -1709,6 +1807,7 @@ def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
         "_post",
         lambda applied, offset, **_: {"total": 40, "jobPostings": [], "facets": []},
     )
+    monkeypatch.setattr(whole, "_post_async", _fake_post_async)
     whole._exhaust({}, lambda batch: None, depth=0)
     assert whole.truncated is None
 
