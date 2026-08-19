@@ -3,7 +3,10 @@
 - Status: Accepted; [ADR-0042](0042-signed-in-ui-saved-sets.md) generalizes the Subscription to
   "the one Saved set per Account with email on", and [ADR-0043](0043-saved-sets-subscription-projection.md)
   implements it as a projection — adding the sets endpoints as a third Subscription writer
-  beside subscribe/unsubscribe and the alerts run (delivery, Watermark, and invite gate stand)
+  beside subscribe/unsubscribe and the alerts run (delivery, Watermark, and invite gate stand);
+  [ADR-0069](0069-sets-own-their-projection-against-the-allowlist.md) then resolves those writers,
+  making this ADR's "an entry's own Query is authoritative" conditional on the Account keeping no
+  Saved sets
 - Date: 2026-08-05
 - Adds a **Subscription** to the Alerts language (CONTEXT.md §Alerts), deliberately *beside*
   Telegram's Subscriber/Filter rather than reusing those terms.

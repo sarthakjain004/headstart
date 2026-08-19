@@ -74,3 +74,4 @@ supersedes it and note the supersession in both.
 | [0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md) | Widen experience recall under a rule that no existing Tier-2 answer may change | 2026-08-19 |
 | [0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) | The spare egress buys a different IP, not a fresh budget | 2026-08-19 |
 | [0068](0068-a-department-names-the-org-not-the-role.md) | The tech gate's disqualifier reads the title; a department vetoes only through a discipline that names the role | 2026-08-19 |
+| [0069](0069-sets-own-their-projection-against-the-allowlist.md) | Sets own their projection; the alerts run yields to the Space's sets endpoints | 2026-08-19 |

@@ -81,7 +81,7 @@ _Avoid_: subscriber — the retired keyword bot's term for a chat matched by key
 The channel one Subscription is delivered by — email or a Telegram DM. Exactly one per Subscription, because a single **Watermark** can only be correct if one thing decides whether a **Digest** arrived.
 
 **Invite** (ADR-0035):
-One entry in the allowlist: an address the owner has permitted, optionally carrying the **Query** and **Search filters** to run for it. An Invite is what a human writes by hand; the **Subscription** is the state it produces, adding the **Watermark** and unsubscribe token that nobody should have to hand-edit. An Invite naming no Query means self-serve — permitted to sign in and choose one. `alerts.run.subscription_for` is the only place one becomes the other.
+One entry in the allowlist: an address the owner has permitted, optionally carrying the **Query** and **Search filters** to run for it. An Invite is what a human writes by hand; the **Subscription** is the state it produces, adding the **Watermark** and unsubscribe token that nobody should have to hand-edit. An Invite naming no Query means self-serve — permitted to sign in and choose one. `alerts.run.subscription_for` is the only place one becomes the other — and only while the Account keeps no **Saved sets**; once it does, the Space's sets endpoints own the Subscription's content and that function yields (ADR-0069).
 _Avoid_: "allowlist entry" as a distinct concept — the allowlist _is_ the set of Invites.
 
 **Master** (ADR-0038):
