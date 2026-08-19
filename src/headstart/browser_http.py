@@ -43,6 +43,17 @@ _NAV_TIMEOUT_S = 20  # per-board deadline, from the shape probe's _DEADLINE
 _FETCH_TIMEOUT_S = 30
 _TAB_WIDTH = 4  # probe-measured: width 4-6 holds; stay at the safe end
 _LAUNCH_ATTEMPTS = 3
+# pydoll's default (10s) is a poll deadline for Chrome's own CDP endpoint to come up, not a
+# network-only timeout — it races real OS-level browser startup. On a 4-vCPU Actions runner
+# already running up to 16 scrape worker threads, that's tight enough to miss on its own, and
+# a spare-egress rotation's blocking `systemctl restart warp-svc` (ADR-0063, ~2-4s measured)
+# can tip a launch over it: of 28 "Browser failed to start within timeout" hits across 6 runs,
+# a rotation directly overlapped the 10s poll window in 9-12 of them, and all 3 launches that
+# fully exhausted their 3 retries sat inside shards rotating every ~10-20s throughout. pydoll's
+# own maintainers doubled this same default in their docs' example fix for slow starts
+# (pydoll#195); Playwright's equivalent default is 30s. 20s keeps 3 retries well under the
+# scrape step's budget while giving a launch real headroom against both sources of load.
+_CHROME_START_TIMEOUT_S = 20
 
 # CDP Network.setBlockedURLs matches whole URLs with `*` wildcards; query strings need their own
 # pattern. "heavy": no media, no JS (Turnstile included) — arm A never renders the app.
@@ -125,6 +136,7 @@ def _default_chrome():
     options = ChromiumOptions()
     for arg in _CHROME_ARGS:
         options.add_argument(arg)
+    options.start_timeout = _CHROME_START_TIMEOUT_S
     return Chrome(options=options)
 
 
