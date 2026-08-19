@@ -45,6 +45,14 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_ghost_posting_site",
+        # Walmart's wd5 tenant was retired (superseded by wd504's WalmartExternal, the real
+        # board, 2000 postings). wd5 now 303-redirects every jobs query to a Workday
+        # maintenance page; our client follows it to a 200 of maintenance-page HTML, so
+        # response.json() throws JSONDecodeError on every run (confirmed live 2026-08-19, not
+        # just historical logs). The ledger carries this dead URL under three duplicate rows
+        # (the match is on `slug_from`'s URL, not the `tenant` column, so only the URL's two
+        # casings matter) — the lowercased key here covers both.
+        "workday:https://walmart.wd5.myworkdayjobs.com/non-workdayinternal",
     }
 )
 
