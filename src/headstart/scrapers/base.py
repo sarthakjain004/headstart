@@ -181,6 +181,28 @@ class BaseScraper(ABC):
         response.raise_for_status()
         return response.text
 
+    async def _get_async(self, session: Any, url: str | None = None) -> str:
+        """Async counterpart to :meth:`_get` over the shared multiplexed ``AsyncSession``.
+
+        Carries :meth:`_get`'s headers, egress marking and raise-on-definitive-error, and pairs
+        with it the way :meth:`fan_out_async` pairs with :meth:`fan_out`. **A subclass that
+        overrides `_get` must override this too** — eightfold's adds a Referer and marks the
+        wall, so it cannot ride this one.
+        """
+        response = await http.fetch_async(
+            session,
+            "GET",
+            url or self.url(),
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Accept": "application/json, text/html",
+            },
+            timeout=30,
+            **self._egress(),
+        )
+        response.raise_for_status()
+        return response.text
+
     def fetch_raw(self) -> Any:
         return json.loads(self._get())
 
