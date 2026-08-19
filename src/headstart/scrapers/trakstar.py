@@ -8,9 +8,13 @@ the document GET). So, like Zoho, we GET the page and parse the rendered job car
       <div class="... js-job-list-opening-loc" ... title="{location}">
 
 The card has no description; each job's own page (/jobs/{code}/) embeds a schema.org
-JobPosting JSON-LD block whose ``description`` we extract in a second, bounded pass. Detail
-pages go through curl_cffi (TLS impersonation) since they sit behind the same DataDome edge;
-a failed fetch leaves description None — the job is still kept.
+JobPosting JSON-LD block whose ``description`` we extract in a second, bounded pass. Some
+tenant boards never emit that block at all — same template, real rendered content, just no
+JSON-LD anywhere on the page (#179) — so when the JSON-LD parse comes back empty we fall back
+to the rendered ``<div class="jobdesciption">`` container (that's the tenant template's own
+spelling, not a typo here). Detail pages go through curl_cffi (TLS impersonation) since they
+sit behind the same DataDome edge; a failed fetch leaves description None — the job is still
+kept.
 """
 
 from __future__ import annotations
@@ -35,6 +39,9 @@ _EMPTYPE = re.compile(r"js-job-list-opening-meta[^>]*>\s*<span>\s*([^<]+?)\s*</s
 _JSONLD = re.compile(
     r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE
 )
+# the rendered description container present on every detail page template, JSON-LD or not
+_DESC_DIV = re.compile(r'<div class="jobdesciption">', re.IGNORECASE)
+_DIV_TAG = re.compile(r"<div\b|</div\s*>", re.IGNORECASE)
 _UA = "headstart/0.1 (job-board reader)"
 _DETAIL_WORKERS = 4  # detail pages sit behind DataDome — keep the concurrency gentle
 
@@ -72,10 +79,16 @@ class TrakstarScraper(BaseScraper):
 
     @staticmethod
     def _extract_posting(response: Any) -> dict | None:
-        """Pull the JobPosting JSON-LD block from a detail page (None on non-200)."""
+        """Pull the JobPosting JSON-LD block from a detail page (None on non-200), falling
+        back to the rendered description container when a tenant's template never emits
+        JSON-LD at all (#179)."""
         if response.status_code != 200:
             return None
-        return _jsonld_posting(response.text)
+        posting = _jsonld_posting(response.text)
+        if posting is not None:
+            return posting
+        description = _html_description(response.text)
+        return {"description": description} if description is not None else None
 
     def _job_posting(self, code: str) -> dict | None:
         """GET one job page and return its JSON-LD JobPosting (None on failure). Sync path."""
@@ -151,4 +164,23 @@ def _jsonld_posting(html: str) -> dict | None:
         for item in data if isinstance(data, list) else [data]:
             if isinstance(item, dict) and item.get("@type") == "JobPosting":
                 return item
+    return None
+
+
+def _html_description(html: str) -> str | None:
+    """Raw inner HTML of the ``.jobdesciption`` container (None if the container itself is
+    missing). Found by open/close tag counting, not a non-greedy regex, because the
+    container's content is sometimes itself wrapped in a nested ``<div>`` (e.g. cityflo,
+    dripcapital) that a naive ``.*?`` match would truncate at. ``html_to_text`` (called by
+    ``parse``) strips the markup and turns an empty match into None, so a present-but-blank
+    container (a job with no real description body) still ends up None rather than "".
+    """
+    match = _DESC_DIV.search(html)
+    if not match:
+        return None
+    depth = 1
+    for tag in _DIV_TAG.finditer(html, match.end()):
+        depth += -1 if tag.group(0).startswith("</") else 1
+        if depth == 0:
+            return html[match.end() : tag.start()]
     return None
