@@ -174,6 +174,10 @@ def _html_description(html: str) -> str | None:
     dripcapital) that a naive ``.*?`` match would truncate at. ``html_to_text`` (called by
     ``parse``) strips the markup and turns an empty match into None, so a present-but-blank
     container (a job with no real description body) still ends up None rather than "".
+
+    ``successfactors.py``'s ``_matched_content`` does the same open/close counting for a
+    different tag; not shared here, on purpose (CLAUDE.md: no cross-scraper abstraction for
+    one more caller) — flagging the resemblance rather than silently duplicating it unnoted.
     """
     match = _DESC_DIV.search(html)
     if not match:
