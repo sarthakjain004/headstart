@@ -153,12 +153,13 @@ def subscription_for(
     # An entry may carry `filters` without a `query` (ADR-0035). Gating on `invite.query` meant
     # editing only the filters never took effect; fall back to the query already stored rather
     # than blanking it.
+    # Same for the filters: a bare-string entry parses to `search_filters={}`, which is the
+    # absence of a statement, not a statement of emptiness — writing it back blanked what the
+    # person chose at sign-in on every run.
     wanted_query = invite.query or existing.query
-    if (
-        wanted_query != existing.query
-        or invite.search_filters != existing.search_filters
-    ):
-        revised = existing.revised(wanted_query, invite.search_filters)
+    wanted_filters = invite.search_filters or existing.search_filters
+    if wanted_query != existing.query or wanted_filters != existing.search_filters:
+        revised = existing.revised(wanted_query, wanted_filters)
     # The allowlist owns the transport outright — there is no self-serve way to set a chat
     # id, so the file is the only thing that can ever be right about it. (Only for Accounts
     # without sets; for the rest this run never gets here at all — ADR-0069 accepts that cost
@@ -199,10 +200,7 @@ def main() -> int:
     store = Store(os.environ["SUBSCRIBERS_REPO"], os.environ["SUBSCRIBERS_TOKEN"])
     # Each transport is read but not demanded: a repo with only Telegram configured should
     # run Telegram and skip the email Subscriptions, not refuse to start (ADR-0038).
-    config = {
-        name: os.environ.get(name, "")
-        for name in ("RESEND_API_KEY", "ALERTS_SENDER", "TELEGRAM_BOT_TOKEN")
-    }
+    config = transports.secrets(os.environ)
 
     invites = store.invites()
     chats = telegram_subscriptions(store)

@@ -116,6 +116,19 @@ EMAIL = Transport(
 TRANSPORTS: tuple[Transport, ...] = (TELEGRAM, EMAIL)
 
 
+def secrets(env: Mapping[str, str]) -> dict[str, str]:
+    """Every variable `TRANSPORTS` names, read but not demanded (ADR-0038).
+
+    `run` calls this instead of listing the names itself, which is what makes "one literal and
+    one tuple entry" true: a new Transport's `needs` reach the config by adding the literal and
+    nothing else. Listing them in `run` meant a new channel's secrets were always absent, so
+    `missing` called it unconfigured and skipped its Subscriptions silently.
+    """
+    return {
+        name: env.get(name, "") for transport in TRANSPORTS for name in transport.needs
+    }
+
+
 def for_subscription(sub: Subscription) -> Transport:
     """The Transport this Subscription is delivered by — the first whose `selects` matches.
 
