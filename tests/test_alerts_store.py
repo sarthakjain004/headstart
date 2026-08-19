@@ -444,3 +444,47 @@ def test_saved_lookups_reject_malformed_ids(monkeypatch):
     assert store.get_saved(account, "../../secret") is None
     assert store.saved_for("not-an-account") == []
     assert store.saved_ids("not-an-account") == set()
+
+
+def test_saved_jobs_stamped_in_the_same_second_keep_a_stable_order(monkeypatch):
+    """`starred_at` is second-precision, so a burst of stars ties exactly — ADR-0044 calls that
+    the normal case ("three jobs in quick succession is three concurrent writers").
+
+    `sort` is stable, so ties keep arrival order, and `as_completed` makes arrival order
+    *thread-completion* order — the Saved tab would reshuffle same-second stars on every reload.
+    Reads here finish in a deliberately different order from the listing (each sleeps in
+    proportion to its index), so a missing tiebreaker changes the answer rather than merely
+    being able to; the assertion is the exact order, not "it was stable this time".
+    """
+    import time
+
+    account = "a" * 16
+    same_second = "2026-08-19T12:00:00+00:00"
+    ids = [f"{i:016x}" for i in range(6)]
+    files = {
+        f"saved/{account}/{jid}.json": json.dumps(
+            {
+                "id": jid,
+                "account": account,
+                "job_id": f"greenhouse:acme:{n}",
+                "title": "Backend Engineer",
+                "company": "acme",
+                "url": f"https://boards.greenhouse.io/acme/jobs/{n}",
+                "starred_at": same_second,
+            }
+        ).encode()
+        for n, jid in enumerate(ids)
+    }
+    hub = _Hub(files)
+    hub.install(monkeypatch)
+    order = {path: n for n, path in enumerate(sorted(files))}
+    monkeypatch.setattr(
+        st,
+        "_read",
+        lambda repo, path, token: (time.sleep(order[path] * 0.02), hub.files[path])[1],
+    )
+
+    got = [j.id for j in st.Store(REPO, TOKEN).saved_for(account)]
+
+    # Same timestamp throughout, so the id breaks every tie: newest-first degrades to id-desc.
+    assert got == sorted(ids, reverse=True)
