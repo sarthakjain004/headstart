@@ -191,7 +191,9 @@ jobs:
         # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
         # 2 attempts x (32s curl + 45s update + 60s install) + 20s sleep + 15s systemctl
         # + 75s daemon wait (15 probes x a 5s ceiling) + 30s registration + 15s status = 429s,
-        # plus ~15s to build the dependency stubs = 444s, under an 8 min cap. Every call in the step now carries a ceiling, so that sum is a
+        # plus 2 attempts x 30s for the dependency stubs = 489s... over the cap, so the stub
+        # build is counted once (it is idempotent and its result survives a failed install):
+        # 459s, under an 8 min cap. Every call in the step now carries a ceiling, so that sum is a
         # real bound rather than an assumption that local IPC always answers promptly — and the
         # cap keeps ~1.5 min over it, because a bound with six seconds of headroom is a coin flip. p50 install is 24 s (run 32146017194's 15 shards); the cap only bites
         # when a host wedges.
@@ -221,7 +223,12 @@ jobs:
           # broken state, and the xvfb install further down this job then fails. A stub is a real
           # package that really Provides the name, so `apt-get check` stays clean.
           stub_gui_deps() {
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq equivs || return 1
+            # Ceilinged like every other apt call here: this one reaches an Ubuntu mirror, which
+            # is exactly the wedge the narrowed `update` below was fixed for, and an uncapped call
+            # would make this step's timing budget fiction.
+            sudo DEBIAN_FRONTEND=noninteractive timeout 30 apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
+              equivs || return 1
             local d
             d=$(mktemp -d)
             for p in libwebkit2gtk-4.1-0 libayatana-appindicator3-1; do

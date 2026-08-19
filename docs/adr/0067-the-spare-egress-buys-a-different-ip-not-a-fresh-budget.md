@@ -13,9 +13,9 @@ on through it. ADR-0065 then made a walled caller *wait* for a fresh IP rather t
 attempt on the spent one. Both rest on an assumption neither measured: that rotating the spare
 egress yields an address the origin has not already seen.
 
-Three probes on real runners measured it. All are `workflow_dispatch` diagnostics
-(`warp-install-probe`, `warp-rotate-probe`, `warp-colo-probe`) and should be deleted once this
-settles.
+Three probes on real runners measured it — `warp-install-probe`, `warp-rotate-probe` and
+`warp-colo-probe`, `workflow_dispatch` diagnostics removed in the same change that records this.
+The numbers below are what they returned; the runs are 32264439126, 32266015124 and 32270727776.
 
 **Rotation usually returns the same address.** Across 30 jobs, `systemctl restart warp-svc` — what
 `spare_egress.rotate()` does — produced a genuinely different egress IP **11 times out of 30**. A
@@ -76,7 +76,7 @@ Concretely, and in the order they pay:
 
 - **Cloudflare Zero Trust.** The free tier unlocks `tunnel endpoint set`, which would let a shard
   choose its colo and therefore its pool. Rejected for now on the device cap: the free tier covers
-  50 devices, and 15 shards across roughly twelve runs a day is ~180 registrations a day, so it
+  50 devices, and 15 shards across the measured 12 runs a day is ~180 registrations a day, so it
   needs a revoke-on-exit step this pipeline has no place to run reliably. Worth revisiting if the
   egress problem outgrows the concurrency fix.
 - **A commercial proxy pool.** Buys genuine diversity, and is the only option that actually
