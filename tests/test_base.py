@@ -172,8 +172,16 @@ def test_egress_opt_in_keys_on_the_ats_not_the_board():
     # per-Board marking would make each of a shard's Boards spend its own attempts rediscovering
     # a wall the first one already proved (the metering is per origin, across tenants)
     kwargs = _WalledScraper("acme")._egress()
-    assert kwargs == {"egress_group": "walled", "egress_on": frozenset({403, 405})}
-    assert _WalledScraper("other-board")._egress() == kwargs
+    other = _WalledScraper("other-board")._egress()
+    assert kwargs["egress_group"] == other["egress_group"] == "walled"
+    assert kwargs["egress_on"] == other["egress_on"] == frozenset({403, 405})
+
+
+def test_the_board_rides_along_for_attribution_only():
+    """`egress_board` lets the shard report name which Boards spent the IP supply. It must not
+    change the grouping: two Boards of one ATS still share a budget and a wall."""
+    assert _WalledScraper("acme")._egress()["egress_board"] == "walled:acme"
+    assert _WalledScraper("other")._egress()["egress_board"] == "walled:other"
 
 
 def test_eightfold_opts_in_on_the_two_wall_statuses():

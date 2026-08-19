@@ -4,7 +4,16 @@
 [ADR-0026](0026-parallelize-nightly-scrape.md),
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md),
 [ADR-0056](0056-darwinbox-browser-escalation.md) · **Amends:**
-[ADR-0047](0047-pace-against-the-origin.md)
+[ADR-0047](0047-pace-against-the-origin.md) · **Amended by:**
+[ADR-0065](0065-wait-for-the-fresh-ip-rather-than-riding-the-spent-one.md)
+
+> **Read ADR-0065 before applying the exit criterion below.** The "many rotations with a low
+> recovery rate" test in *Amendment: the spare egress rotates* was measured, and the metric it
+> reads turned out to be mis-specified: it counted attempts rather than settled requests, and
+> scored every non-200 — including a dead Board's 404s — as a failure to recover. The criterion is
+> restated there as *rotations failing, or rescues staying low across rotations that did produce
+> fresh IPs*. On the runs that prompted the test, 2,030 of 2,030 rotations succeeded and #168
+> stayed.
 
 ## Context
 
