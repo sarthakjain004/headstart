@@ -176,6 +176,33 @@ def test_excluded_boards_match_regardless_of_slug_casing(tmp_path):
     assert load_active_companies(ledger) == []
 
 
+def test_excluded_boards_drops_walmart_non_workday_internal(monkeypatch):
+    """Against the real ledger, not a fixture — and asserted from both sides, like
+    ``test_parked_boards_name_a_live_board_and_are_dropped`` above, because a one-sided check
+    passes vacuously if the ledger row's status ever drifts off ``live`` on its own. The ledger
+    carries this dead board under three duplicate rows (`non-workdayinternal`,
+    `walmart/non-workdayinternal`, `walmart.wd5.myworkdayjobs.com/non-workdayinternal`) that
+    all resolve, via `slug_from`'s URL column, to the same lowercased key — one entry must drop
+    all three."""
+    ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
+    key = "https://walmart.wd5.myworkdayjobs.com/non-workdayinternal"
+
+    slugs = {
+        c.slug.lower()
+        for c in load_active_companies(ledger, min_jobs=0)
+        if c.ats == "workday"
+    }
+    assert key not in slugs
+
+    monkeypatch.setattr(config, "EXCLUDED_BOARDS", frozenset())
+    unexcluded_slugs = {
+        c.slug.lower()
+        for c in load_active_companies(ledger, min_jobs=0)
+        if c.ats == "workday"
+    }
+    assert key in unexcluded_slugs, "ledger no longer names this Board at all"
+
+
 def test_load_active_companies_min_jobs(tmp_path):
     ledger = tmp_path / "liveness"
     _write_ledger(
