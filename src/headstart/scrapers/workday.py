@@ -23,12 +23,15 @@ The list endpoint carries no description; a second pass fetches each posting's d
 bounded thread pool to fill it in. A failed detail fetch leaves description None — the job
 is still kept.
 
-Adapted from jobhive (kalil0321/ats-scrapers) to this project's synchronous design (the shared
-pooled ``http`` client, no asyncio), mapped onto our leaner Job.
+Adapted from jobhive (kalil0321/ats-scrapers) to this project's shared pooled ``http`` client,
+mapped onto our leaner Job. The listing crawl (``_paginate``) and the per-job detail pass both fan
+out over a bounded number of concurrent async streams against the same host — see ``_PAGE_STREAMS``
+and ``_DETAIL_STREAMS``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
@@ -83,6 +86,15 @@ _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit on
 # detail pass; Workday carries ~2.5x the per-shard volume, so this is a starting point to re-measure
 # with scripts/bench/probe_eightfold_throttle.py's method, not a settled number.
 _DETAIL_STREAMS = 25
+# The listing-pagination fan-out's width (see `_paginate`). Reuses `_DETAIL_STREAMS`'s value
+# rather than a fresh number: pagination and the detail pass are sequential phases of one board's
+# fetch (`fetch_raw` runs `_exhaust` — which calls `_paginate` — to completion before the detail
+# pass's `fan_out_async` starts), so this never *stacks* concurrent load on top of what
+# `_DETAIL_STREAMS` was measured safe for against the same per-(source IP, instance) ceiling — it
+# spends that same ceiling in a second phase, not a second one. Kept as its own name because the
+# two passes differ (a POST with a JSON body vs. a bare GET) and may need to diverge once measured
+# under real pagination load, the way `_DETAIL_STREAMS` diverged from `_DETAIL_WORKERS`.
+_PAGE_STREAMS = _DETAIL_STREAMS
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
@@ -239,6 +251,38 @@ class WorkdayScraper(BaseScraper):
         response.raise_for_status()
         return response.json()
 
+    async def _post_async(
+        self, session: Any, applied_facets: dict[str, list[str]], offset: int
+    ) -> dict[str, Any] | None:
+        """Async counterpart to :meth:`_post`, for the concurrent mid-crawl pages
+        :meth:`_paginate` fans out. Only ever called for offset > 0 — the first page of every
+        slice still goes through the sync :meth:`_post` inside :meth:`_exhaust`, which needs
+        ``raise_gone`` — so this always takes :meth:`_post`'s ``raise_gone=False`` path."""
+        body = {
+            "appliedFacets": applied_facets,
+            "limit": _PAGE_LIMIT,
+            "offset": offset,
+            "searchText": "",
+        }
+        headers = {
+            "User-Agent": _USER_AGENT,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        response = await http.fetch_async(
+            session,
+            "POST",
+            self.url(),
+            json=body,
+            headers=headers,
+            timeout=30,
+            **self._egress(),
+        )
+        if response.status_code == 404:
+            return None  # one page of a live board — the caller reports the gap
+        response.raise_for_status()
+        return response.json()
+
     def fetch_raw(self) -> Any:
         """Crawl the tenant (paginate + recursively subdivide capped queries) and
         return a flat, de-duplicated list of raw posting dicts."""
@@ -386,15 +430,15 @@ class WorkdayScraper(BaseScraper):
             self._exhaust({**applied, param: [value_id]}, absorb, depth + 1)
 
     def _paginate(self, applied: dict[str, list[str]], total: int, absorb) -> None:
-        """Page through offsets [20, total) sequentially. Pages whose ``_post`` 404s
-        mid-crawl are skipped as before, but one warning now reports how many went
-        missing — the tripwire for a partial board."""
-        missing = 0
-        for offset in range(_PAGE_LIMIT, total, _PAGE_LIMIT):
-            payload = self._post(applied, offset=offset)
-            if payload is None:
-                missing += 1
-            absorb((payload or {}).get("jobPostings") or [])
+        """Page through offsets [20, total), fanned out over ``_PAGE_STREAMS`` concurrent
+        streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
+        own small gather rather than a call to it — see :meth:`_paginate_async`). Pages whose
+        ``_post_async`` 404s mid-crawl are skipped as before, but one warning now reports how
+        many went missing — the tripwire for a partial board."""
+        offsets = range(_PAGE_LIMIT, total, _PAGE_LIMIT)
+        if not offsets:
+            return
+        missing = asyncio.run(self._paginate_async(applied, offsets, absorb))
         if missing:
             _log.warning(
                 f"{self.board_key()}: {missing} page(s) 404ed mid-crawl — "
@@ -405,6 +449,48 @@ class WorkdayScraper(BaseScraper):
             self.mark_truncated(
                 f"{missing} page(s) 404ed mid-crawl of {total} listed postings"
             )
+
+    async def _paginate_async(
+        self, applied: dict[str, list[str]], offsets: range, absorb
+    ) -> int:
+        """Fetch every offset in ``offsets`` concurrently over one shared ``AsyncSession``,
+        bounded to ``_PAGE_STREAMS`` in flight, and return how many 404ed.
+
+        Not a call to :meth:`fan_out_async`: that method's per-item contract swallows *every*
+        exception into ``default``, which here would turn an unexpected error (a persisting 5xx,
+        a connection failure) into a silent missing-page count instead of the raised failure
+        :meth:`_post`'s sequential caller relied on — ADR-0058's "a listing error must raise, not
+        read as empty/partial" applies to a mid-crawl page too. Only a 404 — handled inside
+        :meth:`_post_async` itself — is a soft, expected gap; everything else still fails the
+        whole crawl, so every offset is let to finish before any exception is re-raised.
+
+        ``absorb`` runs on the event loop's single thread, one call at a time, so concurrent
+        callers can't race its ``seen``/``postings`` state the way concurrent OS threads would —
+        no lock needed. Nothing here orders it by offset; the postings it's building are
+        deduplicated and looked up by id, never by position, so completion order is irrelevant.
+        """
+        from curl_cffi.requests import AsyncSession
+
+        sem = asyncio.Semaphore(_PAGE_STREAMS)
+        missing = 0
+
+        async with AsyncSession(impersonate="chrome") as session:
+
+            async def one(offset: int) -> None:
+                nonlocal missing
+                async with sem:
+                    payload = await self._post_async(session, applied, offset)
+                    if payload is None:
+                        missing += 1
+                    absorb((payload or {}).get("jobPostings") or [])
+
+            results = await asyncio.gather(
+                *(one(offset) for offset in offsets), return_exceptions=True
+            )
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+        return missing
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, site = self._parts()
