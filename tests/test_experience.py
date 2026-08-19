@@ -578,3 +578,59 @@ def test_requirement_ceiling_applies_to_anchored_patterns_too():
     assert from_description("8+ years of hands-on experience") == ExperienceSpan(
         8, None, "regex"
     )
+
+
+def test_tier_two_captures_a_three_digit_year_whole():
+    """A 3-digit number must reach the plausibility guard, not be truncated past it (ADR-0013).
+
+    `_DIGITS` was `\\d{1,2}`, so "105 years" matched the trailing "05" and returned 5, and
+    "100 years" returned 0 — a company-history sentence answering as a real requirement. ADR-0013
+    asked for `\\d{1,3}` so "the plausibility guard can reject it", and recorded the consequence
+    that "`from_field` and `from_description` now enforce identical plausibility rules"; Tier 1
+    was widened then and Tier 2 was not.
+    """
+    assert from_description("with 105 years of experience") is None
+    assert from_description("over 100 years of experience") is None
+    assert from_description("300 years of experience") is None
+    # The measured shape: every one of the 25 descriptions this changed is company narrative.
+    assert (
+        from_description(
+            "a team with more than 100 years of combined experience in payments"
+        )
+        is None
+    )
+    # Tier 1 already behaved; the point is that the two tiers now agree.
+    assert from_field("105") is None
+
+
+def test_two_digit_requirements_still_answer():
+    """The widening must not disturb the ordinary case it sits next to."""
+    assert from_description("5+ years of experience").min_years == 5
+    assert from_description("12 years of experience").min_years == 12
+    span = from_description("2-4 years of experience")
+    assert (span.min_years, span.max_years) == (2, 4)
+
+
+def test_requirement_ceiling_judges_the_recovered_floor_not_the_range_top():
+    """`_MAX_PLAUSIBLE_REQUIREMENT` must run *after* `_RANGE_TAIL` recovery.
+
+    Applied first, it sees the range's ceiling — so "between 2 and 25 years" was rejected whole
+    and a real 2-year requirement was lost. ADR-0060/0066 put `_RANGE_TAIL` in to fix
+    ceiling-as-floor "for every pattern at once and for separators the range patterns never
+    enumerate: '2 ~ 4', 'between 2 and 4'"; judging genre before recovery undoes that.
+    """
+    span = from_description("between 2 and 25 years of experience")
+    assert (span.min_years, span.max_years) == (2, 25)
+    span = from_description("2 ~ 25 years of experience")
+    assert (span.min_years, span.max_years) == (2, 25)
+
+
+def test_narrative_above_the_requirement_ceiling_is_still_refused():
+    """Moving the guard must not open the genre hole it exists to close (ADR-0066)."""
+    assert from_description("more than 25 years of experience") is None
+    assert (
+        from_description(
+            "PayPal has been revolutionizing commerce for more than 25 years"
+        )
+        is None
+    )
