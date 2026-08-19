@@ -185,7 +185,7 @@ def _ensure_started() -> None:
                 try:
                     browser._browser_process_manager.stop_process()
                     browser._temp_directory_manager.cleanup()
-                except Exception:  # noqa: BLE001, S110 - already failing; don't mask the cause
+                except BaseException:  # noqa: BLE001, S110 - already failing; don't mask the cause
                     pass
                 raise
             return browser
