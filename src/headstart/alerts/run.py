@@ -97,12 +97,14 @@ def send_one(
 
 
 def subscription_for(
-    invite: Invite, store: Store, accounts_with_sets: frozenset[str] = frozenset()
+    invite: Invite, store: Store, accounts_with_sets: frozenset[str]
 ) -> Subscription | None:
     """The Subscription this Invite should send against, created on first sight.
 
-    An Invite that names a Query of its own is **authoritative**: the allowlist is the
-    owner's one edit path, so changing a Query there takes effect next run. It is applied
+    An Invite that names a Query of its own is **authoritative — while the Account keeps no
+    Saved sets**: the allowlist is then the owner's one edit path, so changing a Query there
+    takes effect next run. Once sets exist the Space's sets endpoints own the record and this
+    run yields entirely (ADR-0069). It is applied
     through `revised`, which keeps the Watermark and the unsubscribe token — so no window is
     skipped and no link in mail already delivered goes dead. The file's `default_query` is
     deliberately *not* authoritative: it seeds somebody with no record yet, and is ignored
@@ -117,13 +119,23 @@ def subscription_for(
     """
     account = subscription_id(invite.email)
     if account in accounts_with_sets:
+        held = store.get(account)
+        if held is None:
+            # Not "no query set yet" — they have a Query, and we are declining to act on it.
+            # Say which, because ADR-0069's whole argument is that this class of desync costs
+            # so much precisely because it is invisible.
+            print(
+                f"[alerts] {account}: has Saved sets, email not enabled from the Matches tab"
+                " - skipped",
+                flush=True,
+            )
         # ADR-0069: once an Account keeps Saved sets, the Space's sets endpoints own the
         # Subscription's content — they are the only writer that keeps the projection in step
         # (ADR-0043), which is why `/subscribe` already 409s in this configuration. Re-projecting
         # from the Invite here would overwrite the emailing set's Query on every run: the Matches
         # tab would show ✉ on one set while the Digest delivered another, permanently and with
         # no way for the person to correct it. The record is read-only to this run.
-        return store.get(account)
+        return held
 
     existing = store.get(account)
     if existing is None:
@@ -148,7 +160,9 @@ def subscription_for(
     ):
         revised = existing.revised(wanted_query, invite.search_filters)
     # The allowlist owns the transport outright — there is no self-serve way to set a chat
-    # id, so the file is the only thing that can ever be right about it.
+    # id, so the file is the only thing that can ever be right about it. (Only for Accounts
+    # without sets; for the rest this run never gets here at all — ADR-0069 accepts that cost
+    # rather than keep a partial second writer.)
     if invite.telegram != revised.telegram:
         revised = replace(revised, telegram=invite.telegram)
     if revised is not existing:
@@ -193,7 +207,7 @@ def main() -> int:
     invites = store.invites()
     chats = telegram_subscriptions(store)
     # One listing for the whole run — see Store.accounts_with_sets (ADR-0069).
-    with_sets = frozenset(store.accounts_with_sets())
+    with_sets = store.accounts_with_sets()
     print(f"[alerts] {len(invites)} invited, {len(chats)} via telegram", flush=True)
 
     sent = failed = skipped = 0

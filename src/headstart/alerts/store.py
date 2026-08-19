@@ -587,7 +587,7 @@ class Store:
         out.sort(key=lambda s: s.created_at)
         return out
 
-    def accounts_with_sets(self) -> set[str]:
+    def accounts_with_sets(self) -> frozenset[str]:
         """Every Account id that keeps at least one Saved set.
 
         Answered from the file listing alone — no record is read, because the caller only
@@ -596,11 +596,14 @@ class Store:
         """
         out: set[str] = set()
         for path in _list_files(self._repo, self._token):
-            rest = path[len(SETS_PREFIX) :] if path.startswith(SETS_PREFIX) else ""
-            account, _, tail = rest.partition("/")
-            if tail and _ID.fullmatch(account):
+            if not path.startswith(SETS_PREFIX):
+                continue
+            account, _, tail = path[len(SETS_PREFIX) :].partition("/")
+            # Both halves are shape-checked, as `get_set` checks them: a stray file under a
+            # well-formed account dir must not freeze that Account's Subscription.
+            if _ID.fullmatch(account) and _SET_ID.fullmatch(tail.removesuffix(".json")):
                 out.add(account)
-        return out
+        return frozenset(out)
 
     def get_set(self, account: str, set_id: str) -> SavedSet | None:
         """One Saved set by id, or None. Both parts are shape-checked before they reach a

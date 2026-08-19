@@ -136,7 +136,7 @@ def test_an_invite_with_a_query_creates_and_stores_a_subscription():
     store = _InviteStore()
     invite = Invite("ada@example.com", "backend engineer", {"remote": "true"})
 
-    sub = run.subscription_for(invite, store)
+    sub = run.subscription_for(invite, store, frozenset())
 
     assert sub is not None
     assert sub.query == "backend engineer"
@@ -147,7 +147,10 @@ def test_an_invite_with_a_query_creates_and_stores_a_subscription():
 
 
 def test_an_invite_without_a_query_and_no_record_is_skipped():
-    assert run.subscription_for(Invite("ada@example.com"), _InviteStore()) is None
+    assert (
+        run.subscription_for(Invite("ada@example.com"), _InviteStore(), frozenset())
+        is None
+    )
 
 
 def test_an_invite_can_edit_filters_without_restating_the_query():
@@ -166,7 +169,7 @@ def test_an_invite_can_edit_filters_without_restating_the_query():
     store = _InviteStore({stored.id: stored})
 
     sub = run.subscription_for(
-        Invite("ada@example.com", None, {"remote": "true"}), store
+        Invite("ada@example.com", None, {"remote": "true"}), store, frozenset()
     )
 
     assert sub.search_filters == {"remote": "true"}
@@ -187,7 +190,9 @@ def test_an_invite_query_revises_a_stored_subscription_keeping_watermark_and_tok
     )
     store = _InviteStore({stored.id: stored})
 
-    sub = run.subscription_for(Invite("ada@example.com", "new query"), store)
+    sub = run.subscription_for(
+        Invite("ada@example.com", "new query"), store, frozenset()
+    )
 
     assert sub.query == "new query"
     assert sub.watermark == AFTER, (
@@ -207,7 +212,7 @@ def test_an_invite_without_a_query_defers_to_what_they_chose_at_signin():
     )
     store = _InviteStore({stored.id: stored})
 
-    sub = run.subscription_for(Invite("ada@example.com"), store)
+    sub = run.subscription_for(Invite("ada@example.com"), store, frozenset())
 
     assert sub.query == "their own query"
     assert store.saved == [], "an unchanged Subscription needs no write"
@@ -226,12 +231,14 @@ def test_a_default_query_seeds_a_new_record_but_never_revises_a_signed_in_one():
     store = _InviteStore({stored.id: stored})
     invite = Invite("ada@example.com", "", {}, "the file default")
 
-    assert run.subscription_for(invite, store).query == "their own query"
+    assert run.subscription_for(invite, store, frozenset()).query == "their own query"
     assert store.saved == []
 
     # The same default does seed somebody with no record at all.
     fresh = run.subscription_for(
-        Invite("bob@example.com", "", {}, "the file default"), _InviteStore()
+        Invite("bob@example.com", "", {}, "the file default"),
+        _InviteStore(),
+        frozenset(),
     )
     assert fresh.query == "the file default"
 
@@ -248,7 +255,7 @@ def test_a_revision_is_stored_so_the_record_cannot_drift_stale():
     )
     store = _InviteStore({stored.id: stored})
 
-    run.subscription_for(Invite("ada@example.com", "new query"), store)
+    run.subscription_for(Invite("ada@example.com", "new query"), store, frozenset())
 
     assert [s.query for s in store.saved] == ["new query"]
 

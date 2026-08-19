@@ -22,7 +22,7 @@ from the Invite on **every run**.
 
 Nothing reconciled them, and the paths meet in production. Enabling email on a set is
 allowlist-gated, so **every account that emails a set is also an Invite**. If that person's
-allowlist entry is the object form carrying `query`, each alerts run overwrote the emailing set's
+Invite is the object form carrying `query`, each alerts run overwrote the emailing set's
 projection — permanently, and invisibly: the Matches tab kept showing ✉ on set A while the Digest
 delivered query B, and re-editing the set in the UI fixed it only until the next run. The
 allowlist writer never got the guard `/subscribe` did.
@@ -75,7 +75,9 @@ It now knows exactly one thing — whether an Account has any — and nothing ab
 **The guarding test was self-confirming, in the same shape as the `/allow` defect on #192.**
 `tests/test_alerts_run.py` asserted the re-projection worked, which it did; nothing asserted what
 happened when the Account also had sets, because no test constructed that state. The new tests
-drive both populations and were each confirmed to fail without the gate.
+drive both populations; the two that exercise the gated path were confirmed to fail without it.
+The third pins the *un*gated population and passes either way by design — it is a guard against
+over-reach, not a proof of the fix, and saying so is the point of this paragraph.
 
 **Not addressed: the Telegram enrolment path.** A chat-created Subscription is delivered directly
 and never passes through `subscription_for`, so it was never exposed to this. If sets ever become

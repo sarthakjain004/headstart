@@ -444,3 +444,36 @@ def test_saved_lookups_reject_malformed_ids(monkeypatch):
     assert store.get_saved(account, "../../secret") is None
     assert store.saved_for("not-an-account") == []
     assert store.saved_ids("not-an-account") == set()
+
+
+def test_accounts_with_sets_reads_only_the_listing(monkeypatch):
+    """ADR-0069: the alerts run needs existence, not contents.
+
+    This path parsing is what decides in production whether the projection gate fires, so it
+    is pinned directly rather than through the hand-built frozensets the run tests use. Both
+    halves of `sets/{account}/{set_id}.json` are shape-checked: a stray file under a
+    well-formed account dir must not freeze that Account's Subscription.
+    """
+    ada, bob = "a" * 16, "b" * 16
+    reads: list[str] = []
+    fake = _Hub(
+        {
+            f"sets/{ada}/{'1' * 8}.json": b"{}",
+            f"sets/{ada}/{'2' * 8}.json": b"{}",  # two sets, one account
+            f"sets/{bob}/{'3' * 8}.json": b"{}",
+            f"sets/{ada}/notes.txt": b"x",  # stray file under a good account dir
+            f"sets/{'Z' * 16}/{'4' * 8}.json": b"{}",  # non-hex account
+            "sets/loose.json": b"{}",  # no account dir at all
+            f"saved/{ada}/{'5' * 8}.json": b"{}",  # a different namespace
+            f"subscriptions/{ada}.json": b"{}",
+        }
+    )
+    fake.install(monkeypatch)
+    monkeypatch.setattr(
+        st, "_read", lambda repo, path, token: reads.append(path) or fake.files[path]
+    )
+
+    accounts = st.Store(REPO, TOKEN).accounts_with_sets()
+
+    assert accounts == frozenset({ada, bob})
+    assert reads == [], "existence must come from the listing, with no record read"
