@@ -196,6 +196,25 @@ def _note_retry(
     return delay
 
 
+def _severed_by_our_rotation(before: int, earned: int) -> int:
+    """Extra attempts a connection error earns back when *we* caused it (0 or 1).
+
+    A rotation is a ``systemctl restart`` of the tunnel every in-flight request is riding, so the
+    requests crossing it die with a connection error — 27 of them in run 32249345870, against zero
+    in the run before pagination fanned out. Those retries were already happening; what was missing
+    is that they cost an attempt. A wall earns one back through :func:`_rotate_for` because the
+    origin refused us; a socket *we* tore down should too, because the origin never got a say.
+
+    Capped by the same :data:`_MAX_EARNED_ATTEMPTS` as a wall-earned attempt, so a shard whose
+    rotations keep landing mid-request still runs out of budget rather than retrying forever.
+    """
+    return (
+        1
+        if spare_egress.generation() != before and earned < _MAX_EARNED_ATTEMPTS
+        else 0
+    )
+
+
 def fetch(
     method: str,
     url: str,
@@ -236,9 +255,11 @@ def fetch(
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
         )
+        rotations = spare_egress.generation()
         try:
             response = session().request(method, url, **routed)
         except RequestsError as exc:
+            budget += _severed_by_our_rotation(rotations, budget - attempts)
             if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
                 if proxied and egress_group is not None:
                     spare_egress.note_settled(egress_group, None, egress_on)
@@ -316,9 +337,11 @@ async def fetch_async(
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
         )
+        rotations = spare_egress.generation()
         try:
             response = await session.request(method, url, **routed)
         except RequestsError as exc:
+            budget += _severed_by_our_rotation(rotations, budget - attempts)
             if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
                 if proxied and egress_group is not None:
                     spare_egress.note_settled(egress_group, None, egress_on)

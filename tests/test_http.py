@@ -607,3 +607,78 @@ def test_async_wall_on_the_final_attempt_still_marks(monkeypatch):
     )
     assert response.status_code == 429
     assert http.spare_egress.walled_groups() == frozenset({"workday"})
+
+
+# --- a connection we severed ourselves is not the request's fault ---------------------------------
+
+
+def _rotating_generation(monkeypatch, bump_on):
+    """Make `spare_egress.generation()` advance just before the given call indices, as a real
+    rotation on another thread would while this request was in flight."""
+    state = {"n": 0, "calls": 0}
+
+    def generation():
+        return state["n"]
+
+    def bump():
+        if state["calls"] in bump_on:
+            state["n"] += 1
+        state["calls"] += 1
+
+    monkeypatch.setattr(http.spare_egress, "generation", generation)
+    return bump
+
+
+def test_a_connection_our_rotation_severed_earns_its_attempt_back(monkeypatch):
+    """The restart tore down the tunnel mid-request. The origin never got a say, so the attempt
+    that died with it should not count against the request's budget."""
+    bump = _rotating_generation(monkeypatch, bump_on={0})
+    calls = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            calls.append(url)
+            bump()  # a peer rotated while this request was in flight
+            if len(calls) <= http._ATTEMPTS:
+                raise _err(None)
+            return _Resp(200)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(http.time, "sleep", lambda *a: None)
+
+    resp = http.fetch("GET", "u")
+
+    assert resp.status_code == 200
+    assert len(calls) == http._ATTEMPTS + 1  # the refund bought exactly one more
+
+
+def test_a_connection_error_with_no_rotation_earns_nothing(monkeypatch):
+    """Without a rotation the error is the network's, not ours — the budget stands unchanged."""
+    _rotating_generation(monkeypatch, bump_on=set())
+    calls = _stub(monkeypatch, [_err(None)] * 8)
+
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u")
+
+    assert len(calls) == http._ATTEMPTS
+
+
+def test_rotation_severed_refunds_are_capped(monkeypatch):
+    """Rotations that keep landing mid-request must still run the budget out."""
+    calls = []
+    state = {"n": 0}
+    monkeypatch.setattr(http.spare_egress, "generation", lambda: state["n"])
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            calls.append(url)
+            state["n"] += 1  # every single request is crossed by a rotation
+            raise _err(None)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(http.time, "sleep", lambda *a: None)
+
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u")
+
+    assert len(calls) == http._ATTEMPTS + http._MAX_EARNED_ATTEMPTS
