@@ -269,7 +269,15 @@ class SuccessFactorsScraper(BaseScraper):
                 lambda pair: self._job_fields(pair[0]),
                 workers=_DETAIL_WORKERS,
             )
-        self.report_detail_gaps(fields, "detail fields")
+        lost = self.report_detail_gaps(fields, "detail fields")
+        if lost:
+            # Every field comes from the job page, so `parse` drops a Job whose page did not
+            # arrive. That makes the returned list knowingly short, and an unmarked short list
+            # is exactly what `index sync` reads as a delisting — it would evict Jobs that are
+            # still posted, purely because their detail fetch failed (ADR-0053).
+            self.mark_truncated(
+                f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
+            )
         return [
             {"url": url, "id": job_id, "fields": page_fields}
             for (url, job_id), page_fields in zip(listed, fields)

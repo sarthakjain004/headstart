@@ -41,6 +41,9 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
+_MAX_PAGES = (
+    99  # our own ceiling, not the server's — reaching it means the board went unread
+)
 _TLDS = ("in", "com")
 _UA = "headstart/0.1 (job-board reader)"
 
@@ -134,12 +137,16 @@ class DarwinboxScraper(BaseScraper):
             batch = page_ctx.post_json(api, {**body, "page": 1}).get("data") or []
             jobs = list(batch)
             page = 1
-            while len(batch) == _PAGE_SIZE and page < 99:
+            while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:
                 page += 1
                 batch = (
                     page_ctx.post_json(api, {**body, "page": page}).get("data") or []
                 )
                 jobs.extend(batch)
+            if len(batch) == _PAGE_SIZE:
+                self.mark_truncated(  # same cap as `fetch_raw`'s curl loop below (ADR-0053)
+                    f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
+                )
             try:
                 info = page_ctx.get_json("/ms/candidateapi/companyinfo?companyId=main")
                 company = (info.get("message") or {}).get("company") or {}
@@ -174,10 +181,16 @@ class DarwinboxScraper(BaseScraper):
         self._new_careers = self._portal_is_v2(host)
         jobs = list(batch)
         page = 1
-        while len(batch) == _PAGE_SIZE and page < 99:
+        while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:
             page += 1
             batch = self._alljobs(host, page)
             jobs.extend(batch)
+        if len(batch) == _PAGE_SIZE:
+            # Left on the page cap, not on a short page: there is more board behind it, so this
+            # list is knowingly short and must say so or `index sync` evicts the rest (ADR-0053).
+            self.mark_truncated(
+                f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
+            )
         return jobs
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

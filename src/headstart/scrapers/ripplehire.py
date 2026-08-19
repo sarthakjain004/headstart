@@ -30,6 +30,7 @@ _PAGE_SIZE = 100
 # The width this detail pass has always run at — `fan_out`'s default, stated here so the async
 # path resolves to it rather than to the 100-stream default (base.fan_out_async, ADR-0047).
 _DETAIL_WORKERS = 8
+_MAX_PAGES = 200  # our own ceiling — the natural exit is the tenant's own job count
 _UA = "headstart/0.1 (job-board reader)"
 
 
@@ -64,7 +65,7 @@ class RippleHireScraper(BaseScraper):
         }
         jobs: list[dict] = []
         page = 0
-        while page < 200:  # hard cap; loops break on the count below
+        while page < _MAX_PAGES:  # the real exit is the count-based break below
             params = json.dumps(
                 {
                     "page": page,
@@ -83,6 +84,12 @@ class RippleHireScraper(BaseScraper):
             page += 1
             if len(batch) < _PAGE_SIZE or len(jobs) >= data.get("totalJobCount", 0):
                 break
+        else:
+            # Reached only by exhausting the cap — every natural end breaks above. Whatever
+            # sits past it is unread, not absent (ADR-0053).
+            self.mark_truncated(
+                f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
+            )
         # detail pass: the list never carries jobDesc — fill it from the per-job detail JSON
         need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
         # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
