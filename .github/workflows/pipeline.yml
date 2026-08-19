@@ -34,18 +34,29 @@ name: nightly-pipeline
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 on:
   schedule:
-    # Every 2h on odd hours, so the 21:30 nightly keeps its slot. Runs serialize via the
-    # concurrency group; the interval is shorter than a run (last 12 scheduled runs: min 33 /
-    # mean 84 / max 124 min, starting a mean ~97 min after their slot), so cycles queue rather
-    # than all fire. Expect fewer than 12 effective runs/day — run duration sets the ceiling.
+    # Hourly at :30, which still includes 21:30, the compulsory nightly. This is a BACK-TO-BACK
+    # cadence, not an hourly one (ADR-0068): the concurrency group below serializes runs, so a
+    # cron that fires mid-run parks a run as *pending* and it starts the instant the current one
+    # ends. Because mean run duration (68 min, measured over the 12 runs to 2026-08-19) exceeds
+    # the 60-min interval, a successor is almost always already queued — the effective cadence is
+    # run duration, not the cron.
+    #
+    # The 2h cadence this replaced left a measured **52 min idle per cycle** (mean start-to-start
+    # 120 min against a 68 min run), capping throughput at 12.0 runs/day where back-to-back gives
+    # ~21. Do not read the hourly cron as "24 runs/day": runs cannot overlap, so duration sets the
+    # ceiling and a slow run simply defers its successor.
     #
     # STORAGE BUDGET — the binding constraint, not compute. Each run rewrites ~1.86 GB of LFS
     # blobs (embeddings.f32 948 MB + jobs.lance 755 MB + meta.jsonl 154 MB) and HF retains every
     # prior revision, so the 100 GB dataset quota buys ~54 runs before it must be reclaimed with
-    # `super_squash_history` (done 2026-07-27: 263 commits -> 1, 96.8 GB -> 11.1 GB). At this
-    # cadence that is roughly 4 days. Check `repo_info(...).used_storage` before assuming
-    # headroom; a full quota fails the push mid-run and leaves the dataset half-written.
-    - cron: "30 1-23/2 * * *" # includes 21:30, the compulsory nightly
+    # `super_squash_history` (done 2026-07-27: 263 commits -> 1, 96.8 GB -> 11.1 GB). At ~21
+    # runs/day that is ~2.5 days of quota, which is survivable only because
+    # `squash-dataset-history` already runs **daily** at 04:00 UTC — one day's burn is ~39 GB
+    # against a 100 GB quota. That daily squash is now load-bearing: if it is disabled or moved to
+    # a longer interval, this cadence must come back down with it. Check
+    # `repo_info(...).used_storage` before assuming headroom (26.6 GB on 2026-08-19); a full quota
+    # fails the push mid-run and leaves the dataset half-written.
+    - cron: "30 * * * *" # hourly at :30; concurrency turns this into back-to-back
   workflow_dispatch:
     inputs:
       max_boards:
