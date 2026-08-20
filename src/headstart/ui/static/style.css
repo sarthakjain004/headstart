@@ -233,6 +233,9 @@ textarea:focus{ border-color:var(--violet); }
 .tag.rem{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet);
   border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
 
+.pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
+.pager .ghost{ padding:8px 16px; }
+
 .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); max-width:56ch;
   margin-inline:auto; }
 .empty .big{ font:600 17px var(--serif); color:var(--ink); margin-bottom:8px;

@@ -130,26 +130,36 @@ function clearAll(){
   go();
 }
 
-function showIntro(){
-  el('results').innerHTML = '<div class="empty"><div class="big">Describe the role, not the keywords</div>' +
-    'This searches meaning, so "someone to own our payments backend" works as well as a job title.<br>' +
-    'Set the structured constraints — experience, location, salary — on the left.</div>';
-}
+// Pagination (ADR-0074): fixed page size, capped page count — matches the server's own
+// `max_k`/`max_page` clamp in headstart.search.JobSearch, so a click here never asks for
+// something the server would silently clamp anyway.
+const PAGE_SIZE = 20;
+const MAX_PAGE = 20;
+let page = 1;
 
-let lastRows = null;   // kept so re-sorting never costs another embedding
+let lastRows = null;   // kept so re-sorting never costs another embedding/query
 
 // Sorting is a view over rows we already have. Re-running go() would refetch /search and
-// re-encode the query server-side to reorder six results client-side.
+// re-rank server-side to reorder twenty results client-side.
 function resort(){ if (lastRows) draw(lastRows); else go(); }
 
-async function go(){
+// go(): a fresh search or browse from page 1 — Search button, Enter, a chip, or a filter
+// change. An empty query browses the newest jobs instead of ranking by similarity
+// (ADR-0074), so this always fetches; it never shows a static empty state.
+async function go(){ page = 1; await fetchPage(); }
+
+// goToPage(n): re-fetch the SAME query and filters at a different page. Never resets page 1
+// itself, so Prev/Next can't fight a fresh go() call.
+async function goToPage(n){ page = Math.max(1, Math.min(n, MAX_PAGE)); await fetchPage(); }
+
+async function fetchPage(){
   const q = el('q').value.trim();
   drawActive();
-  if(!q){ showIntro(); el('n').textContent = ''; return; }
-  const p = new URLSearchParams({ q, k: el('k').value });
+  const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
-  el('n').textContent = 'searching…';
+  el('pager').innerHTML = '';
+  el('n').textContent = q ? 'searching…' : 'loading…';
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
@@ -158,12 +168,28 @@ async function go(){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     el('n').textContent = ''; return; }
   if(!rows.length){
-    el('results').innerHTML = '<div class="empty"><div class="big">Nothing matched</div>' +
-      'Try loosening a filter, or describe the role more broadly.</div>';
-    el('n').textContent = '0 results'; return; }
+    el('results').innerHTML = page === 1
+      ? '<div class="empty"><div class="big">Nothing matched</div>' +
+        'Try loosening a filter, or describe the role more broadly.</div>'
+      : '<div class="empty"><div class="big">No more jobs</div>' +
+        'You\'ve reached the end of these results.</div>';
+    el('n').textContent = page === 1 ? '0 results' : '';
+    drawPager(0);
+    return; }
   lastRows = rows;
   el('n').textContent = rows.length + ' result' + (rows.length===1?'':'s');
   draw(rows);
+  drawPager(rows.length);
+}
+
+// A short page (fewer than PAGE_SIZE rows) is how "no next page" is known — there is no
+// total-count query on the server (ADR-0074), so this is the only signal available.
+function drawPager(rowCount){
+  const hasPrev = page > 1, hasNext = rowCount === PAGE_SIZE && page < MAX_PAGE;
+  el('pager').innerHTML =
+    `<button class="ghost" ${hasPrev?'':'disabled'} onclick="goToPage(${page-1})">‹ Prev</button>` +
+    `<span class="note">Page ${page}</span>` +
+    `<button class="ghost" ${hasNext?'':'disabled'} onclick="goToPage(${page+1})">Next ›</button>`;
 }
 
 function draw(rows, target){
@@ -173,22 +199,25 @@ function draw(rows, target){
   }
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   el(target || 'results').innerHTML = rows.map((r,i) => {
-    const s = Number(r.score) || 0, c = tone(s), pct = matchPct(s);
+    // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
+    // match ring would otherwise show a misleading "0%" rather than "not applicable".
+    const ranked = r.score != null;
+    const s = Number(r.score) || 0, pct = matchPct(s);
     return `
-    <div class="card" style="--tone:${c}; animation-delay:${Math.min(i,12)*35}ms">
+    <div class="card" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="hd">
         <div style="flex:1; min-width:0">
           <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
         ${starBtn(r.id)}
-        <div class="match" title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+        ${ranked? `<div class="match" title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
           <div class="v">${pct}%</div>
-        </div>
+        </div>` : ''}
       </div>
       <div class="tags">
         ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
@@ -907,7 +936,7 @@ if (el('matches-controls')){
     rerun();
   });
 }
-showIntro();
+go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
 showTab(currentTab());
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab

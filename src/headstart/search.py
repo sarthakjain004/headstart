@@ -275,19 +275,27 @@ class JobSearch:
 
     Built once per process with the loaded encoder and the open LanceDB ``jobs`` table; the
     constructor scans the table's ATS whitelist and schema once. ``run(args)`` takes a
-    request's query-string mapping and returns the projected result rows — ``[]`` for an
-    empty query (no encode), ``ValueError`` for garbage filter input, which the routes
-    answer as 400. ``max_k`` caps the page size so a crafted ``k`` can't dump the table.
+    request's query-string mapping and returns the projected result rows for one page.
+    ``ValueError`` on garbage filter input, which the routes answer as 400. ``max_k`` caps
+    the page size and ``max_page`` caps how far ``page`` can walk (ADR-0074) — together they
+    bound how much of the table one Search can ever address, so a crafted request can't dump
+    it.
+
+    An empty query (ADR-0074) does not call the encoder — it lists the table's newest rows by
+    ``first_seen`` instead of ranking by similarity, and every row's ``score`` comes back
+    ``None`` rather than a number that would imply a relevance this ranking never computed.
+    Filters and pagination apply identically either way.
 
     The two facts the UI templates need — :attr:`atses` for the Board dropdown and
     :attr:`has_first_seen` for the "first seen" control — are attributes, not methods, so a
     template context can carry them straight through.
     """
 
-    def __init__(self, model: Any, table: Any, *, max_k: int = 100):
+    def __init__(self, model: Any, table: Any, *, max_k: int = 100, max_page: int = 20):
         self._model = model
         self._table = table
         self.max_k = max_k
+        self.max_page = max_page
         # the ATSes actually present in the index — feeds the dropdown and the whitelist
         self.atses = sorted(
             {
@@ -301,8 +309,6 @@ class JobSearch:
 
     def run(self, args: Mapping[str, str]) -> list[dict]:
         query = (args.get("q") or "").strip()
-        if not query:
-            return []
 
         def _int(name: str) -> int | None:
             raw = args.get(name)
@@ -328,16 +334,56 @@ class JobSearch:
             has_first_seen=self.has_first_seen,
         )
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
-        # `or` on the parsed int would silently turn k=0 into the default 20 instead.
+        # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same
+        # reasoning for `page`, new in ADR-0074: page=1 is the default, not a falsy no-op.
         k = _int("k")
         k = max(1, min(20 if k is None else k, self.max_k))
-        search = self._table.search(encode_query(self._model, query)).metric("cosine")
+        page = _int("page")
+        page = max(1, min(1 if page is None else page, self.max_page))
+        offset = (page - 1) * k
+
+        if query:
+            search = self._table.search(encode_query(self._model, query)).metric(
+                "cosine"
+            )
+        else:
+            search = (
+                self._table.search()
+            )  # no vector: a plain, filtered scan (ADR-0074)
         if where:
             search = search.where(where, prefilter=True)
+        if not query:
+            # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
+            # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`
+            # pagination over a tied sort silently repeats and drops rows across pages
+            # (measured 2026-08-20 against a real table: 2 of 5 rows recurred between page 1
+            # and page 2 with no tiebreaker, zero recurred with one). `id` is unique per row,
+            # so it breaks every tie deterministically. Plain dicts, not `lancedb.query.
+            # ColumnOrdering` instances — lancedb's pydantic layer coerces either (verified
+            # 2026-08-20), and a dict keeps `search.py` importable without lancedb installed
+            # (the quality job's `.[dev]` extra omits it — lancedb only ships in `.[embed]`).
+            # Do NOT add this ordering to the query branch above — passing any explicit
+            # `order_by` alongside a vector search was measured to override ranking by
+            # similarity entirely, not merely break ties within it.
+            ordering = (
+                [
+                    {
+                        "column_name": "first_seen",
+                        "ascending": False,
+                        "nulls_first": False,
+                    }
+                ]
+                if self.has_first_seen
+                else []
+            )
+            ordering.append({"column_name": "id", "ascending": True})
+            search = search.order_by(ordering)
+        rows = search.limit(k).offset(offset).to_list()
+
         return [
             {
                 "id": r.get("id"),  # the star identity — {ats}:{slug}:{native_id}
-                "score": round(1 - r["_distance"], 3),
+                "score": round(1 - r["_distance"], 3) if query else None,
                 "title": r["title"],
                 "company": r["company"],
                 "location": r.get("location"),
@@ -352,7 +398,7 @@ class JobSearch:
                     r.get("ats"), r.get("url"), r.get("id")
                 ),  # temporary; see _canonical_url
             }
-            for r in search.limit(k).to_list()
+            for r in rows
         ]
 
     def indexed(self, ids: Collection[str]) -> set[str]:
