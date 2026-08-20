@@ -192,11 +192,12 @@ _WORD_NUM = {
     "eleven": 11,
     "twelve": 12,
 }
-_DIGITS = r"(\d{1,2})"
+_DIGITS = r"(\d{1,3})"
 # Hand-factored rather than `"|".join(_WORD_NUM)`: `re` does not build a trie out of an alternation,
 # so sharing each first letter across its branches is what keeps the second pass affordable
-# (measured 0.75s -> 0.47s per 3,000 descriptions on the pattern this appears in).
-_DIGITS_OR_WORDS = r"(\d{1,2}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(?:ight|leven)|nine|one)"
+# (measured 0.75s -> 0.47s per 3,000 descriptions on the pattern this appears in, when the
+# digit branch was `\d{1,2}`; re-measured at `\d{1,3}` the pass is 1.193s -> 1.201s, unchanged).
+_DIGITS_OR_WORDS = r"(\d{1,3}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(?:ight|leven)|nine|one)"
 
 
 def _years_from_token(token: str) -> int:
