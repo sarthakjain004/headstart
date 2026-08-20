@@ -5,6 +5,12 @@
   --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
   --aqua:#12D6B4; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
   --coral:#FB7185;
+  /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
+     against this file's own --raise dark / #FFFFFF light chart surfaces — six-checks PASS in
+     both modes; see docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is
+     the CVD-safety mechanism, so these are read by SLOT, never re-ordered per chart. */
+  --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
+  --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
   --glow:rgba(18,214,180,.22);
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
   --shadow:0 18px 44px rgba(0,0,0,.42);
@@ -22,6 +28,8 @@
     --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
     --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
     --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+    --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
   }
 }
@@ -29,6 +37,8 @@
     --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
     --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
     --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+    --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
 }
 
@@ -309,13 +319,15 @@ textarea:focus{ border-color:var(--violet); }
 .profile-card .go{ padding:12px 24px; }  /* .go's height comes from the searchbar's flex elsewhere */
 .ghost.danger:hover{ border-color:var(--coral); color:var(--coral); }
 
-/* ---- role trends (ADR-0040/0051), its own tab since the shell landed ---- */
-.trends-toggles{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+/* ---- role trends (ADR-0040/0051), its own tab since the shell landed. Redesigned 2026-08-20
+   against the dataviz skill's mark/interaction specs and the WAI-ARIA radiogroup pattern —
+   see docs/product/2026-08-20_trends-ui-design-research.md. ---- */
+.trends-toggles{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; align-items:center; }
 .seg{ display:inline-flex; border:1px solid var(--rule); border-radius:9px; overflow:hidden; }
 .seg button{ appearance:none; border:0; background:none; color:var(--ink-2); font:inherit;
   font-size:12px; padding:4px 10px; cursor:pointer; }
 .seg button + button{ border-left:1px solid var(--rule); }
-.seg button[aria-pressed="true"]{ background:var(--raise-2); color:var(--ink-1); }
+.seg button[aria-checked="true"]{ background:var(--raise-2); color:var(--ink-1); }
 .seg button:disabled{ cursor:not-allowed; color:var(--ink-3); }
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-xl); }
@@ -329,6 +341,15 @@ textarea:focus{ border-color:var(--violet); }
 :root[data-theme="dark"] .trends-range input[type="datetime-local"]{ color-scheme:dark; }
 :root[data-theme="light"] .trends-range input[type="datetime-local"]{ color-scheme:light; }
 .trends-note{ color:var(--ink-3); font-size:12.5px; }
+/* [hidden] overrides display, matching .panel[hidden] above — an author `display` rule beats
+   the UA stylesheet's [hidden]{display:none} at equal specificity, so every element toggled via
+   .hidden needs this same escape hatch or `hidden=true` silently does nothing visible. */
+.trends-error[hidden], .trends-grid[hidden], .trends-table-wrap[hidden]{ display:none !important; }
+.trends-error{ display:flex; align-items:center; gap:10px; padding:14px 16px; margin:10px 0 0;
+  background:color-mix(in srgb, var(--coral) 10%, transparent);
+  border:1px solid color-mix(in srgb, var(--coral) 30%, transparent); border-radius:var(--r-md);
+  color:var(--ink-2); font-size:13px; }
+.trends-error button{ margin-left:auto; flex:none; }
 /* ATS picker (ADR-0075): the app's first popover, scoped to this one control */
 .ats-pick{ position:relative; }
 .ats-pick .ghost{ padding:4px 10px; font-size:12px; font-weight:600; border-radius:9px; }
@@ -338,22 +359,48 @@ textarea:focus{ border-color:var(--violet); }
 .ats-pick-menu label{ display:flex; align-items:center; gap:7px; padding:4px 6px; border-radius:7px;
   font-size:12.5px; color:var(--ink-2); cursor:pointer; }
 .ats-pick-menu label:hover{ background:var(--raise-2); color:var(--ink-1); }
+
 .trends-grid{ display:grid; grid-template-columns:1fr 232px; gap:18px; align-items:start;
-  margin-top:14px; }
-#trends-chart{ width:100%; height:260px; overflow:visible; }
+  margin-top:14px; transition:opacity .2s ease; }
+.trends-grid.loading{ opacity:.55; }
+.trends-chart-wrap{ position:relative; }
+/* aspect-ratio keeps the rendered box proportional to the 720x260 viewBox at any container
+   width, so text/gridlines never stretch non-uniformly the way a fixed height + width:100% +
+   preserveAspectRatio="none" used to (a real bug on a narrow sidebar or a very wide monitor). */
+#trends-chart{ width:100%; aspect-ratio:720/260; height:auto; display:block; overflow:visible; }
+#trends-hitrect{ cursor:crosshair; }
+.crosshair-line{ stroke:var(--rule-2); stroke-width:1; }
+.ch-dot{ pointer-events:none; }
+
+.trends-tooltip{ position:absolute; z-index:5; pointer-events:none; min-width:150px; max-width:220px;
+  padding:8px 10px; background:var(--raise); border:1px solid var(--rule-2); border-radius:var(--r-md);
+  box-shadow:var(--shadow); font-size:11.5px; }
+.trends-tooltip .tt-date{ color:var(--ink-3); font-size:10.5px; margin-bottom:5px;
+  text-transform:uppercase; letter-spacing:.04em; }
+.trends-tooltip .tt-row{ display:flex; align-items:center; gap:6px; padding:2px 0; }
+.trends-tooltip .tt-key{ width:10px; height:2px; border-radius:1px; flex:none; }
+.trends-tooltip .tt-val{ font-variant-numeric:tabular-nums; font-weight:600; color:var(--ink); }
+.trends-tooltip .tt-name{ color:var(--ink-2); flex:1; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }
+
 .trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;
   max-height:260px; overflow-y:auto; }
 /* The row's box lives on the inner `.row`, not the <li>: only `.row` carries role="button", so
    the <li> keeps its implicit `listitem` and the <ul> stays a list for assistive tech. */
 .trends-legend li{ display:flex; }
 .trends-legend .row{ display:flex; align-items:center; gap:8px; padding:4px 6px; width:100%;
-  border-radius:8px; font-size:12.5px; }
-/* `.charted` rows are the only ones that drill; `.listed` rows are here for their number alone,
-   so they get neither the pointer nor the hover lift — cues for a click that does nothing. */
+  border-radius:8px; font-size:12.5px; transition:opacity .15s ease, background var(--step); }
 .trends-legend .charted .row{ background:var(--raise-2); cursor:pointer; }
-.trends-legend .charted .row:hover{ background:var(--rule); }
-.trends-legend .listed{ opacity:.45; }
-.trends-legend .swatch{ width:9px; height:9px; border-radius:3px; flex:none; }
+.trends-legend .charted .row:hover, .trends-legend .charted .row:focus-visible{ background:var(--rule); }
+/* Hover-highlight de-emphasis (dataviz skill §2): a row for a series that isn't the one
+   currently focused fades, mirroring the chart's own dimmed lines. */
+.trends-legend .row.dim{ opacity:.4; }
+/* The Other row: one honest aggregate, not N real-looking categories that quietly do nothing on
+   click. A hairline separates it from the real, individually-charted categories above it. */
+.trends-legend .other{ margin-top:2px; padding-top:2px; border-top:1px dashed var(--rule); }
+.trends-legend .other .row{ cursor:default; }
+/* A short stroke, not a dot, so the swatch mirrors the mark it stands for (a line). */
+.trends-legend .swatch{ width:12px; height:3px; border-radius:2px; flex:none; }
 .trends-legend .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Marks a category whose drill holds named roles — muted, so it reads as an affordance rather
    than competing with the number beside it. flex:none so it never steals width from .nm. */
@@ -364,7 +411,19 @@ textarea:focus{ border-color:var(--violet); }
   text-align:right; }
 .up{ color:var(--lime); } .down{ color:var(--coral); } .flat{ color:var(--ink-3); }
 .trends-grid .gridline{ stroke:var(--rule); stroke-width:1; }
-.trends-grid .axis-label{ fill:var(--ink-3); font-size:10px; }
+/* 12px floor + tabular-nums (Datawrapper's legibility rule) — was 10px with no numeric
+   alignment, both flagged by the design research doc §6. */
+.trends-grid .axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
+
+.trends-table-wrap{ margin-top:14px; overflow-x:auto; }
+.trends-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+.trends-table th, .trends-table td{ padding:7px 10px; text-align:right; border-bottom:1px solid var(--rule);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.trends-table thead th{ color:var(--ink-3); font-weight:600; font-size:11px; text-transform:uppercase;
+  letter-spacing:.03em; }
+.trends-table th[scope="row"]{ text-align:left; color:var(--ink); font-weight:500;
+  font-variant-numeric:normal; position:sticky; left:0; background:var(--raise); }
+
 @media (max-width:760px){ .trends-grid{ grid-template-columns:1fr; } }
 
 /* running text, so it gets a measure — 1180px of prose is unreadable */
