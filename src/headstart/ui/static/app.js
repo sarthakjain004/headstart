@@ -631,12 +631,65 @@ async function onGoogleCredential(resp){
    units (share of the index, absolute count). Share is the default on stock because raw stock
    counts move with our coverage — a night the index grows 1.5% lifts every category ~1.5%
    and says nothing about the market; a share only moves when categories move RELATIVE to each
-   other. "New" is charted as counts: its meaning ("312 fresh AI/ML roles") IS the number. ---- */
-const TREND_COLOURS = ['#12D6B4','#8B5CF6','#F59E0B','#A3E635','#FB7185','#60A5FA','#F472B6','#34D399'];
+   other. "New" is charted as counts: its meaning ("312 fresh AI/ML roles") IS the number.
+
+   Redesigned 2026-08-20 against the dataviz skill's method and
+   docs/product/2026-08-20_trends-ui-design-research.md (WAI-ARIA APG, FT/Datawrapper/NN·g).
+   Colour is 8 CSS custom properties (--series-1..8, style.css) from a CVD-validated categorical
+   palette, read live via getComputedStyle so a mid-session theme flip repaints correctly —
+   never a hardcoded hex array. Assignment is by ENTITY: `assignSeriesColors` caches name -> slot
+   the first time a name is drawn and keeps it for as long as that name keeps appearing, so a
+   Metric/Unit/ATS change that merely reshuffles the ranking never repaints a still-visible
+   category (the "recolor-on-filter" failure mode: a reader who learned "AI/ML is violet" must
+   not have it turn blue because a filter changed who's biggest). ---- */
 let trendData = null, trendDrill = null;
 let trendMetric = 'stock', trendUnit = 'share', trendSplit = 'bands';
-const LEGEND_MAX = 12;   // rows listed; CHART_MAX of them are plotted
-const CHART_MAX = 8;     // distinct colours in TREND_COLOURS
+let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
+let tableView = false;      // the WCAG-clean twin of the chart, independent of the SVG
+let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
+const CHART_MAX = 8;        // matches the 8-slot validated categorical palette
+
+const seriesColorAssignment = new Map();   // family/role name -> slot index, sticky per entity
+function seriesColor(slot){
+  return getComputedStyle(document.documentElement).getPropertyValue(`--series-${slot + 1}`).trim();
+}
+// Keep whatever slot a name already had; hand any new name the lowest slot nothing currently
+// visible is using. Names no longer drawn are dropped so their slot can be reused — the map only
+// ever holds the (at most CHART_MAX) names on screen right now, never a 24-family reservation.
+function assignSeriesColors(names){
+  for (const name of [...seriesColorAssignment.keys()]) if (!names.includes(name)) seriesColorAssignment.delete(name);
+  const used = new Set(seriesColorAssignment.values());
+  for (const name of names){
+    if (seriesColorAssignment.has(name)) continue;
+    let slot = 0; while (used.has(slot)) slot++;
+    seriesColorAssignment.set(name, slot);
+    used.add(slot);
+  }
+}
+// Everything past CHART_MAX, folded into one honest aggregate row instead of the N real-looking
+// legend rows the previous design left permanently inert (a documented dead-click: dataviz
+// skill anti-patterns, "cycling past 8" — fold the tail into "Other," don't seat a 9th).
+// A stamp where every hidden series is unmeasured stays null, so the aggregate's line breaks at
+// the same points a real series' would; where some measured and others didn't, an unmeasured
+// series contributes 0 rather than being excluded — a display approximation, not a data claim.
+function buildOtherSeries(rest){
+  if (!rest.length) return null;
+  const points = trendData.stamps.map((_, j) => {
+    const anyMeasured = rest.some(s => s.points[j] != null);
+    if (!anyMeasured) return null;
+    return rest.reduce((sum, s) => sum + (s.points[j] || 0), 0);
+  });
+  const latest = rest.reduce((sum, s) => sum + (s.latest || 0), 0);
+  return { name: '__other__', label: `Other (${rest.length} smaller categor${rest.length===1?'y':'ies'})`, points, latest };
+}
+
+// The chart and the table view both need "the top CHART_MAX, plus Other" — one place computes
+// it so the split can't quietly drift between the two renderers.
+function chartedAndOther(d){
+  const charted = d.series.slice(0, CHART_MAX);
+  const other = buildOtherSeries(d.series.slice(CHART_MAX));
+  return { charted, other, shown: other ? [...charted, other] : charted };
+}
 
 // The window inputs go to the server — a range must filter before the share denominator is
 // computed, not after. `datetime-local` reads in the browser's local zone; converted to UTC so
@@ -685,10 +738,34 @@ async function loadTrends(family){
   if (range.until) q.set('until', range.until);
   const ats = trendAtsSelected();
   if (ats) ats.forEach(a => q.append('ats', a));
-  const r = await fetch('/trends' + (q.size ? '?' + q : ''));
-  if (!r.ok) { el('trends').style.display = 'none'; return; }
+  // Refetch keeps the frame (dataviz skill, interaction.md): the previous render stays up,
+  // dimmed, rather than the panel blanking — a filter change must never read as "it broke"
+  // while the round trip is in flight, and a genuine failure must never look like a dead toggle.
+  if (el('trends-viz')) el('trends-viz').classList.add('loading');
+  let r;
+  try { r = await fetch('/trends' + (q.size ? '?' + q : '')); }
+  catch(e){ showTrendsError('That request didn’t go through.'); return; }
+  if (!r.ok){
+    showTrendsError(r.status === 401
+      ? 'Your session expired — sign in again to see trends.'
+      : 'Trends didn’t load. Try again.');
+    return;
+  }
+  hideTrendsError();
   trendData = await r.json(); trendDrill = family || null;
   drawTrends();
+}
+
+// A failed fetch used to hide the whole #trends section — every toggle then looked locked with
+// no explanation. Now only the chart/legend area is replaced; the header, toggles and Retry stay
+// reachable, and Retry replays the exact same request `loadTrends` just made.
+function showTrendsError(msg){
+  if (el('trends-viz')){ el('trends-viz').classList.remove('loading'); el('trends-viz').hidden = true; }
+  if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
+}
+function hideTrendsError(){
+  if (el('trends-error')) el('trends-error').hidden = true;
+  if (el('trends-viz')){ el('trends-viz').hidden = false; el('trends-viz').classList.remove('loading'); }
 }
 
 // A series' value in the displayed unit: share of the index for stock, else the raw count.
@@ -726,12 +803,29 @@ function fmtValue(v){
   return Math.round(v).toLocaleString();
 }
 
+// Shared by every place that flips a radiogroup button's checked state — keeps the three call
+// sites (drawTrends' split-toggle sync, trendSeg's select, setUnit) from drifting apart on the
+// aria-checked/roving-tabindex pair.
+function setRadioChecked(btn, on){
+  btn.setAttribute('aria-checked', on);
+  btn.tabIndex = on ? 0 : -1;
+}
+
 function drawTrends(){
   const d = trendData; if (!d) return;
   const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
-  const shown = d.series.slice(0, CHART_MAX);
+  const { charted, other, shown } = chartedAndOther(d);
+
+  assignSeriesColors(charted.map(s => s.name));   // Other is a bucket, not an entity — no slot
+
   const vals = shown.flatMap(s => s.points.map((v, j) => trendValue(v, j))).filter(v => v != null);
-  const lo = 0, hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
+  const lo = 0;
+  let hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
+  // Datawrapper's line-chart guidance: extend the axis to 100% once a share reading comes
+  // close to it, so the reader sees the true ceiling rather than an axis that implies more
+  // headroom exists. Left alone otherwise — most shares here are single digits, and forcing
+  // every chart to a 0-100 scale would flatten the small-value comparisons this page is for.
+  if (trendUnit === 'share' && hi > 80) hi = 100;
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - 6) / (d.stamps.length - 1));
   const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
 
@@ -750,50 +844,96 @@ function drawTrends(){
                text-anchor="${anchor}">${stampLabel(d.stamps[ti])}</text>`;
     }
   }
-  shown.forEach((s, i) => {
-    const c = TREND_COLOURS[i % TREND_COLOURS.length];
-    // break the path at gaps rather than bridging them — an unmeasured run is not a value
-    let path = '', pen = 'M';
-    s.points.forEach((v, j) => { const u = trendValue(v, j); if (u == null) { pen = 'M'; return; } path += `${pen}${x(j).toFixed(1)},${y(u).toFixed(1)} `; pen = 'L'; });
-    svg += `<path d="${path.trim()}" fill="none" stroke="${c}" stroke-width="2"
-             stroke-linejoin="round" stroke-linecap="round"/>`;
-    const last = s.points.map((v,j)=>[trendValue(v,j),j]).filter(([v])=>v!=null).pop();
-    if (last) svg += `<circle cx="${x(last[1]).toFixed(1)}" cy="${y(last[0]).toFixed(1)}" r="3" fill="${c}"/>`;
-  });
-  el('trends-chart').innerHTML = svg;
 
-  el('trends-legend').innerHTML = d.series.slice(0, LEGEND_MAX).map((s, i) => {
-    const c = TREND_COLOURS[i % TREND_COLOURS.length];
+  const geomSeries = [];   // color + per-index resolved value, read by the hover layer below
+  svg += '<g id="lines-layer">';
+  shown.forEach(s => {
+    const isOther = s.name === '__other__';
+    const c = isOther ? 'var(--ink-3)' : seriesColor(seriesColorAssignment.get(s.name));
+    const values = s.points.map((v, j) => trendValue(v, j));
+    // break the path at gaps rather than bridging them — an unmeasured run is not a value
+    let path = '', pen = 'M', first = null, lastPt = null;
+    values.forEach((u, j) => {
+      if (u == null) { pen = 'M'; return; }
+      const px = x(j), py = y(u);
+      path += `${pen}${px.toFixed(1)},${py.toFixed(1)} `;
+      if (pen === 'M') first = px;
+      lastPt = [px, py];
+      pen = 'L';
+    });
+    path = path.trim();
+    // Soft area fill under the line — a wash, never a saturated block (dataviz skill,
+    // marks-and-anatomy.md). Skipped for Other: a gray wash under a gray line reads as murk,
+    // not signal, and Other already carries no identity worth reinforcing with a fill.
+    if (path && !isOther){
+      const areaPath = `${path} L${x(s.points.length-1).toFixed(1)},${y(lo).toFixed(1)} ` +
+                        `L${(first ?? PAD_L).toFixed(1)},${y(lo).toFixed(1)} Z`;
+      svg += `<path d="${areaPath}" fill="${c}" opacity=".10" stroke="none"/>`;
+    }
+    svg += `<path class="series-line" data-name="${esc(s.name)}" d="${path}" fill="none" stroke="${c}"
+             stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (lastPt) svg += `<circle class="series-end" data-name="${esc(s.name)}" cx="${lastPt[0].toFixed(1)}"
+             cy="${lastPt[1].toFixed(1)}" r="4" fill="${c}" stroke="var(--raise)" stroke-width="2"/>`;
+    geomSeries.push({ name: s.name, label: s.label, color: c, values });
+  });
+  svg += '</g>';
+  // The hover layer: a crosshair line + one dot per series, hidden until pointermove positions
+  // them (dataviz skill, interaction.md — "an HTML chart is interactive by default"). Built once
+  // per redraw, in the same order as geomSeries, so the pointermove handler below can index
+  // straight into `dotEls` with no per-event DOM query.
+  svg += `<g id="trends-crosshair" style="display:none">
+    <line class="crosshair-line" x1="0" y1="${PAD_T}" x2="0" y2="${H - PAD_B}"/>
+    ${geomSeries.map(s => `<circle class="ch-dot" r="4" fill="${s.color}" stroke="var(--raise)" stroke-width="2"/>`).join('')}
+  </g>`;
+  svg += `<rect id="trends-hitrect" x="0" y="0" width="${W}" height="${H}" fill="transparent" pointer-events="all"/>`;
+  el('trends-chart').innerHTML = svg;
+  const dotEls = [...el('trends-chart').querySelectorAll('.ch-dot')];
+  lastGeom = { x, y, W, stamps: d.stamps, series: geomSeries, dotEls };
+  positionHoverLayer(null);
+  hoveredSeries = null;
+
+  const legendRows = charted.map(s => {
+    const c = seriesColor(seriesColorAssignment.get(s.name));
     const dl = trendDelta(s.points);
     const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
     const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
-    // Past CHART_MAX a row is listed but not charted, and `trendClick` will not drill it — so
-    // it is not interactive either. The button role goes on the inner `.row`, never on the
-    // <li>: overriding the li's implicit `listitem` leaves the <ul> a list owning no items.
-    const off = i >= CHART_MAX;
     const j = d.stamps.length - 1;
     const latest = s.latest == null ? null : trendValue(s.latest, j);
     // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
     // top level. Without it the split toggle only appears after drilling in, which means the
     // one place that advertises the feature is the one place you reach by already knowing it
-    // exists. Only on rows that actually drill (`trendClick` ignores rows past CHART_MAX), so
-    // the marker never promises a click that does nothing.
-    const hasRoles = !trendDrill && i < CHART_MAX
-      && (d.watch_parents || []).includes(s.name);
+    // exists.
+    const hasRoles = !trendDrill && (d.watch_parents || []).includes(s.name);
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
-    return `<li class="${off ? 'listed' : 'charted'}"><span class="row" data-name="${esc(s.name)}"${off ? '' : ' role="button" tabindex="0"'}
-      ><span class="swatch" style="background:${off?'var(--ink-3)':c}"></span>
+    return `<li class="charted"><span class="row" data-name="${esc(s.name)}" role="button" tabindex="0"
+      ><span class="swatch" style="background:${c}"></span>
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Named roles are tracked inside this category">▸ roles</span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
       <span class="dl ${cls}">${txt}</span></span></li>`;
-  }).join('');
+  });
+  if (other){
+    // Everything past CHART_MAX, as one honestly-labeled, honestly-inert row — not N rows that
+    // look like real categories but silently do nothing on click (the dead-click this replaces).
+    // No role/tabindex: `trendClick` already no-ops on a name absent from trendData.series
+    // (findIndex returns -1), so `__other__` is inert by the SAME guard real unknown names use,
+    // not a new special case.
+    const dl = trendDelta(other.points);
+    const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
+    const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
+    const j = d.stamps.length - 1;
+    const latest = other.points[j] == null ? null : trendValue(other.points[j], j);
+    legendRows.push(`<li class="other"><span class="row" data-name="__other__"
+      ><span class="swatch" style="background:var(--ink-3)"></span>
+      <span class="nm" title="${esc(other.label)}">${esc(other.label)}</span>
+      <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
+      <span class="dl ${cls}">${txt}</span></span></li>`);
+  }
+  el('trends-legend').innerHTML = legendRows.join('');
 
   const runs = d.stamps.length;
-  const hidden = d.series.slice(LEGEND_MAX);
-  const tail = hidden.reduce((n, s) => n + (s.latest || 0), 0);
   // The measurement window, stated on the page: "19 measurements" alone could be two hours
   // or two years, and every judgement about a trend depends on which.
   const spanMs = runs > 1 ? new Date(d.stamps[runs-1]) - new Date(d.stamps[0]) : 0;
@@ -801,22 +941,13 @@ function drawTrends(){
   const span = runs < 2 ? '' :
     spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
   const measured = `${runs} measurement${runs===1?'':'s'}${span}`;
-  // The only thing at this level that says the rows are clickable — and it must not over-promise:
-  // the legend lists LEGEND_MAX rows but `trendClick` only drills the first CHART_MAX, so past
-  // that a click does nothing. Name the drillable set whenever the two differ.
-  const drillHint = d.series.length > CHART_MAX
-    ? ` — click any of the top ${CHART_MAX} to break it down`
-    : ' — click a category to break it down';
+  // Every category is now represented — individually if it's one of the top CHART_MAX, folded
+  // into Other otherwise — so this no longer needs a "top N of M" caveat.
   el('trends-scope').textContent = trendDrill
     ? (trendSplit === 'roles'
         ? `tracked roles · ${measured} — click any line to go back`
         : `by experience level · ${measured} — click to go back`)
-    : hidden.length
-      // Say what is on screen, not just what exists. The list is capped, so quoting only the
-      // total invites adding the visible rows up against the indexed-jobs headline and finding
-      // tens of thousands unaccounted for — they are in the tail, reported in the footer.
-      ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${measured}${drillHint}`
-      : `${d.series.length} categories · ${measured}${drillHint}`;
+    : `${d.series.length} categories · ${measured} — click any of the top ${CHART_MAX} to break it down`;
   // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
@@ -836,9 +967,8 @@ function drawTrends(){
   parts.push(trendMetric === 'new'
     ? 'Openings first seen in the last 7 days, re-measured every pipeline run.'
     : (trendUnit === 'share'
-      ? 'Each line is a category\u2019s share of all live openings in the index \u2014 immune to the index itself growing or shrinking.'
+      ? 'Each line is a category’s share of all live openings in the index — immune to the index itself growing or shrinking.'
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
-  if (tail) parts.push(`${hidden.length} smaller categories are not listed, holding ${tail.toLocaleString()} further ${trendMetric === 'new' ? 'new openings' : 'openings'}.`);
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
 
@@ -846,8 +976,106 @@ function drawTrends(){
   const seg = el('trends-split');
   if (seg) {
     seg.hidden = !(trendDrill && (d.watch_parents || []).includes(trendDrill));
-    seg.querySelectorAll('button').forEach(b =>
-      b.setAttribute('aria-pressed', b.dataset.split === trendSplit));
+    seg.querySelectorAll('button').forEach(b => setRadioChecked(b, b.dataset.split === trendSplit));
+  }
+  if (tableView) el('trends-table').innerHTML = buildTrendsTable();
+}
+
+// ---- hover: crosshair + one-tooltip-for-every-series (dataviz skill, interaction.md) --------
+
+function positionHoverLayer(index){
+  const svgEl = el('trends-chart'), tip = el('trends-tooltip');
+  if (!svgEl || !lastGeom) return;
+  const group = svgEl.querySelector('#trends-crosshair');
+  if (!group) return;
+  if (index == null){
+    group.style.display = 'none';
+    if (tip) tip.hidden = true;
+    return;
+  }
+  group.style.display = '';
+  const { x, y, series, dotEls, stamps } = lastGeom;
+  const line = group.querySelector('.crosshair-line');
+  line.setAttribute('x1', x(index)); line.setAttribute('x2', x(index));
+  const rows = [];
+  series.forEach((s, i) => {
+    const v = s.values[index], dot = dotEls[i];
+    if (v == null){ if (dot) dot.style.display = 'none'; return; }
+    if (dot){ dot.style.display = ''; dot.setAttribute('cx', x(index)); dot.setAttribute('cy', y(v)); }
+    rows.push({ label: s.label, color: s.color, value: v });
+  });
+  if (!tip) return;
+  tip.hidden = rows.length === 0;
+  if (rows.length){
+    // Labels come from config/role_families.json content, not user text — still built with
+    // textContent/DOM nodes rather than innerHTML string concatenation, matching the rest of
+    // this file's rule for anything that reaches the DOM (esc() is for innerHTML call sites).
+    tip.replaceChildren();
+    const head = document.createElement('div');
+    head.className = 'tt-date'; head.textContent = stampLabel(stamps[index]);
+    tip.appendChild(head);
+    rows.forEach(r => {
+      const row = document.createElement('div'); row.className = 'tt-row';
+      const key = document.createElement('span'); key.className = 'tt-key'; key.style.background = r.color;
+      const val = document.createElement('span'); val.className = 'tt-val'; val.textContent = fmtValue(r.value);
+      const nm = document.createElement('span'); nm.className = 'tt-name'; nm.textContent = r.label;
+      row.append(key, val, nm); tip.appendChild(row);
+    });
+    const wrap = svgEl.parentElement, wrapRect = wrap.getBoundingClientRect();
+    const svgRect = svgEl.getBoundingClientRect();
+    const scaleX = lastGeom.W ? svgRect.width / lastGeom.W : 1;
+    const px = x(index) * scaleX;
+    const left = px + 200 > wrapRect.width ? Math.max(4, px - 212) : px + 12;
+    tip.style.left = left + 'px';
+    tip.style.top = '8px';
+  }
+}
+
+// Hover-highlight (dataviz skill; converges ECharts' emphasis/blur, Chart.js's alpha-dim,
+// amCharts' stroke-width — see docs/product/2026-08-20_trends-ui-design-research.md §2): the
+// hovered series goes full-opacity + thicker stroke and repaints on top of its siblings
+// (Observable Plot's z-order technique, plain `appendChild` re-insertion here); everything else
+// dims to .25, never display:none, so shape/position context survives. A style toggle, not a
+// redraw — cheap, and it cannot itself trigger a data refetch.
+function applyEmphasis(){
+  const chartEl = el('trends-chart');
+  const layer = chartEl && chartEl.querySelector('#lines-layer');
+  if (layer){
+    layer.querySelectorAll('.series-line').forEach(node => {
+      const active = !hoveredSeries || node.dataset.name === hoveredSeries;
+      node.style.opacity = active ? '' : '.25';
+      node.style.strokeWidth = (hoveredSeries && active) ? '3' : '2';
+      if (hoveredSeries && active) layer.appendChild(node);   // paint the focused line on top
+    });
+    layer.querySelectorAll('.series-end').forEach(node => {
+      node.style.opacity = (!hoveredSeries || node.dataset.name === hoveredSeries) ? '' : '.25';
+    });
+  }
+  const legend = el('trends-legend');
+  if (legend) legend.querySelectorAll('.row[data-name]').forEach(row =>
+    row.classList.toggle('dim', !!hoveredSeries && row.dataset.name !== hoveredSeries));
+}
+
+// ---- the table view: the WCAG-clean twin of the chart (dataviz skill, components.md) --------
+
+function buildTrendsTable(){
+  const d = trendData; if (!d) return '';
+  const { shown: rows } = chartedAndOther(d);
+  const head = '<tr><th scope="col">Category</th>' +
+    d.stamps.map(ts => `<th scope="col">${esc(stampLabel(ts))}</th>`).join('') + '</tr>';
+  const body = rows.map(s => '<tr><th scope="row">' + esc(s.label) + '</th>' +
+    s.points.map((v, j) => { const u = trendValue(v, j); return `<td>${u == null ? '—' : esc(fmtValue(u))}</td>`; }).join('') +
+    '</tr>').join('');
+  return `<thead>${head}</thead><tbody>${body}</tbody>`;
+}
+
+function toggleTrendsTable(force){
+  tableView = force ?? !tableView;
+  if (el('trends-table-toggle')) el('trends-table-toggle').setAttribute('aria-pressed', tableView);
+  if (el('trends-viz')) el('trends-viz').hidden = tableView;
+  if (el('trends-table-wrap')){
+    el('trends-table-wrap').hidden = !tableView;
+    if (tableView && el('trends-table')) el('trends-table').innerHTML = buildTrendsTable();
   }
 }
 
@@ -864,27 +1092,53 @@ function trendClick(name){
   loadTrends(name);
 }
 
-// The three segmented toggles share one wiring: press -> update state -> refetch.
+// The three segmented toggles are WAI-ARIA radiogroups (APG's own Toolbar Example resolves
+// this exact shape — toggle-styled buttons that are mutually exclusive and apply immediately,
+// no save step — as radiogroup, not a plain button group: see the Radio Group pattern and
+// docs/product/2026-08-20_trends-ui-design-research.md §4). Roving tabindex: exactly one
+// button is tabbable at a time; arrow/Home/End keys move focus AND select, matching the
+// pattern's keyboard model.
 function trendSeg(id, attr, apply){
   const seg = el(id); if (!seg) return;
+  const buttons = () => [...seg.querySelectorAll('button')];
+  function select(b){
+    if (!b || b.getAttribute('aria-checked') === 'true') return;
+    buttons().forEach(x => setRadioChecked(x, x === b));
+    apply(b.dataset[attr]);
+  }
   seg.addEventListener('click', e => {
     const b = e.target.closest(`button[data-${attr}]`);
-    if (!b || b.getAttribute('aria-pressed') === 'true') return;
-    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
-    apply(b.dataset[attr]);
+    if (b) select(b);
+  });
+  seg.addEventListener('keydown', e => {
+    const list = buttons().filter(b => !b.disabled);
+    if (!list.length) return;
+    const i = list.indexOf(document.activeElement);
+    let next = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = list[(i + 1 + list.length) % list.length];
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = list[(i - 1 + list.length) % list.length];
+    else if (e.key === 'Home') next = list[0];
+    else if (e.key === 'End') next = list[list.length - 1];
+    if (!next) return;
+    e.preventDefault();
+    select(next); next.focus();
   });
 }
 // Share divides by the STOCK total, so it is meaningless against "new" — a share of new
 // openings over all live ones is a number with no reading. The unit segment is therefore
 // locked there. `disabled`, not just pointer-events: the latter stops the mouse and not the
-// keyboard, and a focused Space press would have plotted new counts over stock totals.
+// keyboard, and a focused Space press would have plotted new counts over stock totals. `title`
+// says why, rather than leaving a dimmed control to speak for itself.
 function setUnit(value, locked){
   trendUnit = value;
   const seg = el('trends-unit'); if (!seg) return;
   seg.style.opacity = locked ? .4 : '';
+  seg.title = locked
+    ? 'Share isn’t meaningful for “New this week” — a share of new openings over all live ones has no reading, so this shows Count instead.'
+    : '';
   seg.querySelectorAll('button').forEach(b => {
     b.disabled = locked;
-    b.setAttribute('aria-pressed', b.dataset.unit === value);
+    setRadioChecked(b, b.dataset.unit === value);
   });
 }
 trendSeg('trends-metric', 'metric', v => {
@@ -901,6 +1155,8 @@ if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click',
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
   loadTrends(trendDrill);
 });
+if (el('trends-retry')) el('trends-retry').addEventListener('click', () => loadTrends(trendDrill));
+if (el('trends-table-toggle')) el('trends-table-toggle').addEventListener('click', () => toggleTrendsTable());
 if (el('trends-ats-trigger')) {
   el('trends-ats-trigger').addEventListener('click', () => toggleAtsPopover());
   el('trends-ats-menu').addEventListener('change', () => { trendAtsLabel(); loadTrends(trendDrill); });
@@ -910,6 +1166,23 @@ if (el('trends-ats-trigger')) {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !el('trends-ats-menu').hidden) toggleAtsPopover(false);
   });
+}
+// Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an
+// innerHTML rewrite of its children (every drawTrends() call) leaves listeners on the element
+// itself intact, so this never needs re-attaching.
+if (el('trends-chart')) {
+  el('trends-chart').addEventListener('pointermove', e => {
+    if (!lastGeom) return;
+    const rect = el('trends-chart').getBoundingClientRect();
+    const svgX = rect.width ? (e.clientX - rect.left) / rect.width * lastGeom.W : 0;
+    let best = 0, bestDist = Infinity;
+    lastGeom.stamps.forEach((_, j) => {
+      const dist = Math.abs(lastGeom.x(j) - svgX);
+      if (dist < bestDist){ bestDist = dist; best = j; }
+    });
+    positionHoverLayer(best);
+  });
+  el('trends-chart').addEventListener('pointerleave', () => positionHoverLayer(null));
 }
 
 function initAlerts(){
@@ -934,6 +1207,28 @@ if (el('trends-legend')) {
     if (!row) return;
     e.preventDefault();
     trendClick(row.dataset.name);
+  });
+  // Hover-highlight (dataviz skill; design-research doc §2): a legend row's mouse hover reaches
+  // the chart, not just its own background. `pointerover`/`pointerout` bubble (mouseenter/leave
+  // don't), so this is one delegated pair rather than one listener per row; `relatedTarget` is
+  // checked so moving between two DOM nodes inside the SAME row doesn't flicker the state.
+  legend.addEventListener('pointerover', e => {
+    const row = e.target.closest('.row[data-name]');
+    if (row && hoveredSeries !== row.dataset.name){ hoveredSeries = row.dataset.name; applyEmphasis(); }
+  });
+  legend.addEventListener('pointerout', e => {
+    const row = e.target.closest('.row[data-name]');
+    if (row && !(e.relatedTarget && e.relatedTarget.closest('.row[data-name]'))){ hoveredSeries = null; applyEmphasis(); }
+  });
+  // Same emphasis on keyboard focus as on hover (dataviz skill, interaction.md: "same details
+  // on keyboard focus as on hover") — charted rows are already tabindex="0".
+  legend.addEventListener('focusin', e => {
+    const row = e.target.closest('.row[role="button"]');
+    if (row){ hoveredSeries = row.dataset.name; applyEmphasis(); }
+  });
+  legend.addEventListener('focusout', e => {
+    const row = e.target.closest('.row[role="button"]');
+    if (row){ hoveredSeries = null; applyEmphasis(); }
   });
 }
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
