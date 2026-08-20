@@ -156,7 +156,9 @@ _FIXED_FACETS_BY_SLUG: dict[str, dict[str, list[str]]] = {
     # is the one that holds its software roles. "Business & Store Operations" (9,928) is nearly
     # the whole board this gives up, plus Part time (6,726).
     "https://tjx.wd1.myworkdayjobs.com/TJX_EXTERNAL": {
-        "jobFamilyGroup": ["7d770955258e1000a7fd6e81b64e0000"],  # "Information Technology"
+        "jobFamilyGroup": [
+            "7d770955258e1000a7fd6e81b64e0000"
+        ],  # "Information Technology"
         "timeType": ["d5866b796ae0101de252d60f8cb10000"],  # "Full time"
     },
     # 12,438 -> 34. Loblaw's tenant is on the shared `myview.wd3` host under the `paradox_careers`
