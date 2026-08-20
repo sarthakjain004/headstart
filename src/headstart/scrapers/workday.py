@@ -35,7 +35,7 @@ import asyncio
 import re
 from typing import Any
 
-from headstart import http, log
+from headstart import http, log, spare_egress
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -92,7 +92,9 @@ _DETAIL_STREAMS = 25
 # `_DETAIL_STREAMS` was measured safe for against the same per-(source IP, instance) ceiling — it
 # spends that same ceiling in a second phase, not a second one. Kept as its own name because the
 # two passes differ (a POST with a JSON body vs. a bare GET) and may need to diverge once measured
-# under real pagination load, the way `_DETAIL_STREAMS` diverged from `_DETAIL_WORKERS`.
+# under real pagination load, the way `_DETAIL_STREAMS` diverged from `_DETAIL_WORKERS`. It is a
+# ceiling rather than the width in use: once a 429 has walled this shard's `workday` group,
+# `spare_egress.stream_width` narrows the fan-out below it for the rest of the run (#195).
 _PAGE_STREAMS = _DETAIL_STREAMS
 # How much of one query's pages may come back short before `_paginate` fails the crawl instead of
 # reporting it truncated (ADR-0076). A judgement call, not a measurement — nothing records
@@ -523,7 +525,7 @@ class WorkdayScraper(BaseScraper):
                 )
 
     def _paginate(self, applied: dict[str, list[str]], total: int, absorb) -> None:
-        """Page through offsets [20, total), fanned out over ``_PAGE_STREAMS`` concurrent
+        """Page through offsets [20, total), fanned out over at most ``_PAGE_STREAMS`` concurrent
         streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
         own small gather rather than a call to it — see :meth:`_paginate_async`). A page that
         404s or spends its retry ladder mid-crawl is skipped, and one warning reports how many
@@ -577,8 +579,9 @@ class WorkdayScraper(BaseScraper):
         self, applied: dict[str, list[str]], offsets: range, absorb
     ) -> tuple[int, http.RequestsError | None]:
         """Fetch every offset in ``offsets`` concurrently over one shared ``AsyncSession``,
-        bounded to ``_PAGE_STREAMS`` in flight, and return how many pages came back short
-        together with the first request error that made one (None when only 404s did).
+        bounded to at most ``_PAGE_STREAMS`` in flight — narrower once the origin has walled this
+        shard (:func:`~headstart.spare_egress.stream_width`) — and return how many pages came back
+        short together with the first request error that made one (None when only 404s did).
 
         Not a call to :meth:`fan_out_async`: that method's per-item contract swallows *every*
         exception into ``default``, which would lose the one thing :meth:`_paginate` decides on
@@ -595,7 +598,13 @@ class WorkdayScraper(BaseScraper):
         """
         from curl_cffi.requests import AsyncSession
 
-        sem = asyncio.Semaphore(_PAGE_STREAMS)
+        # The same clamp `fan_out_async` applies to its own resolved width, at the second call
+        # site rather than through it: this gather exists precisely because that method's
+        # exception contract is not the one `_paginate` needs (above), so the width policy is
+        # shared as a function and the two fan-outs stay apart (#195).
+        sem = asyncio.Semaphore(
+            spare_egress.stream_width(self._egress().get("egress_group"), _PAGE_STREAMS)
+        )
         missing = 0
         error: http.RequestsError | None = None
 

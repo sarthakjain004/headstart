@@ -16,6 +16,11 @@ the refusals continue (bounded by :data:`_ROTATION_COOLDOWN`).
 Cloudflare WARP is the implementation, not the concept: the module is named for what it provides so
 that swapping the provider is an edit here rather than a rename everywhere.
 
+A second route is not the only answer to a spent budget, so this module also owns **how hard to
+push** once one is spent: :func:`stream_width` narrows a caller's fan-out for a walled group, since
+ADR-0067 measured that the spare egress buys a different IP rather than a fresh allowance and
+rotation therefore cannot rescue a shard that is simply too wide (#195).
+
 WARP runs in **proxy mode**, never VPN mode. VPN mode routes the whole machine through Cloudflare,
 which on a runner means the artifact upload, the HF push and the GitHub API calls too; proxy mode
 touches only the clients that point at the SOCKS5 port, so the scrape moves and nothing else does.
@@ -61,6 +66,7 @@ __all__ = [
     "rotate",
     "rotation_causes",
     "rotations",
+    "stream_width",
     "traffic",
     "wait_deadline",
     "walled_groups",
@@ -220,6 +226,42 @@ def walled_groups() -> frozenset[str]:
     """
     with _walled_lock:
         return frozenset(_walled)
+
+
+#: How wide a caller may still fan out once its group is walled. **Extrapolated, not measured
+#: here.** ADR-0047 benchmarked Eightfold's detail pass against a live origin and put width 12 at
+#: 47.9% loss for 17.6 minutes on the worst shard, against 49.9% for 9.7 minutes at 25 — so 12 is
+#: where narrowing still buys something and the wall-clock still fits a 60-minute shard. That table
+#: is bare GETs against a different ATS, and the pagination this now clamps is a POST with a JSON
+#: body; ADR-0047 also says of its own row that "one production run should be read before moving
+#: it". A starting point to re-measure with scripts/bench/probe_eightfold_throttle.py's method,
+#: then, not a settled number.
+_WALLED_STREAM_WIDTH = 12
+
+
+def stream_width(group: str | None, ceiling: int) -> int:
+    """How wide we may fan out against ``group`` right now, at most ``ceiling``.
+
+    ``ceiling`` is the width the caller resolved from its own measurements, and this only ever
+    narrows it — a call site that pinned a width for its own reasons keeps it. ``group is None``
+    (every scraper that never opted into the fallback) and a group that has not walled both get
+    ``ceiling`` back unchanged.
+
+    **Reactive within a run, deliberately.** Nothing tells a shard *before* its first wall whether
+    it has a working spare egress: the only eager answer is :func:`proxy_url`, and asking it early
+    dials WARP on every shard including the ones that would never have needed it. So the first wall
+    is the signal, and the width narrows from there — the requests before it are as wide as they
+    were, the ones after the origin has already said no are not.
+
+    It does not ask whether the walled group *has* a spare egress either, because ADR-0067 measured
+    that a working one supplies one to three IPs fixed by the runner's colo rather than a fresh
+    budget. A shard that can rotate is not owed the wide width; it only reaches the wall slower.
+    """
+    if group is None:
+        return ceiling
+    with _walled_lock:
+        walled = group in _walled
+    return min(ceiling, _WALLED_STREAM_WIDTH) if walled else ceiling
 
 
 #: Per group, at two levels, because they answer different questions. ``routed`` counts *attempts*

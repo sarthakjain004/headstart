@@ -220,6 +220,58 @@ def test_reset_clears_traffic_as_well_as_walls():
     assert spare_egress.rotation_causes() == {}
 
 
+# --- how wide, once a budget is spent (#195) -----------------------------------------------------
+
+
+def test_stream_width_leaves_a_scraper_that_never_opted_in_alone():
+    """`group is None` is every scraper with an empty `egress_fallback_on`. Nothing about it can
+    ever wall, so narrowing it would spend wall-clock to avoid a wall that does not exist."""
+    assert spare_egress.stream_width(None, 100) == 100
+
+
+def test_stream_width_is_the_callers_ceiling_until_the_group_walls():
+    """The clamp is reactive: until an origin has actually refused this shard, the width the
+    caller measured for itself stands. A run where nothing walls fans out exactly as it did."""
+    assert spare_egress.stream_width("workday", 25) == 25
+    spare_egress.mark_walled("eightfold", 403)
+    assert spare_egress.stream_width("workday", 25) == 25, (
+        "another ATS's wall is not this one's"
+    )
+
+
+def test_stream_width_narrows_a_walled_group():
+    spare_egress.mark_walled("workday", 429)
+    assert spare_egress.stream_width("workday", 25) == spare_egress._WALLED_STREAM_WIDTH
+
+
+def test_stream_width_never_widens_a_ceiling_already_below_the_stopgap():
+    """The stopgap is a ceiling, not a target: a group that has *just been refused* is the last
+    place to answer a narrow call site by widening it.
+
+    No production ceiling is below 12 today — the only two scrapers that can wall (workday,
+    eightfold) both resolve 25 — so this is a contract pinned ahead of a caller that needs it,
+    not a path any board takes. Trakstar's pinned 4 is *not* that caller: it declares no
+    `egress_fallback_on`, so it reaches `stream_width` with `group=None` and is covered by the
+    first test above."""
+    spare_egress.mark_walled("workday", 429)
+    assert spare_egress.stream_width("workday", 4) == 4
+
+
+def test_stream_width_asks_nothing_of_warp(monkeypatch):
+    """It reads only state something else already computed. Dialling to find out whether a spare
+    egress exists would put a WARP connect on the width decision of every walled shard — including
+    the ones for which the answer changes nothing (ADR-0067: a different IP, not a fresh budget)."""
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_url",
+        lambda: pytest.fail("stream_width must not dial the spare egress"),
+    )
+    spare_egress.mark_walled("workday", 429)
+    assert (
+        spare_egress.stream_width("workday", 100) == spare_egress._WALLED_STREAM_WIDTH
+    )
+
+
 def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog):
     """A runner that cannot raise a tunnel is a degradation an operator should see; at INFO it
     would sit under the scrape's own output unread."""
