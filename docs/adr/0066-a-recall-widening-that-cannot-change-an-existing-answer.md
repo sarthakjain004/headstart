@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - **Amended by:** [ADR-0072](0072-a-three-digit-number-condemns-the-whole-span.md) — one Tier-2 answer is withdrawn that was *faithful*, not wrong, so it falls outside the exception below; enumerated there
+- **Suspended by:** [ADR-0079](0079-smallest-stated-experience-requirement-wins.md) — the rule below governs a *recall widening*, where a changed answer is collateral damage; ADR-0079 is a policy change, so changing answers (39,208 of them, all downward) is its point. The rule still binds any future widening
 - Date: 2026-08-19
 - Extends [ADR-0009](0009-experience-extraction.md) and [ADR-0018](0018-experience-seniority-fallback.md)
 - **Amends [ADR-0060](0060-narrative-guards-for-the-work-word-patterns.md)** on three points: how
