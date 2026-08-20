@@ -21,7 +21,10 @@ name: cleanup-index
 # it once more per two days.
 on:
   schedule:
-    - cron: "0 6 * * *" # 06:00 UTC, clear of the pipeline's :30 slots and the 04:00 squash
+    - cron: "0 6 * * *" # 06:00 UTC. No longer clear of anything: the pipeline fires hourly at :30 (ADR-0071) and the
+    # dataset squash moved into its merge job. This run shares the pipeline's concurrency group,
+    # so while it is *pending* the next pipeline fire can displace it — tolerated, because
+    # compaction is idempotent and simply runs the next day
   workflow_dispatch:
 
 permissions:

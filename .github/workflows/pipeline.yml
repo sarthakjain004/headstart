@@ -566,9 +566,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     # hang detector: ~5 min of work at this scale, up to ~4.5 min of `up()` retry backoff across
-    # the three HF uploads, and up to ~18 min of state_fetch retries (5 partial downloads of the
-    # ~1.3k-file lancedb dir + 7.5 min of waits, ADR-0033). Single writer, so it stays generous.
-    timeout-minutes: 48
+    # the three HF uploads, up to ~18 min of state_fetch retries (5 partial downloads of the
+    # ~1.3k-file lancedb dir + 7.5 min of waits, ADR-0033), and up to 10 min for the reclaim step
+    # below (its own cap). Single writer, so it stays generous. Raised 48 -> 58 when the reclaim
+    # moved in: the header rule is that the JOB margin covers setup + EVERY step + upload, and a
+    # job kill lands after the uploads but before `Restart the Space`, banking the data while the
+    # Space keeps serving the stale index.
+    timeout-minutes: 58
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.scrape-plan.outputs.run == 'true'
@@ -680,11 +684,22 @@ jobs:
       # that already holds the group and it races nothing by construction. Placed after the
       # upload and made non-fatal: reclaiming space must never be able to lose a run's data.
       - name: Reclaim dataset history when the quota is filling
-        if: needs.scrape-plan.outputs.run == 'true'
+        # `always()`, not the implicit `success()`: `Upload index state` pushes four separate
+        # commits, so a failure on the fourth leaves the dataset grown with the reclaim skipped —
+        # precisely the state moving it here was meant to prevent.
+        if: always() && needs.scrape-plan.outputs.run == 'true'
+        # Never fail the run for want of reclaimed space; the data is already uploaded. The
+        # safety invariant still shouts through `::error::` below, because a silently-failing
+        # reclaim compounds toward a mid-run push failure about two days out.
         continue-on-error: true
+        timeout-minutes: 10
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          SQUASH_ABOVE_GB: "55"
+          # Sized to honour "squash at least daily": live files sit ~3.5 GB after a squash and the
+          # run writes ~1.86 GB, so (40 - 3.5) / 1.86 = ~19.6 runs, which at the ~19.4 runs/day
+          # ceiling is ~24 h. A 55 GB threshold measured out at ~34 h — less often than daily,
+          # which was the opposite of the intent.
+          SQUASH_ABOVE_GB: "40"
         run: |
           python - <<'PY'
           import os
@@ -715,7 +730,14 @@ jobs:
           live2 = sum(f.size or 0 for f in after.siblings)
           # The live-file set must survive untouched — that is the whole safety property.
           if live2 < live:
-              raise SystemExit(f"live files shrank ({live / 1e9:.2f} -> {live2 / 1e9:.2f} GB)")
+              # The one invariant this step must never break. `continue-on-error` keeps the job
+              # green, so say it loudly enough to survive that.
+              print(
+                  f"::error::live files shrank ({live / 1e9:.2f} -> {live2 / 1e9:.2f} GB) after "
+                  "squash — investigate before the next run",
+                  flush=True,
+              )
+              raise SystemExit(1)
           print(f"::notice::squashed; live {live2 / 1e9:.2f} GB, usedStorage falls as HF collects "
                 "the orphans", flush=True)
           PY

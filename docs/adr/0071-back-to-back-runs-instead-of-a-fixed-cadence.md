@@ -75,8 +75,15 @@ rather than a tuning problem.
 **So the reclaim moved inside the `merge` job**, which already holds the concurrency group and
 therefore races nothing by construction. It runs after the upload and is `continue-on-error`:
 reclaiming space must never be able to lose a run's data. It fires on a **threshold**
-(`used_storage` over 55 GB) rather than a schedule, because at ~1.86 GB/run the quota is the thing
+(`used_storage` over 40 GB) rather than a schedule, because at ~1.86 GB/run the quota is the thing
 that actually matters and any run-count or day-count proxy drifts as run size or cadence does.
+
+The threshold is sized to hold the reclaim at **roughly daily**, which is what the schedule it
+replaces did: live files settle at ~3.5 GB after a squash and each run adds ~1.86 GB, so
+`(40 - 3.5) / 1.86 = ~19.6 runs`, and at the ~19.4 runs/day ceiling that is ~24 h. This is worth
+stating because the first revision used 55 GB, which measures out at ~34 h — *less* often than the
+daily schedule it replaced, and so a regression dressed as an improvement. A threshold is only
+equivalent to a schedule if someone does that arithmetic.
 `squash-dataset-history.yml` loses its schedule and stays as a manual escape hatch.
 
 ### `cleanup-index` keeps the shared group, and may occasionally be displaced

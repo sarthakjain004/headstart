@@ -97,7 +97,7 @@ guarantee — a shard that hits its budget still forwards what it finished.
 **Discovery** runs occasionally and by hand; its output, the liveness ledger under
 `data/validate/liveness/`, is committed to git and is what the ingest pipeline reads.
 
-**Ingest** (`.github/workflows/pipeline.yml`) runs back-to-back (ADR-0068) as five stages, two of them
+**Ingest** (`.github/workflows/pipeline.yml`) runs back-to-back (ADR-0071) as five stages, two of them
 matrix fan-outs capped at 15 concurrent **GitHub VMs** (ADR-0025 sharded embed, ADR-0026 sharded
 scrape). A run-level `concurrency` group serializes whole runs so two never race on the dataset.
 

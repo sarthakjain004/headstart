@@ -82,11 +82,15 @@ jobs:
           used2, live2, commits2 = state()
           print(f"after:  usedStorage {used2/1e9:.2f} GB · live files {live2/1e9:.2f} GB "
                 f"· {commits2} commits", flush=True)
+          # The live-file set must survive a squash untouched — that is the whole safety property,
+          # so it is checked BEFORE announcing success. The inline reclaim in `pipeline.yml` had
+          # this ordering right and this copy did not: it announced, then exited non-zero.
+          if live2 < live:
+              print(f"::error::live files shrank ({live/1e9:.2f} -> {live2/1e9:.2f} GB) after "
+                    "squash — investigate before the next run", flush=True)
+              raise SystemExit(1)
+
           # usedStorage lags: HF garbage-collects orphaned LFS blobs asynchronously.
           print(f"::notice::live files {live2/1e9:.2f} GB across {commits2} commit(s); "
                 f"usedStorage reads {used2/1e9:.2f} GB and falls as HF collects the orphans")
-
-          # The live-file set must survive a squash untouched — that is the whole safety property.
-          if live2 < live:
-              raise SystemExit(f"live files shrank ({live/1e9:.2f} -> {live2/1e9:.2f} GB) — investigate")
           PY
