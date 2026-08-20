@@ -48,6 +48,7 @@ from collections import Counter, defaultdict
 from headstart import log
 
 __all__ = [
+    "egress_ips",
     "mark_walled",
     "note_routed",
     "note_settled",
@@ -309,6 +310,24 @@ def report() -> list[str]:
                 if spins.get(why)
             )
         )
+    addresses = egress_ips()
+    seen = {k[3:] for k in addresses if k.startswith("ip:")}
+    if seen or addresses.get("unreadable"):
+        # Distinct addresses, not rotations: ADR-0067's finding is that a colo carries a 1-3
+        # address pool, so "40 rotations across 2 addresses" is the shape to notice and a bare
+        # rotation count hides it completely.
+        lines.append(
+            f"egress addresses: {len(seen)} distinct across "
+            f"{addresses['moved'] + addresses['repeat']} rotation(s) "
+            f"({addresses['moved']} moved, {addresses['repeat']} returned the same IP"
+            + (
+                f", {addresses['unreadable']} unreadable"
+                if addresses.get("unreadable")
+                else ""
+            )
+            + ")"
+            + (f" — {', '.join(sorted(seen))}" if seen else "")
+        )
     causes = rotation_causes()
     if causes:
         top = ", ".join(f"{board} {n:,}" for board, n in causes.most_common(5))
@@ -372,6 +391,21 @@ _rotations: Counter[str] = Counter()
 #: and the grant count would show it as unremarkable.
 _rotation_causes: Counter[str] = Counter()
 _last_rotation = 0.0
+
+#: Which egress addresses this shard was actually given, plus moved/repeat/unreadable tallies.
+#: Addresses are keyed `ip:<address>`. The counters beside them are the point: ADR-0067 showed a
+#: rotation returns a *different* address only ~11 times in 30, so a rotation count says nothing
+#: about whether rotation is working and only a comparison of addresses does.
+_egress_ips: Counter[str] = Counter()
+_last_egress_ip: str | None = None
+
+#: Cloudflare's own trace endpoint, read *through* the proxy so the address it echoes is the one
+#: the shard is actually egressing from. Plain text, a few hundred bytes, and served by the same
+#: edge the tunnel already terminates on, so it costs a fraction of a real Board fetch.
+_TRACE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
+#: Short on purpose. This runs inside the rotation lock, so every peer waiting to rotate waits on
+#: it too; a slow trace must cost the shard a missing log line, never a stalled fan-out.
+_TRACE_TIMEOUT = 4.0
 
 #: Minimum seconds between successive rotations. Rotation is cyclic — every wall seen *through*
 #: the spare egress asks for another IP — so without a floor a shard meeting 429s continuously
@@ -529,11 +563,76 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
             _rotations["succeeded"] += 1
             _log.warning(
                 f"spare egress: rotated to a fresh egress IP (#{_rotation_generation})"
+                + _observe_egress_ip()
             )
             return True
         finally:
             _gate.set()  # one place, so no exit path can strand the shard behind a closed gate
             _rotated.notify_all()  # and release the waiters onto whatever this produced
+
+
+def _observe_egress_ip() -> str:
+    """Read the address this rotation actually landed on, and say whether it moved.
+
+    ADR-0067 measured that `systemctl restart warp-svc` returns a *different* egress IP only about
+    11 times in 30: a WARP client is pinned to its nearest colo, the colo never moves under any
+    rotation verb, and each colo carries a pool of one to three addresses — so on LAX or SJC a
+    rotation cannot move at all. That ADR's own consequence is the reason this function exists:
+
+        Rotation counters are not a health signal. `spare_egress.rotations()` counts restarts, and
+        a restart that returns the same address counts the same as one that does not. A future
+        change that wants to know whether rotation is *working* has to compare egress addresses,
+        not count rotations.
+
+    So the returned suffix is the health signal the counters cannot be. `same` means the rotation
+    bought nothing — the caller still paid ~2s and a closed gate for the address it already had.
+
+    Bounded and swallowed on every failure: this is telemetry attached to the retry path, and a
+    trace endpoint being slow or down must never turn a working rotation into a failed one. The
+    empty string on failure keeps the log line valid rather than annotating it with noise.
+    """
+    global _last_egress_ip
+    proxy = _proxy
+    if not proxy:
+        return ""
+    try:
+        from curl_cffi import requests as _rq
+
+        body = _rq.get(
+            _TRACE_URL,
+            proxies={"http": proxy, "https": proxy},
+            timeout=_TRACE_TIMEOUT,
+        ).text
+    except Exception:  # noqa: BLE001 — telemetry must never fail a rotation
+        _egress_ips["unreadable"] += 1
+        return ""
+    ip = next(
+        (ln[3:] for ln in body.splitlines() if ln.startswith("ip=")),
+        "",
+    )
+    if not ip:
+        _egress_ips["unreadable"] += 1
+        return ""
+    moved = _last_egress_ip is not None and ip != _last_egress_ip
+    if _last_egress_ip is None:
+        verdict = "first"
+    else:
+        verdict = "moved" if moved else "SAME as before"
+        _egress_ips["moved" if moved else "repeat"] += 1
+    _egress_ips[f"ip:{ip}"] += 1
+    _last_egress_ip = ip
+    return f" -> {ip} ({verdict})"
+
+
+def egress_ips() -> Counter[str]:
+    """Every egress address this shard was given, plus moved/repeat/unreadable tallies.
+
+    Keyed `ip:<address>` for the addresses so one Counter carries both without a second structure;
+    the join reads the `ip:` prefix to count *distinct* addresses across shards, which is the
+    number ADR-0067 actually cared about — 30 jobs shared 11 WARP IPs, one across 8 jobs.
+    """
+    with _rotation_lock:
+        return Counter(_egress_ips)
 
 
 def _restart_daemon() -> bool:
@@ -581,7 +680,7 @@ def rotation_causes() -> Counter[str]:
 
 def reset() -> None:
     """Forget the cached proxy *and* the walled groups, so the next call probes again (tests)."""
-    global _resolved, _proxy, _last_rotation, _rotation_generation
+    global _resolved, _proxy, _last_rotation, _rotation_generation, _last_egress_ip
     with _lock:
         _resolved = False
         _proxy = None
@@ -592,6 +691,8 @@ def reset() -> None:
     with _rotation_lock:
         _rotations.clear()
         _rotation_causes.clear()
+        _egress_ips.clear()
+        _last_egress_ip = None
         _last_rotation = 0.0
         _rotation_generation = 0
     _gate.set()

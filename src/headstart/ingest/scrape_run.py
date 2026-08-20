@@ -269,6 +269,11 @@ def _report(
         deferred=deferred,
         board_seconds=spread,
         retries=dict(retries),
+        # The addresses this shard actually egressed from, not just how often it rotated. Only a
+        # comparison of addresses can answer whether rotation works (ADR-0067 measured a genuinely
+        # different IP ~11 times in 30), and only the join can see the cross-shard picture that
+        # mattered most there — 30 jobs sharing 11 WARP IPs, one of them across 8 jobs.
+        egress_ips=dict(spare_egress.egress_ips()),
         # the full map, not the top-3 digest the log line carries: the join can only
         # aggregate error classes across shards if the classes survive the runner
         errors=progress.errors,

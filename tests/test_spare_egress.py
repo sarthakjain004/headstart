@@ -400,3 +400,94 @@ def test_report_includes_rotation_counts():
     spare_egress._rotations.update({"attempted": 2, "succeeded": 1, "failed": 1})
     lines = spare_egress.report()
     assert any("rotations" in line and "attempted 2" in line for line in lines)
+
+
+def _tracing(monkeypatch, addresses):
+    """Stub the trace endpoint so successive rotations report the given addresses in order.
+
+    A list rather than one value because the whole point of the feature is telling a rotation that
+    *moved* from one that came back to the same address.
+    """
+    seen = iter(addresses)
+
+    class _Resp:
+        def __init__(self, ip):
+            self.text = f"fl=123abc\nip={ip}\nts=1\nwarp=on\n"
+
+    def _get(url, **kw):
+        return _Resp(next(seen))
+
+    monkeypatch.setattr(
+        spare_egress, "_observe_egress_ip", spare_egress._observe_egress_ip
+    )
+    import curl_cffi.requests as _rq
+
+    monkeypatch.setattr(_rq, "get", _get)
+
+
+def test_a_rotation_that_moves_is_told_apart_from_one_that_does_not(
+    monkeypatch, caplog
+):
+    """ADR-0067: rotation returns a different IP only ~11 times in 30, so a rotation *count* is
+    not a health signal. Only comparing addresses distinguishes a rotation that bought something
+    from one that spent ~2s and a closed gate to land on the address it already had."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    _tracing(monkeypatch, ["104.28.232.96", "104.28.200.91", "104.28.200.91"])
+
+    with caplog.at_level("WARNING"):
+        for _ in range(3):
+            spare_egress.rotate()
+
+    text = caplog.text
+    assert "104.28.232.96 (first)" in text
+    assert "104.28.200.91 (moved)" in text
+    assert "104.28.200.91 (SAME as before)" in text
+
+    tallies = spare_egress.egress_ips()
+    assert tallies["moved"] == 1
+    assert tallies["repeat"] == 1
+    assert tallies["ip:104.28.200.91"] == 2
+
+
+def test_report_names_the_distinct_addresses_not_just_the_rotation_count(monkeypatch):
+    """The cross-shard number ADR-0067 cared about was distinct addresses (30 jobs shared 11 IPs),
+    which a rotation count cannot express."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    _tracing(monkeypatch, ["1.1.1.1", "2.2.2.2", "2.2.2.2"])
+    spare_egress.mark_walled("workday", 429)
+    for _ in range(3):
+        spare_egress.rotate()
+
+    line = next(x for x in spare_egress.report() if x.startswith("egress addresses"))
+    assert "2 distinct" in line
+    assert "1 moved" in line
+    assert "1 returned the same IP" in line
+    assert "1.1.1.1" in line and "2.2.2.2" in line
+
+
+def test_an_unreadable_trace_never_fails_the_rotation(monkeypatch):
+    """Telemetry on the retry path. A trace endpoint that is slow or down must cost a log line,
+    never a working rotation."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    import curl_cffi.requests as _rq
+
+    def _boom(*a, **kw):
+        raise RuntimeError("trace endpoint down")
+
+    monkeypatch.setattr(_rq, "get", _boom)
+
+    assert spare_egress.rotate() is True
+    assert spare_egress.egress_ips()["unreadable"] == 1
