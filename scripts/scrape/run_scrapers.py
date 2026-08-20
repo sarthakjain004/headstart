@@ -198,7 +198,10 @@ def main() -> int:
     ap.add_argument(
         "--streams",
         type=int,
-        help="HTTP/2 multiplexing width per host for the async detail pass (default 100)",
+        help=(
+            "HTTP/2 multiplexing width per host for the async detail pass (default 100). "
+            "A ceiling: an ATS that walls this shard is fanned out narrower regardless (#195)"
+        ),
     )
     ap.add_argument(
         "--sync",

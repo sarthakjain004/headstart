@@ -980,6 +980,50 @@ def test_workday_paginate_fans_out_bounded_by_page_streams(monkeypatch):
     assert 1 < max_in_flight <= workday_mod._PAGE_STREAMS
 
 
+def test_workday_paginate_narrows_its_fan_out_once_the_origin_has_walled(monkeypatch):
+    """#195's second call site. `_paginate_async` builds its own semaphore rather than calling
+    `fan_out_async` — its exception contract is the one `_paginate` needs (ADR-0076) — so the
+    width policy has to reach it separately or the larger half of Workday's traffic keeps paging
+    at full width against an origin that has already said no.
+
+    Paired against its own control, because a `<=` assertion alone passes on a fan-out that
+    simply never saturated: the same fake, same offsets, walled and not."""
+    import asyncio
+
+    from headstart import spare_egress
+    from headstart.scrapers import workday as workday_mod
+    from headstart.scrapers.workday import WorkdayScraper
+
+    def widest() -> int:
+        s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+        in_flight = 0
+        peak = 0
+
+        async def fake_post_async(session, applied, offset):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)
+            in_flight -= 1
+            return {"jobPostings": []}
+
+        monkeypatch.setattr(s, "_post_async", fake_post_async)
+        s._paginate(
+            {},
+            workday_mod._PAGE_LIMIT * (workday_mod._PAGE_STREAMS + 11),
+            lambda b: None,
+        )
+        return peak
+
+    spare_egress.reset()
+    try:
+        assert widest() == workday_mod._PAGE_STREAMS
+        spare_egress.mark_walled("workday", 429)
+        assert widest() == spare_egress._WALLED_STREAM_WIDTH
+    finally:
+        spare_egress.reset()
+
+
 def test_workday_paginate_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch, caplog):
     """A page that spends `fetch_async`'s retry ladder on a persisting 429 is one page of a live
     board, exactly like a mid-crawl 404 — it must not discard the pages that did arrive (#194:
