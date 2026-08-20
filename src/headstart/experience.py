@@ -52,6 +52,10 @@ _MAX_PLAUSIBLE_YEARS = (
 # The anchor word says nothing about genre; the magnitude does.
 _MAX_PLAUSIBLE_REQUIREMENT = 20
 
+# The value `_DIGITS`' third digit made reachable. Below it, ADR-0013's ceiling rule stands
+# (drop an absurd `hi`, keep the real floor); at or above it the span is not a requirement.
+_THREE_DIGITS = 100
+
 
 @dataclass(frozen=True, slots=True)
 class ExperienceSpan:
@@ -456,6 +460,15 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 if floor is not None and floor < lo:
                     lo, hi = floor, lo
             if lo > _MAX_PLAUSIBLE_YEARS:
+                continue
+            if hi is not None and hi >= _THREE_DIGITS:
+                # A 3-digit number condemns the whole span, floor included. Widening `_DIGITS`
+                # to `\d{1,3}` exists so the plausibility guard can *reject* such a number; for
+                # a floor it does (`lo > _MAX_PLAUSIBLE_REQUIREMENT` above), but for a ceiling
+                # the rule below merely dropped `hi` and kept `lo` — turning "brings 8 to 150
+                # years of combined experience" into an 8-year requirement, which is worse than
+                # the bogus 0 it replaced: 0 constrains nobody, 8 hides the job from juniors.
+                # A 2-digit absurd ceiling keeps ADR-0013's rule: "3 to 99 years" is still 3.
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
                 hi = None
