@@ -817,8 +817,13 @@ function drawTrends(){
       // tens of thousands unaccounted for — they are in the tail, reported in the footer.
       ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${measured}${drillHint}`
       : `${d.series.length} categories · ${measured}${drillHint}`;
+  // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
+  // only exist from the run this shipped in forward, not because the pipeline itself is new —
+  // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs < 2
-    ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
+    ? (trendAtsSelected()
+        ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
+        : 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.')
     : (trendDrill && trendSplit === 'roles' && !d.series.length
       // "not tracked" would be wrong and self-contradictory next to a marker that just said
       // roles ARE tracked here: the watchlist is config, the rows are measurements, and between

@@ -278,3 +278,26 @@ test('the popover forces closed regardless of its current state', () => {
   t.atsToggle(false);
   assert.equal(nodes['trends-ats-menu'].hidden, true);
 });
+
+/** One stamp only, so `runs < 2` and the empty-runs message renders. */
+function oneStampFixture() {
+  const f = fixture();
+  return { ...f, stamps: [f.stamps[0]], series: f.series.map(s => ({ ...s, points: [s.points[0]] })) };
+}
+
+test('a short history under an active ATS filter names the filter as the cause', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', false]]);   // narrowed
+  t.set(oneStampFixture(), null);
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /ATS selection/);
+});
+
+test('a short history with no ATS filter keeps the generic pipeline-is-new message', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true]]);    // all checked = no filter
+  t.set(oneStampFixture(), null);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /ATS selection/);
+  assert.match(nodes['trends-empty'].textContent, /pipeline has run a few more times/);
+});
