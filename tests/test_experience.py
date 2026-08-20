@@ -578,3 +578,70 @@ def test_requirement_ceiling_applies_to_anchored_patterns_too():
     assert from_description("8+ years of hands-on experience") == ExperienceSpan(
         8, None, "regex"
     )
+
+
+def test_tier_two_captures_a_three_digit_year_whole():
+    """A 3-digit number must reach the plausibility guard, not be truncated past it (ADR-0013).
+
+    `_DIGITS` was `\\d{1,2}`, so "105 years" matched the trailing "05" and returned 5, and
+    "100 years" returned 0 — a company-history sentence answering as a real requirement.
+    ADR-0013 widened `_FIELD` for exactly this reason, "so a 3-digit value is captured whole
+    and the plausibility guard can reject it", but scoped itself to Tier 1 and explicitly
+    *deferred* the Tier-2 anchor, which needed corpus access to settle. This un-defers it.
+    """
+    assert from_description("with 105 years of experience") is None
+    assert from_description("over 100 years of experience") is None
+    assert from_description("300 years of experience") is None
+    # Measured over the whole description store — 328,923 descriptions, every ATS: 733 rows
+    # swap a bogus 0 for the requirement the text actually states, ~276 narrative rows stop
+    # answering at all, and ~8 lose a real requirement to a separator-less range (PR body).
+    # The company-history sentence below is the shape behind the 276.
+    assert (
+        from_description(
+            "a team with more than 100 years of combined experience in payments"
+        )
+        is None
+    )
+    # Tier 1 already behaved; the point is that the two tiers now agree.
+    assert from_field("105") is None
+
+
+def test_two_digit_requirements_still_answer():
+    """The widening must not disturb the ordinary case it sits next to."""
+    assert from_description("5+ years of experience").min_years == 5
+    assert from_description("12 years of experience").min_years == 12
+    span = from_description("2-4 years of experience")
+    assert (span.min_years, span.max_years) == (2, 4)
+
+
+def test_the_requirement_ceiling_still_refuses_a_narrative_range():
+    """The ceiling runs *before* `_RANGE_TAIL` recovery, deliberately — this pins that order.
+
+    Moving it after recovery restores a floor first and then waves the pair through, re-opening
+    the hole ADR-0066 closed: "The anchor word says nothing about genre; the magnitude does."
+    Measured both ways over 116,463 descriptions: moving it changed nothing at all, so it buys
+    no recall and costs exactly these sentences.
+    """
+    assert (
+        from_description(
+            "the founding team brings 10 and 30 years of experience building payments"
+        )
+        is None
+    )
+    assert (
+        from_description("a combined 8 and 40 years at Palantir of experience") is None
+    )
+    assert (
+        from_description("we pair 4 and 30 years of cloud-operating experience") is None
+    )
+
+
+def test_narrative_above_the_requirement_ceiling_is_still_refused():
+    """Moving the guard must not open the genre hole it exists to close (ADR-0066)."""
+    assert from_description("more than 25 years of experience") is None
+    assert (
+        from_description(
+            "PayPal has been revolutionizing commerce for more than 25 years"
+        )
+        is None
+    )
