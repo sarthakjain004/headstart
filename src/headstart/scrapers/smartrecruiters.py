@@ -5,10 +5,13 @@ project's BaseScraper contract:
     https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100[&offset=N]
 
 `limit` is our page size, not the provider's ceiling (ADR-0070) — the listing pages by
-`offset`, and `totalFound` reports the board's true size. We page behind `_MAX_PAGES` rather
-than to the end, to bound what one board can cost a shard on its first, uncosted run — the
-run ADR-0064's tech-per-minute gate cannot see, because it only judges a board that already
-has a measurement (ADR-0077).
+`offset`, and `totalFound` reports the board's true size. `_MAX_PAGES` bounds what one board
+can cost a shard on its first, uncosted run — the run ADR-0064's tech-per-minute gate cannot
+see, because it only judges a board that already has a measurement (ADR-0077) — but its
+enforcement is commented out below for the initial rollout: shipping uncapped on purpose, to
+measure real cost/impact across a few pipeline runs before deciding a cap from data rather
+than from #202's projection a second time (#227). Trivially reversible — uncomment the two
+marked lines to re-enable the 50-page cap.
 
 The postings list has no description; a second pass fetches each posting's detail
 (GET .../postings/{id} -> jobAd.sections.jobDescription.text) in a bounded thread pool to
@@ -31,6 +34,8 @@ _PAGE_SIZE = 100  # our page size, not the provider's ceiling (ADR-0070)
 # and 6 of the 15 boards over 3,000 run 14-62% tech at *half* and *end* of board. 5,000 postings is
 # the most this scraper can read and still stay under ADR-0064's 15-minute gate floor at the slow
 # end of fleet throughput; what stays truncated above it is ~0%-tech retail the gate handles.
+# NOT ENFORCED right now (#227) — kept defined so re-enabling is a two-line uncomment, not a
+# re-derivation.
 _MAX_PAGES = 50
 
 
@@ -50,7 +55,8 @@ class SmartRecruitersScraper(BaseScraper):
         batch = data.get("content") or []
         postings = list(batch)
         page = 1
-        while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:
+        # `and page < _MAX_PAGES` disabled for now — uncapped rollout, see #227.
+        while len(batch) == _PAGE_SIZE:
             more = json.loads(self._get(f"{self.url()}&offset={page * _PAGE_SIZE}"))
             batch = more.get("content") or []
             postings.extend(batch)
@@ -61,17 +67,16 @@ class SmartRecruitersScraper(BaseScraper):
         # Measured 2026-08-20: dominos totalFound=24556 behind a 100-posting page.
         # `totalFound` is always present and always an int — verified live across 15 boards
         # 2026-08-20, a dead slug included: it answers {"totalFound": 0}.
-        # One check still covers both ways the read falls short — the cap above and the short page
-        # this already handled — because `totalFound` is exact rather than a full-page guess
-        # (ADR-0070). It names the cap only when the cap is what stopped the loop, which takes both
-        # halves: `page` alone also reads `_MAX_PAGES` when the *last* page came back short, and
-        # `totalFound` is read off page 1, so a board that loses a posting mid-read lands there.
+        # `totalFound` is exact rather than a full-page guess (ADR-0070), so this still catches a
+        # short read even with the cap disabled — a posting closing mid-crawl, or an inconsistent
+        # page. `capped = page == _MAX_PAGES and len(batch) == _PAGE_SIZE` / the cap-naming note
+        # are commented out along with the cap itself (#227): with no cap enforced, `page` reaching
+        # `_MAX_PAGES` can no longer be what stopped the loop, so naming it would mislabel a genuine
+        # short read as a cap hit.
         total = data.get("totalFound") or 0
         if total > len(postings):
-            capped = page == _MAX_PAGES and len(batch) == _PAGE_SIZE
-            cap_note = f" — hit the {_MAX_PAGES}-page cap" if capped else ""
             self.mark_truncated(
-                f"read {len(postings)} of {total} postings{cap_note} — the rest unread"
+                f"read {len(postings)} of {total} postings — the rest unread"
             )
         if self.async_fanout_enabled():
             descriptions = self.fan_out_async(

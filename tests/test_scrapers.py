@@ -357,6 +357,9 @@ def test_smartrecruiters_page_cap_is_the_decided_number():
     assert (sr._PAGE_SIZE, sr._MAX_PAGES) == (100, 50)
 
 
+@pytest.mark.skip(
+    reason="cap enforcement commented out for the initial uncapped rollout, see #227"
+)
 def test_smartrecruiters_marks_its_page_cap(monkeypatch):
     """Paging stops at `_MAX_PAGES` and says so, so the unread tail is still not a delisting.
 
