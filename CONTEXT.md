@@ -145,6 +145,12 @@ _Avoid_: CV. And keep it apart from **Profile** — the Résumé is the transien
 **Résumé query**:
 The role sentence an LLM writes from a **Résumé** — stored as the **Profile**'s sentence, editable there, and shown in the search box before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
 
+### Trends
+
+**Trend filter** (ADR-0075):
+Which ATSes a Trends request is scoped to. No exclusion is the only spelling of "no filter" — a request naming every ATS explicitly would still exclude any row from before this filter existed (those carry no real ATS name), silently cutting off history a user never meant to exclude. A scoped request's series can start later than an unscoped one's for the same reason: there is nothing to backfill from.
+_Avoid_: **Search filter** — that names a deterministic where-clause over the **Search index**; this narrows which rows of the trends ledger get summed, a different mechanism over a different thing.
+
 ### Accounts
 
 **Account** (ADR-0042):

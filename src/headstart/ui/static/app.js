@@ -650,6 +650,28 @@ function trendRange(){
   return r;
 }
 
+// Checked ATS names, or null when every box is checked — the only spelling of "no filter"
+// (ADR-0075): sending all of them explicitly would exclude pre-ship, undecomposed rows.
+function trendAtsSelected(){
+  const menu = el('trends-ats-menu'); if (!menu) return null;
+  const boxes = [...menu.querySelectorAll('input[type=checkbox]')];
+  const checked = boxes.filter(b => b.checked).map(b => b.value);
+  return checked.length === boxes.length ? null : checked;
+}
+
+function trendAtsLabel(){
+  const menu = el('trends-ats-menu'); if (!menu) return;
+  const boxes = menu.querySelectorAll('input[type=checkbox]');
+  const n = [...boxes].filter(b => b.checked).length;
+  el('trends-ats-trigger').textContent = (n === boxes.length ? 'All ATS' : `${n} ATS`) + ' ▾';
+}
+
+function toggleAtsPopover(force){
+  const open = force ?? el('trends-ats-menu').hidden;
+  el('trends-ats-menu').hidden = !open;
+  el('trends-ats-trigger').setAttribute('aria-expanded', open);
+}
+
 async function loadTrends(family){
   const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
@@ -661,6 +683,8 @@ async function loadTrends(family){
   const range = trendRange();
   if (range.since) q.set('since', range.since);
   if (range.until) q.set('until', range.until);
+  const ats = trendAtsSelected();
+  if (ats) ats.forEach(a => q.append('ats', a));
   const r = await fetch('/trends' + (q.size ? '?' + q : ''));
   if (!r.ok) { el('trends').style.display = 'none'; return; }
   trendData = await r.json(); trendDrill = family || null;
@@ -793,8 +817,13 @@ function drawTrends(){
       // tens of thousands unaccounted for — they are in the tail, reported in the footer.
       ? `top ${LEGEND_MAX} of ${d.series.length} categories · ${measured}${drillHint}`
       : `${d.series.length} categories · ${measured}${drillHint}`;
+  // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
+  // only exist from the run this shipped in forward, not because the pipeline itself is new —
+  // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs < 2
-    ? 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.'
+    ? (trendAtsSelected()
+        ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
+        : 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.')
     : (trendDrill && trendSplit === 'roles' && !d.series.length
       // "not tracked" would be wrong and self-contradictory next to a marker that just said
       // roles ARE tracked here: the watchlist is config, the rows are measurements, and between
@@ -872,6 +901,16 @@ if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click',
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
   loadTrends(trendDrill);
 });
+if (el('trends-ats-trigger')) {
+  el('trends-ats-trigger').addEventListener('click', () => toggleAtsPopover());
+  el('trends-ats-menu').addEventListener('change', () => { trendAtsLabel(); loadTrends(trendDrill); });
+  document.addEventListener('click', e => {
+    if (!el('trends-ats-menu').hidden && !e.target.closest('#trends-ats')) toggleAtsPopover(false);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !el('trends-ats-menu').hidden) toggleAtsPopover(false);
+  });
+}
 
 function initAlerts(){
   if (!window.google || !CFG.google_client_id) return;

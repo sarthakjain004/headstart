@@ -958,3 +958,80 @@ def test_trends_range_outside_the_data_returns_empty_not_503(trends_app):
     d = r.get_json()
     assert d["stamps"] == []
     assert d["series"] == []
+
+
+# ---- /trends ats scope (ADR-0075) --------------------------------------------------------
+
+_U1, _U2 = (
+    "2026-08-14T01:00:00+00:00",  # pre-ADR-0075: migrated, ats=all sentinel only
+    "2026-08-15T01:00:00+00:00",  # post-ADR-0075: real per-ats rows
+)
+
+
+def _ats_trends_csv(state: Path) -> None:
+    rows = [
+        "ts,version,metric,family,band,ats,count",
+        f"{_U1},2,stock,software-engineering,mid,all,100",
+        f"{_U1},2,stock,non-tech,all,all,10",
+        f"{_U2},2,stock,software-engineering,mid,greenhouse,60",
+        f"{_U2},2,stock,software-engineering,mid,lever,50",
+        f"{_U2},2,stock,ai-ml,mid,greenhouse,20",
+        f"{_U2},2,stock,non-tech,all,all,15",
+    ]
+    out = state / "data" / "state" / "role_trends.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def ats_trends_app(tmp_path_factory):
+    state = tmp_path_factory.mktemp("ats-state")
+    _ats_trends_csv(state)
+    with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
+        module._TRENDS = module._load_trends(
+            state / "data" / "state" / "role_trends.csv"
+        )
+        module._WATCH = {}
+        yield module
+
+
+def test_trends_no_ats_param_sums_every_ats_including_the_migration_sentinel(
+    ats_trends_app,
+):
+    d = ats_trends_app.app.test_client().get("/trends").get_json()
+    by_name = {s["name"]: s for s in d["series"]}
+    assert by_name["software-engineering"]["points"] == [
+        100,
+        110,
+    ]  # U1 sentinel + U2's 60+50
+    assert by_name["ai-ml"]["points"] == [None, 20]
+    assert d["totals"] == [110, 145]  # U1: 100+10, U2: 60+50+20+15
+
+
+def test_trends_ats_filter_excludes_the_migration_sentinel(ats_trends_app):
+    """A pre-ADR-0075 row's ats='all' matches no real ATS name, so a scoped request has no
+    row at all at the sentinel-only stamp — U1 drops out of `stamps` entirely rather than
+    appearing as a gap, the hard history wall the ADR calls out."""
+    d = ats_trends_app.app.test_client().get("/trends?ats=greenhouse").get_json()
+    assert d["stamps"] == [_U2]
+    by_name = {s["name"]: s for s in d["series"]}
+    assert by_name["software-engineering"]["points"] == [60]
+    assert by_name["ai-ml"]["points"] == [20]
+
+
+def test_trends_ats_filter_narrows_totals_to_the_selected_scope(ats_trends_app):
+    """Share is 'of what's in view': totals scope down with the ats filter exactly like every
+    other row does, not the whole unfiltered index (ADR-0075)."""
+    d = ats_trends_app.app.test_client().get("/trends?ats=greenhouse").get_json()
+    assert d["totals"] == [80]  # U2 only: 60 + 20
+
+
+def test_trends_multiple_ats_params_union(ats_trends_app):
+    d = (
+        ats_trends_app.app.test_client()
+        .get("/trends?ats=greenhouse&ats=lever")
+        .get_json()
+    )
+    assert d["stamps"] == [_U2]
+    by_name = {s["name"]: s for s in d["series"]}
+    assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
