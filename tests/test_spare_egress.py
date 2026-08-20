@@ -400,3 +400,154 @@ def test_report_includes_rotation_counts():
     spare_egress._rotations.update({"attempted": 2, "succeeded": 1, "failed": 1})
     lines = spare_egress.report()
     assert any("rotations" in line and "attempted 2" in line for line in lines)
+
+
+def _tracing(monkeypatch, addresses, *, colos=None):
+    """Stub the trace endpoint so successive observations report the given addresses in order.
+
+    A list rather than one value because the whole point of the feature is telling an observation
+    that *moved* from one that landed back on the same address.
+    """
+    seen = iter(addresses)
+    colo_seen = iter(colos or ["SJC"] * len(addresses))
+
+    class _Resp:
+        def __init__(self, ip, colo):
+            self.text = f"fl=123abc\nip={ip}\ncolo={colo}\nts=1\nwarp=on\n"
+
+    def _get(url, **kw):
+        return _Resp(next(seen), next(colo_seen))
+
+    monkeypatch.setattr(spare_egress._rq, "get", _get)
+
+
+def test_a_rotation_that_moves_is_told_apart_from_one_that_does_not(
+    monkeypatch, caplog
+):
+    """ADR-0067: rotation returns a different IP only ~11 times in 30, so a rotation *count* is
+    not a health signal. Only comparing addresses distinguishes a rotation that bought something
+    from one that spent ~2s and a closed gate to land on the address it already had."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    # The dial that put the first address in service never happened here (`_proxy` is set
+    # directly, bypassing `proxy_url`), so seed `_last_egress_ip` the same way a real dial would:
+    # via the first observed rotation.
+    _tracing(monkeypatch, ["104.28.232.96", "104.28.200.91", "104.28.200.91"])
+
+    with caplog.at_level("WARNING"):
+        for _ in range(3):
+            spare_egress.rotate()
+
+    text = caplog.text
+    assert "104.28.232.96 via SJC (first)" in text
+    assert "104.28.200.91 via SJC (moved)" in text
+    assert "104.28.200.91 via SJC (SAME as before)" in text
+
+    tallies = spare_egress.egress_ips()
+    assert tallies["moved"] == 1
+    assert tallies["repeat"] == 1
+    assert tallies["ip:104.28.200.91"] == 2
+
+
+def test_the_initial_dial_seeds_the_first_comparison(monkeypatch, caplog):
+    """The dial that puts the first address in service is itself an observation — without it the
+    shard's very first rotation has nothing to compare against."""
+    spare_egress.reset()
+    _rotating(monkeypatch)
+    _tracing(monkeypatch, ["9.9.9.9", "9.9.9.9"])
+
+    with caplog.at_level("WARNING"):
+        spare_egress.proxy_url()
+        monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+        spare_egress.rotate()
+
+    assert "9.9.9.9 via SJC (first)" in caplog.text
+    assert "9.9.9.9 via SJC (SAME as before)" in caplog.text
+
+
+def test_report_names_the_distinct_addresses_not_just_the_rotation_count(monkeypatch):
+    """The cross-shard number ADR-0067 cared about was distinct addresses (30 jobs shared 11 IPs),
+    which a rotation count cannot express."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    _tracing(
+        monkeypatch, ["1.1.1.1", "2.2.2.2", "2.2.2.2"], colos=["LAX", "SJC", "SJC"]
+    )
+    spare_egress.mark_walled("workday", 429)
+    for _ in range(3):
+        spare_egress.rotate()
+
+    line = next(x for x in spare_egress.report() if x.startswith("egress addresses"))
+    assert "2 distinct" in line
+    assert "2 comparison(s)" in line
+    assert "1 moved" in line
+    assert "1 returned the same IP" in line
+    assert "1.1.1.1" in line and "2.2.2.2" in line
+    assert "LAX" in line and "SJC" in line
+
+
+def test_an_unreadable_trace_never_fails_the_rotation(monkeypatch):
+    """Telemetry on the retry path. A trace endpoint that is slow or down must cost a log line,
+    never a working rotation."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    def _boom(*a, **kw):
+        raise RuntimeError("trace endpoint down")
+
+    monkeypatch.setattr(spare_egress._rq, "get", _boom)
+
+    assert spare_egress.rotate() is True
+    assert spare_egress.egress_ips()["unreadable"] == 1
+
+
+def test_a_direct_response_from_the_trace_is_not_recorded_as_an_egress_address(
+    monkeypatch,
+):
+    """`warp=off` means the trace never travelled the tunnel — recording its address would log the
+    runner's direct IP as though it were the egress the shard is actually using."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    class _Resp:
+        text = "fl=1\nip=1.2.3.4\ncolo=SJC\nwarp=off\n"
+
+    monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Resp())
+
+    assert spare_egress.rotate() is True
+    tallies = spare_egress.egress_ips()
+    assert tallies["unreadable"] == 1
+    assert "ip:1.2.3.4" not in tallies
+
+
+def test_observing_the_egress_ip_never_holds_the_rotation_gate_or_lock(monkeypatch):
+    """The trace is a ~4s network call; running it inside the rotation lock or the gate would
+    stall every proxied worker in the shard, not merely the rotators waiting on this rotation."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    gate_was_open_during_trace = []
+
+    def _get(url, **kw):
+        gate_was_open_during_trace.append(spare_egress._gate.is_set())
+        return type("R", (), {"text": "ip=5.5.5.5\ncolo=SJC\nwarp=on\n"})()
+
+    monkeypatch.setattr(spare_egress._rq, "get", _get)
+    spare_egress.rotate()
+
+    assert gate_was_open_during_trace == [True]
