@@ -1,6 +1,7 @@
 # ADR-0066: A recall widening that cannot change an existing answer
 
 - Status: Accepted
+- **Amended by:** [ADR-0071](0071-a-three-digit-number-condemns-the-whole-span.md) — one Tier-2 answer is withdrawn that was *faithful*, not wrong, so it falls outside the exception below; enumerated there
 - Date: 2026-08-19
 - Extends [ADR-0009](0009-experience-extraction.md) and [ADR-0018](0018-experience-seniority-fallback.md)
 - **Amends [ADR-0060](0060-narrative-guards-for-the-work-word-patterns.md)** on three points: how

@@ -1,7 +1,11 @@
 # ADR-0013: Experience-extraction plausibility guards — fix Tier 1, defer the Tier 2 anchor
 
 - Status: Accepted
-- **Amended by:** [ADR-0072](0072-a-three-digit-number-condemns-the-whole-span.md) — the ceiling rule below holds for 2-digit ceilings; a ceiling of 100+ now rejects the whole span, floor included
+- **Amended by:** [ADR-0072](0072-a-three-digit-number-condemns-the-whole-span.md) — in
+  **Tier 2 only**: `from_description` now rejects a span whose ceiling is 100+ outright,
+  floor included. The `from_field` ceiling rule recorded below is unchanged —
+  `from_field("8 to 150")` still answers 8, because a structured field is not prose and
+  carries no narrative risk.
 - Date: 2026-07-03
 
 ## Context

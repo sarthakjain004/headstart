@@ -1,7 +1,9 @@
 # ADR-0072: A 3-digit number condemns the whole span, floor included
 
 **Status:** accepted · **Date:** 2026-08-20 · **Amends:**
-[ADR-0013](0013-experience-plausibility-guards.md) (its ceiling rule, for 3-digit ceilings only)
+[ADR-0013](0013-experience-plausibility-guards.md) (its ceiling rule, in Tier 2 only) ·
+**Amends:** [ADR-0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md) (it
+changes one answer its exception does not cover — see *Consequences*)
 · **Relates to:** [ADR-0066](0066-a-recall-widening-that-cannot-change-an-existing-answer.md),
 [ADR-0060](0060-narrative-guards-for-the-work-word-patterns.md)
 
@@ -54,11 +56,26 @@ its own corpus measurement, and this defect is live now.
 
 ## Consequences
 
-Measured over the whole description store, 328,923 descriptions, every ATS: **1 record changes** —
+Measured over the whole description store, every ATS: **1 record changes** —
 `workday:husqvarnagroup/…:R-17525`, whose text reads *"You have 1-100 years of work experience"*,
-from `min_years=1` to no answer. Both mean "no effective constraint", so the practical difference
-is nil.
+from `min_years=1` to no answer. Both mean "no effective constraint" to the `min_years <= N OR
+min_years IS NULL` filter, so the practical difference is nil.
 
-The narrative class this closes is likewise near-absent from today's corpus; it is fixed because
-it is wrong, not because it is common. The cost of leaving it is unbounded and the cost of fixing
-it is one row.
+**This is not covered by ADR-0066's exception, and does not claim to be.** That exception permits
+withdrawing an answer that was *wrong* — "all eight are the `up to` guard withdrawing a *wrong*
+one". `1` is a faithful reading of "1-100 years": the text really does say 1. So this ADR amends
+ADR-0066's rule rather than sheltering under it, on the narrow ground that the row is enumerated,
+named, and provably inert against the only filter that consumes the field.
+
+**Tier 1 is deliberately left alone,** which ADR-0013 §2 would otherwise call an asymmetry
+("two tiers that should agree, disagreeing"): `from_field("1-100")` still answers 1. The tiers
+diverge because their inputs do. Tier 2 reads prose, where a range can be a sentence about a
+company rather than a requirement; Tier 1 reads a structured experience field an ATS emitted for
+this posting, which carries no narrative and where a stated floor is the employer's own. Nothing
+is gained by making a garbage *field* answer nothing instead of 1.
+
+**Only the 3-digit case closes.** A 2-digit narrative ceiling still leaks — *"brings 8 to 90 years
+of combined experience"* still answers 8 — because the real distinction is the idiom
+("combined", "collective", "the team"), not the number's size. Marking the range patterns
+`guarded=True` is the fix for that, and it needs its own measurement; this ADR only restores the
+pre-widening invariant.

@@ -648,13 +648,11 @@ def test_narrative_above_the_requirement_ceiling_is_still_refused():
 
 
 def test_an_absurd_ceiling_condemns_the_whole_span():
-    """A range whose top is implausible is narrative, floor included (ADR-0072).
+    """A range whose top is implausible is narrative, floor included (ADR-0072 has the argument).
 
-    `_DIGITS` widening to `\\d{1,3}` let a range pattern capture a 3-digit ceiling. The
-    requirement guard tests only `lo`, so the ceiling passed, and the code then nulled the
-    implausible `hi` and kept `lo` — turning "brings 8 to 150 years of combined experience" into
-    an 8-year requirement. That is worse than the bogus 0 it replaced: 0 constrains nobody, 8
-    hides the job from every junior.
+    The `_DIGITS` widening let a range pattern capture a 3-digit ceiling; the requirement guard
+    tests only `lo`, so the code nulled the implausible `hi` and kept a narrative floor. Before
+    the widening these sentences answered nothing at all — except the third, which answered 0.
     """
     assert (
         from_description("Our team brings 8 to 150 years of combined experience")
@@ -679,3 +677,10 @@ def test_an_ordinary_range_is_untouched_by_the_ceiling_rule():
     span = from_description("2-4 years of experience")
     assert (span.min_years, span.max_years) == (2, 4)
     assert from_description("5+ years of experience").min_years == 5
+
+
+def test_the_ceiling_rule_turns_on_exactly_at_one_hundred():
+    """99 keeps ADR-0013's behaviour, 100 is the new rule — pin the boundary itself."""
+    span = from_description("3 to 99 years experience")
+    assert (span.min_years, span.max_years) == (3, None)
+    assert from_description("3 to 100 years experience") is None
