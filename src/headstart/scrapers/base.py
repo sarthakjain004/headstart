@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
-from headstart import http, log
+from headstart import http, log, spare_egress
 from headstart.models import Job
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
@@ -264,6 +264,17 @@ class BaseScraper(ABC):
         bound comes before the global default so a detail pass cannot be polite on the sync path
         and 100-wide on the async one — the divergence that had Workday fetching 100 streams
         against a host its sync path deliberately held to 6.
+
+        Whatever that chain settles on is a **ceiling**, not the width: every step of it is static,
+        so a shard whose origin has already refused it would otherwise fan out exactly as wide as
+        one the origin is still serving. :func:`~headstart.spare_egress.stream_width` clamps the
+        resolved number once this scraper's egress group has walled (#195).
+
+        The clamp only ever narrows, and it outranks **every** step above it, the operator's
+        ``--streams`` included — so that flag now widens an unwalled group and not a walled one.
+        That is deliberate: ``--streams`` exists to pace an origin, and a walled origin has
+        already said what pace it will take. The kill switch for the async path itself is
+        ``HEADSTART_ASYNC_FANOUT=0`` (ADR-0016), which this does not touch.
         """
         if not items:
             return [default] * len(items)
@@ -272,6 +283,12 @@ class BaseScraper(ABC):
             concurrency = int(
                 env or self.detail_streams or self.detail_workers or _DEFAULT_H2_STREAMS
             )
+        # `_egress()` names the group this scraper's traffic is metered under, and is empty for one
+        # that never opted in — so the clamp keys on exactly what the requests themselves carry
+        # rather than a second guess at it that could drift from `egress_fallback_on`.
+        concurrency = spare_egress.stream_width(
+            self._egress().get("egress_group"), concurrency
+        )
         return asyncio.run(BaseScraper._gather_async(items, fn, concurrency, default))
 
     @staticmethod

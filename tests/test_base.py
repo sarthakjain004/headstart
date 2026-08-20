@@ -146,6 +146,40 @@ def test_fan_out_async_keeps_the_global_default_when_nothing_is_declared(monkeyp
     assert seen["concurrency"] == _DEFAULT_H2_STREAMS
 
 
+def test_fan_out_async_narrows_once_this_scrapers_egress_group_has_walled(monkeypatch):
+    """Every step of the chain above is static, so a shard the origin had already refused fanned
+    out exactly as wide as one it was still serving — 4 of 15 shards on run 32249345870 took 80%
+    of its 94,110 rate-limit retries that way (#195). The clamp keys on the group `_egress()`
+    names, so it reaches only the scrapers whose requests carry one."""
+    from headstart import spare_egress
+
+    seen = _spy_concurrency(monkeypatch)
+    monkeypatch.delenv("HEADSTART_H2_STREAMS", raising=False)
+
+    class _Walls(_StubScraper):
+        detail_streams = 25
+        egress_fallback_on = frozenset({429})  # ats "stub", inherited
+
+    spare_egress.reset()
+    try:
+        _Walls("x").fan_out_async([1], _echo)
+        assert seen["concurrency"] == 25, (
+            "unwalled, the scraper's own measured width stands"
+        )
+        _StubScraper("x").fan_out_async([1], _echo)
+        opted_out = seen["concurrency"]
+
+        spare_egress.mark_walled("stub", 429)
+        _Walls("x").fan_out_async([1], _echo)
+        assert seen["concurrency"] == spare_egress._WALLED_STREAM_WIDTH
+        # ...and the same wall leaves a scraper that never opted into the fallback alone: its
+        # requests name no group, so there is nothing this could have learned about its origin.
+        _StubScraper("x").fan_out_async([1], _echo)
+        assert seen["concurrency"] == opted_out
+    finally:
+        spare_egress.reset()
+
+
 def test_async_fanout_enabled_on_by_default(monkeypatch):
     # ADR-0016: async is the default; HEADSTART_ASYNC_FANOUT=0 is the escape hatch to sync
     monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
