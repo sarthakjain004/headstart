@@ -530,6 +530,31 @@ def is_nonprod(tenant: str, url: str) -> bool:
     return bool(_NONPROD.search(tenant or "") or _NONPROD.search(url or ""))
 
 
+# Eightfold tenants publishing the same board as another live tenant under a second vanity
+# hostname — same _EF_GROUP_ID, byte-identical job-id set, so both get indexed under different
+# Board keys and ~10,240 rows are served twice (#154). Being genuinely alive is precisely the
+# problem: `dedupe_eightfold_aliases.py --apply` buried these six, but a plain dead-TTL re-probe
+# would find them answering (measured 2026-08-20: all six still 200 their sitemap, 423-2,666 job
+# URLs each) and resurrect the duplicate. So the burial has to hold without asking the host —
+# the same pre-probe skip ADR-0034 gives non-prod boards, re-asserted free on every check (#157).
+# The winner named against each is the live tenant it duplicates.
+# TODO: regenerate, don't hand-maintain — a company onboarding a second vanity domain forms a
+# cluster this frozen set cannot see; have `dedupe_eightfold_aliases.py` write it to a data file.
+_EIGHTFOLD_ALIAS_LOSERS = {
+    "nvidia.eightfold.ai",  # jobs.nvidia.com
+    "qualcomm.eightfold.ai",  # careers.qualcomm.com
+    "micron.eightfold.ai",  # careers.micron.com
+    "hsbc.eightfold.ai",  # portal.careers.hsbc.com
+    "vodafone.eightfold.ai",  # jobs.vodafone.com
+    "dsm.eightfold.ai",  # dsm-firmenich.eightfold.ai
+}
+
+
+def _is_eightfold_alias_loser(ats: str, tenant: str) -> bool:
+    """A duplicate-hostname eightfold board — dead before any probe is spent (#157)."""
+    return ats == "eightfold" and (tenant or "") in _EIGHTFOLD_ALIAS_LOSERS
+
+
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
@@ -1305,9 +1330,8 @@ def main():
             _ctx.ats = (
                 ats  # so _note attributes this worker's failures to the right ATS
             )
-            if is_nonprod(
-                tenant, url
-            ):  # dead by convention — no probe spent (ADR-0034)
+            # dead by convention — no probe spent (ADR-0034 nonprod, #157 alias losers)
+            if is_nonprod(tenant, url) or _is_eightfold_alias_loser(ats, tenant):
                 verdict, jobs = DEAD, None
             else:
                 try:
