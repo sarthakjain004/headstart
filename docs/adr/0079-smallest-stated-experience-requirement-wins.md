@@ -1,4 +1,4 @@
-# ADR-0076: The smallest stated experience requirement wins
+# ADR-0079: The smallest stated experience requirement wins
 
 - Status: Accepted
 - Date: 2026-08-20

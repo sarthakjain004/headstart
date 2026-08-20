@@ -14,7 +14,7 @@ LLM tier is another ``from_*`` chained in :func:`extract`. Keeping each tier pur
 thing unit-testable without I/O.
 
 Five things about Tier 2 are load-bearing and easy to undo by accident (ADR-0060, ADR-0066,
-ADR-0076):
+ADR-0079):
 
 * **The smallest stated requirement wins**, so :func:`_scan` collects every surviving match and
   selects; it must not return the first one it finds. A description stating several is read at its
@@ -160,7 +160,7 @@ _FOLD = str.maketrans(
 # 30). It sat at 30 only while `_scan` answered with the leftmost match: a wider gap then also
 # decided *which* requirement a multi-requirement description reported, measured at 2,690 jobs,
 # mean +5.7 years. `_scan` now answers with the smallest stated floor regardless of position
-# (ADR-0076), so the width buys recall and nothing else.
+# (ADR-0079), so the width buys recall and nothing else.
 # `'` and `"` are here as the *targets* of `_FOLD`, which turns the curly forms into them before
 # any of this runs; `·` and `•` are the bullet characters boards actually emit. The curly forms
 # themselves are deliberately absent — folding means they can never reach a Tier-2 pattern.
@@ -411,7 +411,7 @@ _NARRATIVE_SPAN = re.compile(
 # "up to N years" states a *ceiling*, so reading it as `min_years` inverts the posting — a job open
 # to "candidates with up to 3 years of experience" was being served as requiring 3, hiding it from
 # the juniors it addresses. The faithful reading is a floor of 0 with N as the top, which is what
-# `_scan` now records (ADR-0076); withdrawing the number instead served the posting as stating no
+# `_scan` now records (ADR-0079); withdrawing the number instead served the posting as stating no
 # requirement at all, and left the scan hunting for a later occurrence — on one row, the company
 # boilerplate "more than 50 years of experience". Checked for every pattern, guarded or not,
 # because the inversion does not depend on which pattern found the number: the example above fires
@@ -443,7 +443,7 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
     """One pass of the Tier-2 patterns over already-folded text, answered by its smallest floor.
 
     Every match that survives the guards is collected and the **smallest** `min_years` among them
-    wins (ADR-0076), rather than whichever the leftmost pattern reached first. Its own `max_years`
+    wins (ADR-0079), rather than whichever the leftmost pattern reached first. Its own `max_years`
     travels with it: a floor from one sentence paired with a ceiling from another describes nothing
     anybody wrote. Selecting rather than returning early is what lets `_GAP` be as wide as recall
     wants, since position no longer decides the answer.

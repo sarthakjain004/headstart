@@ -514,7 +514,7 @@ def test_gerund_needs_an_object():
 
 def test_up_to_is_a_ceiling_not_a_floor():
     # "up to N years" states a maximum, so the floor it states is 0 — reading N as min_years
-    # inverts the posting (ADR-0076). Retention boilerplate and fixed-term contracts phrase a
+    # inverts the posting (ADR-0079). Retention boilerplate and fixed-term contracts phrase a
     # duration the same way and now read as 0-N rather than as nothing; that reads a requirement
     # into a sentence that states none, but costs no filtering, because a 0 floor and an unknown
     # one both pass `min_years <= your_years`.
