@@ -85,3 +85,4 @@ supersedes it and note the supersession in both.
 | [0074](0074-browse-and-paginate-the-search-index.md) | An empty Query browses; every result set paginates | 2026-08-20 |
 | [0075](0075-ats-becomes-a-trends-ledger-dimension.md) | `ats` becomes a trends-ledger dimension, filtered by exclusion at read time | 2026-08-20 |
 | [0076](0076-a-lost-page-is-a-truncation-until-most-of-them-are.md) | A page lost mid-crawl truncates the list; losing most of them fails the crawl | 2026-08-20 |
+| [0077](0077-smartrecruiters-pages-behind-a-cost-sized-cap.md) | SmartRecruiters pages behind a cost-sized cap | 2026-08-20 |
