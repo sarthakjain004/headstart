@@ -54,6 +54,33 @@ def test_is_nonprod(cl, tenant, url, nonprod):
     assert cl.is_nonprod(tenant, url) is nonprod
 
 
+# --- eightfold alias losers (#157) ----------------------------------------------------------
+# The same pre-probe shape, for a different reason: these six are alive, so only a skip that
+# never asks the host keeps #154's dedupe from being undone by the 90-day dead-TTL re-probe.
+
+
+@pytest.mark.parametrize(
+    ("ats", "tenant", "loser"),
+    [
+        # the six buried by dedupe_eightfold_aliases.py's 2026-08-16 run
+        ("eightfold", "nvidia.eightfold.ai", True),
+        ("eightfold", "qualcomm.eightfold.ai", True),
+        ("eightfold", "micron.eightfold.ai", True),
+        ("eightfold", "hsbc.eightfold.ai", True),
+        ("eightfold", "vodafone.eightfold.ai", True),
+        ("eightfold", "dsm.eightfold.ai", True),
+        # the winners each one duplicates must stay probeable — burying a cluster's only
+        # surviving board would cost the jobs outright, not just the duplicate copy
+        ("eightfold", "jobs.nvidia.com", False),
+        ("eightfold", "dsm-firmenich.eightfold.ai", False),
+        # no cross-ATS bleed: the set is exact hostnames, and hostnames are not ATS-unique
+        ("workday", "nvidia.eightfold.ai", False),
+    ],
+)
+def test_is_eightfold_alias_loser(cl, ats, tenant, loser):
+    assert cl._is_eightfold_alias_loser(ats, tenant) is loser
+
+
 # --- rate-limit gating ----------------------------------------------------------------------
 # A gate paces the boards that share one rate limit. Getting its *span* wrong is the hazard these
 # cover: too narrow and the breaker never trips (each tenant keeps its own strike counter); too

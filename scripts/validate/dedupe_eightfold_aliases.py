@@ -33,14 +33,14 @@ ledger is eightfold-only, so no `ats:` prefix is needed).
 `index sync/prune`'s live keep-set, so its already-indexed rows are evicted by the next
 `index prune` — via the plain off-board path (`plan_prune`'s `off_board`, not the case-variant
 `duplicate` group; that dedup is what fails to catch this problem *before* the fix, not the
-mechanism that fixes it after). But the marking is not durably protected against
-`check_liveness.py`'s own dead-TTL re-probe (`DEAD_TTL_DAYS`, 90 days by default) — a plain
-re-probe of a genuinely-live, 200-answering host would flip it back to `live` and silently
-re-admit the duplicate. ADR-0034 solved the identical durability problem for non-prod boards with
-a pre-probe skip (`_NONPROD_TENANTS`) inside `check_liveness.py` itself; the same shape belongs
-there for these tenants too, but that file carries unrelated uncommitted work as of this script's
-authorship and is deliberately not touched here. Re-run this script periodically (or after any
-`check_liveness.py` refresh) until that durability fix lands.
+mechanism that fixes it after).
+
+**Durability, closed in #157**: that marking on its own would not survive `check_liveness.py`'s
+dead-TTL re-probe (`DEAD_TTL_DAYS`, 90 days), since these hosts genuinely answer 200 and a plain
+re-probe flips them back to `live`. `check_liveness.py` now skips the six before spending any
+HTTP (`_EIGHTFOLD_ALIAS_LOSERS`, the shape ADR-0034 uses for non-prod boards). That set is a
+frozen snapshot of the 2026-08-16 run, so re-run this script periodically anyway — it re-verifies
+overlap live — and fold any newly-formed cluster into it.
 
     python scripts/validate/dedupe_eightfold_aliases.py
     python scripts/validate/dedupe_eightfold_aliases.py --apply
