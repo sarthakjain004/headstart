@@ -33,7 +33,10 @@ carries an unscraped-looking Board unchanged.
 rather than this run's: it counts, per Board, the embedded Jobs whose description the ADR-0050
 store has never settled. Those Jobs' derived columns cannot be repaired without the text, so the
 next run's ``scrape_plan`` reserves part of its exploration tail for the Boards holding them
-(ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes.
+(ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes. Two classes
+are counted *unreachable* rather than unsettled: rows on a disabled ATS, and rows whose Board this
+run scraped authoritatively without re-emitting them — those postings have expired off the Board,
+so no future scrape can settle them (#185).
 
 Seed the priority ledger from a full local corpus with::
 
@@ -59,6 +62,7 @@ from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
 from headstart.ingest import REPO_ROOT, board_failures, observability
+from headstart.ingest.index_plan import read_unauthoritative_boards, resolve_board
 from headstart.ingest.update_descriptions import settled_ids
 
 _log = log.get(__name__, __spec__)
@@ -70,6 +74,7 @@ _PRIORITY_LEDGER = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST_LEDGER = REPO_ROOT / "data" / "state" / "board_cost.csv"
 _FAILURES_LEDGER = REPO_ROOT / "data" / "state" / "board_failures.csv"
 _GAP_LEDGER = REPO_ROOT / "data" / "state" / "board_description_gap.csv"
+_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 _META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 
@@ -161,6 +166,38 @@ def failures(args: argparse.Namespace) -> int:
     return 0
 
 
+def _authoritative_scrape(
+    jobs: Path, unauthoritative: Path
+) -> tuple[set[str], set[str]]:
+    """The Boards whose scraped list this run can be read as their complete set of openings, and
+    every id those Boards emitted.
+
+    Boards are keyed like the gap counts themselves — ``board_of`` lowercased — so the two pair
+    (ADR-0049). An id can only ever be emitted by the Board whose key prefixes it, so one flat id
+    set answers "did this Board re-emit it" exactly as a per-Board set would.
+
+    A Board that wrote no lines is simply absent, whether it went unscraped this run or was
+    truncated to nothing, and absence is what leaves an id counted. The ADR-0053 half is only as
+    good as its file: ``read_unauthoritative_boards`` fails **open**, so an unreadable
+    ``unauthoritative_boards.json`` protects no Board here — the same bet ``index sync`` already
+    makes on that file, taken for a strictly smaller action (a count, not an eviction).
+    """
+    skip = read_unauthoritative_boards(unauthoritative)
+    boards: set[str] = set()
+    emitted: set[str] = set()
+    for job in iter_jobs(jobs):
+        # `skip` is keyed by the real `board_key()`, so the membership test resolves by prefix
+        # rather than through `board_of`, whose answer for a native id carrying a colon is a
+        # phantom Board no unauthoritative key matches (ADR-0049) — protection that silently
+        # missed exactly the Workday ids it most needs to cover. Only the *test* uses it; the
+        # key stays `board_of`'s so both sides of the comparison in `gap` are built alike.
+        if resolve_board(job["id"], skip).lower() in skip:
+            continue
+        boards.add(board_of(job["id"]).lower())
+        emitted.add(job["id"])
+    return boards, emitted
+
+
 def gap(args: argparse.Namespace) -> int:
     from headstart.scrapers.registry import DISABLED_ATS
 
@@ -180,8 +217,10 @@ def gap(args: argparse.Namespace) -> int:
         )
         return 0
 
+    scraped, emitted = _authoritative_scrape(args.jobs, args.unauthoritative_boards)
+
     counts: Counter[str] = Counter()
-    rows = unreachable = 0
+    rows = unreachable = expired = 0
     with args.meta.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -205,14 +244,24 @@ def gap(args: argparse.Namespace) -> int:
             # only case-insensitively, so keying this as-observed would strand every one of them.
             # It also folds ADR-0023's case-variant pairs (`.../External` and `.../external` are
             # one Board) into a single row instead of two half-counts.
-            counts[board_of(row["id"]).lower()] += 1
+            board = board_of(row["id"]).lower()
+            # An id its own Board's authoritative scrape did not re-emit has expired off that
+            # Board, and `reconcile()` only ever acts on ids the *current* scrape returned — so
+            # nothing can ever settle it, and counting it reserves gap quota no scrape can spend
+            # (#185). Boards absent from `scraped` are no evidence either way, so their ids stay
+            # unsettled — including one whose scrape came back unauthoritative this run.
+            if board in scraped and row["id"] not in emitted:
+                expired += 1
+                continue
+            counts[board] += 1
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     board_description_gap.save(args.ledger, dict(counts), today=today)
     jobs = sum(counts.values())
     _log.info(
         f"gap: {rows:,} stored rows | {len(held):,} settled | {jobs:,} unsettled across "
-        f"{len(counts):,} boards ({unreachable:,} on a disabled ATS, unreachable) -> {args.ledger}"
+        f"{len(counts):,} boards ({unreachable:,} on a disabled ATS, {expired:,} gone from a "
+        f"Board this run scraped in full — both unreachable) -> {args.ledger}"
     )
     for board, n in counts.most_common(10):
         _log.info(f"  {n:6,} unsettled  {board}")
@@ -287,6 +336,20 @@ def main() -> int:
         type=Path,
         default=_DESCRIPTIONS,
         help="the ADR-0050 description store (default: data/descriptions)",
+    )
+    p_gap.add_argument(
+        "--jobs",
+        type=Path,
+        default=_JOBS,
+        help="this run's scrape output; a Job its Board scraped without re-emitting has expired "
+        "off that Board, so it is unreachable rather than unsettled (default: data/jobs)",
+    )
+    p_gap.add_argument(
+        "--unauthoritative-boards",
+        type=Path,
+        default=_UNAUTHORITATIVE,
+        help="Boards whose scrape came back truncated or raised this run (ADR-0053); their "
+        "missing Jobs stay unsettled (default: data/state/unauthoritative_boards.json)",
     )
     p_gap.add_argument(
         "--ledger",
