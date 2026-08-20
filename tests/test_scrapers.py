@@ -260,8 +260,21 @@ def test_smartrecruiters_description_joins_requirement_sections():
 
 
 def _sr_offline(monkeypatch, scraper, payload):
-    """Run `fetch_raw` against `payload` with the detail pass stubbed out."""
-    monkeypatch.setattr(scraper, "_get", lambda: json.dumps(payload))
+    """Run `fetch_raw` against `payload` with the detail pass stubbed out.
+
+    ``payload["content"]`` is the *whole* board; the stub slices it by `offset` the way the real
+    listing does, so paging past page 1 reads further postings and then runs out.
+    """
+    from headstart.scrapers import smartrecruiters as sr
+
+    board = payload.get("content") or []
+
+    def _get(url=None):
+        offset = int(url.split("offset=")[1]) if url and "offset=" in url else 0
+        page = board[offset : offset + sr._PAGE_SIZE]
+        return json.dumps({**payload, "offset": offset, "content": page})
+
+    monkeypatch.setattr(scraper, "_get", _get)
     monkeypatch.setattr(scraper, "fan_out", lambda items, fn, **kw: [None] * len(items))
     monkeypatch.setattr(
         scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
@@ -330,6 +343,98 @@ def test_smartrecruiters_a_board_of_exactly_one_page_is_not_truncated(monkeypatc
         },
     )
 
+    assert scraper.truncated is None
+
+
+def test_smartrecruiters_page_cap_is_the_decided_number():
+    """ADR-0076 decided 5,000 postings, and every other test here reads the constant.
+
+    Without this the cap could be re-tuned to anything and the suite would stay green, which is
+    how a number chosen from a measurement quietly becomes a number chosen to feel safe.
+    """
+    from headstart.scrapers import smartrecruiters as sr
+
+    assert (sr._PAGE_SIZE, sr._MAX_PAGES) == (100, 50)
+
+
+@pytest.mark.skip(
+    reason="cap enforcement commented out for the initial uncapped rollout, see #227"
+)
+def test_smartrecruiters_marks_its_page_cap(monkeypatch):
+    """Paging stops at `_MAX_PAGES` and says so, so the unread tail is still not a delisting.
+
+    The cap is sized by cost, not by an assumption that the tail is junk (ADR-0076): measured
+    live 2026-08-20, tech density does *not* fall off down the list — 14.1% at offset 500 across
+    40 random boards over 500 postings, and `EndeavorITSolution` runs 62% tech at 8,478 deep.
+    """
+    from headstart.scrapers import smartrecruiters as sr
+
+    scraper = get_scraper("smartrecruiters", "dominos", "Dominos")
+    raw = _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": sr._PAGE_SIZE,
+            "totalFound": 24561,
+            # more board than the cap can read, so stopping is the scraper's choice
+            "content": [
+                {"id": str(n)} for n in range(sr._PAGE_SIZE * (sr._MAX_PAGES + 1))
+            ],
+        },
+    )
+
+    read = raw["content"]
+    assert len(read) == sr._PAGE_SIZE * sr._MAX_PAGES
+    # distinct ids: the offsets really advanced rather than re-reading page 1
+    assert len({p["id"] for p in read}) == sr._PAGE_SIZE * sr._MAX_PAGES
+    assert scraper.truncated and f"{sr._MAX_PAGES}-page cap" in scraper.truncated
+    assert "24561" in scraper.truncated
+
+
+def test_smartrecruiters_a_short_last_page_is_not_blamed_on_the_cap(monkeypatch):
+    """Truncated, but *not* by the cap: the last page came back short.
+
+    `page` alone reaches `_MAX_PAGES` either way, and `totalFound` is read off page 1 — so a board
+    that loses a posting mid-read lands exactly here. The reason string feeds the shard report
+    (ADR-0045), and a reason that names a cap which never fired is the false premise CLAUDE.md's
+    review rule exists to catch.
+    """
+    from headstart.scrapers import smartrecruiters as sr
+
+    scraper = get_scraper("smartrecruiters", "shrinking", "Shrinking")
+    board = sr._PAGE_SIZE * sr._MAX_PAGES - 1  # one short of a full final page
+    _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": sr._PAGE_SIZE,
+            "totalFound": board + 1,  # page 1 counted the posting that has since closed
+            "content": [{"id": str(n)} for n in range(board)],
+        },
+    )
+
+    assert scraper.truncated and "page cap" not in scraper.truncated
+
+
+def test_smartrecruiters_a_board_shorter_than_the_cap_is_read_whole(monkeypatch):
+    """Paging stops on a short page, and a board it fully read stays evictable (ADR-0053)."""
+    from headstart.scrapers import smartrecruiters as sr
+
+    scraper = get_scraper("smartrecruiters", "midsize", "Midsize")
+    raw = _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": sr._PAGE_SIZE,
+            "totalFound": 250,
+            "content": [{"id": str(n)} for n in range(250)],
+        },
+    )
+
+    assert len(raw["content"]) == 250  # page 1 alone would have read 100
     assert scraper.truncated is None
 
 
