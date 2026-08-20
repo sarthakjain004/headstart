@@ -468,7 +468,7 @@ def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
         def accounts_with_sets(self):
             return frozenset()
 
-        def subscriptions(self):
+        def all(self):
             return []
 
     seen = {}
