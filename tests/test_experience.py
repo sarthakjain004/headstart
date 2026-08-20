@@ -704,18 +704,19 @@ def test_seniority_reads_a_tech_discipline_manager():
     assert from_seniority(None, "Software Engineering Manager") == ExperienceSpan(
         5, None, "seniority"
     )
-    assert from_seniority(None, "Software Development Manager") == ExperienceSpan(
-        5, None, "seniority"
-    )
 
 
 def test_seniority_leaves_the_rest_of_the_manager_vocabulary_alone():
     # The bulk of the uncovered "manager" titles, none of which states a floor (#189). The last
-    # two are what the wider "<tech discipline> manager" list would have reached: ops and
-    # facilities roles, plus "development manager" swallowing the business kind.
+    # three are what a wider pattern would have reached but shouldn't: "IT Infrastructure
+    # Manager"/"Facilities Technical Manager" are ops/facilities, no reliable floor; "Software
+    # Development Manager" carries a genuinely different, unmeasured median (8, not 5) — pinning
+    # it here, not in the "engineering manager" pattern, keeps the two classes from being
+    # silently folded into one value.
     assert from_seniority(None, "Program Manager Non Tech") is None
     assert from_seniority(None, "Project Manager") is None
     assert from_seniority(None, "Business Development Manager") is None
     assert from_seniority(None, "HR and Admin Assistant / Manager") is None
     assert from_seniority(None, "IT Infrastructure Manager") is None
     assert from_seniority(None, "Facilities Technical Manager") is None
+    assert from_seniority(None, "Software Development Manager") is None

@@ -505,10 +505,10 @@ _SENIORITY = [
     # Infrastructure Manager", "Facilities Technical Manager-Muskogee, OK") — the no-reliable-floor
     # class this pattern exists to exclude, along with the "Program Manager Non Tech" / "Project
     # Manager" / "Business Development Manager" bulk of the 1,003 uncovered manager titles (#189).
+    # "Software development manager" was tried too and dropped: its own 19-sample median is 8, not
+    # 5 — a different, unmeasured class this pattern must not silently fold in at the wrong value.
     (
-        re.compile(
-            r"\b(?:engineering|software\s+development)\s+manager\b", re.IGNORECASE
-        ),
+        re.compile(r"\bengineering\s+manager\b", re.IGNORECASE),
         5,
     ),
     (
