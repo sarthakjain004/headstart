@@ -586,16 +586,20 @@ def test_tier_two_captures_a_three_digit_year_whole():
     `_DIGITS` was `\\d{1,2}`, so "105 years" matched the trailing "05" and returned 5, and
     "100 years" returned 0 — a company-history sentence answering as a real requirement.
     ADR-0013 widened `_FIELD` for exactly this reason, "so a 3-digit value is captured whole
-    and the plausibility guard can reject it", but scoped itself to Tier 1 and explicitly
-    *deferred* the Tier-2 anchor, which needed corpus access to settle. This un-defers it.
+    and the plausibility guard can reject it", but scoped that widening to Tier 1. What it
+    deferred was something else — the direction-agnostic Tier-2 *anchor*, still pinned by the
+    strict xfail above. This widens Tier 2's digit capture; the deferred anchor stays deferred.
     """
     assert from_description("with 105 years of experience") is None
     assert from_description("over 100 years of experience") is None
     assert from_description("300 years of experience") is None
-    # Measured over the whole description store — 328,923 descriptions, every ATS: 733 rows
-    # swap a bogus 0 for the requirement the text actually states, ~276 narrative rows stop
-    # answering at all, and ~8 lose a real requirement to a separator-less range (PR body).
-    # The company-history sentence below is the shape behind the 276.
+    # Measured over the whole description store — 328,923 descriptions, every ATS: 1,019 rows
+    # change. 736 keep a Tier-2 answer but move its value, all but 5 of them off a bogus 0; those
+    # 5 go non-zero to a different non-zero (10->5, 10->6, 10->4, 10->5, 20->1). 283 stop
+    # answering, and 26 of those had a real prior value — mostly separator-less ranges, where
+    # "810 years" is "8-10" with the hyphen lost upstream. An earlier note here said "~8"; that
+    # came from bucketing by keyword rather than reading the rows, and undercounted.
+    # The company-history sentence below is the shape behind the bulk of the 283.
     assert (
         from_description(
             "a team with more than 100 years of combined experience in payments"
@@ -619,8 +623,10 @@ def test_the_requirement_ceiling_still_refuses_a_narrative_range():
 
     Moving it after recovery restores a floor first and then waves the pair through, re-opening
     the hole ADR-0066 closed: "The anchor word says nothing about genre; the magnitude does."
-    Measured both ways over 116,463 descriptions: moving it changed nothing at all, so it buys
-    no recall and costs exactly these sentences.
+    Measured both ways over 328,923 descriptions: moving it changes 6 rows, and every one is a
+    narrative sentence gaining a bogus span (15-25, 18-22, 18-25, 18-28, 20-25, and one 8 -> 16-21).
+    So it buys no recall, costs exactly these sentences, and an earlier note here claiming it
+    "changed nothing at all" was measured against a scan that raced the edit it was testing.
     """
     assert (
         from_description(
