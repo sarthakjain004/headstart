@@ -27,8 +27,14 @@ function fakeEl() {
     // reading `#q` even when this harness only cares about Trends) sees an empty query
     // rather than throwing on `undefined.trim()`.
     innerHTML: '', textContent: '', hidden: false, style: {}, value: '',
-    querySelectorAll: () => [],
+    // The redesigned drawTrends() queries into #trends-chart/#trends-legend for the hover layer
+    // and the emphasis pass (querySelector/querySelectorAll). Null/empty is the correct stub
+    // answer — every call site already guards on "not found" for the real DOM's own sake (the
+    // crosshair group doesn't exist until the first draw), so this never needs to be smarter.
+    querySelectorAll: () => [], querySelector: () => null,
     setAttribute() {}, getAttribute: () => null, addEventListener() {},
+    tabIndex: 0, classList: { toggle() {}, add() {}, remove() {} },
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
   };
 }
 
@@ -45,10 +51,15 @@ function loadApp() {
       getElementById: id => (nodes[id] ||= fakeEl()),
       addEventListener() {},
       querySelectorAll: () => [],
+      // seriesColor() reads categorical-slot custom properties off :root at draw time (a theme
+      // flip repaints correctly instead of freezing on a hardcoded hex array — see app.js). The
+      // stub's exact color is irrelevant to every test here; only the structural HTML is asserted.
+      documentElement: { getAttribute: () => null, setAttribute() {} },
     },
     window: { addEventListener() {}, location: { hash: '' } },
     location: { hash: '' },
     console, CFG: {}, URLSearchParams, Date, Math, isNaN,
+    getComputedStyle: () => ({ getPropertyValue: () => '#000000' }),
     fetch: url => { fetches.push(String(url)); return Promise.resolve({ ok: false }); },
   };
   ctx.globalThis = ctx;
@@ -56,6 +67,7 @@ function loadApp() {
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
+    + ' colorSlot: name => seriesColorAssignment.get(name),'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
   vm.runInNewContext(src, ctx);
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
@@ -66,7 +78,7 @@ function loadApp() {
 
 const mk = (name, label, latest) => ({ name, label, points: [latest, latest], latest });
 
-/** Ten series, so four sit past CHART_MAX (8) and are listed-but-not-charted. */
+/** Ten series, so two (ai-ml, data-science) sit past CHART_MAX (8) and fold into the Other row. */
 function fixture() {
   return {
     version: 2, metric: 'stock', split_by: 'family',
@@ -108,11 +120,24 @@ test('a category with no watched roles carries no marker', () => {
   assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'qa-test'), /class="drill"/);
 });
 
-test('a row past CHART_MAX is not marked — clicking it would not drill', () => {
+test('a row past CHART_MAX no longer appears by name — it is folded into Other', () => {
   const { t, nodes } = loadApp();
   t.set(fixture(), null);   // ai-ml is 9th here
   t.draw();
-  assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'ai-ml'), /class="drill"/);
+  const html = nodes['trends-legend'].innerHTML;
+  assert.equal(row(html, 'ai-ml'), '');           // no row named ai-ml exists any more
+  assert.notEqual(row(html, '__other__'), '');    // it is summed into the Other row instead
+  assert.doesNotMatch(row(html, '__other__'), /class="drill"/);
+});
+
+test('the Other row sums every series past CHART_MAX', () => {
+  const { t, nodes } = loadApp();
+  // ai-ml (2000) + data-science (1000) are the two past CHART_MAX in fixture().
+  t.set(fixture(), null);
+  t.draw();
+  // count unit (not share) makes the summed value land on a fixed, easy-to-check number.
+  const other = row(nodes['trends-legend'].innerHTML, '__other__');
+  assert.match(other, /Other \(2 smaller categories\)/);
 });
 
 test('clicking a marked row opens the roles split it advertised', () => {
@@ -129,28 +154,37 @@ test('clicking a category without watched roles opens the experience bands', () 
   assert.equal(t.split(), 'bands');
 });
 
-test('charted rows are real buttons; listed-but-uncharted rows are not interactive', () => {
+test('charted rows are real buttons; the Other row is not interactive', () => {
   const { t, nodes } = loadApp();
   t.set(fixture(), null);
   t.draw();
   const html = nodes['trends-legend'].innerHTML;
   const charted = row(html, 'software-engineering');
-  const uncharted = row(html, 'ai-ml');            // 9th, past CHART_MAX
+  const other = row(html, '__other__');            // the aggregate of everything past CHART_MAX
   assert.match(charted, /role="button"/);
   assert.match(charted, /tabindex="0"/);
-  assert.doesNotMatch(uncharted, /role="button"/);
-  assert.doesNotMatch(uncharted, /tabindex/);
+  assert.doesNotMatch(other, /role="button"/);
+  assert.doesNotMatch(other, /tabindex/);
   // Scoped to these rows, not the whole legend: a future real toggle must not fail this.
   assert.doesNotMatch(charted, /aria-pressed/);
-  assert.doesNotMatch(uncharted, /aria-pressed/);
+  assert.doesNotMatch(other, /aria-pressed/);
   // The role belongs on the inner .row so the <li> keeps its implicit `listitem`.
   assert.match(charted, /<span class="row"[^>]*role="button"/);
 });
 
-test('an uncharted row is inert — clicking it issues no request', () => {
+test('the Other row is inert — clicking it issues no request', () => {
   const { t, fetches } = loadApp();
   t.set(fixture(), null);
-  t.click('ai-ml');                                 // 9th: listed, not charted
+  // `__other__` is not a real family name, so trendClick's findIndex(-1) guard catches it —
+  // the SAME guard an unknown/mistyped name relies on, not a special case added for Other.
+  t.click('__other__');
+  assert.deepEqual(fetches, []);
+});
+
+test('a name past CHART_MAX is still inert if clicked directly (defence in depth)', () => {
+  const { t, fetches } = loadApp();
+  t.set(fixture(), null);
+  t.click('ai-ml');                                 // 9th: real name, but past CHART_MAX
   assert.deepEqual(fetches, []);
 });
 
@@ -208,6 +242,43 @@ test('an unknown series name is ignored rather than drilled', () => {
   // ignored-click state and the fallback a drilled unknown name would land on.
   t.click('no-such-family');
   assert.deepEqual(fetches, []);
+});
+
+test('a charted category keeps its color slot when a filter reshuffles the ranking', () => {
+  // The anti-pattern this guards against: color assigned by array position repaints a category
+  // when a filter merely changes who ranks where — a reader who learned "AI/ML is violet" must
+  // not see it turn blue because Metric/Unit/ATS changed the order. Reverse only the top 8 (the
+  // ones actually charted), leaving the same 8 names on screen, just re-ranked — a real filter
+  // reshuffle never changes WHICH 8 make the cut and which 2 fall into Other in the same breath.
+  const { t } = loadApp();
+  const f = fixture();
+  t.set(f, null);
+  t.draw();
+  const chartedNames = f.series.slice(0, t.chartMax).map(s => s.name);
+  const before = chartedNames.map(name => t.colorSlot(name));
+
+  const reordered = { ...f, series: [...f.series.slice(0, t.chartMax)].reverse().concat(f.series.slice(t.chartMax)) };
+  t.set(reordered, null);
+  t.draw();
+  chartedNames.forEach((name, i) => {
+    assert.equal(t.colorSlot(name), before[i], `${name} changed color slot after a pure reorder`);
+  });
+});
+
+test('a slot vacated by a name that drops off screen is free for a new entrant', () => {
+  // Complements the stability test above: the cache must not grow unbounded or starve a
+  // genuinely new top-8 entrant just because an old name is still technically in the Map.
+  const { t } = loadApp();
+  const f = fixture();
+  t.set(f, null);
+  t.draw();                                        // 8 charted slots filled, 0-7
+  const dropped = f.series[7].name;                 // mobile-development — about to fall off
+
+  const swapped = { ...f, series: [f.series[8], ...f.series.slice(0, 7)] };   // ai-ml takes its place
+  t.set(swapped, null);
+  t.draw();
+  assert.equal(t.colorSlot(dropped), undefined);     // no longer drawn -> no longer cached
+  assert.ok(t.colorSlot('ai-ml') != null);            // the new 8th got a real slot, not undefined
 });
 
 // ---- ATS picker (ADR-0075) ----------------------------------------------------------------

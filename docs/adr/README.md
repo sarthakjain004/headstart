@@ -88,3 +88,4 @@ supersedes it and note the supersession in both.
 | [0077](0077-smartrecruiters-pages-behind-a-cost-sized-cap.md) | SmartRecruiters pages behind a cost-sized cap | 2026-08-20 |
 | [0078](0078-width-narrows-once-the-origin-has-walled.md) | Fan-out width narrows once the origin has walled, and only once it has | 2026-08-20 |
 | [0079](0079-smallest-stated-experience-requirement-wins.md) | The smallest stated experience requirement wins | 2026-08-20 |
+| [0080](0080-trends-chart-redesign.md) | Trends chart redesign — validated palette, Other bucket, hover layer, radiogroup ARIA | 2026-08-20 |

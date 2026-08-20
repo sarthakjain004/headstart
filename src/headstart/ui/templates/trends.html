@@ -3,18 +3,19 @@
     <h2>Which tech roles are growing</h2>
     <span class="note" id="trends-scope"></span>
     <span class="trends-toggles">
-      <span class="seg" id="trends-metric" role="group" aria-label="Measure">
-        <button data-metric="stock" aria-pressed="true">All openings</button>
-        <button data-metric="new" aria-pressed="false">New this week</button>
+      <span class="seg" id="trends-metric" role="radiogroup" aria-label="Measure">
+        <button data-metric="stock" role="radio" aria-checked="true" tabindex="0">All openings</button>
+        <button data-metric="new" role="radio" aria-checked="false" tabindex="-1">New this week</button>
       </span>
-      <span class="seg" id="trends-unit" role="group" aria-label="Unit">
-        <button data-unit="share" aria-pressed="true">Share</button>
-        <button data-unit="count" aria-pressed="false">Count</button>
+      <span class="seg" id="trends-unit" role="radiogroup" aria-label="Unit">
+        <button data-unit="share" role="radio" aria-checked="true" tabindex="0">Share</button>
+        <button data-unit="count" role="radio" aria-checked="false" tabindex="-1">Count</button>
       </span>
-      <span class="seg" id="trends-split" role="group" aria-label="Drill" hidden>
-        <button data-split="bands" aria-pressed="true">By level</button>
-        <button data-split="roles" aria-pressed="false">By role</button>
+      <span class="seg" id="trends-split" role="radiogroup" aria-label="Drill" hidden>
+        <button data-split="bands" role="radio" aria-checked="true" tabindex="0">By level</button>
+        <button data-split="roles" role="radio" aria-checked="false" tabindex="-1">By role</button>
       </span>
+      <button class="ghost" id="trends-table-toggle" type="button" aria-pressed="false">Table view</button>
       <span class="ats-pick" id="trends-ats">
         <button class="ghost" id="trends-ats-trigger" type="button"
                 aria-haspopup="true" aria-expanded="false">All ATS ▾</button>
@@ -32,10 +33,20 @@
     <button class="ghost" id="trends-range-clear">Clear</button>
   </div>
   <div class="trends-note" id="trends-empty"></div>
-  <div class="trends-grid">
-    <svg id="trends-chart" viewBox="0 0 720 260" preserveAspectRatio="none"
-         role="img" aria-label="Open roles over time by category"></svg>
+  <div class="trends-error" id="trends-error" hidden>
+    <span id="trends-error-msg"></span>
+    <button class="ghost" id="trends-retry" type="button">Retry</button>
+  </div>
+  <div class="trends-grid" id="trends-viz">
+    <div class="trends-chart-wrap">
+      <svg id="trends-chart" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="Open roles over time by category"></svg>
+      <div class="trends-tooltip" id="trends-tooltip" hidden></div>
+    </div>
     <ul class="trends-legend" id="trends-legend"></ul>
+  </div>
+  <div class="trends-table-wrap" id="trends-table-wrap" hidden>
+    <table class="trends-table" id="trends-table"></table>
   </div>
   <div class="note" id="trends-foot"></div>
 </section>
