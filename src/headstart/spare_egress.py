@@ -45,6 +45,8 @@ import threading
 import time
 from collections import Counter, defaultdict
 
+from curl_cffi import requests as _rq
+
 from headstart import log
 
 __all__ = [
@@ -184,6 +186,7 @@ def proxy_url() -> str | None:
         _proxy = _connect()
         _resolved = True
         took = time.monotonic() - started
+        connected = _proxy
         if _proxy:
             _log.warning(
                 f"spare egress: connected in {took:.1f}s, routing via {_proxy}"
@@ -193,7 +196,12 @@ def proxy_url() -> str | None:
                 f"spare egress: unavailable after {took:.1f}s — every walled Board this run "
                 f"stays on the spent origin"
             )
-        return _proxy
+    # Outside `_lock`, same reasoning as `rotate`'s tail: this is the FIRST address the shard
+    # egresses from, and without it the shard's first rotation has nothing to compare against and
+    # reports `(first)` when it should be able to say `(moved)`/`(SAME as before)`.
+    if connected:
+        _observe_egress_ip()
+    return _proxy
 
 
 # --- which groups have spent their budget -------------------------------------------------------
@@ -312,13 +320,16 @@ def report() -> list[str]:
         )
     addresses = egress_ips()
     seen = {k[3:] for k in addresses if k.startswith("ip:")}
+    colos = {k[5:] for k in addresses if k.startswith("colo:")}
     if seen or addresses.get("unreadable"):
         # Distinct addresses, not rotations: ADR-0067's finding is that a colo carries a 1-3
         # address pool, so "40 rotations across 2 addresses" is the shape to notice and a bare
-        # rotation count hides it completely.
+        # rotation count hides it completely. "comparison(s)", not "rotation(s)": the first
+        # observation has nothing to compare against, so this is one less than the rotations
+        # that actually produced an address.
         lines.append(
             f"egress addresses: {len(seen)} distinct across "
-            f"{addresses['moved'] + addresses['repeat']} rotation(s) "
+            f"{addresses['moved'] + addresses['repeat']} comparison(s) "
             f"({addresses['moved']} moved, {addresses['repeat']} returned the same IP"
             + (
                 f", {addresses['unreadable']} unreadable"
@@ -327,6 +338,7 @@ def report() -> list[str]:
             )
             + ")"
             + (f" — {', '.join(sorted(seen))}" if seen else "")
+            + (f" via colo {', '.join(sorted(colos))}" if colos else "")
         )
     causes = rotation_causes()
     if causes:
@@ -503,6 +515,7 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
         with _rotation_lock:
             _rotation_causes[board] += 1
     seen = _rotation_generation
+    fresh = False
     if deadline is None:
         deadline = wait_deadline()
     with _rotated:
@@ -563,15 +576,21 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
             _rotations["succeeded"] += 1
             _log.warning(
                 f"spare egress: rotated to a fresh egress IP (#{_rotation_generation})"
-                + _observe_egress_ip()
             )
-            return True
+            fresh = True
         finally:
             _gate.set()  # one place, so no exit path can strand the shard behind a closed gate
             _rotated.notify_all()  # and release the waiters onto whatever this produced
+    # Deliberately outside the `with`: the gate is open and the rotation lock released before the
+    # trace runs. Inside, its timeout would be added to `_ROTATION_WAIT_CAP` for every queued
+    # rotator *and* — because `proxy_for` blocks on the same gate — would stall every proxied
+    # worker in the shard, not merely the rotators. Telemetry must not be able to do that.
+    if fresh:
+        _observe_egress_ip()
+    return fresh
 
 
-def _observe_egress_ip() -> str:
+def _observe_egress_ip() -> None:
     """Read the address this rotation actually landed on, and say whether it moved.
 
     ADR-0067 measured that `systemctl restart warp-svc` returns a *different* egress IP only about
@@ -587,41 +606,57 @@ def _observe_egress_ip() -> str:
     So the returned suffix is the health signal the counters cannot be. `same` means the rotation
     bought nothing — the caller still paid ~2s and a closed gate for the address it already had.
 
-    Bounded and swallowed on every failure: this is telemetry attached to the retry path, and a
-    trace endpoint being slow or down must never turn a working rotation into a failed one. The
-    empty string on failure keeps the log line valid rather than annotating it with noise.
+    The colo rides along because ADR-0067 found it is *the* determinant of how much rotation can
+    ever achieve — a colo carries one to three addresses, so LAX or SJC cannot move at all — and it
+    costs nothing extra, arriving in the same response.
+
+    Called with **no lock held and the gate open**. Bounded and swallowed on every failure: this is
+    telemetry attached to the retry path, and a trace endpoint being slow or down must never turn a
+    working rotation into a failed one.
     """
     global _last_egress_ip
-    proxy = _proxy
+    with _lock:
+        proxy = _proxy
     if not proxy:
-        return ""
+        return
     try:
-        from curl_cffi import requests as _rq
-
         body = _rq.get(
             _TRACE_URL,
             proxies={"http": proxy, "https": proxy},
             timeout=_TRACE_TIMEOUT,
         ).text
     except Exception:  # noqa: BLE001 — telemetry must never fail a rotation
-        _egress_ips["unreadable"] += 1
-        return ""
-    ip = next(
-        (ln[3:] for ln in body.splitlines() if ln.startswith("ip=")),
-        "",
-    )
+        with _rotation_lock:
+            _egress_ips["unreadable"] += 1
+        return
+    fields = dict(line.split("=", 1) for line in body.splitlines() if "=" in line)
+    ip = fields.get("ip", "")
     if not ip:
-        _egress_ips["unreadable"] += 1
-        return ""
-    moved = _last_egress_ip is not None and ip != _last_egress_ip
-    if _last_egress_ip is None:
-        verdict = "first"
-    else:
-        verdict = "moved" if moved else "SAME as before"
-        _egress_ips["moved" if moved else "repeat"] += 1
-    _egress_ips[f"ip:{ip}"] += 1
-    _last_egress_ip = ip
-    return f" -> {ip} ({verdict})"
+        with _rotation_lock:
+            _egress_ips["unreadable"] += 1
+        return
+    colo = fields.get("colo", "?")
+    # `warp=off` means the trace did not travel the tunnel, so the address is the direct one and
+    # would be a lie in this log line. Say so rather than record it as an egress address.
+    if fields.get("warp", "on") == "off":
+        _log.warning(
+            "spare egress: trace reports warp=off — not recording a direct address"
+        )
+        with _rotation_lock:
+            _egress_ips["unreadable"] += 1
+        return
+    with _rotation_lock:
+        previous = _last_egress_ip
+        if previous is None:
+            verdict = "first"
+        else:
+            moved = ip != previous
+            verdict = "moved" if moved else "SAME as before"
+            _egress_ips["moved" if moved else "repeat"] += 1
+        _egress_ips[f"ip:{ip}"] += 1
+        _egress_ips[f"colo:{colo}"] += 1
+        _last_egress_ip = ip
+    _log.warning(f"spare egress: now egressing from {ip} via {colo} ({verdict})")
 
 
 def egress_ips() -> Counter[str]:
