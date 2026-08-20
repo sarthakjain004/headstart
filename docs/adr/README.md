@@ -83,3 +83,4 @@ supersedes it and note the supersession in both.
 | [0072](0072-a-three-digit-number-condemns-the-whole-span.md) | A 3-digit number condemns the whole span, floor included | 2026-08-20 |
 | [0073](0073-narrow-six-retail-workday-boards-at-the-source.md) | Narrow six retail-dominated Workday boards at the source | 2026-08-20 |
 | [0074](0074-browse-and-paginate-the-search-index.md) | An empty Query browses; every result set paginates | 2026-08-20 |
+| [0075](0075-ats-becomes-a-trends-ledger-dimension.md) | `ats` becomes a trends-ledger dimension, filtered by exclusion at read time | 2026-08-20 |

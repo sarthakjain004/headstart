@@ -39,10 +39,14 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
         pa.field("employment_type", pa.string()),
         pa.field("min_years", pa.int32()),
         pa.field("vector", pa.list_(pa.float32(), _DIM)),
+        pa.field("ats", pa.string()),
     ]
     if any("first_seen" in r for r in rows):
         fields.append(pa.field("first_seen", pa.string()))
     schema = pa.schema(fields)
+    # Every served row carries an ats; tests that don't care which get one shared default so
+    # their (family, band) assertions still map to exactly one row (ADR-0075).
+    rows = [{"ats": "greenhouse", **r} for r in rows]
     lancedb.connect(db_dir).create_table(
         PROD_TABLE, pa.Table.from_pylist(rows, schema=schema)
     )
@@ -158,6 +162,55 @@ def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypa
     assert ("data-science", "mid") not in rows  # only non-empty groups
 
 
+def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
+    tmp_path, monkeypatch
+):
+    """ADR-0075: two rows in the same (family, band) but different ats each get their own
+    ledger row, and the non-tech diagnostic is always ats='all' — never split, same as it's
+    never banded."""
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    x = [1.0, 0.0, 0.0, 0.0]  # -> software-engineering
+    z = [0.0, 0.0, 1.0, 0.0]  # -> NON-TECH
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Backend Dev",
+                "employment_type": "full_time",
+                "min_years": 5,
+                "vector": x,
+                "ats": "greenhouse",
+            },
+            {
+                "id": "b",
+                "title": "Backend Dev",
+                "employment_type": "full_time",
+                "min_years": 5,
+                "vector": x,
+                "ats": "lever",
+            },
+            {
+                "id": "c",
+                "title": "Data Entry Clerk",
+                "employment_type": None,
+                "min_years": 2,
+                "vector": z,
+                "ats": "lever",
+            },
+        ],
+    )
+    ledger = _run(tmp_path, monkeypatch)
+
+    rows = {
+        (r["family"], r["band"], r["ats"]): r["count"]
+        for r in csv.DictReader(ledger.open())
+    }
+    assert rows[("software-engineering", "senior", "greenhouse")] == "1"
+    assert rows[("software-engineering", "senior", "lever")] == "1"
+    assert rows[("non-tech", "all", "all")] == "1"  # never split by ats
+
+
 def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
     _centroids(tmp_path / "rc", tmp_path / "families.json")
     _table(
@@ -176,7 +229,7 @@ def test_ledger_appends_with_one_header(tmp_path, monkeypatch):
     _run(tmp_path, monkeypatch)  # second run appends
 
     lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,count"
+    assert lines[0] == "ts,version,metric,family,band,ats,count"
     assert (
         len(lines) == 5
     )  # header + (one stock group + the non-tech diagnostic) per run
@@ -462,9 +515,12 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
     assert not ledger.exists()
 
 
-def test_old_ledger_is_migrated_in_place_before_the_first_append(tmp_path, monkeypatch):
-    """The ledger predates the metric column and is append-only on HF, so the migration happens
-    where the appends do — old rows become metric=stock exactly, never a guess."""
+def test_pre_metric_ledger_is_migrated_in_place_before_the_first_append(
+    tmp_path, monkeypatch
+):
+    """The ledger predates the metric AND ats columns and is append-only on HF, so the
+    migration happens where the appends do — old rows become metric=stock, ats=all exactly,
+    never a guess."""
     ledger = tmp_path / "role_trends.csv"
     ledger.write_text(
         "ts,version,family,band,count\n"
@@ -489,12 +545,53 @@ def test_old_ledger_is_migrated_in_place_before_the_first_append(tmp_path, monke
     _run(tmp_path, monkeypatch)
 
     lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,count"
-    assert lines[1] == "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,10"
+    assert lines[0] == "ts,version,metric,family,band,ats,count"
+    assert (
+        lines[1] == "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,all,10"
+    )
     assert sum(1 for line in lines if line.startswith("ts,")) == 1
     # every row — migrated and appended alike — parses under the one header
     rows = list(csv.DictReader(ledger.open()))
     assert all(r["metric"] in ("stock", "new") and r["count"].isdigit() for r in rows)
+
+
+def test_pre_ats_ledger_is_migrated_in_place_before_the_first_append(
+    tmp_path, monkeypatch
+):
+    """A ledger already on the ADR-0051 six-column shape (has metric, not ats) gets only
+    ats=all stamped — the metric it already carries is trusted, not re-derived."""
+    ledger = tmp_path / "role_trends.csv"
+    ledger.write_text(
+        "ts,version,metric,family,band,count\n"
+        "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,10\n"
+        "2026-08-11T00:00:00+00:00,2,new,software-engineering,mid,4\n",
+        encoding="utf-8",
+    )
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    x = [1.0, 0.0, 0.0, 0.0]
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+            }
+        ],
+    )
+    _run(tmp_path, monkeypatch)
+
+    lines = ledger.read_text().splitlines()
+    assert lines[0] == "ts,version,metric,family,band,ats,count"
+    assert (
+        lines[1] == "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,all,10"
+    )
+    assert lines[2] == "2026-08-11T00:00:00+00:00,2,new,software-engineering,mid,all,4"
+    assert sum(1 for line in lines if line.startswith("ts,")) == 1
+    rows = list(csv.DictReader(ledger.open()))
+    assert all(r["ats"] for r in rows)  # migrated and freshly-appended rows alike
 
 
 def test_a_zero_byte_ledger_does_not_sink_the_run(tmp_path, monkeypatch):
@@ -519,7 +616,7 @@ def test_a_zero_byte_ledger_does_not_sink_the_run(tmp_path, monkeypatch):
     _run(tmp_path, monkeypatch)
 
     lines = ledger.read_text().splitlines()
-    assert lines[0] == "ts,version,metric,family,band,count"
+    assert lines[0] == "ts,version,metric,family,band,ats,count"
     assert len(lines) == 3  # header + the one group + the non-tech diagnostic
 
 
@@ -561,6 +658,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
                 "employment_type": "full-time",
                 "min_years": 3,
                 "vector": [1.0, 0.0, 0.0, 0.0],
+                "ats": "greenhouse",
             },
             {
                 "id": "ats:b:ai",
@@ -568,6 +666,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
                 "employment_type": "full-time",
                 "min_years": 3,
                 "vector": [0.0, 1.0, 0.0, 0.0],
+                "ats": "greenhouse",
             },
             {
                 "id": "ats:b:nontech",
@@ -575,6 +674,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
                 "employment_type": "full-time",
                 "min_years": 0,
                 "vector": [0.0, 0.0, 1.0, 0.0],
+                "ats": "greenhouse",
             },
         ],
         schema=pa.schema(
@@ -584,6 +684,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
                 pa.field("employment_type", pa.string()),
                 pa.field("min_years", pa.int32()),
                 pa.field("vector", pa.list_(pa.float32(), _DIM)),
+                pa.field("ats", pa.string()),
             ]
         ),
     )

@@ -87,6 +87,10 @@ def _load_trends(path: Path) -> list[dict]:
                 "metric": r.get("metric") or "stock",
                 "family": r["family"],
                 "band": r["band"],
+                # Absent the same way pre-ADR-0075, and on the non-tech diagnostic row every
+                # run writes deliberately undecomposed — 'all' means "not split by ATS" either
+                # way (ADR-0075).
+                "ats": r.get("ats") or "all",
                 "count": int(r["count"]),
             }
             for r in csv.DictReader(fh)
@@ -657,12 +661,19 @@ def trends():
     omitted; a malformed one is a 400, not a silent no-op; an out-of-data range returns a
     normal 200 with empty series rather than a 503, since the ledger itself is not empty.
 
-    ``totals`` carries the whole served table per stamp so the caller can plot a **share** of
-    the index rather than a raw count — the count moves whenever our coverage does, the share
-    only when categories move relative to each other. Watched roles are left out of it: they
-    re-count Jobs already counted in their family, so adding them would inflate the
-    denominator. ``watch_parents`` names the families that have any, so a caller can offer the
-    roles split only where it leads somewhere.
+    ``?ats=`` (repeatable, ADR-0075) narrows to the named ATSes; omitted entirely means every
+    ATS, which is the only spelling of "no filter" — a request naming all of them explicitly
+    would exclude every migrated pre-ADR-0075 row (they carry ``ats='all'``, matching no real
+    name) and silently truncate history. A pre-ship stamp has no per-ATS breakdown to select
+    from, so a narrow ``ats`` scope's series legitimately start later than an unfiltered one's.
+
+    ``totals`` carries the served table per stamp — narrowed by ``ats`` exactly like every
+    other row here — so the caller can plot a **share** of what's currently in view rather than
+    a raw count: with no ATS filter that's a share of the whole index, with one it's a share of
+    the selected ATSes' own total, both coverage-immune in the same way. Watched roles are left
+    out of it: they re-count Jobs already counted in their family, so adding them would inflate
+    the denominator. ``watch_parents`` names the families that have any, so a caller can offer
+    the roles split only where it leads somewhere.
 
     The reserved ``non-tech`` family is never a chart series — it rides along as ``non_tech``,
     the tech-filter health number, so the page can show it as a caveat rather than a role."""
@@ -690,6 +701,7 @@ def trends():
         until = _norm_stamp(request.args["until"]) if "until" in request.args else None
     except ValueError:
         return jsonify(error="since/until must be ISO-8601"), 400
+    ats = request.args.getlist("ats")
 
     # ``_TRENDS`` is already pinned to the live centroid version at load time, so filtering here
     # never has to worry about a stray row from a stale refit; only the requested window changes.
@@ -698,11 +710,14 @@ def trends():
         trends_rows = [r for r in trends_rows if r["ts"] >= since]
     if until:
         trends_rows = [r for r in trends_rows if r["ts"] <= until]
+    if ats:
+        trends_rows = [r for r in trends_rows if r["ats"] in ats]
 
-    # Stamps and the share denominator come from the FULL stock ledger, not the drilled
-    # subset: total(ts) is the whole served table (families + non-tech, since count_groups
-    # assigns every row exactly once), which is what makes share-of-index coverage-immune —
-    # an index that grew 1.5% overnight moves every count but no share (ADR-0051).
+    # Stamps and the share denominator come from `trends_rows` (since/until/ats-narrowed, but
+    # not the family/metric drill): total(ts) is every family + non-tech IN THAT SCOPE, since
+    # count_groups assigns every row exactly once, which is what makes share coverage-immune —
+    # an index (or an ATS selection) that grew 1.5% overnight moves every count but no share
+    # (ADR-0051, scope extended to ATS by ADR-0075).
     stock = [r for r in trends_rows if r["metric"] == "stock"]
     stamps = sorted({r["ts"] for r in stock})
     totals: dict[str, int] = {}

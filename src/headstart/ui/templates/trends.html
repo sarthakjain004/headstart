@@ -15,6 +15,13 @@
         <button data-split="bands" aria-pressed="true">By level</button>
         <button data-split="roles" aria-pressed="false">By role</button>
       </span>
+      <span class="ats-pick" id="trends-ats">
+        <button class="ghost" id="trends-ats-trigger" type="button"
+                aria-haspopup="true" aria-expanded="false">All ATS ▾</button>
+        <div class="ats-pick-menu" id="trends-ats-menu" hidden>
+          {% for a in atses %}<label><input type="checkbox" value="{{ a }}" checked> {{ a }}</label>{% endfor %}
+        </div>
+      </span>
     </span>
   </div>
   <div class="trends-range">
