@@ -106,7 +106,8 @@ def build_doc(job: dict) -> str:
 # change that alters what `extract` returns, and `update_meta` re-derives every already-stored row
 # whose description we hold — otherwise a fix reaches new Jobs only, because `embed_plan` skips ids
 # it has already embedded. Only the derivations below depend on it; facts refresh unconditionally.
-DERIVATIONS_VERSION = 1
+# v2: Tier 2 answers with the smallest stated requirement rather than the first (ADR-0076).
+DERIVATIONS_VERSION = 2
 
 
 def to_meta(job: dict) -> dict:

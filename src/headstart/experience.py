@@ -13,8 +13,13 @@ adding to ``_tier2_patterns`` (the factory feeding both Tier-2 passes) or ``_SEN
 LLM tier is another ``from_*`` chained in :func:`extract`. Keeping each tier pure keeps the whole
 thing unit-testable without I/O.
 
-Four things about Tier 2 are load-bearing and easy to undo by accident (ADR-0060, ADR-0066):
+Five things about Tier 2 are load-bearing and easy to undo by accident (ADR-0060, ADR-0066,
+ADR-0076):
 
+* **The smallest stated requirement wins**, so :func:`_scan` collects every surviving match and
+  selects; it must not return the first one it finds. A description stating several is read at its
+  most permissive, because `search` filters `min_years <= your_years` and the alternatives are as
+  often a cheaper *path* to the same job ("12+ years, or 10+ with a PhD") as an extra demand.
 * **Ranges are tried before single values**, because a single-value pattern will otherwise match at
   a range's ceiling and report it as the floor ("2-4 years" served as 4+).
 * **Every pattern carries its own guard flag.** A pattern that cannot fire without the literal word
@@ -150,16 +155,17 @@ _FOLD = str.maketrans(
 )
 
 
-# `_GAP` stays at 30 deliberately. Widening it to 45 would gain the "N+ years <noun phrase>
-# experience" class, but `search` returns the LEFTMOST match, so a wider gap also changes *which*
-# requirement wins on a description stating several — measured at 2,690 jobs, mean +5.7 years. That
-# is a semantic choice about multi-requirement postings (is the floor the first stated, or the
-# largest?), not part of the range fix, so it is left to its own decision.
+# `_GAP` is 45, which reaches the "N+ years <noun phrase> experience" class the corpus is full of
+# ("3+ years of production-grade C++ and/or Rust experience" — 37 characters, answering nothing at
+# 30). It sat at 30 only while `_scan` answered with the leftmost match: a wider gap then also
+# decided *which* requirement a multi-requirement description reported, measured at 2,690 jobs,
+# mean +5.7 years. `_scan` now answers with the smallest stated floor regardless of position
+# (ADR-0076), so the width buys recall and nothing else.
 # `'` and `"` are here as the *targets* of `_FOLD`, which turns the curly forms into them before
 # any of this runs; `·` and `•` are the bullet characters boards actually emit. The curly forms
 # themselves are deliberately absent — folding means they can never reach a Tier-2 pattern.
 _GAP = (
-    r"[\w\s.'\":/()&,·•+-]{0,30}?"  # what may sit between the number and "experience"
+    r"[\w\s.'\":/()&,·•+-]{0,45}?"  # what may sit between the number and "experience"
 )
 _YEARS = (
     r"(?:years?|yrs?)"  # "yrs" is common enough in the corpus to be worth accepting
@@ -404,8 +410,12 @@ _NARRATIVE_SPAN = re.compile(
 
 # "up to N years" states a *ceiling*, so reading it as `min_years` inverts the posting — a job open
 # to "candidates with up to 3 years of experience" was being served as requiring 3, hiding it from
-# the juniors it addresses. Checked for every pattern, guarded or not, because that inversion does
-# not depend on which pattern found the number: the example above fires an experience-anchored one.
+# the juniors it addresses. The faithful reading is a floor of 0 with N as the top, which is what
+# `_scan` now records (ADR-0076); withdrawing the number instead served the posting as stating no
+# requirement at all, and left the scan hunting for a later occurrence — on one row, the company
+# boilerplate "more than 50 years of experience". Checked for every pattern, guarded or not,
+# because the inversion does not depend on which pattern found the number: the example above fires
+# an experience-anchored one.
 #
 # It must sit *immediately* before the number, not merely nearby: a 25-character window turns
 # "Bonus up to 20 percent and 6+ years in backend systems" and "up to date knowledge and 5+ years
@@ -430,26 +440,45 @@ def from_description(text: str | None) -> ExperienceSpan | None:
 
 
 def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
-    """One pass of the Tier-2 patterns over already-folded text."""
+    """One pass of the Tier-2 patterns over already-folded text, answered by its smallest floor.
+
+    Every match that survives the guards is collected and the **smallest** `min_years` among them
+    wins (ADR-0076), rather than whichever the leftmost pattern reached first. Its own `max_years`
+    travels with it: a floor from one sentence paired with a ceiling from another describes nothing
+    anybody wrote. Selecting rather than returning early is what lets `_GAP` be as wide as recall
+    wants, since position no longer decides the answer.
+    """
+    spans: list[ExperienceSpan] = []
     for pattern, guarded in patterns:
-        # finditer, not search: a guarded rejection must fall through to the next *occurrence*, so
-        # "Founded 12 years ago. Requires 5+ years building …" still yields 5 rather than nothing.
-        for match in pattern.finditer(text):
+        # Every occurrence, so a rejected match falls through to the next one — "Founded 12 years
+        # ago. Requires 5+ years building …" still yields 5 rather than nothing. Resumed from just
+        # past the matched *number* rather than from the match's end, because `finditer`'s
+        # non-overlapping walk hides a smaller requirement sitting inside a longer match: "10 years
+        # (Master's degree with 6 years) related experience" offers only the 10, and "Age Range:
+        # 28-35 years 5-8 years' experience" offers nothing at all, the real requirement swallowed
+        # by an age the guards then reject. Past the number, not one character into it, or `\d{1,3}`
+        # matches "05" out of "105" and re-opens the truncation ADR-0013 closed.
+        pos = 0
+        while (match := pattern.search(text, pos)) is not None:
+            pos = match.start(1) + len(match.group(1))
             lo = _years_from_token(match.group(1))
             hi = (
                 _years_from_token(match.group(2))
                 if match.lastindex and match.lastindex >= 2 and match.group(2)
                 else None
             )
-            if _NARRATIVE_SPAN.match(
-                text[match.start(1) : match.end() + 20]
-            ) or _CEILING_BEFORE.search(
-                text[max(0, match.start(1) - 10) : match.start(1)]
-            ):
+            if _NARRATIVE_SPAN.match(text[match.start(1) : match.end() + 20]):
                 continue
             if lo > _MAX_PLAUSIBLE_REQUIREMENT:
                 continue
             if guarded and _is_narrative(text, match):
+                continue
+            if _CEILING_BEFORE.search(
+                text[max(0, match.start(1) - 10) : match.start(1)]
+            ):
+                # "up to N years": the number is the top of the range, and the posting states no
+                # floor at all. Guarded first, so "up to 25 years" is still refused as narrative.
+                spans.append(ExperienceSpan(0, hi if hi is not None else lo, "regex"))
                 continue
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).
@@ -468,8 +497,8 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
                 hi = None
-            return ExperienceSpan(lo, hi, "regex")
-    return None
+            spans.append(ExperienceSpan(lo, hi, "regex"))
+    return min(spans, key=lambda span: span.min_years, default=None)
 
 
 # --- Tier 3 (fallback): map a seniority label to a floor-years estimate --------------------------

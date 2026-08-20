@@ -513,12 +513,33 @@ def test_gerund_needs_an_object():
 
 
 def test_up_to_is_a_ceiling_not_a_floor():
-    # "up to N years" states a maximum — reading it as min_years is wrong in every case, and it is
-    # how retention boilerplate and fixed-term contracts phrase a duration.
-    assert from_description("Your data is kept for up to 2 years in our pool") is None
-    assert (
-        from_description("a training position of up to three years in duration") is None
-    )
+    # "up to N years" states a maximum, so the floor it states is 0 — reading N as min_years
+    # inverts the posting (ADR-0076). Retention boilerplate and fixed-term contracts phrase a
+    # duration the same way and now read as 0-N rather than as nothing; that overstates what the
+    # sentence said, but costs no filtering, because a 0 floor and an unknown one both pass
+    # `min_years <= your_years`.
+    assert from_description(
+        "Your data is kept for up to 2 years in our pool"
+    ) == ExperienceSpan(0, 2, "regex")
+    assert from_description(
+        "a training position of up to three years in duration"
+    ) == ExperienceSpan(0, 3, "regex")
+
+
+def test_a_ceiling_answers_instead_of_falling_through():
+    # Withdrawing the number left the scan hunting for a later occurrence, which on one row landed
+    # on company boilerplate (#189). A ceiling produces an answer, so there is nothing to fall to.
+    assert from_description(
+        "Fresh graduates and candidates with up to 3 years of relevant mobile development "
+        "experience are welcome to apply. We bring more than 15 years of experience to every "
+        "project."
+    ) == ExperienceSpan(0, 3, "regex")
+
+
+def test_a_ceiling_is_read_only_below_the_requirement_ceiling():
+    # The 20-year requirement guard runs first, so an "up to N" in company narrative is still
+    # refused rather than converted into a 0-N span.
+    assert from_description("with up to 25 years of experience in the industry") is None
 
 
 def test_range_tail_needs_a_word_boundary():
@@ -543,7 +564,9 @@ def test_narrative_idiom_spans_a_range():
 
 def test_ceiling_applies_to_anchored_patterns_too():
     # This fires an experience-anchored (unguarded) pattern, so a guarded-only check misses it.
-    assert from_description("Candidates with up to 3 years of experience") is None
+    assert from_description(
+        "Candidates with up to 3 years of experience"
+    ) == ExperienceSpan(0, 3, "regex")
 
 
 def test_ceiling_must_sit_immediately_before_the_number():
@@ -720,3 +743,64 @@ def test_seniority_leaves_the_rest_of_the_manager_vocabulary_alone():
     assert from_seniority(None, "IT Infrastructure Manager") is None
     assert from_seniority(None, "Facilities Technical Manager") is None
     assert from_seniority(None, "Software Development Manager") is None
+
+
+# --- the smallest stated requirement wins (ADR-0079, #163) ---------------------------------------
+# Which requirement a multi-requirement description reports used to be decided by position — the
+# leftmost match of the first matching pattern. It is now decided by value: the smallest floor,
+# because `search` filters `min_years <= your_years` and no candidate should lose a job they
+# qualify for. Measured over the 339,192-description store: 39,208 answers move down (median -3,
+# mean -3.7), 977 appear where there were none, none is lost, and exactly one moves up.
+
+
+def test_the_smallest_stated_requirement_wins():
+    # AND-stacked: the posting wants both, so the smaller floor is deliberately over-inclusive —
+    # the alternative hides the job from a candidate holding every year of one requirement.
+    assert from_description(
+        "5+ years of experience building distributed systems, including 2+ years of technical "
+        "leadership experience"
+    ) == ExperienceSpan(2, None, "regex")
+    assert from_description(
+        "7+ years in software engineering with 2+ years in a people management role"
+    ) == ExperienceSpan(2, None, "regex")
+
+
+def test_an_or_alternative_answers_at_its_cheaper_path():
+    # The corpus shape that makes "largest" wrong rather than merely strict: the degree buys
+    # years, and a 10-year PhD candidate genuinely qualifies for a job asking 12 without one.
+    assert from_description(
+        "Bachelor's degree with 12+ years of experience, or a Master's/PhD with 10+ years of "
+        "experience"
+    ) == ExperienceSpan(10, None, "regex")
+    assert from_description(
+        "4+ years of work/academic experience as a Machine-Learning researcher "
+        "(2+ years, post-PhD work experience with those having a PhD degree)"
+    ) == ExperienceSpan(2, None, "regex")
+
+
+def test_the_winning_span_keeps_its_own_ceiling():
+    # A floor from one sentence carrying a ceiling from another describes no posting anyone wrote.
+    assert from_description(
+        "8 to 12 years of experience overall, with 2-4 years of experience in Kubernetes"
+    ) == ExperienceSpan(2, 4, "regex")
+
+
+def test_a_requirement_inside_a_longer_match_is_still_a_candidate():
+    # The scan resumes just past each matched number, not after the whole match: at a 45-character
+    # gap a longer match spans the smaller requirement, and `finditer` would never offer it. The
+    # second is worse than a wrong number — the real requirement sits inside an age range the
+    # guards then reject, so the description answered nothing at all.
+    assert from_description(
+        "10 years (Master's degree with 6 years) related experience"
+    ) == ExperienceSpan(6, None, "regex")
+    assert from_description(
+        "Age Range: 28-35 years 5-8 years' experience preferred"
+    ) == ExperienceSpan(5, 8, "regex")
+
+
+def test_a_noun_phrase_may_sit_between_the_number_and_experience():
+    # `_GAP` is 45 because selecting by value made position stop deciding the answer. This is the
+    # class #163 measured: "N+ years <noun phrase> experience", 37 characters here.
+    assert from_description(
+        "3+ years of production-grade C++ and/or Rust experience"
+    ) == ExperienceSpan(3, None, "regex")
