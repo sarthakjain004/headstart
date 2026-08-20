@@ -73,11 +73,20 @@ happen to point the same way.
 | 32337598985 | 68.8m | scrape 39.8m | 58% | **94%** | `workday:walmart.wd504` (see §4 — this shard also degraded to DIRECT) |
 | 32343784119 | 48.5m | scrape 25.0m | 51% | **93%** | `successfactors:careers.hcltech.com` (92% `hcltech.jobs.hr.cloud.sap` in the same run, different shard) |
 
-Same three named companies, no exceptions, extending the WARP doc's 7-run streak to 10. One
-refinement: HCLTech is not one floor-bound board but **two** — `careers.hcltech.com` and
-`hcltech.jobs.hr.cloud.sap` are separate SuccessFactors tenants, and `32343784119` shows both
-sitting in its three slowest shards simultaneously. A per-board fix needs to name both hosts, not
-one.
+Same three named companies, no exceptions, extending the WARP doc's 7-run streak to 10.
+
+**Correction, checked directly against both hosts after this doc first shipped:**
+`hcltech.jobs.hr.cloud.sap` is not a second floor-bound board — it's a plain Apache 301 redirect to
+`careers.hcltech.com` (`hcltech.jobs.hr.cloud.sap/sitemap.xml` → `careers.hcltech.com/xml/sitemap.xml`,
+same for the site root). Same site, same jobs, reached through a vanity hostname the liveness
+ledger independently tracks as a "live" tenant. So `32343784119` showing both in its three slowest
+shards simultaneously isn't two boards costing critical-path time, it's **one board scraped twice
+per run**, at full cost each time — and since the scraper keys job ids off `self.slug`
+(`src/headstart/scrapers/successfactors.py:314`), every posting lands in the index twice under two
+different ids with no dedup between them. Dropping the alias tenant from the liveness ledger is a
+free win: no scraper change, no recall cost, pure duplicate-work removal. Filed as
+[#212](https://github.com/sarthakjain004/headstart/issues/212) rather than fixed directly — it
+touches discovery/liveness data, not scraper code, and deserves its own change.
 
 **New this session — the two open items connect.** `32337598985`'s worst shard (walmart, a/p
 **3.40**, the single worst ratio across every shard examined in this doc or the WARP validation
@@ -148,6 +157,54 @@ No shard hit its time budget in any of the three new runs. Error rates (2.2-23.9
 are unremarkable except shard 7 of `32337598985`, which carries 21% of that run's errors — the
 same shard that lost WARP, consistent rather than new.
 
+## 6. Six retail-dominated Workday boards, narrowed at the source
+
+Widened the run survey to 20 recent pipeline runs and tallied every Workday board that hit ≥60%
+floor on some shard, not just each run's single worst. Ranked by consistency and severity, six
+stood out as genuinely heavy — not a one-off slow day, a board that dominates a shard essentially
+every time it's scraped:
+
+| board | occurrences (of 20 runs) | max floor | max wall |
+| --- | --- | --- | --- |
+| walmart (`WalmartExternal`) | 9 | 98% | 49.5m |
+| cvshealth (`CVS_Health_Careers`) | 7 | 98% | 48.4m |
+| target (`targetcareers`) | 9 | 97% | 35.8m |
+| tjx (`TJX_EXTERNAL`) | 9 | 95% | 28.0m |
+| lowes (`LWS_External_CS`) | 1 (severe on its one appearance) | 93% | 33.5m |
+| loblaw (`myview.wd3/paradox_careers`) | 8 | 95% | 32.4m |
+
+All six share Walmart's shape: a huge retail/operations board where the tech-labeled category is a
+sliver. Live-checked against each board's own API, 2026-08-20:
+
+| board | total postings | tech category | tech count | % of board |
+| --- | --- | --- | --- | --- |
+| walmart | 19,272 | Technology | 869 | 4.5% |
+| cvshealth | 19,283 | Technology | 187 | 1.0% |
+| target | ~11,900 | Technology | 118 | 1.0% |
+| tjx | 10,349 | **Information Technology** (no "Technology" label exists) | 63 | 0.6% |
+| loblaw | 12,438 | Technology + Digital & Ecommerce | 25 + 9 | 0.3% |
+| lowes | 12,029 | Technology + Digital + IND_Digital | 42 + 27 + 4 | 0.6% |
+
+"tech count" is the category alone, before intersecting with Full time — the code's inline comments
+show the smaller final combined-query total each board actually gets scraped down to (e.g. walmart
+869 category -> 823 once Full time is applied too), which is what to check against a live run's
+board size, not this table.
+
+Two boards don't use a single clean "Technology" bucket: TJX's own taxonomy calls it "Information
+Technology" instead, and Lowe's/Loblaw split tech-adjacent roles across more than one small bucket.
+Which extra buckets to fold in (e.g. Lowe's "Digital"/"IND_Digital" alongside "Technology") is a
+judgment call, not something inferrable from the facet name alone — decided explicitly per board,
+not by a blanket rule. Target's board also carries a `timeType=Variable` majority (11,089 of
+~11,900) used for retail scheduling; checked specifically, all 118 of its Technology postings are
+independently Full time, so the filter combination costs nothing extra there.
+
+**Same ADR-0017 tradeoff as §3's Walmart entry, accepted explicitly per board**: postings outside
+the listed categories, and every Part-time posting, are never fetched, so a real tech role filed
+under an odd department at any of these six companies is now invisible to HeadStart, not merely
+deprioritized — the post-hoc filter never gets a chance to see what the scrape never fetched.
+Implemented in `src/headstart/scrapers/workday.py`'s `_FIXED_FACETS_BY_SLUG`, same mechanism as
+Walmart, each board's exact facet ids and the specific postings given up documented inline.
+
 ## What to do next
 
 1. ~~File an issue for the equivs-ceiling finding~~ — done directly instead, see §4:
@@ -157,8 +214,11 @@ same shard that lost WARP, consistent rather than new.
    firing as often.
 2. **Don't revise ADR-0071's ~19.4 runs/day projection yet.** The ~22.8/day reading in §2 is real
    but n=3; let the nightly-plus-a-few-more-cycles data in before treating it as the new number.
-3. **The three critical-path boards (§3) are still the single highest-value target**, now with the
-   HCLTech-is-two-boards correction and the walmart/WARP interaction as added context for whoever
-   scopes the per-board timeout.
+3. ~~The three critical-path boards are the single highest-value target~~ — six Workday boards
+   narrowed at the source instead of timed out (§6); EY is SuccessFactors and still open, and
+   HCLTech's second "board" turned out to be a duplicate, not a second target (§3, #212). Watch the
+   next several runs for whether the six narrowed boards actually drop off the critical path, or
+   whether EY (and whatever board now surfaces once these six stop dominating shards) becomes the
+   next target.
 4. Workday (#194/#195) and quarantine counts are unchanged from prior reads — nothing actionable
    surfaced here beyond confirming the plateau held.

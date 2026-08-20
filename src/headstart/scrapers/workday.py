@@ -114,6 +114,77 @@ _REMOTE_TYPE_PATTERNS = {
 # Subdivision dimensions in priority order (see module docstring).
 _SUBDIVISION_FACETS = ("jobFamilyGroup", "timeType", "locations", "workerSubType")
 
+# Deliberate, per-board recall narrowing — NOT a subdivision. `_SUBDIVISION_FACETS` above splits
+# a capped query into slices whose union is the whole board; this instead fixes facet values from
+# the start, so postings outside them are never fetched at all. ADR-0017 is explicit that a
+# category facet like `jobFamilyGroup` "cannot be the authoritative tech gate" because department
+# taxonomies are inconsistent and a real tech job filed under an odd department would be dropped
+# for good, not just deprioritized — the post-hoc filter never gets a chance to see what the scrape
+# never fetched. Every board below is an explicit, human-approved exception to that recall
+# guarantee, decided one board at a time, not a pattern to extend to a new board without the same
+# tradeoff being re-examined against that board's own facet counts.
+#
+# All six were the single largest contributor to a shard's wall-clock somewhere in the 20 pipeline
+# runs surveyed 2026-08-20 (docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md §3, §6
+# — a shard 90-98% one board), and share the same shape: a retail/ops-dominated board where the
+# tech-labeled category is a sliver (0.2-4.5%) of the whole. The label is NOT uniform across
+# companies — TJX calls it "Information Technology", not "Technology" — and two boards (Lowe's,
+# Loblaw) split tech-adjacent roles across more than one small bucket rather than one; which
+# buckets to include past the obvious "Technology" one is a human call, made explicitly per board
+# below, not inferred. All counts and ids live-checked 2026-08-20 against each board's own API.
+_FIXED_FACETS_BY_SLUG: dict[str, dict[str, list[str]]] = {
+    # 19,272 -> 823. Business Services 6,970 and Business Operations 6,553 are the two biggest
+    # categories this gives up, plus Part time (5,829 of 19,272 total across the board).
+    "https://walmart.wd504.myworkdayjobs.com/WalmartExternal": {
+        "jobFamilyGroup": ["e83ebdbd2a0a01e7e1477a8948e904c6"],  # "Technology"
+        "timeType": ["b181d8271e36017533d4ca68eee44f00"],  # "Full time"
+    },
+    # 19,283 -> 187. Retail Store & Pharmacy 12,084 and "Internships and Devlpmt Pgms" 4,055 are
+    # the two biggest categories this gives up, plus Part time (11,649).
+    "https://cvshealth.wd1.myworkdayjobs.com/CVS_Health_Careers": {
+        "jobFamilyGroup": ["e65dbadf6a50100168ed86fe4cf50001"],  # "Technology"
+        "timeType": ["1aea6da227e21005504339b6b1770001"],  # "Full time"
+    },
+    # ~11,900 -> 118. "Stores" (11,681) is nearly the whole board. Every one of Technology's 118
+    # postings is independently confirmed Full time (0 are the dominant "Variable" timeType), so
+    # this filter combination costs nothing extra beyond the category narrowing itself.
+    "https://target.wd5.myworkdayjobs.com/targetcareers": {
+        "jobFamilyGroup": ["daccab9f1d25018677ebcc363457460e"],  # "Technology"
+        "timeType": ["dbf9619e323f012ffc1de2db2a574a00"],  # "Full time"
+    },
+    # 10,349 -> 63. TJX's own taxonomy has no "Technology" label at all — "Information Technology"
+    # is the one that holds its software roles. "Business & Store Operations" (9,928) is nearly
+    # the whole board this gives up, plus Part time (6,726).
+    "https://tjx.wd1.myworkdayjobs.com/TJX_EXTERNAL": {
+        "jobFamilyGroup": ["7d770955258e1000a7fd6e81b64e0000"],  # "Information Technology"
+        "timeType": ["d5866b796ae0101de252d60f8cb10000"],  # "Full time"
+    },
+    # 12,438 -> 34. Loblaw's tenant is on the shared `myview.wd3` host under the `paradox_careers`
+    # site. "Technology" (25) alone would miss real engineering roles filed under "Digital &
+    # Ecommerce" (9) instead — included on purpose, not everything small was. "Retail" (11,670) is
+    # the board this gives up, plus Part time (10,651).
+    "https://myview.wd3.myworkdayjobs.com/paradox_careers": {
+        "jobFamilyGroup": [
+            "1e109731718b4ca4ada8d4d49b59afe0",  # "Technology"
+            "e128c069551e1086c1a3b8c2616fbf98",  # "Digital & Ecommerce"
+        ],
+        "timeType": ["f9ccda084af243cebebf4538f57811ab"],  # "Full time"
+    },
+    # 12,029 -> 73. Split the same way as Loblaw: "Technology" (42) plus "Digital" (27) and
+    # "IND_Digital" (4) — the other "IND-"-prefixed buckets (Finance, HR, Legal, Marketing,
+    # Merchandising, Supply Chain) are left out on purpose, they are not tech-adjacent. Every other
+    # "IND_"/"IND-" naming is a leftover of two merged taxonomies, not a typo to "fix" here.
+    # "Store Operations" (11,542) is the board this gives up, plus Part time (9,230).
+    "https://lowes.wd5.myworkdayjobs.com/LWS_External_CS": {
+        "jobFamilyGroup": [
+            "02b0c958653f01d9810ce8fafb055745",  # "Technology"
+            "02b0c958653f01dc63f0e6fafb055345",  # "Digital"
+            "afb941e45f461009d3a1165a2df20000",  # "IND_Digital"
+        ],
+        "timeType": ["db5c129996dd0110db0aab26c2038100"],  # "Full time"
+    },
+}
+
 
 class WorkdayScraper(BaseScraper):
     """Workday scraper — `slug` must be the full careers URL."""
@@ -297,7 +368,7 @@ class WorkdayScraper(BaseScraper):
                 seen.add(key)
                 postings.append(item)
 
-        self._exhaust({}, absorb, depth=0)
+        self._exhaust(_FIXED_FACETS_BY_SLUG.get(self.slug, {}), absorb, depth=0)
         # Second pass: fill each posting's detail fields concurrently (bounded); a failed
         # fetch leaves ``_detail`` empty so the job is still kept.
         if self.async_fanout_enabled():
