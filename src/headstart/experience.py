@@ -52,7 +52,7 @@ _MAX_PLAUSIBLE_YEARS = (
 # The anchor word says nothing about genre; the magnitude does.
 _MAX_PLAUSIBLE_REQUIREMENT = 20
 
-# The smallest ceiling `_DIGITS`' third digit made reachable, hence the boundary ADR-0071 draws:
+# The smallest ceiling `_DIGITS`' third digit made reachable, hence the boundary ADR-0072 draws:
 # below it ADR-0013's ceiling rule stands (drop an absurd `hi`, keep the real floor).
 _SMALLEST_THREE_DIGIT_YEARS = 100
 
@@ -462,7 +462,7 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
             if lo > _MAX_PLAUSIBLE_YEARS:
                 continue
             if hi is not None and hi >= _SMALLEST_THREE_DIGIT_YEARS:
-                # A 3-digit ceiling condemns the span, floor included (ADR-0071): the rule below
+                # A 3-digit ceiling condemns the span, floor included (ADR-0072): the rule below
                 # would drop `hi` and keep a floor the sentence never offered as a requirement.
                 # Below 100, ADR-0013's rule stands — "3 to 99 years" is still 3.
                 continue
