@@ -477,8 +477,12 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 text[max(0, match.start(1) - 10) : match.start(1)]
             ):
                 # "up to N years": the number is the top of the range, and the posting states no
-                # floor at all. Guarded first, so "up to 25 years" is still refused as narrative.
-                spans.append(ExperienceSpan(0, hi if hi is not None else lo, "regex"))
+                # floor at all. The top faces the requirement ceiling the floor just faced — this
+                # branch skips the span rules below, so without it "up to 8 to 150 years" would
+                # write a 150 no other path can produce (ADR-0072).
+                top = hi if hi is not None else lo
+                if top <= _MAX_PLAUSIBLE_REQUIREMENT:
+                    spans.append(ExperienceSpan(0, top, "regex"))
                 continue
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).

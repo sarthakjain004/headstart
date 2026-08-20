@@ -74,6 +74,7 @@ ATSes**, 2026-08-20) — this change against the merge-base, Tier 2 only:
 | same floor, different ceiling | 68 |
 | gains an answer where there was none | 977 (305 of them an "up to N" ceiling) |
 | **loses** its answer | 0 |
+| *of the movers*: a floor replaced by an "up to N" ceiling | 286 |
 
 ## Decision
 
@@ -100,11 +101,21 @@ character in, `\d{1,3}` matches "05" out of "105" and re-opens the truncation AD
 longer decides the answer. This is #189 item 2, and it is why the two issues ship together: the
 widening was never a separate change, it was blocked on this policy.
 
-**"up to N years" is read as `0`–`N`, not withdrawn.** The check moves *after* the plausibility and
-narrative guards rather than sitting with them, so "up to 25 years" is still refused as narrative
-by the 20-year ceiling; below it, the posting's floor is 0 and N is its top. That is what the
-sentence says, it answers instead of falling through to boilerplate, and it makes the posting's
-openness visible to the UI rather than merely not-mis-filed.
+**"up to N years" is read as `0`–`N`, not withdrawn.** The check moves *after* the narrative and
+floor-plausibility guards rather than sitting with them, so "up to 25 years" is still refused as
+narrative by the 20-year requirement ceiling; and the branch applies that same ceiling to the top
+it records, because it returns before the ADR-0072 span rules further down and would otherwise be
+the one path that can write an absurd `max_years` ("up to 8 to 150 years" — no description in the
+store takes that shape today, so the guard is structural, not a repair). Below the ceiling, the
+posting's floor is 0 and N is its top — what the sentence actually says, and an answer rather than
+a fall-through to whatever "N years" the description mentions next.
+
+Be clear about what this does **not** buy today: nothing reads `max_years`. `search.py` filters on
+`min_years` only (its `max_years` parameter is the *user's* years), `/search` does not project the
+column, and the UI badge renders `min_years` alone — so a junior sees the same result set either
+way, because an unknown floor already passes every filter (ADR-0009). What changes now is that the
+row states the truth instead of nothing, and that the scan stops hunting past it; the filtering
+win #189 imagined needs a consumer for the ceiling, which is a separate change.
 
 **`DERIVATIONS_VERSION` 1 → 2.** Without the bump this reaches newly seen jobs only, because
 `embed_plan` skips ids already embedded (ADR-0061). The ~39k moved answers are the point; they have
@@ -149,10 +160,18 @@ construction, so where the residue survives the guards it becomes the answer. Re
 25 changed rows, 2 were of this kind. Widening the idiom list is still the wrong fix (ADR-0066
 measured it costing real requirements); this is the LLM tier's work.
 
-**A duration sentence now reads as a requirement range.** "Your data is kept for up to 2 years"
-answers 0–2 rather than nothing. It costs no filtering — a 0 floor and an unknown floor both pass
-every `max_years` — but the badge overstates what the posting said. That is the price of item 1
-being a pattern rather than a guard.
+**A ceiling outvotes a stated floor, and 286 rows take that path.** A ceiling span's floor is 0,
+which is the global minimum, so wherever a description carries both an "up to N" sentence and a
+real requirement, the ceiling wins. Measured against the merge-base, 286 descriptions that answered
+a floor above 0 now answer 0–N — mostly privacy boilerplate against a real requirement ("Your data
+is kept for up to 2 years in our candidate pool" beating a stated 3), and occasionally a genuine
+pair ("4-6 years … up to 5-10 years for candidates with the right posture" → 0–10). This is the
+policy applied literally, and it errs in the safe direction on the column anything reads: the row
+is admitted to more searches, never fewer. What it damages is the `max_years` no consumer has yet,
+and a UI badge that now reads "0+ yrs" where it read "3+ yrs" — the tier is right, the number is
+the most permissive reading of a description that says both things. If `max_years` ever gains a
+consumer, revisit this: the fix would be to let a ceiling span answer only when no stated floor was
+found, which is a different policy for a different pair of costs.
 
 **Tier 2 is ~1.24x slower** (144.4s → 179.1s over 339,192 descriptions, single-threaded), because a
 scan can no longer stop at its first hit. It runs inside `update_meta`/`embed_plan`, both far from

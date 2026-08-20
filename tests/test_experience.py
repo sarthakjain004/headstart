@@ -515,9 +515,9 @@ def test_gerund_needs_an_object():
 def test_up_to_is_a_ceiling_not_a_floor():
     # "up to N years" states a maximum, so the floor it states is 0 — reading N as min_years
     # inverts the posting (ADR-0076). Retention boilerplate and fixed-term contracts phrase a
-    # duration the same way and now read as 0-N rather than as nothing; that overstates what the
-    # sentence said, but costs no filtering, because a 0 floor and an unknown one both pass
-    # `min_years <= your_years`.
+    # duration the same way and now read as 0-N rather than as nothing; that reads a requirement
+    # into a sentence that states none, but costs no filtering, because a 0 floor and an unknown
+    # one both pass `min_years <= your_years`.
     assert from_description(
         "Your data is kept for up to 2 years in our pool"
     ) == ExperienceSpan(0, 2, "regex")
@@ -540,6 +540,9 @@ def test_a_ceiling_is_read_only_below_the_requirement_ceiling():
     # The 20-year requirement guard runs first, so an "up to N" in company narrative is still
     # refused rather than converted into a 0-N span.
     assert from_description("with up to 25 years of experience in the industry") is None
+    # The top of a ceiling range faces the same guard: this branch skips the span rules further
+    # down `_scan`, so without it an absurd ceiling reaches the served table (ADR-0072).
+    assert from_description("up to 5 to 150 years of experience") is None
 
 
 def test_range_tail_needs_a_word_boundary():
