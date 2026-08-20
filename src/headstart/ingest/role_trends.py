@@ -4,10 +4,12 @@
 Runs after ``index sync`` and ``index prune``, so it counts the **served stock**: every row
 still in the ``jobs`` table is assigned to its nearest frozen centroid, that cluster is mapped
 to a curated role family (``config/role_families.json``), the row is banded by the experience
-columns the table already carries, and one ``(ts, version, family, band, count)`` row per
-non-empty group is appended to ``data/state/role_trends.csv`` — plus one unbanded
-``(non-tech, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
-changes only on an explicit centroid refit (a re-base, ADR-0040).
+columns the table already carries, and one ``(ts, version, family, band, ats, count)`` row per
+non-empty group is appended to ``data/state/role_trends.csv`` — plus one unbanded, undecomposed
+``(non-tech, all, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
+changes only on an explicit centroid refit (a re-base, ADR-0040). ``ats`` (ADR-0075) lets the
+Trends tab filter by which ATS posted a run; a pre-ADR-0075 row carries ``ats='all'`` on
+migration, the same sentinel the diagnostic row itself always uses.
 
 It also records which family each row landed in and reports the rows that **changed** family
 since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counting stock alone
@@ -44,8 +46,16 @@ _LEDGER = REPO_ROOT / "data" / "state" / "role_trends.csv"
 _ASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_assignments.parquet"
 _REASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_reassignments.csv"
 
-_COLUMNS = ("ts", "version", "metric", "family", "band", "count")
-_OLD_COLUMNS = (
+_COLUMNS = ("ts", "version", "metric", "family", "band", "ats", "count")
+_PRE_ATS_COLUMNS = (
+    "ts",
+    "version",
+    "metric",
+    "family",
+    "band",
+    "count",
+)  # pre-ADR-0075, migrated on write
+_PRE_METRIC_COLUMNS = (
     "ts",
     "version",
     "family",
@@ -65,8 +75,8 @@ def count_groups(
     families: dict[int, str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
-) -> tuple[dict[tuple[str, str, str], int], int, dict[str, str]]:
-    """Count served rows into ``(metric, family, band)`` groups; non-tech rows counted apart.
+) -> tuple[dict[tuple[str, str, str, str], int], int, dict[str, str]]:
+    """Count served rows into ``(metric, family, band, ats)`` groups; non-tech counted apart.
 
     Returns ``(counts, non_tech, assigned)`` — the last being ``id -> family`` for every row that
     landed in a real family, which :mod:`headstart.ingest.role_assignments` diffs against the
@@ -78,6 +88,9 @@ def count_groups(
     large family can be barely posting). ``first_seen`` survives an ADR-0050 re-embed, so an
     upgraded vector does not read as a fresh opening; rows predating ADR-0031 carry no stamp
     and are never "new", which under-counts the first week after that ADR and nothing after.
+
+    ``ats`` (ADR-0075) lets a Trends request narrow its scope to a chosen set of ATSes — every
+    served row carries one, unlike ``first_seen`` there is no pre-existing-table case to guard.
 
     Watch roles (ADR-0051) are counted by title into the same structure under
     ``watch:{name}``, independent of centroid assignment — a watched title counts even when
@@ -94,6 +107,7 @@ def count_groups(
     min_years = rows["min_years"].to_pylist()
     titles = rows["title"].to_pylist()
     employment = rows["employment_type"].to_pylist()
+    atses = rows["ats"].to_pylist()
     # Absent when the table predates ADR-0031; those rows are stock, never new.
     seen = (
         rows["first_seen"].to_pylist()
@@ -101,24 +115,28 @@ def count_groups(
         else [None] * len(titles)
     )
 
-    counts: dict[tuple[str, str, str], int] = {}
+    counts: dict[tuple[str, str, str, str], int] = {}
     assigned: dict[str, str] = {}
 
-    def bump(family: str, band: str, is_new: bool) -> None:
-        counts[("stock", family, band)] = counts.get(("stock", family, band), 0) + 1
+    def bump(family: str, band: str, ats: str, is_new: bool) -> None:
+        counts[("stock", family, band, ats)] = (
+            counts.get(("stock", family, band, ats), 0) + 1
+        )
         if is_new:
-            counts[("new", family, band)] = counts.get(("new", family, band), 0) + 1
+            counts[("new", family, band, ats)] = (
+                counts.get(("new", family, band, ats), 0) + 1
+            )
 
     non_tech = 0
-    for job_id, cluster, years, title, etype, first in zip(
-        ids, clusters, min_years, titles, employment, seen, strict=True
+    for job_id, cluster, years, title, etype, first, ats in zip(
+        ids, clusters, min_years, titles, employment, seen, atses, strict=True
     ):
         # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
         band = roles.band(years, title, etype)
         for role in watchlist:
             if role.matches(title):
-                bump(roles.WATCH_PREFIX + role.name, band, is_new)
+                bump(roles.WATCH_PREFIX + role.name, band, ats, is_new)
         family = families[int(cluster)]
         if family is None:
             non_tech += 1
@@ -126,21 +144,27 @@ def count_groups(
         # Watch roles are deliberately absent here: they are title matches layered over the
         # taxonomy, so a row "moving" between them is a title edit, not a reassignment.
         assigned[job_id] = family
-        bump(family, band, is_new)
+        bump(family, band, ats, is_new)
     return counts, non_tech, assigned
 
 
 def _migrate_ledger(ledger: Path) -> None:
-    """Rewrite a pre-ADR-0051 ledger in place, inserting ``metric='stock'`` on every row.
+    """Rewrite an old-shaped ledger in place onto the current seven-column schema.
+
+    Two prior shapes are recognized, each stamped with whatever the schema after it added:
+    a pre-ADR-0051 row (no ``metric``) gets ``metric='stock'`` AND ``ats='all'``; a
+    pre-ADR-0075 row (``metric`` but no ``ats``) gets only ``ats='all'``. ``'all'`` (ADR-0075)
+    means "not decomposed by ATS" — the same sentinel the non-tech diagnostic row already
+    writes for itself every run, migrated or not. Every pre-ADR-0051 row was a stock
+    measurement, so that backfill is exact, not a guess.
 
     The file is append-only and rides the HF state round trip, so the migration happens where
-    the appends do — once, idempotently, before the first six-column write. Every pre-ADR-0051
-    row was a stock measurement, so the backfill is exact, not a guess.
+    the appends do — once, idempotently, before the first seven-column write.
 
     Rewriting the file whole is fine because this runs **once** — the next append sees the
-    six-column header and returns immediately. It is not sized by ADR-0040's "a few dozen rows
-    per run", which ADR-0052's fifteen watched roles took to several hundred; if a retention or
-    rollup policy ever lands, this is the function that has to care.
+    seven-column header and returns immediately. It is not sized by ADR-0040's "a few dozen
+    rows per run", which ADR-0052's fifteen watched roles took to several hundred; if a
+    retention or rollup policy ever lands, this is the function that has to care.
     """
     with ledger.open(encoding="utf-8", newline="") as fh:
         reader = csv.reader(fh)
@@ -153,33 +177,42 @@ def _migrate_ledger(ledger: Path) -> None:
             return
         if header == _COLUMNS:
             return
-        if header != _OLD_COLUMNS:
+        if header == _PRE_ATS_COLUMNS:
+            rows = [
+                [ts, version, metric, family, band, "all", count]
+                for ts, version, metric, family, band, count in reader
+            ]
+        elif header == _PRE_METRIC_COLUMNS:
+            rows = [
+                [ts, version, "stock", family, band, "all", count]
+                for ts, version, family, band, count in reader
+            ]
+        else:
             raise ValueError(f"{ledger}: unrecognized header {header}")
-        rows = [
-            [ts, version, "stock", family, band, count]
-            for ts, version, family, band, count in reader
-        ]
     tmp = ledger.with_suffix(".csv.tmp")
     with tmp.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(_COLUMNS)
         writer.writerows(rows)
     tmp.replace(ledger)
-    _log.info(f"migrated {ledger} to the six-column ADR-0051 schema ({len(rows)} rows)")
+    _log.info(
+        f"migrated {ledger} to the seven-column ADR-0075 schema ({len(rows)} rows)"
+    )
 
 
 def append_ledger(
     ledger: Path,
-    counts: dict[tuple[str, str, str], int],
+    counts: dict[tuple[str, str, str, str], int],
     non_tech: int,
     version: int,
     ts: str,
 ) -> int:
     """Append one row per non-empty group + the non-tech diagnostic. Header on first write.
 
-    The diagnostic rides the same file as ``(stock, non-tech, all)`` — one number per run,
-    unbanded because a band on a Data Entry Clerk means nothing. The chart filters it out; its
-    trend is the tech filter's health over time. Returns rows written."""
+    The diagnostic rides the same file as ``(stock, non-tech, all, all)`` — one number per run,
+    unbanded and undecomposed by ATS because either split means nothing for a Data Entry Clerk
+    total. The chart filters it out; its trend is the tech filter's health over time. Returns
+    rows written."""
     ledger.parent.mkdir(parents=True, exist_ok=True)
     if ledger.exists():
         _migrate_ledger(ledger)
@@ -190,9 +223,9 @@ def append_ledger(
         writer = csv.writer(fh)
         if fresh:
             writer.writerow(_COLUMNS)
-        for (metric, family, band), n in sorted(counts.items()):
-            writer.writerow([ts, version, metric, family, band, n])
-        writer.writerow([ts, version, "stock", roles.NON_TECH, "all", non_tech])
+        for (metric, family, band, ats), n in sorted(counts.items()):
+            writer.writerow([ts, version, metric, family, band, ats, n])
+        writer.writerow([ts, version, "stock", roles.NON_TECH, "all", "all", non_tech])
         fh.flush()
     return len(counts) + 1
 
@@ -262,7 +295,8 @@ def main() -> int:
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
     # column, so ask only for what exists and let count_groups treat absence as "never new".
-    columns = ["id", "vector", "min_years", "title", "employment_type"]
+    # ats carries no such case — every served row has had one since before this table existed.
+    columns = ["id", "vector", "min_years", "title", "employment_type", "ats"]
     if "first_seen" in table.schema.names:
         columns.append("first_seen")
     rows = table.search().select(columns).limit(n).to_arrow()
@@ -280,7 +314,7 @@ def main() -> int:
     fresh_total = sum(c for k, c in counts.items() if k[0] == "new")
     _log.info(
         f"appended {written} rows @ {ts} -> {args.ledger} | top: "
-        + ", ".join(f"{family}/{band} {c}" for (_, family, band), c in stock_top)
+        + ", ".join(f"{family}/{band} {c}" for (_, family, band, _ats), c in stock_top)
         + f" | new in {NEW_WINDOW_DAYS}d: {fresh_total}"
     )
     _log.info(

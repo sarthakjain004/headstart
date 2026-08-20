@@ -55,6 +55,7 @@ function loadApp() {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
+    + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
   vm.runInNewContext(src, ctx);
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
@@ -207,4 +208,73 @@ test('an unknown series name is ignored rather than drilled', () => {
   // ignored-click state and the fallback a drilled unknown name would land on.
   t.click('no-such-family');
   assert.deepEqual(fetches, []);
+});
+
+// ---- ATS picker (ADR-0075) ----------------------------------------------------------------
+
+/** Fake checkboxes for #trends-ats-menu's querySelectorAll — the harness's generic fakeEl
+ * always answers querySelectorAll with [], so the ATS picker needs its own stand-in list. */
+function fakeAtsMenu(nodes, pairs) {
+  const boxes = pairs.map(([value, checked]) => ({ value, checked }));
+  nodes['trends-ats-menu'].querySelectorAll = () => boxes;
+  return boxes;
+}
+
+test('every box checked selects nothing — the only spelling of "no filter"', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true]]);
+  assert.equal(t.atsSelected(), null);
+});
+
+test('an unchecked box narrows the selection to what remains checked', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', false]]);
+  assert.deepEqual(t.atsSelected(), ['greenhouse', 'lever']);
+});
+
+test('all-checked sends no ats param on the wire', () => {
+  const { t, nodes, fetches } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true]]);
+  t.set(fixture(), null);
+  t.click('software-engineering');   // drills, which calls loadTrends and issues a fetch
+  assert.doesNotMatch(fetches[0], /ats=/);
+});
+
+test('a narrowed selection is sent as repeated ats params', () => {
+  const { t, nodes, fetches } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', false]]);
+  t.set(fixture(), null);
+  t.click('software-engineering');
+  const params = new URLSearchParams(fetches[0].split('?')[1]);
+  assert.deepEqual(params.getAll('ats'), ['greenhouse', 'lever']);
+});
+
+test('the trigger label reads "All ATS" when nothing is excluded', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true]]);
+  t.atsLabel();
+  assert.equal(nodes['trends-ats-trigger'].textContent, 'All ATS ▾');
+});
+
+test('the trigger label counts what remains checked once something is excluded', () => {
+  const { t, nodes } = loadApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', false]]);
+  t.atsLabel();
+  assert.equal(nodes['trends-ats-trigger'].textContent, '2 ATS ▾');
+});
+
+test('the popover opens and closes, toggling by default', () => {
+  const { t, nodes } = loadApp();
+  nodes['trends-ats-menu'].hidden = true;
+  t.atsToggle();
+  assert.equal(nodes['trends-ats-menu'].hidden, false);
+  t.atsToggle();
+  assert.equal(nodes['trends-ats-menu'].hidden, true);
+});
+
+test('the popover forces closed regardless of its current state', () => {
+  const { t, nodes } = loadApp();
+  nodes['trends-ats-menu'].hidden = false;
+  t.atsToggle(false);
+  assert.equal(nodes['trends-ats-menu'].hidden, true);
 });
