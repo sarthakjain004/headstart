@@ -259,6 +259,80 @@ def test_smartrecruiters_description_joins_requirement_sections():
     assert "boilerplate" not in text  # companyDescription deliberately skipped
 
 
+def _sr_offline(monkeypatch, scraper, payload):
+    """Run `fetch_raw` against `payload` with the detail pass stubbed out."""
+    monkeypatch.setattr(scraper, "_get", lambda: json.dumps(payload))
+    monkeypatch.setattr(scraper, "fan_out", lambda items, fn, **kw: [None] * len(items))
+    monkeypatch.setattr(
+        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
+    )
+    return scraper.fetch_raw()
+
+
+def test_smartrecruiters_marks_truncation_when_the_board_outruns_one_page(monkeypatch):
+    """`totalFound` above the postings returned means the list is knowingly short (ADR-0053).
+
+    Unmarked, `index sync` reads every posting behind the page as a delisting. Measured live
+    2026-08-20: `dominos` answers `totalFound=24556` behind a 100-posting page, and `offset=100`
+    returns 100 further distinct ids — so the rest is reachable, and its absence is not a
+    delisting.
+    """
+    scraper = get_scraper("smartrecruiters", "dominos", "Dominos")
+    _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": 24556,
+            "content": [{"id": str(n)} for n in range(100)],
+        },
+    )
+
+    assert scraper.truncated is not None
+    assert "24556" in scraper.truncated
+
+
+def test_smartrecruiters_complete_board_is_not_marked_truncated(monkeypatch):
+    """A Board that fits in one page is authoritative — marking it would strip it from the
+    eviction scope for nothing, and its real delistings would then never be pruned."""
+    scraper = get_scraper("smartrecruiters", "acme", "Acme")
+    _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": 3,
+            "content": [{"id": str(n)} for n in range(3)],
+        },
+    )
+
+    assert scraper.truncated is None
+
+
+def test_smartrecruiters_a_board_of_exactly_one_page_is_not_truncated(monkeypatch):
+    """`totalFound == len(content) == limit` separates the two candidate signals.
+
+    The rejected `len(content) == limit` heuristic would mark this board and strip it from the
+    eviction scope forever; `totalFound` is exact, so it does not. No board in the liveness ledger
+    sits at exactly 100 today — this pins the distinction rather than a live shape.
+    """
+    scraper = get_scraper("smartrecruiters", "exactly", "Exactly")
+    _sr_offline(
+        monkeypatch,
+        scraper,
+        {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": 100,
+            "content": [{"id": str(n)} for n in range(100)],
+        },
+    )
+
+    assert scraper.truncated is None
+
+
 def test_sensehq_parse():
     jobs = get_scraper("sensehq", "zetwerk", "Zetwerk").parse(
         _load("sensehq_zetwerk.json"), SCRAPED_AT

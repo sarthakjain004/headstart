@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-03
+- **Amended by:** [ADR-0070](0070-smartrecruiters-does-not-cap-a-board-at-100-postings.md) — measured: the claim below that "SmartRecruiters caps its list at 100 postings/board" is false; that is *our* `?limit=100`, not the provider's ceiling. The detail count is still bounded at 100, so this ADR's window sizing and speed numbers are unaffected — only the reason for the bound changes. Two statements rest on the false premise: the parenthesis in *Context* and the same-host burst comparison in *Decision*.
 
 ## Context
 
@@ -69,3 +70,5 @@ optimization is deferred: same-host ATSes (all SmartRecruiters boards hit `api.s
 currently open one `AsyncSession` per board; a session shared across boards would collapse that to ~1
 connection. Next adoption target is **Workday**, whose boards have thousands of details per host — a
 far bigger same-host burst than SmartRecruiters, so a larger expected win.
+[ADR-0070: SmartRecruiters boards also hold thousands of postings (`dominos` 24,556); the
+burst is smaller only because our page size caps it, not because the boards are smaller.]
