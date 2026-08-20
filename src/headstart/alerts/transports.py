@@ -124,9 +124,11 @@ def config_from(env: Mapping[str, str]) -> dict[str, str]:
     secrets were always absent, so `missing` called it unconfigured and skipped its
     Subscriptions silently — failing closed *and* quietly.
 
-    This does not make ADR-0038's "one literal and one tuple entry" literally true: Actions has
-    to map each secret by name, so `.github/workflows/alerts.yml` still needs a line per
-    channel. What it removes is the *second* place inside this package that had to know.
+    This does not make ADR-0038's "one literal and one tuple entry" literally true. Actions maps
+    values by name, so `alerts.yml` needs a line per name in `needs` (email takes two — one a
+    secret, one a repo variable), and
+    `digest` holds a renderer per channel. What this removes is one specific place that had to
+    know: the name list `run` used to carry.
     """
     return {
         name: env.get(name, "") for transport in TRANSPORTS for name in transport.needs

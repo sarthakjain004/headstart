@@ -157,8 +157,12 @@ def subscription_for(
     # back blanked what the person chose at sign-in, every run. Read `{}` as silence rather than
     # as a stated empty set. The trade is that the allowlist can no longer *clear* someone's
     # filters — `{"filters": {}}`, an absent key, and a key the allowlist rejects all reach here
-    # as `{}`, so they are indistinguishable. Clearing stays available where it was chosen, via
-    # `POST /subscribe`. This is exactly symmetric with the `invite.query` line above.
+    # as `{}`, so they are indistinguishable, and this path offers no way back. Do not read that
+    # as "clear it from the Space instead": ADR-0069 leaves the allowlist as the edit path for
+    # everyone who never signed in, and they have no session to clear with — `/subscribe` answers
+    # "sign in first" (verified live). For a signed-in Account the sets endpoints own the
+    # projection anyway. Symmetric with the `invite.query` line above, where the same trade was
+    # already accepted.
     wanted_query = invite.query or existing.query
     wanted_filters = invite.search_filters or existing.search_filters
     if wanted_query != existing.query or wanted_filters != existing.search_filters:
