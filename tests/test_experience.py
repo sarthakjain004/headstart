@@ -690,3 +690,33 @@ def test_the_ceiling_rule_turns_on_exactly_at_one_hundred():
     span = from_description("3 to 99 years experience")
     assert (span.min_years, span.max_years) == (3, None)
     assert from_description("3 to 100 years experience") is None
+
+
+def test_seniority_reads_a_tech_discipline_manager():
+    """Calibrated like every other Tier-3 label (ADR-0018), not assigned by rung.
+
+    Of the 1,094 corpus titles holding "engineering manager", the 753 that also state a number
+    have a median `min_years` of 5 — the senior tier, not the lead/staff 7 the ladder suggests.
+    """
+    assert from_seniority(None, "Engineering Manager") == ExperienceSpan(
+        5, None, "seniority"
+    )
+    assert from_seniority(None, "Software Engineering Manager") == ExperienceSpan(
+        5, None, "seniority"
+    )
+
+
+def test_seniority_leaves_the_rest_of_the_manager_vocabulary_alone():
+    # The bulk of the uncovered "manager" titles, none of which states a floor (#189). The last
+    # three are what a wider pattern would have reached but shouldn't: "IT Infrastructure
+    # Manager"/"Facilities Technical Manager" are ops/facilities, no reliable floor; "Software
+    # Development Manager" carries a genuinely different, unmeasured median (8, not 5) — pinning
+    # it here, not in the "engineering manager" pattern, keeps the two classes from being
+    # silently folded into one value.
+    assert from_seniority(None, "Program Manager Non Tech") is None
+    assert from_seniority(None, "Project Manager") is None
+    assert from_seniority(None, "Business Development Manager") is None
+    assert from_seniority(None, "HR and Admin Assistant / Manager") is None
+    assert from_seniority(None, "IT Infrastructure Manager") is None
+    assert from_seniority(None, "Facilities Technical Manager") is None
+    assert from_seniority(None, "Software Development Manager") is None
