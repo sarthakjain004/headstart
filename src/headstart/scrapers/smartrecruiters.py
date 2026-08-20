@@ -10,8 +10,9 @@ can cost a shard on its first, uncosted run — the run ADR-0064's tech-per-minu
 see, because it only judges a board that already has a measurement (ADR-0077) — but its
 enforcement is commented out below for the initial rollout: shipping uncapped on purpose, to
 measure real cost/impact across a few pipeline runs before deciding a cap from data rather
-than from #202's projection a second time (#227). Trivially reversible — uncomment the two
-marked lines to re-enable the 50-page cap.
+than from #202's projection a second time (#227). Trivially reversible — restore the two
+commented-out conditions in `fetch_raw` (the loop's cap check, and the cap-naming branch of
+its truncation message) to re-enable the 50-page cap.
 
 The postings list has no description; a second pass fetches each posting's detail
 (GET .../postings/{id} -> jobAd.sections.jobDescription.text) in a bounded thread pool to
@@ -55,7 +56,7 @@ class SmartRecruitersScraper(BaseScraper):
         batch = data.get("content") or []
         postings = list(batch)
         page = 1
-        # `and page < _MAX_PAGES` disabled for now — uncapped rollout, see #227.
+        # while len(batch) == _PAGE_SIZE and page < _MAX_PAGES:  -- the cap, disabled below (#227)
         while len(batch) == _PAGE_SIZE:
             more = json.loads(self._get(f"{self.url()}&offset={page * _PAGE_SIZE}"))
             batch = more.get("content") or []
@@ -69,14 +70,17 @@ class SmartRecruitersScraper(BaseScraper):
         # 2026-08-20, a dead slug included: it answers {"totalFound": 0}.
         # `totalFound` is exact rather than a full-page guess (ADR-0070), so this still catches a
         # short read even with the cap disabled — a posting closing mid-crawl, or an inconsistent
-        # page. `capped = page == _MAX_PAGES and len(batch) == _PAGE_SIZE` / the cap-naming note
-        # are commented out along with the cap itself (#227): with no cap enforced, `page` reaching
-        # `_MAX_PAGES` can no longer be what stopped the loop, so naming it would mislabel a genuine
-        # short read as a cap hit.
+        # page. The cap-naming half, disabled along with the cap itself (#227):
+        #     capped = page == _MAX_PAGES and len(batch) == _PAGE_SIZE
+        #     cap_note = f" — hit the {_MAX_PAGES}-page cap" if capped else ""
+        # With no cap enforced, `page` reaching `_MAX_PAGES` can no longer be what stopped the
+        # loop, so naming it would mislabel a genuine short read as a cap hit — `cap_note` below
+        # is `""` rather than the commented-out call above until the cap is re-enabled.
         total = data.get("totalFound") or 0
+        cap_note = ""
         if total > len(postings):
             self.mark_truncated(
-                f"read {len(postings)} of {total} postings — the rest unread"
+                f"read {len(postings)} of {total} postings{cap_note} — the rest unread"
             )
         if self.async_fanout_enabled():
             descriptions = self.fan_out_async(

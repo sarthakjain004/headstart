@@ -1,5 +1,13 @@
 # ADR-0077: SmartRecruiters pages behind a cost-sized cap
 
+**Amended same day, same PR:** the cap this ADR derives (`_MAX_PAGES = 50`) is not currently
+enforced. Rather than pre-committing to a cap from these projected numbers, the decision was to
+ship uncapped for the initial rollout and watch what real, uncapped pipeline runs actually cost —
+tracked in [#227](https://github.com/sarthakjain004/headstart/issues/227). The cap's derivation
+below, the code (`_MAX_PAGES = 50`), and its tests all stay in place, commented rather than
+deleted, so re-enabling it is restoring two commented-out conditions in `smartrecruiters.py`, not
+re-running this analysis. See "Amendment" under Consequences.
+
 **Status:** accepted · **Date:** 2026-08-20 · **Resolves:**
 [ADR-0070](0070-smartrecruiters-does-not-cap-a-board-at-100-postings.md) (which marked the
 truncation and deliberately left the cost half open) · **Relates to:**
@@ -151,8 +159,24 @@ Four are ~0–1% tech and ADR-0064's gate is expected to drop them once measured
 (`EndeavorITSolution` at 62%, `SonsoftInc` at 16%) are tech-dense and stay partially unread — the
 known, priced-in gap this cap accepts.
 
-Noted, not fixed: **the liveness ledger holds case-duplicate slugs** — `dominos`/`Dominos`,
-`crossmark1`/`CROSSMARK1`, `aecom2`/`AECOM2` and at least eight more pairs among boards over 3,000
-postings alone. The 807/796 counts above are un-deduped and therefore overstate board *counts*
-(though not the per-board cap decision, which is per slug). Pre-existing, out of scope here, worth
-its own issue.
+**Fixed in this same PR, not deferred:** the liveness ledger held case-duplicate slugs —
+`dominos`/`Dominos`, `crossmark1`/`CROSSMARK1`, `aecom2`/`AECOM2` and 1,840 more pairs, every board
+in the ledger, one root cause (a tenant-casing normalization that never removed the old row). The
+807/796 counts above are un-deduped and overstate board *count* (not the per-board cap decision,
+which is per canonical slug — `_dedupe_boards`, ADR-0023, already collapsed these before this fix).
+Cleaning the ledger surfaced a real bug beyond counting: `_dedupe_boards`'s lexicographic tie-break
+picked the *older* row whenever old and new disagreed on more than casing, and for two boards
+(`FosterFarms`, `Samsung-by-Korn-Ferry`) the newer probe had found them `dead` — so both stayed in
+the active scrape list past their real closure. Fixed by dropping the 1,843 stale rows, keeping the
+newest `checked_at` per canonical tenant; verified live (both now answer `totalFound: 0`) and
+against `load_active_companies()` (both now correctly excluded).
+
+## Amendment (2026-08-20, same day, same PR)
+
+Shipping uncapped for the initial rollout instead of at the cap derived above. `_MAX_PAGES = 50`
+stays defined and this ADR's derivation stands — enforcement is commented out in `fetch_raw`, not
+the constant removed, so restoring it needs no new analysis. Tracked in
+[#227](https://github.com/sarthakjain004/headstart/issues/227): watch real shard wall-clock,
+corpus/LFS growth, and ADR-0064 gate interaction across a few post-rollout pipeline runs, then
+decide — re-enable this cap, pick a different number, or leave it uncapped — from measured impact
+rather than from this ADR's projection a second time.
