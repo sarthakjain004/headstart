@@ -803,6 +803,14 @@ function fmtValue(v){
   return Math.round(v).toLocaleString();
 }
 
+// Shared by every place that flips a radiogroup button's checked state — keeps the three call
+// sites (drawTrends' split-toggle sync, trendSeg's select, setUnit) from drifting apart on the
+// aria-checked/roving-tabindex pair.
+function setRadioChecked(btn, on){
+  btn.setAttribute('aria-checked', on);
+  btn.tabIndex = on ? 0 : -1;
+}
+
 function drawTrends(){
   const d = trendData; if (!d) return;
   const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
@@ -870,7 +878,7 @@ function drawTrends(){
   });
   svg += '</g>';
   // The hover layer: a crosshair line + one dot per series, hidden until pointermove positions
-  // them (dataviz skill, interaction.md -- "an HTML chart is interactive by default"). Built once
+  // them (dataviz skill, interaction.md — "an HTML chart is interactive by default"). Built once
   // per redraw, in the same order as geomSeries, so the pointermove handler below can index
   // straight into `dotEls` with no per-event DOM query.
   svg += `<g id="trends-crosshair" style="display:none">
@@ -968,11 +976,7 @@ function drawTrends(){
   const seg = el('trends-split');
   if (seg) {
     seg.hidden = !(trendDrill && (d.watch_parents || []).includes(trendDrill));
-    seg.querySelectorAll('button').forEach(b => {
-      const on = b.dataset.split === trendSplit;
-      b.setAttribute('aria-checked', on);
-      b.tabIndex = on ? 0 : -1;
-    });
+    seg.querySelectorAll('button').forEach(b => setRadioChecked(b, b.dataset.split === trendSplit));
   }
   if (tableView) el('trends-table').innerHTML = buildTrendsTable();
 }
@@ -1099,7 +1103,7 @@ function trendSeg(id, attr, apply){
   const buttons = () => [...seg.querySelectorAll('button')];
   function select(b){
     if (!b || b.getAttribute('aria-checked') === 'true') return;
-    buttons().forEach(x => { const on = x === b; x.setAttribute('aria-checked', on); x.tabIndex = on ? 0 : -1; });
+    buttons().forEach(x => setRadioChecked(x, x === b));
     apply(b.dataset[attr]);
   }
   seg.addEventListener('click', e => {
@@ -1134,9 +1138,7 @@ function setUnit(value, locked){
     : '';
   seg.querySelectorAll('button').forEach(b => {
     b.disabled = locked;
-    const on = b.dataset.unit === value;
-    b.setAttribute('aria-checked', on);
-    b.tabIndex = on ? 0 : -1;
+    setRadioChecked(b, b.dataset.unit === value);
   });
 }
 trendSeg('trends-metric', 'metric', v => {

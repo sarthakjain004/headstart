@@ -320,7 +320,7 @@ textarea:focus{ border-color:var(--violet); }
 .ghost.danger:hover{ border-color:var(--coral); color:var(--coral); }
 
 /* ---- role trends (ADR-0040/0051), its own tab since the shell landed. Redesigned 2026-08-20
-   against the dataviz skill's mark/interaction specs and the WAI-ARIA radiogroup pattern --
+   against the dataviz skill's mark/interaction specs and the WAI-ARIA radiogroup pattern —
    see docs/product/2026-08-20_trends-ui-design-research.md. ---- */
 .trends-toggles{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; align-items:center; }
 .seg{ display:inline-flex; border:1px solid var(--rule); border-radius:9px; overflow:hidden; }

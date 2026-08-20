@@ -67,7 +67,7 @@ function loadApp() {
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
-    + ' colorSlot: name => seriesColorAssignment.get(name),'
+    + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
   vm.runInNewContext(src, ctx);
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
@@ -134,10 +134,13 @@ test('the Other row sums every series past CHART_MAX', () => {
   const { t, nodes } = loadApp();
   // ai-ml (2000) + data-science (1000) are the two past CHART_MAX in fixture().
   t.set(fixture(), null);
+  t.setUnit('count', false);   // count is a straight sum; share would also fold in the totals scaling
   t.draw();
-  // count unit (not share) makes the summed value land on a fixed, easy-to-check number.
   const other = row(nodes['trends-legend'].innerHTML, '__other__');
   assert.match(other, /Other \(2 smaller categories\)/);
+  const ct = other.match(/<span class="ct">([^<]+)<\/span>/);
+  assert.ok(ct, 'Other row should render a count value');
+  assert.equal(Number(ct[1].replace(/,/g, '')), 3000);   // 2000 + 1000, not just the label text
 });
 
 test('clicking a marked row opens the roles split it advertised', () => {
