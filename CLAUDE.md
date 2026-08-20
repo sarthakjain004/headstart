@@ -316,6 +316,37 @@ the harness must run clean, including its coverage gate (`atses_without_shape` e
 exists because eightfold, freshteam and successfactors all shipped serving jobs no check ever
 looked at, and the gap surfaced as a user-visible bad result rather than a red run.
 
+### Checking a liveness ledger for duplicate boards
+
+**Before trusting a liveness ledger's row/board count, or shipping a change that reads it as
+one row per board, check for duplicates — a `live` ledger routinely holds more than one row for
+the same underlying board.** This has shown up as three genuinely different mechanisms, each
+found independently, each costing real critical-path time or serving stale data before it was
+caught:
+
+- **Cross-hostname redirects** (#212, #218) — a vanity/legacy hostname 301s to the canonical
+  one; both marked `live` as if independent tenants. Diagnostic: fetch `/` and `/sitemap.xml`,
+  follow redirects manually, check whether the target is another `live` row in the same ledger.
+- **Tenant-key format proliferation** (#220) — the same board recorded under more than one slug
+  spelling (bare tenant vs full URL vs partial path), from discovery/resolve emitting more than
+  one variant over time. Diagnostic: group by `board_key()` (ADR-0023's canonical identity), not
+  by the raw ledger row.
+- **Stale casing duplicates** (found fixing #202/PR #226) — a prober-side casing-normalization
+  change left the old-cased row behind instead of replacing it; 1,843 pairs in one ledger, one
+  root cause. `_dedupe_boards`'s lexicographic tie-break (`config.py`) usually papers over this
+  silently, but picks the **older** row whenever old and new disagree in ASCII order — which
+  matters when the two rows also disagree on *verdict*, not just casing: two boards stayed in
+  the active scrape list after the newer probe had already found them `dead`, because the stale
+  `live` row kept winning the tie-break. Diagnostic: for a ledger with real duplicate rows, check
+  whether the tie-break's survivor is the newest-verified data, not just count how many boards
+  survive dedup.
+
+None of these are caught by `_dedupe_boards()`/`_drop_parked` alone — that mechanism assumes
+duplicate rows differ only cosmetically (casing, URL form) and always agree on which board they
+name and whether it's live. A raw `wc -l` or per-row count on a liveness CSV overstates board
+count by however many duplicates exist; go through `load_active_companies()` (or an equivalent
+`board_key()`-grouped count) for anything that needs to be accurate, not the CSV directly.
+
 ### Verifying experience-extraction coverage
 Whenever you change `experience.py`'s patterns, gauge the effect with
 `scripts/enrich/experience_coverage.py`: it runs `extract(field, description, title)` over
