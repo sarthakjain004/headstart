@@ -42,10 +42,15 @@ Run: python scripts/runlog/fanout_retries.py 32272854468
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 from run_logs import Run, common_args, runs_from
 
 RETRIES = re.compile(r"\[scrape_run\] retries: ([^(]+)\(total (\d+)\)")
+# `http._retry_reason` is a closed classifier — these five and no others, with `network` as its
+# fallback. Naming them here rather than deriving columns from the rows is what lets this table
+# print its header up front and stream each shard as it lands, per the repo's streaming rule.
+CLASSES = ("network", "429-ratelimit", "5xx", "403-wall", "405-wall")
 DEGRADED = "degrading to direct"
 ROTATED = re.compile(r"spare egress: rotated to a fresh egress IP")
 WALLED = re.compile(r"spare egress: (\S+) walled the current IP")
@@ -61,10 +66,21 @@ DIRECT_RATIO = 5.0
 WARP_RATIO = 1.0
 
 
+class Row(NamedTuple):
+    shard: int | None
+    counts: dict[str, int]
+    total: int
+    logged_degraded: bool
+    rotations: int
+    walls: int
+    spent: int
+
+
 def direct_ratio(counts: dict[str, int]) -> float | None:
-    """429-per-network, the egress fingerprint. `None` when the shard spent too few retries of
-    either class to say anything — a shard with no network *and* no rate-limit retries is silent,
-    not direct, and calling it direct was a real false positive this guard exists to stop."""
+    """429-per-network, the egress fingerprint. `None` only when the shard spent **zero** of both
+    classes — it is then silent, not direct, and calling it direct was a real false positive this
+    guard exists to stop. A shard with zero network but any rate-limit retries still reads
+    `inf`/DIRECT, deliberately: no proxy failures at all alongside walling is the degraded shape."""
     net, lim = counts.get("network", 0), counts.get("429-ratelimit", 0)
     if net == 0:
         return None if lim == 0 else float("inf")
@@ -91,77 +107,74 @@ def parse_retries(text: str) -> tuple[dict[str, int], int] | None:
 
 
 def report(run: Run) -> None:
-    rows = []
+    print(
+        "".join(
+            [f"{'sh':>4}"]
+            + [f"{k:>16}" for k in CLASSES]
+            + [f"{'total':>9}{'429/net':>9}{'egress':>10}  (arrival order)"]
+        ),
+        flush=True,
+    )
+    rows: list[Row] = []
     for shard, _job, text in run.stage("scrape"):
         parsed = parse_retries(text)
         if not parsed:
             continue
         counts, total = parsed
-        rows.append(
-            {
-                "shard": shard,
-                "counts": counts,
-                "total": total,
-                "logged_degraded": DEGRADED in text,
-                "rotations": len(ROTATED.findall(text)),
-                "walls": len(WALLED.findall(text)),
-                "spent": len(SPENT.findall(text)),
-            }
+        r = Row(
+            shard=shard,
+            counts=counts,
+            total=total,
+            logged_degraded=DEGRADED in text,
+            rotations=len(ROTATED.findall(text)),
+            walls=len(WALLED.findall(text)),
+            spent=len(SPENT.findall(text)),
         )
-    if not rows:
-        print("  no retry lines found", flush=True)
-        return
-
-    keys = sorted(
-        {k for r in rows for k in r["counts"]},
-        key=lambda k: -sum(r["counts"].get(k, 0) for r in rows),
-    )
-    print(
-        "".join(
-            [f"{'sh':>4}"]
-            + [f"{k:>16}" for k in keys]
-            + [f"{'total':>9}{'429/net':>9}{'egress':>10}"]
-        ),
-        flush=True,
-    )
-    for r in rows:
-        ratio = direct_ratio(r["counts"])
+        rows.append(r)
+        ratio = direct_ratio(r.counts)
         verdict = verdict_of(ratio)
-        # Only a confident verdict can disagree with the log line; "?" is an abstention.
-        flag = (
-            ""
-            if verdict == "?" or (verdict == "DIRECT") == r["logged_degraded"]
-            else " !MISMATCH"
-        )
+        # An abstention cannot contradict the log line, but a shard the log called degraded while
+        # the ratio abstains is still worth surfacing — that is the calibration's blind spot.
+        if verdict == "?":
+            flag = " ?vs-log" if r.logged_degraded else ""
+        else:
+            flag = "" if (verdict == "DIRECT") == r.logged_degraded else " !MISMATCH"
         shown = (
             "-"
             if ratio is None
             else ("inf" if ratio == float("inf") else f"{ratio:.2f}")
         )
         print(
-            "".join(
-                [f"{r['shard']:>4}"] + [f"{r['counts'].get(k, 0):>16}" for k in keys]
-            )
-            + f"{r['total']:>9}{shown:>9}{verdict:>10}{flag}",
+            "".join([f"{r.shard:>4}"] + [f"{r.counts.get(k, 0):>16}" for k in CLASSES])
+            + f"{r.total:>9}{shown:>9}{verdict:>10}{flag}",
             flush=True,
         )
-    agg = {k: sum(r["counts"].get(k, 0) for r in rows) for k in keys}
+    if not rows:
+        print("  no retry lines found", flush=True)
+        return
+
+    unknown = sorted({k for r in rows for k in r.counts} - set(CLASSES))
+    if unknown:
+        print(
+            f"  NB: retry classes outside CLASSES, omitted above: {unknown}", flush=True
+        )
+    agg = {k: sum(r.counts.get(k, 0) for r in rows) for k in CLASSES}
     print(
-        "".join([f"{'Σ':>4}"] + [f"{agg[k]:>16}" for k in keys])
-        + f"{sum(r['total'] for r in rows):>9}",
+        "".join([f"{'Σ':>4}"] + [f"{agg[k]:>16}" for k in CLASSES])
+        + f"{sum(r.total for r in rows):>9}",
         flush=True,
     )
 
-    direct = [r for r in rows if verdict_of(direct_ratio(r["counts"])) == "DIRECT"]
-    logged = [r for r in rows if r["logged_degraded"]]
+    direct = [r for r in rows if verdict_of(direct_ratio(r.counts)) == "DIRECT"]
+    logged = [r for r in rows if r.logged_degraded]
     print(
         f"  egress: {len(direct)}/{len(rows)} shards look DIRECT by retry ratio; "
         f"{len(logged)}/{len(rows)} logged '{DEGRADED}'",
         flush=True,
     )
     if direct:
-        cost = sum(r["counts"].get("429-ratelimit", 0) for r in direct)
-        rest = sum(r["counts"].get("429-ratelimit", 0) for r in rows if r not in direct)
+        cost = sum(r.counts.get("429-ratelimit", 0) for r in direct)
+        rest = sum(r.counts.get("429-ratelimit", 0) for r in rows if r not in direct)
         per = rest / max(1, len(rows) - len(direct))
         print(
             f"  those shards spent {cost:,} rate-limit retries against ~{per:,.0f} "
@@ -169,8 +182,8 @@ def report(run: Run) -> None:
             flush=True,
         )
     print(
-        f"  rotation activity (NOT health, ADR-0067): {sum(r['rotations'] for r in rows)} rotations, "
-        f"{sum(r['walls'] for r in rows)} wall events, {sum(r['spent'] for r in rows)} budgets spent",
+        f"  rotation activity (NOT health, ADR-0067): {sum(r.rotations for r in rows)} rotations, "
+        f"{sum(r.walls for r in rows)} wall events, {sum(r.spent for r in rows)} budgets spent",
         flush=True,
     )
 

@@ -23,7 +23,13 @@ grep.
 outcome — a quarantined board stops being scraped — so a sudden burst is worth reading as a symptom
 of the run rather than of the boards.
 
-**Count them from the `failures:` line, never by counting `quarantined` lines.** `update_ledgers`
+**That count is a stock, not a flow.** `failures:` reports `len(quarantined(rows))` over the entire
+ledger — every board currently at or over the strike threshold, most of them struck out on earlier
+runs. It is not "boards quarantined this run", and reading it as inflow is the same mistake the
+trends ledger already cost this repo. Compare it against the previous run's figure to get a
+delta; the number alone is a level.
+
+**Count it from the `failures:` line, never by counting `quarantined` lines.** `update_ledgers`
 emits `for board in sorted(quarantined)[:20]` — a capped, *alphabetically sorted* sample. Counting
 those lines reported 20 quarantines for a run whose own `failures:` line said **114**, a 5.7x
 undercount, and made the per-ATS breakdown a 20-row alphabetical prefix (all `ashby`) rather than a
@@ -78,10 +84,13 @@ def scrape_errors(run: Run) -> None:
             )
         for d in ERR_DIGEST.findall(text):
             digests.append((shard, unstamp(d)))
+            print(f"     shard {shard}: {unstamp(d)}", flush=True)
         for k in KILLED.findall(text):
             kills.append((shard, float(k)))
+            print(f"     shard {shard} KILLED at {float(k):.1f} min", flush=True)
         for d in DEFERRED.findall(text):
             deferrals.append((shard, unstamp(d)))
+            print(f"     shard {shard} deferred: {unstamp(d)}", flush=True)
         for f in FAILED.findall(text):
             classes[f[2]] = classes.get(f[2], 0) + 1
 
@@ -108,16 +117,10 @@ def scrape_errors(run: Run) -> None:
             ),
             flush=True,
         )
-    for shard, d in digests:
-        print(f"  shard {shard}: {d}", flush=True)
     if kills:
         print(f"\n  {len(kills)} shard(s) hit the time budget:", flush=True)
-        for shard, mins in kills:
-            print(f"    shard {shard} killed at {mins:.1f} min", flush=True)
     else:
         print("\n  no shard hit its time budget", flush=True)
-    for shard, d in deferrals:
-        print(f"    shard {shard} deferred: {d}", flush=True)
 
 
 def quarantines(run: Run) -> None:
@@ -131,7 +134,8 @@ def quarantines(run: Run) -> None:
         print(
             f"\n  failures: {gone} board(s) reported gone across {shards} shard(s) | "
             f"{ledger} ledger rows ({cleared} cleared) | "
-            f"**{quarantined}** at/over {at} strikes (quarantined)",
+            f"**{quarantined}** at/over {at} strikes — a STANDING TOTAL over the whole ledger, "
+            f"not this run's inflow",
             flush=True,
         )
     sample = QUARANTINE.findall(text)

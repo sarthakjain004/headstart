@@ -69,11 +69,16 @@ _SHARDED = re.compile(r"^(.*?) \((\d+)\)$")
 _STAMP = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z ")
 
 # --- shared emitter patterns (single source of truth; see the module docstring) ---------------
-# `scrape_run._report`. The `predicted`/`actual` tail is absent when the planner had no estimate,
-# so groups 6-7 are optional and callers must treat them as such.
+# `scrape_run._report`. Two shapes matter and both nearly went unhandled:
+#   - the `predicted`/`actual` tail is absent when the planner had no estimate, so groups 6-7 are
+#     optional and callers must treat them as such;
+#   - `board seconds` is `{}` — EMPTY — for a shard that finished zero boards, because
+#     `observability.percentiles([])` returns `{}`. The dict group is therefore `[^}]*`, not
+#     `[^}]+`. With `+` the line does not match at all and that shard vanishes from every table
+#     *and* from the run totals, which is a silent undercount rather than a visible error.
 DONE = re.compile(
     r"\[scrape_run\] done: (\d+) jobs from (\d+) boards in (\d+)s \((\d+) board errors\)"
-    r" \| board seconds (\{[^}]+\})(?: \| predicted ([\d.]+) min, actual/predicted ([\d.]+)x)?"
+    r" \| board seconds (\{[^}]*\})(?: \| predicted ([\d.]+) min, actual/predicted ([\d.]+)x)?"
 )
 
 
@@ -117,7 +122,6 @@ class Run:
         meta = json.loads(gh(f"repos/{repo}/actions/runs/{run_id}"))
         self.head = meta["head_sha"][:7]
         self.created = meta["created_at"]
-        self.conclusion = meta.get("conclusion")
         self.jobs = [j for j in self._jobs() if j["started_at"] and j["completed_at"]]
 
     def _jobs(self) -> list[dict]:
@@ -165,15 +169,22 @@ class Run:
         jobs = [j for j in self.jobs if self.stage_of(j["name"]) == stage]
         return sorted(jobs, key=lambda j: self.shard_of(j["name"]) or 0)
 
-    def stage(self, stage: str) -> Iterator[tuple[int | None, dict, str]]:
+    def stage(
+        self, stage: str, only: int | None = None
+    ) -> Iterator[tuple[int | None, dict, str]]:
         """Yield `(shard, job, cleaned_log)` as each log lands — completion order, not shard order.
 
         A generator rather than a list so callers stream: the repo forbids buffering a batch and
         printing only at the end, since one slow item then stalls all visibility and a crash loses
         everything. Callers that need a ranked table should print each shard on arrival and rank
         afterwards, not withhold output until the fetch completes.
+
+        ``only`` restricts the fetch to one shard. The `--stage --shard` dump used to download all
+        15 logs and discard 14 of them.
         """
         jobs = self.stage_jobs(stage)
+        if only is not None:
+            jobs = [j for j in jobs if self.shard_of(j["name"]) == only]
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             futures = {pool.submit(self.log, j): j for j in jobs}
             for fut in as_completed(futures):
@@ -240,9 +251,13 @@ def main() -> None:
                     flush=True,
                 )
             continue
-        for shard, _job, text in run.stage(args.stage):
+        # Shard-ordered, not arrival-ordered: a dump interleaved differently on every invocation
+        # is undiffable, and this path is for reading rather than for throughput.
+        for job in run.stage_jobs(args.stage):
+            shard = run.shard_of(job["name"])
             if args.shard is not None and shard != args.shard:
                 continue
+            text = run.log(job)
             print(f"--- {args.stage} shard {shard} ---", flush=True)
             for line in text.splitlines():
                 print(unstamp(line), flush=True)
