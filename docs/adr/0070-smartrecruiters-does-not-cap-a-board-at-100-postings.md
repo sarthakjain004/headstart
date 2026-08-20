@@ -66,8 +66,8 @@ It is raised as its own issue with these numbers attached.
 Rejected: **treat a full page as the truncation signal** (`len(content) == limit`), the darwinbox
 heuristic. Unnecessary here — `totalFound` is exact, so a board holding exactly 100 postings is
 correctly *not* marked, where the heuristic would falsely strip it from the eviction scope and
-leave its real delistings unpruned forever. That case is currently empty (no board in the 14,248-row
-liveness ledger sits at exactly 100), so this is an argument from the signal being exact rather than
+leave its real delistings unpruned forever. That case is currently empty (no board sits at exactly 100 among the
+12,688 liveness-ledger rows that carry a job count), so this is an argument from the signal being exact rather than
 from an observed board — `totalFound` is the better signal regardless of how often the two differ.
 
 ## Consequences
@@ -78,11 +78,13 @@ worse search result, a false delisting is a lost job.
 
 **This cost is real and is not yet bounded.** An estimated 807 boards leave the eviction scope, and
 nothing prunes their stale rows while they stay truncated, so that population only grows. The
-truncation flag's only surfacing today is `index sync`'s per-board reason log
-(`ingest/index.py:377`) — one WARNING per excluded board, so this also adds ~807 lines to every
-sync. `scrape_run.on_board` logs nothing for a truncated board and `scrape_join`'s summary has no
-truncated line. Quantifying the stale-row growth, and reporting the exclusion as one aggregate
-rather than 807 warnings, is follow-up work, not something this change delivers.
+flag does reach the per-shard report artifact — `scrape_run` hands the whole `{board: why}` map to
+`observability.write_shard` (ADR-0045), and `scrape_join` logs an aggregate count of unauthoritative
+Boards — but nothing tracks that count's growth or alerts on it. Its only *per-board* surfacing is
+`index sync`'s reason log (`ingest/index.py`), one WARNING each; a single run plans a slice of the
+fleet rather than all ~807, so the added lines are bounded by that slice, not by 807.
+`scrape_run.on_board` logs nothing for a truncated board and `_report_shards` has no truncated line.
+Quantifying the stale-row growth, and aggregating the exclusion, is follow-up work.
 
 ADR-0015's measured speed conclusions stand: the ~14% matched-concurrency and ~38% width-100
 numbers were measured, not derived from the ceiling. Only the claim that the window is *bounded*
