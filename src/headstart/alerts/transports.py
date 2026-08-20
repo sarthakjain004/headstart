@@ -116,6 +116,23 @@ EMAIL = Transport(
 TRANSPORTS: tuple[Transport, ...] = (TELEGRAM, EMAIL)
 
 
+def config_from(env: Mapping[str, str]) -> dict[str, str]:
+    """Every variable `TRANSPORTS` names, read but not demanded (ADR-0038).
+
+    `run` calls this instead of listing the names itself, so a new Transport's `needs` reach the
+    config by adding the literal and nothing else. Listing them in `run` meant a new channel's
+    secrets were always absent, so `missing` called it unconfigured and skipped its
+    Subscriptions silently — failing closed *and* quietly.
+
+    This does not make ADR-0038's "one literal and one tuple entry" literally true: Actions has
+    to map each secret by name, so `.github/workflows/alerts.yml` still needs a line per
+    channel. What it removes is the *second* place inside this package that had to know.
+    """
+    return {
+        name: env.get(name, "") for transport in TRANSPORTS for name in transport.needs
+    }
+
+
 def for_subscription(sub: Subscription) -> Transport:
     """The Transport this Subscription is delivered by — the first whose `selects` matches.
 

@@ -379,3 +379,107 @@ def test_an_account_with_sets_but_no_subscription_is_not_minted_one():
 
     assert sub is None
     assert store.saved == []
+
+
+def test_a_bare_string_invite_does_not_blank_the_filters_chosen_at_signin():
+    """ADR-0035: "Bare strings still mean self-serve — invited, Query supplied at sign-in".
+
+    A bare string parses to `Invite(search_filters={})`. The revise test then sees `{}` differ
+    from what the person chose, and `revised(...)` wrote the empty dict back — every run,
+    forever. This is the same defect already fixed one line above for `query`; the filters half
+    was left behind.
+    """
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="their own query",
+        search_filters={"remote": "true", "location": "Berlin"},
+        watermark=AFTER,
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(Invite("ada@example.com"), store, frozenset())
+
+    assert sub.search_filters == {"remote": "true", "location": "Berlin"}
+    assert store.saved == [], "an unchanged Subscription needs no write"
+
+
+def test_an_invite_can_still_replace_the_filters_it_states():
+    """The fall-back must not make filters unwritable — a stated filter set still wins.
+
+    Values are compared after the store's own normalisation (it stringifies), so this asserts
+    the stated set replaced the stored one, not the literal types handed in.
+    """
+    stored = Subscription(
+        id=subscription_id("ada@example.com"),
+        email="ada@example.com",
+        query="their own query",
+        search_filters={"etype": "INTERN"},
+        watermark=AFTER,
+    )
+    store = _InviteStore({stored.id: stored})
+
+    sub = run.subscription_for(
+        Invite("ada@example.com", "", {"etype": "FULL_TIME"}),
+        store,
+        frozenset(),
+    )
+
+    assert sub.search_filters == {"etype": "FULL_TIME"}
+    assert store.saved == [sub]
+
+
+def test_main_builds_its_config_from_transports_not_a_name_list(monkeypatch):
+    """The production path, not just the helper: `main`'s config must carry a new channel's
+    secret without `run` naming it (ADR-0038).
+
+    Both helper tests passed with `main` still holding a hard-coded name tuple, so the defect
+    survived its own regression suite — this is the test that actually fails without the fix.
+    """
+    from headstart.alerts import transports
+
+    extra = transports.Transport(
+        name="slack",
+        selects=lambda sub: False,
+        send=lambda *a, **k: None,
+        needs=("SLACK_WEBHOOK_URL",),
+    )
+    monkeypatch.setattr(transports, "TRANSPORTS", (*transports.TRANSPORTS, extra))
+    for name, value in {
+        "SUBSCRIBERS_REPO": "repo",
+        "SUBSCRIBERS_TOKEN": "tok",
+        "SLACK_WEBHOOK_URL": "https://hooks.example",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    class _Repo:
+        def __init__(self, *a, **k):
+            pass
+
+        def invites(self):
+            return [Invite("ada@example.com", "backend engineer")]
+
+        def get(self, sub_id):
+            return None
+
+        def put(self, sub):
+            pass
+
+        def accounts_with_sets(self):
+            return frozenset()
+
+        def subscriptions(self):
+            return []
+
+    seen = {}
+
+    def _capture(sub, store, space, config):
+        seen.update(config)
+        return 0
+
+    monkeypatch.setattr(run, "Store", _Repo)
+    monkeypatch.setattr(run, "telegram_subscriptions", lambda store: [])
+    monkeypatch.setattr(run, "send_one", _capture)
+
+    assert run.main() == 0
+    assert seen.get("SLACK_WEBHOOK_URL") == "https://hooks.example"

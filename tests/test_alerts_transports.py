@@ -140,3 +140,34 @@ def test_the_payload_total_reaches_the_renderer_so_counts_are_not_understated():
     assert "75 new job(s)" in chunks[0]
     assert any("74 more" in c for c in chunks), "the rest must be pointed at the file"
     assert seen == {}
+
+
+def test_config_from_covers_every_transport_without_run_naming_one(monkeypatch):
+    """ADR-0038: "adding Slack or a webhook is one literal and one tuple entry; `run` never
+    learns a channel exists."
+
+    `run.main` built its config from a hard-coded name tuple, so a new Transport's `needs` were
+    absent from it, `Transport.missing` then reported the channel unconfigured, and every one of
+    its Subscriptions was skipped as `TransportUnset` — the seam failing closed *and* silently.
+    """
+    extra = transports.Transport(
+        name="slack",
+        selects=lambda sub: False,
+        send=lambda *a, **k: None,
+        needs=("SLACK_WEBHOOK_URL",),
+    )
+    monkeypatch.setattr(transports, "TRANSPORTS", (*transports.TRANSPORTS, extra))
+
+    config = transports.config_from({"SLACK_WEBHOOK_URL": "https://hooks.example"})
+
+    assert extra.missing(config) == []
+
+
+def test_config_from_reads_but_does_not_demand():
+    """A repo with only Telegram configured runs Telegram and skips email, rather than
+    refusing to start (ADR-0038)."""
+    config = transports.config_from({"TELEGRAM_BOT_TOKEN": "t"})
+
+    assert config["TELEGRAM_BOT_TOKEN"] == "t"
+    assert config["RESEND_API_KEY"] == ""
+    assert transports.EMAIL.missing(config) == ["RESEND_API_KEY", "ALERTS_SENDER"]
