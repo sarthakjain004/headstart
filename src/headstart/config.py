@@ -41,6 +41,15 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "careers-test". Safe to drop because their production board is in the ledger too
         # (`careers.capgemini.com`, 1338 postings) — this removes the duplicate, not the jobs.
         "successfactors:careers-test.capgemini.com",
+        # A plain Apache 301 to `conaservices.jobs2web.com` (`/` -> `/`, `/sitemap.xml` ->
+        # `/xml/sitemap.xml`, both verified live 2026-08-20) — not an independent tenant, just a
+        # vanity hostname for the Coca-Cola bottlers' board the ledger already tracks under its
+        # own "live" entry. What settles them as one board is the sitemap, not the ledger: both
+        # hosts serve the byte-identical document of 1467 job ids, while the ledger's 1226 (this
+        # row) and 1251 (`conaservices`) differ only because the two rows were checked on
+        # different days. Left in, it scrapes that board twice and indexes every posting under
+        # two ids. Found by #218's sweep.
+        "successfactors:careers.cokeonena.com",
         # LTIMindtree's retired vanity host. Its TLS cert is SAP's own unconfigured-vanity
         # placeholder (CN=certificate-not-found.jobs2web.com, no SAN for this hostname) —
         # verified live 2026-08-19, failing the same way in all 6 recent pipeline runs. Its
@@ -59,6 +68,14 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # §3) for zero extra coverage, and duplicated every posting in the index under two ids
         # (the scraper keys off `self.slug`, `successfactors.py:314`). Fixes #212.
         "successfactors:hcltech.jobs.hr.cloud.sap",
+        # The `www.` spelling of `jobs.bombardier.com`, which the ledger carries as its own
+        # "live" entry — the same Apache 301 shape as the HCLTech and CONA aliases (`/` -> `/`,
+        # `/sitemap.xml` -> `/xml/sitemap.xml`, both verified live 2026-08-20), and again both
+        # hosts serve the byte-identical sitemap, here of 1158 job ids. Ignore that the ledger
+        # has this row *higher* than the canonical one (1227 vs 1174): those are two check dates,
+        # not two boards. Not an independent tenant, so dropping it removes the duplicate, not
+        # Bombardier's jobs. Found by #218's sweep.
+        "successfactors:www.jobs.bombardier.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
