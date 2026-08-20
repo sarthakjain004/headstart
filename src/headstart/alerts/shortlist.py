@@ -10,8 +10,10 @@ corpus. Re-cutting here means a lagging Space under-delivers rather than mailing
 their entire index. Rows with no `first_seen` are dropped for the same reason: an unstamped
 row (pre-ADR-0031) cannot be shown to be new.
 
-The **cap** is what keeps a Digest readable — a run adds thousands of rows, and the point
-of the email is the best few.
+The **cap** is a ceiling this function offers, not one it imposes on the Digest. `run` ranks
+twice over (ADR-0038: "The message is capped and the spreadsheet is not"), calling this with
+`cap=len(rows)` for the spreadsheet and cutting the message to `CAP` itself — so the readable-
+message cut lives there, and `CAP` is the default for any caller that wants both at once.
 """
 
 from __future__ import annotations
