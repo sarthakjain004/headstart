@@ -243,6 +243,24 @@ def test_gap_keeps_the_ids_of_a_board_whose_scrape_was_not_authoritative(tmp_pat
     assert board_description_gap.load(path) == {"lever:jobgether": 2}
 
 
+def test_gap_protects_an_unauthoritative_board_whose_ids_carry_a_colon(tmp_path):
+    """ADR-0049's case, and the one that makes the protection worth pinning twice: a Workday
+    native id like `REQ: 228` makes `board_of` name a Board that does not exist, which no
+    `board_key()`-shaped unauthoritative entry can match. Resolved by prefix instead, so a
+    truncated Workday scrape cannot reap the very ids its shape hides."""
+    path = _gap_run(
+        tmp_path,
+        meta_rows=[
+            {"id": f"{_WORKDAY_BOARD}:REQ: 228", "ats": "workday"},
+            {"id": f"{_WORKDAY_BOARD}:REQ: 229", "ats": "workday"},
+        ],
+        settled={"greenhouse": ["unrelated"]},
+        scraped={"workday": [f"{_WORKDAY_BOARD}:REQ: 229"]},
+        unauthoritative={_WORKDAY_BOARD: "truncated: HTTP Error 429: "},
+    )
+    assert board_description_gap.load(path) == {f"{_WORKDAY_BOARD}:req".lower(): 2}
+
+
 def test_a_missing_store_leaves_the_ledger_alone(tmp_path):
     """The failure that would otherwise mark every Board gap-ful: the join fetches the store on
     `|| echo ::warning::`, so an empty store means a lost download, not a settled corpus."""

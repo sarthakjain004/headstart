@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -62,7 +62,7 @@ from headstart.board_priority import update as update_priority
 from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
 from headstart.ingest import REPO_ROOT, board_failures, observability
-from headstart.ingest.index_plan import read_unauthoritative_boards
+from headstart.ingest.index_plan import read_unauthoritative_boards, resolve_board
 from headstart.ingest.update_descriptions import settled_ids
 
 _log = log.get(__name__, __spec__)
@@ -166,22 +166,36 @@ def failures(args: argparse.Namespace) -> int:
     return 0
 
 
-def _authoritative_fresh_ids(jobs: Path, unauthoritative: Path) -> dict[str, set[str]]:
-    """``{lowercased Board: the ids it emitted this run}``, for the Boards whose scraped list this
-    run can be read as their complete set of openings.
+def _authoritative_scrape(
+    jobs: Path, unauthoritative: Path
+) -> tuple[set[str], set[str]]:
+    """The Boards whose scraped list this run can be read as their complete set of openings, and
+    every id those Boards emitted.
 
-    Fails closed on both sides: a Board that wrote no lines is simply absent (unscraped this run,
-    or scraped and truncated to nothing), and so is one ``read_unauthoritative_boards`` names
-    (ADR-0053) — absence from this mapping is what leaves an id counted. Keyed like the gap counts
-    themselves, ``board_of`` lowercased, so the two pair (ADR-0049).
+    Boards are keyed like the gap counts themselves — ``board_of`` lowercased — so the two pair
+    (ADR-0049). An id can only ever be emitted by the Board whose key prefixes it, so one flat id
+    set answers "did this Board re-emit it" exactly as a per-Board set would.
+
+    A Board that wrote no lines is simply absent, whether it went unscraped this run or was
+    truncated to nothing, and absence is what leaves an id counted. The ADR-0053 half is only as
+    good as its file: ``read_unauthoritative_boards`` fails **open**, so an unreadable
+    ``unauthoritative_boards.json`` protects no Board here — the same bet ``index sync`` already
+    makes on that file, taken for a strictly smaller action (a count, not an eviction).
     """
     skip = read_unauthoritative_boards(unauthoritative)
-    fresh: dict[str, set[str]] = defaultdict(set)
+    boards: set[str] = set()
+    emitted: set[str] = set()
     for job in iter_jobs(jobs):
-        board = board_of(job["id"]).lower()
-        if board not in skip:
-            fresh[board].add(job["id"])
-    return fresh
+        # `skip` is keyed by the real `board_key()`, so the membership test resolves by prefix
+        # rather than through `board_of`, whose answer for a native id carrying a colon is a
+        # phantom Board no unauthoritative key matches (ADR-0049) — protection that silently
+        # missed exactly the Workday ids it most needs to cover. Only the *test* uses it; the
+        # key stays `board_of`'s so both sides of the comparison in `gap` are built alike.
+        if resolve_board(job["id"], skip).lower() in skip:
+            continue
+        boards.add(board_of(job["id"]).lower())
+        emitted.add(job["id"])
+    return boards, emitted
 
 
 def gap(args: argparse.Namespace) -> int:
@@ -203,7 +217,7 @@ def gap(args: argparse.Namespace) -> int:
         )
         return 0
 
-    fresh = _authoritative_fresh_ids(args.jobs, args.unauthoritative_boards)
+    scraped, emitted = _authoritative_scrape(args.jobs, args.unauthoritative_boards)
 
     counts: Counter[str] = Counter()
     rows = unreachable = expired = 0
@@ -234,9 +248,9 @@ def gap(args: argparse.Namespace) -> int:
             # An id its own Board's authoritative scrape did not re-emit has expired off that
             # Board, and `reconcile()` only ever acts on ids the *current* scrape returned — so
             # nothing can ever settle it, and counting it reserves gap quota no scrape can spend
-            # (#185). Boards absent from `fresh` are no evidence either way, so their ids stay
+            # (#185). Boards absent from `scraped` are no evidence either way, so their ids stay
             # unsettled — including one whose scrape came back unauthoritative this run.
-            if board in fresh and row["id"] not in fresh[board]:
+            if board in scraped and row["id"] not in emitted:
                 expired += 1
                 continue
             counts[board] += 1
