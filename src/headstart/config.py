@@ -51,6 +51,14 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # cert (`careers.ltm.com`, 49 postings, comparable to this host's last-good 55). Safe to
         # drop: it removes the permanently broken duplicate, not LTIMindtree's jobs.
         "successfactors:careers.ltimindtree.com",
+        # A plain Apache 301 redirect to `careers.hcltech.com` (`/sitemap.xml` and `/` both
+        # redirect, verified live 2026-08-20) — not an independent tenant, the same board
+        # reached through a vanity hostname the liveness ledger independently tracks as its
+        # own "live" entry. Left in, it cost ~1150-1300s as a floor-bound worst shard in
+        # multiple pipeline runs (docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md
+        # §3) for zero extra coverage, and duplicated every posting in the index under two ids
+        # (the scraper keys off `self.slug`, `successfactors.py:314`). Fixes #212.
+        "successfactors:hcltech.jobs.hr.cloud.sap",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
@@ -89,6 +97,16 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # inner budget and the 66m step timeout — failing the whole shard, not just this Board.
         # Un-park once a per-board deadline bounds it.
         "workday:accenture/accenturecareers",
+        # 1,162 postings, real and un-fabricated — unlike Accenture above this board finishes
+        # every run, it's just consistently the worst floor-bound shard once it does: the single
+        # most expensive board across 10+ consecutive pipeline runs (~19-37 min each,
+        # docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md §3), now the run-owning
+        # straggler after the six Workday retail boards were narrowed instead of parked (§6).
+        # No per-category narrowing exists for this scraper the way Workday's
+        # `_FIXED_FACETS_BY_SLUG` does — SuccessFactors' listing surfaces (sitemap/search/RSS)
+        # carry no facet mechanism to fetch only a tech-labeled subset. Un-park once one exists,
+        # or a per-board timeout bounds the cost instead.
+        "successfactors:careers.ey.com",
     }
 )
 
