@@ -112,7 +112,9 @@ def test_a_board_reaches_quarantine_only_after_five_consecutive_runs(tmp_path):
 # would mark every Board gap-ful from a failed download.
 
 
-def _gap_run(tmp_path, *, meta_rows, settled, ledger=None):
+def _gap_run(
+    tmp_path, *, meta_rows, settled, scraped=None, unauthoritative=None, ledger=None
+):
     meta = tmp_path / "meta.jsonl"
     meta.write_text("".join(json.dumps(r) + "\n" for r in meta_rows), encoding="utf-8")
     store = tmp_path / "descriptions"
@@ -122,8 +124,24 @@ def _gap_run(tmp_path, *, meta_rows, settled, ledger=None):
         with gzip.open(d / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
             for job_id in ids:
                 fh.write(json.dumps({"id": job_id, "description": "text"}) + "\n")
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir(exist_ok=True)
+    for ats, ids in (scraped or {}).items():
+        (jobs_dir / f"{ats}.jsonl").write_text(
+            "".join(json.dumps({"id": i}) + "\n" for i in ids), encoding="utf-8"
+        )
+    boards = tmp_path / "unauthoritative_boards.json"
+    boards.write_text(json.dumps(unauthoritative or {}), encoding="utf-8")
     path = ledger or tmp_path / "board_description_gap.csv"
-    gap(argparse.Namespace(meta=meta, descriptions=store, ledger=path))
+    gap(
+        argparse.Namespace(
+            meta=meta,
+            descriptions=store,
+            jobs=jobs_dir,
+            unauthoritative_boards=boards,
+            ledger=path,
+        )
+    )
     return path
 
 
@@ -185,6 +203,44 @@ def test_gap_skips_a_disabled_ats(tmp_path):
         settled={"greenhouse": ["unrelated"]},
     )
     assert board_description_gap.load(path) == {"ashby:real": 1}
+
+
+def test_gap_skips_an_id_its_own_board_scraped_without_re_emitting(tmp_path):
+    """#185: the posting expired off a healthy Board, and `reconcile()` only ever sees ids the
+    current scrape returned — so it can never settle, and counting it reserves quota nothing can
+    spend. A Board this run never scraped (`greenhouse:elsewhere`) is no evidence and keeps its
+    row: that is the partial-harvest rule."""
+    path = _gap_run(
+        tmp_path,
+        meta_rows=[
+            {"id": "lever:jobgether:expired", "ats": "lever"},
+            {"id": "lever:jobgether:live", "ats": "lever"},
+            {"id": "greenhouse:elsewhere:1", "ats": "greenhouse"},
+        ],
+        settled={"greenhouse": ["unrelated"]},
+        scraped={"lever": ["lever:jobgether:live"]},
+    )
+    assert board_description_gap.load(path) == {
+        "lever:jobgether": 1,
+        "greenhouse:elsewhere": 1,
+    }
+
+
+def test_gap_keeps_the_ids_of_a_board_whose_scrape_was_not_authoritative(tmp_path):
+    """The safety half: a truncated or raised scrape emits the lines it did get, so its missing
+    ids look identical to expired ones. ADR-0053 already names those Boards; their Jobs stay
+    unsettled rather than being reaped on a scrape that failed."""
+    path = _gap_run(
+        tmp_path,
+        meta_rows=[
+            {"id": "lever:jobgether:expired", "ats": "lever"},
+            {"id": "lever:jobgether:live", "ats": "lever"},
+        ],
+        settled={"greenhouse": ["unrelated"]},
+        scraped={"lever": ["lever:jobgether:live"]},
+        unauthoritative={"lever:jobgether": "HTTPError: HTTP Error 429: "},
+    )
+    assert board_description_gap.load(path) == {"lever:jobgether": 2}
 
 
 def test_a_missing_store_leaves_the_ledger_alone(tmp_path):
