@@ -206,6 +206,13 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
     retries: Counter[str] = Counter()
     for r in reports:
         retries.update(r.get("retries") or {})
+    # The cross-shard view a single shard cannot have: ADR-0067 measured 30 jobs sharing just 11
+    # WARP IPs, one across 8 of them — a fact no shard's own count of its rotations can show.
+    egress_ips: Counter[str] = Counter()
+    for r in reports:
+        egress_ips.update(r.get("egress_ips") or {})
+    distinct_ips = sorted(k[3:] for k in egress_ips if k.startswith("ip:"))
+    distinct_colos = sorted(k[5:] for k in egress_ips if k.startswith("colo:"))
     # `.get(... ) or 0` throughout, never direct indexing: a truncated report must not raise
     # here. The join's real job is unioning the run's job data, and losing that to a broken
     # telemetry file would be a far worse trade than losing one shard's numbers.
@@ -241,6 +248,11 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
         f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"
         + (f" | actual/predicted {ratio_span}" if ratio_span else "")
     )
+    if distinct_ips:
+        _log.info(
+            f"egress: {len(distinct_ips)} distinct address(es) across {len(reports)} shards"
+            f" ({', '.join(distinct_ips)}), colos {', '.join(distinct_colos) or '?'}"
+        )
     observability.summary(
         "Scrape fan-out",
         [
