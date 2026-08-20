@@ -125,8 +125,15 @@ How many Docs are encoded together in one pass, fixed per **Bucket** so batch si
 The measured embedding rate — not a fixed constant. The embed step logs a running `jobs/s` average per batch straight to the CI log; its reciprocal, seconds-per-Doc, is the more useful number for predicting run length. Throughput differs sharply by **Bucket** (short Docs batch efficiently; the ≤4096 Bucket, Batch size 1, costs roughly 20x longer per Doc) and by which runner executes the run — so there is no single "embedding speed," only a per-Bucket rate read off real logs.
 
 **Query**:
-The natural-language sentence a user types describing *only the role they want* ("backend engineer at a climate startup"). It drives the embedding and nothing else — every structured constraint belongs to a **Search filter** instead, which is what makes the hybrid split explicit at the UI. A Query that carries years, salary, or a location is a Query doing a **Search filter**'s job.
-_Avoid_: search term, keywords — it is a sentence describing a role, not a bag of terms to match.
+The natural-language sentence a user types describing *only the role they want* ("backend engineer at a climate startup"). It drives the embedding and nothing else — every structured constraint belongs to a **Search filter** instead, which is what makes the hybrid split explicit at the UI. A Query that carries years, salary, or a location is a Query doing a **Search filter**'s job. Optional (ADR-0074): an empty Query is a **Browse**, not an error.
+
+**Browse** (ADR-0074):
+A request with no **Query** — the Search tab's default, and what opening it with nothing typed shows. Ranks the **Search index** by `first_seen` instead of semantic similarity, so every row's `score` comes back empty rather than a number implying a relevance never computed. Every **Search filter** and **Page** still applies; only the ranking criterion changes.
+_Avoid_: empty search, default search — it never ran a **Query**, so calling it a search understates what changed.
+
+**Page** (ADR-0074):
+One `k`-sized slice of a **Query**'s or **Browse**'s ranked results, walked with `page` (1-indexed, capped at 20). Server-side pagination — a click reads a click for a specific offset into a ranking that already exists, not a resort or a fresh guess. Has no total-count concept: a short page (fewer rows than `k`) is how "no next page" is known, not a separate count.
+_Avoid_: offset, cursor — `offset` is the mechanism `page` compiles to, not the vocabulary a caller uses.
 
 **Search filter**:
 A structured constraint the user sets themselves on the **Search index** — remote, employment type, `min_years`, recency — compiled into a deterministic where-clause that runs *before* ranking. A **Subscription** carries a set of these, and they are the only kind of filter left: the retired keyword bot's per-Subscriber `Filter` over the **Feed** went with it (ADR-0038).
