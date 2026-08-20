@@ -94,6 +94,14 @@ _DETAIL_STREAMS = 25
 # two passes differ (a POST with a JSON body vs. a bare GET) and may need to diverge once measured
 # under real pagination load, the way `_DETAIL_STREAMS` diverged from `_DETAIL_WORKERS`.
 _PAGE_STREAMS = _DETAIL_STREAMS
+# How much of one query's pages may come back short before `_paginate` fails the crawl instead of
+# reporting it truncated (ADR-0076). A judgement call, not a measurement — nothing records
+# per-page failure rates, so there is no distribution to cut at yet; the warning `_paginate` logs
+# either way carries the numbers to re-measure this with. Half is where the two ends land on the
+# side they belong: one page of five lost to a 429 still ships the other four, while a query that
+# loses most of its pages has kept too little to read as those postings — and marking *that*
+# truncated would tell `index sync` to preserve rows for a query we barely read.
+_MAX_LOST_PAGE_SHARE = 0.5
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
@@ -499,14 +507,29 @@ class WorkdayScraper(BaseScraper):
             f"into {len(values)} queries (depth {depth + 1})"
         )
         for value_id, _count in values:
-            self._exhaust({**applied, param: [value_id]}, absorb, depth + 1)
+            sliced = {**applied, param: [value_id]}
+            try:
+                self._exhaust(sliced, absorb, depth + 1)
+            except http.RequestsError as exc:
+                # One slice of a union, not the board: its siblings' postings are already
+                # absorbed and are real. Costing them a slice's 429 is what #194 is about, and
+                # on a capped board every page after the first is fetched down here — so
+                # without this the fix reaches nvidia, Walmart and every other subdivided board
+                # not at all. Same trade the first-page 404 branch above already makes: the
+                # slice is dropped whole and reported, never quietly.
+                self.mark_truncated(
+                    f"{_slice_label(sliced)} failed ({exc}) — "
+                    "none of that slice's postings were read"
+                )
 
     def _paginate(self, applied: dict[str, list[str]], total: int, absorb) -> None:
         """Page through offsets [20, total), fanned out over ``_PAGE_STREAMS`` concurrent
         streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
-        own small gather rather than a call to it — see :meth:`_paginate_async`). Pages whose
-        ``_post_async`` 404s mid-crawl are skipped as before, but one warning now reports how
-        many went missing — the tripwire for a partial board.
+        own small gather rather than a call to it — see :meth:`_paginate_async`). A page that
+        404s or spends its retry ladder mid-crawl is skipped, and one warning reports how many
+        went missing — the tripwire for a truncated list — unless more than
+        ``_MAX_LOST_PAGE_SHARE`` of the query's pages went that way, which is a failed crawl
+        rather than a truncated one and raises (ADR-0076).
 
         Falls back to the old one-at-a-time :meth:`_post` loop when
         :meth:`~BaseScraper.async_fanout_enabled` says no (``HEADSTART_ASYNC_FANOUT=0``): that
@@ -519,33 +542,51 @@ class WorkdayScraper(BaseScraper):
         if not offsets:
             return
         if self.async_fanout_enabled():
-            missing = asyncio.run(self._paginate_async(applied, offsets, absorb))
+            missing, error = asyncio.run(self._paginate_async(applied, offsets, absorb))
         else:
-            missing = self._paginate_sync(applied, offsets, absorb)
-        if missing:
+            missing, error = self._paginate_sync(applied, offsets, absorb)
+        if not missing:
+            return
+        # Page 1 is in the denominator because it is in hand: :meth:`_exhaust` fetched it before
+        # calling this, and it is as much a page of ``total`` as the ones fanned out here.
+        # Counting only ``offsets`` reads a 21-40 posting query — one page here, three of
+        # nvidia's fifteen slices — as 100% lost the moment its single page 429s, which is the
+        # whole of what #194 asked this not to do.
+        page_count = len(offsets) + 1
+        shortfall = f"{missing} of {page_count} page(s) failed mid-crawl"
+        if missing / page_count > _MAX_LOST_PAGE_SHARE:
             _log.warning(
-                f"{self.board_key()}: {missing} page(s) 404ed mid-crawl — "
-                f"board partial ({total} listed)"
+                f"{self.board_key()}: {shortfall} — too little of {total} listed read to keep"
             )
-            # The warning was the whole record until ADR-0053: `index sync` could not see it, so
-            # the pages this dropped were evicted as delistings. Now it travels with the Jobs.
-            self.mark_truncated(
-                f"{missing} page(s) 404ed mid-crawl of {total} listed postings"
+            # Re-raise what the origin actually said rather than a fresh exception of our own:
+            # `board_failures._GONE` reads the "HTTP Error {code}" text out of the recorded
+            # reason to tell a vanished board from a throttled one, and a generic error would
+            # read as neither. Only an all-404 majority arrives with nothing to re-raise.
+            raise error or RuntimeError(
+                f"{shortfall} — too little of {total} listed postings was read"
             )
+        _log.warning(
+            f"{self.board_key()}: {shortfall} — Board unauthoritative this run "
+            f"({total} listed)"
+        )
+        # The warning was the whole record until ADR-0053: `index sync` could not see it, so
+        # the pages this dropped were evicted as delistings. Now it travels with the Jobs.
+        self.mark_truncated(f"{shortfall} of {total} listed postings")
 
     async def _paginate_async(
         self, applied: dict[str, list[str]], offsets: range, absorb
-    ) -> int:
+    ) -> tuple[int, http.RequestsError | None]:
         """Fetch every offset in ``offsets`` concurrently over one shared ``AsyncSession``,
-        bounded to ``_PAGE_STREAMS`` in flight, and return how many 404ed.
+        bounded to ``_PAGE_STREAMS`` in flight, and return how many pages came back short
+        together with the first request error that made one (None when only 404s did).
 
         Not a call to :meth:`fan_out_async`: that method's per-item contract swallows *every*
-        exception into ``default``, which here would turn an unexpected error (a persisting 5xx,
-        a connection failure) into a silent missing-page count instead of the raised failure
-        :meth:`_post`'s sequential caller relied on — ADR-0058's "a listing error must raise, not
-        read as empty/partial" applies to a mid-crawl page too. Only a 404 — handled inside
-        :meth:`_post_async` itself — is a soft, expected gap; everything else still fails the
-        whole crawl, so every offset is let to finish before any exception is re-raised.
+        exception into ``default``, which would lose the one thing :meth:`_paginate` decides on
+        — whether enough of the query was read to be worth keeping — and would swallow an
+        unexpected exception with it. A 404 (handled inside :meth:`_post_async`) and a request
+        error that outlived ``fetch_async``'s retry ladder are both one page of a board whose
+        other pages arrived, so both are counted rather than raised here; anything else is a bug
+        in this code, not a page that failed, and propagates.
 
         ``absorb`` runs on the event loop's single thread, one call at a time, so concurrent
         callers can't race its ``seen``/``postings`` state the way concurrent OS threads would —
@@ -556,38 +597,47 @@ class WorkdayScraper(BaseScraper):
 
         sem = asyncio.Semaphore(_PAGE_STREAMS)
         missing = 0
+        error: http.RequestsError | None = None
 
         async with AsyncSession(impersonate="chrome") as session:
 
             async def one(offset: int) -> None:
-                nonlocal missing
+                nonlocal missing, error
                 async with sem:
-                    payload = await self._post_async(session, applied, offset)
+                    try:
+                        payload = await self._post_async(session, applied, offset)
+                    except http.RequestsError as exc:
+                        missing += 1
+                        error = error or exc
+                        return
                     if payload is None:
                         missing += 1
                     absorb((payload or {}).get("jobPostings") or [])
 
-            results = await asyncio.gather(
-                *(one(offset) for offset in offsets), return_exceptions=True
-            )
-        for result in results:
-            if isinstance(result, BaseException):
-                raise result
-        return missing
+            await asyncio.gather(*(one(offset) for offset in offsets))
+        return missing, error
 
     def _paginate_sync(
         self, applied: dict[str, list[str]], offsets: range, absorb
-    ) -> int:
+    ) -> tuple[int, http.RequestsError | None]:
         """The pre-concurrency fallback: walk ``offsets`` one at a time via the sync
         :meth:`_post`, exactly as :meth:`_paginate` did before it fanned out. Only reached
-        when :meth:`~BaseScraper.async_fanout_enabled` is off."""
+        when :meth:`~BaseScraper.async_fanout_enabled` is off — and it counts a failed page the
+        same way :meth:`_paginate_async` does, so flipping the kill switch changes how the pages
+        are fetched, never how much of a struggling board survives."""
         missing = 0
+        error: http.RequestsError | None = None
         for offset in offsets:
-            payload = self._post(applied, offset=offset)
+            try:
+                payload = self._post(applied, offset=offset)
+            except http.RequestsError as exc:
+                missing += 1
+                error = error or exc
+                continue
             if payload is None:
                 missing += 1
             absorb((payload or {}).get("jobPostings") or [])
-        return missing
+        return missing, error
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, site = self._parts()

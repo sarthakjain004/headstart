@@ -834,8 +834,10 @@ def test_workday_paginate_warns_once_on_missing_pages(monkeypatch, caplog):
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     assert warnings[0].name == "headstart.scrapers.workday"
-    assert "1 page(s) 404ed" in warnings[0].getMessage()
+    # 1 of 5, not 1 of 4: the first page `_exhaust` already holds counts too
+    assert "1 of 5 page(s) failed" in warnings[0].getMessage()
     assert "workday:acme/ext" in warnings[0].getMessage()  # the board key
+    assert s.truncated is not None  # and it travels with the Jobs (ADR-0053)
 
 
 def test_workday_paginate_fans_out_bounded_by_page_streams(monkeypatch):
@@ -873,26 +875,119 @@ def test_workday_paginate_fans_out_bounded_by_page_streams(monkeypatch):
     assert 1 < max_in_flight <= workday_mod._PAGE_STREAMS
 
 
-def test_workday_paginate_raises_on_a_non_404_error_mid_crawl(monkeypatch):
-    """A 404 mid-crawl is a soft, expected gap (the test above). Anything else — a persisting
-    5xx, a connection failure — must still fail the whole crawl, same as the old sequential
-    loop's unhandled `_post` exception (ADR-0058: a listing error must raise, never read as an
-    empty/partial board). `_paginate_async` must not fold this into another `missing` count the
-    way `fan_out_async`'s per-item contract would have."""
+def test_workday_paginate_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch, caplog):
+    """A page that spends `fetch_async`'s retry ladder on a persisting 429 is one page of a live
+    board, exactly like a mid-crawl 404 — it must not discard the pages that did arrive (#194:
+    the bigger the board, the more page requests, so raising here killed the boards worth most).
+    Same shape as the 404 test above, with the failing page raising instead of returning None."""
     from headstart import http
     from headstart.scrapers.workday import WorkdayScraper
 
     s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
 
     async def fake_post_async(session, applied, offset):
-        if offset == 40:
-            raise http.RequestsError("HTTP Error 500: Internal Server Error")
+        if offset == 40:  # retries spent — `_post_async`'s raise_for_status
+            raise http.RequestsError("HTTP Error 429: Too Many Requests")
         return {"jobPostings": [{"bulletFields": [f"R{offset}"]}]}
 
     monkeypatch.setattr(s, "_post_async", fake_post_async)
+    absorbed = []
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    s._paginate({}, 100, absorbed.extend)
+
+    assert sorted(p["bulletFields"][0] for p in absorbed) == ["R20", "R60", "R80"]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "1 of 5 page(s) failed" in warnings[0].getMessage()
+    # and the gap travels with the Jobs, or `index sync` reads it as delistings (ADR-0053)
+    assert s.truncated is not None
+
+
+def test_workday_paginate_raises_when_most_pages_fail_mid_crawl(monkeypatch):
+    """The other end of the same line. One failed page in five is a truncation worth keeping (the
+    test above); a crawl that loses more than `_MAX_LOST_PAGE_SHARE` of its pages has kept too
+    little to read as those postings, and marking *that* truncated would tell `index sync` to
+    preserve rows for a query we barely read — so it still fails outright, as every mid-crawl
+    error did before #194. The premise this test used to carry — that a *single* non-404 error
+    fails the crawl — is what #194 changed."""
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    async def fake_post_async(session, applied, offset):
+        if offset == 20:
+            return {"jobPostings": [{"bulletFields": ["R20"]}]}
+        raise http.RequestsError("HTTP Error 500: Internal Server Error")
+
+    monkeypatch.setattr(s, "_post_async", fake_post_async)
+    # 3 of 4 pages gone. The origin's own words are re-raised, not an error of our own making:
+    # `board_failures._GONE` reads the status out of that text to tell gone from throttled.
     with pytest.raises(http.RequestsError, match="500"):
         s._paginate({}, 100, lambda batch: None)
     # an error, not a truncation — matches `_post`'s own contract
+    assert s.truncated is None
+
+
+def test_workday_paginate_raises_without_reading_a_404_majority_as_gone(monkeypatch):
+    """The threshold counts pages that came back short, whatever made them — so a crawl that
+    404s most of its pages fails too, and there is no exception to re-raise. The one it
+    synthesises must not read as a *gone* verdict: `board_failures` ages a Board toward
+    quarantine on 404/410 text, and a mid-crawl 404 is explicitly one page of a live board."""
+    from headstart.ingest.board_failures import is_gone
+    from headstart.scrapers.workday import WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    async def fake_post_async(session, applied, offset):
+        if offset == 20:
+            return {"jobPostings": [{"bulletFields": ["R20"]}]}
+        return None  # 404ed mid-crawl
+
+    monkeypatch.setattr(s, "_post_async", fake_post_async)
+    with pytest.raises(RuntimeError, match="3 of 5") as caught:
+        s._paginate({}, 100, lambda batch: None)
+    assert not is_gone(f"{type(caught.value).__name__}: {caught.value}")
+    assert s.truncated is None
+
+
+def test_workday_paginate_sync_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch):
+    """The kill switch (ADR-0016) may change how the pages are fetched; it must not change how
+    much of a struggling board survives."""
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    def fake_post(applied, offset, **_):
+        if offset == 40:
+            raise http.RequestsError("HTTP Error 429: Too Many Requests")
+        return {"jobPostings": [{"bulletFields": [f"R{offset}"]}]}
+
+    monkeypatch.setattr(s, "_post", fake_post)
+    absorbed = []
+    s._paginate({}, 100, absorbed.extend)
+
+    assert [p["bulletFields"][0] for p in absorbed] == ["R20", "R60", "R80"]
+    assert s.truncated is not None
+
+
+def test_workday_paginate_sync_raises_when_most_pages_fail_mid_crawl(monkeypatch):
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
+
+    def fake_post(applied, offset, **_):
+        if offset == 20:
+            return {"jobPostings": [{"bulletFields": ["R20"]}]}
+        raise http.RequestsError("HTTP Error 500: Internal Server Error")
+
+    monkeypatch.setattr(s, "_post", fake_post)
+    with pytest.raises(http.RequestsError, match="500"):
+        s._paginate({}, 100, lambda batch: None)
     assert s.truncated is None
 
 
@@ -1898,6 +1993,44 @@ def test_workday_reports_a_subdivided_slice_that_lost_its_first_page(monkeypatch
         "R2",
     ]  # siblings still land
     assert scraper.truncated and "jobFamilyGroup=Eng" in scraper.truncated
+
+
+def test_workday_keeps_the_sibling_slices_when_one_slice_fails(monkeypatch):
+    """The #194 fix has to reach a *capped* board, because that is where the biggest ones are:
+    past the 2,000 cap every page after the first is fetched inside a subdivided slice, so a
+    slice that fails outright must cost its own postings and not its siblings'. nvidia is
+    exactly this shape — total 2,000, fifteen `jobFamilyGroup` slices, three of them a single
+    paginated page (live-checked 2026-08-20), and it is the board the issue leads with."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = _workday_scraper()
+    root = {
+        "total": 2000,  # the reported cap: subdivide
+        "jobPostings": [{"bulletFields": ["R1"]}],
+        "facets": [
+            {
+                "facetParameter": "jobFamilyGroup",
+                "values": [{"id": "Eng", "count": 1500}, {"id": "Ops", "count": 600}],
+            }
+        ],
+    }
+
+    def post(applied, offset, *, raise_gone=False):
+        if not applied:
+            return root
+        if applied.get("jobFamilyGroup") == ["Eng"]:
+            raise http.RequestsError("HTTP Error 429: Too Many Requests")
+        return {"total": 1, "jobPostings": [{"bulletFields": ["R2"]}]}
+
+    monkeypatch.setattr(scraper, "_post", post)
+    absorbed: list[dict] = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+
+    assert [p["bulletFields"][0] for p in absorbed] == [
+        "R1",
+        "R2",
+    ]  # siblings still land
+    assert scraper.truncated and "jobFamilyGroup=Eng" in scraper.truncated
+    assert "429" in scraper.truncated  # *why* the slice went, not only that it did
 
 
 def test_workday_raises_when_the_whole_site_is_gone(monkeypatch):
