@@ -1,4 +1,9 @@
-# Durability follow-up for #154 (not applied — `check_liveness.py` carries unrelated WIP)
+# Durability follow-up for #154 — APPLIED (#157)
+
+`_EIGHTFOLD_ALIAS_LOSERS` and `_is_eightfold_alias_loser` now live in `check_liveness.py`, wired
+into `run_pass`'s pre-probe gate beside `is_nonprod`. What follows is the sketch that preceded
+them, kept for the reasoning; the code is the source of truth, and the "regenerate, don't
+hand-maintain" note at the bottom is still open.
 
 `scripts/validate/dedupe_eightfold_aliases.py --apply` marks a duplicate hostname `dead` in the
 ledger, which gets its rows evicted by the next `index prune`. That marking is **not durable**:
