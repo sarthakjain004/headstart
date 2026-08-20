@@ -495,6 +495,22 @@ _SENIORITY = [
         ),
         5,
     ),
+    # The one manager class that carries a floor. Calibrated the ADR-0018 way over
+    # `data/jobs/tech` (75,166 tech jobs): of the 1,094 titles holding "engineering manager", the
+    # 753 that also state a number have a median `min_years` of **5** — and the same run reproduces
+    # every existing mapping exactly (senior 5, lead/staff 7, director 10), so this label is worth
+    # a 5, not the 7 its rung on the ladder suggests. It sits in the 5 block for that reason.
+    # Deliberately narrower than "<tech discipline> manager": adding platform/infrastructure/data/
+    # technical reached 3 more titles corpus-wide, every one of them ops or facilities ("IT
+    # Infrastructure Manager", "Facilities Technical Manager-Muskogee, OK") — the no-reliable-floor
+    # class this pattern exists to exclude, along with the "Program Manager Non Tech" / "Project
+    # Manager" / "Business Development Manager" bulk of the 1,003 uncovered manager titles (#189).
+    (
+        re.compile(
+            r"\b(?:engineering|software\s+development)\s+manager\b", re.IGNORECASE
+        ),
+        5,
+    ),
     (
         re.compile(
             r"\b(associate|mid[\s_-]?level|intermediate|medior|middle(?![\s-]*east))\b",
