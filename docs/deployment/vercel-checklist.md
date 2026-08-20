@@ -18,7 +18,7 @@ not Vercel. `.github/workflows/scrape.yml` rebuilds `docs/jobs.json` every 6 h a
 over HTTPS (replacing GitHub Pages, which is off because the repo is private).
 
 ```
-GitHub Actions (every 2h)          GitHub repo (main)            Vercel
+GitHub Actions (back-to-back)      GitHub repo (main)            Vercel
   python -m headstart  ──commits──►  docs/jobs.json  ──push──►  redeploy ──► serves docs/ as the site
                                      docs/index.html
 ```

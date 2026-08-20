@@ -2,8 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-07-25
-- Cadence note (2026-07-26, #63): this ADR was written when the run was 6-hourly; it is now
-  2-hourly (`.github/workflows/pipeline.yml`, `cron: 30 1-23/2`). The decision — where the
+- Cadence note (2026-07-26, #63; updated 2026-08-19): this ADR was written when the run was
+  6-hourly. It went 2-hourly, and is now **back-to-back** — see
+  [ADR-0071](0071-back-to-back-runs-instead-of-a-fixed-cadence.md)
+  (`.github/workflows/pipeline.yml`, `cron: 30 0-3,7-23`). The decision — where the
   run's code lives — is cadence-independent, so only the wording changed. Text below that
   said "6-hourly" now says "scheduled".
 - Moves the entry points of [ADR-0025](0025-parallelize-nightly-pipeline.md) /

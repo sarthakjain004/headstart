@@ -43,7 +43,7 @@ flowchart TB
         D1 --> D2 --> D3 --> D4
     end
 
-    subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, every 2h &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
+    subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
         P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>20 enabled scrapers → fragments"]
@@ -97,7 +97,7 @@ guarantee — a shard that hits its budget still forwards what it finished.
 **Discovery** runs occasionally and by hand; its output, the liveness ledger under
 `data/validate/liveness/`, is committed to git and is what the ingest pipeline reads.
 
-**Ingest** (`.github/workflows/pipeline.yml`) runs on a 2-hour cron as five stages, two of them
+**Ingest** (`.github/workflows/pipeline.yml`) runs back-to-back (ADR-0068) as five stages, two of them
 matrix fan-outs capped at 15 concurrent **GitHub VMs** (ADR-0025 sharded embed, ADR-0026 sharded
 scrape). A run-level `concurrency` group serializes whole runs so two never race on the dataset.
 
@@ -205,8 +205,8 @@ Filters drive a deterministic where-clause; the query drives the embedding. `/se
   vectors, evicts postings that vanished from a scraped board, and carries corrected metadata into
   rows it already holds; `index prune` sweeps rows on dead boards and case-variant duplicates
   (ADR-0014, ADR-0019, ADR-0023, ADR-0061). `index compact` rewrites the whole table to reclaim
-  orphan fragments and so runs in `cleanup-index`, **not** in the 2-hourly run — rewriting ~1.9 GB
-  every two hours is what the storage budget cannot afford.
+  orphan fragments and so runs in `cleanup-index`, **not** in the ingest run — rewriting ~1.9 GB
+  once per run is what the storage budget cannot afford.
 - **Correctness over time:** stored metadata is not frozen at embed time. Facts (salary, location,
   remote…) are re-observed from each scrape, and the derived experience numbers are recomputed when
   the extractor changes or when a description arrives after the fact (ADR-0061, ADR-0062) — so a
@@ -316,7 +316,7 @@ registered; bot walls (403/429) stay advisory.
   it), `registry`, `access` (the invite allowlist), `identity` (Google token verification),
   `transports` (which channel delivers a Digest), `mail` and `telegram` (the senders), `bot`
   (Telegram enrolment), `digest`, `shortlist`, `space_query`, `run`.
-- `src/headstart/ingest/` — **the 2-hourly pipeline run**, one module per stage step, invoked as
+- `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked as
   `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`
   (`priority`/`cost`/`failures`/`gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta`

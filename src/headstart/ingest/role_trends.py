@@ -54,7 +54,7 @@ _OLD_COLUMNS = (
 )  # pre-ADR-0051, migrated on write
 
 # The flow window (ADR-0051): a row is "new" when its `first_seen` is within this many days of
-# the measurement. A rolling week, not a per-run diff — the 2-hour cadence makes per-run deltas
+# the measurement. A rolling week, not a per-run diff — the back-to-back cadence makes per-run deltas
 # pipeline noise, and "how many roles appeared this week" is the question a job hunter has.
 NEW_WINDOW_DAYS = 7
 

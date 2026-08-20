@@ -209,7 +209,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   LFS data, and storage is this workflow's own documented binding cost constraint.
 
 ## Repo Conventions
-- **The 2-hourly ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
+- **The back-to-back ingest run lives in `src/headstart/ingest/` — not in `scripts/`** (ADR-0028).
   One module per stage step, run as `python -m headstart.ingest.<module>`: `scrape_plan`,
   `scrape_run`, `scrape_join`, `filter_tech`, `update_descriptions` (the ADR-0050 description
   store, after the tech filter and before `embed_plan`), `update_ledgers` (four subcommands, invoked in
@@ -217,7 +217,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `role_trends` (the ADR-0040 trends ledger, after prune). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
-  rewriting the whole table every two hours is what the storage budget cannot afford.
+  rewriting the whole table once per run is what the storage budget cannot afford.
   One more entry point is not a stage but opens three of them: `state_fetch` (ADR-0030) pulls each
   stage's slice of HF state in `scrape-plan`, `join` and `merge`, or aborts.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`

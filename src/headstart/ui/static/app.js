@@ -689,7 +689,7 @@ function drawTrends(){
     svg += `<text class="axis-label" x="0" y="${yy+3}">${fmtValue(v)}</text>`;
   }
   // Time axis: first / middle / last measurement, so the window is visible on the chart
-  // itself rather than inferred. Sparse on purpose — 19 two-hourly stamps don't need 19 ticks.
+  // itself rather than inferred. Sparse on purpose — 19 stamps don't need 19 ticks.
   if (d.stamps.length > 1){
     const ticks = [0, Math.floor((d.stamps.length - 1) / 2), d.stamps.length - 1];
     for (const [ti, anchor] of [[ticks[0],'start'],[ticks[1],'middle'],[ticks[2],'end']]){

@@ -1,6 +1,6 @@
 name: nightly-pipeline
 
-# 2-hourly ingest for the free-tier deployment (ADR-0020), fully parallelized (ADR-0025 embed,
+# Back-to-back ingest for the free-tier deployment (ADR-0020, ADR-0071), fully parallelized (ADR-0025 embed,
 # ADR-0026 scrape):
 #   scrape-plan (select slice → bin-pack boards into shards)
 #     → scrape (matrix, ≤15 shards, each scrapes its boards into a fragment)
@@ -13,9 +13,10 @@ name: nightly-pipeline
 #
 # Time budget (sized 2026-07-25 against measured run 30131376268 — see
 # docs/AI_Integration/embedding-throughput.md for the arithmetic):
-#   expected ~171 min, worst case 358 min (sum of job timeouts). The cron is 2-hourly, i.e.
-#   shorter than a run — the `concurrency` group below queues cycles rather than racing them;
-#   see the note at the cron for the measured run-duration ceiling.
+#   expected ~171 min, worst case 358 min (sum of job timeouts). The cron is hourly, i.e. shorter
+#   than a run — the `concurrency` group below queues cycles rather than racing them, which is
+#   what makes the cadence back-to-back (ADR-0071); see the note at the cron for the measured
+#   run-duration ceiling.
 # Every stage timeout is one of two kinds, and they are set on opposite principles:
 #   - scrape / embed BANK PARTIAL WORK, so their inner `timeout Nm ... || echo` is a *work budget*
 #     sized at ~3x the balanced makespan. Truncation is cheap and deliberate: the fragment uploads
@@ -34,18 +35,25 @@ name: nightly-pipeline
 # `if: always()` steps, so too thin a job margin loses exactly the partial work the design protects.
 on:
   schedule:
-    # Every 2h on odd hours, so the 21:30 nightly keeps its slot. Runs serialize via the
-    # concurrency group; the interval is shorter than a run (last 12 scheduled runs: min 33 /
-    # mean 84 / max 124 min, starting a mean ~97 min after their slot), so cycles queue rather
-    # than all fire. Expect fewer than 12 effective runs/day — run duration sets the ceiling.
+    # Hourly at :30, which still includes 21:30, the compulsory nightly. This is a BACK-TO-BACK
+    # cadence, not an hourly one (ADR-0071): the concurrency group below serializes runs, so a
+    # cron that fires mid-run parks a run as *pending* and it starts the instant the current one
+    # ends. Because mean run duration (74.1 min over the 11 successful scheduled runs to
+    # 2026-08-19; min 55.3, max 87.3, only 1 of 11 under 60) exceeds the 60-min interval, a
+    # successor is almost always already queued — the effective cadence is run duration, not the
+    # cron. Expect ~19 runs/day, not 24: runs cannot overlap, so a slow run defers its successor.
+    #
+    # The 2h cadence this replaced left a measured **46.7 min idle per cycle** (mean
+    # start-to-start 120.8 min against a 74.1 min run), capping throughput at 11.9 runs/day.
     #
     # STORAGE BUDGET — the binding constraint, not compute. Each run rewrites ~1.86 GB of LFS
     # blobs (embeddings.f32 948 MB + jobs.lance 755 MB + meta.jsonl 154 MB) and HF retains every
-    # prior revision, so the 100 GB dataset quota buys ~54 runs before it must be reclaimed with
-    # `super_squash_history` (done 2026-07-27: 263 commits -> 1, 96.8 GB -> 11.1 GB). At this
-    # cadence that is roughly 4 days. Check `repo_info(...).used_storage` before assuming
-    # headroom; a full quota fails the push mid-run and leaves the dataset half-written.
-    - cron: "30 1-23/2 * * *" # includes 21:30, the compulsory nightly
+    # prior revision, so the 100 GB dataset quota buys ~54 runs from empty — and only ~39 from the
+    # 26.6 GB the dataset already held on 2026-08-19. At ~19.4 runs/day that is **~2 days**, which
+    # is why the reclaim moved *into* the merge job below (ADR-0071) rather than staying a
+    # separate scheduled workflow that this cadence would have starved. Check
+    # `repo_info(...).used_storage` before assuming headroom.
+    - cron: "30 * * * *" # hourly at :30; concurrency turns this into back-to-back
   workflow_dispatch:
     inputs:
       max_boards:
@@ -64,7 +72,7 @@ on:
         # cleared the tail is ordinary random resampling, not exploration.
         # Trade-off: the scored head shrinks 14,000 -> 6,000, so top-yield Boards are revisited
         # less often per run. That slows Eviction (a Job only leaves the index when its Board is
-        # re-scraped and the posting is gone), partly offset by the 2h cadence.
+        # re-scraped and the posting is gone), partly offset by the back-to-back cadence.
         # Sizing: that slice carries ~59k more tech postings than the old 8,000, i.e. ~39k new
         # Docs/run, ~126 min of embed across 15 shards at the post-pin-fix 2.89 s/Doc. Overshoot
         # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
@@ -74,6 +82,12 @@ permissions:
   contents: read
 
 concurrency:
+  # Shared with `cleanup-index` on purpose: neither may race the other on HF dataset state.
+  # Only ONE run may be pending per group and a newer arrival cancels the older, so under an
+  # hourly cron a `cleanup-index` run that is still *pending* can be displaced by the next
+  # pipeline fire. That is tolerated: compaction is idempotent and simply runs the next day
+  # (ADR-0071). The dataset *squash* is not tolerated on those terms — it is storage-critical —
+  # so it moved into the merge job below, where it holds this group already and races nothing.
   group: nightly-pipeline # never let two runs race on the dataset state
   cancel-in-progress: false
 
@@ -660,6 +674,51 @@ jobs:
           # `cleanup-index` folds the fragments into the bases with --delete.
           up "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
+      # Reclaim dataset history here rather than from a separate scheduled workflow (ADR-0071).
+      # A standalone squash shares this group, so it sits *pending* behind the run in flight —
+      # measured at 37-55 min — and an hourly cron then displaces it. Run from inside the job
+      # that already holds the group and it races nothing by construction. Placed after the
+      # upload and made non-fatal: reclaiming space must never be able to lose a run's data.
+      - name: Reclaim dataset history when the quota is filling
+        if: needs.scrape-plan.outputs.run == 'true'
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SQUASH_ABOVE_GB: "55"
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo = os.environ["HF_DATASET"]
+          limit = float(os.environ["SQUASH_ABOVE_GB"]) * 1e9
+
+          info = api.repo_info(repo, repo_type="dataset", files_metadata=True)
+          used = info.used_storage or 0
+          live = sum(f.size or 0 for f in info.siblings)
+          commits = len(api.list_repo_commits(repo, repo_type="dataset"))
+          print(f"usedStorage {used / 1e9:.2f} GB · live {live / 1e9:.2f} GB · {commits} commits",
+                flush=True)
+
+          # Threshold, not a schedule: at ~1.86 GB/run the quota is the thing that matters, and a
+          # run-count or day-count proxy drifts whenever run size or cadence does.
+          if used < limit:
+              print(f"under {limit / 1e9:.0f} GB — nothing to reclaim", flush=True)
+              raise SystemExit(0)
+          if commits <= 1:
+              print("already a single commit", flush=True)
+              raise SystemExit(0)
+
+          api.super_squash_history(repo_id=repo, repo_type="dataset")
+          after = api.repo_info(repo, repo_type="dataset", files_metadata=True)
+          live2 = sum(f.size or 0 for f in after.siblings)
+          # The live-file set must survive untouched — that is the whole safety property.
+          if live2 < live:
+              raise SystemExit(f"live files shrank ({live / 1e9:.2f} -> {live2 / 1e9:.2f} GB)")
+          print(f"::notice::squashed; live {live2 / 1e9:.2f} GB, usedStorage falls as HF collects "
+                "the orphans", flush=True)
+          PY
       - name: Restart the Space to pick up the new index
         if: needs.scrape-plan.outputs.run == 'true'
         env:
