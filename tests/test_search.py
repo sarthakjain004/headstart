@@ -156,8 +156,16 @@ class _Query:
         self._t.last_where = clause
         return self
 
+    def order_by(self, ordering):
+        self._t.last_order = ordering
+        return self
+
     def limit(self, k):
         self._t.last_k = k
+        return self
+
+    def offset(self, off):
+        self._t.last_offset = off
         return self
 
     def to_list(self):
@@ -171,8 +179,11 @@ class _Table:
         self.rows = rows
         self.last_where = None
         self.last_k = None
+        self.last_offset = None
+        self.last_order = None
 
     def search(self, *args, **kwargs):
+        self.last_query = args[0] if args else None  # None => a browse, not a search
         return _Query(self)
 
 
@@ -203,12 +214,47 @@ def test_startup_scan_learns_atses_and_first_seen():
     assert searcher.has_first_seen is True
 
 
-def test_empty_query_returns_empty_without_touching_the_model():
+def test_empty_query_browses_instead_of_searching_and_never_touches_the_model():
+    # ADR-0074: an empty query lists the table's newest rows rather than returning nothing —
+    # it must still never call the encoder, since there is no query to embed.
     class _Boom:
         def encode(self, *args, **kwargs):
             raise AssertionError("encoded an empty query")
 
-    assert JobSearch(_Boom(), _Table([dict(_ROW)])).run({"q": "   "}) == []
+    table = _Table([dict(_ROW)])
+    rows = JobSearch(_Boom(), table).run({"q": "   "})
+    assert rows[0]["title"] == "Backend Engineer"
+    assert rows[0]["score"] is None  # no similarity was ever computed
+    assert table.last_query is None  # search() called with no vector — a plain scan
+
+
+def test_empty_query_orders_by_first_seen_desc_with_an_id_tiebreak():
+    # The load-bearing regression: `first_seen` alone ties heavily (stamped once per sync
+    # batch), and offset pagination over a tied sort silently repeats and drops rows across
+    # pages (measured 2026-08-20). `id` must ride along as a tiebreaker on every browse.
+    searcher, table = _searcher()
+    searcher.run({"q": ""})
+    assert table.last_order == [
+        {"column_name": "first_seen", "ascending": False, "nulls_first": False},
+        {"column_name": "id", "ascending": True},
+    ]
+
+
+def test_empty_query_without_first_seen_column_still_tiebreaks_on_id():
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["ats", "title"])  # no first_seen column
+    JobSearch(_Model(), table).run({"q": ""})
+    assert table.last_order == [{"column_name": "id", "ascending": True}]
+
+
+def test_a_real_query_never_gets_an_explicit_order_by():
+    # Passing any order_by alongside a vector search was measured to override ranking by
+    # similarity entirely (2026-08-20), not merely break ties within it — so the search path
+    # must never call order_by at all, unlike the browse path above.
+    searcher, table = _searcher()
+    searcher.run({"q": "backend"})
+    assert table.last_order is None
+    assert table.last_query is not None  # search() called with an actual vector
 
 
 def test_run_projects_rows_and_scores():
@@ -281,6 +327,48 @@ def test_k_zero_floors_to_one_not_the_default():
     searcher, table = _searcher()
     searcher.run({"q": "x", "k": "0"})
     assert table.last_k == 1
+
+
+# ---- pagination (ADR-0074) ----
+
+
+def test_default_page_is_one_offset_zero():
+    # No `page` behaves exactly as before this feature existed — load-bearing for
+    # `headstart.alerts.space_query`, which always requests k=100 and never sends `page`.
+    searcher, table = _searcher()
+    searcher.run({"q": "x"})
+    assert table.last_offset == 0
+
+
+def test_page_two_offsets_by_one_page_size():
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "k": "20", "page": "2"})
+    assert table.last_offset == 20
+
+
+def test_page_is_capped_at_max_page():
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "k": "20", "page": "9999"})
+    assert table.last_offset == (20 - 1) * 20  # clamped to max_page=20, not 9998*20
+
+
+def test_page_zero_or_negative_floors_to_one():
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "k": "20", "page": "0"})
+    assert table.last_offset == 0
+
+
+def test_max_page_is_configurable_like_max_k():
+    table = _Table([dict(_ROW)])
+    searcher = JobSearch(_Model(), table, max_page=2)
+    searcher.run({"q": "x", "k": "20", "page": "5"})
+    assert table.last_offset == (2 - 1) * 20
+
+
+def test_garbage_page_raises_valueerror():
+    searcher, _ = _searcher()
+    with pytest.raises(ValueError):
+        searcher.run({"q": "x", "page": "many"})
 
 
 def test_run_carries_the_job_id_for_starring():

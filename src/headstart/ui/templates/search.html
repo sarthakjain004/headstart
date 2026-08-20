@@ -96,8 +96,6 @@
       <select id="sort" onchange="resort()">
         <option value="rel">Best match</option><option value="new">Newest first</option>
       </select>
-      <label class="note" for="k">Show</label>
-      <select id="k" onchange="go()"><option>10</option><option selected>20</option><option>50</option></select>
       {% if sets_on %}
       <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
       {% endif %}
@@ -111,5 +109,6 @@
     {% endif %}
     <div class="active" id="active"></div>
     <div id="results" aria-live="polite"></div>
+    <div class="pager" id="pager"></div>
   </main>
 </div>

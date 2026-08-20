@@ -23,7 +23,10 @@ const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'stati
 
 function fakeEl() {
   return {
-    innerHTML: '', textContent: '', hidden: false, style: {},
+    // `value: ''` so the load-time `go()` call (ADR-0074 — the Search tab browses on load,
+    // reading `#q` even when this harness only cares about Trends) sees an empty query
+    // rather than throwing on `undefined.trim()`.
+    innerHTML: '', textContent: '', hidden: false, style: {}, value: '',
     querySelectorAll: () => [],
     setAttribute() {}, getAttribute: () => null, addEventListener() {},
   };

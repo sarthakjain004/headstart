@@ -41,7 +41,13 @@ def _no_router(prompt):
 
 
 class _Table:
-    """Enough LanceDB for import time: an ats scan, a schema and a row count."""
+    """Enough LanceDB for import time: an ats scan, a schema and a row count.
+
+    Rows carry every field `JobSearch.run` projects (ADR-0074's browse path reaches this
+    fake through `/search?q=` the same as a real query does now, where the old empty-query
+    shortcut used to return `[]` before ever touching the table) — this file only tests the
+    wall/wiring, not ranking, so the row content itself doesn't matter beyond being complete.
+    """
 
     schema = types.SimpleNamespace(names=["ats", "title", "first_seen"])
 
@@ -51,11 +57,49 @@ class _Table:
     def select(self, *a, **k):
         return self
 
+    def where(self, *a, **k):
+        return self
+
+    def order_by(self, *a, **k):
+        return self
+
     def limit(self, *a, **k):
         return self
 
+    def offset(self, *a, **k):
+        return self
+
     def to_list(self):
-        return [{"ats": "greenhouse"}, {"ats": "lever"}]
+        return [
+            {
+                "ats": "greenhouse",
+                "title": "Backend Engineer",
+                "company": "Acme",
+                "location": "Berlin",
+                "remote": True,
+                "employment_type": "full-time",
+                "min_years": None,
+                "salary": None,
+                "posted_at": "2026-08-01",
+                "first_seen": "2026-08-10T00:00:00+00:00",
+                "url": "https://example.test/1",
+                "id": "greenhouse:acme:1",
+            },
+            {
+                "ats": "lever",
+                "title": "Frontend Engineer",
+                "company": "Beta",
+                "location": "Remote",
+                "remote": True,
+                "employment_type": "full-time",
+                "min_years": None,
+                "salary": None,
+                "posted_at": "2026-08-02",
+                "first_seen": "2026-08-11T00:00:00+00:00",
+                "url": "https://example.test/2",
+                "id": "lever:beta:2",
+            },
+        ]
 
     def count_rows(self):
         return 2
@@ -212,7 +256,9 @@ _HTTPS = "https://localhost"  # the session cookie is Secure; plain http would d
 def test_wall_off_keeps_the_page_open(app):
     client = app.app.test_client()
     assert b"jobs indexed" in client.get("/").data
-    assert client.get("/search?q=").json == []
+    # An empty query browses (ADR-0074) rather than returning nothing — asserting a real
+    # response came back is enough here; the browse behavior itself is test_search.py's job.
+    assert len(client.get("/search?q=").json) == 2
     assert client.get("/me").json == {"auth": False, "email": None}
     # Not a 500: clearing a NullSession raises, so the route must refuse first.
     assert client.post("/signout").status_code == 503
@@ -244,7 +290,9 @@ def test_signin_flow(auth_app, monkeypatch):
     client = auth_app.app.test_client()
     r = client.post("/auth/google", json={"credential": "tok"}, base_url=_HTTPS)
     assert r.status_code == 200 and r.json["email"] == "dev@example.com"
-    assert client.get("/search?q=", base_url=_HTTPS).json == []
+    assert (
+        len(client.get("/search?q=", base_url=_HTTPS).json) == 2
+    )  # browses (ADR-0074)
     assert b"jobs indexed" in client.get("/", base_url=_HTTPS).data
     assert client.get("/me", base_url=_HTTPS).json["email"] == "dev@example.com"
     client.post("/signout", base_url=_HTTPS)
@@ -278,7 +326,7 @@ def test_digest_generator_reaches_search_through_the_wall(service_app):
     client = service_app.app.test_client()
     assert client.get("/search?q=x").status_code == 401  # still shut to the anonymous
     ok = client.get("/search?q=", headers={"Authorization": "Bearer service-token"})
-    assert ok.status_code == 200 and ok.json == []
+    assert ok.status_code == 200 and len(ok.json) == 2  # browses (ADR-0074)
 
 
 def test_the_service_token_buys_search_and_nothing_else(service_app):
