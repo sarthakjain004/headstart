@@ -208,14 +208,17 @@ jobs:
         # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
         # 2 attempts x (32s curl + 45s update + 60s install) + 20s sleep + 15s systemctl
         # + 75s daemon wait (15 probes x a 5s ceiling) + 30s registration + 15s status = 429s,
-        # plus 2 attempts x 30s for the dependency stubs = 489s... over the cap, so the stub
-        # build is counted once (it is idempotent and its result survives a failed install):
-        # 459s, under an 8 min cap. Every call in the step now carries a ceiling, so that sum is a
+        # plus 60s for the dependency stubs (raised from 30s: 4/4 degraded shards sampled in
+        # docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md landed within 2s of the
+        # old 30s cap, which was a coin flip, not a margin) and 20s for the dpkg self-heal that
+        # now follows a failed stub — both counted once, same as before, since stub_gui_deps and
+        # the recovery each run once regardless of how many install_warp attempts follow: 509s,
+        # under a 10 min cap. Every call in the step now carries a ceiling, so that sum is a
         # real bound rather than an assumption that local IPC always answers promptly — and the
-        # cap keeps ~1.5 min over it, because a bound with six seconds of headroom is a coin flip. p50 install is 24 s (run 32146017194's 15 shards); the cap only bites
-        # when a host wedges.
+        # cap keeps ~1.5 min over it, because a bound with six seconds of headroom is a coin flip.
+        # p50 install is 24 s (run 32146017194's 15 shards); the cap only bites when a host wedges.
         continue-on-error: true
-        timeout-minutes: 8
+        timeout-minutes: 10
         run: |
           set -x
           # Every network call carries its own ceiling, and the mirror gets a second chance: the
@@ -243,7 +246,16 @@ jobs:
             # Ceilinged like every other apt call here: this one reaches an Ubuntu mirror, which
             # is exactly the wedge the narrowed `update` below was fixed for, and an uncapped call
             # would make this step's timing budget fiction.
-            sudo DEBIAN_FRONTEND=noninteractive timeout 30 apt-get install -y -qq \
+            #
+            # 30s -> 60s (docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md): the
+            # probe above measured max 27s on 15 idle runners, but every degraded shard sampled
+            # from real runs (4/4) landed within 2s of the 30s cap under production contention —
+            # that's not a safety margin, it's a coin flip. The 30s was going mostly to dpkg's own
+            # database read and trigger processing (man-db, install-info), not the network fetch,
+            # so `--no-install-recommends` was considered and dropped: equivs -> debhelper and
+            # debhelper's own pulls are hard Depends, not Recommends, so it would not have shrunk
+            # the part that actually burns the budget. Widening the cap is the fix.
+            sudo DEBIAN_FRONTEND=noninteractive timeout 60 apt-get install -y -qq \
               -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
               equivs || return 1
             local d
@@ -256,7 +268,16 @@ jobs:
             sudo dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
           }
           # Best-effort: if the stubs cannot be built the install still works, just fat and slow.
-          stub_gui_deps || echo "warp: GUI dependency stubs unavailable — full install" >&2
+          if ! stub_gui_deps; then
+            echo "warp: GUI dependency stubs unavailable — full install" >&2
+            # A `timeout`-killed apt-get can leave dpkg mid-transaction ("dpkg was interrupted,
+            # you must manually run 'sudo dpkg --configure -a'"), which then fails every later
+            # apt-get in this job — measured in run 32337598985 shard 7, where both `install_warp`
+            # retries below failed in under 10ms with no network attempt at all, rather than the
+            # ordinary "install ran and lost" case this fallback is meant to degrade into.
+            # Best-effort and silent: harmless if dpkg was never actually interrupted.
+            sudo timeout 20 dpkg --configure -a >/dev/null 2>&1 || true
+          fi
           install_warp() {
             curl -fsSL --max-time 15 --retry 1 --retry-delay 2 \
               https://pkg.cloudflareclient.com/pubkey.gpg \
