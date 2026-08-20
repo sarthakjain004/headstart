@@ -228,7 +228,7 @@ jobs:
           assert hid(0) not in ids, (
               f"{hid(0)} was delisted by a complete scrape and should have been evicted")
           # ...but the truncated Board's missing Jobs are still open; they were simply not returned.
-          # Evicting them is the index flap: they vanish from search for one 2-hourly cycle and come
+          # Evicting them is the index flap: they vanish from search for one run cycle and come
           # back in the next, over and over (whole NVIDIA/Qualcomm/Micron Boards, measured 5 runs
           # running). "absent from this run's corpus" is not "closed" when the list was truncated.
           stranded = [fid(n) for n in range(1, 6) if fid(n) not in ids]

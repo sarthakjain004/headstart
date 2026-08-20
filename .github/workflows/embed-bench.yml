@@ -5,7 +5,7 @@ name: embed-bench
 # question is whether ONNX/OpenVINO/int8 beats torch-fp32 at HeadStart's ~1,040-token median
 # Doc length, and published backend benchmarks are all on short text (ADR-0029).
 #
-# Manual only: this is a measurement tool, not part of the 2-hourly ingest. Results belong in
+# Manual only: this is a measurement tool, not part of the ingest run. Results belong in
 # experiment/embedding-speed/LOG.md.
 on:
   workflow_dispatch:

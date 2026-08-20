@@ -15,21 +15,20 @@ name: squash-dataset-history
 #
 # The reclaim is asynchronous — HF garbage-collects the orphans on its own schedule, so
 # `usedStorage` can lag the squash by a couple of hours. Don't read a flat number as a failure.
+# **No schedule any more (ADR-0071).** The reclaim now runs inside the pipeline's `merge` job,
+# which already holds the `nightly-pipeline` concurrency group and therefore races nothing.
+#
+# On a schedule this workflow shared that group, so it sat *pending* behind the run in flight —
+# measured at 37-55 min, created ~04:2x and starting 05:02-05:24 across five runs — and only ONE
+# run may be pending per group. Under the back-to-back cadence the next pipeline fire would have
+# displaced it, silently disabling the reclaim that cadence depends on. Reserving a hole in the
+# pipeline cron was tried and rejected: covering GitHub's 42-96 min schedule lateness would have
+# cost a multi-hour gap, which is the throughput the cadence exists to win.
+#
+# Kept as a manual escape hatch: run it by hand to reclaim immediately rather than waiting for the
+# merge step's threshold, or if that step is failing. It still shares the group, so it waits for
+# any run in flight — which is the behaviour you want.
 on:
-  schedule:
-    # Daily 04:00 UTC. The pipeline reserves 04:30-06:30 (no cron fires) precisely so this run
-    # and `cleanup-index` at 06:00 can win the shared `nightly-pipeline` concurrency group: this
-    # run is created ~04:2x but sits pending 37-55 min waiting out the pipeline run in flight, and
-    # a pipeline cron arriving in that window would cancel it outright (ADR-0071). **Do not add
-    # pipeline cron slots between 04:30 and 06:30.** Weekly until 2026-08-14, when it stopped
-    # being survivable: at back-to-back cadence the pipeline writes ~36 GB/day of revisions
-    # (~16 GB/day when this note was written, at the old 2h cadence), so a week accumulates far
-    # past the 100 GB quota — and at ~36 GB/day even two days does. The dataset hit 86.7 GB with
-    # 2.63 GB of live files — 84 GB of dead revisions
-    # — five days after a squash, and would have blown the quota before the next Sunday fired.
-    # A push against a full quota fails mid-run and leaves the dataset half-written, so the
-    # reclaim has to outpace the writes rather than merely follow them.
-    - cron: "0 4 * * *"
   workflow_dispatch:
 
 permissions:
