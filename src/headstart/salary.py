@@ -124,10 +124,24 @@ def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
 
 
 def _period_multiplier(text: str) -> int:
+    # Real teamtailor field, confirmed on live data (PR #239): the schema.org unitText this
+    # scraper's own _salary() passes through is a BARE word ("15-17.5 GBP HOUR", "1500-1800 EUR
+    # MONTH", "120-130 GBP DAY") — none of the phrase-shaped checks below ("per hour", "/hr", ...)
+    # match a bare "HOUR", so every hourly/monthly/daily teamtailor figure was silently defaulting
+    # to the annual multiplier and then correctly-but-wrongly getting rejected by the plausibility
+    # bounds (a genuine £15-18/hr rate reads as an absurd £15-18/year). Word-bounded so it can't
+    # false-positive inside an unrelated word — safe for every Tier-1 caller, since a Tier-1 field
+    # value is always a short, structured "NUMBER-NUMBER CURRENCY UNIT" string, not free text.
     low = text.lower()
-    if any(p in low for p in ("per-hour", "per hour", "/hr", "hourly")):
+    if any(p in low for p in ("per-hour", "per hour", "/hr", "hourly")) or re.search(
+        r"\bhour\b", low
+    ):
         return _HOURLY_TO_ANNUAL
-    if any(p in low for p in ("per-month", "per month", "/mo", "monthly", "mensual")):
+    if re.search(r"\bday\b", low):
+        return _DAILY_TO_ANNUAL
+    if any(
+        p in low for p in ("per-month", "per month", "/mo", "monthly", "mensual")
+    ) or re.search(r"\bmonth\b", low):
         return 12
     return 1  # annual is the default for every known Tier-1 format
 
@@ -417,15 +431,21 @@ _LEVEL_BAND = re.compile(
 )
 
 _PERIOD_HINT = re.compile(
-    r"\b(?:/\s*hr\b|/\s*hour\b|per\s+hour|hourly|\bhr\b|"
-    r"/\s*mo\b|/\s*month\b|per\s+month|monthly|\bmo\b|"
-    r"/\s*yr\b|/\s*year\b|per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|"
-    r"/\s*day\b|per\s+day|daily|\bday\b)"
-    # No leading \b: British informal "p/h" ("£21.50p/h") is glued directly onto the number with
-    # no separating character, so there's no word-to-non-word transition for \b to anchor on
-    # (both the trailing digit and "p" are word characters) — the same class of boundary issue
-    # the "/hour" fix already had to work around, but unfixable the same way since there's no
-    # non-word character anywhere in "0p" to anchor against. Still requires a real trailing \b.
+    r"\b(?:per\s+hour|hourly|\bhr\b|"
+    r"per\s+month|monthly|\bmo\b|"
+    r"per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|"
+    r"per\s+day|daily|\bday\b)"
+    # The slash-prefixed alternatives (/hr, /hour, /mo, /month, /yr, /year, /day) get NO leading
+    # \b, on purpose, for two distinct reasons found on two different real corpora (teamtailor,
+    # PR #239): "£40 /hour" (a SPACE before the slash, real, common phrasing — "Get paid between
+    # £20 and £40 /hour") has no word-to-non-word transition for \b to anchor on, since a space
+    # and a slash are both non-word characters; "£21.50p/h" (GLUED directly onto the number, zero
+    # separator) has the same issue from the opposite direction, since a digit and "p" are both
+    # word characters. Between them, a number and a slash-marker can be glued, space-separated, or
+    # (this pattern already handled) directly adjacent — \b can only anchor reliably in the last
+    # case, so it's dropped for all three rather than chasing each spacing variant as its own fix.
+    # Still requires a real trailing \b so e.g. "/hours" (plural) isn't swept in by accident.
+    r"|/\s*hr\b|/\s*hour\b|/\s*mo\b|/\s*month\b|/\s*yr\b|/\s*year\b|/\s*day\b"
     r"|p\s*/\s*h\b",
     re.IGNORECASE,
 )
@@ -619,14 +639,17 @@ _AMBIGUOUS = object()
 
 
 def _resolve(spans: list[SalarySpan]) -> SalarySpan | None | object:
-    """One match wins outright; several mutually-consistent ones agree, so the first stands;
-    several that disagree are ambiguous (:data:`_AMBIGUOUS`); none means this tier found nothing,
-    try the next. Shared by every Tier-2 pattern so the "don't guess when ambiguous" rule can't
-    drift between them."""
+    """One match wins outright; several mutually-consistent ones agree, so the more informative
+    one stands (a currency-bearing span over a currency-less one, if both are present — see
+    :func:`_mutually_consistent`); several that disagree are ambiguous (:data:`_AMBIGUOUS`); none
+    means this tier found nothing, try the next. Shared by every Tier-2 pattern so the "don't
+    guess when ambiguous" rule can't drift between them."""
     if not spans:
         return None
-    if len(spans) == 1 or _mutually_consistent(spans):
+    if len(spans) == 1:
         return spans[0]
+    if _mutually_consistent(spans):
+        return next((s for s in spans if s.currency), spans[0])
     return _AMBIGUOUS
 
 
@@ -677,11 +700,19 @@ def from_description(
 
 
 def _mutually_consistent(spans: list[SalarySpan]) -> bool:
-    """Whether every span in ``spans`` roughly agrees (same currency, overlapping-ish range) —
-    duplicate mentions of the same figure, not two different genuine numbers."""
+    """Whether every span in ``spans`` roughly agrees (same currency where both state one,
+    overlapping-ish range) — duplicate mentions of the same figure, not two different genuine
+    numbers. A ``None`` currency means "couldn't tell from THIS mention", not "no currency" — it
+    doesn't contradict a sibling span that DID find one, so it's excluded from the currency check
+    rather than treated as a distinct, clashing value (real, measured bug: the same real wage
+    stated twice, once with a symbol and once without — "Compensation: $25.96 / hour" and, later
+    in the same description, "Salary: 25.96/hour" — was flagged ambiguous solely because one span
+    resolved a currency and the other didn't, found via teamtailor PR #239's cross-ATS diff; 24
+    confirmed real cases across the corpus, already latent in already-merged ATSes before this
+    pass, not introduced by it)."""
     first = spans[0]
     for s in spans[1:]:
-        if s.currency != first.currency:
+        if s.currency and first.currency and s.currency != first.currency:
             return False
         if abs(s.min_annual - first.min_annual) > max(first.min_annual * 0.05, 1000):
             return False
