@@ -562,6 +562,78 @@ def test_description_bare_hourly_base_rate_not_excluded_by_nearby_plus_different
     assert span == SalarySpan(21 * 2080, None, "USD", "regex")
 
 
+def test_description_ph_hourly_shorthand_glued_to_number():
+    # Real, common on one UK recruitment agency's postings (zoho pass): British informal "p/h"
+    # glued directly onto the number with no separating character ("£21.50p/h") — no word
+    # boundary exists between the trailing digit and "p" (both are word characters), unlike the
+    # "/hour" fix which could anchor on the "/". Requires _PERIOD_HINT's "p/h" alternative to have
+    # no leading \b.
+    span = extract(None, "Pay up to £21.50p/h, hours M-F 9-5.", "zoho")
+    assert span == SalarySpan(round(21.50) * 2080, None, "GBP", "regex")
+
+
+def test_description_ph_hourly_shorthand_with_space():
+    span = extract(None, "Pay up to £20.00 p/h, M-F 8.30-4.30", "zoho")
+    assert span == SalarySpan(20 * 2080, None, "GBP", "regex")
+
+
+def test_description_paying_verb_form_of_pay_label():
+    # Real, 175 corpus misses (zoho pass): "paying" (a verb conjugation) wasn't recognized as a
+    # variant of the "pay" label word, so "is paying up to $X" fell through entirely.
+    span = extract(
+        None,
+        "The Kitchen Porter job is paying up to £9.00p/h. The working hours",
+        "zoho",
+    )
+    assert span == SalarySpan(9 * 2080, None, "GBP", "regex")
+
+
+def test_description_a_year_period_marker():
+    # Real, common phrasing beyond one company's template (zoho pass): "$X a year" (not "per
+    # year"/"/year"/"annual(ly)") as a bare period marker.
+    span = extract(
+        None, "Salary £25,000 - £30,000 a year, full benefits included", "zoho"
+    )
+    assert span == SalarySpan(25000, 30000, "GBP", "regex")
+
+
+def test_description_compound_connector_of_up_to():
+    # Real, zoho pass: "of" and "up to" recognized individually but not as a two-word sequence —
+    # "salary of up to $X" fell through entirely before this fix.
+    span = extract(
+        None,
+        "the nursery offers a competitive salary of up to £22,000 per year, subject to quals",
+        "zoho",
+    )
+    assert span == SalarySpan(22000, None, "GBP", "regex")
+
+
+def test_description_compound_connector_is_up_to():
+    span = extract(
+        None,
+        "This is for a 42.5 hr working week, salary is up to £34,255 depending on experience",
+        "zoho",
+    )
+    assert span == SalarySpan(34255, None, "GBP", "regex")
+
+
+def test_description_compound_connector_new_match_can_expose_real_ambiguity():
+    # A real, understood side effect of the "of up to" fix above, found via the mandatory
+    # cross-ATS regression diff (zoho pass): recognizing "of up to $X" as a connector means a
+    # SECOND, previously-invisible "of up to" figure can now also match — and when that second
+    # figure genuinely differs from the first, the existing ambiguity guard correctly declines
+    # rather than picking one. Real workday text: "the non-negotiable starting salary for this
+    # position is $84,000 ... may be provided a higher starting salary of up to $92,400" — a base
+    # figure and a conditional higher figure are both real, but genuinely different, so this
+    # correctly stays None rather than guessing which one is "the" salary.
+    text = (
+        "The non-negotiable starting salary for this position is $84,000. Candidates "
+        "exceeding the minimum requirements outlined above may be provided a higher "
+        "starting salary of up to $92,400. All salary offers are non-negotiable."
+    )
+    assert extract(None, text, "workday") is None
+
+
 def test_description_level_bands_envelope_across_multiple_bands():
     # Real, near-single-company template (spacex, confirmed 494/495 corpus occurrences): several
     # explicitly labeled "Level N: $X - $Y" bands for one role. Every generic pattern would see

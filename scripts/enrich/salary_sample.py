@@ -150,12 +150,41 @@ def _fetch_smartrecruiters(scraper: BaseScraper) -> list[Job]:
     return scraper.parse({**page, "content": sample}, datetime.now(UTC).isoformat())
 
 
+def _fetch_zoho(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for zoho: one listing page via the scraper's own single-page primitive
+    (``_get()`` — never ``fetch_raw()``). Zoho's shape differs from workday/smartrecruiters:
+    the listing page already carries ``Job_Description`` for most tenants (some tenants configure
+    their careers site without that column — 28/71 in the scraper's own docstring — and need a
+    per-job detail fetch instead). So this adapter only detail-fetches whichever of the first
+    :data:`_DETAIL_FETCH_CAP` records are actually missing a description, matching
+    ``fetch_raw()``'s own selection logic — for the common case (description already in the
+    listing) this makes zero detail requests at all, cheaper than every other detail-pass ATS
+    sampled so far."""
+    page = scraper._get()
+    records = scraper._records(page)
+    candidates = [
+        r
+        for r in records
+        if r.get("id") and not r.get("Is_Locked") and r.get("Publish", True)
+    ][:_DETAIL_FETCH_CAP]
+    details = {}
+    for r in candidates:
+        if not r.get("Job_Description"):
+            detail = scraper._detail_description(r["id"])
+            if detail:
+                details[r["id"]] = detail
+    return scraper.parse(
+        {"page": page, "details": details}, datetime.now(UTC).isoformat()
+    )
+
+
 #: ATS -> bounded detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one
 #: not yet researched — see the module docstring). Each returns `list[Job]` for at most
 #: `_DETAIL_FETCH_CAP` real, detail-fetched jobs.
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,
+    "zoho": _fetch_zoho,
 }
 
 

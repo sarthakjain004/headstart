@@ -263,9 +263,9 @@ _LABELED = re.compile(
     r"""
     (?:annual\s+)?
     (?:
-        (?:salary|compensation|pay|remuneration|base\s+salary|wage)\s*(?:range|rate)?
+        (?:salary|compensation|pay(?:ing)?|remuneration|base\s+salary|wage)\s*(?:range|rate)?
         (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*:?\s*
-        (?:upto|up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
+        (?:upto|up\s+to|of\s+up\s+to|is\s+up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
         | (?P<bare_starting>starting\s+at)  # bare "starting at $X" — no salary/pay/wage word;
                                             # named so _scan can demand a period hint nearby (see
                                             # its call site) rather than default-annual-guessing,
@@ -384,8 +384,14 @@ _LEVEL_BAND = re.compile(
 _PERIOD_HINT = re.compile(
     r"\b(?:/\s*hr\b|/\s*hour\b|per\s+hour|hourly|\bhr\b|"
     r"/\s*mo\b|/\s*month\b|per\s+month|monthly|\bmo\b|"
-    r"/\s*yr\b|/\s*year\b|per\s+year|per\s+annum|annually|annual|\byr\b|"
-    r"/\s*day\b|per\s+day|daily|\bday\b)",
+    r"/\s*yr\b|/\s*year\b|per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|"
+    r"/\s*day\b|per\s+day|daily|\bday\b)"
+    # No leading \b: British informal "p/h" ("£21.50p/h") is glued directly onto the number with
+    # no separating character, so there's no word-to-non-word transition for \b to anchor on
+    # (both the trailing digit and "p" are word characters) — the same class of boundary issue
+    # the "/hour" fix already had to work around, but unfixable the same way since there's no
+    # non-word character anywhere in "0p" to anchor against. Still requires a real trailing \b.
+    r"|p\s*/\s*h\b",
     re.IGNORECASE,
 )
 
@@ -478,7 +484,7 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     if "," in gap and re.search(r"[a-zA-Z]", gap.replace(",", "")):
         return 1
     hint = m.group(0).lower()
-    if "hr" in hint or "hour" in hint:
+    if "hr" in hint or "hour" in hint or "p/h" in hint.replace(" ", ""):
         return _HOURLY_TO_ANNUAL
     if "day" in hint or "daily" in hint:
         return _DAILY_TO_ANNUAL
