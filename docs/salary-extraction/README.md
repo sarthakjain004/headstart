@@ -113,7 +113,7 @@ the planning record; the table below is the live status.
 | workable | 971 (190 live w/ openings) | done (pilot) | 0.0% field, 15.4% overall | [workable.md](workable.md) |
 | workday | 16,964 (3,000 sampled) | done | 0.0% field, 27.6% overall | [workday.md](workday.md) |
 | greenhouse | 7,503 (3,000 sampled; 9,152 was a stale liveness snapshot) | done | 0.0% field, 36.1% overall | [greenhouse.md](greenhouse.md) |
-| smartrecruiters | 10,845 | not started | — | — |
+| smartrecruiters | 5,659 (3,000 sampled; 10,845 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall | [smartrecruiters.md](smartrecruiters.md) |
 | zoho | 6,550 | not started | — | — |
 | teamtailor | 4,686 | not started | — | — |
 | ashby | 4,347 | not started | — | — |
