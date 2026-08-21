@@ -2,9 +2,10 @@
 
 **Status:** accepted · **Amended by:**
 [ADR-0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) (measured: the spare
-egress yields a *different* IP from a 1–3 address pool fixed by the runner's colo, not an unspent
-origin budget — and 30 jobs sharing 11 WARP IPs is worse diversity than the 30 distinct direct IPs
-they came from) · **Date:** 2026-08-18 · **Relates to:**
+egress yields a *different* IP, not an unspent origin budget; its pool-size figure — a 1–3 address
+pool, worse diversity than the direct route — was itself corrected by
+[ADR-0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md), see ADR-0067's own header) ·
+**Date:** 2026-08-18 · **Relates to:**
 [ADR-0026](0026-parallelize-nightly-scrape.md),
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md),
 [ADR-0056](0056-darwinbox-browser-escalation.md) · **Amends:**

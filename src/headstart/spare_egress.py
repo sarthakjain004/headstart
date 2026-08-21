@@ -17,9 +17,12 @@ Cloudflare WARP is the implementation, not the concept: the module is named for 
 that swapping the provider is an edit here rather than a rename everywhere.
 
 A second route is not the only answer to a spent budget, so this module also owns **how hard to
-push** once one is spent: :func:`stream_width` narrows a caller's fan-out for a walled group, since
-ADR-0067 measured that the spare egress buys a different IP rather than a fresh allowance and
-rotation therefore cannot rescue a shard that is simply too wide (#195).
+push** once one is spent: :func:`stream_width` narrows a caller's fan-out for a walled group,
+reasoning that rotation buys one address at a time rather than a wider allowance and so cannot
+rescue a shard that is simply too wide (#195). The pool that address is drawn from was measured by
+ADR-0067 at "one to three" per colo; ADR-0081 corrected that to a deep pool with a ~100% rescue
+rate on 150 shard-runs of real traffic, which weakens this module's stated reason for narrowing —
+see :func:`stream_width`.
 
 WARP runs in **proxy mode**, never VPN mode. VPN mode routes the whole machine through Cloudflare,
 which on a runner means the artifact upload, the HF push and the GitHub API calls too; proxy mode
@@ -253,9 +256,12 @@ def stream_width(group: str | None, ceiling: int) -> int:
     is the signal, and the width narrows from there — the requests before it are as wide as they
     were, the ones after the origin has already said no are not.
 
-    It does not ask whether the walled group *has* a spare egress either, because ADR-0067 measured
-    that a working one supplies one to three IPs fixed by the runner's colo rather than a fresh
-    budget. A shard that can rotate is not owed the wide width; it only reaches the wall slower.
+    It does not ask whether the walled group *has* a spare egress either — that stays true
+    regardless of pool depth, since :func:`proxy_url` would have to dial WARP to find out. The
+    narrowing itself was justified by ADR-0067's "one to three IPs per colo" measurement; ADR-0081
+    corrected that to a deep pool with a ~100% rescue rate on real traffic, which removes that
+    specific justification without supplying a re-measured width to replace `12` — see ADR-0081's
+    consequences before trusting this constant as tuned.
     """
     if group is None:
         return ceiling
@@ -364,11 +370,13 @@ def report() -> list[str]:
     seen = {k[3:] for k in addresses if k.startswith("ip:")}
     colos = {k[5:] for k in addresses if k.startswith("colo:")}
     if seen or addresses.get("unreadable"):
-        # Distinct addresses, not rotations: ADR-0067's finding is that a colo carries a 1-3
-        # address pool, so "40 rotations across 2 addresses" is the shape to notice and a bare
-        # rotation count hides it completely. "comparison(s)", not "rotation(s)": the first
-        # observation has nothing to compare against, so this is one less than the rotations
-        # that actually produced an address.
+        # Distinct addresses, not rotations: a rotation count alone can't say whether it landed a
+        # fresh IP or a repeat, so "N rotations across M addresses" is the shape to notice and a
+        # bare rotation count hides it completely. (ADR-0067 measured M as small — "one to three"
+        # per colo; ADR-0081 corrected that to a deep pool on 150 shard-runs of real traffic, but
+        # the reason to report distinct addresses rather than a raw count is unchanged either way.)
+        # "comparison(s)", not "rotation(s)": the first observation has nothing to compare against,
+        # so this is one less than the rotations that actually produced an address.
         lines.append(
             f"egress addresses: {len(seen)} distinct across "
             f"{addresses['moved'] + addresses['repeat']} comparison(s) "
@@ -447,9 +455,10 @@ _rotation_causes: Counter[str] = Counter()
 _last_rotation = 0.0
 
 #: Which egress addresses this shard was actually given, plus moved/repeat/unreadable tallies.
-#: Addresses are keyed `ip:<address>`. The counters beside them are the point: ADR-0067 showed a
-#: rotation returns a *different* address only ~11 times in 30, so a rotation count says nothing
-#: about whether rotation is working and only a comparison of addresses does.
+#: Addresses are keyed `ip:<address>`. The counters beside them are the point: a rotation count
+#: says nothing about whether rotation is working and only a comparison of addresses does — a
+#: claim that held under ADR-0067's original "~11 times in 30" measurement and still holds now
+#: that ADR-0081 corrected the pool it drew that number from.
 _egress_ips: Counter[str] = Counter()
 _last_egress_ip: str | None = None
 
@@ -635,10 +644,14 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
 def _observe_egress_ip() -> None:
     """Read the address this rotation actually landed on, and say whether it moved.
 
-    ADR-0067 measured that `systemctl restart warp-svc` returns a *different* egress IP only about
-    11 times in 30: a WARP client is pinned to its nearest colo, the colo never moves under any
-    rotation verb, and each colo carries a pool of one to three addresses — so on LAX or SJC a
-    rotation cannot move at all. That ADR's own consequence is the reason this function exists:
+    ADR-0067 measured (2026-08-19, 18-30 probe jobs) that `systemctl restart warp-svc` returns a
+    *different* egress IP only about 11 times in 30, and pinned that to pool depth: a WARP client
+    is pinned to its nearest colo, the colo never moves under any rotation verb, and each colo was
+    measured to carry a pool of one to three addresses. The colo-pinning half still holds. The
+    pool-depth half does not: ADR-0081 (2026-08-21) parsed 150 shard-runs of real pipeline traffic
+    and found 12,702 rotations landing 11,007 distinct addresses, with per-shard churn of
+    0.93-1.00 and a ~100% rescue rate — a deep pool, not a 1-3 one. Neither ADR changes why this
+    function exists, though:
 
         Rotation counters are not a health signal. `spare_egress.rotations()` counts restarts, and
         a restart that returns the same address counts the same as one that does not. A future
@@ -646,11 +659,16 @@ def _observe_egress_ip() -> None:
         not count rotations.
 
     So the returned suffix is the health signal the counters cannot be. `same` means the rotation
-    bought nothing — the caller still paid ~2s and a closed gate for the address it already had.
+    bought nothing — the caller still paid ~2s and a closed gate for the address it already had;
+    ADR-0081's measurement says that outcome is now the rare one, not the common one.
 
     The colo rides along because ADR-0067 found it is *the* determinant of how much rotation can
-    ever achieve — a colo carries one to three addresses, so LAX or SJC cannot move at all — and it
-    costs nothing extra, arriving in the same response.
+    ever achieve — a shard is pinned to one colo for its whole life, so whatever that colo's pool
+    holds is the ceiling. ADR-0067 measured LAX and SJC at a single address apiece (unable to move
+    at all); ADR-0081's data contradicts that specifically, not just the aggregate number — the
+    same two colo codes showed the same near-1.0 churn as every other colo on 2026-08-21. Reading
+    per-colo pool size still matters, reading either ADR's specific numbers as current does not.
+    Costs nothing extra either way, arriving in the same response.
 
     Called with **no lock held and the gate open**. Bounded and swallowed on every failure: this is
     telemetry attached to the retry path, and a trace endpoint being slow or down must never turn a
@@ -706,7 +724,9 @@ def egress_ips() -> Counter[str]:
 
     Keyed `ip:<address>` for the addresses so one Counter carries both without a second structure;
     the join reads the `ip:` prefix to count *distinct* addresses across shards, which is the
-    number ADR-0067 actually cared about — 30 jobs shared 11 WARP IPs, one across 8 jobs.
+    number that matters for judging pool depth — ADR-0067 put it at 11 WARP IPs shared across 30
+    jobs (one across 8); ADR-0081 remeasured it on 150 shard-runs of real traffic at 11,007
+    distinct IPs across 12,702 rotations.
     """
     with _rotation_lock:
         return Counter(_egress_ips)
