@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from headstart.experience import extract
+from headstart.salary import extract as extract_salary
 from headstart.search import DOC_PREFIX
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
@@ -103,11 +104,15 @@ def build_doc(job: dict) -> str:
 
 
 # How many times the *derived* columns' definition has changed (ADR-0061). Bump this in the same
-# change that alters what `extract` returns, and `update_meta` re-derives every already-stored row
-# whose description we hold — otherwise a fix reaches new Jobs only, because `embed_plan` skips ids
-# it has already embedded. Only the derivations below depend on it; facts refresh unconditionally.
+# change that alters what `experience.extract` or `salary.extract` returns, and `update_meta`
+# re-derives every already-stored row whose description we hold — otherwise a fix reaches new Jobs
+# only, because `embed_plan` skips ids it has already embedded. Only the derivations below depend
+# on it; facts refresh unconditionally. One shared counter for both families (simpler than two
+# watermarks; the wasted recompute on an unrelated bump is cheap regex work, not network/LLM cost
+# — revisit only if that stops being true).
 # v2: Tier 2 answers with the smallest stated requirement rather than the first (ADR-0079).
-DERIVATIONS_VERSION = 2
+# v3: added the salary cascade (min_salary_annual/max_salary_annual/salary_currency/salary_source).
+DERIVATIONS_VERSION = 3
 
 
 def to_meta(job: dict) -> dict:
@@ -115,10 +120,13 @@ def to_meta(job: dict) -> dict:
 
     ``min_years`` / ``max_years`` come from the extraction cascade (field, then description,
     then seniority floor — ADR-0018) with the ``experience_source`` tier tag carried alongside;
-    all three are None when nothing matched. ``employment_type`` / ``salary`` stay raw strings —
-    display-only until normalized (ADR-0019).
+    all three are None when nothing matched. ``min_salary_annual`` / ``max_salary_annual`` /
+    ``salary_currency`` come from the salary cascade (field, then description — no seniority
+    tier, see ``headstart.salary``'s module docstring) with ``salary_source`` alongside; all four
+    are None when nothing matched, and None is never treated as exclusionary. ``employment_type``
+    / ``salary`` stay raw strings — display-only (ADR-0019).
 
-    The derived three are re-computable from the facts beside them, which is what lets
+    The derived fields are re-computable from the facts beside them, which is what lets
     ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
     """
     meta = {field: job.get(field) for field in META_FIELDS}
@@ -131,4 +139,11 @@ def to_meta(job: dict) -> dict:
     meta["min_years"] = span.min_years if span else None
     meta["max_years"] = span.max_years if span else None
     meta["experience_source"] = span.source if span else None
+    salary_span = extract_salary(
+        job.get("salary"), job.get("description"), job.get("ats")
+    )
+    meta["min_salary_annual"] = salary_span.min_annual if salary_span else None
+    meta["max_salary_annual"] = salary_span.max_annual if salary_span else None
+    meta["salary_currency"] = salary_span.currency if salary_span else None
+    meta["salary_source"] = salary_span.source if salary_span else None
     return meta
