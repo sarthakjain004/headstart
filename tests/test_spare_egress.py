@@ -260,7 +260,8 @@ def test_stream_width_never_widens_a_ceiling_already_below_the_stopgap():
 def test_stream_width_asks_nothing_of_warp(monkeypatch):
     """It reads only state something else already computed. Dialling to find out whether a spare
     egress exists would put a WARP connect on the width decision of every walled shard — including
-    the ones for which the answer changes nothing (ADR-0067: a different IP, not a fresh budget)."""
+    the ones for which the answer changes nothing (a different IP, not a fresh allowance to spend
+    on the decision itself — ADR-0067, pool depth since corrected by ADR-0081)."""
     monkeypatch.setattr(
         spare_egress,
         "proxy_url",
@@ -476,9 +477,10 @@ def _tracing(monkeypatch, addresses, *, colos=None):
 def test_a_rotation_that_moves_is_told_apart_from_one_that_does_not(
     monkeypatch, caplog
 ):
-    """ADR-0067: rotation returns a different IP only ~11 times in 30, so a rotation *count* is
-    not a health signal. Only comparing addresses distinguishes a rotation that bought something
-    from one that spent ~2s and a closed gate to land on the address it already had."""
+    """A rotation *count* is not a health signal regardless of how often it lands a fresh address
+    — only comparing addresses distinguishes a rotation that bought something from one that spent
+    ~2s and a closed gate to land on the address it already had. (ADR-0067 measured that as ~11
+    times in 30; ADR-0081 corrected the pool it drew that from, but not this reasoning.)"""
     spare_egress.reset()
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True
@@ -521,8 +523,10 @@ def test_the_initial_dial_seeds_the_first_comparison(monkeypatch, caplog):
 
 
 def test_report_names_the_distinct_addresses_not_just_the_rotation_count(monkeypatch):
-    """The cross-shard number ADR-0067 cared about was distinct addresses (30 jobs shared 11 IPs),
-    which a rotation count cannot express."""
+    """The cross-shard number that matters is distinct addresses, not a rotation count — ADR-0067
+    measured it at 11 IPs shared across 30 jobs; ADR-0081 corrected that to 11,007 distinct IPs
+    across 12,702 rotations on real traffic. Either way, only a comparison of addresses expresses
+    it; a rotation count cannot."""
     spare_egress.reset()
     spare_egress._proxy = "socks5://127.0.0.1:40000"
     spare_egress._resolved = True

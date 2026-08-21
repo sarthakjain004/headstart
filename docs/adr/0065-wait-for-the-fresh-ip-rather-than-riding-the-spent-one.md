@@ -2,8 +2,10 @@
 
 **Status:** Accepted · **Amended by:**
 [ADR-0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) (waiting for the fresh
-IP still beats riding the spent one, but measurement showed the "fresh" IP is the same address
-about half the time — the refund buys a coin flip, not a new budget) · **Date:** 2026-08-19 ·
+IP still beats riding the spent one; ADR-0067's own "same address about half the time" figure was
+itself corrected by
+[ADR-0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md) — the refund now looks closer
+to a new budget than a coin flip, see ADR-0067's own header) · **Date:** 2026-08-19 ·
 **Supersedes nothing; amends ADR-0063**
 
 ## Context

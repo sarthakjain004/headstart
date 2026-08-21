@@ -206,8 +206,9 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
     retries: Counter[str] = Counter()
     for r in reports:
         retries.update(r.get("retries") or {})
-    # The cross-shard view a single shard cannot have: ADR-0067 measured 30 jobs sharing just 11
-    # WARP IPs, one across 8 of them — a fact no shard's own count of its rotations can show.
+    # The cross-shard view a single shard cannot have: pool depth (ADR-0067 first measured 30 jobs
+    # sharing just 11 WARP IPs; ADR-0081 corrected that to 11,007 distinct IPs across 150
+    # shard-runs of real traffic) is a fact no shard's own count of its rotations can show.
     egress_ips: Counter[str] = Counter()
     for r in reports:
         egress_ips.update(r.get("egress_ips") or {})

@@ -7,7 +7,11 @@ than the width in use) · **Relates to:**
 [ADR-0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) (why a working spare
 egress does not earn the wide width back),
 [ADR-0076](0076-a-lost-page-is-a-truncation-until-most-of-them-are.md) (what a lost page costs once
-the width has already produced it)
+the width has already produced it),
+[ADR-0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md) (corrects the "one to three
+IPs per colo" premise Context point 2 and the Rejected section below cite from ADR-0067 — the
+narrowing decision itself is not redone here, but its stated reason is weaker than when this was
+written)
 
 ## Context
 
