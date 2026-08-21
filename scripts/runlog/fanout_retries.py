@@ -30,10 +30,12 @@ small n drawn from a single run, so treat `DIRECT_RATIO` as calibrated, not prov
 in the ambiguous band between the thresholds is reported as `?` rather than forced to a verdict.
 
 **A caution the measurement earned.** `spare_egress.rotations()` counts tunnel restarts, and a
-restart that returns the same address counts the same as one that does not (ADR-0067: rotation
-yields a genuinely different IP only ~11 times in 30, because the colo never moves and carries a
-1-3 address pool). So rotation counts printed here are activity, not health. Egress health is the
-network/429 ratio and nothing else in this output.
+restart that returns the same address counts the same as one that does not — so rotation counts
+printed here are activity, not health, regardless of how deep the address pool behind them turns
+out to be. (ADR-0067 first measured that pool at "one to three" per colo, ~11-of-30 rotations
+genuinely fresh; ADR-0081 corrected it on 150 shard-runs of real traffic to a deep pool with
+~100% rescue rate. Neither number changes this caution — a count still isn't health.) Egress
+health is the network/429 ratio and nothing else in this output.
 
 Run: python scripts/runlog/fanout_retries.py 32272854468
      python scripts/runlog/fanout_retries.py 32261793515 32272854468   # compare
@@ -182,7 +184,7 @@ def report(run: Run) -> None:
             flush=True,
         )
     print(
-        f"  rotation activity (NOT health, ADR-0067): {sum(r.rotations for r in rows)} rotations, "
+        f"  rotation activity (NOT health, ADR-0067/0081): {sum(r.rotations for r in rows)} rotations, "
         f"{sum(r.walls for r in rows)} wall events, {sum(r.spent for r in rows)} budgets spent",
         flush=True,
     )

@@ -1,6 +1,10 @@
 # ADR-0067: The spare egress buys a different IP, not a fresh budget
 
-**Status:** accepted · **Date:** 2026-08-19 · **Amends:**
+**Status:** accepted · **Amended by:**
+[ADR-0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md) (measured on 150 shard-runs of
+real traffic: the pool is not "one to three addresses" — 12,702 rotations produced 11,007 distinct
+IPs, and rescue rate ran ~100% — though the colo-pinning finding below still stands) · **Date:**
+2026-08-19 · **Amends:**
 [ADR-0063](0063-spare-egress-for-a-spent-origin-budget.md) (its premise that a walled shard picks
 up an *unspent* origin budget) · **Relates to:**
 [ADR-0047](0047-pace-against-the-origin.md),
