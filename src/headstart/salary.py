@@ -538,7 +538,7 @@ def from_description(
     anchored "between $X and $Y" phrase. "Between" runs last because it tends to describe a
     narrower sub-detail ("new hires usually start between $X and $Y") rather than the headline
     figure a labeled or bare range states ("expected range is $X to $Y") when a description
-    states both — real example, greenhouse pass, PR TBD. Multiple, mutually-inconsistent genuine
+    states both — real example, greenhouse pass, PR #236. Multiple, mutually-inconsistent genuine
     matches within one tier are ambiguous and stop the cascade there (never fall through to a
     lower-confidence tier to paper over the conflict) — the same no-fabrication principle extended
     from estimation to disambiguation."""
