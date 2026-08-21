@@ -412,6 +412,8 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     # Checked AFTER finding the hint (not by pre-trimming the window) so the number's own trailing
     # digit stays available for _PERIOD_HINT's leading \b to anchor against (e.g. "0" before
     # "/hour").
+    # The period word can land on either side of the number ("hourly rate of $X" vs "$X per
+    # year"), so the gap to check is whichever gap actually separates them.
     rel_start, rel_end = start - window_start, end - window_start
     gap = (
         window[rel_end : m.start()]
@@ -430,11 +432,32 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     return 1  # yr/year/annum/annual(ly) — already annual
 
 
+def _span_from_match(
+    text: str, m: re.Match, lo_raw: str, hi_raw: str | None
+) -> SalarySpan | None:
+    """Shared match -> SalarySpan conversion: false-positive guard, "k" shorthand, period
+    multiplier, currency guess, plausibility bounds. Used by every Tier-2 scanner that turns one
+    regex match into a figure (:func:`_scan`, :func:`_scan_level_bands`) — code review finding,
+    PR #236: this shape was duplicated between them before being extracted here."""
+    if _has_false_positive_context(text, m.start(), m.end()):
+        return None
+    # "k" shorthand: the pattern already consumed an optional trailing k/K without capturing it
+    # separately, so detect it from the matched text itself.
+    matched = m.group(0)
+    k_mult = 1000 if re.search(r"\d[kK]\b", matched) else 1
+    mult = _period_from_window(text, m.start(), m.end()) * k_mult
+    currency = _guess_currency(m.groupdict().get("sym"), matched)
+    lo = _num(lo_raw) * mult
+    hi = _num(hi_raw) * mult if hi_raw else None
+    span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)
+    if span is None:
+        return None
+    return SalarySpan(span.min_annual, span.max_annual, span.currency, "regex")
+
+
 def _scan(text: str, pattern: re.Pattern) -> list[SalarySpan]:
     found: list[SalarySpan] = []
     for m in pattern.finditer(text):
-        if _has_false_positive_context(text, m.start(), m.end()):
-            continue
         gd = m.groupdict()
         lo_raw, hi_raw = gd.get("lo"), gd.get("hi")
         if not lo_raw:
@@ -449,21 +472,9 @@ def _scan(text: str, pattern: re.Pattern) -> list[SalarySpan]:
             # testing, not observed in the sampled corpus — PR #235). Skip rather than default to
             # annual, per the no-fabrication principle.
             continue
-        # "k" shorthand: the pattern already consumed an optional trailing k/K without capturing
-        # it separately, so detect it from the matched text itself.
-        matched = m.group(0)
-        k_mult = 1000 if re.search(r"\d[kK]\b", matched) else 1
-        mult = _period_from_window(text, m.start(), m.end()) * k_mult
-        currency = _guess_currency(gd.get("sym"), matched)
-        lo = _num(lo_raw) * mult
-        hi = _num(hi_raw) * mult if hi_raw else None
-        span = _bounded(
-            min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency
-        )
+        span = _span_from_match(text, m, lo_raw, hi_raw)
         if span is not None:
-            found.append(
-                SalarySpan(span.min_annual, span.max_annual, span.currency, "regex")
-            )
+            found.append(span)
     return found
 
 
@@ -487,15 +498,7 @@ def _scan_level_bands(text: str) -> SalarySpan | None:
     the expected, correct shape here, not an ambiguity to reject."""
     spans: list[SalarySpan] = []
     for m in _LEVEL_BAND.finditer(text):
-        if _has_false_positive_context(text, m.start(), m.end()):
-            continue
-        matched = m.group(0)
-        k_mult = 1000 if re.search(r"\d[kK]\b", matched) else 1
-        mult = _period_from_window(text, m.start(), m.end()) * k_mult
-        currency = _guess_currency(m.group("sym"), matched)
-        lo = _num(m.group("lo")) * mult
-        hi = _num(m.group("hi")) * mult
-        span = _bounded(min(lo, hi), max(lo, hi), currency)
+        span = _span_from_match(text, m, m.group("lo"), m.group("hi"))
         if span is not None:
             spans.append(span)
     if not spans:

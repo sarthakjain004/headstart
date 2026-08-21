@@ -56,8 +56,9 @@ rounds).
 - Sampled up to 3000 or the full live-CSV count: **yes** — 3,000 (7,503 live, well above the cap).
 - Measured both required percentages: **yes** — 0.0% structured-field, 36.1% overall description
   coverage (29,028/80,434), 57.8% coarse-hint rate reported alongside for calibration.
-- Live-verified after code changes: **yes**, one fresh, differently-seeded round after every fix
-  (see Live-verification review) — plus a full per-job diff against both already-merged ATSes
+- Live-verified after code changes: **yes** — one fresh, differently-seeded round run after all of
+  this pass's fixes were in (not after each individual fix; see Live-verification review) — plus a
+  full per-job diff against both already-merged ATSes
   (workable, workday), which is *not* the standard per-ATS process but was necessary here since
   two of this pass's fixes (the number-capture and period-hint bugs) live in shared `salary.py`
   code, not anything greenhouse-specific.
@@ -115,7 +116,10 @@ the full-corpus regression check against workable+workday passed clean:
   labeled range and a narrower "between" sub-detail, and the fuller range is the more
   representative headline figure.
 - **Leveled compensation bands** ("Level 1: $X - $Y Level 2: $A - $B ..."), 494/495 corpus
-  occurrences traced to one company (SpaceX; the 495th is xAI, plausibly sharing an HR template).
+  occurrences traced to one company (SpaceX; the 495th is xAI — confirmed by its
+  `job-boards.greenhouse.io/xai/` slug and URL, though the API's own `company` display field for
+  that board literally reads "SpaceXAI", not "xAI" — corrected 2026-08-22, code review finding,
+  PR #236, plausibly reflecting shared administrative tooling between the two companies).
   Enveloped into one min-to-max span rather than treated as ambiguous, since each band is
   explicitly part of the *same* role's stated range, not a second unrelated number.
 - **The same "unmarked small-dollar range" ambiguity workday's own pass found**, independently
@@ -136,12 +140,20 @@ the full-corpus regression check against workable+workday passed clean:
 |---|---|
 | boards sampled (of 7,503 live) | 3,000 |
 | jobs seen (listing-only, no detail-fetch cap — every job on every sampled board) | 80,434 |
+| jobs showing a salary at all (field OR description) | 29,028 (36.1%) |
 | jobs with a structured `salary` field | 0 (0.0%) — confirmed dead end, no field exists to read |
-| jobs with a description-only signal | 29,028 (36.1%) |
+| jobs with a description-only signal | 29,028 (36.1%) — identical to "at all" since field is always 0 here |
 | overall Tier1+Tier2 coverage | 36.1% |
 | coverage before this pass's fixes (baseline, existing generic patterns only) | 32.0% |
 | coarse hint rate (calibration only) | 57.8% |
 | boards with ≥1 job showing a signal (coarse) | 2,159/2,969 (72.7%) |
+
+**Reconciliation note (2026-08-22, code review finding, PR #236):** the shared artifacts directory
+grew further from the live-verification round after this table was measured (see the workday
+pass's own reconciliation note for why — this mechanism is now expected, not a bug). A reviewer's
+independent recount against the then-current directory (81,105 jobs) gave 36.3% — within rounding
+of the 36.1% above and not a correctness concern, consistent with every prior reconciliation on
+this initiative.
 
 The 21.7-point gap between the coarse hint rate (57.8%) and real coverage (36.1%) is real, not a
 measurement artifact — a substantial share of "mentions a currency symbol near digits" jobs turn
@@ -193,6 +205,26 @@ generic "competitive salary" boilerplate with no actual figure, all correctly le
   version wrongly broke — the bilingual restatement and the words-before-number case).
 - No changes to `greenhouse.py` itself — confirmed via direct API inspection that there is no
   compensation field in the payload to read; everything found is description-only.
+
+**Code-review fix-up (2026-08-22, both axes):** no hard Standards or Spec violations found; the
+Spec reviewer independently reran the workable+workday full-corpus diff from scratch and got the
+same result (0 regressions, small real gains), corroborating that claim rather than just trusting
+it. Two real findings applied:
+
+- `_scan()` and `_scan_level_bands()` duplicated the same match→SalarySpan conversion (false-
+  positive guard, "k" shorthand, period multiplier, currency guess, plausibility bounds) — and
+  `_scan_level_bands` was appending `_bounded()`'s return directly, which hardcodes
+  `source="field"`, into its working list before rebuilding the final span with `source="regex"`
+  (harmless, since only the numeric/currency fields were read from the intermediate object, but a
+  wrong provenance tag on a value nothing ever inspected). Both fixed together by extracting the
+  shared logic into `_span_from_match()`, which returns a correctly-tagged `"regex"` span (or
+  `None`) directly.
+- `_period_from_window`'s two-directions-for-the-gap logic (the period word can sit before or
+  after the number) had no comment explaining why the ternary exists; added one line.
+- The doc itself had a real accuracy slip, caught by direct verification, not just re-reading: the
+  495th leveled-band occurrence was attributed to "xAI" without checking the API's actual
+  `company` field, which reads "SpaceXAI" (the board's slug/URL still confirm it's genuinely
+  xAI's board — see Patterns found). Corrected in place rather than left standing.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
