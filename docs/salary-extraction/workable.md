@@ -48,12 +48,55 @@ sample → measure → build → verify → document loop before scaling to the 
   own) — informed by reading those scrapers' own source and docstrings, not by researching those
   ATSes' live boards (that's each one's own future pass). Workable itself has 0% Tier-1 coverage
   since its scraper has never populated a `salary` field — expected, not a defect of this pass.
+- **Code review found two real bugs the test suite had missed**, both fixed and both worth
+  reading in full — see "Two real bugs found by code review" below. Final coverage after both
+  fixes: **15.4%** (795/5,167).
+
+## Two real bugs found by code review
+
+The `code-review` skill's Spec-axis pass independently re-ran the extractor against the real
+captured corpus (not just trusting the reported numbers) and constructed a failing repro. Worth
+recording in full because both are the kind of bug a percentage alone hides.
+
+**1. The false-positive guard only checked context *before* a match, never after — despite its
+own comment claiming otherwise.** `_has_false_positive_context`'s old implementation built one
+combined string (`prefix[-40:] + text[m.start():m.start()+20]`) and searched it with a single
+`^.{0,40}\b(trigger)\b` pattern. Two compounding bugs: the "after" slice started counting from the
+match's own *start*, not its *end* — so for an 18-character match like `"$50,000 - $60,000"`,
+only ~2 of the intended 20 characters were real post-match text — and the `^.{0,40}` anchor shared
+one budget across both the before- and after-portions of the combined string, so even a corrected
+slice would have starved whichever side came second. Net effect: `"We offer a $50,000 - $60,000
+signing bonus for this role"` extracted a `SalarySpan` instead of correctly returning `None` — a
+real number describing a bonus, not a salary, would have shipped as if it were one. Fixed by
+splitting into two independent, correctly-bounded checks (`_has_false_positive_context` now checks
+`text[start-40:start]` and `text[end:end+40]` separately). Re-measuring the full captured corpus
+after the fix moved coverage from 793 to 781 (**9 jobs** that were being wrongly extracted are now
+correctly `None`) — a real, if small, precision improvement the aggregate 15.3% number alone
+would never have surfaced.
+
+**2. Fixing bug #1 then over-corrected: bare `"401(k)"`/`"hsa"` as trigger words started rejecting
+genuine salaries.** Once the after-window was actually being checked, real postings like `"Pay
+range: $150,000 - $195,000 per year with bonus potential 401(k) Dental insurance"` (a completely
+normal "salary, then a benefits list" structure) started returning `None` — the benefit *category*
+name "401(k)" isn't itself evidence the number in front of it is a benefit amount rather than a
+salary. Diffing the full corpus old-vs-new (not just re-checking the aggregate percentage) caught
+this immediately: 2 of the "changed" jobs were governance improvements, but 2 more were genuine
+salaries newly, wrongly rejected. Narrowed the trigger to require `"contribution"` specifically —
+still catches the real original false positive (`"$2,400 company **contribution** to ... (HSA)"`,
+"contribution" is right there) without the collateral damage. Final: 795/5,167 (15.4%).
+
+**The lesson, stated plainly since it applies to every future ATS's pass**: after touching a
+guard's reach, diff the *full* captured corpus old-vs-new, per job, not just the coverage
+percentage delta. The percentage moved by single digits at every step of this (793 → 781 → 795)
+but each of those single-digit moves was a real, individually-worth-checking correctness change,
+and a percentage alone would have hidden both the original miss and the overcorrection that
+almost followed it.
 
 ## Instruction-adherence self-assessment
 
 - Sampled up to 3000 or the full live-CSV count: **yes** — 190 was the entire live-with-openings
   population, under the cap.
-- Measured both required percentages: **yes** — 0.0% structured-field, 15.3% overall (all from
+- Measured both required percentages: **yes** — 0.0% structured-field, 15.4% overall (all from
   description mining, since Tier 1 has nothing to parse for this ATS); coarse-hint 37.9% reported
   alongside for calibration context, not as a final coverage number. Pushed past the first
   measurement to a second, wider gap-analysis pass (all currency/salary-word mentions, not just
@@ -66,7 +109,7 @@ sample → measure → build → verify → document loop before scaling to the 
   evidence was already sitting in their source rather than needing new research; added an LPA
   ("Lakhs Per Annum") pattern proactively per this repo's explicit India-strong-segment scope,
   even though no LPA-phrased postings turned up in this specific ATS's sample (workable skews
-  US/UK/EU); wrote 29 unit tests, including ones pinned directly to the two real false-positive
+  US/UK/EU); wrote 33 unit tests, including ones pinned directly to the two real false-positive
   classes found, so a future change can't silently regress past them.
 - Did not: attempt cross-currency FX normalization (explicitly out of scope per the locked design
   decision), build a seniority-based estimate fallback (explicitly excluded), or widen past the
@@ -74,16 +117,25 @@ sample → measure → build → verify → document loop before scaling to the 
 
 ## Live-verification review
 
-Ran twice, once per round of fixes. After the first pattern round (bare hr/yr, daily rate, LPA):
-**30 fresh boards, seed=99** against `apply.workable.com`, 30/30 fetched with no errors, 595 jobs,
-52 real extractions (8.7% — lower than the frozen sample's 14.8% at that point, expected natural
-variance from a different 30-board draw, not a regression). Spot-checked all 8 non-duplicate
-extractions for plausibility — e.g. `"Corporate Controller"` → $130k-$150k USD, `"Founding Product
-Engineer (AI & Agentic Systems)"` → £120k-£170k GBP — all genuine, correctly-scaled figures.
+Ran three times, once per round of fixes. After the first pattern round (bare hr/yr, daily rate,
+LPA): **30 fresh boards, seed=99** against `apply.workable.com`, 30/30 fetched with no errors, 595
+jobs, 52 real extractions (8.7% — lower than the frozen sample's 14.8% at that point, expected
+natural variance from a different 30-board draw, not a regression). Spot-checked all 8
+non-duplicate extractions for plausibility — e.g. `"Corporate Controller"` → $130k-$150k USD,
+`"Founding Product Engineer (AI & Agentic Systems)"` → £120k-£170k GBP — all genuine,
+correctly-scaled figures.
 
 After the second round (salary-range label, bare-code range, HKD): **30 more fresh boards,
 seed=2026**, 30/30 fetched with no errors, 1,311 jobs, 177 real extractions (13.5% — consistent
-with the frozen sample's final 15.3%, within normal board-mix variance).
+with that point's frozen-sample number, within normal board-mix variance).
+
+After the code-review round (the false-positive guard fix and its own follow-up narrowing — see
+"Two real bugs found by code review" above): **30 more fresh boards, seed=555**, 30/30 fetched
+with no errors, 661 jobs, 124 real extractions (18.8% — again within normal board-mix variance of
+the frozen sample's final 15.4%). This round mattered most to re-verify live, not just against the
+frozen capture, since the bug was specifically about *rejecting real salaries*, a failure mode a
+stale sample could hide if the fix happened to special-case the captured examples without fixing
+the general mechanism.
 
 ## Patterns found
 
@@ -120,8 +172,8 @@ with the frozen sample's final 15.3%, within normal board-mix variance).
 | boards sampled (of live, currently-hiring) | 190 / 190 (100% — full population, under the 3000 cap) |
 | jobs seen | 5,167 |
 | jobs with a structured `salary` field | 0 (0.0%) — this scraper has never populated one |
-| jobs with a description-only signal | 793 (15.3%) |
-| overall Tier1+Tier2 coverage | 15.3% |
+| jobs with a description-only signal | 795 (15.4%) |
+| overall Tier1+Tier2 coverage | 15.4% |
 | coarse hint rate (calibration only, not a coverage claim) | 37.9% |
 | boards with ≥1 job showing a signal | 102/190 (53.7%, coarse) |
 

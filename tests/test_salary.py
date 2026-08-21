@@ -61,6 +61,14 @@ def test_field_darwinbox_non_inr_rejected():
     assert from_field("USD 3 - 5 (Annual)", "darwinbox") is None
 
 
+def test_field_darwinbox_monthly_timeframe_honored():
+    # salary_timeframe (darwinbox.py) is a real, variable field, not always "Annual" — a monthly
+    # figure must not silently read as annual (code-review finding, PR #234).
+    assert from_field("INR 3 - 5 (Monthly)", "darwinbox") == SalarySpan(
+        3_600_000, 6_000_000, "INR", "field"
+    )
+
+
 def test_field_generic_fallback_for_unlisted_ats():
     # an ATS with no calibrated Tier-1 parser yet still gets a best-effort range/currency read.
     assert from_field("80000-100000 USD", "some-new-ats") == SalarySpan(
@@ -188,6 +196,48 @@ def test_guard_benefit_contribution_not_salary():
 
 def test_guard_signing_bonus_not_salary():
     text = "You'll also receive a $5,000 signing bonus after 90 days."
+    assert from_description(text) is None
+
+
+def test_guard_trigger_word_after_a_range_is_caught():
+    # code-review finding (PR #234): the guard's post-match window used to start at the match's
+    # own start rather than its end, leaving almost no real lookahead — a trigger word trailing a
+    # *range* (not a single figure) went uncaught. These are exactly the failing repros found.
+    assert (
+        from_description("We offer a $50,000 - $60,000 signing bonus for this role.")
+        is None
+    )
+    assert from_description("Salary: $50,000 - $60,000 signing bonus included.") is None
+    assert (
+        from_description(
+            "With over $50,000 - $60,000 in annual revenue and a blue-chip client base."
+        )
+        is None
+    )
+
+
+def test_guard_401k_benefit_list_does_not_reject_a_real_salary():
+    # code-review finding, round 2: once the guard checked the after-window too, bare "401(k)"/
+    # "hsa" started rejecting genuine salaries followed by an unrelated benefits list — real
+    # corpus examples, both previously (wrongly) rejected before this was narrowed to
+    # "contribution" alone.
+    span = extract(
+        None,
+        "Pay range: $150,000 - $195,000 per year with bonus potential 401(k) Dental insurance",
+        "workable",
+    )
+    assert span == SalarySpan(150000, 195000, "USD", "regex")
+    span2 = extract(
+        None,
+        "Competitive salary of $71,700-$85,300 annually 401(k) Dental insurance Employee assistance",
+        "workable",
+    )
+    assert span2 == SalarySpan(71700, 85300, "USD", "regex")
+
+
+def test_guard_trigger_word_well_after_match_still_caught():
+    # a trigger word further than the old ~2-char effective lookahead but within the real window.
+    text = "Compensation: $60,000 - $70,000, paid as a referral bonus upon completion."
     assert from_description(text) is None
 
 

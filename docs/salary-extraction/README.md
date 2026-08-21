@@ -95,7 +95,7 @@ the planning record; the table below is the live status.
 
 | ATS | live boards | status | coverage | doc |
 |---|---:|---|---|---|
-| workable | 971 (190 live w/ openings) | done (pilot) | 0.0% field, 15.3% overall | [workable.md](workable.md) |
+| workable | 971 (190 live w/ openings) | done (pilot) | 0.0% field, 15.4% overall | [workable.md](workable.md) |
 | workday | 16,964 | not started | — | — |
 | greenhouse | 9,152 | not started | — | — |
 | smartrecruiters | 10,845 | not started | — | — |

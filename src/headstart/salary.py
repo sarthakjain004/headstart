@@ -140,17 +140,23 @@ def _field_keka(value: str) -> SalarySpan | None:
 def _field_darwinbox(value: str) -> SalarySpan | None:
     """ "INR 3 - 5 (Annual)" — lakhs, not absolute rupees (ADR-0019's own documented example,
     confirmed against the scraper's real payload semantics: no real tech salary is INR 3-5/year).
-    Multiply by 100,000 before bounding."""
+    Multiply by 100,000 before bounding. The parenthesized suffix is the scraper's own
+    ``salary_timeframe`` field (darwinbox.py) and is **not** always "Annual" — it's a real,
+    variable value, so `_period_multiplier` still applies on top of the lakhs conversion. Missing
+    that would have let a monthly figure read as annual-and-in-bounds, quietly 12x too low
+    (code-review finding, PR #234)."""
     if "INR" not in value.upper():
         return None
+    period_mult = _period_multiplier(value)
     m = _RANGE.search(value)
     if not m:
         single = _SINGLE_NUM.search(value)
         if not single:
             return None
-        lo = hi = _num(single.group(1)) * 100_000
+        lo = hi = _num(single.group(1)) * 100_000 * period_mult
         return _bounded(lo, hi, "INR")
-    lo, hi = _num(m.group(1)) * 100_000, _num(m.group(2)) * 100_000
+    lo = _num(m.group(1)) * 100_000 * period_mult
+    hi = _num(m.group(2)) * 100_000 * period_mult
     return _bounded(min(lo, hi), max(lo, hi), "INR")
 
 
@@ -200,14 +206,41 @@ def from_field(salary: str | None, ats: str | None = None) -> SalarySpan | None:
 # experience.py guards narrative company-tenure phrases:
 #   - company revenue/funding: "$8 billion in annual revenue", "Series B this year (€30 million)"
 #   - benefit-contribution amounts: "$2,400 company contribution to Health Savings Account (HSA)"
-# A match is rejected if one of these context words appears within 40 chars after the number.
+# A match is rejected if one of these context words appears within 40 chars either side of it —
+# "signing bonus" and "revenue" both trail their number in real text ("$50,000 signing bonus"),
+# so both directions matter; catching only one side is a silent miss, not a narrower guard.
+#
+# Deliberately NOT bare "hsa"/"401(k)": those are benefit *category* names, and once the guard
+# started checking the after-window too (see below) they started rejecting genuine salaries that
+# happen to be followed by an unrelated benefits list — real corpus examples: "Pay range:
+# $150,000 - $195,000 per year with bonus potential 401(k) Dental insurance...", "Competitive
+# salary of $71,700-$85,300 annually 401(k) Dental insurance...". "contribution" alone still
+# catches the real false positive ("$2,400 company CONTRIBUTION to ... (HSA)") without that
+# collateral damage, because a benefits-list mention never itself says "contribution".
 _FALSE_POSITIVE_CONTEXT = re.compile(
-    r"^.{0,40}\b("
+    r"\b("
     r"revenue|valuation|series\s+[a-e]\b|funding|raised|arr\b|"
-    r"contribution|hsa\b|401\(?k\)?|signing\s+bonus|referral\s+bonus"
+    r"contribution|signing\s+bonus|referral\s+bonus"
     r")\b",
     re.IGNORECASE,
 )
+_CONTEXT_WINDOW = 40
+
+
+def _has_false_positive_context(text: str, start: int, end: int) -> bool:
+    """Whether a false-positive trigger word appears within :data:`_CONTEXT_WINDOW` chars either
+    side of the match spanning ``text[start:end]``. Two independent, separately-bounded checks —
+    not one combined-and-searched string — so a full budget is available on *each* side; sharing
+    one budget between "before" and "after" silently starved whichever side came second (found
+    live: "We offer a $50,000 - $60,000 signing bonus" extracted uncaught until this was fixed,
+    since the old check's post-match slice started at the match's own start, not its end, leaving
+    almost no real lookahead)."""
+    before = text[max(0, start - _CONTEXT_WINDOW) : start]
+    after = text[end : end + _CONTEXT_WINDOW]
+    return bool(
+        _FALSE_POSITIVE_CONTEXT.search(before) or _FALSE_POSITIVE_CONTEXT.search(after)
+    )
+
 
 _CURRENCY_SYM = {
     "$": None,
@@ -297,10 +330,7 @@ def _period_from_window(text: str, start: int, end: int) -> int:
 def _scan(text: str, pattern: re.Pattern) -> list[SalarySpan]:
     found: list[SalarySpan] = []
     for m in pattern.finditer(text):
-        prefix = text[: m.start()]
-        if _FALSE_POSITIVE_CONTEXT.search(
-            prefix[-40:] + text[m.start() : m.start() + 20]
-        ):
+        if _has_false_positive_context(text, m.start(), m.end()):
             continue
         gd = m.groupdict()
         lo_raw, hi_raw = gd.get("lo"), gd.get("hi")
@@ -327,10 +357,7 @@ def _scan(text: str, pattern: re.Pattern) -> list[SalarySpan]:
 def _scan_lpa(text: str) -> list[SalarySpan]:
     found: list[SalarySpan] = []
     for m in _LPA.finditer(text):
-        prefix = text[: m.start()]
-        if _FALSE_POSITIVE_CONTEXT.search(
-            prefix[-40:] + text[m.start() : m.start() + 20]
-        ):
+        if _has_false_positive_context(text, m.start(), m.end()):
             continue
         gd = m.groupdict()
         lo = round(float(gd["lo"]) * 100_000)
