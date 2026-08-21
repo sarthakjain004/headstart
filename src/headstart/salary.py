@@ -301,6 +301,27 @@ _BARE_BETWEEN = re.compile(
     re.IGNORECASE,
 )
 
+# A bare "$X/hour" or "$X per day" with no label word or connector at all — real, common on
+# smartrecruiters' retail/logistics/care-work postings ("Support Workers ... £8.72 per hour",
+# "BENEFITS & SCHEDULING: $22.50/HOUR!!") where the job description has no "salary"/"pay" word
+# anywhere nearby. Safe specifically because the pattern's OWN match already includes an explicit
+# hourly/daily rate marker — that's the positive confirmation _LABELED's bare "starting at" branch
+# needed a separate _STRONG_PERIOD_HINT check for. Deliberately scoped to hourly/daily only, not
+# monthly/yearly: a bare, unlabeled "$X/month" or "$X/year" is far more likely to be something
+# else (rent, a subscription) and hasn't been measured safe the way this narrower shape has.
+# `(?<!\+)` excludes a leading "+" — real bug, found via the cross-ATS regression diff (not the
+# original 94-case sample): shift-differential lists ("+$4.50/hr -> Mon-Thu Nights +$9.00/hr ->
+# Fri-Sun Nights") state several genuinely different add-on figures, and when the plausibility
+# floor happened to filter out all but one of them, _resolve() saw a lone "unambiguous" match and
+# wrongly reported a differential as the base wage. "+$X" is a reliable, structural signal this is
+# an add-on, not the rate itself — excluding it fixes the mechanism at its source rather than
+# guessing which survivor to trust.
+_BARE_HOURLY_OR_DAILY = re.compile(
+    r"(?<!\+)(?P<sym>[$£€₹])\s?(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*"
+    r"(?:/\s*hr\b|/\s*hour\b|per\s+hour|hourly\b|/\s*day\b|per\s+day\b|daily\b)",
+    re.IGNORECASE,
+)
+
 # A bare number range with a currency CODE (not symbol) trailing it — "50,000-70,000 USD/year",
 # common when a scraper's own Tier-1 phrasing ("USD per-year-salary") style leaks into free text
 # too. Requires the code immediately after (within a few chars) so it doesn't fire on two
@@ -390,31 +411,65 @@ def _guess_currency(sym: str | None, code_context: str) -> str | None:
     return None
 
 
+#: Added to an "after"-side period hint's distance when it looks like a new sentence starting
+#: right where the number ends (see _distance) — large enough to always lose to any "before" hint
+#: within the ~50-char window _period_from_window searches, while still letting the hint win if
+#: it's the only candidate at all.
+_NEW_SENTENCE_PENALTY = 1000
+
+
+def _distance(hint_match: re.Match, rel_start: int, rel_end: int) -> int:
+    """How far `hint_match` sits from the number's own span (`rel_start`-`rel_end`) — used by
+    `_period_from_window` to prefer the period hint CLOSEST to the number, not just the first one
+    found scanning the window left-to-right (real bug: "Shift: Day Salary Range: $44.00 -
+    $57.00/hour" read "Day", the work-shift type, as the period because it sat earlier in the
+    window than the genuine "/hour" right after the number). The period word can land on either
+    side of the number ("hourly rate of $X" vs. "$X per year"), so distance is measured against
+    whichever side it's actually on. An "after" hint that starts a new sentence right where the
+    number ends usually isn't describing the number at all — real bug, found while verifying the
+    fix above: "Competitive hourly rate: $25-35 Annual continuing education benefit..." read
+    "Annual" (opening an unrelated new sentence about a DIFFERENT benefit) over the genuine
+    "hourly" that already precedes the number. Sentence-initial capitalization (title case, not
+    ALL-CAPS emphasis like "$22.50/HOUR!!") is the signal: heavily deprioritize it so a real
+    "before" hint wins instead, but still fall back to it if it's the only candidate at all."""
+    hint_text = hint_match.group(0)
+    if hint_match.start() >= rel_end:
+        dist = hint_match.start() - rel_end
+        if hint_text[0].isupper() and not hint_text.isupper():
+            dist += _NEW_SENTENCE_PENALTY
+        return dist
+    if hint_match.end() <= rel_start:
+        return rel_start - hint_match.end()
+    return (
+        0  # overlaps the number itself — shouldn't happen, but don't crash if it does
+    )
+
+
 def _period_from_window(text: str, start: int, end: int) -> int:
+    """Two checks, in order. First, pick the period hint closest to the number (see _distance).
+    Second, if a comma with real prose words separates the number from whichever hint won, treat
+    it as no hint at all — real bug found on greenhouse: "base salary of $90,000-$100,000, plus
+    weekly and monthly bonus opportunities" wrongly read "monthly" as the SALARY's period (×12 ->
+    $1.08M-$1.2M) when it describes the separate BONUS instead. Requiring BOTH a comma AND
+    leftover letters (not just any words anywhere in the gap) matters: common, genuine phrasing
+    like "Competitive hourly rate of 19-21 USD" (period word BEFORE the number, real words in
+    between, no comma at all) must keep working — an earlier, broader "any letters" version of
+    this guard broke ~150 genuine matches across workable+workday before being caught by a full
+    corpus diff. A comma alone, or comma-separated digits/symbols, are still fine too — "$15.86 -
+    $19.86, hourly." is a genuine trailing-descriptor shape (workday), and a bilingual restatement
+    like "$17.60 - $25.90 / 17,60$ - 25,90$ (per hour / de l'heure)" has commas from
+    European-format duplicate numbers but no real words, and "per hour" genuinely applies to the
+    English figure too."""
     window_start = max(0, start - 20)
     window = text[window_start : end + 30]
-    m = _PERIOD_HINT.search(window)
-    if not m:
+    matches = list(_PERIOD_HINT.finditer(window))
+    if not matches:
         return 1
-    # A comma followed by real prose words between the number and the period word usually means
-    # the word describes something else in a new clause, not this number — real bug found on
-    # greenhouse: "base salary of $90,000-$100,000, plus weekly and monthly bonus opportunities"
-    # wrongly read "monthly" as the SALARY's period (×12 -> $1.08M-$1.2M) when it describes the
-    # separate BONUS instead. Requiring BOTH a comma AND leftover letters (not just any words
-    # anywhere in the gap) matters: common, genuine phrasing like "Competitive hourly rate of
-    # 19-21 USD" (period word BEFORE the number, real words in between, no comma at all) must
-    # keep working — an earlier, broader "any letters" version of this guard broke ~150 genuine
-    # matches across workable+workday before being caught by a full corpus diff. A comma alone,
-    # or comma-separated digits/symbols, are still fine too — "$15.86 - $19.86, hourly." is a
-    # genuine trailing-descriptor shape (workday), and a bilingual restatement like "$17.60 -
-    # $25.90 / 17,60$ - 25,90$ (per hour / de l'heure)" has commas from European-format duplicate
-    # numbers but no real words, and "per hour" genuinely applies to the English figure too.
+    rel_start, rel_end = start - window_start, end - window_start
+    m = min(matches, key=lambda hm: _distance(hm, rel_start, rel_end))
     # Checked AFTER finding the hint (not by pre-trimming the window) so the number's own trailing
     # digit stays available for _PERIOD_HINT's leading \b to anchor against (e.g. "0" before
     # "/hour").
-    # The period word can land on either side of the number ("hourly rate of $X" vs "$X per
-    # year"), so the gap to check is whichever gap actually separates them.
-    rel_start, rel_end = start - window_start, end - window_start
     gap = (
         window[rel_end : m.start()]
         if m.start() >= rel_end
@@ -537,14 +592,17 @@ def from_description(
     compensation bands (several genuinely different numbers that are still one real, stated
     envelope — see :func:`_scan_level_bands`), LPA (a distinctive, unambiguous marker when
     present), an explicit "Salary:"/"Compensation:"-style label, a bare currency-symbol range, a
-    bare number range anchored by a trailing currency code, then — last, lowest-priority — an
-    anchored "between $X and $Y" phrase. "Between" runs last because it tends to describe a
-    narrower sub-detail ("new hires usually start between $X and $Y") rather than the headline
-    figure a labeled or bare range states ("expected range is $X to $Y") when a description
-    states both — real example, greenhouse pass, PR #236. Multiple, mutually-inconsistent genuine
-    matches within one tier are ambiguous and stop the cascade there (never fall through to a
-    lower-confidence tier to paper over the conflict) — the same no-fabrication principle extended
-    from estimation to disambiguation."""
+    bare number range anchored by a trailing currency code, an anchored "between $X and $Y"
+    phrase, then — last, lowest-priority of all — a bare hourly/daily rate with no label at all
+    ("$X/hour" or "$X per day" standing alone). "Between" runs before the fully bare hourly/daily
+    pattern but after everything else, because it tends to describe a narrower sub-detail ("new
+    hires usually start between $X and $Y") rather than the headline figure a labeled or bare
+    range states ("expected range is $X to $Y") when a description states both — real example,
+    greenhouse pass, PR #236. The bare hourly/daily pattern runs last of all since it requires no
+    label whatsoever — any more specific tier that already matched is more likely to be the real
+    figure. Multiple, mutually-inconsistent genuine matches within one tier are ambiguous and stop
+    the cascade there (never fall through to a lower-confidence tier to paper over the conflict)
+    — the same no-fabrication principle extended from estimation to disambiguation."""
     text = description or ""
     if not text:
         return None
@@ -561,6 +619,7 @@ def from_description(
                 _BARE_RANGE_CODE,
                 _BARE_RANGE_CODE_EACH,
                 _BARE_BETWEEN,
+                _BARE_HOURLY_OR_DAILY,
             )
         ),
     ):

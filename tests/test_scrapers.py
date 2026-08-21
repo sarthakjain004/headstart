@@ -259,6 +259,58 @@ def test_smartrecruiters_description_joins_requirement_sections():
     assert "boilerplate" not in text  # companyDescription deliberately skipped
 
 
+def test_smartrecruiters_compensation_custom_field_appended_to_description():
+    # Real, found via direct API inspection: some companies configure a free-text custom field
+    # for pay info the standard jobAd sections never carry (salary-extraction pass, 2026-08-22).
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Marketing Specialist",
+                    "location": {},
+                    "customField": [
+                        {"fieldLabel": "Country/Region", "valueLabel": "New Zealand"},
+                        {
+                            "fieldLabel": "Enter salary or hourly pay range (+ pay grade, if known)",
+                            "valueLabel": "Grade 15. $100K - $115K",
+                        },
+                    ],
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    j = jobs[0]
+    assert "Grade 15. $100K - $115K" in j.description
+    assert (
+        "New Zealand" not in j.description
+    )  # unrelated custom fields are not appended
+    from headstart.salary import extract
+
+    assert extract(None, j.description, "smartrecruiters") is not None
+
+
+def test_smartrecruiters_compensation_custom_field_absent_leaves_description_unchanged():
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {},
+                    "customField": [
+                        {"fieldLabel": "Country/Region", "valueLabel": "New Zealand"},
+                    ],
+                    "_description": "<p>Build things</p>",
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].description == "Build things"
+
+
 def _sr_offline(monkeypatch, scraper, payload):
     """Run `fetch_raw` against `payload` with the detail pass stubbed out.
 
