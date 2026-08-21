@@ -120,6 +120,31 @@ doesn't move within one shard's run), so what changed is specifically the addres
 *within* a colo, not the colo-pinning behavior. Worth updating ADR-0067, or re-running its
 original 30-rotation measurement, since the two numbers can't both be current.
 
+**Independent corroboration: the rescue rate.** If rotation mostly returned an already-walled
+repeat, the spare egress could not sustain a high rescue rate — so `scrape_run`'s own
+`report()` line (`{group}: walled; spare egress rescued X/Y walled request(s)`) is a second,
+independently-gathered signal for the same claim. Pulled from the same cached logs, per run, for
+the two ATSes that opt in:
+
+| run | eightfold rescued/asked | workday rescued/asked |
+|---|---|---|
+| 32443588900 | 1,139/1,139 (100%) | 42,818/42,818 (100%) |
+| 32446509145 | 1,776/1,776 (100%) | 40,542/40,542 (100%) |
+| 32449242159 | 1,999/1,999 (100%) | 39,725/39,725 (100%) |
+| 32452572522 | 1,558/1,558 (100%) | 40,015/40,017 (99.99%) |
+| 32458484544 | 991/991 (100%) | 37,031/37,048 (99.95%) |
+| 32461622760 | 1,751/1,751 (100%) | 37,587/37,588 (99.99%) |
+| 32466424417 | 2,523/2,523 (100%) | 41,306/41,362 (99.86%) |
+| 32470666934 | 1,936/1,936 (100%) | 36,317/36,327 (99.97%) |
+| 32475027789 | 1,970/1,970 (100%) | 37,806/37,809 (99.99%) |
+| 32479274151 | 996/996 (100%) | 41,485/41,489 (99.99%) |
+
+Aggregate across all ten runs: eightfold 16,639/16,639 (100.00%), workday 394,632/394,725
+(99.98%), combined 411,271/411,364 (99.98%). A rotation that mostly landed a repeat of an
+already-refused address could not produce this — the IP-diversity evidence above and this
+rescue-rate evidence were gathered independently (one from `spare_egress` trace lines, one from
+`scrape_run`'s traffic counters) and agree.
+
 Colo distribution across all 150 shard-runs: IAD 3,990, MSP 1,583, SJC 2,085, LAX 1,550,
 ORD 1,504, SEA 1,148, DFW 637, **SCL 205 (one shard, one run — `32449242159` shard 12)**. That one
 Santiago-routed shard is also the single most anomalous rotation record in the whole dataset: 205
