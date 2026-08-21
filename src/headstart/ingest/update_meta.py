@@ -55,6 +55,8 @@ from headstart.experience import extract, from_field, from_seniority
 from headstart.ingest import PENDING_REDERIVE_PATH, REPO_ROOT, read_id_list
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
+from headstart.salary import extract as extract_salary
+from headstart.salary import from_field as salary_from_field
 from headstart.scrapers import registry
 
 _log = log.get(__name__, __spec__)
@@ -76,6 +78,14 @@ FACT_FIELDS = tuple(f for f in META_FIELDS if f not in _IDENTITY)
 
 #: Recomputed from facts whenever the extractor's version moves.
 DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
+
+#: Salary's derived columns (ADR-0082) — no "seniority" tier exists, unlike experience's.
+SALARY_DERIVED_FIELDS = (
+    "min_salary_annual",
+    "max_salary_annual",
+    "salary_currency",
+    "salary_source",
+)
 
 
 def has_description_for(row: dict, detail_pass: frozenset[str]) -> bool:
@@ -184,25 +194,48 @@ def refresh_row(
         row.get("experience") != meta.get("experience")
         or row.get("title") != meta.get("title")
     )
-    if not (sweep or rederive or inputs_moved):
-        return row, facts_changed, False
+    # Salary's own input drift — its cascade never reads `title`, so title-only edits don't
+    # trigger it (unlike experience's).
+    salary_inputs_moved = facts_changed and row.get("salary") != meta.get("salary")
 
-    if (
-        row["id"] in descriptions
-    ):  # the full cascade, against the text this row was derived from
-        span = extract(row.get("experience"), descriptions[row["id"]], row.get("title"))
-    else:
-        span = _rederive_without_text(row, meta)
-    if span is _KEEP:
-        return row, facts_changed, False
+    changed = False
+    if sweep or rederive or inputs_moved:
+        if (
+            row["id"] in descriptions
+        ):  # the full cascade, against the text this row was derived from
+            span = extract(
+                row.get("experience"), descriptions[row["id"]], row.get("title")
+            )
+        else:
+            span = _rederive_without_text(row, meta)
+        if span is not _KEEP:
+            derived = {
+                "min_years": span.min_years if span else None,
+                "max_years": span.max_years if span else None,
+                "experience_source": span.source if span else None,
+            }
+            changed = changed or any(row.get(f) != derived[f] for f in DERIVED_FIELDS)
+            row.update(derived)
 
-    derived = {
-        "min_years": span.min_years if span else None,
-        "max_years": span.max_years if span else None,
-        "experience_source": span.source if span else None,
-    }
-    changed = any(row.get(f) != derived[f] for f in DERIVED_FIELDS)
-    row.update(derived)
+    if sweep or rederive or salary_inputs_moved:
+        if row["id"] in descriptions:
+            salary_span = extract_salary(
+                row.get("salary"), descriptions[row["id"]], row.get("ats")
+            )
+        else:
+            salary_span = _rederive_salary_without_text(row, meta)
+        if salary_span is not _KEEP:
+            derived_salary = {
+                "min_salary_annual": salary_span.min_annual if salary_span else None,
+                "max_salary_annual": salary_span.max_annual if salary_span else None,
+                "salary_currency": salary_span.currency if salary_span else None,
+                "salary_source": salary_span.source if salary_span else None,
+            }
+            changed = changed or any(
+                row.get(f) != derived_salary[f] for f in SALARY_DERIVED_FIELDS
+            )
+            row.update(derived_salary)
+
     return row, facts_changed, changed
 
 
@@ -230,6 +263,23 @@ def _rederive_without_text(row: dict, meta: dict) -> Any:
     if meta.get("experience_source") == "regex":
         return _KEEP
     return from_seniority(row.get("experience"), row.get("title"))
+
+
+def _rederive_salary_without_text(row: dict, meta: dict) -> Any:
+    """Salary's version of :func:`_rederive_without_text` — same reasoning, one fewer branch.
+
+    A parseable field wins outright, same as experience. A description-sourced value is kept
+    because nothing here can improve on it without the text. But where experience falls through to
+    a seniority floor that needs no text, salary has no such tier (see ``headstart.salary``'s
+    module docstring) — "no field, no held description, no prior regex value" is honestly
+    ``None`` here, never a guess.
+    """
+    field = salary_from_field(row.get("salary"), row.get("ats"))
+    if field is not None:
+        return field
+    if meta.get("salary_source") == "regex":
+        return _KEEP
+    return None
 
 
 def refresh(
