@@ -2389,6 +2389,14 @@ def test_zoho_raises_when_the_page_shape_changes(monkeypatch):
             "Salary: 5-10 Lakhs Currency: INR",
         ),
         (
+            '{"id": "1", "Job_Description": "Great role.", "Currency": "INR"}',
+            "Great role. Currency: INR",
+        ),
+        (
+            '{"id": "1", "Currency": "INR"}',
+            "Currency: INR",
+        ),
+        (
             '{"id": "1", "Job_Description": "Great role."}',
             "Great role.",
         ),

@@ -76,6 +76,18 @@ def test_field_generic_fallback_for_unlisted_ats():
     )
 
 
+def test_field_generic_up_to_states_a_ceiling_not_a_floor():
+    # Real, code review, PR #238: ashby/personio pass an HR system's raw free-text field straight
+    # into Job.salary with no scraper-side normalization, so _field_generic hits the exact same
+    # ceiling-vs-floor risk Tier 2 has — "Up to €50,000" must decline, not report €50,000 as a
+    # floor. A real range is unaffected.
+    assert from_field("Up to €50,000", "ashby") is None
+    assert from_field("Salary up to €50,000 per year", "personio") is None
+    assert from_field("40000-50000 EUR", "ashby") == SalarySpan(
+        40000, 50000, "EUR", "field"
+    )
+
+
 def test_field_empty_or_none():
     assert from_field(None) is None
     assert from_field("") is None

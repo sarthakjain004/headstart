@@ -74,11 +74,12 @@ def extract(
 
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
-# These are OUR OWN output shapes (each scraper's private `_salary()`-style helper), not organic
-# free text — so a small per-ATS dispatch beats one generic regex guessing across shapes that
-# don't converge. Populated so far from what's already known in each scraper's source (verified
-# during the salary-extraction planning pass, 2026-08-21); extended per-ATS as that ATS gets its
-# own research pass in docs/salary-extraction/.
+# Mostly OUR OWN output shapes (each scraper's private `_salary()`-style helper: lever, recruitee,
+# teamtailor, keka, darwinbox each get a calibrated `_field_*` parser below) — but not always: an
+# ATS with no dedicated parser falls through to `_field_generic`, and at least two (ashby, personio
+# — corrected claim, code review, PR #238) pass an HR system's own raw free-text field straight
+# into `Job.salary` with zero scraper-side normalization, so `_field_generic` has to treat its
+# input as organic free text too, not assume it's one of our own formats.
 
 # Shared alternation for the 8 ISO codes this module recognizes — several independent regexes
 # below embed it; kept as one string (code review finding, PR #235) so they can't drift apart.
@@ -91,6 +92,35 @@ _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 def _num(s: str) -> int:
     return round(float(s.replace(",", "")))
+
+
+# "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
+# is a required int with no way to represent "ceiling known, floor unknown", so blindly assigning
+# this number to min_annual (as every other connector correctly does for a floor-style figure:
+# "starting at", "from", "is") would silently invert the claim: a job paying AT MOST $X would
+# misreport as paying AT LEAST $X. Real, substantial, already-shipped prevalence measured directly
+# against every ATS sampled so far (workable, workday, greenhouse, smartrecruiters, zoho combined:
+# roughly 1,600 real occurrences across _LABELED, _BARE_HOURLY_OR_DAILY, and LPA alone) — found via
+# a real zoho example during PR #238's review ("Salary: Up to ₹28 LPA" extracting as
+# min_annual=2,800,000), not theoretical. Only matters for a SINGLE bare value (no captured `hi`);
+# an actual stated range ("up to $50,000-$60,000") already states both bounds regardless of the
+# connector, so it's unaffected. Shared by both tiers (not just Tier 2's description mining) —
+# code review, PR #238: Tier 1's `_field_generic` fallback has the identical bare-single-value
+# shape, and it's live-reachable, not theoretical: ashby/personio pass an HR system's raw free-text
+# field straight into `Job.salary` with no scraper-side normalization (unlike lever/recruitee/
+# teamtailor/keka/darwinbox, each of which has its own calibrated `_field_*` parser for a shape
+# *we* format), so "Up to €50,000" from either of those ATSes hit this exact bug too.
+_CEILING_CONNECTOR_WINDOW = (
+    15  # chars scanned before the number; mirrors _CONTEXT_WINDOW's naming
+)
+_UP_TO_CONNECTOR = re.compile(r"\bup\s*to\s*[$£€₹]?\s*$", re.IGNORECASE)
+
+
+def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
+    """Whether an "up to" connector (any amount of internal whitespace, including none — "upto")
+    immediately precedes the number starting at ``lo_start`` (see :data:`_UP_TO_CONNECTOR`)."""
+    window = text[max(0, lo_start - _CEILING_CONNECTOR_WINDOW) : lo_start]
+    return bool(_UP_TO_CONNECTOR.search(window))
 
 
 def _period_multiplier(text: str) -> int:
@@ -190,6 +220,11 @@ def _field_generic(value: str) -> SalarySpan | None:
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
     if single:
+        # Real free-text ATS fields reach this branch (ashby, personio — see the Tier-1 section
+        # comment above), so the same ceiling-vs-floor risk Tier 2 has applies here too: "Up to
+        # €50,000" would otherwise misreport €50,000 as a floor (code review, PR #238).
+        if _states_a_ceiling_only(value, single.start(1)):
+            return None
         v = _num(single.group(1)) * mult
         return _bounded(v, None, currency)
     return None
@@ -404,27 +439,6 @@ _PERIOD_HINT = re.compile(
 _STRONG_PERIOD_HINT = re.compile(
     _PERIOD_HINT.pattern.replace(r"per\s+annum|annually|annual|", ""), re.IGNORECASE
 )
-
-
-# "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
-# is a required int with no way to represent "ceiling known, floor unknown", so blindly assigning
-# this number to min_annual (as every other connector correctly does for a floor-style figure:
-# "starting at", "from", "is") would silently invert the claim: a job paying AT MOST $X would
-# misreport as paying AT LEAST $X. Real, substantial, already-shipped prevalence measured directly
-# against every ATS sampled so far (workable, workday, greenhouse, smartrecruiters, zoho combined:
-# roughly 1,600 real occurrences across _LABELED, _BARE_HOURLY_OR_DAILY, and LPA alone) — found via
-# a real zoho example during PR #238's review ("Salary: Up to ₹28 LPA" extracting as
-# min_annual=2,800,000), not theoretical. Only matters for a SINGLE bare value (no captured `hi`);
-# an actual stated range ("up to $50,000-$60,000") already states both bounds regardless of the
-# connector, so it's unaffected.
-_UP_TO_CONNECTOR = re.compile(r"\b(?:upto|up\s?to)\s*[$£€₹]?\s*$", re.IGNORECASE)
-
-
-def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
-    """Whether an "up to"/"upto" connector immediately precedes the number starting at
-    ``lo_start`` (see :data:`_UP_TO_CONNECTOR`)."""
-    window = text[max(0, lo_start - 15) : lo_start]
-    return bool(_UP_TO_CONNECTOR.search(window))
 
 
 def _guess_currency(sym: str | None, code_context: str) -> str | None:

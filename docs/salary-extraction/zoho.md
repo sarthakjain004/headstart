@@ -238,20 +238,34 @@ benefits all of them once merged.
     "p/h" as hourly.
   - **`_LABELED`**: `pay` → `pay(?:ing)?`; added `of\s+up\s+to`/`is\s+up\s+to` connector
     alternatives before the bare `of`/`is` alternatives so the longer match wins.
-  - **`_states_a_ceiling_only()` + `_UP_TO_CONNECTOR`** (new): a bare single value (no captured
-    range) immediately preceded by "up to"/"upto" now declines rather than being misassigned to
-    `min_annual`. Wired into `_span_from_match` (covers `_LABELED` and `_BARE_HOURLY_OR_DAILY`,
-    every pattern routed through `_scan`) and `_scan_lpa` (the only two places a bare single value
-    becomes a `SalarySpan`). `_LEVEL_BAND`/`_scan_level_bands` always captures both bounds by
-    construction, so it's structurally unaffected.
-- `tests/test_scrapers.py`: 1 new parametrized test function (5 cases) —
-  `test_zoho_detail_description_appends_salary_and_currency` — covering description+both fields,
-  description+salary-only, salary-only+no-description, description-only+no-fields, and the
+  - **`_states_a_ceiling_only()` + `_UP_TO_CONNECTOR`** (new, moved up next to `_num()` so both
+    tiers can share it): a bare single value (no captured range) immediately preceded by "up to"
+    (any internal whitespace, including none) now declines rather than being misassigned to
+    `min_annual`. Wired into Tier 2's `_span_from_match` (covers `_LABELED` and
+    `_BARE_HOURLY_OR_DAILY`, every pattern routed through `_scan`) and `_scan_lpa`.
+    `_LEVEL_BAND`/`_scan_level_bands` always captures both bounds by construction, so it's
+    structurally unaffected. **Also wired into Tier 1's `_field_generic`** (code-review finding,
+    second round): this fallback parser has the identical bare-single-value shape, and it's
+    live-reachable, not theoretical — ashby and personio pass an HR system's raw free-text field
+    straight into `Job.salary` with no scraper-side normalization (confirmed by reading both
+    scrapers directly), unlike lever/recruitee/teamtailor/keka/darwinbox's calibrated `_field_*`
+    parsers for shapes this codebase itself formats. The module's own Tier-1 section comment,
+    which claimed every Tier-1 input was "our own output shape, not organic free text", was wrong
+    for exactly this reason and has been corrected. The whitespace tolerance was also tightened in
+    the same pass: the original `up\s?to` (0–1 space) missed a double-space "up  to", which
+    `_LABELED`'s own connector (`up\s+to`) would still match — simplified to `up\s*to` (0 or more),
+    which also makes the separate "upto" literal redundant.
+- `tests/test_scrapers.py`: 1 parametrized test function (7 cases, 2 added in the second review
+  round) — `test_zoho_detail_description_appends_salary_and_currency` — covering description+both
+  fields, description+salary-only, salary-only+no-description, description+currency-only,
+  currency-only+no-description, description-only+no-fields, and the
   fully-empty regression case.
-- `tests/test_salary.py`: 73 tests total (up from 65 at smartrecruiters' merge). Net across this
+- `tests/test_salary.py`: 74 tests total (up from 65 at smartrecruiters' merge). Net across this
   whole pass: the original 7 zoho-specific pattern tests (p/h ×2, paying, a year, of-up-to,
-  is-up-to, the ambiguity-exposure case), plus 1 new test for the ceiling-vs-floor fix itself
-  (`test_description_up_to_states_a_ceiling_not_a_floor`), with 6 of the original 7 subsequently
+  is-up-to, the ambiguity-exposure case), plus 2 new tests for the ceiling-vs-floor fix
+  (`test_description_up_to_states_a_ceiling_not_a_floor` for Tier 2,
+  `test_field_generic_up_to_states_a_ceiling_not_a_floor` for Tier 1, the latter added in the
+  second review round once the Tier-1 gap was found), with 6 of the original 7 subsequently
   *revised* rather than left stale: `test_description_labeled_single_gbp` (the module's own
   pilot-era "up to" example, now correctly asserting `None`), the two p/h tests and the paying
   test (connector swapped from "up to" to a neutral word so they keep isolating the mechanism they
@@ -319,7 +333,11 @@ this PR merges and the pipeline's derived-field refresh next runs — no need to
 - **New**: one code-review finding is worth re-reading the surrounding code for siblings, not just
   fixing the one flagged issue — this entire chain (three real bugs, two of them far larger than
   the one actually flagged) started from a single Standards-review comment about phantom jobs in a
-  sampling script.
+  sampling script. Confirmed a second time within this same pass: fixing Tier 2's ceiling-vs-floor
+  bug should have prompted a check for the identical bare-single-value shape in Tier 1 immediately
+  — it wasn't done proactively, and a second review round caught the sibling (`_field_generic`,
+  live-reachable via ashby/personio) instead. Re-reading for siblings is a step to take *before*
+  sending a fix for review, not just a thing reviewers happen to catch.
 - **New**: when diffing dataclass instances loaded from two independently-`exec`'d or -imported
   module namespaces (the established old-vs-new verification pattern this initiative uses), compare
   via `repr()` or a field tuple, never bare `==` — the generated `__eq__` checks class identity
