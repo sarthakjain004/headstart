@@ -338,16 +338,14 @@ _PERIOD_HINT = re.compile(
     re.IGNORECASE,
 )
 
-# Same words, minus the bare "annual(ly)"/"per annum" alternative — used only to gate the bare
-# "starting at $X" match (see _scan): an explicit /hour, /day, /mo, or /yr marker is a real signal
-# this is a recurring RATE (wage-shaped), but "annual(ly)" alone isn't, since one-time relocation/
-# tuition/stipend amounts are described that way just as often as real salaries are (PR #235).
+# _PERIOD_HINT minus the bare "annual(ly)"/"per annum" alternative, derived from it (not hand-
+# copied — code review finding, PR #235: the two must not be able to drift apart) so a future
+# marker added to one is added to both automatically. Used only to gate the bare "starting at $X"
+# match (see _scan): an explicit /hour, /day, /mo, or /yr marker is a real signal this is a
+# recurring RATE (wage-shaped), but "annual(ly)" alone isn't, since one-time relocation/tuition/
+# stipend amounts are described that way just as often as real salaries are.
 _STRONG_PERIOD_HINT = re.compile(
-    r"\b(?:/\s*hr\b|/\s*hour\b|per\s+hour|hourly|\bhr\b|"
-    r"/\s*mo\b|/\s*month\b|per\s+month|monthly|\bmo\b|"
-    r"/\s*yr\b|/\s*year\b|per\s+year|\byr\b|"
-    r"/\s*day\b|per\s+day|daily|\bday\b)",
-    re.IGNORECASE,
+    _PERIOD_HINT.pattern.replace(r"per\s+annum|annually|annual|", ""), re.IGNORECASE
 )
 
 
