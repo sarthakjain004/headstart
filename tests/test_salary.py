@@ -433,6 +433,38 @@ def test_description_period_hint_word_before_number_with_no_comma():
     assert span == SalarySpan(19 * 2080, 21 * 2080, "USD", "regex")
 
 
+def test_description_period_hint_prefers_closest_not_first():
+    # Real bug, smartrecruiters pass: _period_from_window used to take the FIRST period word
+    # found when scanning the whole window left-to-right, not the CLOSEST one to the number.
+    # "Shift: Day Salary Range: $44.00 - $57.00/hour" read "Day" (describing the WORK SHIFT type,
+    # unrelated to pay) as the period instead of the genuine "/hour" that comes right after the
+    # number, because "Day" happened to sit earlier in the combined window.
+    text = "Every other weekend Shift: Day Salary Range: $44.00 - $57.00/hour (Final offer based on experience)"
+    span = extract(None, text, "greenhouse")
+    assert span == SalarySpan(round(44.00 * 2080), round(57.00 * 2080), "USD", "regex")
+
+
+def test_description_period_hint_ignores_new_sentence_starting_at_the_number():
+    # Companion regression to the fix above: pure "closest wins" isn't enough on its own — a
+    # capitalized word starting a genuinely NEW, unrelated sentence right where the number ends
+    # ("$25-35 Annual continuing education benefit...") must not out-rank a real period word that
+    # comes a little earlier ("hourly rate: $25-35"). Sentence-initial capitalization (not
+    # ALL-CAPS emphasis) is the distinguishing signal.
+    text = "Competitive hourly rate: $25-35 Annual continuing education benefit $1250 Opportunities for physician interaction"
+    span = extract(None, text, "greenhouse")
+    assert span == SalarySpan(25 * 2080, 35 * 2080, "USD", "regex")
+
+
+def test_description_period_hint_all_caps_emphasis_still_applies():
+    # ALL-CAPS emphasis ("$22.50/HOUR!!") must not be mistaken for the sentence-initial
+    # capitalization the guard above deprioritizes — real workday text.
+    span = extract(
+        None, "BENEFITS & SCHEDULING: $22.50/HOUR!! PAID WEEKLY!!", "greenhouse"
+    )
+    # _num() rounds to whole dollars before annualizing (pre-existing behavior) — 22.50 -> 22.
+    assert span == SalarySpan(22 * 2080, None, "USD", "regex")
+
+
 def test_description_em_dash_range_separator():
     # "... Range $X — $Y USD" (em-dash, not hyphen) is a dominant, templated pattern across many
     # unrelated greenhouse companies — almost certainly a shared compliance/HR tool, not one
@@ -478,6 +510,56 @@ def test_description_between_does_not_override_a_headline_range():
     )
     span = extract(None, text, "workday")
     assert span == SalarySpan(108300, 140800, "USD", "regex")
+
+
+def test_description_bare_hourly_no_label_at_all():
+    # Real, common on smartrecruiters' retail/logistics/care-work postings: a bare "$X/hour" or
+    # "$X per day" with no salary/pay word or connector anywhere nearby.
+    span = extract(
+        None,
+        "Support Workers in Nottinghamshire £8.72 per hour (As well as an hourly rate of...)",
+        "smartrecruiters",
+    )
+    # _num() rounds to whole dollars before annualizing (pre-existing behavior) — 8.72 -> 9.
+    assert span == SalarySpan(9 * 2080, None, "GBP", "regex")
+
+
+def test_description_bare_daily_no_label_at_all():
+    span = extract(
+        None,
+        "Registration Clerk: $ 371 per day Election Official duties as assigned",
+        "smartrecruiters",
+    )
+    assert span == SalarySpan(371 * 260, None, "USD", "regex")
+
+
+def test_description_bare_hourly_ambiguous_multiple_rates_stays_none():
+    # Multiple genuinely different bare hourly rates for different roles in one description must
+    # still resolve to None via the shared ambiguity machinery, not arbitrarily pick one.
+    text = "Registration Clerk: $ 371 per day Election Official: $ 350 per day Poll Supervisor: $ 400 per day"
+    assert extract(None, text, "smartrecruiters") is None
+
+
+def test_description_bare_hourly_excludes_shift_differential_add_on():
+    # Real, confirmed false positive found via a full corpus diff against 3 already-merged ATSes:
+    # a shift-differential list ("+$4.50/hr -> Mon-Thu Nights +$9.00/hr -> Fri-Sun Nights") states
+    # several genuinely different ADD-ON figures, not the base wage — when the plausibility floor
+    # happened to filter out all but one of them, the ambiguity that should have blocked this got
+    # masked, and the sole survivor was wrongly reported as the base rate. A leading "+" is a
+    # reliable, structural signal the figure is an add-on, not the rate itself.
+    text = (
+        "Earn More with Shift Differentials Maximize your earnings with additional hourly "
+        "pay: +$4.50/hr -> Monday-Thursday Nights +$9.00/hr -> Friday-Sunday Nights +$4.50/hr "
+        "-> Saturday-Sunday Days What You'll Do: The Telehealth Psychiatrist is responsible"
+    )
+    assert extract(None, text, "greenhouse") is None
+
+
+def test_description_bare_hourly_base_rate_not_excluded_by_nearby_plus_differential():
+    # Companion to the guard above: a genuine, non-"+"-prefixed base rate stated near a "+$X/hr"
+    # differential must still extract correctly — only the "+"-prefixed figure is excluded.
+    span = extract(None, "$21/hr + $0.50 shift differential + full benefits", "workday")
+    assert span == SalarySpan(21 * 2080, None, "USD", "regex")
 
 
 def test_description_level_bands_envelope_across_multiple_bands():

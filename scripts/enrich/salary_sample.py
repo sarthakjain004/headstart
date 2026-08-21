@@ -136,11 +136,26 @@ def _fetch_workday(scraper: BaseScraper) -> list[Job]:
     return scraper.parse(sample, datetime.now(UTC).isoformat())
 
 
+def _fetch_smartrecruiters(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for smartrecruiters: one listing page via the scraper's own single-page
+    primitive (``_get()``, no offset — never ``fetch_raw()``, which pages the *whole* board plus
+    fans out detail fetches over *every* posting found). Detail-fetches only the first
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_job_description``, then parses
+    just those — so the returned Jobs are exactly the ones with a real description."""
+    page = json.loads(scraper._get())
+    postings = (page or {}).get("content") or []
+    sample = postings[:_DETAIL_FETCH_CAP]
+    for item in sample:
+        item["_description"] = scraper._job_description(item.get("id"))
+    return scraper.parse({**page, "content": sample}, datetime.now(UTC).isoformat())
+
+
 #: ATS -> bounded detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one
 #: not yet researched — see the module docstring). Each returns `list[Job]` for at most
 #: `_DETAIL_FETCH_CAP` real, detail-fetched jobs.
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
+    "smartrecruiters": _fetch_smartrecruiters,
 }
 
 

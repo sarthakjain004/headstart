@@ -22,6 +22,7 @@ fill it in. A failed detail fetch leaves description None — the job is still k
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from headstart import http
@@ -38,6 +39,27 @@ _PAGE_SIZE = 100  # our page size, not the provider's ceiling (ADR-0070)
 # NOT ENFORCED right now (#227) — kept defined so re-enabling is a two-line uncomment, not a
 # re-derivation.
 _MAX_PAGES = 50
+
+# Some companies configure a free-text custom field for pay info (real, found via direct API
+# inspection during the salary-extraction pass, 2026-08-22: "Enter salary or hourly pay range
+# (+ pay grade, if known)" -> "$100K - $115K"; also "Target Salary Range Max" -> "$220,000"). Rare
+# (~2% of boards sampled) but real data the standard sections never carry. Appended to the
+# description as "{label}: {value}" so headstart.salary's existing description-mining cascade can
+# parse whatever shape shows up — not a bespoke parser, since the field is company-configured and
+# non-standardized (one company's free text, another's bare max-only figure).
+_COMPENSATION_FIELD_LABEL = re.compile(
+    r"salary|compensation|pay\s*range", re.IGNORECASE
+)
+
+
+def _compensation_custom_fields(custom_field: Any) -> str:
+    parts = [
+        f"{f.get('fieldLabel')}: {f.get('valueLabel')}"
+        for f in custom_field or []
+        if _COMPENSATION_FIELD_LABEL.search(f.get("fieldLabel") or "")
+        and f.get("valueLabel")
+    ]
+    return " ".join(parts)
 
 
 class SmartRecruitersScraper(BaseScraper):
@@ -164,6 +186,10 @@ class SmartRecruitersScraper(BaseScraper):
                 )
                 or None
             )
+            description = html_to_text(p.get("_description"))
+            comp_fields = _compensation_custom_fields(p.get("customField"))
+            if comp_fields:
+                description = f"{description or ''} {comp_fields}".strip()
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{p['id']}",
@@ -176,7 +202,7 @@ class SmartRecruitersScraper(BaseScraper):
                     url=f"https://jobs.smartrecruiters.com/{self.slug}/{p['id']}",
                     posted_at=p.get("releasedDate"),
                     scraped_at=scraped_at,
-                    description=html_to_text(p.get("_description")),
+                    description=description,
                     experience=(p.get("experienceLevel") or {}).get("label"),
                     employment_type=(p.get("typeOfEmployment") or {}).get("label"),
                 )
