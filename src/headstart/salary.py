@@ -32,6 +32,7 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "AUD": 900_000,
     "INR": 20_00_00_000,  # 2 crore
     "HKD": 6_000_000,
+    "SEK": 6_000_000,
 }
 _MIN_PLAUSIBLE_ANNUAL = {
     "USD": 10_000,
@@ -41,6 +42,7 @@ _MIN_PLAUSIBLE_ANNUAL = {
     "AUD": 10_000,
     "INR": 100_000,  # 1 lakh
     "HKD": 80_000,
+    "SEK": 150_000,
 }
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
@@ -78,7 +80,11 @@ def extract(
 # during the salary-extraction planning pass, 2026-08-21); extended per-ATS as that ATS gets its
 # own research pass in docs/salary-extraction/.
 
-_CURRENCY_CODE = re.compile(r"\b(USD|EUR|GBP|INR|CAD|AUD|HKD)\b", re.IGNORECASE)
+# Shared alternation for the 8 ISO codes this module recognizes — several independent regexes
+# below embed it; kept as one string (code review finding, PR #235) so they can't drift apart.
+_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK"
+
+_CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 _RANGE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*[-–]\s*(\d[\d,]*(?:\.\d+)?)")
 _SINGLE_NUM = re.compile(r"(\d[\d,]*(?:\.\d+)?)")
 
@@ -220,7 +226,7 @@ def from_field(salary: str | None, ats: str | None = None) -> SalarySpan | None:
 _FALSE_POSITIVE_CONTEXT = re.compile(
     r"\b("
     r"revenue|valuation|series\s+[a-e]\b|funding|raised|arr\b|"
-    r"contribution|signing\s+bonus|referral\s+bonus"
+    r"contribution|sign(?:ing|-on)\s+bonus|referral\s+(?:bonus|program|fee)"
     r")\b",
     re.IGNORECASE,
 )
@@ -256,19 +262,29 @@ _CURRENCY_SYM = {
 _LABELED = re.compile(
     r"""
     (?:annual\s+)?
-    (?:salary|compensation|pay|remuneration|base\s+salary|wage)\s*(?:range|rate)?\s*:?\s*
-    (?:upto|up\s+to|of|is|starting(?:\s+(?:salary|at|rate))?)?\s*
+    (?:
+        (?:salary|compensation|pay|remuneration|base\s+salary|wage)\s*(?:range|rate)?
+        (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*:?\s*
+        (?:upto|up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
+        | (?P<bare_starting>starting\s+at)  # bare "starting at $X" — no salary/pay/wage word;
+                                            # named so _scan can demand a period hint nearby (see
+                                            # its call site) rather than default-annual-guessing,
+                                            # since nothing else here confirms this is even a wage
+    )\s*
     (?P<sym>[$£€₹])?\s*
     (?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?
-    (?:\s*[-–to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?)?
-    """,
+    (?:\s*(?:@CODES@)\b)?
+    (?:\s*[-–to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?
+       (?:\s*(?:@CODES@)\b)?)?
+    """.replace("@CODES@", _CURRENCY_CODES),
     re.IGNORECASE | re.VERBOSE,
 )
 
 _BARE_RANGE = re.compile(
     r"(?P<sym>[$£€₹])\s*(?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
-    r"\s*[-–]\s*"
-    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
+    r"(?:\s*[-–]\s*|\s+to\s+)"
+    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?",
+    re.IGNORECASE,
 )
 
 # A bare number range with a currency CODE (not symbol) trailing it — "50,000-70,000 USD/year",
@@ -279,9 +295,31 @@ _BARE_RANGE_CODE = re.compile(
     r"(?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
     r"\s*[-–]\s*"
     r"(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
-    r"\s*(?:USD|EUR|GBP|INR|CAD|AUD|HKD)\b",
+    rf"\s*(?:{_CURRENCY_CODES})\b",
     re.IGNORECASE,
 )
+
+# Same idea, but the code trails EACH side rather than the range as a whole — real workday text:
+# "between 518,910.00 SEK - 815,430.00 SEK" (European-market postings state it this way; the
+# single-trailing-code shape above wouldn't match, the code appears twice, once per number).
+_BARE_RANGE_CODE_EACH = re.compile(
+    rf"(?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:{_CURRENCY_CODES})\b"
+    r"\s*[-–]\s*"
+    rf"(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:{_CURRENCY_CODES})\b",
+    re.IGNORECASE,
+)
+
+# A number-then-symbol pattern ("51882€", the international convention several non-US/UK
+# postings use) was tried and reverted (workday pass, PR #235): `_num()` treats "." as a true
+# decimal point, which is correct for the simple French integer case that motivated it
+# ("51882€") but actively WRONG for the European thousands-separator convention real postings
+# also use ("37.500,00$" is thirty-seven thousand five hundred, not 37.5) — confirmed producing
+# real, incorrect SalarySpans on real workday data, not just a theoretical risk. It also
+# collided with workday's own site URLs, which embed a literal "$" as a path delimiter
+# ("/inst/1$9925/9925$27033.html"). Removed rather than shipped producing wrong numbers; see
+# docs/salary-extraction/workday.md's known-gaps section — proper support needs real
+# locale-aware number parsing (distinguishing "," and "." as decimal vs. thousands separator),
+# which this module doesn't have.
 
 # LPA ("Lakhs Per Annum") gets its own first-class pattern rather than falling through the
 # generic currency-symbol patterns above — it names neither a symbol nor a period marker those
@@ -298,6 +336,16 @@ _PERIOD_HINT = re.compile(
     r"/\s*yr\b|/\s*year\b|per\s+year|per\s+annum|annually|annual|\byr\b|"
     r"/\s*day\b|per\s+day|daily|\bday\b)",
     re.IGNORECASE,
+)
+
+# _PERIOD_HINT minus the bare "annual(ly)"/"per annum" alternative, derived from it (not hand-
+# copied — code review finding, PR #235: the two must not be able to drift apart) so a future
+# marker added to one is added to both automatically. Used only to gate the bare "starting at $X"
+# match (see _scan): an explicit /hour, /day, /mo, or /yr marker is a real signal this is a
+# recurring RATE (wage-shaped), but "annual(ly)" alone isn't, since one-time relocation/tuition/
+# stipend amounts are described that way just as often as real salaries are.
+_STRONG_PERIOD_HINT = re.compile(
+    _PERIOD_HINT.pattern.replace(r"per\s+annum|annually|annual|", ""), re.IGNORECASE
 )
 
 
@@ -335,6 +383,16 @@ def _scan(text: str, pattern: re.Pattern) -> list[SalarySpan]:
         gd = m.groupdict()
         lo_raw, hi_raw = gd.get("lo"), gd.get("hi")
         if not lo_raw:
+            continue
+        if gd.get("bare_starting") and not _STRONG_PERIOD_HINT.search(
+            text[max(0, m.start() - 20) : m.end() + 30]
+        ):
+            # A bare "starting at $X" with no salary/pay/wage word AND no strong rate marker
+            # (hr/day/mo/yr) nearby has nothing confirming it's even a wage — real phrasing like
+            # "relocation assistance starting at $15,000" or "tuition reimbursement starting at
+            # $25,000 annually" reads as a fabricated salary otherwise (found via adversarial
+            # testing, not observed in the sampled corpus — PR #235). Skip rather than default to
+            # annual, per the no-fabrication principle.
             continue
         # "k" shorthand: the pattern already consumed an optional trailing k/K without capturing
         # it separately, so detect it from the matched text itself.
@@ -399,7 +457,10 @@ def from_description(
         return None
     for pattern in (
         _scan_lpa(text),
-        *(_scan(text, p) for p in (_LABELED, _BARE_RANGE, _BARE_RANGE_CODE)),
+        *(
+            _scan(text, p)
+            for p in (_LABELED, _BARE_RANGE, _BARE_RANGE_CODE, _BARE_RANGE_CODE_EACH)
+        ),
     ):
         result = _resolve(pattern)
         if result is _AMBIGUOUS:

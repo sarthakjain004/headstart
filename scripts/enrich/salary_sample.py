@@ -9,19 +9,40 @@ text *looks* like it mentions a figure (``_SALARY_HINT_RE`` — a loose detector
 measurement pass only; it is not the extractor. ``headstart.salary`` is what actually parses a
 figure out, built from what this script finds).
 
-Only listing-only ATSes (``has_detail_pass = False``) are supported today — one cheap request per
-board is the whole sample for those. A detail-pass ATS needs its own bounded adapter (at most ~3
-per-job detail fetches per board, calling the scraper's own endpoint methods directly rather than
-its ``fetch_raw()``, which several detail-pass scrapers use for a full per-board fan-out) built
-during that ATS's own research pass — see docs/salary-extraction/README.md. Until then this script
-exits with a clear message rather than guessing at an unresearched shape.
+Listing-only ATSes (``has_detail_pass = False``) get one cheap request per board — the whole
+sample. A detail-pass ATS needs its own bounded adapter in ``_DETAIL_ADAPTERS`` (at most
+``_DETAIL_FETCH_CAP`` per-job detail fetches per board, calling the scraper's own endpoint methods
+directly rather than its ``fetch_raw()``, which several detail-pass scrapers use for a full
+per-board fan-out) built during that ATS's own research pass — see docs/salary-extraction/
+README.md. An ATS with neither shape exits with a clear message rather than guessing.
+
+**Spare egress is automatic, never hand-rolled.** Every fetch goes through the scraper's own
+``_get()``/``_post()``/``_job_detail()``-style methods, which already carry
+``**self._egress()`` — so an ATS with ``egress_fallback_on`` set (workday: ``{429}``) transparently
+routes through `headstart.spare_egress`'s WARP fallback the same way the real pipeline does,
+reactively, the first time this process meets a wall. No adapter here should ever call
+``http.fetch`` directly; that would silently skip it. One real local limitation, verified
+2026-08-21: rotation (`systemctl restart warp-svc`) needs systemd and doesn't exist on macOS, so a
+local run gets one alternate route per process, not full adaptive rotation — CI still gets that.
 
 Raw captures land in ``experiment/salary-extraction/<ats>/artifacts/<slug>.json`` (the full parsed
-Job list, for reading the real API shape) plus one ``coverage_summary.json``. Progress prints one
-line per board as it completes (a bounded thread pool via ``as_completed``, never a blocking map).
+Job list, for reading the real API shape) plus one ``coverage_summary_<n>_seed<seed>.json`` per
+run (named by board count *and* seed, so neither a small live-verification run nor a same-size
+re-verify with a different seed can clobber another run's summary in the same directory). Progress
+prints one line per board as it completes (a bounded thread pool via ``as_completed``, never a
+blocking map).
+
+``--workers`` (default :data:`_DEFAULT_WORKERS`) bounds board-level concurrency. Higher than a
+single ATS's own production per-*tenant* concurrency (e.g. workday's own ``detail_workers = 6``)
+is safe here specifically because boards are sampled across many different companies/instances —
+workday's own metering is per (source IP, instance host), and ``workday.py`` documents only 18
+known ``wdN`` instances (not "hundreds" — corrected 2026-08-21 after code review), each shared by
+many companies. 32 workers spread across 18 instances is under 2 concurrent requests per instance
+*on average* — a calculated estimate from that documented count, not a measured per-instance load,
+since board sampling order isn't guaranteed to spread evenly across instances.
 
     .venv/bin/python scripts/enrich/salary_sample.py workable
-    .venv/bin/python scripts/enrich/salary_sample.py workday --n 500
+    .venv/bin/python scripts/enrich/salary_sample.py workday --n 500 --workers 48
     .venv/bin/python scripts/enrich/salary_sample.py workable --misses
 """
 
@@ -34,14 +55,25 @@ import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart.config import CompanyRef, load_active_companies
+from headstart.models import Job
 from headstart.scrapers import registry
+from headstart.scrapers.base import BaseScraper
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
 ARTIFACTS_ROOT = ROOT / "experiment" / "salary-extraction"
+
+#: Default board-level concurrency. Deliberately well above any single ATS's own production
+#: per-tenant bound (see the module docstring's concurrency note for why that's safe here — 32
+#: workers over workday's documented 18 ``wdN`` instances is under 2 concurrent/instance on
+#: average, a calculated estimate, not a measured one) — 3000 boards at the old default of 8 took
+#: long enough to make a full pass impractical. Override with --workers for a specific ATS if its
+#: own rate-limiting turns out to need something gentler.
+_DEFAULT_WORKERS = 32
 
 # A coarse "does this text look like it mentions a salary" detector for the measurement pass only
 # — currency symbols/codes near digits, magnitude shorthand, and the region-specific phrasings
@@ -80,9 +112,42 @@ def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
     return random.Random(seed).sample(all_companies, n)
 
 
+#: How many per-job detail fetches a detail-pass adapter may spend on one board — the ~3/board
+#: cap the sampling design commits to (docs/salary-extraction/README.md). Only the detailed jobs
+#: are counted toward coverage stats: an undetailed posting has no description to mine, and
+#: lumping it in as a "no signal" job would dilute the measurement with jobs never actually read,
+#: not jobs genuinely found to say nothing.
+_DETAIL_FETCH_CAP = 3
+
+
+def _fetch_workday(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for workday: one listing page via the scraper's own single-page primitive
+    (``_post``, offset 0 — never ``fetch_raw()``, which recursively subdivides and paginates the
+    *whole* board plus fans out detail fetches over *every* posting found). Detail-fetches only
+    the first :data:`_DETAIL_FETCH_CAP` postings, via the scraper's own ``_job_detail``, then
+    parses just those — so the returned Jobs are exactly the ones with a real description."""
+    scraper._resolve_instance()
+    page = scraper._post({}, offset=0)
+    postings = (page or {}).get("jobPostings") or []
+    sample = postings[:_DETAIL_FETCH_CAP]
+    for item in sample:
+        detail = scraper._job_detail(item.get("externalPath"))
+        item["_detail"] = detail or {}
+    return scraper.parse(sample, datetime.now(UTC).isoformat())
+
+
+#: ATS -> bounded detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one
+#: not yet researched — see the module docstring). Each returns `list[Job]` for at most
+#: `_DETAIL_FETCH_CAP` real, detail-fetched jobs.
+_DETAIL_ADAPTERS = {
+    "workday": _fetch_workday,
+}
+
+
 def _fetch_one(company: CompanyRef, artifacts_dir: Path) -> BoardResult:
     scraper = registry.get_scraper(company.ats, company.slug, company.name)
-    if scraper.has_detail_pass:
+    adapter = _DETAIL_ADAPTERS.get(company.ats)
+    if scraper.has_detail_pass and adapter is None:
         return BoardResult(
             ats=company.ats,
             slug=company.slug,
@@ -94,7 +159,7 @@ def _fetch_one(company: CompanyRef, artifacts_dir: Path) -> BoardResult:
             error="detail-pass ATS: no bounded adapter built yet for this ATS — see module docstring",
         )
     try:
-        jobs = scraper.fetch()
+        jobs = adapter(scraper) if adapter else scraper.fetch()
     except Exception as exc:  # noqa: BLE001 - one board's failure must not sink the sample
         return BoardResult(
             ats=company.ats,
@@ -132,14 +197,17 @@ def _fetch_one(company: CompanyRef, artifacts_dir: Path) -> BoardResult:
     )
 
 
-def _run_sample(ats: str, n: int, seed: int) -> list[BoardResult]:
+def _run_sample(ats: str, n: int, seed: int, workers: int) -> list[BoardResult]:
     boards = _sample_boards(ats, n, seed)
-    print(f"sampling {len(boards)} live board(s) for {ats}", flush=True)
+    print(
+        f"sampling {len(boards)} live board(s) for {ats} ({workers} workers)",
+        flush=True,
+    )
     artifacts_dir = ARTIFACTS_ROOT / ats / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[BoardResult] = []
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(_fetch_one, company, artifacts_dir): company
             for company in boards
@@ -155,7 +223,7 @@ def _run_sample(ats: str, n: int, seed: int) -> list[BoardResult]:
     return results
 
 
-def _summarize(ats: str, results: list[BoardResult]) -> None:
+def _summarize(ats: str, results: list[BoardResult], seed: int) -> None:
     ok = [r for r in results if r.error is None]
     errored = [r for r in results if r.error is not None]
     total_jobs = sum(r.jobs for r in ok)
@@ -184,7 +252,17 @@ def _summarize(ats: str, results: list[BoardResult]) -> None:
         f"boards with >=1 job showing either: {boards_with_any}/{len(ok)} ({100 * boards_with_any / len(ok):.1f}%)"
     )
 
-    summary_path = ARTIFACTS_ROOT / ats / "artifacts" / "coverage_summary.json"
+    # Named per run size AND seed (not a fixed "coverage_summary.json") so a small live-
+    # verification sample can't silently clobber a large main run's summary, or another
+    # differently-seeded verification run of the same size, in the same artifacts directory —
+    # all are real, worth keeping (code review finding, PR #235; size-only collided on a same-N
+    # re-verify before this fix, caught live while applying it).
+    summary_path = (
+        ARTIFACTS_ROOT
+        / ats
+        / "artifacts"
+        / f"coverage_summary_{len(results)}_seed{seed}.json"
+    )
     summary_path.write_text(
         json.dumps(
             {
@@ -214,7 +292,7 @@ def _misses(ats: str, n: int, seed: int) -> None:
         sys.exit(f"no captures at {artifacts_dir} — run a sample first")
     misses: list[dict] = []
     for f in sorted(artifacts_dir.glob("*.json")):
-        if f.name == "coverage_summary.json":
+        if f.name.startswith("coverage_summary"):
             continue
         for j in json.loads(f.read_text()):
             has_field = bool((j.get("salary") or "").strip())
@@ -241,6 +319,12 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=3000)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument(
+        "--workers",
+        type=int,
+        default=_DEFAULT_WORKERS,
+        help=f"concurrent board fetches (default {_DEFAULT_WORKERS})",
+    )
+    ap.add_argument(
         "--misses", action="store_true", help="read miss samples from prior captures"
     )
     args = ap.parse_args()
@@ -252,8 +336,8 @@ def main() -> int:
         _misses(args.ats, n=8, seed=args.seed)
         return 0
 
-    results = _run_sample(args.ats, n=args.n, seed=args.seed)
-    _summarize(args.ats, results)
+    results = _run_sample(args.ats, n=args.n, seed=args.seed, workers=args.workers)
+    _summarize(args.ats, results, args.seed)
     return 0
 
 
