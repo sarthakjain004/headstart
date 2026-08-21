@@ -374,6 +374,152 @@ def test_description_bare_range_accepts_to_separator():
     assert span == SalarySpan(92700, 112000, "USD", "regex")
 
 
+def test_description_trailing_comma_not_absorbed_into_number():
+    # "\d[\d,]*" allowed a dangling trailing comma (real sentence punctuation, not a thousands
+    # separator) to be swept into the `hi` capture — "$100,000," matched hi="100,000," instead of
+    # "100,000", shifting the match's end past the comma (greenhouse pass, real bug). The number
+    # itself parsed fine either way (_num strips commas), but the shifted end broke period-hint
+    # gap detection for the next bug below. Fixed to require the capture end in a real digit.
+    span = extract(None, "Compensation: $90,000-$100,000, per year", "greenhouse")
+    assert span == SalarySpan(90000, 100000, "USD", "regex")
+
+
+def test_description_period_hint_ignores_unrelated_clause_after_comma():
+    # Real bug (greenhouse pass): "base salary of $90,000-$100,000, plus weekly and monthly bonus
+    # opportunities" read "monthly" — describing the separate BONUS, not the salary — as the
+    # salary's own period and multiplied by 12 (-> $1.08M-$1.2M, only caught by luck because it
+    # happened to exceed the plausibility ceiling). A comma between the number and the period word
+    # now means "different clause, don't apply it" — the genuine, unmultiplied $90k-$100k stands.
+    text = (
+        "Earn a base salary of $90,000-$100,000, plus weekly and monthly bonus "
+        "opportunities (typically averaging $1,000/month) and a $10,000 signing bonus."
+    )
+    span = extract(None, text, "greenhouse")
+    assert span == SalarySpan(90000, 100000, "USD", "regex")
+
+
+def test_description_period_hint_still_applies_with_no_intervening_comma():
+    # Companion to the guard above: a period marker directly adjacent (no comma between it and
+    # the number) must still apply normally — every genuine real-corpus case seen so far is this
+    # shape ("$23/hr", "per hour", "$300 - $400 day").
+    span = extract(None, "Pay range: $23 - $25/hr, based on experience", "greenhouse")
+    assert span.min_annual == 23 * 2080
+    assert span.max_annual == 25 * 2080
+
+
+def test_description_period_hint_survives_comma_with_no_real_words():
+    # A comma in the gap is fine as long as nothing but punctuation/digits/symbols follows it —
+    # real workday bilingual posting: the same range restated in French-formatted numbers between
+    # the English figure and its shared "per hour" marker. "per hour" still applies to the English
+    # figure even though European-style commas from the French duplicate sit in between.
+    text = (
+        "Hiring Range / Échelle salariale à l'embauche : $17.60 - $25.90 / "
+        "17,60$ - 25,90$ (per hour / de l'heure)"
+    )
+    span = extract(None, text, "workday")
+    # _num() rounds to whole dollars before annualizing (pre-existing behavior) — 17.60 -> 18,
+    # 25.90 -> 26.
+    assert span.min_annual == 18 * 2080
+    assert span.max_annual == 26 * 2080
+
+
+def test_description_period_hint_word_before_number_with_no_comma():
+    # A period word BEFORE the number, with real prose words in between and no comma at all, must
+    # still apply — real workable text: "Competitive hourly rate of 19-21 USD". An earlier,
+    # overly broad version of the comma-boundary guard (any letters in the gap, not just a
+    # comma-introduced clause) wrongly rejected this and ~150 other genuine matches across
+    # workable+workday before a full corpus diff caught it.
+    span = extract(None, "Competitive hourly rate of 19-21 USD", "workable")
+    assert span == SalarySpan(19 * 2080, 21 * 2080, "USD", "regex")
+
+
+def test_description_em_dash_range_separator():
+    # "... Range $X — $Y USD" (em-dash, not hyphen) is a dominant, templated pattern across many
+    # unrelated greenhouse companies — almost certainly a shared compliance/HR tool, not one
+    # company's own phrasing (confirmed: recurs verbatim across sunnyside, greenthumbindustries,
+    # luminishealth, westernspecialtycontractors, powerx, blackbirdhealth in the real corpus).
+    # Small-dollar occurrences of this same template ("Pay Range $17 — $17 USD") are a separate,
+    # known, genuinely ambiguous gap — see docs/salary-extraction/greenhouse.md.
+    span = extract(None, "Salary Range $40,000 — $105,000 USD", "greenhouse")
+    assert span == SalarySpan(40000, 105000, "USD", "regex")
+
+
+def test_description_between_and_anchored_phrase():
+    # "between $X and $Y" — real, common greenhouse phrasing not covered by any dash/to separator
+    # (charliehealth: "will be between $60,000 and $70,000 per year"; zetacharterschools: "is
+    # between $90,000 and $125,000"). Anchored on the literal word "between" (not a generic
+    # unlabeled "and") so it can't join two unrelated dollar mentions.
+    span = extract(
+        None,
+        "The expected base pay for this role will be between $60,000 and $70,000 per year",
+        "greenhouse",
+    )
+    assert span == SalarySpan(60000, 70000, "USD", "regex")
+
+
+def test_description_between_guards_unrelated_dollar_mentions():
+    # "between" alone isn't a strong enough anchor if the two amounts are genuinely unrelated —
+    # this is why _BARE_BETWEEN requires the literal word right before the first number, not a
+    # generic "and"-joined bare range: two unrelated dollar figures almost never both follow the
+    # word "between" directly.
+    text = "You will receive $50,000 in RSUs and $10,000 signing bonus over four years."
+    assert extract(None, text, "greenhouse") is None
+
+
+def test_description_between_does_not_override_a_headline_range():
+    # Real regression, caught by a full corpus diff against workday's already-merged coverage:
+    # when a description states BOTH a full "range is $X to $Y" AND a narrower "new hires usually
+    # start between $A and $B", the between-clause must not win over the more representative
+    # headline figure just because it's a different pattern. _BARE_BETWEEN runs last (lowest
+    # priority) among the bare patterns for exactly this reason.
+    text = (
+        "Compensation: Expected range is $108,300 to $140,800. New hires usually start "
+        "between $108,300 and $130,000, depending on experience and internal equity."
+    )
+    span = extract(None, text, "workday")
+    assert span == SalarySpan(108300, 140800, "USD", "regex")
+
+
+def test_description_level_bands_envelope_across_multiple_bands():
+    # Real, near-single-company template (spacex, confirmed 494/495 corpus occurrences): several
+    # explicitly labeled "Level N: $X - $Y" bands for one role. Every generic pattern would see
+    # these as multiple genuinely different numbers and correctly refuse to guess — but each band
+    # is explicitly part of the SAME role's stated range, so the envelope (lowest floor to highest
+    # ceiling) is real, stated information, not a guess.
+    text = (
+        "COMPENSATION AND BENEFITS: Pay Range: Level 1: $105,000.00 - $122,500.00 "
+        "Level 2: $120,000.00 - $150,000.00 Your actual level and base salary will be "
+        "determined on a case-by-case basis."
+    )
+    span = extract(None, text, "greenhouse")
+    assert span == SalarySpan(105000, 150000, "USD", "regex")
+
+
+def test_description_level_bands_apply_period_hint_per_band():
+    # Each band can carry its own period marker ("Level 1: $23.00 - $27.00/hour Level 2: ...").
+    text = (
+        "Pay range: Propulsion Technician/Level 1: $23.00 - $27.00/hour "
+        "Propulsion Technician/Level 2: $26.00 - $32.50/hour "
+        "Propulsion Technician/Level 3: $31.00 - $38.00/hour"
+    )
+    span = extract(None, text, "greenhouse")
+    assert span == SalarySpan(23 * 2080, 38 * 2080, "USD", "regex")
+
+
+def test_description_level_bands_without_period_hint_stay_unresolved():
+    # Companion to the above: the same "Level N: $X-$Y" shape with NO period marker anywhere and
+    # small (implausible-as-annual) numbers correctly stays unresolved rather than guessing hourly
+    # — the same genuine, already-established ambiguity as an unmarked "Pay Range: $17 — $17 USD"
+    # elsewhere in this file: the plausibility floor rejects $22-$37 as an annual figure, and
+    # nothing here confirms it's hourly instead.
+    text = (
+        "COMPENSATION AND BENEFITS: Pay Range: Level 1: $22.00 - $26.50 "
+        "Level 2: $25.50 - $31.00 Level 3: $29.50 - $37.00 Your actual level and base "
+        "salary will be determined on a case-by-case basis."
+    )
+    assert extract(None, text, "greenhouse") is None
+
+
 def test_description_labeled_currency_code_requires_word_boundary():
     # _LABELED's per-side currency-code tolerance matched as a prefix of an unrelated word
     # (code review finding, PR #235) — "$50,000 CADillac" read currency='CAD' off "CAD" inside

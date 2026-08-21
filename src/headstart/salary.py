@@ -85,8 +85,8 @@ def extract(
 _CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK"
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
-_RANGE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*[-–]\s*(\d[\d,]*(?:\.\d+)?)")
-_SINGLE_NUM = re.compile(r"(\d[\d,]*(?:\.\d+)?)")
+_RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
+_SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 
 def _num(s: str) -> int:
@@ -272,18 +272,32 @@ _LABELED = re.compile(
                                             # since nothing else here confirms this is even a wage
     )\s*
     (?P<sym>[$£€₹])?\s*
-    (?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?
+    (?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?
     (?:\s*(?:@CODES@)\b)?
-    (?:\s*[-–to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?
+    (?:\s*[-–—to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?
        (?:\s*(?:@CODES@)\b)?)?
     """.replace("@CODES@", _CURRENCY_CODES),
     re.IGNORECASE | re.VERBOSE,
 )
 
 _BARE_RANGE = re.compile(
-    r"(?P<sym>[$£€₹])\s*(?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
-    r"(?:\s*[-–]\s*|\s+to\s+)"
-    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?",
+    r"(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"(?:\s*[-–—]\s*|\s+to\s+)"
+    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    re.IGNORECASE,
+)
+
+# "between $X and $Y" — real, common phrasing (greenhouse: "the base pay for this role will be
+# between $60,000 and $70,000", "the salary range for this position is between $90,000 and
+# $125,000") not covered by _BARE_RANGE (which requires -/–/—/to, not "and") or a widened
+# _LABELED connector: the filler before "between" varies too much to enumerate safely ("will be",
+# "is", "is expected to be", ...), and a bare, unanchored "and" would risk joining two unrelated
+# dollar mentions ("$50,000 in RSUs and $10,000 signing bonus"). Anchoring on the literal word
+# "between" immediately before the first number is what makes this safe without a label word.
+_BARE_BETWEEN = re.compile(
+    r"\bbetween\s+(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"\s+and\s+"
+    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
 
@@ -292,9 +306,9 @@ _BARE_RANGE = re.compile(
 # too. Requires the code immediately after (within a few chars) so it doesn't fire on two
 # unrelated numbers that happen to share a paragraph with an unrelated currency mention.
 _BARE_RANGE_CODE = re.compile(
-    r"(?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
-    r"\s*[-–]\s*"
-    r"(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:[kK])?"
+    r"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"\s*[-–—]\s*"
+    r"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
     rf"\s*(?:{_CURRENCY_CODES})\b",
     re.IGNORECASE,
 )
@@ -303,9 +317,9 @@ _BARE_RANGE_CODE = re.compile(
 # "between 518,910.00 SEK - 815,430.00 SEK" (European-market postings state it this way; the
 # single-trailing-code shape above wouldn't match, the code appears twice, once per number).
 _BARE_RANGE_CODE_EACH = re.compile(
-    rf"(?P<lo>\d[\d,]*(?:\.\d+)?)\s*(?:{_CURRENCY_CODES})\b"
-    r"\s*[-–]\s*"
-    rf"(?P<hi>\d[\d,]*(?:\.\d+)?)\s*(?:{_CURRENCY_CODES})\b",
+    rf"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:{_CURRENCY_CODES})\b"
+    r"\s*[-–—]\s*"
+    rf"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:{_CURRENCY_CODES})\b",
     re.IGNORECASE,
 )
 
@@ -327,6 +341,22 @@ _BARE_RANGE_CODE_EACH = re.compile(
 # scope note: "India is a strong sub-segment", CLAUDE.md). "8-12 LPA", "8 LPA", "Rs 8-12 LPA".
 _LPA = re.compile(
     r"(?:₹|rs\.?|inr)?\s*(?P<lo>\d+(?:\.\d+)?)\s*(?:[-–]\s*(?P<hi>\d+(?:\.\d+)?))?\s*LPA\b",
+    re.IGNORECASE,
+)
+
+# "Level 1: $X - $Y Level 2: $A - $B ..." — a real, near-single-company template (greenhouse:
+# confirmed 494/495 corpus occurrences are SpaceX, 1 is xAI) disclosing several compensation bands
+# for one role at once. Every generic pattern below would see these as multiple genuinely-
+# different numbers and correctly refuse to guess which one is "the" salary (_resolve's ambiguity
+# rule) — but that's too conservative here: each band is explicitly labeled as part of the SAME
+# role's stated range, so the envelope (lowest floor to highest ceiling across all bands) is real,
+# stated information, not a guess. Checked before the generic cascade in from_description so it
+# wins over the ambiguous-therefore-None outcome the bands would otherwise produce.
+_LEVEL_BAND = re.compile(
+    r"Level\s+\d+\s*:\s*"
+    r"(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"\s*[-–—]\s*"
+    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
 
@@ -361,9 +391,34 @@ def _guess_currency(sym: str | None, code_context: str) -> str | None:
 
 
 def _period_from_window(text: str, start: int, end: int) -> int:
-    window = text[max(0, start - 20) : end + 30]
+    window_start = max(0, start - 20)
+    window = text[window_start : end + 30]
     m = _PERIOD_HINT.search(window)
     if not m:
+        return 1
+    # A comma followed by real prose words between the number and the period word usually means
+    # the word describes something else in a new clause, not this number — real bug found on
+    # greenhouse: "base salary of $90,000-$100,000, plus weekly and monthly bonus opportunities"
+    # wrongly read "monthly" as the SALARY's period (×12 -> $1.08M-$1.2M) when it describes the
+    # separate BONUS instead. Requiring BOTH a comma AND leftover letters (not just any words
+    # anywhere in the gap) matters: common, genuine phrasing like "Competitive hourly rate of
+    # 19-21 USD" (period word BEFORE the number, real words in between, no comma at all) must
+    # keep working — an earlier, broader "any letters" version of this guard broke ~150 genuine
+    # matches across workable+workday before being caught by a full corpus diff. A comma alone,
+    # or comma-separated digits/symbols, are still fine too — "$15.86 - $19.86, hourly." is a
+    # genuine trailing-descriptor shape (workday), and a bilingual restatement like "$17.60 -
+    # $25.90 / 17,60$ - 25,90$ (per hour / de l'heure)" has commas from European-format duplicate
+    # numbers but no real words, and "per hour" genuinely applies to the English figure too.
+    # Checked AFTER finding the hint (not by pre-trimming the window) so the number's own trailing
+    # digit stays available for _PERIOD_HINT's leading \b to anchor against (e.g. "0" before
+    # "/hour").
+    rel_start, rel_end = start - window_start, end - window_start
+    gap = (
+        window[rel_end : m.start()]
+        if m.start() >= rel_end
+        else window[m.end() : rel_start]
+    )
+    if "," in gap and re.search(r"[a-zA-Z]", gap.replace(",", "")):
         return 1
     hint = m.group(0).lower()
     if "hr" in hint or "hour" in hint:
@@ -426,6 +481,35 @@ def _scan_lpa(text: str) -> list[SalarySpan]:
     return found
 
 
+def _scan_level_bands(text: str) -> SalarySpan | None:
+    """Envelope every "Level N: $X - $Y" band into one min-to-max span (see :data:`_LEVEL_BAND`)
+    — deliberately NOT run through :func:`_resolve`, since several genuinely different numbers are
+    the expected, correct shape here, not an ambiguity to reject."""
+    spans: list[SalarySpan] = []
+    for m in _LEVEL_BAND.finditer(text):
+        if _has_false_positive_context(text, m.start(), m.end()):
+            continue
+        matched = m.group(0)
+        k_mult = 1000 if re.search(r"\d[kK]\b", matched) else 1
+        mult = _period_from_window(text, m.start(), m.end()) * k_mult
+        currency = _guess_currency(m.group("sym"), matched)
+        lo = _num(m.group("lo")) * mult
+        hi = _num(m.group("hi")) * mult
+        span = _bounded(min(lo, hi), max(lo, hi), currency)
+        if span is not None:
+            spans.append(span)
+    if not spans:
+        return None
+    if len({s.currency for s in spans}) > 1:
+        return None  # genuinely inconsistent currencies across bands — don't guess
+    return SalarySpan(
+        min(s.min_annual for s in spans),
+        max(s.max_annual or s.min_annual for s in spans),
+        spans[0].currency,
+        "regex",
+    )
+
+
 #: Sentinel: this tier found match(es), but they disagree — ambiguous, stop the whole cascade
 #: rather than falling through to a lower-confidence tier that might paper over the conflict.
 _AMBIGUOUS = object()
@@ -446,20 +530,35 @@ def _resolve(spans: list[SalarySpan]) -> SalarySpan | None | object:
 def from_description(
     description: str | None, ats: str | None = None
 ) -> SalarySpan | None:
-    """Scan free text for a stated salary, trying patterns in confidence order: LPA (a
-    distinctive, unambiguous marker when present), an explicit "Salary:"/"Compensation:"-style
-    label, a bare currency-symbol range, then a bare number range anchored by a trailing currency
-    code. Multiple, mutually-inconsistent genuine matches within one tier are ambiguous and stop
-    the cascade there (never fall through to a lower-confidence tier to paper over the conflict)
-    — the same no-fabrication principle extended from estimation to disambiguation."""
+    """Scan free text for a stated salary, trying patterns in confidence order: leveled
+    compensation bands (several genuinely different numbers that are still one real, stated
+    envelope — see :func:`_scan_level_bands`), LPA (a distinctive, unambiguous marker when
+    present), an explicit "Salary:"/"Compensation:"-style label, a bare currency-symbol range, a
+    bare number range anchored by a trailing currency code, then — last, lowest-priority — an
+    anchored "between $X and $Y" phrase. "Between" runs last because it tends to describe a
+    narrower sub-detail ("new hires usually start between $X and $Y") rather than the headline
+    figure a labeled or bare range states ("expected range is $X to $Y") when a description
+    states both — real example, greenhouse pass, PR TBD. Multiple, mutually-inconsistent genuine
+    matches within one tier are ambiguous and stop the cascade there (never fall through to a
+    lower-confidence tier to paper over the conflict) — the same no-fabrication principle extended
+    from estimation to disambiguation."""
     text = description or ""
     if not text:
         return None
+    level_bands = _scan_level_bands(text)
+    if level_bands is not None:
+        return level_bands
     for pattern in (
         _scan_lpa(text),
         *(
             _scan(text, p)
-            for p in (_LABELED, _BARE_RANGE, _BARE_RANGE_CODE, _BARE_RANGE_CODE_EACH)
+            for p in (
+                _LABELED,
+                _BARE_RANGE,
+                _BARE_RANGE_CODE,
+                _BARE_RANGE_CODE_EACH,
+                _BARE_BETWEEN,
+            )
         ),
     ):
         result = _resolve(pattern)
