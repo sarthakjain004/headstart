@@ -411,53 +411,62 @@ def _guess_currency(sym: str | None, code_context: str) -> str | None:
     return None
 
 
+#: Added to an "after"-side period hint's distance when it looks like a new sentence starting
+#: right where the number ends (see _distance) — large enough to always lose to any "before" hint
+#: within the ~50-char window _period_from_window searches, while still letting the hint win if
+#: it's the only candidate at all.
+_NEW_SENTENCE_PENALTY = 1000
+
+
+def _distance(hint_match: re.Match, rel_start: int, rel_end: int) -> int:
+    """How far `hint_match` sits from the number's own span (`rel_start`-`rel_end`) — used by
+    `_period_from_window` to prefer the period hint CLOSEST to the number, not just the first one
+    found scanning the window left-to-right (real bug: "Shift: Day Salary Range: $44.00 -
+    $57.00/hour" read "Day", the work-shift type, as the period because it sat earlier in the
+    window than the genuine "/hour" right after the number). The period word can land on either
+    side of the number ("hourly rate of $X" vs. "$X per year"), so distance is measured against
+    whichever side it's actually on. An "after" hint that starts a new sentence right where the
+    number ends usually isn't describing the number at all — real bug, found while verifying the
+    fix above: "Competitive hourly rate: $25-35 Annual continuing education benefit..." read
+    "Annual" (opening an unrelated new sentence about a DIFFERENT benefit) over the genuine
+    "hourly" that already precedes the number. Sentence-initial capitalization (title case, not
+    ALL-CAPS emphasis like "$22.50/HOUR!!") is the signal: heavily deprioritize it so a real
+    "before" hint wins instead, but still fall back to it if it's the only candidate at all."""
+    hint_text = hint_match.group(0)
+    if hint_match.start() >= rel_end:
+        dist = hint_match.start() - rel_end
+        if hint_text[0].isupper() and not hint_text.isupper():
+            dist += _NEW_SENTENCE_PENALTY
+        return dist
+    if hint_match.end() <= rel_start:
+        return rel_start - hint_match.end()
+    return (
+        0  # overlaps the number itself — shouldn't happen, but don't crash if it does
+    )
+
+
 def _period_from_window(text: str, start: int, end: int) -> int:
+    """Two checks, in order. First, pick the period hint closest to the number (see _distance).
+    Second, if a comma with real prose words separates the number from whichever hint won, treat
+    it as no hint at all — real bug found on greenhouse: "base salary of $90,000-$100,000, plus
+    weekly and monthly bonus opportunities" wrongly read "monthly" as the SALARY's period (×12 ->
+    $1.08M-$1.2M) when it describes the separate BONUS instead. Requiring BOTH a comma AND
+    leftover letters (not just any words anywhere in the gap) matters: common, genuine phrasing
+    like "Competitive hourly rate of 19-21 USD" (period word BEFORE the number, real words in
+    between, no comma at all) must keep working — an earlier, broader "any letters" version of
+    this guard broke ~150 genuine matches across workable+workday before being caught by a full
+    corpus diff. A comma alone, or comma-separated digits/symbols, are still fine too — "$15.86 -
+    $19.86, hourly." is a genuine trailing-descriptor shape (workday), and a bilingual restatement
+    like "$17.60 - $25.90 / 17,60$ - 25,90$ (per hour / de l'heure)" has commas from
+    European-format duplicate numbers but no real words, and "per hour" genuinely applies to the
+    English figure too."""
     window_start = max(0, start - 20)
     window = text[window_start : end + 30]
     matches = list(_PERIOD_HINT.finditer(window))
     if not matches:
         return 1
     rel_start, rel_end = start - window_start, end - window_start
-
-    def _distance(hint_match: re.Match) -> int:
-        hint_text = hint_match.group(0)
-        if hint_match.start() >= rel_end:
-            dist = hint_match.start() - rel_end
-            # An "after" hint that starts a new sentence right where the number ends usually
-            # isn't describing the number at all — real bug, found while verifying the fix below:
-            # "Competitive hourly rate: $25-35 Annual continuing education benefit..." read
-            # "Annual" (opening an unrelated new sentence about a DIFFERENT benefit) over the
-            # genuine "hourly" that already precedes the number. Sentence-initial capitalization
-            # (title case, not ALL-CAPS emphasis like "$22.50/HOUR!!") is the signal: heavily
-            # deprioritize it so a real "before" hint wins instead, but still fall back to it if
-            # it's the only candidate at all.
-            if hint_text[0].isupper() and not hint_text.isupper():
-                dist += 1000
-            return dist
-        if hint_match.end() <= rel_start:
-            return rel_start - hint_match.end()
-        return 0  # overlaps the number itself — shouldn't happen, but don't crash if it does
-
-    # Prefer whichever hint is CLOSEST to the number, not just whichever appears first when
-    # scanning the whole window left-to-right — real bug, found independently of any of this
-    # session's other fixes: "Shift: Day Salary Range: $44.00 - $57.00/hour" read "Day"
-    # (describing the WORK SHIFT type, unrelated to pay) as the period, because it happened to sit
-    # earlier in the combined window than the real "/hour" marker that comes right after the
-    # number itself.
-    m = min(matches, key=_distance)
-    # A comma followed by real prose words between the number and the period word usually means
-    # the word describes something else in a new clause, not this number — real bug found on
-    # greenhouse: "base salary of $90,000-$100,000, plus weekly and monthly bonus opportunities"
-    # wrongly read "monthly" as the SALARY's period (×12 -> $1.08M-$1.2M) when it describes the
-    # separate BONUS instead. Requiring BOTH a comma AND leftover letters (not just any words
-    # anywhere in the gap) matters: common, genuine phrasing like "Competitive hourly rate of
-    # 19-21 USD" (period word BEFORE the number, real words in between, no comma at all) must
-    # keep working — an earlier, broader "any letters" version of this guard broke ~150 genuine
-    # matches across workable+workday before being caught by a full corpus diff. A comma alone,
-    # or comma-separated digits/symbols, are still fine too — "$15.86 - $19.86, hourly." is a
-    # genuine trailing-descriptor shape (workday), and a bilingual restatement like "$17.60 -
-    # $25.90 / 17,60$ - 25,90$ (per hour / de l'heure)" has commas from European-format duplicate
-    # numbers but no real words, and "per hour" genuinely applies to the English figure too.
+    m = min(matches, key=lambda hm: _distance(hm, rel_start, rel_end))
     # Checked AFTER finding the hint (not by pre-trimming the window) so the number's own trailing
     # digit stays available for _PERIOD_HINT's leading \b to anchor against (e.g. "0" before
     # "/hour").

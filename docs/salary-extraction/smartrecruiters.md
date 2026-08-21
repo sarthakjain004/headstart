@@ -36,12 +36,15 @@ rounds), `greenhouse.md` (highest coverage so far, two general `salary.py` bugs 
   internal grade codes with no dollar mapping — confirming the low remaining yield was mostly
   real data sparsity, not a pattern gap). Round 2, reading misses *without* any customField
   involvement, found a genuinely valuable new pattern (bare hourly/daily rates with no label at
-  all) plus, independently, **two real bugs in shared `salary.py` code** — not scoped to this ATS
-  at all, found only because this pass's investigation happened to surface them.
-- **A confirmed false positive, found via the mandatory cross-ATS regression diff, not the
-  original sample**: a shift-differential list states several genuinely different ADD-ON figures
-  ("+$4.50/hr → Mon-Thu Nights +$9.00/hr → Fri-Sun Nights"); when the plausibility floor happened
-  to filter out all but one, the ambiguity that should have blocked this got masked and the sole
+  all) — which itself then needed two rounds of hardening, one against a false positive its own
+  new code introduced, one against a bug that turned out to be genuinely pre-existing in code
+  every already-merged ATS shares (see below, and What changed in code).
+- **A false positive in this pass's own new pattern, caught before it ever shipped** (via the
+  mandatory cross-ATS regression diff, not the original sample — so it never affected any
+  already-merged ATS's real output): a shift-differential list states several genuinely different
+  ADD-ON figures ("+$4.50/hr → Mon-Thu Nights +$9.00/hr → Fri-Sun Nights"); when the plausibility
+  floor happened to filter out all but one, the ambiguity that should have blocked this got
+  masked and the sole
   survivor was wrongly reported as the base wage. Fixed at the pattern level (a leading "+" is a
   reliable, structural "this is an add-on" signal) rather than via a word-based context guard,
   after a word-based ("differential" nearby) attempt was built, tested, and found to break a
@@ -67,10 +70,16 @@ rounds), `greenhouse.md` (highest coverage so far, two general `salary.py` bugs 
   seed=271) after every fix in this pass was in, plus the mandatory full-corpus diff against all
   3 already-merged ATSes' frozen corpora (workable, workday, greenhouse) for the shared-code
   changes, run three times across three fix iterations.
-- Went beyond the ask, explicitly: found and fixed **two real, general bugs in shared `salary.py`
-  code** (the shift-differential false positive, the closest-period-hint bug) that this specific
-  ATS's own pass didn't strictly require — both were surfaced only by the depth of investigation
-  this pass did, and both affect every ATS, not just this one. Fixed a scraper-level data-loss gap
+- Went beyond the ask, explicitly: found and fixed **two real correctness issues in shared
+  `salary.py` code** that this specific ATS's own pass didn't strictly require, both surfaced only
+  by the depth of investigation this pass did. Precisely: the closest-period-hint bug is genuinely
+  **pre-existing** — it affected already-merged workable/workday/greenhouse output before this
+  pass ever touched it (see the Cross-ATS table). The shift-differential false positive is real
+  but narrower in scope than that — it lived only in this pass's own new `_BARE_HOURLY_OR_DAILY`
+  pattern and was caught by the cross-ATS diff *before* that pattern ever shipped, so it never
+  affected any already-merged ATS's real output; it's reported here because the fix (the `(?<!\+)`
+  exclusion) is itself a general, reusable correctness property, not because it was ever a live
+  bug elsewhere. Fixed a scraper-level data-loss gap
   at the source (`smartrecruiters.py`'s `customField` was being silently dropped entirely before
   this pass) rather than working around it downstream. Deliberately avoided a schema-mismatch trap
   (the "Max"-only custom field) that a less careful pass could easily have gotten wrong.
@@ -122,11 +131,14 @@ One round, against real current `api.smartrecruiters.com` hosts, after every fix
   building the pattern, all genuine wage mentions — zero false positives in that initial sample
   (the shift-differential false positive that *was* found came from the separate, later
   cross-ATS regression diff, not this read).
-- **The same two structural bugs greenhouse's pass found in shared code recur here**, confirming
-  they're general, not ATS-specific: a trailing-comma-in-number-capture class of issue (already
-  fixed on greenhouse's pass, so not re-found broken here) and — newly found on this pass — the
-  period-hint proximity bug and the shift-differential false positive, both affecting every ATS's
-  jobs retroactively once fixed (see Coverage's cross-ATS section).
+- **Shared code keeps surfacing general issues, not ATS-specific ones**: greenhouse's pass already
+  fixed a trailing-comma-in-number-capture bug (not re-found broken here, confirming that fix
+  holds). This pass found a genuinely different, previously-unnoticed one in the same shared
+  `_period_from_window` function — the period-hint proximity bug — which, once fixed, changed
+  already-merged ATSes' jobs retroactively (see Coverage's cross-ATS section). The
+  shift-differential false positive, by contrast, was caught within this pass's own new code
+  before it ever shipped (see Instruction-adherence self-assessment) — real, but never live in
+  already-merged output.
 
 ## Coverage
 
@@ -148,12 +160,14 @@ company mix: this sample skewed toward staffing agencies, small non-US employers
 sparse/templated postings that state no figure at all, confirmed by reading real misses (see
 Methods tried) rather than assumed from the low number alone.
 
-### Cross-ATS impact of this pass's two general fixes
+### Cross-ATS impact of the pre-existing closest-period-hint fix
 
-Both bugs found on this pass live in shared `salary.py` code, not smartrecruiters-specific
-dispatch — fixing them changed already-merged ATSes' extraction results too. Verified via a full
-per-job diff against each ATS's frozen corpus (not just re-running the aggregate percentage),
-repeated after each of the three fix iterations in this pass:
+This table covers the closest-period-hint fix specifically — the one bug from this pass that was
+genuinely pre-existing in shared `salary.py` code (the shift-differential fix, by contrast, only
+ever lived in this same pass's own new pattern; see Instruction-adherence self-assessment). Fixing
+it changed already-merged ATSes' extraction results too, verified via a full per-job diff against
+each ATS's frozen corpus (not just re-running the aggregate percentage), repeated after each of
+the three fix iterations in this pass:
 
 | ATS | lost | gained | value changed | net |
 |---|---:|---:|---:|---:|
@@ -200,6 +214,28 @@ is the record of what actually changed and why.
 - `tests/test_scrapers.py`: 2 new tests for `_compensation_custom_fields` — appended when a
   matching label exists, description left unchanged when it doesn't. All 8 pre-existing
   smartrecruiters scraper tests still pass unmodified.
+
+**Code-review fix-up (2026-08-22, both axes):** no hard Standards or Spec violations found.
+Applied:
+
+- `_period_from_window`'s nested `_distance` closure — the only nested closure in the module,
+  breaking the file's own convention of flat top-level single-call-site helpers
+  (`_guess_currency`, `_mutually_consistent`) — extracted to a top-level function taking
+  `rel_start`/`rel_end` explicitly.
+- The `1000`-point new-sentence penalty, previously an unnamed magic number, named as
+  `_NEW_SENTENCE_PENALTY` with a comment tying it to the window size, matching the file's existing
+  convention for other tunables (`_CONTEXT_WINDOW`, `_HOURLY_TO_ANNUAL`).
+- Added a top-level docstring to `_period_from_window` stating its two-stage shape (closest-hint
+  selection, then the comma-gap veto) and how they compose — a third-iteration function with no
+  synthesis comment was flagged as heading toward becoming hard to reason about safely, even
+  though each individual stage was already well-commented.
+- The doc's own framing was corrected in two places above (Methods tried, self-assessment): the
+  shift-differential fix had been described alongside the period-hint fix as "two general bugs
+  affecting every ATS," which overstated it — the differential issue only ever lived in this
+  pass's own new pattern and was caught before it shipped, unlike the period-hint bug, which was
+  genuinely pre-existing in already-merged code. The `_span_from_match`-refactor precedent from
+  greenhouse's own fix-up round (fixing a doc inaccuracy rather than letting it stand) applies
+  here too.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
