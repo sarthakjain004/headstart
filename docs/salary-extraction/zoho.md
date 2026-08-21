@@ -192,17 +192,39 @@ $96,000–$120,000 USD — all genuine.
 | boards sampled (of 5,337 live) | 3,000 |
 | jobs seen (after the phantom-job fix removed 21,358 never-read records) | 36,624 |
 | jobs with a structured `salary` field (`Job.salary`) | 0 (0.0%) — by design; see below |
-| jobs with a Salary/Currency detail-page signal appended to the description | 2,824 (7.7%) |
-| of those, successfully extracted | 1,219 (43.2% of that subset) |
-| jobs extracted from pure prose (no appended field) | 2,139 |
 | **overall Tier1+Tier2 coverage** | **3,358 (9.2%)** |
 | coarse hint rate (calibration only) | 18.1% |
 | boards with ≥1 job showing a real signal | 609/2,865 (21.3%) |
+
+**Append/pure-prose split** — measured via a separate, instrumented re-fetch of the same seed=7
+board draw (36,610 jobs, 14 fewer than the primary sample above — natural variance from re-fetching
+live boards at a different moment, not a mechanism difference; extracted count agrees to 3,361 vs.
+3,358, both round to 9.2%): 1,466 jobs (4.0%) got a genuine detail-page append, of which 496
+(33.8%) successfully extracted; the remaining 2,865 extractions came from pure prose, including
+organic "Salary:"-labeled text that was already part of some descriptions before any append.
 
 `Job.salary` stays at 0% deliberately: the detail-page `Salary`/`Currency` field is real (see
 Patterns found) but is appended to `description` for Tier-2 mining rather than parsed as a
 structured Tier-1 field, matching smartrecruiters' `customField` precedent exactly — so its
 contribution shows up in the Tier-2 numbers above, not as a separate Tier-1 percentage.
+
+**The append/pure-prose breakdown above needed its own correction, caught by the Spec-axis
+re-review.** The first version of this table (2,824 appended / 1,219 extracted from that subset)
+was computed by searching the *final*, already-concatenated description text for `"Salary:"`/
+`"Currency:"` substrings — which also matches organic, pre-existing mentions of those exact words
+inside a real `Job_Description` (confirmed: one real posting genuinely contains "Salary: $15k -
+$25k per month..." as part of its own prose, unrelated to the appended field). A first fix
+attempt anchored the regex at the string's end, which still failed for a related reason: an
+unbounded lazy quantifier before the anchor was forced to swallow all the *unrelated* prose after
+an organic "Salary:" mention just to reach the true end of the string, misclassifying it as an
+append. Two regex attempts against the same opaque, already-transformed string both failed for
+different reasons — the reliable fix was to stop trying to reconstruct the answer after the fact
+and instead tag each job *at the moment of concatenation*, inside the fetch logic itself, where
+whether `Salary`/`Currency` was genuinely present is unambiguous. The numbers above are from that
+instrumented re-fetch. Lesson for future ATSes: if a coverage breakdown attributes extractions to
+a specific mechanism (a custom field, an appended signal), track it at the source during the
+fetch/measurement pass — never reconstruct it after the fact from a string that no longer
+distinguishes where the mechanism's output ends and organic content begins.
 
 Coverage moved twice during this pass, in opposite directions, before landing at its final value:
 the phantom-job fix alone would have raised the raw percentage (a smaller, more honest
