@@ -26,14 +26,20 @@ reactively, the first time this process meets a wall. No adapter here should eve
 local run gets one alternate route per process, not full adaptive rotation — CI still gets that.
 
 Raw captures land in ``experiment/salary-extraction/<ats>/artifacts/<slug>.json`` (the full parsed
-Job list, for reading the real API shape) plus one ``coverage_summary.json``. Progress prints one
-line per board as it completes (a bounded thread pool via ``as_completed``, never a blocking map).
+Job list, for reading the real API shape) plus one ``coverage_summary_<n>_seed<seed>.json`` per
+run (named by board count *and* seed, so neither a small live-verification run nor a same-size
+re-verify with a different seed can clobber another run's summary in the same directory). Progress
+prints one line per board as it completes (a bounded thread pool via ``as_completed``, never a
+blocking map).
 
 ``--workers`` (default :data:`_DEFAULT_WORKERS`) bounds board-level concurrency. Higher than a
 single ATS's own production per-*tenant* concurrency (e.g. workday's own ``detail_workers = 6``)
 is safe here specifically because boards are sampled across many different companies/instances —
-workday's own metering is per (source IP, instance host), so spreading load across hundreds of
-distinct ``wdN`` hosts keeps any one host's share low even at a much higher aggregate pool size.
+workday's own metering is per (source IP, instance host), and ``workday.py`` documents only 18
+known ``wdN`` instances (not "hundreds" — corrected 2026-08-21 after code review), each shared by
+many companies. 32 workers spread across 18 instances is under 2 concurrent requests per instance
+*on average* — a calculated estimate from that documented count, not a measured per-instance load,
+since board sampling order isn't guaranteed to spread evenly across instances.
 
     .venv/bin/python scripts/enrich/salary_sample.py workable
     .venv/bin/python scripts/enrich/salary_sample.py workday --n 500 --workers 48
@@ -53,17 +59,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart.config import CompanyRef, load_active_companies
+from headstart.models import Job
 from headstart.scrapers import registry
+from headstart.scrapers.base import BaseScraper
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
 ARTIFACTS_ROOT = ROOT / "experiment" / "salary-extraction"
 
 #: Default board-level concurrency. Deliberately well above any single ATS's own production
-#: per-tenant bound (see the module docstring's "Spare egress" section for why that's safe here)
-#: — 3000 boards at the old default of 8 took long enough to make a full pass impractical; 32
-#: keeps each individual host's share low while meaningfully cutting wall-clock. Override with
-#: --workers for a specific ATS if its own rate-limiting turns out to need something gentler.
+#: per-tenant bound (see the module docstring's concurrency note for why that's safe here — 32
+#: workers over workday's documented 18 ``wdN`` instances is under 2 concurrent/instance on
+#: average, a calculated estimate, not a measured one) — 3000 boards at the old default of 8 took
+#: long enough to make a full pass impractical. Override with --workers for a specific ATS if its
+#: own rate-limiting turns out to need something gentler.
 _DEFAULT_WORKERS = 32
 
 # A coarse "does this text look like it mentions a salary" detector for the measurement pass only
@@ -111,7 +120,7 @@ def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
 _DETAIL_FETCH_CAP = 3
 
 
-def _fetch_workday(scraper) -> list:
+def _fetch_workday(scraper: BaseScraper) -> list[Job]:
     """Bounded adapter for workday: one listing page via the scraper's own single-page primitive
     (``_post``, offset 0 — never ``fetch_raw()``, which recursively subdivides and paginates the
     *whole* board plus fans out detail fetches over *every* posting found). Detail-fetches only
@@ -214,7 +223,7 @@ def _run_sample(ats: str, n: int, seed: int, workers: int) -> list[BoardResult]:
     return results
 
 
-def _summarize(ats: str, results: list[BoardResult]) -> None:
+def _summarize(ats: str, results: list[BoardResult], seed: int) -> None:
     ok = [r for r in results if r.error is None]
     errored = [r for r in results if r.error is not None]
     total_jobs = sum(r.jobs for r in ok)
@@ -243,7 +252,17 @@ def _summarize(ats: str, results: list[BoardResult]) -> None:
         f"boards with >=1 job showing either: {boards_with_any}/{len(ok)} ({100 * boards_with_any / len(ok):.1f}%)"
     )
 
-    summary_path = ARTIFACTS_ROOT / ats / "artifacts" / "coverage_summary.json"
+    # Named per run size AND seed (not a fixed "coverage_summary.json") so a small live-
+    # verification sample can't silently clobber a large main run's summary, or another
+    # differently-seeded verification run of the same size, in the same artifacts directory —
+    # all are real, worth keeping (code review finding, PR #235; size-only collided on a same-N
+    # re-verify before this fix, caught live while applying it).
+    summary_path = (
+        ARTIFACTS_ROOT
+        / ats
+        / "artifacts"
+        / f"coverage_summary_{len(results)}_seed{seed}.json"
+    )
     summary_path.write_text(
         json.dumps(
             {
@@ -273,7 +292,7 @@ def _misses(ats: str, n: int, seed: int) -> None:
         sys.exit(f"no captures at {artifacts_dir} — run a sample first")
     misses: list[dict] = []
     for f in sorted(artifacts_dir.glob("*.json")):
-        if f.name == "coverage_summary.json":
+        if f.name.startswith("coverage_summary"):
             continue
         for j in json.loads(f.read_text()):
             has_field = bool((j.get("salary") or "").strip())
@@ -318,7 +337,7 @@ def main() -> int:
         return 0
 
     results = _run_sample(args.ats, n=args.n, seed=args.seed, workers=args.workers)
-    _summarize(args.ats, results)
+    _summarize(args.ats, results, args.seed)
     return 0
 
 

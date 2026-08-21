@@ -59,13 +59,18 @@ in, so a new bounded adapter was built for it before any sampling could start).
 - Measured both required percentages: **yes** — 0.0% structured-field (workday's scraper has
   never populated `Job.salary`), 27.6% overall (all Tier 2), 45.3% coarse-hint reported alongside
   for calibration.
-- Live-verified after code changes: **yes**, 3 times (see Live-verification review).
+- Live-verified after code changes: **yes**, 4 times (see Live-verification review).
 - Went beyond the ask: built the first detail-pass sampling adapter (needed once, reusable for
   the 7 other detail-pass ATSes still to come); ran two full gap-analysis rounds, not one, per the
   explicit "cover as much as possible" instruction; found and reverted a pattern that would have
   shipped *wrong* numbers rather than just missing ones, on real-corpus evidence rather than
   assumption; fixed a `_field_darwinbox` correctness bug (unrelated to workday itself, found while
-  reasoning about locale/period handling) via code review, covered in PR #234's own writeup.
+  reasoning about locale/period handling) via code review, covered in PR #234's own writeup. During
+  the code-review fix-up: went beyond the reviewer's own finding (the missing `\b` bug) by
+  adversarially testing the "starting at" bare branch the reviewer had flagged only as a *latent*,
+  contrived risk — found and reproduced a real, non-contrived failure mode (plausible-magnitude
+  corporate-benefits amounts: relocation, tuition, stipend) via direct execution, then fixed it at
+  zero measured coverage cost, rather than accepting it as documented risk.
 - Did not: implement proper locale-aware number parsing (the reverted pattern's real fix) — flagged
   as a known gap, not attempted under time pressure; chase the handful of remaining narrow-phrasing
   misses (`"paid at $X per load hour"`, `"salary is expected between $X to $Y"` — the latter now
@@ -74,18 +79,30 @@ in, so a new bounded adapter was built for it before any sampling could start).
 
 ## Live-verification review
 
-Three rounds, against real current `wd*.myworkdayjobs.com` hosts each time, never a replay of the
+Four rounds, against real current `wd*.myworkdayjobs.com` hosts each time, never a replay of the
 frozen capture:
 
 1. After building the adapter: 3 boards, seed=1, 0 errors, genuine full-length descriptions
    confirmed by direct inspection.
 2. After the full 3000-board sample and Round 1 fixes: implicit in the full sample itself (all
    3000 boards were live fetches).
-3. **Final, after every fix including the concurrency bump**: 40 fresh boards, seed=909,
-   `--workers 32`. 40/40 succeeded, 0 errors, 110 jobs, 32 real extractions (29.1% — consistent
-   with the frozen sample's final 27.6%, normal board-mix variance). Spot-checked the extractions
-   for plausibility (e.g. "Senior Director, Accounting" → $160k-$220k, "AI Infrastructure
-   Engineer" → $192k-$249.6k) — all genuine, correctly-scaled figures.
+3. After every fix including the concurrency bump: 40 fresh boards, seed=909, `--workers 32`.
+   40/40 succeeded, 0 errors, 110 jobs, 32 real extractions (29.1% — consistent with the frozen
+   sample's final 27.6%, normal board-mix variance). Spot-checked the extractions for plausibility
+   (e.g. "Senior Director, Accounting" → $160k-$220k, "AI Infrastructure Engineer" →
+   $192k-$249.6k) — all genuine, correctly-scaled figures.
+4. **Final, after the code-review fix-up** (`\b` boundary, strong-period-hint guard,
+   currency-code dedup): 40 fresh boards, a new seed (2026, distinct from every prior round —
+   `--n 40 --seed 2026 --workers 20`). 40/40 succeeded, 0 errors, 111 jobs, 32 real extractions
+   (28.8%). All 32 spot-checked for plausibility — roles from Pretrial Release Officer
+   ($52.6k-$81.6k) to a College Librarian director role ($170k-$177k) to nursing/RN roles across
+   several boards ($70k-$120k, $162.2k-$199.7k) — every figure sane for its role and location, one
+   correctly-detected GBP figure (a UK-based Volaris Group posting, $40k-$45k GBP). Specifically
+   hunted for live `"starting at"` occurrences to confirm the new guard doesn't cost real coverage:
+   found one (three RN postings sharing one board, "Base Pay Scale: Generally starting at $77.69 -
+   $95.52 per hour") — correctly extracted, via the pre-existing labeled ("pay") branch, unaffected
+   by the new guard since it never depended on the bare path. No CAD (or other) currency
+   mis-detection anywhere in the fresh sample.
 
 ## Patterns found
 
@@ -96,8 +113,16 @@ frozen capture:
   Illinois"/"for this position" filler clause, covers a large share of real coverage.
 - **Bare `"starting at $X"`** with no preceding salary/pay/wage word — real for actual pay
   ("starting at $20.00/hour"), but *far* more commonly used for PTO/benefits amounts in the same
-  corpus (28 days, 5%, 208 hours) — safely disambiguated by the existing plausibility floor alone,
-  no new guard needed (verified against all 60 real occurrences).
+  corpus (28 days, 5%, 208 hours), where the plausibility floor alone is enough (all 60 real
+  occurrences checked). **Revised (2026-08-21, code review + adversarial testing, PR #235):** the
+  floor alone is *not* enough in general — a plausible-salary-sized non-wage figure phrased the
+  same way ("relocation assistance starting at $15,000", "tuition reimbursement starting at
+  $25,000 annually") reads as a fabricated salary, confirmed by direct execution though not present
+  in this specific sampled corpus. Added a dedicated guard: the bare branch now also requires an
+  explicit rate marker (`/hour`, `/day`, `per year`, ...) nearby — bare "annual(ly)" doesn't count,
+  since one-time benefit amounts are described that way just as often as real salaries are. Costs
+  zero measured coverage (2,272/8,220 both before and after, to the byte) since none of the real
+  occurrences relied on the now-closed path.
 - **International/bilingual postings** (Canadian French, Swedish, German, Italian) restate the
   same figure in multiple formats within one description — a real complexity source: some formats
   parse correctly (SEK code-trails-each-number, once fixed), some don't (European
@@ -116,6 +141,21 @@ frozen capture:
 | overall Tier1+Tier2 coverage | 27.6% |
 | coarse hint rate (calibration only) | 45.3% |
 | boards with ≥1 job showing a signal (coarse) | 1,614/2,993 (53.9%) |
+
+**Reconciliation note (2026-08-21, code review finding, PR #235):** the live-verification step
+(below) samples against the same live board pool into the *same* `artifacts/` directory as the
+main run, and each run's `_summarize()` call overwrites the previous `coverage_summary.json` —
+so the summary this table was read from no longer exists on disk, and the directory now holds
+~3,014 board files (2,993 + net-new boards the live-verify pass happened to sample that weren't
+already in the main 3,000). Re-running `salary.extract()` fresh against every board file currently
+captured (2026-08-21) gives 2,272/8,220 = **27.64%** — unchanged from 27.6% at the precision this
+table reports, and within rounding of the reviewer's own independent recount (27.62%) taken
+mid-review before the live-verify boards were added. The headline numbers above are left as
+originally measured rather than silently edited, since they were accurate for the population they
+described at the time; this note is the reconciliation. **Fixed going forward**
+(`scripts/enrich/salary_sample.py`): the summary filename now includes the sampled board count
+(`coverage_summary_<n>.json`), so a small verification run can no longer clobber a large run's
+summary in the same directory.
 
 ## What changed in code, and why
 
@@ -146,11 +186,33 @@ frozen capture:
 - `scripts/enrich/salary_sample.py`: `_fetch_workday()` adapter, `_DETAIL_ADAPTERS` registry,
   `--workers` flag (default bumped 8→32), module docstring updated with the spare-egress and
   concurrency reasoning.
-- `tests/test_salary.py`: 7 new tests for this pass's fixes (starting-at, PTO-correctly-rejected,
-  filler/from tolerance, SEK code-trails-each, `to`-separator, sign-on-bonus guard,
-  referral-program guard).
+- `tests/test_salary.py`: 9 new tests for this pass, verified via `grep -c "^def test_"`
+  (36→45 — CLAUDE.md's own lesson on this exact file applied: recount from the file, never add
+  deltas from memory) — the original 7 (starting-at, PTO-correctly-rejected, filler/from
+  tolerance, SEK code-trails-each, `to`-separator, sign-on-bonus guard, referral-program guard)
+  plus 2 added during code-review fix-up (currency-code word-boundary, strong-period-hint guard).
 - No changes to `workday.py` itself — everything needed was already reachable via its existing
   `_post`/`_job_detail`/`_resolve_instance` methods.
+
+**Code-review fix-up (2026-08-21, both axes, applied same day):**
+
+- **Confirmed bug, fixed**: `_LABELED`'s per-side currency-code tolerance (added above) was
+  missing the trailing `\b` its siblings (`_BARE_RANGE_CODE`, `_BARE_RANGE_CODE_EACH`) both have —
+  `"$50,000 CADillac Escalade"` read `currency='CAD'` off the prefix of an unrelated word.
+  Confirmed by direct execution before and after the fix.
+- **Confirmed gap, fixed**: the bare "starting at $X" branch (see Patterns found, above) gained a
+  dedicated strong-period-hint guard after adversarial testing found the plausibility floor alone
+  doesn't catch a plausible-salary-sized non-wage figure ("relocation assistance starting at
+  $15,000").
+- Currency-code alternation (`USD|EUR|GBP|INR|CAD|AUD|HKD|SEK`), previously duplicated verbatim 6
+  times across the file, extracted to one `_CURRENCY_CODES` constant.
+- `_DEFAULT_WORKERS`'s and the module docstring's justification corrected: `workday.py` documents
+  18 known `wdN` instances, not "hundreds" as originally (wrongly) asserted — the safety margin is
+  now stated as a calculated estimate from that real count, not an unmeasured claim.
+- `_fetch_workday(scraper) -> list` given proper type annotations (`BaseScraper`, `list[Job]`).
+- A "PR TBD" placeholder in the reverted-`_TRAILING_SYMBOL` comment corrected to "PR #235".
+- `coverage_summary.json`'s overwrite-on-every-run gap (reproducibility finding) — see the
+  Reconciliation note above; fixed by naming the file after the sampled board count.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
