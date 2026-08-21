@@ -2373,6 +2373,50 @@ def test_zoho_raises_when_the_page_shape_changes(monkeypatch):
     assert ZohoScraper._records("<html>no jobs here</html>") == []
 
 
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        (
+            '{"id": "1", "Job_Description": "Great role.", "Salary": "5-10 Lakhs", "Currency": "INR"}',
+            "Great role. Salary: 5-10 Lakhs Currency: INR",
+        ),
+        (
+            '{"id": "1", "Job_Description": "Great role.", "Salary": "5-10 Lakhs"}',
+            "Great role. Salary: 5-10 Lakhs",
+        ),
+        (
+            '{"id": "1", "Salary": "5-10 Lakhs", "Currency": "INR"}',
+            "Salary: 5-10 Lakhs Currency: INR",
+        ),
+        (
+            '{"id": "1", "Job_Description": "Great role.", "Currency": "INR"}',
+            "Great role. Currency: INR",
+        ),
+        (
+            '{"id": "1", "Currency": "INR"}',
+            "Currency: INR",
+        ),
+        (
+            '{"id": "1", "Job_Description": "Great role."}',
+            "Great role.",
+        ),
+        (
+            '{"id": "1"}',
+            None,
+        ),
+    ],
+)
+def test_zoho_detail_description_appends_salary_and_currency(record, expected):
+    """Salary/Currency only live on the detail page, never the listing (found via a
+    code-review-triggered re-probe on PR #238) — free-text per-tenant strings, so they ride
+    along in the description for Tier-2 mining rather than a bespoke Tier-1 parser, matching
+    smartrecruiters' customField compensation treatment."""
+    from headstart.scrapers.zoho import ZohoScraper
+
+    page = f"var jobs = JSON.parse('[{record}]')"
+    assert ZohoScraper._description_of(page) == expected
+
+
 def test_zoho_slug_from_keeps_only_the_host():
     """Same shape as the personio bug: `url()` appends `/jobs/Careers`, so a stored job deep link
     would put that suffix inside the path or query and fetch something that is not the board.
