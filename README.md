@@ -244,6 +244,10 @@ fails if this table drifts from it.
 | `max_years` | int32 | nullable |
 | `experience_source` | string | `field` \| `regex` \| `seniority` \| null — how the years were derived (ADR-0018) |
 | `salary` | string | raw, for display (`"INR 3 - 5 (Annual)"`) |
+| `min_salary_annual` | int32 | parsed from `salary` or the description; period-normalized to an annual figure in the job's native currency; **nullable** — null means unknown, not zero (ADR-0082) |
+| `max_salary_annual` | int32 | nullable — open-ended when only a floor is stated |
+| `salary_currency` | string | ISO 4217 code where determinable (`"USD"`, `"INR"`, `"EUR"`, …); null if a number was found but the currency wasn't |
+| `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
 | `department` | string | raw ATS text |
 | `url` | string | the job-detail link |
 | `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 13.4%** of rows (measured over all 481,396 stored rows, 2026-08-18; an earlier 1,000-row sample read 29%, which the full count corrects) |
@@ -253,7 +257,10 @@ fails if this table drifts from it.
 Two example rows, fetched from the live index on 2026-08-12 (signed in — `/search` 401s an
 anonymous caller) — exactly as `/search` projects them, which is why `experience`, `max_years`,
 `experience_source`, `department` and the vector do not appear: the API omits those, though the
-table stores them.
+table stores them. They predate `min_salary_annual`/`max_salary_annual`/`salary_currency`/
+`salary_source` (ADR-0082) and this session has no signed-in credential to re-fetch a live row —
+they're left as-is rather than fabricated; a future update should replace them with a row that
+actually carries salary data once the pipeline has run against it.
 
 ```jsonc
 {

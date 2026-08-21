@@ -112,7 +112,9 @@ _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
-# the vector. min_years/max_years are nullable ints — null for the Jobs no number was found for.
+# inline salary numbers (ADR-0082) + the vector. min_years/max_years/min_salary_annual/
+# max_salary_annual are nullable ints — null for the Jobs no number was found for, and null is
+# never treated as exclusionary (ADR-0082).
 def _schema(dim: int) -> pa.Schema:
     return pa.schema(
         [
@@ -130,6 +132,16 @@ def _schema(dim: int) -> pa.Schema:
                 "experience_source", pa.string()
             ),  # "field" | "regex" | "seniority" | null
             pa.field("salary", pa.string()),  # raw string for display (ADR-0019)
+            pa.field(
+                "min_salary_annual", pa.int32()
+            ),  # parsed, period-normalized, native currency
+            pa.field("max_salary_annual", pa.int32()),
+            pa.field(
+                "salary_currency", pa.string()
+            ),  # ISO 4217 where determinable, else null
+            pa.field(
+                "salary_source", pa.string()
+            ),  # "field" | "regex" | null — no seniority tier
             pa.field("department", pa.string()),
             pa.field("url", pa.string()),
             pa.field("posted_at", pa.string()),
@@ -405,6 +417,25 @@ def sync(args: argparse.Namespace) -> int:
     if _FIRST_SEEN_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_FIRST_SEEN_FIELD.name}' to the existing table")
         table.add_columns(_FIRST_SEEN_FIELD)
+
+    # Same idempotent add for the salary columns (ADR-0082) — a table built before they existed
+    # keeps its frozen schema otherwise. Existing rows get null, honest: we haven't derived salary
+    # for them yet, and null is never treated as exclusionary.
+    _salary_fields = [
+        f
+        for f in _schema(dim)
+        if f.name
+        in (
+            "min_salary_annual",
+            "max_salary_annual",
+            "salary_currency",
+            "salary_source",
+        )
+        and f.name not in table.schema.names
+    ]
+    if _salary_fields:
+        _log.info(f"adding {[f.name for f in _salary_fields]} to the existing table")
+        table.add_columns(_salary_fields)
 
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id
