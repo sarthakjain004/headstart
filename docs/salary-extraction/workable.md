@@ -109,7 +109,9 @@ almost followed it.
   evidence was already sitting in their source rather than needing new research; added an LPA
   ("Lakhs Per Annum") pattern proactively per this repo's explicit India-strong-segment scope,
   even though no LPA-phrased postings turned up in this specific ATS's sample (workable skews
-  US/UK/EU); wrote 33 unit tests, including ones pinned directly to the two real false-positive
+  US/UK/EU); wrote 36 unit tests (verified via `grep -c "^def test_" tests/test_salary.py` rather
+  than hand-counted, after this exact claim went stale twice in a row), including ones pinned
+  directly to the two real false-positive
   classes found, so a future change can't silently regress past them.
 - Did not: attempt cross-currency FX normalization (explicitly out of scope per the locked design
   decision), build a seniority-based estimate fallback (explicitly excluded), or widen past the
@@ -201,6 +203,16 @@ the general mechanism.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
+- **The 40-char guard window isn't strictly bounded through long whitespace runs**, found by the
+  code review's adversarial re-verification pass: `_LABELED`/`_BARE_RANGE`'s trailing `\s*` after
+  the matched number is unbounded, so a run of ≥15 consecutive whitespace characters between a
+  match and a trigger word can push the effective window past 40 real characters, in principle
+  widening the guard arbitrarily. Checked against the full 5,167-description captured corpus for
+  any run of ≥15 consecutive whitespace chars: **zero found** — this ATS's description text is
+  already whitespace-normalized upstream, so it's inert here. Not fixed now (the pattern set has
+  already been touched twice this pass; a third edit risks a third regression for a case that
+  doesn't fire on real data) — but worth checking explicitly on any future ATS whose scraper
+  output isn't whitespace-normalized before this guard runs on it.
 - **European decimal-comma monthly figures** (Spanish `€3.200 mensuales`-style). Real, seen once
   in this sample, not implemented. Would need locale-aware number parsing this module doesn't have
   yet.
