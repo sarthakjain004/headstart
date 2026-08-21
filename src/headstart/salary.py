@@ -74,11 +74,12 @@ def extract(
 
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
-# These are OUR OWN output shapes (each scraper's private `_salary()`-style helper), not organic
-# free text — so a small per-ATS dispatch beats one generic regex guessing across shapes that
-# don't converge. Populated so far from what's already known in each scraper's source (verified
-# during the salary-extraction planning pass, 2026-08-21); extended per-ATS as that ATS gets its
-# own research pass in docs/salary-extraction/.
+# Mostly OUR OWN output shapes (each scraper's private `_salary()`-style helper: lever, recruitee,
+# teamtailor, keka, darwinbox each get a calibrated `_field_*` parser below) — but not always: an
+# ATS with no dedicated parser falls through to `_field_generic`, and at least two (ashby, personio
+# — corrected claim, code review, PR #238) pass an HR system's own raw free-text field straight
+# into `Job.salary` with zero scraper-side normalization, so `_field_generic` has to treat its
+# input as organic free text too, not assume it's one of our own formats.
 
 # Shared alternation for the 8 ISO codes this module recognizes — several independent regexes
 # below embed it; kept as one string (code review finding, PR #235) so they can't drift apart.
@@ -91,6 +92,35 @@ _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 def _num(s: str) -> int:
     return round(float(s.replace(",", "")))
+
+
+# "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
+# is a required int with no way to represent "ceiling known, floor unknown", so blindly assigning
+# this number to min_annual (as every other connector correctly does for a floor-style figure:
+# "starting at", "from", "is") would silently invert the claim: a job paying AT MOST $X would
+# misreport as paying AT LEAST $X. Real, substantial, already-shipped prevalence measured directly
+# against every ATS sampled so far (workable, workday, greenhouse, smartrecruiters, zoho combined:
+# roughly 1,600 real occurrences across _LABELED, _BARE_HOURLY_OR_DAILY, and LPA alone) — found via
+# a real zoho example during PR #238's review ("Salary: Up to ₹28 LPA" extracting as
+# min_annual=2,800,000), not theoretical. Only matters for a SINGLE bare value (no captured `hi`);
+# an actual stated range ("up to $50,000-$60,000") already states both bounds regardless of the
+# connector, so it's unaffected. Shared by both tiers (not just Tier 2's description mining) —
+# code review, PR #238: Tier 1's `_field_generic` fallback has the identical bare-single-value
+# shape, and it's live-reachable, not theoretical: ashby/personio pass an HR system's raw free-text
+# field straight into `Job.salary` with no scraper-side normalization (unlike lever/recruitee/
+# teamtailor/keka/darwinbox, each of which has its own calibrated `_field_*` parser for a shape
+# *we* format), so "Up to €50,000" from either of those ATSes hit this exact bug too.
+_CEILING_CONNECTOR_WINDOW = (
+    15  # chars scanned before the number; mirrors _CONTEXT_WINDOW's naming
+)
+_UP_TO_CONNECTOR = re.compile(r"\bup\s*to\s*[$£€₹]?\s*$", re.IGNORECASE)
+
+
+def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
+    """Whether an "up to" connector (any amount of internal whitespace, including none — "upto")
+    immediately precedes the number starting at ``lo_start`` (see :data:`_UP_TO_CONNECTOR`)."""
+    window = text[max(0, lo_start - _CEILING_CONNECTOR_WINDOW) : lo_start]
+    return bool(_UP_TO_CONNECTOR.search(window))
 
 
 def _period_multiplier(text: str) -> int:
@@ -190,6 +220,11 @@ def _field_generic(value: str) -> SalarySpan | None:
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
     if single:
+        # Real free-text ATS fields reach this branch (ashby, personio — see the Tier-1 section
+        # comment above), so the same ceiling-vs-floor risk Tier 2 has applies here too: "Up to
+        # €50,000" would otherwise misreport €50,000 as a floor (code review, PR #238).
+        if _states_a_ceiling_only(value, single.start(1)):
+            return None
         v = _num(single.group(1)) * mult
         return _bounded(v, None, currency)
     return None
@@ -263,9 +298,9 @@ _LABELED = re.compile(
     r"""
     (?:annual\s+)?
     (?:
-        (?:salary|compensation|pay|remuneration|base\s+salary|wage)\s*(?:range|rate)?
+        (?:salary|compensation|pay(?:ing)?|remuneration|base\s+salary|wage)\s*(?:range|rate)?
         (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*:?\s*
-        (?:upto|up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
+        (?:upto|up\s+to|of\s+up\s+to|is\s+up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
         | (?P<bare_starting>starting\s+at)  # bare "starting at $X" — no salary/pay/wage word;
                                             # named so _scan can demand a period hint nearby (see
                                             # its call site) rather than default-annual-guessing,
@@ -384,8 +419,14 @@ _LEVEL_BAND = re.compile(
 _PERIOD_HINT = re.compile(
     r"\b(?:/\s*hr\b|/\s*hour\b|per\s+hour|hourly|\bhr\b|"
     r"/\s*mo\b|/\s*month\b|per\s+month|monthly|\bmo\b|"
-    r"/\s*yr\b|/\s*year\b|per\s+year|per\s+annum|annually|annual|\byr\b|"
-    r"/\s*day\b|per\s+day|daily|\bday\b)",
+    r"/\s*yr\b|/\s*year\b|per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|"
+    r"/\s*day\b|per\s+day|daily|\bday\b)"
+    # No leading \b: British informal "p/h" ("£21.50p/h") is glued directly onto the number with
+    # no separating character, so there's no word-to-non-word transition for \b to anchor on
+    # (both the trailing digit and "p" are word characters) — the same class of boundary issue
+    # the "/hour" fix already had to work around, but unfixable the same way since there's no
+    # non-word character anywhere in "0p" to anchor against. Still requires a real trailing \b.
+    r"|p\s*/\s*h\b",
     re.IGNORECASE,
 )
 
@@ -478,7 +519,7 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     if "," in gap and re.search(r"[a-zA-Z]", gap.replace(",", "")):
         return 1
     hint = m.group(0).lower()
-    if "hr" in hint or "hour" in hint:
+    if "hr" in hint or "hour" in hint or "p/h" in hint.replace(" ", ""):
         return _HOURLY_TO_ANNUAL
     if "day" in hint or "daily" in hint:
         return _DAILY_TO_ANNUAL
@@ -495,6 +536,8 @@ def _span_from_match(
     regex match into a figure (:func:`_scan`, :func:`_scan_level_bands`) — code review finding,
     PR #236: this shape was duplicated between them before being extracted here."""
     if _has_false_positive_context(text, m.start(), m.end()):
+        return None
+    if hi_raw is None and _states_a_ceiling_only(text, m.start("lo")):
         return None
     # "k" shorthand: the pattern already consumed an optional trailing k/K without capturing it
     # separately, so detect it from the matched text itself.
@@ -539,6 +582,8 @@ def _scan_lpa(text: str) -> list[SalarySpan]:
         if _has_false_positive_context(text, m.start(), m.end()):
             continue
         gd = m.groupdict()
+        if not gd.get("hi") and _states_a_ceiling_only(text, m.start("lo")):
+            continue
         lo = round(float(gd["lo"]) * 100_000)
         hi = round(float(gd["hi"]) * 100_000) if gd.get("hi") else None
         span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, "INR")

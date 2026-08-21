@@ -102,7 +102,14 @@ class ZohoScraper(BaseScraper):
 
     @staticmethod
     def _description_of(page: str) -> str | None:
-        """Job_Description from a detail page's embedded record (None when absent/unparseable)."""
+        """Job_Description, with Salary/Currency appended when present, from a detail page's
+        embedded record (None when neither is found). Salary/Currency only live on the detail
+        page, never the listing (found via a code-review-triggered re-probe on PR #238, after an
+        earlier check against the listing wrongly called the field a dead end) — and they're
+        free-text, per-tenant strings ("5-10 Lakhs", "DOE", "$35.00 per hour"), not a clean
+        structured field, so they ride along in the description text for Tier-2 mining rather
+        than a bespoke Tier-1 parser, the same treatment smartrecruiters' customField
+        compensation gets in ``smartrecruiters.py``."""
         m = _DETAIL_JOBS.search(page)
         if not m:
             return None
@@ -110,7 +117,20 @@ class ZohoScraper(BaseScraper):
             records = json.loads(_js_unescape(m.group(1)))
         except json.JSONDecodeError:
             return None
-        return (records[0].get("Job_Description") or None) if records else None
+        if not records:
+            return None
+        r = records[0]
+        description = r.get("Job_Description") or ""
+        comp = " ".join(
+            f"{label}: {value}"
+            for label, value in (
+                ("Salary", r.get("Salary")),
+                ("Currency", r.get("Currency")),
+            )
+            if value
+        )
+        combined = f"{description} {comp}".strip() if comp else description
+        return combined or None
 
     def _detail_description(self, jid: str) -> str | None:
         """GET one job's detail page and pull Job_Description from its embedded record."""
