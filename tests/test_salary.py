@@ -279,3 +279,119 @@ def test_extract_none_when_neither_tier_finds_anything():
     # no seniority-style fallback exists — unlike experience.extract, this must never estimate.
     assert extract(None, "We're hiring a great teammate.", "workable") is None
     assert extract("", "", "workable") is None
+
+
+# --- Patterns added during the workday pass (docs/salary-extraction/workday.md) ----------------
+
+
+def test_description_bare_starting_at_no_label_word():
+    # real workday text: "starting at $20.00/hour!" with no preceding salary/pay/wage word.
+    span = extract(
+        None, "location starting at $20.00/hour! Bilingual in Spanish", "workday"
+    )
+    assert span == SalarySpan(41600, None, "USD", "regex")
+
+
+def test_description_starting_at_pto_correctly_rejected():
+    # "starting at" fires on PTO/benefit amounts far more often than on pay in real workday text
+    # (28 days, 5%, 208 hours, 6:45am, ...) — all must stay None. These three are all small enough
+    # that the plausibility floor alone rejects them (every real corpus example was checked, see
+    # workday.md) — see test_description_starting_at_requires_strong_period_hint below for the
+    # separate, dedicated guard added after adversarial testing found the floor alone isn't enough
+    # once the amount is plausible-salary-sized (PR #235).
+    assert (
+        extract(
+            None,
+            "Generous retirement plan matching starting at 5% and increasing to 7% after five years",
+            "workday",
+        )
+        is None
+    )
+    assert (
+        extract(
+            None, "Paid time off starting at 28 days per year, inclusive", "workday"
+        )
+        is None
+    )
+    assert (
+        extract(None, "Generous PTO: starting at 208 hours annually", "workday") is None
+    )
+
+
+def test_description_starting_at_requires_strong_period_hint():
+    # A bare "starting at $X" with a plausible-salary-sized number ISN'T caught by the floor —
+    # real corporate-benefits phrasing (relocation/tuition/stipend amounts) reads identically to a
+    # bare salary otherwise (confirmed by direct execution, not observed in the sampled corpus —
+    # PR #235). A bare "annual(ly)" doesn't count as a strong hint either: one-time benefit amounts
+    # are described that way just as often as real salaries are.
+    for text in (
+        "Relocation assistance starting at $15,000 for eligible candidates.",
+        "Tuition reimbursement starting at $25,000 annually for full-time staff.",
+        "Our device stipend program is starting at $30,000 for the fiscal year budget.",
+    ):
+        assert extract(None, text, "workday") is None, text
+    # An explicit rate marker (/hour, per year, ...) is a strong enough hint to keep working.
+    span = extract(
+        None,
+        "This role is starting at $85,000 per year based on experience.",
+        "workday",
+    )
+    assert span == SalarySpan(85000, None, "USD", "regex")
+
+
+def test_description_label_tolerates_short_filler_and_from_between():
+    # "the pay range for Illinois is $X" / "hiring range for this position is $X" — real workday
+    # phrasing puts a short qualifier between the label and the connector.
+    span = extract(
+        None,
+        "The approximate pay range for Illinois is $73,047.47 - $109,571.20.",
+        "workday",
+    )
+    assert span == SalarySpan(73047, 109571, "USD", "regex")
+    span2 = extract(
+        None, "Annual Base Salary: From $57,000 + based on qualifications", "workday"
+    )
+    assert span2 == SalarySpan(57000, None, "USD", "regex")
+
+
+def test_description_sek_code_trails_each_number():
+    # real workday (Swedish postings): the currency code repeats after each side of the range,
+    # not once for the whole range like _BARE_RANGE_CODE's shape.
+    span = extract(
+        None,
+        "The base salary range for this role is 518,910.00 SEK – 815,430.00 SEK on annual basis",
+        "workday",
+    )
+    assert span == SalarySpan(518910, 815430, "SEK", "regex")
+
+
+def test_description_bare_range_accepts_to_separator():
+    # only _LABELED accepted "to" as a separator before; _BARE_RANGE (the no-label fallback)
+    # didn't, so "$X to $Y" with no recognized label fell through entirely.
+    span = extract(
+        None, "compensation is expected between $92,700 to $112,000", "workday"
+    )
+    assert span == SalarySpan(92700, 112000, "USD", "regex")
+
+
+def test_description_labeled_currency_code_requires_word_boundary():
+    # _LABELED's per-side currency-code tolerance matched as a prefix of an unrelated word
+    # (code review finding, PR #235) — "$50,000 CADillac" read currency='CAD' off "CAD" inside
+    # "CADillac" with no word boundary enforced. Must fall back to symbol-guessed USD instead.
+    span = extract(
+        None, "Compensation: $50,000 CADillac Escalade included as a perk", "workday"
+    )
+    assert span == SalarySpan(50000, None, "USD", "regex")
+
+
+def test_guard_sign_on_bonus_variant():
+    # "Sign-On Bonus" (hyphenated variant) wasn't covered by the "signing bonus" trigger.
+    text = "$1,000 Sign-On Bonus* About Fairfield If you're driven and seek a collaborative workplace"
+    assert extract(None, text, "workday") is None
+
+
+def test_guard_referral_program_not_just_referral_bonus():
+    text = (
+        "Generous referral program ranging from $500-$2500, depending on business need"
+    )
+    assert extract(None, text, "workday") is None

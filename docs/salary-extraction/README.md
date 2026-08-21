@@ -31,7 +31,22 @@ reader can also open `workday.md` alone and get everything about workday specifi
    ATSes get a bounded adapter (~3 per-job detail fetches/board, calling the scraper's own endpoint
    methods directly — several detail-pass scrapers bake a full per-board fan-out into `fetch_raw()`
    itself, which a naive call would trigger, blowing past the bounded-request intent) — built
-   per-ATS as that ATS is reached, never assumed in advance.
+   per-ATS as that ATS is reached, never assumed in advance. Runs at `--workers 32` by default
+   (bumped from an initial 8 partway through the workday pass, since 3000 boards at 8 workers was
+   impractically slow) — safe at that width specifically because sampled boards spread across many
+   different companies/instances, not one tenant's own rate limit. Spare egress is automatic:
+   every fetch goes through the scraper's own `_get()`/`_post()`/`_job_detail()`, which already
+   carries `egress_fallback_on`, so an ATS with it set (workday: `{429}`) transparently falls back
+   to `headstart.spare_egress`'s WARP route the same way the real pipeline does — never build a
+   new adapter that calls `http.fetch` directly, that silently skips it.
+   **Local operational note** (doesn't apply to CI): running a sample that actually triggers the
+   fallback dials this machine's own registered WARP client and leaves it connected afterward —
+   `systemctl`-based rotation doesn't exist on macOS, so it's one alternate route per process, not
+   full rotation. A connected local client left running when the test suite runs next can make
+   `tests/test_spare_egress.py`'s tight cooldown-timing tests flake (a real network round-trip
+   through a real listening proxy takes measurably longer than the fast-failing one those tests
+   are timed against) — `warp-cli --accept-tos disconnect` before running tests if a sample was
+   just run.
 2. **Measure.** Two numbers, both required: % of jobs (and % of boards with ≥1 job) carrying a
    populated structured `salary` field, and % where a salary figure only shows up inside the
    description text (a loose detector for this measurement pass — `headstart.salary` is the real
@@ -96,7 +111,7 @@ the planning record; the table below is the live status.
 | ATS | live boards | status | coverage | doc |
 |---|---:|---|---|---|
 | workable | 971 (190 live w/ openings) | done (pilot) | 0.0% field, 15.4% overall | [workable.md](workable.md) |
-| workday | 16,964 | not started | — | — |
+| workday | 16,964 (3,000 sampled) | done | 0.0% field, 27.6% overall | [workday.md](workday.md) |
 | greenhouse | 9,152 | not started | — | — |
 | smartrecruiters | 10,845 | not started | — | — |
 | zoho | 6,550 | not started | — | — |
