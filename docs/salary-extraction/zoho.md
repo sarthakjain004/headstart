@@ -5,207 +5,327 @@ four prior passes: `workable.md` (pilot), `workday.md` (first detail-pass ATS, t
 rounds), `greenhouse.md` (highest coverage, two general `salary.py` bugs found), `smartrecruiters.md`
 (a company-configurable custom field, plus a genuinely pre-existing period-hint bug).
 
+**This pass needed three rounds of correction before its own numbers were right** — the first
+draft of this document was wrong on two separate points, both caught by code review before merge,
+not after. That history is kept in the sections below rather than smoothed over, because the
+lessons are as valuable as the final numbers: check which page a field actually lives on before
+calling it a dead end, and check what a bare connector word semantically means (floor vs. ceiling)
+before trusting a schema's default assignment.
+
 ## Methods tried
 
-- **Sampled 3,000 of 5,337 live boards** (freshly measured 2026-08-22, superseding whatever stale
-  count the README carried before). `has_detail_pass = True`, but a genuinely different shape from
-  workday/smartrecruiters: `fetch_raw()` only detail-fetches jobs *missing* `Job_Description` from
-  the initial listing payload — the scraper's own docstring documents 28/71 sampled tenants
-  needing this, the rest get everything from one cheap request. Built `_fetch_zoho` in
-  `salary_sample.py` to mirror this conditional shape: caps detail-fetches at 3/board (matching
-  every other detail-pass ATS), but **deliberately does not cap total job count** for tenants whose
-  descriptions are already in the listing, since including them costs zero additional requests.
-  Confirmed working as designed: one sampled tenant returned 750 jobs, another 421, purely from
-  the free listing payload. **This is a real methodology divergence from workable/workday/
-  greenhouse/smartrecruiters' uniform ≤3/board cap** — zoho's total job count (58,004 across 3,000
-  boards, ~19/board average) is not directly comparable to the other ATSes' bounded ~1-27/board
-  average on that basis alone; the bound that matters (network requests, not job count) is
-  unchanged. 3,000/3,000 boards succeeded (0 errors).
-- **Checked for a dedicated or custom salary field before assuming Tier 1 was a dead end** —
-  carried forward from greenhouse's/smartrecruiters' passes, and it paid off differently here:
-  zoho's raw job records carry a genuine, dedicated `Salary` field (plus a companion `Currency`
-  field), a real first-class schema field, not a company-configurable workaround. **Measured
-  across two independent samples (100 tenants, 2,808 jobs total, seeds 7 and 999): the field is
-  never populated by any real tenant sampled — 0/2,808.** A confirmed, well-evidenced Tier 1 dead
-  end, same conclusion class as `freshteam`'s own documented precedent (`ctc_details` null on
-  2,591/2,591) — a first-class negative finding, not a section to skip.
-- **One gap-analysis round**, reading real misses broadly since the coarse-hint rate (11.1%) was
-  the lowest seen so far. Found five real, distinct gaps, each measured for prevalence before
-  building anything: a British informal "p/h" hourly shorthand (69 occurrences, concentrated in
-  one recruitment agency but a real, standard abbreviation), a `"paying"` verb-conjugation
-  variant of the `"pay"` label word (210 occurrences, 175 missed), `"a year"` as a bare period
-  marker (50 occurrences, mostly one company's template but 3 others too), and two compound
-  connector phrases (`"of up to"`, `"is up to"`, ~13-16 occurrences each, found independently in
-  different companies' text, so not a single-template artifact).
-- **A guard was checked and deliberately not added** — the space-separated `"sign on bonus"`
-  phrasing (150 occurrences) looked like it might need the same guard treatment as the already-
-  fixed hyphenated `"sign-on bonus"` variant. Directly verified: **zero genuine false positives**
-  across the full 58,004-job corpus — every nearby extracted figure traced to a real, separately-
-  stated base salary, never to the bonus amount itself. Not fixed, on the same evidence-based
-  reasoning that declined a speculative "equity" guard on greenhouse's pass: a plausible-sounding
-  risk that real data doesn't actually support.
-- **A real, understood side effect of the "of up to" fix, found via the mandatory cross-ATS
-  regression diff** (not the zoho sample itself): on workday, a description stating both a base
-  salary ("is $84,000") and a conditional higher figure ("may be provided a higher starting
-  salary of up to $92,400") now has *two* matches instead of one, since the fix taught `_LABELED`
-  to recognize the second phrasing it previously couldn't see at all. The existing ambiguity guard
-  correctly declines rather than picking one — this is the same mechanism working as designed on a
-  case it was previously blind to, not a new bug. See What changed in code.
+- **Sampled 3,000 of 5,337 live boards** (freshly measured 2026-08-22). `has_detail_pass = True`,
+  with a shape different from workday/smartrecruiters: `fetch_raw()` only detail-fetches jobs
+  *missing* `Job_Description` from the initial listing payload — most tenants already have it
+  inline (43/71 in the scraper's own docstring sample), the rest need a per-job detail pass. Built
+  `_fetch_zoho` in `salary_sample.py` to mirror this: capped detail-fetches, uncapped total job
+  count for tenants whose descriptions are already free in the listing.
+- **First code-review round (Standards axis) found a real measurement bug in that adapter**: it
+  capped which records got a detail-fetch *attempt*, but then called `parse()` against the full,
+  uncapped page — so records past the cap that lacked an inline description came back as Jobs with
+  an *empty* description, silently diluting the coverage denominator with jobs nobody ever
+  actually read. Verified directly against `zoho.py`'s `parse()` and the captured artifacts: 21,358
+  of 58,004 jobs (36.8%) were these phantom empty-description records, across 1,336 boards with
+  more than 3 postings. **Fixed**: `_fetch_zoho` now selects detail-fetch candidates from records
+  genuinely missing a description (not just "first 3 regardless"), and drops any record that still
+  has no description at all — inline or fetched — before returning, exactly matching the principle
+  `_DETAIL_FETCH_CAP`'s own docstring states ("an undetailed posting has no description to mine").
+  Re-sampling after the fix: 36,624 jobs (down from the phantom-inflated 58,004), coarse hint rate
+  up from 11.1% to 18.1% — the same real signal, over a denominator that no longer includes jobs
+  that were never given a chance.
+- **While independently re-verifying that fix, found the Tier-1 "confirmed dead end" claim in this
+  document's own first draft was itself wrong.** The original check queried zoho's *listing* page
+  records for a `Salary` field and found none — true, but the wrong page: the listing genuinely
+  carries no such key (`['City', 'Country', 'Industry', 'Is_Locked', 'Job_Opening_Name',
+  'Job_Type', ..., 'id']`), but a job's *detail* page does (`[..., 'Salary', 'State',
+  'Work_Experience', 'Zip_Code', ...]`), and it's a real, sometimes-populated field. A fresh
+  150-tenant probe fetching detail pages directly (independent of production scrape scope)
+  measured **48.6% of jobs whose detail page was fetched had `Salary` and/or `Currency`
+  populated** — roughly equally whether or not the listing already carried `Job_Description`
+  inline (51.5% vs. 46.2%). **Fixed**: `zoho.py`'s `_description_of` now appends `"Salary: X
+  Currency: Y"` onto the description text whenever a detail page is fetched — free-text,
+  per-tenant strings (`"5-10 Lakhs"`, `"DOE"`, `"$35.00 per hour"`), not a clean structured field,
+  so they ride along for Tier-2 mining rather than getting a bespoke Tier-1 parser, mirroring
+  smartrecruiters' `customField` treatment exactly. Verified against 17 real sampled values: 12
+  extract cleanly via the *existing* Tier-2 cascade with zero new patterns needed, and the 5
+  non-extractions are all principled (ambiguous currency, "DOE"/"Base + commission" aren't
+  numbers, `R$` isn't a recognized currency symbol) — not bugs. Zero production request-volume
+  cost: this rides on detail fetches the scraper already makes for description-backfill reasons.
+- **Deliberately NOT built, and not going to be built without sign-off**: expanding
+  `fetch_raw()`'s detail-fetch trigger to *also* fetch every job's detail page even when
+  `Job_Description` is already inline (to reach the other ~46% of the population-rate signal
+  currently invisible to production scraping, since the rate was roughly equal in both groups).
+  This would substantially increase production request volume — roughly doubling it for the ~61%
+  of tenants that currently make zero detail requests, recurring every pipeline run, against live
+  third-party career-site infrastructure — squarely the kind of architectural cost/benefit
+  tradeoff CLAUDE.md's "Weigh Design Choices on Big Work" rule asks to be presented, not silently
+  decided. Left for the founder to weigh with the real numbers above.
+- **A third, independent, more serious bug found while re-verifying the second fix's cross-ATS
+  diff**: `"up to $X"` (a stated *ceiling*) was being extracted as `min_annual=X` — the semantic
+  opposite of what it means, since every connector word in `_LABELED`'s bare-single-value branch
+  ("starting at", "from", "is", "of", *and* "up to") was uniformly assigned to `min_annual`
+  regardless of which direction it actually points. `SalarySpan.min_annual` is a required `int`
+  with no way to represent "ceiling known, floor unknown", so this wasn't a narrow miss — it was
+  silently inverting a real, correctly-read number. Found from a real zoho example ("Salary: Up to
+  ₹28 LPA" → `min_annual=2,800,000`), but the bug lives in shared `salary.py` code and was already
+  shipping in all four merged ATSes. Precisely measured (an "up to"/"upto" immediately adjacent to
+  the matched number, not merely present anywhere in the text — an earlier, looser measurement
+  attempt was thrown out for false-positiving on unrelated idioms like "up to 55 lbs" and "up to
+  10 hours weekly"): workable 63, workday 47, greenhouse 777, smartrecruiters 40, zoho 712 real
+  cases across `_LABELED`, `_BARE_HOURLY_OR_DAILY`, and `_LPA` combined. **Fixed**: a bare single
+  value (no captured range) preceded by "up to"/"upto" now correctly declines rather than
+  misassigns, via a shared `_states_a_ceiling_only()` check wired into `_span_from_match` (covers
+  `_LABELED` and `_BARE_HOURLY_OR_DAILY`) and `_scan_lpa`. An actual stated range ("up to
+  $50,000-$60,000") is unaffected — both bounds are already known regardless of the connector.
+- **Verified the fix's real impact with the mandatory full cross-ATS diff** (main's frozen
+  `salary.py` vs. the fixed working tree, across all 5 ATSes' frozen corpora) — and caught a
+  second bug along the way, this time in the diff script itself: comparing `SalarySpan` instances
+  loaded from two independently-`exec`'d module namespaces via `==` always returns `False`
+  regardless of field values, since dataclass's generated `__eq__` checks `other.__class__ is
+  self.__class__` and the two modules define distinct class objects. Confirmed directly
+  (`repr(o) == repr(n)` was `True`, `o == n` was `False`). The first diff run's `lost`/`gained`
+  counts were unaffected (those only ever check `is None`), but its `both_same`/`value_changed`
+  split was completely wrong — every genuinely-unchanged match was misclassified as changed.
+  Fixed by comparing `repr()` instead. The corrected numbers: see Coverage and What changed below.
+  Read a sample of the real `value_changed` cases by hand rather than trusting the count alone
+  (ADR-0066 discipline) — every one checked was a genuine improvement: the wrongly-parsed ceiling
+  had been *shadowing* a real, fuller range or figure stated elsewhere in the same description,
+  because `from_description`'s cascade returns as soon as one tier's `_resolve()` succeeds — e.g.
+  a real Expedia posting states "the total cash range... is $146,000.00 to $204,500.00" *and*
+  "pay up to $233,500.00" (a conditional ceiling); before the fix, `_LABELED` matched only the
+  wrong "$233,500" and returned immediately, never reaching `_BARE_RANGE`'s correct match on the
+  real range; after the fix, the ceiling match declines, the tier finds nothing, and the cascade
+  correctly falls through to recover the real $146K–$204.5K range. Same story for a real
+  mascmedical posting (a $50,000 *bonus* ceiling was shadowing the real "$80K–$105K base salary"
+  stated a few words earlier) and a christiansonco posting (a $65/hr *commission* ceiling was
+  shadowing the real "Hourly Rate: $22–$45/hour"). One case was murkier: with the wrong "up to
+  $17.25" ceiling removed, a Dutch Bros posting's fallback tier picked up "$7.25 per hour" instead
+  — which turned out to be the *average tip* component, not the wage, from "Compensation: Up to
+  $17.25 per hour. Number includes an average tip of $7.25 per hour." Measured prevalence of this
+  specific shape (a bare hourly figure extracted near the word "tip") across the full 5-ATS corpus
+  before deciding whether to guard it: 43 cases total, but 42 of those are jobs where the extracted
+  figure is the genuine base wage and "tips" is just a mentioned benefit nearby ("Pay: $16 per
+  hour Supplemental pay types: Commission, Tips") — only the one Dutch Bros case is a real
+  mismatch, where the number itself is introduced by "tip of" rather than being the wage. Left
+  unguarded — a single real occurrence across five ATSes' combined corpora doesn't meet this
+  initiative's established yield bar for a dedicated pattern.
+- **One gap-analysis round** (before the above three fixes were found), reading real misses at the
+  coarse-hint rate (11.1% at the time, the lowest seen so far). Found five real, distinct,
+  evidence-measured gaps: British informal "p/h" hourly shorthand (69 occurrences), a "paying"
+  verb-conjugation variant of the "pay" label (210 occurrences, 175 missed), "a year" as a bare
+  period marker (50 occurrences), and two compound connector phrases ("of up to", "is up to",
+  ~13–16 occurrences each). All four fixed; see What changed in code.
+- **A guard candidate checked and deliberately not added**: space-separated "sign on bonus" (150
+  occurrences, unlike the already-guarded hyphenated "sign-on bonus"). Verified zero genuine false
+  positives across the full corpus — every nearby extracted figure traced to a real, separately-
+  stated base salary, never the bonus amount. Not fixed, same evidence-based reasoning as
+  greenhouse's declined "equity" guard.
 
 ## Instruction-adherence self-assessment
 
 - Sampled up to 3000 or the full live-CSV count: **yes** — 3,000 (5,337 live, above the cap).
-- Measured both required percentages: **yes** — 0.0% structured-field (confirmed via two
-  independent 100-tenant probes, not assumed from one), 5.9% overall description-mining coverage
-  (3,414/58,004), 11.1% coarse-hint rate reported alongside for calibration.
-- Live-verified after code changes: **yes** — one fresh, differently-seeded round (40 boards,
-  seed=619) after all fixes, plus the mandatory full-corpus diff against all 4 already-merged
-  ATSes' frozen corpora for the shared-code changes.
-- Went beyond the ask: independently confirmed the Tier-1 dead-end finding with a *second*,
-  differently-seeded probe rather than accepting one sample's negative result at face value.
-  Investigated a guard candidate (space-separated "sign on bonus") thoroughly enough to find it
-  *didn't* need fixing, rather than fixing it speculatively because a hyphenated sibling had
-  needed a fix before. Traced the "of up to" fix's own side effect (the workday ambiguity case) to
-  its real source text and confirmed it's correct behavior rather than assuming a corpus-diff
-  "loss" must be a regression.
-- Did not: build special envelope-handling logic for the "base + conditional higher figure"
-  ambiguity found on workday (2 jobs, one company) — same proportionality reasoning as
-  smartrecruiters' declined 2-job "target within range" ambiguity: too small a yield to justify
-  extending shared ambiguity-resolution logic every other ATS also depends on. Did not chase the
-  parenthesis-before-amount or dash-before-connector punctuation gaps found during misses-reading
-  (8 and 10 occurrences respectively) — smaller than the ATSes' established threshold for a
-  dedicated fix, and structurally riskier to get right than the connector-phrase fixes that were
-  built. Did not investigate non-English postings (confirmed present: Italian "RAL", Dutch
-  "salaris", French listings) — out of scope per this repo's English-only search-index policy,
-  consistent with every prior pass.
+- Measured both required percentages: **yes** — 0.0% structured-field (the field exists, is real,
+  but is folded into Tier 2 by design rather than surfaced as a separate Tier-1 percentage — see
+  Coverage), 9.2% overall description-mining coverage (3,358/36,624), 18.1% coarse-hint rate
+  reported alongside for calibration.
+- Live-verified after code changes: **yes, three times** — once after the phantom-job fix, once
+  more (implicitly, via direct value testing) after the Salary/Currency wiring, and a final fresh,
+  differently-seeded round (40 boards, seed=2026) after every fix including the ceiling-vs-floor
+  correction. Two earlier live-verification rounds (seed=619, then an intermediate one) were
+  invalidated by subsequent fixes and are not reported below — only the final one is, since citing
+  a superseded number would misrepresent the shipped code's actual behavior.
+- Went beyond the ask, and by a wide margin this pass: independently re-verified a claim this same
+  document had already made (the Tier-1 dead end) rather than accepting it at face value, and
+  caught it was wrong. Found and fixed a bug in shared code that had already shipped in four
+  merged ATSes, not just an issue local to zoho. Found and fixed a bug in the diff script used to
+  verify the fix. Measured a guard candidate exposed by the fix (the "tip" shape) before declining
+  it rather than either reflexively building or reflexively ignoring it.
+- Did not: build the expensive detail-fetch-every-job option (Option B) that would roughly double
+  zoho's production request volume for a large additional coverage gain — flagged prominently
+  instead of decided unilaterally, per CLAUDE.md's big-design-choice rule. Did not build a guard
+  for the single-occurrence "tip" mismatch shape. Did not chase the parenthesis-before-amount or
+  dash-before-connector punctuation gaps found during the original gap-analysis round (8 and 10
+  occurrences respectively) — below this initiative's established per-pattern yield bar.
 
 ## Live-verification review
 
-One round, against real current `*.zohorecruit.{com,eu,in,com.au}` hosts, after all fixes:
+The authoritative round (fresh, 40 boards, seed=2026, `--workers 20`), run against the fully-fixed
+code (phantom-job fix + Salary/Currency wiring + ceiling-vs-floor fix, all together) — two earlier
+rounds against intermediate, since-superseded code are not reported, per the self-assessment above.
 
-- **40 fresh boards, seed=619** (distinct from the main sample's seed=7), `--workers 20`. 40/40
-  succeeded, 0 errors, 1,566 jobs, 4 real extractions (0.26% — much lower than the frozen sample's
-  5.9%, explained by genuine board-mix skew rather than a bug: 2 of the 40 sampled boards
-  (`afconrecruitltd`, 421 jobs; `tehora`, 662 jobs — together 69% of this sample's job count)
-  happened to be salary-free — `afconrecruitltd` confirmed by reading real postings, `tehora`
-  confirmed to be a French-language Quebec engineering firm, out of scope regardless). All 4 real
-  extractions spot-checked for plausibility (Coach Drivers £37.4k-£41.6k GBP, Digital Marketing
-  Sales $65k-$125k USD, Intake Specialist $35.4k-$52k USD, a Magento Developer at $20,000 with
-  correctly-unresolved currency) — all genuine.
+40/40 boards succeeded, 0 errors, 465 jobs, 44 real Tier1+Tier2 extractions (9.5% — consistent with
+the 3,000-board sample's 9.2%, a good stability check). The sample happened to draw
+`bladerecruitment.zohorecruit.com`, a single high-volume UK trades/cleaning recruitment agency
+that states a clear salary on nearly every posting, contributing 39 of the 44 extractions — real
+board-mix variance in a 40-board draw, not a bug (the coarse hint rate for this specific sample,
+35.1%, is correspondingly higher than the 3,000-board average of 18.1% for the same reason). All
+44 extractions spot-checked for plausibility: the bladerecruitment figures are sensible UK
+trade-wage ranges (£18,720–£50,000, cleaners/electricians/painters/handymen), plus a Spanish-
+language Canadian farm-technician posting correctly resolving to CAD, a Social Media Assistant at
+$31,200–$41,600 USD, two allied-health assistant roles at $55,000–$72,000 (currency unresolved,
+correctly, since neither symbol nor code was present), and a Performance Marketing Manager at
+$96,000–$120,000 USD — all genuine.
 
 ## Patterns found
 
-- **A genuine, dedicated `Salary`+`Currency` schema field that no real tenant populates** — the
-  strongest-looking Tier-1 candidate of any ATS pass so far, and a confirmed dead end regardless.
+- **A genuine `Salary`+`Currency` field that lives only on the per-job detail page** — the
+  strongest Tier-1-shaped signal found in any ATS pass so far (48.6% population rate among jobs
+  whose detail page is fetched), folded into Tier 2 via description concatenation rather than a
+  bespoke parser, since the raw values are free text ("5-10 Lakhs", "DOE", "$35.00 per hour"), not
+  a clean structured shape.
+- **"up to $X" as a ceiling, not a floor** — a real, common, and previously mis-handled connector
+  shape across every ATS sampled so far, not specific to zoho. See Methods tried and What changed.
 - **"p/h" as British informal hourly shorthand**, almost always glued directly onto the number
-  with no separator (`"£21.50p/h"`) — structurally distinct from every other period marker this
-  module recognizes, since there's no non-word character anywhere in the glued sequence for a
-  leading `\b` to anchor on.
-- **Verb-conjugated label words** (`"paying"` for `"pay"`) — the same class of gap workday's pass
-  found and left unfixed (`"Starts"` vs `"starting"`) but here measured large enough (175 misses)
-  to justify the fix.
-- **Compound connector phrases** (`"of up to"`, `"is up to"`) that this module's single-alternative
-  connector list didn't recognize as two-word sequences, even though each word was independently
-  recognized alone.
-- **Regional job-board duplication**: one UK company (`towertrophies`) posts the *same* role
-  separately per region (Essex, South Yorkshire, Bedfordshire, Wiltshire, Northamptonshire,
-  Northumberland — 6 near-identical postings sampled), each stating `"£5,000 - £20,000 a year
-  COMMISSION ONLY"` — correctly declined by the plausibility floor (£5,000 fails GBP's £8,000
-  minimum), a genuine commission-heavy role rather than a bug.
+  with no separator (`"£21.50p/h"`).
+- **Verb-conjugated label words** (`"paying"` for `"pay"`).
+- **Compound connector phrases** (`"of up to"`, `"is up to"`) not recognized as two-word
+  sequences even though each word was recognized alone.
+- **Regional job-board duplication**: one UK company (`towertrophies`) posts the same role
+  separately per region (6 near-identical postings sampled), each stating `"£5,000 - £20,000 a
+  year COMMISSION ONLY"` — correctly declined by the plausibility floor (£5,000 fails GBP's £8,000
+  minimum), a genuine commission-heavy role, not a bug.
 
 ## Coverage
 
 | metric | value |
-|---|---|
+|---|---:|
 | boards sampled (of 5,337 live) | 3,000 |
-| jobs seen (uncapped for "cheap" tenants — see Methods tried's methodology note) | 58,004 |
-| jobs with a structured `salary` field | 0 (0.0%) — confirmed dead end across 2,808 jobs, 2 independent samples |
-| jobs with a description-only signal | 3,414 (5.9%) |
-| overall Tier1+Tier2 coverage | 5.9% |
-| coverage before this pass's fixes (baseline, existing generic patterns only) | 5.75% |
-| coarse hint rate (calibration only) | 11.1% |
-| boards with ≥1 job showing a signal (coarse) | 733/3,000 (24.4%) |
+| jobs seen (after the phantom-job fix removed 21,358 never-read records) | 36,624 |
+| jobs with a structured `salary` field (`Job.salary`) | 0 (0.0%) — by design; see below |
+| jobs with a Salary/Currency detail-page signal appended to the description | 2,824 (7.7%) |
+| of those, successfully extracted | 1,219 (43.2% of that subset) |
+| jobs extracted from pure prose (no appended field) | 2,139 |
+| **overall Tier1+Tier2 coverage** | **3,358 (9.2%)** |
+| coarse hint rate (calibration only) | 18.1% |
+| boards with ≥1 job showing a real signal | 609/2,865 (21.3%) |
 
-The lowest overall coverage of the five ATSes so far (workable 15.4%, workday 27.6%, greenhouse
-36.1%, smartrecruiters 10.0%, zoho 5.9%) and the lowest coarse-hint rate too — a genuinely
-different, more international/agency-heavy company mix (confirmed by reading real misses: Italian,
-Dutch, and French postings; UK recruitment agencies; small companies with boilerplate "competitive
-salary" text and no stated figure) rather than a weaker extraction pass.
+`Job.salary` stays at 0% deliberately: the detail-page `Salary`/`Currency` field is real (see
+Patterns found) but is appended to `description` for Tier-2 mining rather than parsed as a
+structured Tier-1 field, matching smartrecruiters' `customField` precedent exactly — so its
+contribution shows up in the Tier-2 numbers above, not as a separate Tier-1 percentage.
+
+Coverage moved twice during this pass, in opposite directions, before landing at its final value:
+the phantom-job fix alone would have raised the raw percentage (a smaller, more honest
+denominator); the Salary/Currency wiring added real signal on top of that; the ceiling-vs-floor
+fix then *removed* net signal (more wrongly-extracted ceilings correctly declined than the
+now-unblocked genuine figures it recovered). The 9.2% final figure is now the lowest of the five
+ATSes done so far (workable 15.4%, workday 27.6%, greenhouse 36.1%, smartrecruiters 10.0%, zoho
+9.2%) — a genuinely different, more international/agency-heavy company mix (confirmed reading real
+misses: Italian, Dutch, and French postings; UK recruitment agencies; boilerplate "competitive
+salary" text with no stated figure), not a weaker extraction pass; if anything, this pass's
+extraction logic is now measurably *more* correct than every other ATS's, since the ceiling fix
+benefits all of them once merged.
 
 ## What changed in code, and why
 
-- `src/headstart/salary.py`:
-  - **`_PERIOD_HINT`: added `p\s*/\s*h\b` (no leading `\b`) for British informal "p/h"**, and a
-    matching downstream check (`"p/h" in hint.replace(" ", "")`) since "p/h" contains neither
-    "hr" nor "hour" as a substring, so the existing multiplier-selection logic wouldn't have
-    recognized it as hourly even once the pattern matched.
-  - **`_PERIOD_HINT`: added `\ba\s+year\b`** as a bare-annual period marker alongside the existing
-    "per year"/"/year"/"annual(ly)" forms.
-  - **`_LABELED`: `pay` → `pay(?:ing)?`** to recognize the verb-conjugated form.
-  - **`_LABELED`: added `of\s+up\s+to` and `is\s+up\s+to`** as two-word connector alternatives,
-    placed before the bare `of`/`is` alternatives so the longer, more specific match wins.
-- `scripts/enrich/salary_sample.py`: new `_fetch_zoho()` bounded adapter (registered in
-  `_DETAIL_ADAPTERS`), matching the conditional detail-fetch shape described in Methods tried.
-- `tests/test_salary.py`: 7 new tests, verified via `grep -c "^def test_"` (65→72) — the "p/h"
-  shorthand (glued and spaced), the "paying" verb form, the "a year" period marker, both compound
-  connectors, and the "of up to" fix's own real, understood ambiguity side effect on workday.
-- No changes to `zoho.py` itself — the bounded sampling adapter reuses its existing `_records`/
-  `_detail_description` methods directly; the confirmed-dead `Salary`/`Currency` fields needed no
-  scraper change since there's nothing populated to read.
+- `scripts/enrich/salary_sample.py`:
+  - New `_fetch_zoho()` bounded sampling adapter (registered in `_DETAIL_ADAPTERS`).
+  - **Fixed** (code-review finding): candidate selection for detail-fetching now comes from
+    records genuinely missing a description (`missing_desc`), not "first `_DETAIL_FETCH_CAP`
+    eligible records regardless" — and the returned job list is now filtered to drop any record
+    that ended up with no description at all (inline or fetched), matching every other detail-pass
+    adapter's implicit guarantee that a returned job was actually given a chance to show a signal.
+- `src/headstart/scrapers/zoho.py`:
+  - **`_description_of`**: now appends `"Salary: X Currency: Y"` onto the description whenever a
+    detail page is fetched and either field is populated — zero new requests, since this rides on
+    detail fetches already made for description-backfill reasons. `report_detail_gaps`'s "missing"
+    count only checks for `None` (confirmed by reading its source before making this change), so a
+    job that yields compensation info but no prose description is correctly no longer counted as a
+    gap — a small, deliberate, correct shift in what that specific metric means.
+- `src/headstart/salary.py` (shared code — affects every ATS, not just zoho):
+  - **`_PERIOD_HINT`**: added `p\s*/\s*h\b` (no leading `\b`, since "21.50p/h" has no word/non-word
+    transition to anchor on) and `\ba\s+year\b`; downstream multiplier logic updated to recognize
+    "p/h" as hourly.
+  - **`_LABELED`**: `pay` → `pay(?:ing)?`; added `of\s+up\s+to`/`is\s+up\s+to` connector
+    alternatives before the bare `of`/`is` alternatives so the longer match wins.
+  - **`_states_a_ceiling_only()` + `_UP_TO_CONNECTOR`** (new): a bare single value (no captured
+    range) immediately preceded by "up to"/"upto" now declines rather than being misassigned to
+    `min_annual`. Wired into `_span_from_match` (covers `_LABELED` and `_BARE_HOURLY_OR_DAILY`,
+    every pattern routed through `_scan`) and `_scan_lpa` (the only two places a bare single value
+    becomes a `SalarySpan`). `_LEVEL_BAND`/`_scan_level_bands` always captures both bounds by
+    construction, so it's structurally unaffected.
+- `tests/test_scrapers.py`: 1 new parametrized test function (5 cases) —
+  `test_zoho_detail_description_appends_salary_and_currency` — covering description+both fields,
+  description+salary-only, salary-only+no-description, description-only+no-fields, and the
+  fully-empty regression case.
+- `tests/test_salary.py`: 73 tests total (up from 65 at smartrecruiters' merge). Net across this
+  whole pass: the original 7 zoho-specific pattern tests (p/h ×2, paying, a year, of-up-to,
+  is-up-to, the ambiguity-exposure case), plus 1 new test for the ceiling-vs-floor fix itself
+  (`test_description_up_to_states_a_ceiling_not_a_floor`), with 6 of the original 7 subsequently
+  *revised* rather than left stale: `test_description_labeled_single_gbp` (the module's own
+  pilot-era "up to" example, now correctly asserting `None`), the two p/h tests and the paying
+  test (connector swapped from "up to" to a neutral word so they keep isolating the mechanism they
+  were built to cover, rather than being silently masked by the later, unrelated ceiling fix), the
+  two compound-connector tests (reframed from "prove the connector is recognized via successful
+  extraction" to "prove the ceiling-guard applies to the two-word connector form too", plus a new
+  assertion using an actual range to keep connector-recognition itself provable), and the
+  ambiguity-exposure test (renamed `test_description_up_to_no_longer_creates_false_ambiguity`,
+  now asserting the correctly-recovered $84,000 base salary instead of `None`).
 
 ### Cross-ATS impact of the shared `salary.py` fixes
 
-All four fixes above live in shared code, not zoho-specific dispatch. Verified via a full per-job
-diff against each already-merged ATS's frozen corpus (not just re-running the aggregate
-percentage), run once after all four fixes landed together:
+Verified via a full per-job diff against every ATS's frozen corpus (main's `salary.py` vs. the
+final, fully-fixed working tree) — not just the aggregate percentage, and not just the p/h/paying/
+a-year/connector fixes but the ceiling-vs-floor fix too, since all of it lives in shared code:
 
-| ATS | lost | gained | value changed | net |
-|---|---:|---:|---:|---:|
-| workable | 0 | 0 | 0 | 0 |
-| workday | 2 (both traced and understood — see below) | 2 | 0 | 0 |
-| greenhouse | 0 | 8 | 0 | +8 |
-| smartrecruiters | 0 | 7 | 0 | +7 |
+| ATS | both_none | both_same | lost | gained | value_changed |
+|---|---:|---:|---:|---:|---:|
+| workable | 4,294 | 816 | 57 | 0 | 0 |
+| workday | 5,836 | 2,428 | 19 | 1 | 2 |
+| greenhouse | 51,180 | 29,588 | 303 | 15 | 19 |
+| smartrecruiters | 6,727 | 715 | 19 | 5 | 0 |
+| zoho | 32,914 | 3,330 | 352 | 23 | 5 |
 
-The 2 workday "losses" are not a regression: `_LABELED` recognizing `"of up to"` as a connector
-means a second, previously-invisible `"... a higher starting salary of up to $92,400"` phrase now
-also matches alongside an already-extracted `"is $84,000"` base figure. Both are real, but
-genuinely different (a guaranteed base vs. a conditional higher tier for exceeding requirements) —
-the existing ambiguity guard correctly declines rather than picking one, exactly the no-fabrication
-principle working as intended on a case it couldn't previously see at all. Traced to the real
-source text and confirmed correct before accepting the diff, not just counted.
+`lost` = a real "up to $X" case that used to wrongly extract the ceiling as a floor and now
+correctly declines. `gained` = a case where declining the wrong ceiling match let a genuine,
+previously-masked figure extract instead (the `_resolve()`/ambiguity mechanism, or cascade
+short-circuiting, hiding a real number behind a wrong one). `value_changed` — every example
+checked by hand across all five ATSes (see Methods tried) was the same story as `gained`: a real,
+fuller, more correct figure recovered from later in the same description, with exactly one
+narrower exception (a tip amount briefly surfacing in place of a declined wage ceiling — measured,
+found rare, left unguarded). This fix will correct the four already-merged ATSes' data too, once
+this PR merges and the pipeline's derived-field refresh next runs — no need to reopen those PRs.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
-- **Parenthesis or em-dash between a label and its connector** (`"salary (£30,000-£60k Base
-  Salary..."`, `"pay – up to £53,000"`) — real (8 and 10 occurrences respectively) but smaller
-  than this pass's built fixes and structurally riskier to widen safely without more evidence.
-- **Non-English postings** (confirmed: Italian "RAL €32.000 - €40.000", Dutch "salaris... tussen
-  de € 15,00 en € 17,00", French) — out of scope per this repo's English-only search-index policy,
-  consistent with every prior pass's finding of the same.
-- **A base-figure-plus-conditional-higher-figure ambiguity** (the workday case found via the
-  cross-ATS diff) — real, but only 2 known occurrences from one company; extending the shared
-  ambiguity-resolution logic for that yield wasn't judged worth the risk to every other ATS.
-- **"Higher placement within the salary range" boilerplate with no adjacent figure** (rwjf,
-  workday) — describes the EXPERIENCE tiers that map to salary placement, not a number itself;
-  genuinely non-extractable without inferring which tier applies, correctly left unresolved.
+- **Non-English postings** (confirmed: Italian, Dutch, French) — out of scope per this repo's
+  English-only search-index policy, consistent with every prior pass's finding of the same.
+- **A bare hourly figure occasionally extracted from a "tip" sub-clause instead of the wage** — one
+  confirmed real occurrence across the full 5-ATS corpus (see Methods tried); below this
+  initiative's yield bar for a dedicated guard.
+- **Parenthesis or em-dash between a label and its connector**, and **expanding the detail-fetch
+  pass to every job** (Option B, see Methods tried) — both real, both measured, both deliberately
+  left for a human call rather than decided silently.
 
-## Carried forward from workable, workday, greenhouse, and smartrecruiters
+## Carried forward from workable, workday, greenhouse, and smartrecruiters — and new lessons for future ATSes
 
 - **Applied**: check for a dedicated or custom-configurable salary field via direct API inspection
-  before assuming Tier 1 is a dead end (greenhouse's `metadata`, smartrecruiters' `customField`)
-  — zoho's genuine dedicated `Salary` field made this feel like it would finally pay off, and the
-  discipline of actually *measuring* population (twice, independently) rather than assuming from
-  the field's existence is what turned a plausible Tier-1 win into an honest, confirmed dead end.
+  before assuming Tier 1 is a dead end. Applied twice, in fact — the first check (against the
+  listing page) genuinely found nothing, and it took a second, independent look (prompted by an
+  unrelated code-review finding, not a fresh instruction) to discover the check itself had queried
+  the wrong page shape.
 - **Applied**: verify a guard candidate against real data before adding it, even when a sibling
-  pattern already needed the same class of fix (workday's hyphenated "sign-on bonus" vs. zoho's
-  space-separated variant) — checked, found zero real false positives, correctly left unfixed.
-- **Applied, extended**: the full corpus diff caught a real, understood side effect (not a bug)
-  this time, rather than a broken fix — worth noting as a *different* outcome of the same
-  discipline: not every diff finding is a regression to fix, some are the ambiguity-safety
-  mechanism correctly doing its job on a newly-visible case. Tracing to real source text before
-  deciding which is which remains the load-bearing step either way.
-- **New for future ATSes**: a scraper's bounded sampling adapter doesn't have to mirror the
-  uniform ≤3/board cap exactly — when a scraper's own shape means some boards cost nothing extra
-  to sample in full (already-fetched, already-parsed), capping them anyway only throws away free
-  signal. Document the divergence clearly rather than silently deviating from the established
-  pattern.
+  pattern already needed the same class of fix. Applied to both the "sign on bonus" and "tip"
+  candidates this pass.
+- **New, the headline lesson of this whole pass**: a detail-pass ATS can have real fields that live
+  *only* on the per-job detail page, invisible to any check run against the listing alone. Before
+  writing "confirmed dead end" for any structured field, confirm which page/response shape was
+  actually probed, not just that the field was probed.
+- **New**: before trusting that a bare single-value connector word (any of "starting at", "from",
+  "is", "up to", "at least", "no more than", ...) can be uniformly assigned to a schema's one
+  numeric slot, check what each one *means* — some state a floor, some a ceiling, and a schema
+  with only a `min`-shaped required field has no safe way to represent the latter except declining
+  to guess. This exact confusion had already shipped, undetected, in four merged ATSes.
+- **New**: one code-review finding is worth re-reading the surrounding code for siblings, not just
+  fixing the one flagged issue — this entire chain (three real bugs, two of them far larger than
+  the one actually flagged) started from a single Standards-review comment about phantom jobs in a
+  sampling script.
+- **New**: when diffing dataclass instances loaded from two independently-`exec`'d or -imported
+  module namespaces (the established old-vs-new verification pattern this initiative uses), compare
+  via `repr()` or a field tuple, never bare `==` — the generated `__eq__` checks class identity
+  first, and two structurally-identical instances from two different module executions will never
+  be `==`, silently corrupting a diff's "unchanged" bucket into "changed" with no exception raised.
+- **New**: a scraper's bounded sampling adapter doesn't have to mirror a uniform per-board cap
+  exactly — when some boards cost nothing extra to sample in full, capping them anyway throws away
+  free signal — but the candidate-selection logic still has to match production's real selection
+  criteria precisely, not an approximation of it, or the measurement quietly dilutes itself.

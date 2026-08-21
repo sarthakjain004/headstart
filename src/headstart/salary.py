@@ -406,6 +406,27 @@ _STRONG_PERIOD_HINT = re.compile(
 )
 
 
+# "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
+# is a required int with no way to represent "ceiling known, floor unknown", so blindly assigning
+# this number to min_annual (as every other connector correctly does for a floor-style figure:
+# "starting at", "from", "is") would silently invert the claim: a job paying AT MOST $X would
+# misreport as paying AT LEAST $X. Real, substantial, already-shipped prevalence measured directly
+# against every ATS sampled so far (workable, workday, greenhouse, smartrecruiters, zoho combined:
+# roughly 1,600 real occurrences across _LABELED, _BARE_HOURLY_OR_DAILY, and LPA alone) — found via
+# a real zoho example during PR #238's review ("Salary: Up to ₹28 LPA" extracting as
+# min_annual=2,800,000), not theoretical. Only matters for a SINGLE bare value (no captured `hi`);
+# an actual stated range ("up to $50,000-$60,000") already states both bounds regardless of the
+# connector, so it's unaffected.
+_UP_TO_CONNECTOR = re.compile(r"\b(?:upto|up\s?to)\s*[$£€₹]?\s*$", re.IGNORECASE)
+
+
+def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
+    """Whether an "up to"/"upto" connector immediately precedes the number starting at
+    ``lo_start`` (see :data:`_UP_TO_CONNECTOR`)."""
+    window = text[max(0, lo_start - 15) : lo_start]
+    return bool(_UP_TO_CONNECTOR.search(window))
+
+
 def _guess_currency(sym: str | None, code_context: str) -> str | None:
     if sym and sym != "$":
         return _CURRENCY_SYM.get(sym)
@@ -502,6 +523,8 @@ def _span_from_match(
     PR #236: this shape was duplicated between them before being extracted here."""
     if _has_false_positive_context(text, m.start(), m.end()):
         return None
+    if hi_raw is None and _states_a_ceiling_only(text, m.start("lo")):
+        return None
     # "k" shorthand: the pattern already consumed an optional trailing k/K without capturing it
     # separately, so detect it from the matched text itself.
     matched = m.group(0)
@@ -545,6 +568,8 @@ def _scan_lpa(text: str) -> list[SalarySpan]:
         if _has_false_positive_context(text, m.start(), m.end()):
             continue
         gd = m.groupdict()
+        if not gd.get("hi") and _states_a_ceiling_only(text, m.start("lo")):
+            continue
         lo = round(float(gd["lo"]) * 100_000)
         hi = round(float(gd["hi"]) * 100_000) if gd.get("hi") else None
         span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, "INR")
