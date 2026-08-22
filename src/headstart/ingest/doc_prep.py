@@ -120,7 +120,23 @@ def build_doc(job: dict) -> str:
 # that also corrects the same pre-existing false positive on 8 already-merged ATSes — see
 # docs/salary-extraction/keka.md). One bump sweeps in all of it; the counter has no way to
 # distinguish which change it's covering.
-DERIVATIONS_VERSION = 4
+# v5: the exact same gap recurred (full list: `git log 2b6ccd8..e14f412 -- src/headstart/salary.py`
+# — 3 commits, none bumped this). Two made real, measurable changes: darwinbox's pass fixed a
+# lakhs-vs-absolute magnitude bug in its own field parser (zero cross-ATS effect, but darwinbox's
+# own pre-existing rows need a sweep to pick up the fix — see docs/salary-extraction/darwinbox.md);
+# trakstar's pass fixed `_resolve()`'s own tie-break to prefer the more complete span, moving 82
+# already-shipped values across 5 ATSes (18 ashby, 53 greenhouse, 1 smartrecruiters, 1 teamtailor,
+# 9 zoho — re-verified directly against the frozen corpora, not transcribed from memory) from a
+# floor-only reading to the correct, fuller one — see docs/salary-extraction/trakstar.md.
+# Successfactors' pass was comment-only, no sweep-worthy change. This bump was prompted by a real
+# user report (a live Ashby posting whose stated "€90,000 – €110,000 per year" wasn't reflected in
+# served data) — `extract()` itself returns the correct span for that exact text today, confirming
+# there's no code defect to chase there. But that posting's own description carries only ONE salary
+# mention, so `_resolve()` never reaches the multi-span tie-break v5 actually fixes — this bump is
+# confirmed to correct 82 OTHER already-shipped values across 5 ATSes, not shown to explain that
+# specific posting, whose own gap (never-yet-scraped vs. genuinely stale vs. something else) is
+# still open and tracked separately, not resolved by this change.
+DERIVATIONS_VERSION = 5
 
 
 def to_meta(job: dict) -> dict:
