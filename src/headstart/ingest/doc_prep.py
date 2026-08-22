@@ -136,7 +136,21 @@ def build_doc(job: dict) -> str:
 # confirmed to correct 82 OTHER already-shipped values across 5 ATSes, not shown to explain that
 # specific posting, whose own gap (never-yet-scraped vs. genuinely stale vs. something else) is
 # still open and tracked separately, not resolved by this change.
-DERIVATIONS_VERSION = 5
+# v6: the full-HF-corpus recall audit (docs/salary-extraction/README.md's "Salary corpus audit"
+# follow-on, 2026-08-23) found and fixed three real `_LABELED`/`_BARE_BETWEEN` gaps, verified via
+# a full-corpus diff (391,134 jobs, every ATS, not a per-ATS sample): (1) `_LABELED`'s own "for
+# X Y Z" filler cap was too tight (3 words) to reach real phrasing like "for this role across
+# Switzerland" (4 words), silently missing the whole match; widened to 4 words — calibrated
+# against the real distribution, not guessed, and deliberately not wider (a first, wider attempt
+# reached distant, unrelated mentions and corrupted a European trailing-symbol format and a
+# missing-separator source typo — both found and reverted via the same diff). (2) `_BARE_BETWEEN`
+# only recognized a currency SYMBOL, not a CODE — "between CAD 82,000 and/- CAD 100,000" fell
+# through entirely. (3) a bare "CA$" prefix (Canadian dollars) was silently defaulting to USD;
+# now recognized. Net, full-corpus effect: 361 gained, 12 lost (all confirmed genuine multi-
+# region ambiguity, now correctly caught where a too-narrow filler used to be accidentally blind
+# to it), 76 changed (68 currency-only corrections, 8 real value shifts — see
+# docs/salary-extraction/full-corpus-audit.md for the complete accounting).
+DERIVATIONS_VERSION = 6
 
 
 def to_meta(job: dict) -> dict:

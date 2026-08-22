@@ -112,6 +112,9 @@ def extract(
 _CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED"
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
+# "CA$"/"C$" immediately before a dollar figure — a real Canadian-dollar notation "$" alone
+# can't express; see _guess_currency's own use of this.
+_CA_DOLLAR = re.compile(r"\bC(?:A)?\$")
 _RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
@@ -578,7 +581,7 @@ _LABELED = re.compile(
     (?:annual\s+)?
     (?:
         (?:salary|compensation|pay(?:ing)?|remuneration|base\s+salary|wage|stipend|ctc)\s*(?:range|rate)?
-        (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*[:\-]?\s*
+        (?:\s+for\s+(?!between\b)[^\W\d]\w*(?:\s+(?!between\b)[^\W\d]\w*){0,3})?\s*[:\-]?\s*
         (?:upto|up\s+to|of\s+up\s+to|is\s+up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
         | (?P<bare_starting>starting\s+at)  # bare "starting at $X" — no salary/pay/wage word;
                                             # named so _scan can demand a period hint nearby (see
@@ -610,10 +613,29 @@ _BARE_RANGE = re.compile(
 # "is", "is expected to be", ...), and a bare, unanchored "and" would risk joining two unrelated
 # dollar mentions ("$50,000 in RSUs and $10,000 signing bonus"). Anchoring on the literal word
 # "between" immediately before the first number is what makes this safe without a label word.
+#
+# Extended (full-corpus audit, 2026-08-23) two ways: (1) also accepts a currency CODE, not just
+# a symbol — "between CAD 82,000 and CAD 100,000" was falling through entirely, since the
+# original only recognized $£€₹. The first number still REQUIRES a symbol or a code (same safety
+# anchor as before, now widened); the second stays optional either way, matching how every other
+# paired pattern here only needs the currency stated once. `_guess_currency` finds a code
+# anywhere in the overall match text on its own — no new named group needed for that half.
+# (2) also accepts a dash separator, not just " and " — a real, if less common, hybrid phrasing
+# ("is between CAD 82,000 - CAD 100,000", mixing "between" with a dash instead of "and"). This
+# deliberately stays inside `_BARE_BETWEEN` rather than widening `_LABELED`'s own connector list
+# to include "between": `_LABELED` runs earlier in the cascade and has no "and" branch in its own
+# separator, so a "between X and Y" description would have matched `_LABELED` first with only the
+# floor captured (no separator = no ceiling), short-circuiting `_BARE_BETWEEN`'s own complete
+# match — the identical cascade-precedence failure mode found and reverted on trakstar's own pass
+# (the declined "rate" label). Keeping "between" solely in its own purpose-built, lower-priority
+# tier avoids that trap entirely.
 _BARE_BETWEEN = re.compile(
-    r"\bbetween\s+(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
-    r"\s+and\s+"
-    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    rf"\bbetween\s+"
+    rf"(?:(?P<sym>[$£€₹])\s*(?:(?:{_CURRENCY_CODES})\b\s*)?|(?:{_CURRENCY_CODES})\b\s*)"
+    r"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"(?:\s+and\s+|\s*[-–—]\s*)"
+    rf"(?P<sym2>[$£€₹])?\s*(?:(?:{_CURRENCY_CODES})\b\s*)?"
+    r"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
 
@@ -784,6 +806,12 @@ def _guess_currency(sym: str | None, code_context: str) -> str | None:
     code_m = _CURRENCY_CODE.search(code_context)
     if code_m:
         return code_m.group(1).upper()
+    if sym == "$" and _CA_DOLLAR.search(code_context):
+        # "CA$"/"C$" immediately before the symbol — a real, common Canadian-dollar notation
+        # (full-corpus audit, 2026-08-23; 30 occurrences, 10 companies) the generic USD-default
+        # below was silently overriding. Checked before that default, not folded into
+        # _CURRENCY_CODE, since "CA" alone isn't a valid \bCAD\b code match.
+        return "CAD"
     if sym == "$":
         return "USD"  # statistically dominant in this corpus; genuinely ambiguous otherwise
     return None
