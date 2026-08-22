@@ -52,8 +52,11 @@ the large majority of genuinely correct field values — see What changed in cod
   `_period_multiplier_structured`, not the base `_period_multiplier`, after a second review round
   found the bare-word version wasn't safe for every caller (see What changed in code). Measured
   impact of this fix in isolation (`from_field()` alone, not the full Tier1+Tier2 cascade): the
-  field-present-but-unparseable rate dropped from 49.1% to 4.4%, recovering exactly 1,885 jobs.
-  The residual 4.4% is genuinely broken/mislabeled source data (see What changed in code). A
+  field-present-but-unparseable rate dropped from 49.1% to 4.4%, a net recovery of exactly 1,885
+  jobs (1,904 gained by the fix, 19 lost — a handful of field values that happened to parse into a
+  plausible-looking but wrong figure before, and correctly decline now; see the hand-traced `LOST`
+  entries in What changed in code for exactly which ones and why). The residual 4.4% is genuinely
+  broken/mislabeled source data (see What changed in code). A
   related but distinct number appears in Coverage below — 45.7%→4.2% is what the SAME transition
   looks like through the full `extract()` cascade (Tier 1 plus whatever Tier 2 mining catches on
   top), after all three of this pass's fixes, not the multiplier fix in isolation; keep the two
@@ -100,10 +103,19 @@ the large majority of genuinely correct field values — see What changed in cod
   concurrency investigation (99.5%), from 3,764 live boards.
 - Measured both required percentages: **yes** — 9.8% structured-field presence, 14.1% overall
   Tier1+Tier2 coverage (6,033/42,919), reported alongside the coarse hint rate for calibration.
-- Live-verified after code changes: **yes** — a fresh, differently-seeded 50-board sample
-  (seed=2026, 16 workers, 0 errors — confirming a short run stays clean, consistent with the
-  rolling-window theory) after all three shared-code fixes, 11.2% real coverage, 10 extractions
-  spot-checked for plausibility, all genuine.
+- Live-verified after code changes: **yes for teamtailor's own three fixes** — a fresh,
+  differently-seeded 50-board sample (seed=2026, 16 workers, 0 errors — confirming a short run
+  stays clean, consistent with the rolling-window theory) after all three shared-code fixes, 11.2%
+  real coverage, 10 extractions spot-checked for plausibility, all genuine. **Not literally
+  possible for the second-round `_field_generic`/`_field_darwinbox` scoping fix specifically**
+  (Spec-review finding): that fix only affects ashby/personio/darwinbox, none of which this
+  initiative has sampled yet (ashby is scheduled later in the plan's order; no
+  `experiment/salary-extraction/ashby/` artifacts exist to verify against). Verified instead by
+  (a) two direct unit tests reproducing the exact corruption against the pre-fix code and
+  confirming it's gone, and (b) proving `_period_multiplier` — the function ashby/darwinbox
+  actually call — is byte-identical to the pre-PR baseline after the split, meaning the bug never
+  reached either of them in any shipped state. A real gap in the letter of the process, worth
+  naming rather than glossing over, even though the practical risk is low.
 - Went beyond the ask, substantially: diagnosed and resolved a real operational rate-limiting
   issue with the sampling infrastructure itself (not just the extraction logic) via direct,
   repeated measurement rather than accepting a degraded sample. Found and fixed two ADDITIONAL
@@ -111,14 +123,19 @@ the large majority of genuinely correct field values — see What changed in cod
   own real-prevalence measurement across all 6 ATS corpora. Hand-traced every single `LOST` entry
   in the final diff (18 + 2 = 20 cases), not a sample of them, before accepting the fix as net
   positive.
-- Did not: build a fix for the two narrow, rare edge cases found while tracing the `LOST` bucket
-  (a `_num()`-rounding/5%-tolerance interaction affecting one real weekday/weekend rate pair; a
-  `_period_from_window` proximity search reaching past an unrelated dollar figure to steal a wrong
-  hint) — each a single confirmed occurrence across the full 6-ATS corpus, well below this
-  initiative's established yield bar, and each mechanism delicate enough that a quick fix risks
-  new edge cases of its own. Documented, not silently dropped — see Known gaps. Did not add
-  support for unsupported currencies (THB, MXN, PKR, BRL all appeared in the residual Tier-1
-  failures) — measured at 11/179 of the pre-second-fix residual, too small a yield.
+- Did not: build a fix for three known gaps found while tracing the `LOST` bucket and, in the
+  second review round, verifying the fix-up — for three different, honestly-distinguished reasons,
+  not one blanket "too rare" (an earlier draft of this section wrongly claimed all of these were
+  single occurrences; corrected here after a Spec-review finding that this section and Known Gaps
+  had drifted out of sync). The `_period_from_window` proximity-hint-stealing issue genuinely is a
+  single confirmed occurrence (below the yield bar). The 5%-consistency-tolerance gap for
+  legitimate small differentials is NOT rare on proper measurement (~30–40 real, diverse cases
+  across all 6 ATSes) — declined instead because loosening an ambiguity-safety check is inherently
+  riskier than this pass's other additive fixes, not because it's uncommon; see Known gaps for the
+  full, corrected measurement. The `_mutually_consistent` hub-topology gap (found in the second
+  review round) genuinely measured at zero real occurrences. Did not add support for unsupported
+  currencies (THB, MXN, PKR, BRL all appeared in the residual Tier-1 failures) — measured at 11/179
+  of the pre-second-fix residual, too small a yield.
 
 ## Live-verification review
 
