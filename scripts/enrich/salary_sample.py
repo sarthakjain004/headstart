@@ -209,16 +209,38 @@ def _fetch_zoho(scraper: BaseScraper) -> list[Job]:
     return [j for j in jobs if j.id.split(":", 2)[2] in keep_ids]
 
 
+def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for rippling: one listing GET via the scraper's own inherited ``_get()``
+    primitive (``BaseScraper``'s, egress-wrapped — rippling.py doesn't override it), never
+    ``fetch_raw()``, which bakes the FULL per-posting detail fan-out into that same call — every
+    job on the board, not a capped subset. It's the *fan-out*, not the listing, that makes calling
+    ``fetch_raw()`` directly unsafe for a sampling pass here. Detail-fetches only the first
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_detail()``, then parses just
+    those, mirroring workday's/smartrecruiters' capped shape rather than zoho's uncapped one."""
+    data = json.loads(scraper._get())
+    items = (
+        data
+        if isinstance(data, list)
+        else (data.get("items") or data.get("jobs") or [])
+    )
+    sample = items[:_DETAIL_FETCH_CAP]
+    for item in sample:
+        item["_detail"] = scraper._detail(item.get("uuid")) or {}
+    return scraper.parse(sample, datetime.now(UTC).isoformat())
+
+
 #: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
-#: researched — see the module docstring). workday/smartrecruiters cap detail fetches at
-#: `_DETAIL_FETCH_CAP` (their listings paginate too, so `fetch_raw()` itself is expensive to call
-#: from a sampling script); zoho is uncapped — its listing never paginates, so `fetch_raw()` costs
-#: nothing extra there, and capping its *detail* fetches was undercounting real coverage (see
-#: `_fetch_zoho`'s own docstring).
+#: researched — see the module docstring). workday/smartrecruiters/rippling cap detail fetches at
+#: `_DETAIL_FETCH_CAP` (workday/smartrecruiters' listings paginate too, so `fetch_raw()` itself is
+#: expensive to call from a sampling script; rippling's listing is cheap but its `fetch_raw()`
+#: bakes in an uncapped detail fan-out — see `_fetch_rippling`'s own docstring); zoho is uncapped —
+#: its listing never paginates, so `fetch_raw()` costs nothing extra there, and capping its
+#: *detail* fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,
     "zoho": _fetch_zoho,
+    "rippling": _fetch_rippling,
 }
 
 

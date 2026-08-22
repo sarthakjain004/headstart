@@ -263,10 +263,13 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
     structured `<salaryInformation><min>/<max>/<currencyCode>/<type>` element — `_text()`'s prior
     read of the element's own direct text was always empty for this shape, a real Tier-1 dead end
     fixed the same way ashby's own was) — the "fix ambiguity at the source" latitude the
-    salary-extraction plan already grants, not organic text, for both. All converge on RANGE +
-    CODE + optional period. Named for the shape, not each ATS that happens to produce it (renamed
-    from `_field_lever_recruitee_teamtailor` when ashby joined — see CLAUDE.md's "re-check the
-    name whenever what it does changes").
+    salary-extraction plan already grants, not organic text, for both. | rippling:
+    "62000-70000 USD YEAR" / "25-25 USD HOUR" (assembled by rippling.py's own `_pay_range()` from
+    the structured `payRangeDetails[0]` entry; no fix needed here — the raw format already matched
+    this parser's shape end-to-end, confirmed by testing before registering, not assumed). All
+    converge on RANGE + CODE + optional period. Named for the shape, not each ATS that happens to
+    produce it (renamed from `_field_lever_recruitee_teamtailor` when ashby joined — see
+    CLAUDE.md's "re-check the name whenever what it does changes").
 
     A bare SINGLE value with no range ("60000 USD 1 YEAR", "35 USD 1 HOUR") falls back to
     `_SINGLE_NUM` — real on ashby's structured data specifically (a fixed-rate tier with only one
@@ -331,6 +334,7 @@ _FIELD_PARSERS = {
     "teamtailor": _field_range_currency_interval,
     "ashby": _field_range_currency_interval,
     "personio": _field_range_currency_interval,
+    "rippling": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
 }
@@ -609,7 +613,7 @@ _LEVEL_BAND = re.compile(
 )
 
 _PERIOD_HINT = re.compile(
-    r"\b(?:per\s+hour|hourly|\bhr\b|pro\s+stunde|"
+    r"\b(?:per\s+hour|hourly|\bhr\b|\ban\s+hour\b|pro\s+stunde|"
     r"per\s+month|monthly|\bmo\b|pro\s+monat|"
     r"per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|pro\s+jahr|"
     r"per\s+day|daily|\bday\b)"

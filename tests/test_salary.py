@@ -186,6 +186,22 @@ def test_field_range_currency_interval_personio_structured_tier():
     )
 
 
+def test_field_range_currency_interval_rippling_structured_tier():
+    # Real, direct API inspection (2026-08-22): rippling.py's own _pay_range() assembles this
+    # shape from the structured payRangeDetails[0] entry ({rangeStart, rangeEnd, currency,
+    # frequency}) — a genuine range+currency+interval string, not free text. No scraper change
+    # needed: unlike ashby/personio, rippling's raw format already matched this parser's shape
+    # end-to-end (confirmed by testing the unmapped value through from_field() first, per this
+    # initiative's own "test before building a translation layer" lesson) — registering it was
+    # the entire fix.
+    assert from_field("62000-70000 USD YEAR", "rippling") == SalarySpan(
+        62000, 70000, "USD", "field"
+    )
+    assert from_field("25-25 USD HOUR", "rippling") == SalarySpan(
+        25 * 2080, 25 * 2080, "USD", "field"
+    )
+
+
 def test_field_range_currency_interval_bare_week():
     # Real, ashby pass (PR #240): a contractor-style weekly rate ("1 WEEK" interval), 50 real
     # occurrences measured across 10 distinct values before adding — "796 USD 1 WEEK",
@@ -842,6 +858,18 @@ def test_description_a_year_period_marker():
         None, "Salary £25,000 - £30,000 a year, full benefits included", "zoho"
     )
     assert span == SalarySpan(25000, 30000, "GBP", "regex")
+
+
+def test_description_an_hour_period_marker():
+    # Real, rippling pass (2026-08-22): "$X an hour" (not "per hour"/"/hour"/"hourly") as a bare
+    # period marker — 26 real occurrences across 19 distinct companies, mirroring "a year"'s
+    # already-supported bare-indefinite-article phrasing.
+    span = extract(
+        None,
+        "Starting pay is $18.50 an hour, and varies based on experience",
+        "rippling",
+    )
+    assert span == SalarySpan(round(18.5) * 2080, None, "USD", "regex")
 
 
 def test_description_compound_connector_of_up_to():
