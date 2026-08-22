@@ -11,7 +11,44 @@ from __future__ import annotations
 
 from headstart.salary import SalarySpan, extract, from_description, from_field
 
-# --- Tier 1: from_field, per-ATS formats ------------------------------------------------------
+# --- Shared: _num(), US and European number formats -------------------------------------------
+
+
+def test_num_us_and_european_formats():
+    # Real, found on personio's pass (2026-08-22): the old always-strip-commas, period-is-
+    # decimal assumption silently mis-read German-formatted numbers two different, dangerous
+    # ways. "49.000" (forty-nine THOUSAND) read as 49 — an undercount that happened to fail the
+    # plausibility floor in the case that surfaced it, but not guaranteed to in general. "14,00"
+    # (fourteen, decimal-comma) read as 1400 — a genuine, dangerous OVERESTIMATE that can clear
+    # the plausibility bounds and silently corrupt a real value.
+    from headstart.salary import _num
+
+    # European: period=thousands, comma=decimal.
+    assert _num("49.000") == 49000
+    assert _num("14,00") == 14
+    assert _num("62.000,00") == 62000
+    assert _num("1.234.567,89") == 1234568
+    assert _num("1.234.567") == 1234567
+    # US: comma=thousands, period=decimal — unchanged, pre-existing behavior.
+    assert _num("50,000") == 50000
+    assert _num("1,234.56") == 1235
+    assert _num("100000") == 100000
+    # Genuine short decimals (1-2 digits after a lone period) stay decimals in either
+    # convention — never mistaken for a thousands group, which is always exactly 3 digits.
+    assert _num("62.5") == 62
+    assert _num("13.50") == 14  # pre-existing banker's-rounding behavior, unaffected
+
+
+def test_num_repeated_separator_up_to_the_decimal_group_does_not_crash():
+    # Real crash, greenhouse pass (2026-08-22): a genuine posting typo, "$100,000.00 -
+    # $125,000,00" (comma fat-fingered in place of the period before the cents). The naive fix —
+    # convert every comma to a period once a 2-digit trailing group is seen — would leave TWO
+    # periods in "125,000,00" and crash float(); only the LAST separator may become a decimal
+    # point, every earlier one is stripped. Covers both directions since the fix is symmetric.
+    from headstart.salary import _num
+
+    assert _num("125,000,00") == 125000
+    assert _num("125.000.00") == 125000
 
 
 def test_field_lever():
@@ -949,3 +986,93 @@ def test_guard_referral_program_not_just_referral_bonus():
         "Generous referral program ranging from $500-$2500, depending on business need"
     )
     assert extract(None, text, "workday") is None
+
+
+# --- Patterns added during the personio coverage-audit pass (docs/salary-extraction/personio.md,
+# post-merge addendum) ----------------------------------------------------------------------------
+
+
+def test_description_german_trailing_symbol_range():
+    # real personio (German-market): the range states no symbol until the very end, and the
+    # period is stated auf Deutsch — neither was previously recognized.
+    text = (
+        "Wir bieten Homeoffice und flexible Arbeitszeiten. 50.000 - 56.000 € / Jahr "
+        "Faktoren, die dein Gehalt beeinflussen, sind Erfahrung und Standort."
+    )
+    span = from_description(text)
+    assert span == SalarySpan(50000, 56000, "EUR", "regex")
+
+
+def test_description_german_trailing_symbol_range_hourly():
+    # "pro Stunde" (per hour) — real personio phrasing, not a slash-glued marker.
+    text = "Attraktive Vergütung von ca. 18–22 € pro Stunde (je nach Erfahrung) plus Zuschläge"
+    span = from_description(text)
+    assert span == SalarySpan(18 * 2080, 22 * 2080, "EUR", "regex")
+
+
+def test_description_german_year_marker_not_misread_as_hourly():
+    # Regression guard: "jahr" ends in "hr", which would collide with the existing hourly
+    # substring check ("hr" in hint) if not special-cased — real bug caught before shipping, not
+    # observed in the wild. If "pro Jahr" were misclassified as hourly here, 50,000 would be
+    # multiplied by ~2080 and rejected by the plausibility ceiling, silently returning None
+    # instead of the correct annual figure.
+    text = (
+        "Das Jahresgehalt für diese Position liegt bei 50.000 - 56.000 € pro Jahr, "
+        "je nach Erfahrung."
+    )
+    span = from_description(text)
+    assert span == SalarySpan(50000, 56000, "EUR", "regex")
+
+
+def test_description_german_trailing_symbol_each_side():
+    # real personio (Spanish-language posting, Barcelona): the symbol repeats after each side,
+    # not once for the whole range like the shape above.
+    text = "Banda salarial: 23.000 € – 27.000 € brutos anuales, dependiendo de la experiencia"
+    span = from_description(text)
+    assert span == SalarySpan(23000, 27000, "EUR", "regex")
+
+
+def test_description_trailing_symbol_excludes_dollar_sign():
+    # Deliberately scoped to €/£, excluding $ — real personio evidence showed 32/32 real
+    # trailing-symbol ranges use €, zero use $, and a trailing-$ pattern collided with workday's
+    # own URLs during that ATS's own pass (PR #235; see _BARE_RANGE_SYMBOL's docstring). A
+    # plausible-looking bare trailing-$ range must stay unmatched.
+    text = "The estimated range for this contractor engagement is 45000-55000$ depending on scope"
+    assert from_description(text) is None
+
+
+def test_guard_small_per_deal_commission_rejected_by_plausibility_alone():
+    # A German "Provision" (commission) context-word guard was tried and reverted in this same
+    # pass — see _FALSE_POSITIVE_CONTEXT's comment: it collided with the ordinary English word
+    # "provision" (a clause/stipulation), silently killing real salary ranges stated near common
+    # US "Pay Transparency Provision" boilerplate. This real per-deal commission figure (personio:
+    # hygh) needs no dedicated guard at all — read as an annual amount, 300-450 is already far
+    # below any plausible floor, so the existing bounds check rejects it on its own.
+    text = (
+        "Neukundengewinnung und Partnerakquise. Was du verdienst: 300 – 450 € Provision pro "
+        "erfolgreichem Abschluss, unlimitiert."
+    )
+    assert from_description(text) is None
+
+
+def test_guard_acv_deal_size_not_salary():
+    # "ACV" (Annual Contract Value) — real personio text (cybus-gmbh), a SaaS sales metric
+    # describing deal size, not compensation.
+    text = (
+        "Du bewegst Dich in einem Segment mit einem ACV von EUR 80-150k und gewinnst "
+        "namhafte Industrieunternehmen als Kunden."
+    )
+    assert from_description(text) is None
+
+
+def test_description_pay_transparency_provision_boilerplate_not_a_commission_guard():
+    # The real collision that reverted the "Provision" guard (see _FALSE_POSITIVE_CONTEXT):
+    # real greenhouse text (26 postings, boxinc) states a genuine, well-formed salary range right
+    # after common US pay-disclosure boilerplate that itself contains the word "Provision" as an
+    # ordinary English noun (a clause), unrelated to German commission.
+    text = (
+        "In accordance with OFCCP compliance, here is the Pay Transparency Provision . "
+        "Redwood City Pay Range $146,500 — $183,000 USD"
+    )
+    span = from_description(text)
+    assert span == SalarySpan(146500, 183000, "USD", "regex")
