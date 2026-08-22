@@ -1434,6 +1434,32 @@ def test_description_ca_dollar_prefix_resolves_as_cad():
     )
 
 
+def test_description_ca_dollar_prefix_works_without_a_swallowing_filler():
+    # Code review caught that the first version of the fix above only worked when an unrelated
+    # earlier part of the SAME _LABELED match happened to have already consumed the "CA" letters
+    # as generic filler text ("for this position" left "is" to eat "CA" as an incidental extra
+    # filler word) — real for that one phrasing, not general. This shorter phrasing has no filler
+    # at all to accidentally swallow "CA" first, so it isolates whether _SYM itself now captures
+    # the prefix directly, the way every other symbol-capturing pattern in the file needs it to.
+    text = "We offer CA$105,000 to $145,000 per year"
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        105_000, 145_000, "CAD", "regex"
+    )
+
+
+def test_description_ca_dollar_bare_range_multi_region_still_ambiguous():
+    # Real ashby:docker posting: two genuinely different regional ranges, one in CA$ and one in
+    # bare $, both matched by _BARE_RANGE (not _LABELED — no label word precedes either range
+    # here). Before the general fix, "CA$225,300 – CA$361,750" wasn't recognized as CAD at all
+    # via this pattern, so the two ranges could resolve inconsistently instead of correctly
+    # declining as the ambiguous multi-region case they actually are.
+    text = (
+        "Compensation & Equity Canada: CA$225,300 – CA$361,750 + equity "
+        "United States: $160,900 – $260,700 + equity"
+    )
+    assert from_description(text, ats="ashby") is None
+
+
 def test_description_ca_dollar_and_trailing_cad_code_agree():
     # Real guidepoint case: the SAME company states the SAME range once with a "CA$" prefix and
     # once with a trailing "CAD" code — before the fix above, these disagreed on currency (one

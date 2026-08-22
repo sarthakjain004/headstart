@@ -70,11 +70,23 @@ in `src/headstart/ingest/doc_prep.py` for the terse version):
   itself to accept a code, and to accept a dash as well as "and" — kept inside `_BARE_BETWEEN`,
   not folded into `_LABELED`'s own connector list, for the same cascade-precedence reason above.
 
-**One real currency-attribution bug, fixed this pass**: a bare "CA$" prefix (Canadian dollars) was
-silently defaulting to USD via `_guess_currency`'s own generic "$" fallback — 30 occurrences, 10
-distinct companies. A real guidepoint posting stated the identical $105,000-$145,000 range twice,
-once with "CA$" and once with a trailing "CAD" code, and the two disagreeing currency guesses made
-`_resolve()` decline the whole thing as ambiguous even though the dollar amounts themselves agreed.
+**One real currency-attribution bug, fixed this pass — and fixed twice, the first attempt wasn't
+general**: a bare "CA$"/"C$" prefix (Canadian dollars) was silently defaulting to USD via
+`_guess_currency`'s own generic "$" fallback — 30 occurrences, 10 distinct companies. A real
+guidepoint posting stated the identical $105,000-$145,000 range twice, once with "CA$" and once
+with a trailing "CAD" code, and the two disagreeing currency guesses made `_resolve()` decline the
+whole thing as ambiguous even though the dollar amounts themselves agreed. **The first fix
+(`_CA_DOLLAR`, a separate lookup against the overall matched text) only worked when an unrelated
+earlier part of the SAME match happened to have already swallowed the "CA"/"C" letters as generic
+filler text — real for the guidepoint phrasing that motivated it, not real for other, differently-
+worded real phrasings with the identical prefix** (code review caught this directly, testing a
+natural rephrasing that exposed it). Fixed properly the second time by folding the "CA$"/"C$"
+prefix into `_SYM` — the ONE shared symbol fragment every pattern in the file that captures a
+currency symbol now interpolates, rather than each independently spelling out `[$£€₹]` — so every
+caller reliably captures the prefix as part of its own match, not by coincidence of surrounding
+text. This also meant the filler exclusion added for "between" (see above) needed a matching
+exclusion for "a word immediately followed by a currency symbol", for the identical reason: the
+filler's own generic word-matching was swallowing "CA" before `_SYM` ever got a chance to see it.
 
 **A large, well-evidenced body of missing-currency findings, deliberately NOT built this pass** —
 see "Deferred: new currencies" below.
@@ -82,7 +94,7 @@ see "Deferred: new currencies" below.
 **Everything else read traced to an already-correctly-declining reason**, matching this
 initiative's own repeated finding across every per-ATS pass: multi-region/multi-level postings
 stating several genuinely different real ranges (the dominant shape in the residual sample, and
-the mechanism behind all but one of this fix's own 12 "lost" cases in the full-corpus diff — see
+the mechanism behind every one of this fix's own "lost" cases in the full-corpus diff — see
 Verification below), funding/revenue/valuation boilerplate, benefit/perk amounts, vague
 "competitive"/"CTC — best in industry" phrasing with no figure, and non-English text.
 
@@ -96,23 +108,34 @@ verification run this initiative has ever done.
 
 | metric | count |
 |---|---:|
-| gained (None → a value) | 361 |
-| lost (a value → None) | 12 |
-| changed (a value → a different value) | 76 |
+| gained (None → a value) | 366 |
+| lost (a value → None) | 21 |
+| changed (a value → a different value) | 153 |
 
-**All 12 "lost" cases directly confirmed genuine, not assumed**: for each, `_LABELED.finditer()`
-against the job's full description found 2+ distinct `(lo, hi)` pairs — real, different stated
-ranges (the established multi-region/multi-level pattern), now correctly caught where the
-narrower, pre-fix filler was simply blind to the second mention. Losing a wrong "confident" single
-answer to a correct "ambiguous" decline is the intended outcome, not a regression — see
-eightfold.md's own "twilio/ericsson/ford/ngc" precedent for the same call made the same way.
+**All 21 "lost" cases directly confirmed genuine, not assumed** — and confirmed against every
+pattern capable of independently finding a span (`_LABELED`, `_BARE_RANGE`, `_BARE_BETWEEN`,
+`_MIN_MAX_BAND`, `_LEVEL_BAND`, `_BARE_HOURLY_OR_DAILY`, `_BARE_RANGE_CODE`), not `_LABELED`
+alone: a first verification pass checked only `_LABELED.finditer()` and found 8 of 21 cases
+"suspicious" (zero matches) — reading one directly (a real Docker/ashby posting: "Canada:
+CA$225,300 – CA$361,750 + equity United States: $160,900 – $260,700 + equity") showed the real
+mechanism was `_BARE_RANGE` (a bare-symbol range with no label at all), which the CA$ fix now lets
+correctly recognize BOTH regional ranges as genuinely different currencies — the identical
+multi-region-ambiguity pattern, just reached through a different pattern than the filler-length
+fix's own motivating examples. Checking all patterns, every one of the 21 finds 2+ distinct
+`(lo, hi)` pairs — real, different stated ranges (the established multi-region/multi-level
+pattern), now correctly caught where the pre-fix code was simply blind to the second mention
+(either the filler was too short to reach it, or the second mention's own currency wasn't
+recognized as genuinely different). Losing a wrong "confident" single answer to a correct
+"ambiguous" decline is the intended outcome, not a regression — see eightfold.md's own
+"twilio/ericsson/ford/ngc" precedent for the same call made the same way.
 
-**Of the 76 "changed" cases**: 68 are pure currency corrections (identical `min_annual`/
-`max_annual`, only the currency label improved — the CA$ fix). The remaining 8 are genuine value
-shifts, all on `workday`, all traced to the same multi-region mechanism as the losses (a
-`_mutually_consistent()` merge or tie-break landing on a different, still-real regional figure
-than before) — read individually, none is a fabricated or implausible number, all are figures
-genuinely present in their own job's description.
+**Of the 153 "changed" cases**: 147 are pure currency corrections (identical `min_annual`/
+`max_annual`, only the currency label improved — the CA$ fix, general this time; confirmed spread
+across 3+ distinct companies on recruitee alone, not one repeated template). The remaining 6 are
+genuine value shifts, all on `workday`, all traced to the same multi-region mechanism as the
+losses (a `_mutually_consistent()` merge or tie-break landing on a different, still-real regional
+figure than before) — read individually, none is a fabricated or implausible number, all are
+figures genuinely present in their own job's description.
 
 ## Deferred: new currencies
 
