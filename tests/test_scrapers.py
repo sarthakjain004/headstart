@@ -126,6 +126,42 @@ def test_ashby_parse_skips_unlisted():
                     {
                         "components": [
                             {
+                                "compensationType": "Salary",
+                                "interval": "1 YEAR",
+                                "currencyCode": "USD",
+                                "minValue": 0,
+                                "maxValue": 250000,
+                            }
+                        ]
+                    }
+                ]
+            },
+            "0-250000 USD 1 YEAR",
+        ),
+        (
+            {
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 YEAR",
+                                "currencyCode": "USD",
+                                "minValue": 0,
+                                "maxValue": None,
+                            }
+                        ]
+                    }
+                ]
+            },
+            "0 USD 1 YEAR",
+        ),
+        (
+            {
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
                                 "compensationType": "EquityPercentage",
                                 "interval": "NONE",
                                 "currencyCode": None,
@@ -166,7 +202,10 @@ def test_ashby_salary_from_structured_compensation_tier(compensation, expected):
     the compensationTierSummary string this scraper used to extract — 34% of jobs have it
     populated, close to 4x teamtailor's field-presence rate. A "1 TIME" interval (a one-off
     payment, not a recurring salary — real: "Compensation per finished project") is deliberately
-    excluded rather than guessed at as annual."""
+    excluded rather than guessed at as annual. The two ``minValue=0`` cases are a real, live-
+    reconfirmed Standards-review catch (Ramp's own board): a truthy check on ``lo``/``hi`` drops a
+    genuine 0 and silently corrupts the disclosure, so both must format the 0 rather than treat it
+    as absent."""
     from headstart.scrapers.ashby import _salary
 
     assert _salary(compensation) == expected

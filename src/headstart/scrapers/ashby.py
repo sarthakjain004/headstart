@@ -23,7 +23,18 @@ def _salary(compensation: dict | None) -> str | None:
     is a one-off payment, not a recurring salary — deliberately excluded rather than guessed at as
     if it were annual, the same no-fabrication principle every other Tier-1 field parser follows.
     Zero real tiers had more than one Salary component when checked; a job with several
-    compensation tiers (13/1,972 in the same sample) takes the first tier with a usable one."""
+    compensation tiers (13/1,972 in the same sample) takes the first tier with a usable one.
+
+    ``lo`` and ``hi`` are checked with ``is not None``, not truthiness — Ramp's own board has a
+    real job with ``minValue=0, maxValue=250000`` (a code-review catch, live-reconfirmed
+    2026-08-22); a truthy check drops the 0 and silently inverts the disclosure into "$250k+, no
+    ceiling" instead of the true "$0-$250k". Fixed, the pair now correctly reaches ``_bounded``
+    as (0, 250000), which declines it (0 is below the $10k USD floor) rather than reporting either
+    wrong value — a correct decline, not a corrected extraction. The mirror shape, ``hi`` set and
+    ``lo`` unset (a ceiling-only "up to $X" tier with no stated floor), was checked directly
+    against live data alongside this fix — 0/820 real Salary components across 4 boards — and is
+    deliberately left on the existing bare-single-value path (which reads as floor-only) rather
+    than special-cased for a shape not yet observed in practice."""
     for tier in (compensation or {}).get("compensationTiers") or []:
         for c in tier.get("components") or []:
             if c.get("compensationType") != "Salary":
@@ -34,7 +45,11 @@ def _salary(compensation: dict | None) -> str | None:
             interval = c.get("interval")
             if interval == "1 TIME":
                 continue
-            span = f"{lo}-{hi}" if lo and hi else str(lo or hi)
+            span = (
+                f"{lo}-{hi}"
+                if lo is not None and hi is not None
+                else str(lo if lo is not None else hi)
+            )
             return " ".join(
                 str(x) for x in (span, c.get("currencyCode"), interval) if x
             )
