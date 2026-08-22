@@ -211,10 +211,14 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
     """lever: "50000-70000 USD per-year-salary" | recruitee: "50000-70000 EUR per year" |
     teamtailor: "40000-60000 EUR YEAR" | ashby: "80000-100000 USD 1 YEAR" (assembled by
     ashby.py's own `_salary()` from the structured Salary-typed `compensationTiers[].components[]`
-    entry — the "fix ambiguity at the source" latitude the salary-extraction plan already grants,
-    not organic text) — all converge on RANGE + CODE + optional period. Named for the shape, not
-    each ATS that happens to produce it (renamed from `_field_lever_recruitee_teamtailor` when
-    ashby joined — see CLAUDE.md's "re-check the name whenever what it does changes").
+    entry) | personio: "48000 EUR year" (assembled by personio.py's own `_salary()` from the
+    structured `<salaryInformation><min>/<max>/<currencyCode>/<type>` element — `_text()`'s prior
+    read of the element's own direct text was always empty for this shape, a real Tier-1 dead end
+    fixed the same way ashby's own was) — the "fix ambiguity at the source" latitude the
+    salary-extraction plan already grants, not organic text, for both. All converge on RANGE +
+    CODE + optional period. Named for the shape, not each ATS that happens to produce it (renamed
+    from `_field_lever_recruitee_teamtailor` when ashby joined — see CLAUDE.md's "re-check the
+    name whenever what it does changes").
 
     A bare SINGLE value with no range ("60000 USD 1 YEAR", "35 USD 1 HOUR") falls back to
     `_SINGLE_NUM` — real on ashby's structured data specifically (a fixed-rate tier with only one
@@ -278,6 +282,7 @@ _FIELD_PARSERS = {
     "recruitee": _field_range_currency_interval,
     "teamtailor": _field_range_currency_interval,
     "ashby": _field_range_currency_interval,
+    "personio": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
 }

@@ -21,6 +21,54 @@ def _text(pos: ET.Element, tag: str) -> str | None:
     return e.text.strip() if e is not None and e.text and e.text.strip() else None
 
 
+#: Personio's own `<type>` values ("yearly"/"monthly"/"hourly", confirmed real; "daily"/"weekly"
+#: not yet observed but the same naming convention, included for completeness) don't match
+#: `_period_multiplier_structured`'s bare-word regex (`\bmonth\b` etc. — no boundary between "h"
+#: and "l" in "monthly"), so map to the recognized word here rather than widen that shared regex
+#: for a single ATS's own suffix convention.
+_PERIOD_WORD = {
+    "yearly": "year",
+    "monthly": "month",
+    "hourly": "hour",
+    "daily": "day",
+    "weekly": "week",
+}
+
+
+def _salary(pos: ET.Element) -> str | None:
+    """A real, structured `<salaryInformation>` element (`<min>`/`<max>`/`<currencyCode>`/
+    `<type>`) formatted as "50000-70000 EUR year" — the same RANGE + CODE + interval shape
+    `_field_range_currency_interval` already parses for lever/recruitee/teamtailor/ashby. Found
+    via direct API inspection (2026-08-22): 13.4% of positions carry this structured element; the
+    scraper previously read only `<salaryInformation>`'s own direct text via `_text()`, which is
+    always empty when the element is structured like this (`.text` is the text *before* the first
+    child, and Personio never puts any there) — so this was a real, silent Tier-1 dead end, not a
+    genuinely-absent field. `min` is always present when the element carries content; `max` is
+    sometimes absent (a fixed-rate or floor-only figure) — left as a bare single value for
+    `_field_range_currency_interval`'s own `_SINGLE_NUM` fallback to handle, not guessed at as a
+    range.
+
+    `lo`/`hi` are checked with `is not None`, not truthiness — XML text is always a string here
+    (`findtext` never returns a raw numeric type), so a real "0.00" would already be truthy and
+    this specific ashby-class bug can't occur (verified: 0 zero-valued and 0 non-string min/max
+    across a live 80-board check) — but the explicit check costs nothing and removes any doubt for
+    a future reader, given this exact shape has already caused a real bug once in this module."""
+    sal = pos.find("salaryInformation")
+    if sal is None:
+        return None
+    lo, hi = sal.findtext("min"), sal.findtext("max")
+    if lo is None and hi is None:
+        return None
+    span = (
+        f"{lo}-{hi}"
+        if lo is not None and hi is not None
+        else (lo if lo is not None else hi)
+    )
+    code = sal.findtext("currencyCode")
+    period = _PERIOD_WORD.get((sal.findtext("type") or "").strip().lower())
+    return " ".join(x for x in (span, code, period) if x)
+
+
 def _description(pos: ET.Element) -> str | None:
     """Concatenate the <jobDescription> sections (name + CDATA HTML value) into clean text."""
     block = pos.find("jobDescriptions")
@@ -94,7 +142,7 @@ class PersonioScraper(BaseScraper):
                     experience=_text(pos, "seniority")
                     or _text(pos, "yearsOfExperience"),
                     employment_type=" / ".join(x for x in (etype, sched) if x) or None,
-                    salary=_text(pos, "salaryInformation"),
+                    salary=_salary(pos),
                 )
             )
         return jobs

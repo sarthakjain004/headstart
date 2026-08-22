@@ -1495,6 +1495,44 @@ def test_personio_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+@pytest.mark.parametrize(
+    ("position_xml", "expected"),
+    [
+        (
+            """<position><salaryInformation><min>3200.00</min><max>4600.00</max>
+            <currencyCode>EUR</currencyCode><currencySymbol>€</currencySymbol>
+            <type>monthly</type></salaryInformation></position>""",
+            "3200.00-4600.00 EUR month",
+        ),
+        (
+            """<position><salaryInformation><min>48000.00</min>
+            <currencyCode>EUR</currencyCode><currencySymbol>€</currencySymbol>
+            <type>yearly</type></salaryInformation></position>""",
+            "48000.00 EUR year",
+        ),
+        (
+            """<position><salaryInformation><min>25.00</min>
+            <currencyCode>GBP</currencyCode><type>hourly</type></salaryInformation></position>""",
+            "25.00 GBP hour",
+        ),
+        ("<position><salaryInformation></salaryInformation></position>", None),
+        ("<position></position>", None),
+    ],
+)
+def test_personio_salary_from_structured_salary_information(position_xml, expected):
+    """Real, direct API inspection (2026-08-22, PR #243): personio's <salaryInformation> element
+    is structured (min/max/currencyCode/type), one level deeper than the direct element text
+    _text() used to read — always empty for this shape, so this was a real Tier-1 dead end, not
+    genuinely-absent data. 13.4% of positions carry it in a live 80-board sample. <type> values
+    ("yearly"/"monthly"/"hourly") are mapped to the bare period words _field_range_currency_
+    interval already recognizes, since the "-ly" suffix itself doesn't match that word-boundary
+    check."""
+    from headstart.scrapers.personio import _salary
+
+    pos = ET.fromstring(position_xml)
+    assert _salary(pos) == expected
+
+
 def test_personio_slug_from_keeps_only_the_host():
     """Discovery stored the raw Common Crawl capture for host-shaped ATSes, so 634 rows in the
     personio ledger carry a job deep link with tracking params instead of the board. A path alone
