@@ -181,6 +181,13 @@ run, one seed, fully reproducible) — this check exists only to confirm they ho
 do. (The zero-value fix's own effect on this recheck is real but far below reporting precision:
 1 confirmed occurrence per ~820 real Salary components checked, ≈0.1%.)
 
+**What this recheck does and doesn't cover, precisely**: it confirms the extraction logic itself
+is stable against sampling variance — both draws hit Ashby's own live API directly. It does *not*
+exercise the served pipeline downstream of the scrape (tech filter, description store, embed,
+LanceDB sync) the way a genuine served-table check would, so it can't catch drift introduced
+between scrape and serve specifically. That residual gap is the same one all 5 non-pilot passes
+before this one already carried; nothing here closes it, only the honesty of naming it does.
+
 ## Patterns found
 
 - **Structured compensation data one level deeper than what the scraper was extracting** — the
