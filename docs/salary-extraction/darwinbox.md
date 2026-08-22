@@ -23,15 +23,17 @@
 - **A real, major bug found and fixed — the actual center of this pass**: `_field_darwinbox`
   (pre-existing, built during the plan's own pilot phase from ADR-0019's single documented example,
   `"INR 3 - 5 (Annual)"`) unconditionally multiplied every parsed number by 100,000, assuming
-  lakhs-shorthand universally. Measured against a real 72-company, 1,737-value sample (fake tenants
-  excluded): genuine lakhs-shorthand is the **minority** shape (30 values, 14 companies, topping
-  out at 19) — the overwhelming majority (1,707 values, 64 companies) state **already-absolute
-  rupees** (`"INR 600000 - 1000000 (Annual)"`, `"INR 20000 - 25000 (Monthly)"`), which the blanket
-  ×100,000 turned into a nonsensical billions-of-rupees figure, correctly-but-uselessly rejected by
-  the plausibility bounds every time. Real gap: 20 to 4,999, zero observed real values — comfortable
+  lakhs-shorthand universally. Measured against a real 65-distinct-company, 1,733-non-zero-value
+  sample (fake tenants excluded, 11 companies showing both shapes): genuine lakhs-shorthand is the
+  **minority** shape (30 values, 13 companies, topping out at 19) — the overwhelming majority
+  (1,703 values, 63 companies) state **already-absolute rupees** (`"INR 600000 - 1000000
+  (Annual)"`, `"INR 20000 - 25000 (Monthly)"`), which the blanket ×100,000 turned into a
+  nonsensical billions-of-rupees figure, correctly-but-uselessly rejected by the plausibility
+  bounds every time. Real gap: 20 to 9,999 (by the larger side of each range), zero observed real
+  values — comfortable
   room either side of a magnitude threshold. Fixed with `_DARWINBOX_LAKHS_THRESHOLD = 1_000`,
   applied to `max(raw_lo, raw_hi)` before choosing the ×100,000-vs-×1 multiplier. Recovered field
-  coverage from 0.2% to 13.1% (+1,691 jobs) on the sampled corpus — even larger than keka's own
+  coverage from 0.2% to 13.0% (+1,684 jobs) on the sampled corpus — even larger than keka's own
   scientific-notation fix the previous pass.
 - **A second, smaller, incidental scraper bug found and fixed while investigating the first**:
   `salary_range` already carries its own `"(Annual)"`/`"(Monthly)"` suffix whenever one exists —
@@ -59,7 +61,7 @@
   lever's own `sandboxvr` precedent. 516 fabricated postings excluded, shipped as its own separate,
   standalone PR (#250) per this initiative's established scope-cleanliness convention.
 - **Read real no-signal misses, then quantified the currency-shaped subset** (the mandatory audit):
-  of 11,411 no-signal jobs (86.6% of the corpus, fake tenants excluded), 467 (4.1% of no-signal)
+  of 11,381 no-signal jobs (86.6% of the corpus, fake tenants excluded), 467 (4.1% of no-signal)
   have currency-shaped content that wasn't extracted. Read directly — see Patterns found for the
   breakdown, which concluded no new Tier-2 pattern was warranted.
 - **Cross-ATS impact measured and confirmed zero** — expected and verified, not just assumed:
@@ -85,7 +87,7 @@
   currency-shaped, read directly and traced to specific reasons (see Patterns found) — none a real,
   buildable gap.
 - Went beyond the ask: found and fixed a real, major, pre-existing Tier-1 correctness bug (the
-  lakhs-vs-absolute magnitude assumption) worth +1,691 jobs — the largest single-pass field-
+  lakhs-vs-absolute magnitude assumption) worth +1,684 jobs — the largest single-pass field-
   coverage recovery in this initiative to date; found and fixed a second, smaller scraper bug
   (the doubled-suffix duplication) discovered while investigating the first; found and excluded 9
   demo/QA tenants (more than any prior single pass), explicitly correcting a false start along the
@@ -114,7 +116,7 @@ the frozen capture:
 - **The lakhs-vs-absolute magnitude bug dominates this pass's own gain** — not a description-mining
   pattern at all, but a Tier-1 correctness bug that had silently discarded the overwhelming
   majority of real darwinbox salary data since the very first pass that registered
-  `_field_darwinbox`. Fixing it alone moved field coverage from 0.2% to 13.1% (+1,691 jobs).
+  `_field_darwinbox`. Fixing it alone moved field coverage from 0.2% to 13.0% (+1,684 jobs).
 - **The currency-shaped no-signal audit (467 jobs) broke down as**:
   - **A recurring description-embedded template mirror**: `"Salary Range: INR to (Annual)"` (or
     without the timeframe suffix) appears verbatim across many different companies
@@ -159,7 +161,7 @@ the frozen capture:
 |---|---:|
 | boards sampled (of 281 live, post-`EXCLUDED_BOARDS` fix) | 290 attempted (pre-fix count), 289 clean |
 | jobs seen (fake-tenant postings excluded from this count and every figure below) | 13,142 |
-| jobs with a structured `salary_range` field (`Job.salary`) | ~2,077 (coarse count before bounds checking) |
+| jobs with a structured `salary_range` field (`Job.salary`) | 1,949 (14.8% of all jobs) |
 | of those, extracted via Tier 1 | 1,713 (13.0% of all jobs) |
 | extracted via Tier 2 (description, no usable field) | 48 (0.4%) |
 | **overall Tier1+Tier2 coverage** | **1,761 (13.4%)** |
@@ -168,8 +170,8 @@ Mid-to-lower pack for this initiative (workable 15.4%, workday 27.6%, greenhouse
 smartrecruiters 10.0%, zoho 10.0%, teamtailor 14.1%, ashby 49.7%, recruitee 38.2%, personio 10.5%,
 rippling 46.4%, lever 41.3%, keka 29.1%, **darwinbox 13.4%**). Unlike most prior passes, darwinbox's
 number is **not** primarily a disclosure-rate story — the underlying disclosure rate (jobs with a
-non-empty `salary_range`) is closer to 15.8%, and Tier 1 now correctly captures the overwhelming
-majority of it (13.0% of 15.8%, roughly 82% conversion). The gap to a higher headline number is
+non-empty `salary_range`) is 14.8% (1,949/13,142), and Tier 1 now correctly captures the
+overwhelming majority of it (1,713/1,949, ~87.9% conversion). The gap to a higher headline number is
 darwinbox's real company mix skewing away from tech (hospitality, manufacturing, retail, pharma,
 logistics), not a coverage defect — a lower ceiling correctly measured, not a lower conversion
 rate incorrectly measured.

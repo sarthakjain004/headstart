@@ -317,18 +317,20 @@ def _field_keka(value: str) -> SalarySpan | None:
 #: darwinbox pass (2026-08-22): "INR 3 - 5 (Annual)" (ADR-0019's original documented example) is
 #: lakhs-shorthand, but that turned out to be the MINORITY real shape — most tenants state
 #: already-absolute rupees ("INR 600000 - 1000000"), which the old always-x100,000 logic was
-#: silently rejecting as implausible (600000 lakh is billions). Real, non-demo-tenant evidence (72
-#: companies, 1,737 values) shows a wide, clean gap with zero real values in it: genuine
-#: lakhs-shorthand tops out at 19 (both sides of every range), genuine already-absolute figures
-#: start at 5,000 — nothing observed between 20 and 4,999. 1,000 sits in the middle of that gap
-#: with room either side, not tuned to either boundary.
+#: silently rejecting as implausible (600000 lakh is billions). Real, non-demo-tenant evidence (65
+#: distinct companies, 1,733 non-zero values, 11 companies showing both shapes) shows a wide, clean
+#: gap with zero real values in it: genuine lakhs-shorthand (13 companies, 30 values) tops out at
+#: 19 (both sides of every range); genuine already-absolute figures (63 companies, 1,703 values)
+#: start at 10,000 (by the larger side of the range, the same `max()` this threshold checks) —
+#: nothing observed between 20 and 9,999. 1,000 sits in the middle of that gap with room either
+#: side, not tuned to either boundary.
 _DARWINBOX_LAKHS_THRESHOLD = 1_000
 
 
 def _field_darwinbox(value: str) -> SalarySpan | None:
     """ "INR 3 - 5 (Annual)" is lakhs (300,000-500,000); "INR 600000 - 1000000 (Annual) (Annual)"
     is already absolute rupees — see `_DARWINBOX_LAKHS_THRESHOLD` for the real evidence behind
-    telling them apart by magnitude. Fixing this recovered field coverage from ~2.4% to ~15.5% on
+    telling them apart by magnitude. Fixing this recovered field coverage from 0.2% to 13.0% on
     re-measurement (darwinbox pass, 2026-08-22) — the lakhs assumption, generalized from ADR-0019's
     single documented example, had never been checked against a broader real sample until now.
     The parenthesized suffix is the scraper's own ``salary_timeframe`` field (darwinbox.py) and is
