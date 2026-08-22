@@ -45,10 +45,10 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # location fields identically and repeatedly: "3891_Manager" @ "3891_Singapore, Singapore,
         # Singapore, Singapore", "DB156_Manager" @ "DB156_Hyderabad, ...", "00002_Manager" @
         # "00002_Los Angeles, ...", "DB163 MANAGER" @ "DB163 Los Angeles, ..." — plus a literal
-        # "Darwinbox Sample" title and gibberish ("sasasa")); `training2` (same family, weaker but
-        # consistent signal — "COE senior manager472"/"Sr.Manager_KK" carry the identical stray-
-        # numeric-suffix shape `training14`'s clearer cases confirm, on too small a sample — 8
-        # postings — for training14's own decisive title/location-contamination evidence). Checked
+        # "Darwinbox Sample" title and gibberish ("sasasa")); `training2` (same family, weaker
+        # signal — "COE senior manager472"/"Sr.Manager_KK" carry the same stray-numeric-suffix
+        # shape, title-only on its 8 postings, none of `training14`'s title/location contamination
+        # since there's no location field affected in this smaller sample). Checked
         # and deliberately kept: `banyanhcmuat` (a "uat"-shaped slug, same risk class as
         # `homecredituat`/`southuat`, but its content is genuinely realistic hospitality-role
         # postings — real titles like "Chief Steward", "Sushi Chef", even a Chinese-language
