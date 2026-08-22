@@ -5,7 +5,7 @@
 which silently caps at 25 rendered job cards — confirmed live and measured at 5.4% of a
 148-board sample hitting it (see the scraper module's own docstring, "Known gap" note,
 2026-08-22). The alternate ``fetch_via_feed()`` path reads the tenant's RSS feed instead, which
-carries every job with no such cap — but it isn't reachable for every tenant (7.4% 404 or
+carries every job with no such cap — but it isn't reachable for every tenant (6.1% 404 or
 unparseable in that same sample); a working feed reporting zero current openings is a distinct,
 real result (``feed_available=True``, ``feed_job_count=0``), not counted as unavailable.
 

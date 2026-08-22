@@ -24,10 +24,12 @@ Trakstar also serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed`
 ``fetch_via_feed`` below) that carries every job with no such cap, embeds the full description
 inline (no per-job detail fetch needed), and — unlike the detail pages — is reachable through
 plain ``http.fetch`` with no DataDome/curl_cffi involved (confirmed: 0 errors across 148 sampled
-boards). It is NOT universal — the same run found the feed unreachable (404 or unparseable) on
-7.4% of tenants (confirmed: sleekr 404s), distinct from a working feed that genuinely reports
-zero current openings (confirmed 200s with an empty channel: grassrootsvoter,
-knowingtechnologies) — so it can't unconditionally replace the path above yet. ``fetch_via_feed``
+boards). It is NOT universal — the same run found the feed truly unreachable (404 or
+unparseable) on 6.1% of tenants (confirmed: sleekr 404s), distinct from a working feed that
+genuinely reports zero current openings (confirmed 200s with an empty channel:
+grassrootsvoter, knowingtechnologies — 2 more boards the run's own raw counts include, both
+correctly reclassified out of "unreachable" once ``fetch_via_feed`` learned to tell the two
+apart) — so it can't unconditionally replace the path above yet. ``fetch_via_feed``
 (below) exposes it as a second, independent entry
 point so ``scripts/eval/trakstar_feed_compare.py`` can call both paths on the same boards and
 compare their real output at scale before any cutover — it is deliberately not wired into
