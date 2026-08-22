@@ -135,3 +135,22 @@ test('an invalid-filter response (non-array) shows the filter error, not a crash
   await t.go();
   assert.ok(nodes.results.innerHTML.includes("isn't valid"));
 });
+
+test('a description-only (Tier-2) salary still renders a pay tag', async () => {
+  // `salary` (the raw display string) is only ever populated from a scraper's own structured
+  // field — most of this initiative's own measured salary coverage is Tier-2, description-
+  // mined (ADR-0082), which only ever reaches min_salary_annual/max_salary_annual/
+  // salary_currency. A Job with those set but salary null must still show a pay tag.
+  const { t, nodes } = loadApp(() => [
+    job('a', { salary: null, min_salary_annual: 90000, max_salary_annual: 110000, salary_currency: 'EUR' }),
+  ]);
+  await t.go();
+  assert.ok(nodes.results.innerHTML.includes('class="tag pay"'));
+  assert.ok(nodes.results.innerHTML.includes('EUR 90,000–110,000/yr'));
+});
+
+test('a row with no salary signal at all renders no pay tag', async () => {
+  const { t, nodes } = loadApp(() => [job('a', { salary: null })]);
+  await t.go();
+  assert.ok(!nodes.results.innerHTML.includes('class="tag pay"'));
+});

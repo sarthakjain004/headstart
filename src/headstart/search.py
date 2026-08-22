@@ -212,7 +212,13 @@ def build_filter(
     if company:
         filters.append(f"lower(company) LIKE '%{_like(company)}%'")
     if has_salary:
-        filters.append("salary IS NOT NULL")
+        # `min_salary_annual` (ADR-0082), not the raw `salary` string: `salary` is only ever
+        # populated from a scraper's own structured field, so gating on it silently excluded
+        # every Job whose salary is only known via Tier-2 description-mining — most of this
+        # initiative's own measured coverage on most ATSes. `min_salary_annual` is the fully
+        # reconciled cascade result (Tier 1 or Tier 2), so it's the correct "do we have a real
+        # number" check either way.
+        filters.append("min_salary_annual IS NOT NULL")
     if posted_within is not None:
         # posted_at is a raw string; ISO-prefixed values (97%) compare correctly. The LIKE
         # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
@@ -391,6 +397,10 @@ class JobSearch:
                 "employment_type": r.get("employment_type"),
                 "min_years": r.get("min_years"),
                 "salary": r.get("salary"),
+                "min_salary_annual": r.get("min_salary_annual"),
+                "max_salary_annual": r.get("max_salary_annual"),
+                "salary_currency": r.get("salary_currency"),
+                "salary_source": r.get("salary_source"),
                 "ats": r.get("ats"),
                 "posted_at": r.get("posted_at"),
                 "first_seen": r.get("first_seen"),
