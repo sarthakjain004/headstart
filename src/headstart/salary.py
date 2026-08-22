@@ -810,12 +810,12 @@ def _span_from_match(
         return None
     matched = m.group(0)
     # "401k"/"401(k)" is a US retirement-plan NAME, not a $401,000 figure — real, found on keka's
-    # pass (2026-08-22): the label+hyphen-connector fix (below) makes "Equity compensation - 401K
-    # program" match _LABELED ("compensation" + "-" + "401" + the pre-existing "k" shorthand),
-    # misreading the plan name as $401,000. _has_false_positive_context can't catch this: "401k"
-    # is the matched NUMBER itself, not context text before/after the match. Checked specifically
-    # (not a general exclusion of 401 as a number) since no other common number+k US workplace
-    # term collides the same way.
+    # pass (2026-08-22): the label+hyphen-connector fix (above, in _LABELED's own definition) makes
+    # "Equity compensation - 401K program" match _LABELED ("compensation" + "-" + "401" + the
+    # pre-existing "k" shorthand), misreading the plan name as $401,000. _has_false_positive_context
+    # can't catch this: "401k" is the matched NUMBER itself, not context text before/after the
+    # match. Checked specifically (not a general exclusion of 401 as a number) since no other
+    # common number+k US workplace term collides the same way.
     if re.search(r"401\s*\(?k\)?\b", matched, re.IGNORECASE):
         return None
     # "k"/"L" shorthand: the pattern already consumed an optional trailing k/K/L without capturing

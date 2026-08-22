@@ -45,9 +45,12 @@
   to Keka's own LinkedIn). Fixed in `EXCLUDED_BOARDS` as its own separate, standalone PR (#248),
   matching lever's PR #246 precedent — a liveness/data-quality concern, not a `salary.py` concern.
 - **Read real no-signal misses, then went further and quantified the currency-shaped subset**
-  (the mandatory audit from personio's own lesson): of 9,134 no-signal jobs (71.0% of the corpus),
-  551 (6.0% of no-signal, 4.3% of all jobs) have currency-shaped content that wasn't extracted.
-  Read directly, not assumed clean — see Patterns found for the full breakdown and what it led to.
+  (the mandatory audit from personio's own lesson): of 9,128 no-signal jobs (70.9% of the corpus,
+  measured against the final, fully-patched code — the audit itself ran earlier and surfaced the
+  "L"/"ctc" gaps below, which is why re-measuring against the final code after building them
+  matters), 547 (6.0% of no-signal, 4.3% of all jobs) have currency-shaped content that wasn't
+  extracted. Read directly, not assumed clean — see Patterns found for the full breakdown and what
+  it led to.
 - **Two acronym-collision risks checked directly, both confirmed harmless**: "CAD" (Computer-Aided
   Design — heavy in keka's mechanical/hardware-engineering postings) and "GBP" (Google Business
   Profile, in marketing postings) both collide with real currency codes. Checked whether either
@@ -89,9 +92,9 @@
   current hosts, after the scientific-notation fix; zero errors, and the fix's own effect (clean,
   correctly-parsed large values) directly confirmed on live data, not just the frozen sample.
 - **Audited the no-signal bucket for language-independent currency-shaped content before trusting
-  the coverage number as a ceiling**: 9,134 no-signal jobs (71.0%); 551 (6.0% of no-signal) had
+  the coverage number as a ceiling**: 9,128 no-signal jobs (70.9%); 547 (6.0% of no-signal) had
   currency-shaped content. Read directly — not assumed clean — and traced to specific, real
-  reasons: acronym noise (CAD/GBP, 141 of 551), correctly-guarded revenue/funding/AUM/budget/
+  reasons: acronym noise (CAD/GBP, 141 of 547), correctly-guarded revenue/funding/AUM/budget/
   market-size mentions (the large majority of the rest), a small number of unrecoverable "per
   class"/ceiling-only mentions, and the two genuine gaps this pass fixed (L-suffix, CTC label) plus
   one deferred (Rs.) and one declined (doubled-unit LPA).
@@ -131,13 +134,13 @@ Two rounds:
 - **The scientific-notation bug dominates Tier 1's own gain** — not a description-mining pattern
   at all, but a scraper-level formatting defect that silently discarded every genuine keka figure
   ≥ ₹1,000,000. Fixing it alone moved field coverage from ~15.8% to 27.8% (+1,549 jobs).
-- **The currency-shaped no-signal audit (551 jobs) broke down as**:
-  - **141 jobs (25.6%)**: "CAD"/"GBP" acronym noise (Computer-Aided Design, Google Business
+- **The currency-shaped no-signal audit (547 jobs) broke down as**:
+  - **141 jobs (25.8%)**: "CAD"/"GBP" acronym noise (Computer-Aided Design, Google Business
     Profile) — no real currency mention at all. Checked directly for false *extraction* risk (not
     just audit noise) — confirmed zero: every real CAD/GBP currency hit in the corpus is Tier 1
     (field-sourced), meaning the Tier-2 cascade never actually matches either acronym as currency
     in real description text.
-  - **The large majority of the remaining 396** (a representative 20-example random sample found
+  - **The large majority of the remaining 392** (a representative 20-example random sample found
     16/20, 80%): correctly-guarded non-salary currency mentions — company revenue ("$1B in annual
     gross bookings"), funding rounds ("$27.5M in funding", "$3.8M seed round"), AUM ("₹2,300
     crores... investment vehicles"), organizational/ad budgets ("scale budgets of ₹50 Lakhs+"),
@@ -333,7 +336,7 @@ to a specific, understood mechanism.
   confirmed-flat-miss, **keka: confirmed undecodable** — a new third outcome, not a repeat of
   either prior category).
 - **Applied**: the mandatory "audit the no-signal bucket" methodology (personio's lesson,
-  `docs/salary-extraction/README.md` step 3) — 71.0% no-signal, 6.0% of those currency-shaped,
+  `docs/salary-extraction/README.md` step 3) — 70.9% no-signal, 6.0% of those currency-shaped,
   each category read and traced to a specific real reason, not just counted.
 - **Applied**: vendor demo/QA tenants confirmed only by reading real content, never slug shape
   alone (lever's lesson) — `csdemo`/`salesdemo` fixed as their own separate PR, matching PR #246's
