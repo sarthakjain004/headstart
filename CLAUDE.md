@@ -365,6 +365,30 @@ Tier 2 already produced, and a coverage total hides that completely: a review ca
 turning "GET THE JOB DONE - 5+ years" into 1-5 (off the "one" in "DONE") while coverage went *up*.
 Bucket every record by old-tier → new-tier **and** report same-tier value changes (ADR-0066).
 
+### `DERIVATIONS_VERSION`: when a fix to a derived field needs a version bump
+`headstart.ingest.doc_prep.DERIVATIONS_VERSION` (ADR-0061) is a single counter shared by every
+field `experience.extract()` or `salary.extract()` derives. `to_meta()` runs the cascade once, at
+scrape time, on whatever code is live then — so a fix to either module reaches a **new** Job
+immediately, for free. It does **not** reach an **already-indexed** Job: `update_meta`'s sweep only
+re-derives a stored row when `DERIVATIONS_VERSION > stored_version` (or the row's own raw inputs
+changed), so a fix that isn't accompanied by a version bump silently never reaches production data
+that already existed before the fix shipped — the code is correct, but everything indexed earlier
+keeps serving the old, wrong answer forever.
+
+**Bump it, in the same change, whenever a fix to `experience.py` or `salary.py` changes what
+`extract()` returns for input that's already been scraped** — not just a new pattern that only
+matters for new data going forward. A currency/pattern *addition* usually needs one too, since it
+can recover a value on already-indexed jobs that previously fell through to `None`. Skip it only
+when the change is provably inert on anything already stored (e.g. a new ATS's own field parser,
+scoped to a dispatch key no existing row uses yet).
+
+Cite the exact commit range in the version comment (`git log <prior-bump-sha>..<this-sha> -- path`
+— a fixed range, never `..HEAD`, which drifts as later commits land), and verify every fact you put
+in that comment against the real diff/data before writing it down, not from memory of what a past
+session found — this repo's own history has caught an unbumped fix reaching production twice
+(`docs/salary-extraction/keka.md`'s "DERIVATIONS_VERSION can silently stop being bumped" finding,
+then the identical gap recurring across darwinbox's and trakstar's own salary.py passes).
+
 ## Agent skills
 
 **Invoke a skill through the Skill tool whenever one applies — never reproduce its process from
