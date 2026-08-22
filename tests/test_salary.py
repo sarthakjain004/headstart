@@ -106,6 +106,35 @@ def test_field_darwinbox_monthly_timeframe_honored():
     )
 
 
+def test_field_darwinbox_already_absolute_rupees_not_multiplied():
+    # Real, darwinbox pass 2026-08-22: ADR-0019's lakhs example turned out to be the MINORITY
+    # shape — most tenants (69/72 sampled companies) state already-absolute rupees. A blanket
+    # x100,000 previously turned this into a nonsensical 60-billion-rupee figure, correctly but
+    # uselessly rejected by the plausibility bounds. Real yesforyou example.
+    assert from_field(
+        "INR 600000 - 1000000 (Annual) (Annual)", "darwinbox"
+    ) == SalarySpan(600_000, 1_000_000, "INR", "field")
+
+
+def test_field_darwinbox_already_absolute_rupees_monthly():
+    # Same magnitude question, crossed with a real period marker — real wellnessforever example.
+    assert from_field(
+        "INR 20000 - 25000 (Monthly) (Monthly)", "darwinbox"
+    ) == SalarySpan(240_000, 300_000, "INR", "field")
+
+
+def test_field_darwinbox_magnitude_threshold_boundary():
+    # _DARWINBOX_LAKHS_THRESHOLD sits in a wide, evidence-based gap (real lakhs values top out at
+    # 19, real absolute values start at 5,000) — exercise the exact 1,000 boundary mechanically.
+    # Just below: treated as lakhs (x100,000) -> a large but in-bounds figure.
+    assert from_field("INR 999 (Annual)", "darwinbox") == SalarySpan(
+        99_900_000, 99_900_000, "INR", "field"
+    )
+    # At the threshold: treated as already-absolute (x1) -> below the floor either way, correctly
+    # rejected rather than multiplied into a false-precision lakhs guess.
+    assert from_field("INR 1000 (Annual)", "darwinbox") is None
+
+
 def test_field_teamtailor_bare_unit_word_period_markers():
     # Real, teamtailor pass (PR #239): the schema.org unitText this scraper's own _salary() passes
     # through is a BARE word ("15-17.5 GBP HOUR", "1500-1800 EUR MONTH", "120-130 GBP DAY"), not a

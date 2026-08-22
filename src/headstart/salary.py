@@ -314,26 +314,43 @@ def _field_keka(value: str) -> SalarySpan | None:
     return _bounded(min(lo, hi), max(lo, hi), currency)
 
 
+#: darwinbox pass (2026-08-22): "INR 3 - 5 (Annual)" (ADR-0019's original documented example) is
+#: lakhs-shorthand, but that turned out to be the MINORITY real shape — most tenants state
+#: already-absolute rupees ("INR 600000 - 1000000"), which the old always-x100,000 logic was
+#: silently rejecting as implausible (600000 lakh is billions). Real, non-demo-tenant evidence (72
+#: companies, 1,737 values) shows a wide, clean gap with zero real values in it: genuine
+#: lakhs-shorthand tops out at 19 (both sides of every range), genuine already-absolute figures
+#: start at 5,000 — nothing observed between 20 and 4,999. 1,000 sits in the middle of that gap
+#: with room either side, not tuned to either boundary.
+_DARWINBOX_LAKHS_THRESHOLD = 1_000
+
+
 def _field_darwinbox(value: str) -> SalarySpan | None:
-    """ "INR 3 - 5 (Annual)" — lakhs, not absolute rupees (ADR-0019's own documented example,
-    confirmed against the scraper's real payload semantics: no real tech salary is INR 3-5/year).
-    Multiply by 100,000 before bounding. The parenthesized suffix is the scraper's own
-    ``salary_timeframe`` field (darwinbox.py) and is **not** always "Annual" — it's a real,
-    variable value, so `_period_multiplier` still applies on top of the lakhs conversion. Missing
-    that would have let a monthly figure read as annual-and-in-bounds, quietly 12x too low
-    (code-review finding, PR #234)."""
+    """ "INR 3 - 5 (Annual)" is lakhs (300,000-500,000); "INR 600000 - 1000000 (Annual) (Annual)"
+    is already absolute rupees — see `_DARWINBOX_LAKHS_THRESHOLD` for the real evidence behind
+    telling them apart by magnitude. Fixing this recovered field coverage from ~2.4% to ~15.5% on
+    re-measurement (darwinbox pass, 2026-08-22) — the lakhs assumption, generalized from ADR-0019's
+    single documented example, had never been checked against a broader real sample until now.
+    The parenthesized suffix is the scraper's own ``salary_timeframe`` field (darwinbox.py) and is
+    **not** always "Annual" — it's a real, variable value (including on already-absolute-rupee
+    tenants, e.g. "INR 20000 - 25000 (Monthly)"), so `_period_multiplier` applies on top of
+    whichever magnitude multiplier is chosen. Missing that would have let a monthly figure read as
+    annual-and-in-bounds, quietly 12x too low (code-review finding, PR #234, predates this fix but
+    still applies to it)."""
     if "INR" not in value.upper():
         return None
     period_mult = _period_multiplier(value)
     m = _RANGE.search(value)
-    if not m:
+    if m:
+        raw_lo, raw_hi = _num(m.group(1)), _num(m.group(2))
+    else:
         single = _SINGLE_NUM.search(value)
         if not single:
             return None
-        lo = hi = _num(single.group(1)) * 100_000 * period_mult
-        return _bounded(lo, hi, "INR")
-    lo = _num(m.group(1)) * 100_000 * period_mult
-    hi = _num(m.group(2)) * 100_000 * period_mult
+        raw_lo = raw_hi = _num(single.group(1))
+    magnitude_mult = 1 if max(raw_lo, raw_hi) >= _DARWINBOX_LAKHS_THRESHOLD else 100_000
+    lo = raw_lo * magnitude_mult * period_mult
+    hi = raw_hi * magnitude_mult * period_mult
     return _bounded(min(lo, hi), max(lo, hi), "INR")
 
 

@@ -135,7 +135,7 @@ the planning record; the table below is the live status.
 | rippling | 2,062 (2,062 sampled, 2,058 clean; 2,941 was a stale liveness snapshot) | done | 24.3% field, 46.4% overall | [rippling.md](rippling.md) |
 | lever | 2,179 (2,187 sampled pre-fix, 2,165 clean; 2,784 was a stale liveness snapshot; 8 vendor demo tenants found and excluded, PR #246) | done | 30.5% field, 41.3% overall | [lever.md](lever.md) |
 | keka | 819 (819 sampled, full population; 916 was a stale liveness snapshot; 2 vendor demo tenants found and excluded, PR #248) | done | 27.8% field, 29.1% overall | [keka.md](keka.md) |
-| darwinbox | 446 | not started | — | — |
+| darwinbox | 281 (290 sampled, full population; 446 was a stale liveness snapshot; 9 vendor demo/QA tenants found and excluded, PR #250) | done | 13.0% field, 13.4% overall | [darwinbox.md](darwinbox.md) |
 | ripplehire | 79 | not started | — | — |
 | successfactors | 2,204 | not started | — | — |
 | trakstar | 1,632 | not started | — | — |
