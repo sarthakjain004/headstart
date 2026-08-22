@@ -54,9 +54,19 @@ reader can also open `workday.md` alone and get everything about workday specifi
    populated structured `salary` field, and % where a salary figure only shows up inside the
    description text (a loose detector for this measurement pass — `headstart.salary` is the real
    extractor, built from what this step finds, not the other way around).
-3. **Read the real shapes.** `--misses <ats>` re-reads captured artifacts (no new network calls)
-   and samples substantial no-signal jobs for manual reading — the "widen the pattern" half of the
-   loop, mirroring `scripts/enrich/experience_coverage.py --misses`.
+3. **Read the real shapes, and audit whether "no signal" is genuinely non-disclosure.**
+   `--misses <ats>` re-reads captured artifacts (no new network calls) and samples substantial
+   no-signal jobs for manual reading — the "widen the pattern" half of the loop, mirroring
+   `scripts/enrich/experience_coverage.py --misses`. On top of that open-ended read, run a
+   language-independent structural check over the *whole* no-signal population — a symbol or ISO
+   code adjacent to a number (`[€$£]\d`, `\d[€$£]`, `\bEUR\b\d`, etc.), gated on no English or
+   German label word at all — before reporting any coverage number as a ceiling. This turns
+   "coverage looks low" into a measured claim (X% genuinely has no currency mention anywhere, Y%
+   does and is a real, chase-able gap) instead of an assumption that a low number means the ATS
+   just doesn't disclose. Added after personio's pass (2026-08-22,
+   `docs/salary-extraction/personio.md`'s "Post-merge coverage audit") found this exact audit
+   surfaced two real `_num()` locale bugs and a new Tier-2 pattern that also lifted coverage on
+   every other already-merged ATS — required for every pass from here on, not optional.
 4. **Extend `headstart.salary` and/or the scraper**, informed by what was actually read — never
    speculative patterns written ahead of real evidence. Code changes to a scraper are in scope
    (e.g. fixing a raw-field ambiguity at the source, or adding a query param that unlocks a
@@ -121,7 +131,7 @@ the planning record; the table below is the live status.
 | teamtailor | 3,764 (2,985 sampled after a rate-limit retry; 4,686 was a stale liveness snapshot) | done | 9.8% field, 14.1% overall | [teamtailor.md](teamtailor.md) |
 | ashby | 3,823 (3,000 sampled; 4,347 was a stale liveness snapshot) | done | 38.9% field, 49.7% overall | [ashby.md](ashby.md) |
 | recruitee | 3,534 (3,000 sampled, 2,995 clean after a rate-limit retry; 3,970 was a stale liveness snapshot) | done | 36.5% field, 38.2% overall | [recruitee.md](recruitee.md) |
-| personio | 2,534 (2,534 sampled, 2,510 clean; 2,992 was a stale liveness snapshot) | done | 10.7% field, 10.2% overall | [personio.md](personio.md) |
+| personio | 2,534 (2,534 sampled, 2,510 clean; 2,992 was a stale liveness snapshot) | done | 10.7% field, 10.5% overall (corrected, was 10.2% — see personio.md's "Post-merge coverage audit" for the full investigation and its real, hand-traced side effects on every other ATS below) | [personio.md](personio.md) |
 | rippling | 2,941 | not started | — | — |
 | lever | 2,784 | not started | — | — |
 | keka | 916 | not started | — | — |

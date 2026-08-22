@@ -106,7 +106,49 @@ _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
 
 def _num(s: str) -> int:
-    return round(float(s.replace(",", "")))
+    """Parse a captured number in either US (comma=thousands, period=decimal: "50,000.00",
+    "50,000") or European (period=thousands, comma=decimal: "50.000,00", "50.000", "14,00")
+    convention. Found on personio's pass (2026-08-22): real German-formatted salary text was
+    silently mis-read two different ways by the old always-strip-commas, period-is-decimal
+    assumption. "49.000" (forty-nine THOUSAND) was read as 49 — a safe-looking undercount that
+    happened to fail the plausibility floor here, but not guaranteed to in general. "14,00 EUR"
+    (fourteen euros, decimal-comma) was read as 1400 — a genuine, dangerous *overestimate* that
+    can clear the plausibility bounds and silently corrupt a real value, exactly the failure
+    class this module's no-fabrication principle exists to prevent, not just an undercount.
+
+    Disambiguated the same way for both separators, on real evidence: a trailing group of
+    exactly 2 digits is a decimal fraction (currency amounts overwhelmingly carry 0 or 2 decimal
+    places in every corpus sampled so far, never 3); a trailing group of exactly 3 digits is a
+    thousands-separator (grouping is always in 3s, in both conventions). When both separators
+    appear in the same number, the LAST one is the true decimal marker and the other is
+    thousands-grouping, regardless of which character each one is.
+
+    Only ever the LAST occurrence of a separator is treated as a possible decimal point — a real
+    posting typo (greenhouse pass, 2026-08-22: "$100,000.00 - $125,000,00", comma fat-fingered in
+    place of the period before the cents) repeats the same separator character right up to the
+    decimal group ("125,000,00"). Blindly converting every comma to a period would leave TWO
+    periods in the string and crash `float()`; `rpartition` isolates the last group and strips
+    every earlier occurrence outright, regardless of how many there are."""
+    if "," in s and "." in s:
+        if s.rindex(",") > s.rindex("."):
+            s = s.replace(".", "").replace(",", ".")  # European: 1.234.567,89
+        else:
+            s = s.replace(",", "")  # US: 1,234,567.89
+        return round(float(s))
+    if "," in s:
+        head, _, tail = s.rpartition(",")
+        if len(tail) == 2:
+            return round(
+                float(head.replace(",", "") + "." + tail)
+            )  # European decimal: 14,00
+        return round(float(s.replace(",", "")))  # US thousands: 50,000
+    if "." in s and re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+        return round(float(s.replace(".", "")))  # European thousands: 49.000
+    # Defensive mirror of the comma fix above: strip every period but the last before falling
+    # through to a bare decimal read, in case the same typo pattern repeats with periods instead
+    # of commas (not observed yet, but the failure mode — an uncaught ValueError — is cheap to
+    # close off given it already happened once with the other separator).
+    return round(float(s.replace(".", "", max(0, s.count(".") - 1))))
 
 
 # "up to $X" (or "upto"/LPA's "up to ₹X") states a CEILING, not a floor — but SalarySpan.min_annual
@@ -346,9 +388,27 @@ def from_field(salary: str | None, ats: str | None = None) -> SalarySpan | None:
 # salary of $71,700-$85,300 annually 401(k) Dental insurance...". "contribution" alone still
 # catches the real false positive ("$2,400 company CONTRIBUTION to ... (HSA)") without that
 # collateral damage, because a benefits-list mention never itself says "contribution".
+#   - deal-size, not compensation: "ACV von EUR 80-150k" (personio: cybus-gmbh) — Annual Contract
+#     Value, a SaaS sales metric describing what a customer pays, same false-positive class as the
+#     existing revenue/valuation/funding guards above. Checked against the full 9-ATS corpus (582
+#     real "ACV" occurrences, personio pass, 2026-08-22): every sampled context is the same sales
+#     metric, no unrelated-word collision found — unlike "provision" below.
+#
+# A German "Provision" (commission) guard was tried in this same pass and reverted: it collided
+# with the ordinary English word "provision" (a clause/stipulation) — "Pay Transparency Provision"
+# is common US pay-disclosure boilerplate that sits right next to a genuine, correctly-formatted
+# salary range (greenhouse: boxinc, 26 real postings wrongly suppressed by this alone). Re-checked
+# against the real German evidence too: the one genuinely-bad case that motivated the guard
+# ("300 – 450 € Provision pro erfolgreichem Abschluss", a per-deal commission amount) is already
+# rejected by the plausibility floor alone (300-450 read as an annual figure is far too low) — the
+# guard was net-harmful, not just redundant, since "Provision" mentioned near a range doesn't
+# reliably mean the range itself is commission (real counter-examples: Autohaus Royal's "Fixum und
+# ungedeckelter Provision (70.000-150.000 EUR Jahresbrutto)" and feld.energy's "Fixgehalt ...
+# 50.000-60.000 EUR jährlich zzgl. Provision" both state a real, correctly-labeled base/total
+# salary despite "Provision" appearing nearby).
 _FALSE_POSITIVE_CONTEXT = re.compile(
     r"\b("
-    r"revenue|valuation|series\s+[a-e]\b|funding|raised|arr\b|"
+    r"revenue|valuation|series\s+[a-e]\b|funding|raised|arr\b|acv\b|"
     r"contribution|sign(?:ing|-on)\s+bonus|referral\s+(?:bonus|program|fee)"
     r")\b",
     re.IGNORECASE,
@@ -467,17 +527,35 @@ _BARE_RANGE_CODE_EACH = re.compile(
     re.IGNORECASE,
 )
 
-# A number-then-symbol pattern ("51882€", the international convention several non-US/UK
-# postings use) was tried and reverted (workday pass, PR #235): `_num()` treats "." as a true
-# decimal point, which is correct for the simple French integer case that motivated it
-# ("51882€") but actively WRONG for the European thousands-separator convention real postings
-# also use ("37.500,00$" is thirty-seven thousand five hundred, not 37.5) — confirmed producing
-# real, incorrect SalarySpans on real workday data, not just a theoretical risk. It also
-# collided with workday's own site URLs, which embed a literal "$" as a path delimiter
-# ("/inst/1$9925/9925$27033.html"). Removed rather than shipped producing wrong numbers; see
-# docs/salary-extraction/workday.md's known-gaps section — proper support needs real
-# locale-aware number parsing (distinguishing "," and "." as decimal vs. thousands separator),
-# which this module doesn't have.
+# A bare number range with a currency SYMBOL trailing the range once — "50.000 - 56.000 €"
+# (personio pass, 2026-08-22: 32 real occurrences, German-market postings that state no symbol
+# until the very end). A version of this ("51882€", a bare number-then-symbol shape) was tried
+# and reverted during workday's own pass (PR #235) for two reasons: `_num()` misread the European
+# thousands-separator convention ("37.500,00" as 37.5, not 37500) — now fixed, see `_num()`'s own
+# docstring — and it collided with workday's own site URLs, which embed a literal "$" as a path
+# delimiter ("/inst/1$9925/9925$27033.html"). That second risk is sidestepped here by construction
+# rather than by a URL-detection guard: scoped to €/£ only, deliberately excluding $ — real
+# personio evidence shows 32/32 real trailing-symbol ranges use €, zero use $, so a real, common
+# European convention is covered at zero cost to the workday collision. See
+# docs/salary-extraction/workday.md's known-gaps section for the original finding.
+_BARE_RANGE_SYMBOL = re.compile(
+    r"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"\s*[-–—]\s*"
+    r"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"\s*(?P<sym>[€£])",
+    re.IGNORECASE,
+)
+
+# Same idea, but the symbol trails EACH side rather than the range as a whole — real personio
+# text: "23.000 € – 27.000 €", "13€ - 15€/h" (2 distinct companies; the single-trailing-symbol
+# shape above only captures the last one when both sides repeat the symbol, since its own `lo`
+# would otherwise swallow the first symbol as stray text between the numbers).
+_BARE_RANGE_SYMBOL_EACH = re.compile(
+    r"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?\s*(?P<sym>[€£])"
+    r"\s*[-–—]\s*"
+    r"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?\s*[€£]",
+    re.IGNORECASE,
+)
 
 # "minimum annual salary of $X, a midpoint of $Y, and a maximum salary of $Z" / "Minimum $X -
 # Maximum $Y" — a real, explicit min/max compensation-band disclosure (ashby pass: 23 real
@@ -531,9 +609,9 @@ _LEVEL_BAND = re.compile(
 )
 
 _PERIOD_HINT = re.compile(
-    r"\b(?:per\s+hour|hourly|\bhr\b|"
-    r"per\s+month|monthly|\bmo\b|"
-    r"per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|"
+    r"\b(?:per\s+hour|hourly|\bhr\b|pro\s+stunde|"
+    r"per\s+month|monthly|\bmo\b|pro\s+monat|"
+    r"per\s+year|per\s+annum|annually|annual|\ba\s+year\b|\byr\b|pro\s+jahr|"
     r"per\s+day|daily|\bday\b)"
     # The slash-prefixed alternatives (/hr, /hour, /mo, /month, /yr, /year, /day) get NO leading
     # \b, on purpose, for two distinct reasons found on two different real corpora (teamtailor,
@@ -546,7 +624,13 @@ _PERIOD_HINT = re.compile(
     # case, so it's dropped for all three rather than chasing each spacing variant as its own fix.
     # Still requires a real trailing \b so e.g. "/hours" (plural) isn't swept in by accident.
     r"|/\s*hr\b|/\s*hour\b|/\s*mo\b|/\s*month\b|/\s*yr\b|/\s*year\b|/\s*day\b"
-    r"|p\s*/\s*h\b",
+    r"|p\s*/\s*h\b"
+    # German markers (personio pass, 2026-08-22): real range-shape misses trailed a currency
+    # symbol/code but stated the period auf Deutsch ("50.000 - 56.000 € / Jahr", "pro Stunde",
+    # "/Std.") — 48 occurrences across 19 distinct companies, not a one-off. Bare "jahr"/"monat"/
+    # "stunde" alone are deliberately NOT accepted (mirroring bare "hour"/"month" above): unguarded,
+    # "Jahr" collides with ubiquitous, unrelated "X Jahre Erfahrung" (years of experience) phrasing.
+    r"|/\s*std\b|/\s*stunde\b|/\s*monat\b|/\s*jahr\b",
     re.IGNORECASE,
 )
 
@@ -639,13 +723,23 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     if "," in gap and re.search(r"[a-zA-Z]", gap.replace(",", "")):
         return 1
     hint = m.group(0).lower()
-    if "hr" in hint or "hour" in hint or "p/h" in hint.replace(" ", ""):
+    # German "jahr" (year) must be checked before the "hr" substring test below — "jahr" ends in
+    # "hr" and would otherwise misclassify a German annual marker as hourly.
+    if "jahr" in hint:
+        return 1
+    if (
+        "hr" in hint
+        or "hour" in hint
+        or "stunde" in hint
+        or "std" in hint
+        or "p/h" in hint.replace(" ", "")
+    ):
         return _HOURLY_TO_ANNUAL
     if "day" in hint or "daily" in hint:
         return _DAILY_TO_ANNUAL
     if "mo" in hint or "month" in hint:
         return 12
-    return 1  # yr/year/annum/annual(ly) — already annual
+    return 1  # yr/year/annum/annual(ly)/jahr — already annual
 
 
 def _span_from_match(
@@ -764,8 +858,8 @@ def from_description(
     two separate, mutually-inconsistent spans and decline the whole thing as ambiguous), LPA (a
     distinctive, unambiguous marker when present), an explicit "Salary:"/"Compensation:"-style
     label, a bare currency-symbol range, a
-    bare number range anchored by a trailing currency code, an anchored "between $X and $Y"
-    phrase, then — last, lowest-priority of all — a bare hourly/daily rate with no label at all
+    bare number range anchored by a trailing currency code or symbol, an anchored "between $X and
+    $Y" phrase, then — last, lowest-priority of all — a bare hourly/daily rate with no label at all
     ("$X/hour" or "$X per day" standing alone). "Between" runs before the fully bare hourly/daily
     pattern but after everything else, because it tends to describe a narrower sub-detail ("new
     hires usually start between $X and $Y") rather than the headline figure a labeled or bare
@@ -793,6 +887,8 @@ def from_description(
                 _BARE_RANGE,
                 _BARE_RANGE_CODE,
                 _BARE_RANGE_CODE_EACH,
+                _BARE_RANGE_SYMBOL,
+                _BARE_RANGE_SYMBOL_EACH,
                 _BARE_BETWEEN,
                 _BARE_HOURLY_OR_DAILY,
             )
