@@ -76,8 +76,7 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
 from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
 from headstart.scrapers.successfactors import _job_urls_from
-from headstart.scrapers.trakstar import _CODE as _TRAKSTAR_CODE
-from headstart.scrapers.trakstar import _ITEM as _TRAKSTAR_ITEM
+from headstart.scrapers.trakstar import _codes_from
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
@@ -348,12 +347,7 @@ def _fetch_trakstar(scraper: BaseScraper) -> list[Job]:
     down to just the detail-fetched codes afterward, the same "don't count a never-read job as a
     no-signal one" discipline zoho's adapter already established via its own ``keep_ids`` filter."""
     html = scraper._get()
-    codes = [
-        m.group(1)
-        for block in html.split(_TRAKSTAR_ITEM)[1:]
-        if (m := _TRAKSTAR_CODE.search(block))
-    ]
-    sample = set(codes[:_DETAIL_FETCH_CAP])
+    sample = _codes_from(html)[:_DETAIL_FETCH_CAP]
     postings = {code: scraper._job_posting(code) for code in sample}
     jobs = scraper.parse(
         {"html": html, "postings": postings}, datetime.now(UTC).isoformat()

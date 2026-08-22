@@ -27,8 +27,8 @@
   \$16.00 - \$18.00 an hour", "the salary range for this position starts at \$235,00 to
   \$250,000") the mature cascade already handles.
 - **Three real Tier-2 candidates measured and declined, each below this initiative's
-  multi-company evidence bar** (see [[lever's/personio's/zoho's own precedent]] for the same
-  bar applied elsewhere):
+  multi-company evidence bar** (the same bar applied throughout this initiative — see
+  `lever.md`, `personio.md`, and `zoho.md`'s own single-company declines):
   - A label immediately followed by a parenthetical period marker ("Pay Rate (per hour):
     \$18.75") — `_LABELED` doesn't match this shape at all (confirmed directly: `.search()`
     returns `None`), but real evidence is 1 occurrence, 1 company. Declined.
@@ -62,10 +62,10 @@
   careers-page HTML this scraper reads for its production `fetch_raw()`/`parse()` path silently
   caps at 25 rendered job cards — confirmed live and measured at 5.4% of a 148-board sample
   hitting the cap, recovering 154 real jobs missed by the current path in that one run. Scoped as
-  its own separate investigation and PR (#256), not bundled into this salary pass — see
-  [[trakstar-feed-truncation-investigation]] for the full account. Not yet cut over to
-  production; this salary pass's own coverage numbers are measured against the CURRENT
-  (HTML-capped) production path, since that's what's actually served today.
+  its own separate investigation and PR (#256, merged — adds `TrakstarScraper.fetch_via_feed()`,
+  an alternate RSS-based fetch path, alongside the current one, not cut over to production yet),
+  not bundled into this salary pass. This salary pass's own coverage numbers are measured against
+  the CURRENT (HTML-capped) production path, since that's what's actually served today.
 - **Three demo/QA vendor tenants found and excluded** (`bbtest`, `smoketest`, `testbass` — 27
   fabricated postings, clustered in Bangalore or content-confirmed as feature-testing sandboxes;
   `zutest` checked and deliberately kept as genuinely real) — fixed as its own standalone PR
@@ -79,8 +79,11 @@
   against 1,946 jobs.
 - Live-verified after code changes: **yes** — the only code change here is the sampling adapter
   itself (`salary.py` ships unchanged); a fresh, differently-seeded 30-board reseed (seed=313)
-  confirms it works correctly against real current boards, consistent shape with the full sample
-  (0% field, ~31.5% description-hint).
+  confirms it works correctly against real current boards, consistent shape with the full
+  sample's own coarse *sampling-stage* signal (0% field, ~31.5% description-hint — the loose,
+  keyword-based detector `salary_sample.py` itself reports while measuring, not the calibrated
+  `salary.py` cascade rate reported under Coverage below; the full 968-board sample's own
+  equivalent figure is 30.9%, see the Live-verification review section).
 - **Audited the no-signal bucket for language-independent currency-shaped content before
   trusting the coverage number as a ceiling**: yes — read directly, traced to specific reasons
   (see Methods tried and Patterns found).
@@ -95,9 +98,14 @@
 
 Fresh, differently-seeded 30-board sample (seed=313) against real current trakstar hosts: 29/30
 succeeded (1 errored — a real board-level failure, not an adapter bug), 54 jobs seen, 0% field,
-31.5% description-hint — consistent with the full 968-board sample's shape (30.9%). No new
-patterns shipped this pass, so there is nothing for a code change to have silently broken; this
-re-run mainly re-confirms the sampling adapter itself still works against real, current boards.
+31.5% description-hint (the sampling script's own coarse detector — `salary_sample.py`'s raw
+output for this reseed: "jobs with only a description hint: 17 (31.5%)") — consistent with the
+full 968-board sample's own equivalent figure (602/1,946 = 30.9%, from that same run's raw
+output). This coarse figure is a sampling-stage signal, not the calibrated coverage number
+(19.78%, see Coverage below); comparing it across the two runs is what confirms the sampling
+adapter itself behaves consistently, not a claim about the calibrated rate. No new patterns
+shipped this pass, so there is nothing for a code change to have silently broken; this re-run
+mainly re-confirms the sampling adapter itself still works against real, current boards.
 
 ## Patterns found
 
@@ -149,7 +157,7 @@ jurisdiction employers.
 Separately (own PRs, not this pass's `salary.py` scope): `src/headstart/config.py` gained 3 new
 `EXCLUDED_BOARDS` entries (PR #255); `src/headstart/scrapers/trakstar.py` gained an investigative
 `fetch_via_feed()` alternate fetch path plus `scripts/eval/trakstar_feed_compare.py` (PR #256) —
-see [[trakstar-feed-truncation-investigation]].
+see Methods tried above for the full account.
 
 ## Carried forward
 
@@ -180,4 +188,4 @@ see [[trakstar-feed-truncation-investigation]].
 - **New**: a real, unrelated production bug found while sampling for salary extraction (the
   25-job HTML truncation) is worth surfacing and scoping as its own investigation immediately,
   not silently worked around or silently ignored just because it isn't what the current pass is
-  measuring for — see [[trakstar-feed-truncation-investigation]] for the full account and lesson.
+  measuring for — see PR #256 for the full account.

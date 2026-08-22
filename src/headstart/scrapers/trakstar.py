@@ -94,9 +94,7 @@ class TrakstarScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
-        codes = [
-            m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))
-        ]
+        codes = _codes_from(html)
         # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
         # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
         # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global
@@ -208,6 +206,15 @@ class TrakstarScraper(BaseScraper):
                 )
             )
         return jobs
+
+
+def _codes_from(html: str) -> list[str]:
+    """Every job code on a careers-page listing, in the order the cards appear. Shared by
+    ``fetch_raw()`` and the sampling script's own bounded adapter (``_fetch_trakstar``,
+    ``scripts/enrich/salary_sample.py``) so the two don't carry two copies of the same
+    card-splitting logic — the same reuse ``_fetch_successfactors`` already gets from this
+    module's ``_job_urls_from``-equivalent, ``successfactors.py``'s own module-level helper."""
+    return [m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))]
 
 
 def _jsonld_posting(html: str) -> dict | None:
