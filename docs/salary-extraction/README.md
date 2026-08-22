@@ -132,7 +132,7 @@ the planning record; the table below is the live status.
 | ashby | 3,823 (3,000 sampled; 4,347 was a stale liveness snapshot) | done | 38.9% field, 49.7% overall | [ashby.md](ashby.md) |
 | recruitee | 3,534 (3,000 sampled, 2,995 clean after a rate-limit retry; 3,970 was a stale liveness snapshot) | done | 36.5% field, 38.2% overall | [recruitee.md](recruitee.md) |
 | personio | 2,534 (2,534 sampled, 2,510 clean; 2,992 was a stale liveness snapshot) | done | 10.7% field, 10.5% overall (corrected, was 10.2% — see personio.md's "Post-merge coverage audit" for the full investigation and its real, hand-traced side effects on every other ATS below) | [personio.md](personio.md) |
-| rippling | 2,941 | not started | — | — |
+| rippling | 2,062 (2,062 sampled, 2,058 clean; 2,941 was a stale liveness snapshot) | done | 24.3% field, 46.4% overall | [rippling.md](rippling.md) |
 | lever | 2,784 | not started | — | — |
 | keka | 916 | not started | — | — |
 | darwinbox | 446 | not started | — | — |
