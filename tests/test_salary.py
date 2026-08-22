@@ -296,6 +296,32 @@ def test_description_hkd_currency_recognized():
     assert span.currency == "HKD"
 
 
+def test_field_pln_currency_recognized_and_bounded():
+    # recruitee's pass (PR #241): real, multi-company evidence of PLN salaries that were already
+    # clearing the USD-shaped fallback bound with currency=None — now correctly resolved.
+    span = from_field("60000-90000 PLN", "some-new-ats")
+    assert span == SalarySpan(60000, 90000, "PLN", "field")
+
+
+def test_field_pln_below_its_own_floor_rejected_though_it_cleared_the_old_usd_fallback():
+    # 15,000 PLN/year clears the old USD-shaped fallback floor (10,000) but is well below a
+    # real Polish minimum wage annualized (~57,672 in 2026) — the calibrated PLN floor (30,000)
+    # now correctly rejects it instead of silently letting an implausible PLN figure through.
+    assert from_field("15000 PLN", "some-new-ats") is None
+
+
+def test_field_chf_currency_recognized_and_bounded():
+    span = from_field("80000-110000 CHF", "some-new-ats")
+    assert span == SalarySpan(80000, 110000, "CHF", "field")
+
+
+def test_field_chf_below_its_own_floor_rejected_though_it_cleared_the_old_usd_fallback():
+    # 12,000 CHF/year clears the old USD-shaped fallback floor (10,000) but is well below every
+    # 2026 cantonal Swiss minimum wage annualized (~41,600-52,800) — the calibrated CHF floor
+    # (20,000) now correctly rejects it.
+    assert from_field("12000 CHF", "some-new-ats") is None
+
+
 def test_description_none_or_empty():
     assert from_description(None) is None
     assert from_description("") is None
