@@ -421,16 +421,20 @@ this sampling script, but to `zoho.py`'s own production `fetch_raw()`, which mak
 single request. There is no way, from outside Zoho's authenticated API, to even measure how many
 real jobs are being missed on any given board — the ceiling is silent, with no truncation signal.
 
-**Not fixed here, and not decided unilaterally**: closing this gap would need either (a) a
-headless browser driving the widget's real UI (a fundamentally different scraping architecture
-from every other scraper in this codebase, all of which are lightweight HTTP/`curl_cffi`-based),
-or (b) per-tenant authenticated API access (impractical at this scale — thousands of unaffiliated
-companies, no existing relationship with any of them to request OAuth grants from). Both are real,
-substantial architectural decisions squarely inside CLAUDE.md's "Weigh Design Choices on Big Work"
-rule — flagged here with the evidence behind it, not built without sign-off. `src/headstart/
-scrapers/zoho.py`'s own module docstring now documents this limit directly, so a future reader
-investigating a large zoho board's missing postings finds the explanation immediately rather than
-re-discovering it.
+**Not fixed here, and put to the user rather than decided unilaterally.** Closing this gap would
+need either (a) a headless browser driving the widget's real UI (a fundamentally different
+scraping architecture from every other scraper in this codebase, all of which are lightweight
+HTTP/`curl_cffi`-based), or (b) per-tenant authenticated API access (impractical at this scale —
+thousands of unaffiliated companies, no existing relationship with any of them to request OAuth
+grants from). Both are real, substantial architectural decisions squarely inside CLAUDE.md's
+"Weigh Design Choices on Big Work" rule. The evidence above was presented with exactly these three
+options (accept as a documented limit / scope a headless-browser fix / investigate per-tenant API
+access for the affected companies specifically) — **the user chose to accept this as a documented
+platform limit for now**, not pursue either fix. That choice, not an inferred one, is what this PR
+ships. `src/headstart/scrapers/zoho.py`'s own module docstring documents the limit directly, so a
+future reader investigating a large zoho board's missing postings finds the explanation
+immediately, and finds that the option to build past it was already weighed and declined, not
+overlooked.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
@@ -444,10 +448,10 @@ re-discovering it.
   left for a human call rather than decided silently.
 - **A hard ~750-job ceiling on the public career-site widget's single listing response** (see
   "Post-merge correction" above for the full investigation) — affects 3/3,000 sampled boards
-  (0.1%), all high-volume staffing agencies, silently and unmeasurably beyond the ceiling. No fix
-  available inside this scraper's current unauthenticated-HTTP architecture; closing it would need
-  a headless browser or per-tenant authenticated API access, both real architectural decisions
-  flagged for a human call rather than built unilaterally.
+  (0.1%), all high-volume staffing agencies, silently and unmeasurably beyond the ceiling. Closing
+  it would need a headless browser or per-tenant authenticated API access; both options (plus
+  accepting the limit) were put to the user, who chose to accept it as a documented platform limit
+  rather than build either fix.
 
 ## Carried forward from workable, workday, greenhouse, and smartrecruiters — and new lessons for future ATSes
 
