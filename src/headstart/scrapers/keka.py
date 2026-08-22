@@ -27,16 +27,42 @@ _UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 _DEAD_MARKERS = ("Invalid Tenant", "Forbidden Access")
 
 
+def _format_num(v: float) -> str:
+    """Fixed-point, never scientific notation. Python's ``:g`` format (this function's own
+    predecessor) silently switches to scientific notation ("1e+06") for values >= 1,000,000 —
+    neither this module's ``_RANGE`` regex nor ``headstart.salary._num()`` can parse an exponent,
+    so every genuine keka figure at or above ₹1,000,000 was silently discarded (real, evidenced:
+    27% of a 300-job sample of rejected ``Job.salary`` field values, across 19 distinct companies
+    — salary-extraction pass 2026-08-22)."""
+    return f"{v:f}".rstrip("0").rstrip(".") or "0"
+
+
 def _salary(rng: dict | None) -> str | None:
     """Format keka's salaryRange, e.g. '25000-30000 INR'. None when no amounts published.
 
-    The salaryPeriod enum's labels aren't in the payload, so the period is omitted.
+    The raw payload also carries a numeric ``salaryPeriod`` enum (confirmed real: values 0-4 seen
+    across a 150-board sample, salary-extraction pass 2026-08-22) — but its label mapping is
+    confirmed UNDECODABLE, not just undocumented: the tenant-specific JS bundle every keka careers
+    page actually loads (`{slug}.keka.com/careers/api/embedjobs/js/{tenant_uuid}`) contains zero
+    occurrences of the string "salary" anywhere in it — the public embed-jobs widget doesn't
+    render salary at all, so no label mapping exists anywhere in the public product to reverse-
+    engineer, not merely one this scraper hasn't found yet. Statistical inference from magnitude
+    doesn't resolve it either: the same enum value spans both LPA-shorthand-scale numbers ("3-5")
+    and absolute-rupee-scale numbers ("300000-500000") across different tenants, consistent with
+    inconsistent data entry by each company's own HR staff rather than a clean, guessable
+    convention. The period is correctly omitted rather than guessed.
     """
     rng = rng or {}
+    # `or None` (truthy, not `is not None`) is deliberate here, checked against real data before
+    # keeping it: unlike ashby's real bug (a genuinely STATED 0 silently dropped), keka's 0 is a
+    # form default for "left blank" — every real 0/0 pair seen is a fully-unfilled field, and an
+    # asymmetric 0/X pair reads as "only the ceiling was entered," which `SalarySpan.min_annual`
+    # being a required int can't represent anyway (same as any other ceiling-only figure). The
+    # `lo or hi` fallback below already produces the correct bare-ceiling string for that case.
     lo, hi = rng.get("minimum") or None, rng.get("maximum") or None
     if not lo and not hi:
         return None
-    span = f"{lo:g}-{hi:g}" if lo and hi else f"{(lo or hi):g}"
+    span = f"{_format_num(lo)}-{_format_num(hi)}" if lo and hi else _format_num(lo or hi)
     return " ".join(str(x) for x in (span, rng.get("currency")) if x)
 
 

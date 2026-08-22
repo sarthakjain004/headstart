@@ -37,6 +37,7 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "CHF": 900_000,  # same raw figure as CAD/AUD, but CHF trades stronger than either — genuinely
     # more generous in real terms, a deliberate choice given Swiss finance/pharma pay, not a
     # same-tier match (code review finding, PR #241: the original comment implied equivalence)
+    "AED": 3_000_000,  # scaled from the USD ceiling via ~3.67 AED/USD, not independently sourced
 }
 _MIN_PLAUSIBLE_ANNUAL = {
     "USD": 10_000,
@@ -49,6 +50,11 @@ _MIN_PLAUSIBLE_ANNUAL = {
     "SEK": 150_000,
     "PLN": 30_000,  # ~52% of 2026 full-time minimum wage annualized (4,806/mo x 12 = 57,672)
     "CHF": 20_000,  # below every 2026 cantonal minimum-wage floor (Geneva's highest, ~51,000/yr)
+    "AED": 30_000,  # keka pass, 2026-08-22: real observed AED figures (91 raw numbers, 11
+    # companies) are all monthly-scale (topping at 25,000) — keka's own period-omitted payload
+    # means these can't be annualized, so this floor is set to comfortably reject them as
+    # implausible-if-treated-as-annual (the correct, safe outcome) while still admitting a
+    # genuinely low but real annual figure, not independently sourced from a UAE minimum wage.
 }
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
@@ -98,7 +104,12 @@ def extract(
 # _bounded's USD-shaped fallback with currency=None — adding them resolves the currency field
 # rather than changing which values pass, and calibrates a currency-appropriate bound instead of
 # relying on the fallback. Bounds sourced from 2026 minimum-wage data (see _MIN_PLAUSIBLE_ANNUAL).
-_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF"
+# AED joined on keka's pass (2026-08-22): 11 distinct companies, same resolves-the-currency-field
+# reasoning — real observed AED figures are all monthly-scale, so this doesn't change which values
+# pass today (keka's own period-omitted payload means they're correctly rejected either way), but
+# gives any genuinely-annual AED figure (here or on a future ATS) a properly-calibrated bound
+# instead of the coarser USD-shaped fallback.
+_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED"
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 _RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
@@ -446,12 +457,50 @@ _CURRENCY_SYM = {
 # label first (highest confidence, matches "Salary: upto £29,000", "Compensation: $100-120k",
 # "Pay Rate: $34-58/hr" from real samples), then a bare currency-symbol range/single anywhere in
 # text as a fallback.
+#
+# The optional leading-code groups (before `lo` and before `hi`) close a real, general gap found
+# on keka's pass (2026-08-22): a currency CODE immediately before the number ("Salary: AED
+# 30,000-35,000", "Monthly salary: AED 12,000 to AED 20,000") was never supported — only a
+# leading SYMBOL ("$X") or a trailing CODE ("X USD") were. Not AED-specific: "Salary: USD
+# 70,000-90,000" (an already-registered code) failed identically before this fix, confirmed by
+# direct testing — AED's pass just supplied the first real evidence, since AED is conventionally
+# written code-first far more often than the codes already in `_CURRENCY_CODES`. No new named
+# group needed: the leading code becomes part of the overall match, which `_guess_currency`
+# already scans for a code via `_CURRENCY_CODE.search()` on the full matched text.
+#
+# "stipend" joined the label alternation on the same keka pass: 13 distinct companies, always the
+# PRIMARY stated compensation for an internship/trainee posting ("Stipend: 15000 INR per month"),
+# not a side benefit alongside a separately-stated salary — the value is real, disclosed pay, just
+# for a different role type, and this initiative extracts what a role actually pays rather than
+# filtering by employment classification. The connector also gained a bare hyphen ("Stipend-
+# 15000") alongside the existing optional colon, evidenced by the same real examples — safe
+# because a number is still required immediately after, so "pay-per-view"-shaped text with no
+# following digit still can't match.
+#
+# The "L" suffix (lakh, x100,000 — see _span_from_match) is the same keka pass's second numeric-
+# shorthand addition, evidenced separately from "stipend": 5 companies, all label-anchored
+# ("Compensation: ₹30L to ₹50L", "Salary : INR 3.0L to 4.5L", "CTC - 7L-8L"). Requires a trailing
+# \b (unlike "k", which has none) so it can't partially swallow "Lakhs"/"Location"/any other L-word
+# — "30 Lakhs" stops the optional group before the "a", leaving "akhs" unconsumed rather than
+# misreading the "L" as this shorthand. Deliberately NOT added to any bare/unguarded pattern: a
+# label is what makes "L" safe here the same way it makes "k" safe, and the broader "lacs"/"lakhs"
+# word (checked the same pass) is dominated by unrelated insurance-coverage mentions ("group
+# medical insurance of 3 lakhs") that only a label anchor keeps out.
+#
+# "ctc" (Cost To Company — India's standard term for total annual compensation) joined the same
+# pass, separately evidenced: 74 occurrences, 33 distinct companies, 13 not already extracted via
+# some other label ("CTC: ₹20,000 per month", "CTC :20000 to 25000 Per month"). Checked for the
+# same acronym-collision risk as AED/401(k): real corpus text has "CTC" naming an unrelated
+# business unit ("investigate... Freight charges for CTC Business units") — safe here because
+# _LABELED's own connector is narrow (`[:\-]?` plus a small lead-in-word set) and demands a digit
+# immediately after, so a bare mention with no adjacent figure never reaches the number groups at
+# all; confirmed directly against that exact real text, not just reasoned about.
 _LABELED = re.compile(
     r"""
     (?:annual\s+)?
     (?:
-        (?:salary|compensation|pay(?:ing)?|remuneration|base\s+salary|wage)\s*(?:range|rate)?
-        (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*:?\s*
+        (?:salary|compensation|pay(?:ing)?|remuneration|base\s+salary|wage|stipend|ctc)\s*(?:range|rate)?
+        (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*[:\-]?\s*
         (?:upto|up\s+to|of\s+up\s+to|is\s+up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
         | (?P<bare_starting>starting\s+at)  # bare "starting at $X" — no salary/pay/wage word;
                                             # named so _scan can demand a period hint nearby (see
@@ -459,9 +508,11 @@ _LABELED = re.compile(
                                             # since nothing else here confirms this is even a wage
     )\s*
     (?P<sym>[$£€₹])?\s*
-    (?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?
+    (?:(?:@CODES@)\b\s*)?
+    (?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK]|[lL]\b)?
     (?:\s*(?:@CODES@)\b)?
-    (?:\s*[-–—to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?
+    (?:\s*[-–—to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?:(?:@CODES@)\b\s*)?
+       (?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK]|[lL]\b)?
        (?:\s*(?:@CODES@)\b)?)?
     """.replace("@CODES@", _CURRENCY_CODES),
     re.IGNORECASE | re.VERBOSE,
@@ -757,11 +808,28 @@ def _span_from_match(
         return None
     if hi_raw is None and _states_a_ceiling_only(text, m.start("lo")):
         return None
-    # "k" shorthand: the pattern already consumed an optional trailing k/K without capturing it
-    # separately, so detect it from the matched text itself.
     matched = m.group(0)
-    k_mult = 1000 if re.search(r"\d[kK]\b", matched) else 1
-    mult = _period_from_window(text, m.start(), m.end()) * k_mult
+    # "401k"/"401(k)" is a US retirement-plan NAME, not a $401,000 figure — real, found on keka's
+    # pass (2026-08-22): the label+hyphen-connector fix (above, in _LABELED's own definition) makes
+    # "Equity compensation - 401K program" match _LABELED ("compensation" + "-" + "401" + the
+    # pre-existing "k" shorthand), misreading the plan name as $401,000. _has_false_positive_context
+    # can't catch this: "401k" is the matched NUMBER itself, not context text before/after the
+    # match. Checked specifically (not a general exclusion of 401 as a number) since no other
+    # common number+k US workplace term collides the same way.
+    if re.search(r"401\s*\(?k\)?\b", matched, re.IGNORECASE):
+        return None
+    # "k"/"L" shorthand: the pattern already consumed an optional trailing k/K/L without capturing
+    # it separately, so detect it from the matched text itself. Only _LABELED's own regex ever
+    # consumes an "L" here (see its definition) — this stays effectively k-only for every other
+    # scanner, since none of them capture a trailing L as part of their own match.
+    magnitude_mult = (
+        1000
+        if re.search(r"\d[kK]\b", matched)
+        else 100_000
+        if re.search(r"\d[lL]\b", matched)
+        else 1
+    )
+    mult = _period_from_window(text, m.start(), m.end()) * magnitude_mult
     currency = _guess_currency(m.groupdict().get("sym"), matched)
     lo = _num(lo_raw) * mult
     hi = _num(hi_raw) * mult if hi_raw else None
