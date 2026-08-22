@@ -10,11 +10,15 @@ measurement pass only; it is not the extractor. ``headstart.salary`` is what act
 figure out, built from what this script finds).
 
 Listing-only ATSes (``has_detail_pass = False``) get one cheap request per board — the whole
-sample. A detail-pass ATS needs its own bounded adapter in ``_DETAIL_ADAPTERS`` (at most
-``_DETAIL_FETCH_CAP`` per-job detail fetches per board, calling the scraper's own endpoint methods
-directly rather than its ``fetch_raw()``, which several detail-pass scrapers use for a full
-per-board fan-out) built during that ATS's own research pass — see docs/salary-extraction/
-README.md. An ATS with neither shape exits with a clear message rather than guessing.
+sample. A detail-pass ATS needs its own adapter in ``_DETAIL_ADAPTERS``, built during that ATS's
+own research pass — see docs/salary-extraction/README.md. Most cap detail fetches at
+``_DETAIL_FETCH_CAP`` per board, calling the scraper's own endpoint methods directly rather than
+its ``fetch_raw()`` (several detail-pass scrapers use that for a full per-board fan-out, expensive
+across a large sample). **zoho is the deliberate exception**: its listing never paginates, so
+calling ``fetch_raw()`` costs nothing beyond the detail fetches it needs anyway, and capping those
+specifically was undercounting real coverage on boards with many missing-description jobs — see
+``_fetch_zoho``'s own docstring. An ATS with neither the listing-only nor a built adapter shape
+exits with a clear message rather than guessing.
 
 **Spare egress is automatic, never hand-rolled.** Every fetch goes through the scraper's own
 ``_get()``/``_post()``/``_job_detail()``-style methods, which already carry
@@ -151,46 +155,55 @@ def _fetch_smartrecruiters(scraper: BaseScraper) -> list[Job]:
 
 
 def _fetch_zoho(scraper: BaseScraper) -> list[Job]:
-    """Bounded adapter for zoho: one listing page via the scraper's own single-page primitive
-    (``_get()`` — never ``fetch_raw()``). Zoho's shape differs from workday/smartrecruiters:
-    the listing page already carries ``Job_Description`` for most tenants (some tenants configure
-    their careers site without that column — 28/71 in the scraper's own docstring — and need a
-    per-job detail fetch instead). So this adapter detail-fetches up to :data:`_DETAIL_FETCH_CAP`
-    of whichever records are actually missing a description (mirroring ``fetch_raw()``'s own
-    ``empty`` selection, just capped) — for the common case (description already in the listing)
-    this makes zero detail requests at all, cheaper than every other detail-pass ATS sampled so
-    far. A record that still has no description afterward (missing inline *and* past the detail
-    cap, or a detail fetch that came back empty) is dropped before returning: it was never given a
-    chance to show a signal, and keeping it would dilute the coverage measurement with a job
-    nobody actually read (the same principle :data:`_DETAIL_FETCH_CAP`'s docstring states, and the
-    same shape ``_fetch_workday``/``_fetch_smartrecruiters`` get for free by slicing the postings
-    list before ``parse()`` — zoho can't slice its raw HTML page the same way, so this adapter
-    filters ``parse()``'s output by job id instead, found via ``code-review`` on PR #238)."""
-    page = scraper._get()
-    records = scraper._records(page)
-    eligible = [
-        r
-        for r in records
-        if r.get("id") and not r.get("Is_Locked") and r.get("Publish", True)
-    ]
-    missing_desc = [r for r in eligible if not r.get("Job_Description")]
-    details = {}
-    for r in missing_desc[:_DETAIL_FETCH_CAP]:
-        detail = scraper._detail_description(r["id"])
-        if detail:
-            details[r["id"]] = detail
+    """Uncapped adapter for zoho: calls the scraper's own ``fetch_raw()`` directly, unlike every
+    other detail-pass adapter here. Zoho's listing (``_get()``, one page — zoho never paginates
+    the listing itself, so ``fetch_raw()`` costs nothing extra there) already carries
+    ``Job_Description`` for most tenants; some tenants configure their careers site without that
+    column (28/71 in the scraper's own docstring) and need a per-job detail fetch instead.
+
+    This used to cap those detail fetches at :data:`_DETAIL_FETCH_CAP` (3/board, serial, its own
+    small re-implementation of ``fetch_raw()``'s ``empty``-selection logic). A DIFFERENT, earlier
+    zoho bug — every eligible record came back from ``parse()`` regardless of whether its
+    description was ever fetched, so records past the cap silently became phantom "no signal"
+    Jobs — was already fixed on zoho's original pass (PR #238) by post-filtering `parse()`'s
+    output through ``keep_ids``, the same filter still below: 21,358 of 58,004 jobs (36.8%) were
+    phantom before that fix (docs/salary-extraction/zoho.md's own numbers). That filter was
+    correct as far as it went, but it only ever hid the cap's cost from the coverage percentage —
+    it didn't remove the cost. A board with far more than 3 missing-description jobs still only
+    ever got 3 of them genuinely read; `keep_ids` correctly excluded the rest from the denominator
+    rather than mis-scoring them as "no signal," but excluding them is not the same as reading
+    them — real coverage was still measured over a tiny, non-representative slice of any such
+    board's true population. Removed here: this adapter now detail-fetches every missing-
+    description record via the scraper's own concurrent ``fetch_raw()`` (fan_out/fan_out_async,
+    spare-egress-aware, same path production uses), matching what a real scrape of the board
+    already does — user-directed fix, PR #242, independently re-measured (not assumed) at 36,624
+    to 45,855 genuinely-read jobs (+25.2%) and 9.2% to 10.0% overall coverage on a fresh seed=7
+    resample; see docs/salary-extraction/zoho.md's correction section for the full account. The
+    post-filter below still matters for a *genuine* detail-fetch failure (network error, 404) —
+    ``parse()`` doesn't drop those either, and keeping one in the sample would count a job that
+    was actually attempted-and-failed as if it had been read and found to say nothing; filtered
+    here exactly as before, just over the now-complete ``details`` dict instead of one capped at
+    3."""
+    raw = scraper.fetch_raw()
+    records = scraper._records(raw["page"])
     keep_ids = {
-        r["id"] for r in eligible if r.get("Job_Description") or r["id"] in details
+        r["id"]
+        for r in records
+        if r.get("id")
+        and not r.get("Is_Locked")
+        and r.get("Publish", True)
+        and (r.get("Job_Description") or r["id"] in raw["details"])
     }
-    jobs = scraper.parse(
-        {"page": page, "details": details}, datetime.now(UTC).isoformat()
-    )
+    jobs = scraper.parse(raw, datetime.now(UTC).isoformat())
     return [j for j in jobs if j.id.split(":", 2)[2] in keep_ids]
 
 
-#: ATS -> bounded detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one
-#: not yet researched — see the module docstring). Each returns `list[Job]` for at most
-#: `_DETAIL_FETCH_CAP` real, detail-fetched jobs.
+#: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
+#: researched — see the module docstring). workday/smartrecruiters cap detail fetches at
+#: `_DETAIL_FETCH_CAP` (their listings paginate too, so `fetch_raw()` itself is expensive to call
+#: from a sampling script); zoho is uncapped — its listing never paginates, so `fetch_raw()` costs
+#: nothing extra there, and capping its *detail* fetches was undercounting real coverage (see
+#: `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,

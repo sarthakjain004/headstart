@@ -187,14 +187,24 @@ $96,000–$120,000 USD — all genuine.
 
 ## Coverage
 
+**Corrected 2026-08-22 (PR #242) — see "Post-merge correction" below.** The table reflects the
+current, post-correction numbers; the narrative below it (Append/pure-prose split onward) is kept
+as the honest historical record of this pass's own original findings and is not rewritten in
+place, per this doc's own established practice of documenting a correction rather than erasing it.
+
 | metric | value |
 |---|---:|
 | boards sampled (of 5,337 live) | 3,000 |
-| jobs seen (after the phantom-job fix removed 21,358 never-read records) | 36,624 |
+| jobs seen (uncapped detail-fetch; up from 36,624 pre-correction, +25.2%) | 45,855 |
 | jobs with a structured `salary` field (`Job.salary`) | 0 (0.0%) — by design; see below |
-| **overall Tier1+Tier2 coverage** | **3,358 (9.2%)** |
-| coarse hint rate (calibration only) | 18.1% |
-| boards with ≥1 job showing a real signal | 609/2,865 (21.3%) |
+| **overall Tier1+Tier2 coverage** | **4,596 (10.0%)** |
+| coarse hint rate (calibration only) | 19.3% |
+| boards with ≥1 job showing a real signal | 515/3,000 (17.2%) |
+
+The boards-with-signal denominator is now the full 3,000 (0 errored boards this run); the original
+609/2,865 figure excluded some boards from its own denominator for reasons this correction didn't
+re-derive, so the two ratios aren't a clean like-for-like comparison — reported as measured rather
+than reconciled further.
 
 **Append/pure-prose split** — measured via a separate, instrumented re-fetch of the same seed=7
 board draw (36,610 jobs, 14 fewer than the primary sample above — natural variance from re-fetching
@@ -226,15 +236,17 @@ a specific mechanism (a custom field, an appended signal), track it at the sourc
 fetch/measurement pass — never reconstruct it after the fact from a string that no longer
 distinguishes where the mechanism's output ends and organic content begins.
 
-Coverage moved twice during this pass, in opposite directions, before landing at its final value:
-the phantom-job fix alone would have raised the raw percentage (a smaller, more honest
+Coverage moved twice during this pass, in opposite directions, before landing at its then-final
+value: the phantom-job fix alone would have raised the raw percentage (a smaller, more honest
 denominator); the Salary/Currency wiring added real signal on top of that; the ceiling-vs-floor
 fix then *removed* net signal (more wrongly-extracted ceilings correctly declined than the
-now-unblocked genuine figures it recovered). The 9.2% final figure is now the lowest of the five
-ATSes done so far (workable 15.4%, workday 27.6%, greenhouse 36.1%, smartrecruiters 10.0%, zoho
-9.2%) — a genuinely different, more international/agency-heavy company mix (confirmed reading real
-misses: Italian, Dutch, and French postings; UK recruitment agencies; boilerplate "competitive
-salary" text with no stated figure), not a weaker extraction pass; if anything, this pass's
+now-unblocked genuine figures it recovered). **The 9.2% figure below was this pass's own final
+number, and is now superseded — see "Post-merge correction" for the current 10.0%.** At 9.2% it
+was the lowest of the five ATSes done at the time (workable 15.4%, workday 27.6%, greenhouse
+36.1%, smartrecruiters 10.0%, zoho 9.2%) — a genuinely different, more international/agency-heavy
+company mix (confirmed reading real misses: Italian, Dutch, and French postings; UK recruitment
+agencies; boilerplate "competitive salary" text with no stated figure), not a weaker extraction
+pass; if anything, this pass's
 extraction logic is now measurably *more* correct than every other ATS's, since the ceiling fix
 benefits all of them once merged.
 
@@ -322,6 +334,51 @@ narrower exception (a tip amount briefly surfacing in place of a declined wage c
 found rare, left unguarded). This fix will correct the four already-merged ATSes' data too, once
 this PR merges and the pipeline's derived-field refresh next runs — no need to reopen those PRs.
 
+## Post-merge correction (PR #242, 2026-08-22): the cap itself, not just its phantom-job symptom
+
+This pass's own `keep_ids` fix (above) was a real, correct fix for a real bug — it stopped a
+record that was never given a chance to show a signal from being silently scored as "no signal."
+But it fixed the SYMPTOM (phantom jobs polluting the denominator) without touching the CAUSE (the
+adapter still only ever detail-fetched the first `_DETAIL_FETCH_CAP` (3) records missing a
+description, no matter how many a board actually had). `keep_ids` correctly excluded the rest from
+the denominator instead of mis-scoring them — but excluding a real, uncheckable record from the
+count is not the same as reading it. A board with 62 real missing-description postings still only
+ever had 3 of them genuinely read; the other 59 were invisible to every coverage measurement this
+pass reported, cap-and-all — real signal permanently out of reach of the 3,000-board sample no
+matter how many times it was re-run, not a rare failure mode.
+
+**Fixed**: `_fetch_zoho` no longer caps detail fetches at all. It now calls the scraper's own
+`fetch_raw()` directly — zoho's listing never paginates (unlike workday/smartrecruiters, where
+`fetch_raw()` is genuinely expensive to call from a sampling script), so this costs nothing beyond
+the detail fetches it already needed, and reuses the scraper's real concurrent fan-out
+(`fan_out`/`fan_out_async`, spare-egress-aware) instead of a serial 3-request loop. The `keep_ids`
+post-filter stays — it still correctly excludes a record whose detail fetch was attempted and
+genuinely failed (network error, 404), which `parse()` doesn't drop on its own — but it now runs
+over the complete set of attempts, not one truncated at 3.
+
+**Independently re-measured, not assumed**: a fresh full 3,000-board sample, same seed (7) as the
+original, 0 errors. Jobs seen: 36,624 → 45,855 (+9,231, +25.2% — real postings that were
+previously invisible to the sample, not new boards or a different draw). Overall Tier1+Tier2
+coverage: 9.2% (3,358) → **10.0% (4,596)**. The percentage-point move is modest relative to the
+denominator's growth because most of the newly-visible jobs came from boards this pass's own
+company-mix finding already described (international/agency-heavy postings, several non-English)
+— reading the newly-recovered descriptions directly confirms the same pattern the original pass
+found in its smaller sample, just at greater scale, not a different population. `tsaaro.
+zohorecruit.in` (62/62 eligible postings missing an inline description, all previously capped to 3)
+is a representative single-board example: all 62 now genuinely read in 2.9 seconds via the
+concurrent fetch, none of them stating a salary — a real board this initiative's own numbers were
+blind to before, not diluting the corrected total, just no longer silently excluded from it.
+
+This correction does not touch `src/headstart/salary.py` or any production scraper — only
+`scripts/enrich/salary_sample.py`'s zoho-specific sampling adapter. No cross-ATS diff applies (no
+shared extraction code changed); no `verify-search-filters` re-run applies (no scraper URL or
+production behavior changed). The comparison tables in `teamtailor.md`, `ashby.md`, and
+`recruitee.md` still cite zoho's pre-correction 9.2% figure as of their own respective merge
+dates — deliberately not rewritten here, consistent with treating each pass's doc as a point-in-time
+snapshot rather than a living document; this section is the correction's permanent record. Zoho's
+corrected 10.0% is now roughly tied with smartrecruiters' 10.0% rather than strictly the lowest of
+the passes done so far.
+
 ## Known gaps, left honestly unresolved rather than guessed at
 
 - **Non-English postings** (confirmed: Italian, Dutch, French) — out of scope per this repo's
@@ -369,3 +426,13 @@ this PR merges and the pipeline's derived-field refresh next runs — no need to
   exactly — when some boards cost nothing extra to sample in full, capping them anyway throws away
   free signal — but the candidate-selection logic still has to match production's real selection
   criteria precisely, not an approximation of it, or the measurement quietly dilutes itself.
+- **New, from the post-merge correction**: a filter that correctly excludes truncated data from a
+  coverage denominator is not the same fix as removing the truncation — it hides the cap's cost
+  from the reported percentage without recovering the signal the cap threw away. `keep_ids` (this
+  pass's own fix, above) was the right response to "phantom jobs are silently scored as no
+  signal," but the deeper question — "is a 3/board cap the right design for an ATS whose *entire*
+  coverage comes from Tier 2, where every uncapped detail fetch is potential real signal, not
+  just noise-reduction?" — went unasked until directly raised after merge. When a sampling cap and
+  the ATS's own production `fetch_raw()` compute the identical eligibility set (confirmed here:
+  `_fetch_zoho`'s `missing_desc` and `fetch_raw()`'s `empty` used the same four conditions), check
+  whether the cap is still earning its cost, not just whether its symptom is measured correctly.

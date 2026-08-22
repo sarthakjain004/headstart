@@ -114,7 +114,7 @@ the planning record; the table below is the live status.
 | workday | 16,964 (3,000 sampled) | done | 0.0% field, 27.6% overall | [workday.md](workday.md) |
 | greenhouse | 7,503 (3,000 sampled; 9,152 was a stale liveness snapshot) | done | 0.0% field, 36.1% overall | [greenhouse.md](greenhouse.md) |
 | smartrecruiters | 5,659 (3,000 sampled; 10,845 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall | [smartrecruiters.md](smartrecruiters.md) |
-| zoho | 5,337 (3,000 sampled; 6,550 was a stale liveness snapshot) | done | 0.0% field, 9.2% overall | [zoho.md](zoho.md) |
+| zoho | 5,337 (3,000 sampled; 6,550 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall (corrected PR #242, was 9.2%) | [zoho.md](zoho.md) |
 | teamtailor | 3,764 (2,985 sampled after a rate-limit retry; 4,686 was a stale liveness snapshot) | done | 9.8% field, 14.1% overall | [teamtailor.md](teamtailor.md) |
 | ashby | 3,823 (3,000 sampled; 4,347 was a stale liveness snapshot) | done | 38.9% field, 49.7% overall | [ashby.md](ashby.md) |
 | recruitee | 3,534 (3,000 sampled, 2,995 clean after a rate-limit retry; 3,970 was a stale liveness snapshot) | done | 36.5% field, 38.2% overall | [recruitee.md](recruitee.md) |
