@@ -84,6 +84,25 @@ wide margin, the highest coverage of any ATS in this initiative so far.
   smartrecruiters: 1 gained, zoho: 5 improved from unresolved to resolved currency) — every single
   one hand-traced against real text, not sampled (see What changed in code). Only workable and
   teamtailor showed zero difference.
+- **Code review (Standards axis) caught and live-reconfirmed a real bug**: `_salary()`'s range
+  formatting used Python truthiness (`lo and hi`, `lo or hi`) instead of `is not None` checks, so a
+  genuine `minValue=0` was treated as absent. Live-reconfirmed against Ramp's real board the same
+  day (2026-08-22): a real "Solutions Consultant, Post Sales, Enterprise" posting has
+  `minValue=0, maxValue=250000, currencyCode=USD, interval="1 YEAR"` — the buggy code silently
+  reported this as `SalarySpan(250000, None, "USD")`, i.e. "$250k+, no ceiling," the exact inverse
+  of the true "$0–$250k" disclosure — the same class of silent floor/ceiling corruption the
+  no-fabrication principle exists to prevent, not a safe decline. Fixed with `is not None` checks
+  on both branches (the range case and the single-value fallback's `str(lo or hi)`, which had its
+  own, lower-impact mirror defect: `minValue=0, maxValue=None` rendered the literal string
+  `"None"`). Fixed, the Ramp example now correctly reaches `_bounded` as `(0, 250000)`, which
+  **declines** it — 0 fails the $10k USD floor — rather than reporting either wrong value; a
+  correct decline, not a corrected extraction, and additional confirmation the plausibility bounds
+  are doing real work. A direct re-probe of 4 real boards immediately after the fix (820 real
+  Salary components: ramp, openai, notion, linear) found exactly 1 more `minValue=0` case (the
+  same Ramp job) and, checked at the same time, **zero** occurrences of the mirror shape (`hi` set,
+  `lo` unset — a ceiling-only "up to $X" tier) — real, permitted by the schema, but with no
+  measured occurrence to build special handling against, so it's deliberately left on the existing
+  bare-single-value path (which reads it as floor-only) rather than guessed at (see Known gaps).
 - **The 15-currency unsupported-currency gap was measured and deliberately left undone**: PHP
   (32), JPY (14), HUF (12), COP (11), MXN (9), CRC (5), KRW (4), SGD (3), TWD (3), CNY (2), ZAR
   (2), KHR (2), CZK (1), PLN (1), BRL (1) — 102 total real occurrences, genuinely global (Ashby's
@@ -101,9 +120,16 @@ wide margin, the highest coverage of any ATS in this initiative so far.
   Tier1+Tier2 coverage (see Coverage for the fully-fixed final number), reported alongside every
   intermediate measurement as each of the four code fixes landed, not just the final total.
 - Live-verified after code changes: **yes** — a fresh, differently-seeded 50-board sample
-  (seed=2026, 32 workers, 0 errors) after all four fixes, 65.4% real coverage on that sample, 10
-  extractions spot-checked for plausibility, all genuine (including a €65k-90k EU role, correctly
-  resolving EUR).
+  (seed=2026, 32 workers, 0 errors) after all four extraction fixes, 65.4% real coverage on that
+  sample, 10 extractions spot-checked for plausibility, all genuine (including a €65k-90k EU role,
+  correctly resolving EUR). A second, larger confirmatory check (400 boards, seed=3001, run after
+  a code-review round found and fixed a real zero-value bug) reproduced the headline 49.7% figure
+  within noise on a combined 3,093-board pool (50.0%) — see Live-verification review.
+- Code review found a real, live bug: **yes, and fixed** — Standards axis review caught
+  `_salary()`'s truthy check silently dropping a genuine `minValue=0`, live-reconfirmed against a
+  real Ramp posting the same day, fixed with `is not None` checks, and covered by two new
+  regression test cases. This is exactly the review process working as this initiative intends —
+  see Methods tried for the full account.
 - Went beyond the ask, substantially: found and fixed a genuine gap in the SHARED parser
   (`_field_range_currency_interval`'s missing single-value handling) that had nothing to do with
   ashby's headline structured-field fix — evidence-measured, not guessed, and confirmed zero
@@ -133,6 +159,27 @@ State Estimation Engineer ($200,454–$260,590 — an unusually precise band, ge
 banding), a Product Manager ($161k–$225k), a Staff Software Engineer ($190k–$210k), and a
 Staff Product Designer based in Europe (€65k–€90k, correctly resolving EUR) — all genuine, no red
 flags.
+
+**A second, larger confirmatory check** (post the zero-value fix, 2026-08-22): the plan's own
+verification checklist asks the coverage claim be checked "against the served LanceDB table...
+not just the frozen sample." The served table's HTTP `/search` endpoint now sits behind a sign-in
+wall (ADR-0042, added since the README's own documented `curl` example was written — the deployed
+app has moved on from that doc, worth a separate flag), and a direct `snapshot_download` of the
+full served table is 1.87 GB against a resource CLAUDE.md explicitly calls out as storage-cost-
+constrained — disproportionate for a single sanity check this initiative's other 5 non-pilot
+passes already chose to skip entirely. Took the cheaper, and arguably fresher, path instead: a
+fresh 400-board sample (`--seed 3001`, distinct from both the original `--seed 7` and the
+live-verification `--seed 2026`) against Ashby's own live API directly — the same source the
+served table is itself built from, one pipeline cycle fresher. Re-running `headstart.salary.
+extract()` over the combined artifact pool this produced (3,093 distinct boards once merged with
+the original sample, 48,891 jobs — closer to the full 3,823-board population than either
+individual run) gives: 39.0% field-present, 38.4% Tier 1, 11.6% Tier 2, **50.0% overall**,
+62.9% of boards with ≥1 hit — all within a few tenths of a point of the headline 38.9%/49.7%/64.7%
+figures above. The headline numbers are reported from the original, single, cleanly-seeded
+3,000-board run rather than restated from this mixed-seed pool (methodologically cleaner: one
+run, one seed, fully reproducible) — this check exists only to confirm they hold up, which they
+do. (The zero-value fix's own effect on this recheck is real but far below reporting precision:
+1 confirmed occurrence per ~820 real Salary components checked, ≈0.1%.)
 
 ## Patterns found
 
@@ -183,6 +230,10 @@ structured field that, once correctly read, is extremely reliable.
   already-fetched response `parse()` reads) — confirmed no `verify-search-filters` re-run is
   needed, since that skill exists to catch a *new* ATS's URL-shape gap, and no URL construction
   changed here at all.
+  **`_salary()`'s range formatting uses `is not None` checks, not truthiness** (code-review fix —
+  see Methods tried): `lo and hi`/`lo or hi` silently dropped a real `minValue=0` (Ramp,
+  live-reconfirmed), inverting "$0–$250k" into "$250k+, no ceiling." Fixed; the corrected pair now
+  reaches `_bounded` as `(0, 250000)` and is correctly declined, not misreported.
 - `src/headstart/salary.py` (all four fixes below are shared code, not ashby-specific dispatch):
   - **Renamed** `_field_lever_recruitee_teamtailor` → `_field_range_currency_interval`; registered
     `"ashby"` in `_FIELD_PARSERS`. Confirmed zero behavior change for lever/recruitee/teamtailor
@@ -212,10 +263,16 @@ structured field that, once correctly read, is extremely reliable.
 ### Cross-ATS impact of the shared `salary.py` fixes
 
 Two separate full cross-ATS diffs were run this pass (main's frozen `salary.py` vs. the current
-working tree, across all 6 previously-processed ATSes' frozen corpora): one confirming the rename
-+ WEEK + single-value fixes are a genuine zero-op for every already-processed ATS (0 differences
-across all 6, exactly as expected — none of those ATSes' real data exercises the code paths these
-three fixes touch), and a second specifically for the new `_scan_min_max_band` pattern:
+working tree, across all 6 previously-processed ATSes' frozen corpora): one confirming the rename,
+the WEEK support, and the single-value fallback are a genuine zero-op for every already-processed
+ATS (0 differences across all 6), and a second specifically for the new `_scan_min_max_band`
+pattern. The first diff's "0 across all 6" is real but weaker than it sounds: only teamtailor's
+`Job.salary` dispatches through `_field_range_currency_interval` at all among those 6 (lever and
+recruitee, the parser's two other real callers, are both still "not started" per the status
+table) — the other 5 ATSes are structurally guaranteed a zero diff regardless of whether the fix
+is correct, since none of their data ever reaches this function. Only teamtailor's corpus is a
+genuine behavioral check, and it too shows zero difference (real: teamtailor's own data has no
+WEEK intervals or bare single values in the sampled corpus).
 
 | ATS | differences | direction |
 |---|---:|---|
@@ -247,6 +304,15 @@ already-merged ATSes' data once this PR merges and the pipeline's derived-field 
 - **Genuinely broken/placeholder source data** (`"0.01 USD 1 HOUR"`, `"0 USD 1 YEAR"`, a
   `"70-90000 USD 1 YEAR"` spread that's clearly a dropped-digit formatting artifact) — correctly
   and safely declined by the plausibility bounds; not a code gap at all.
+- **A ceiling-only compensation tier** (`maxValue` set, `minValue` unset — the structural mirror of
+  the real floor-only shape `_SINGLE_NUM` already handles) is permitted by Ashby's own schema (the
+  `_salary()` guard checks `lo is None and hi is None`, not either alone, specifically because one
+  can be set without the other) but was checked directly against live data during the zero-value
+  fix — 0/820 real Salary components across 4 boards — and has no confirmed real occurrence to
+  build against. Left on the existing bare-single-value path, which reads any lone value as a
+  floor, not a ceiling; if a real occurrence ever surfaces, it would silently invert the same way
+  the zero-value bug did, so this is worth a direct re-check on the next pass that touches this
+  parser rather than assuming it stays zero forever.
 
 ## Carried forward from workable through teamtailor — and new lessons
 
@@ -282,3 +348,21 @@ already-merged ATSes' data once this PR merges and the pipeline's derived-field 
   MERGED ATSes too, not just the one it was built for — always run the full cross-ATS diff for
   shared-code Tier-2 additions, not just Tier-1/period-multiplier changes, and don't assume a
   Tier-2 pattern's blast radius is naturally narrower just because it's "just a new regex."
+- **New**: when a scraper's own `_salary()`-style helper formats REAL numeric fields straight from
+  a structured API response (not text needing a regex), check every zero/None branch with
+  `is not None`, never truthiness — `0` is a legitimate value for a numeric compensation field in a
+  way it's essentially never a legitimate stand-in for "missing" in this codebase's other string-
+  matching code, and a truthy check silently drops it exactly where the no-fabrication principle
+  is supposed to prevent silent corruption. This is a narrower, sharper case of the "up to states a
+  ceiling, not a floor" family of bugs (zoho's pass): there, the ambiguity was in TEXT and needed a
+  phrase-detection guard; here the ambiguity was in already-structured numbers and needed nothing
+  more than the right null check — worth checking for on every future ATS whose fix touches a raw
+  numeric field directly, before it ships rather than after review catches it live.
+- **New**: when the plan's own verification checklist asks for a check that's become newly
+  expensive or newly blocked since it was written (here: the served table's sign-in wall, and its
+  size against a documented storage-cost constraint), don't silently skip it the way five prior
+  passes already did — say so explicitly, explain the tradeoff, and substitute the cheapest
+  available check that serves the same actual intent (a fresher, differently-seeded live resample
+  stood in for "check against a more durable source" here, since it's fresher than the served
+  table would be anyway). An explicitly-reasoned skip is a different, better thing than a silent
+  one, even when the end action is the same.
