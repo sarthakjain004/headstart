@@ -33,6 +33,10 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "INR": 20_00_00_000,  # 2 crore
     "HKD": 6_000_000,
     "SEK": 6_000_000,
+    "PLN": 3_000_000,
+    "CHF": 900_000,  # same raw figure as CAD/AUD, but CHF trades stronger than either — genuinely
+    # more generous in real terms, a deliberate choice given Swiss finance/pharma pay, not a
+    # same-tier match (code review finding, PR #241: the original comment implied equivalence)
 }
 _MIN_PLAUSIBLE_ANNUAL = {
     "USD": 10_000,
@@ -43,6 +47,8 @@ _MIN_PLAUSIBLE_ANNUAL = {
     "INR": 100_000,  # 1 lakh
     "HKD": 80_000,
     "SEK": 150_000,
+    "PLN": 30_000,  # ~52% of 2026 full-time minimum wage annualized (4,806/mo x 12 = 57,672)
+    "CHF": 20_000,  # below every 2026 cantonal minimum-wage floor (Geneva's highest, ~51,000/yr)
 }
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
@@ -82,9 +88,14 @@ def extract(
 # into `Job.salary` with zero scraper-side normalization, so `_field_generic` has to treat its
 # input as organic free text too, not assume it's one of our own formats.
 
-# Shared alternation for the 8 ISO codes this module recognizes — several independent regexes
+# Shared alternation for the ISO codes this module recognizes — several independent regexes
 # below embed it; kept as one string (code review finding, PR #235) so they can't drift apart.
-_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK"
+# PLN and CHF joined on recruitee's pass (PR #241): real, multi-company evidence (19 and 7
+# distinct companies respectively in a 3,000-board sample) of amounts that were already clearing
+# _bounded's USD-shaped fallback with currency=None — adding them resolves the currency field
+# rather than changing which values pass, and calibrates a currency-appropriate bound instead of
+# relying on the fallback. Bounds sourced from 2026 minimum-wage data (see _MIN_PLAUSIBLE_ANNUAL).
+_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF"
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 _RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
