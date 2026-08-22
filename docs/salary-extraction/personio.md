@@ -207,6 +207,9 @@ flags.
 
 ## Coverage
 
+**Corrected 2026-08-22 — see "Post-merge coverage audit" below for the current 10.5% and the
+full investigation.** The table below reflects this pass's original, as-merged (PR #243) numbers.
+
 | metric | value |
 |---|---:|
 | boards sampled (of 2,534 live) | 2,534 attempted, 2,510 clean (99.05%) |
@@ -267,7 +270,9 @@ change shared logic and therefore had real, non-zero, hand-traced diffs to repor
   `flatrock`; HUF — `TradeTracker Hungary`; PHP — `Dynamix Services Philippines`) — real, but well
   below the multi-company evidence bar this initiative has already established.
 - **A heavily German-majority, largely non-disclosing description corpus** (79.8% of misses) —
-  consistent with, not a deviation from, this project's English-only search-corpus scope.
+  consistent with, not a deviation from, this project's English-only search-corpus scope. **Audited
+  in depth post-merge — see "Post-merge coverage audit" below** — the 79.8%/89.4% figure is real
+  and correctly describes genuine non-disclosure, not an unexamined assumption.
 - **24 Vercel-bot-challenge sampling failures (0.9%)** — a genuinely different failure shape from
   this initiative's two previously-diagnosed rate-limit patterns; concurrency reduction doesn't
   help it. Not a new gap this pass leaves open: `docs/personio/vercel-bot-wall-bypass.md` already
@@ -275,6 +280,152 @@ change shared logic and therefore had real, non-zero, hand-traced diffs to repor
   building one is disproportionate open-ended effort) well before this pass encountered it — this
   pass's own 0.9% is a small, expected instance of an already-understood, already-accepted
   platform behavior, not a fresh, unresolved question.
+
+## Post-merge coverage audit (2026-08-22): is the low coverage genuinely non-disclosure?
+
+Explicit follow-up request after this pass's own merge: don't just accept the 10.2% figure — read
+real description text, find genuine missed patterns, and confirm the remainder is actual
+non-disclosure rather than an unexamined gap. Directed to become standing methodology for every
+future ATS pass, not a one-off personio fix.
+
+**Method**: every "no signal" job (neither tier extracted anything) was scanned for
+language-independent currency-shaped content — a symbol or ISO code adjacent to a number
+(`[€$£]\d`, `\d[€$£]`, `\bEUR\b\d`, etc.) — deliberately not gated on any English or German label
+word, so the audit can't just be re-finding the same keyword blind spot it's meant to check for.
+
+**Result, precise and measured, not estimated**: of 17,400 no-signal jobs (90.5% of the full
+19,384-job corpus), 15,560 (89.4% of no-signal) have no currency-shaped content anywhere in the
+description — genuinely undisclosed, confirming the "Known gaps" bullet above rather than
+correcting it. The remaining 1,840 (10.6% of no-signal, 9.5% of all jobs) do contain
+currency-shaped content that wasn't being extracted — read in full, not sampled by eye, and
+bucketed by shape (regex counts, not keyword guesses): 90 are a range with a real salary keyword
+nearby (15/15 hand-spot-checked clean, zero false positives), 57 carry an explicit German
+salary-compound label (Jahresgehalt/Monatsgehalt/Bruttogehalt/Jahresbrutto) on a single value, 3
+are range-shaped near a benefit keyword, and 4 fit neither bucket — the last two categories turned
+out, on reading, to include real hourly/Spanish-language disclosures an incomplete first-pass
+keyword list had miscategorized (fixed by widening the audit's own keywords, not by touching
+`salary.py`, since the audit script's keyword list is diagnostic tooling, not shipped logic).
+
+**Patterns found and fixed**, all evidence-based (every pattern below is backed by real examples
+read from the corpus, not written ahead of them):
+
+- **`_num()` misread European number formats two distinct, dangerous ways** — this is the
+  foundational fix everything else depends on. The old always-strip-commas, period-is-decimal
+  assumption read German "49.000" (forty-nine thousand) as 49 — a safe-looking undercount, usually
+  but not always caught by the plausibility floor — and "14,00" (fourteen, decimal comma) as
+  1400 — a genuine, dangerous *overestimate* that can clear plausibility bounds and silently
+  corrupt a real value, exactly what this module's no-fabrication principle exists to prevent.
+  Fixed by disambiguating on the trailing digit-group length (2 digits = decimal fraction, 3 =
+  thousands-grouping, true in both conventions) rather than assuming one convention globally.
+- **A trailing-currency-symbol range pattern** (`_BARE_RANGE_SYMBOL` /
+  `_BARE_RANGE_SYMBOL_EACH`) for "50.000 - 56.000 €" and "23.000 € – 27.000 €" — real, common
+  German/European phrasing where no symbol appears until the very end of the range, unlike
+  `_BARE_RANGE`'s leading-symbol shape. **This closes a real historical gap**: an equivalent
+  bare number-then-symbol pattern was built and reverted during workday's own pass (PR #235,
+  `docs/salary-extraction/workday.md`'s Known gaps) specifically because the old `_num()` produced
+  wrong numbers on real workday data and the pattern collided with workday's own URLs, which embed
+  a literal `$` as a path delimiter (`/inst/1$9925/9925$27033.html`). Deliberately scoped to `€`/`£`
+  only, excluding `$` — real personio evidence shows 32/32 real trailing-symbol ranges use `€`,
+  zero use `$` — which sidesteps the workday collision by construction rather than by a
+  URL-detection guard, at zero real cost to coverage.
+- **German period markers** (`pro Jahr`/`/Jahr`, `pro Monat`/`/Monat`, `pro Stunde`/`/Std`) added
+  to `_PERIOD_HINT` — 48 real occurrences across 19 distinct companies near range-shape misses,
+  not a one-off. Bare, unprefixed "Jahr"/"Monat"/"Stunde" are deliberately NOT accepted, mirroring
+  the existing bare-"hour"/"month" exclusion: unguarded, "Jahr" collides with the ubiquitous
+  unrelated "X Jahre Erfahrung" (years of experience) phrasing. A real, subtle collision was caught
+  and fixed before shipping: "Jahr" ends in "hr", which — unguarded — would trip the existing
+  hourly-classification substring check (`"hr" in hint`) and misread a German annual figure as
+  hourly, inflating it ~2080x. Checked for "jahr" first, before the "hr" check, closes this.
+- **Two false-positive guards evaluated on real evidence; one shipped, one built then reverted**:
+  "ACV" (Annual Contract Value, a SaaS deal-size metric — "ACV von EUR 80-150k") is real and
+  shipped, checked against the full 9-ATS corpus (582 real occurrences, every sampled context the
+  same sales metric, no collision found). A German "Provision" (commission) guard was also built
+  from real personio evidence (3 companies) but **reverted after the mandatory cross-ATS diff
+  caught it colliding with the ordinary English word "provision"** (a clause/stipulation) — see
+  "Cross-ATS impact" below for the full story; it is not present in the shipped code.
+
+**Evaluated and deliberately deferred**: the 57 single-value German-compound-label cases
+(Jahresgehalt/Monatsgehalt/Bruttogehalt/Jahresbrutto). A naive "label word, then any nearby number"
+pattern looked promising from the coverage-audit numbers alone, but reading real examples surfaced
+a genuine false-positive class the audit's own keyword-prevalence count couldn't see: "13.
+Monatsgehalt" is extremely common German phrasing for a 13th-month year-end bonus *structure*
+("Vergütung plus 13. Monatsgehalt") with no figure attached to it at all, sitting in the same
+sentence as unrelated numbers (vacation days, weekly hours) a naive nearby-number pattern would
+wrongly attach to the label. Only a minority of the 57 (the Walldorf Consulting shape, 6 postings
+from one company: "Das Jahresgehalt ... entspricht EUR 50.000") looked safely extractable on a
+first read. Not chased further this pass — a safe version needs to positively exclude the ordinal-
+prefixed "13. Monatsgehalt" shape and validate proximity/magnitude more carefully than time
+allowed here, and one company's worth of clearly-safe evidence is below this initiative's own
+multi-company bar. Left as an honest known gap, same treatment as workday.md gave its own
+single-example phrasing gaps.
+
+**Coverage, personio itself**: 1,984/19,384 (10.2%, PR #243's merged baseline) → **2,045/19,384
+(10.5%)** — net +61 jobs, +0.31 percentage points. Modest by design, not by shortfall: this
+number is small *because* the audit confirmed the ceiling is largely real non-disclosure (89.4% of
+no-signal has no currency mention at all), not because the patterns built are weak — every
+currency-shaped miss this pass could safely resolve without guessing, it did.
+
+### Cross-ATS impact — real this time, extensively hand-traced
+
+Unlike this pass's own original PR #243 (zero diff, additive-only), this correction touches
+shared `salary.py` code used by every ATS, so the mandatory full cross-ATS diff (main's frozen
+`salary.py` vs. this working tree, all 9 previously-merged ATSes' frozen corpora — workable,
+workday, greenhouse, smartrecruiters, zoho, teamtailor, ashby, recruitee, personio) found real,
+substantial differences. Every category was hand-traced to its exact mechanism, not just counted:
+
+- **One real crash, fixed**: a genuine posting typo (greenhouse: "$100,000.00 - $125,000,00",
+  comma fat-fingered for the period before the cents) hit `_num()`'s new EU-decimal branch, which
+  blindly converted *every* comma to a period — leaving two periods in the string and crashing
+  `float()`. Fixed by isolating only the last separator as the decimal point via `rpartition`,
+  with the same defensive treatment applied to the mirror (untriggered, but structurally identical)
+  period case as cheap insurance.
+- **One real regression, found and reverted**: the "Provision" guard (above) silently killed
+  genuine, correctly-formatted US salary ranges wherever they sat near common "Pay Transparency
+  Provision" pay-disclosure boilerplate — 26 real postings on one company (greenhouse: boxinc)
+  alone. Re-examined against the real German evidence too: the one genuinely-bad case that
+  motivated the guard (a 300-450€ per-deal commission figure) is already rejected by the
+  plausibility floor alone with no guard at all, and "Provision" mentioned near a range doesn't
+  reliably mean the range itself is commission — real counter-examples (Autohaus Royal, feld.energy)
+  show a correctly-labeled base/total salary stated in the same sentence as an unrelated
+  "Provision" mention. The guard was net-harmful, not just redundant; removed entirely.
+- **The remainder — every one individually traced, not sampled** — splits into two categories,
+  both a natural and largely beneficial consequence of `_num()` becoming correct rather than a new
+  bug: (a) source-data typos ("$200,00" for "$200,000", a dropped zero) that the old buggy parser
+  silently misread into a wrong-but-plausible-looking value (accepted, incorrectly, before) and the
+  new parser correctly refuses to guess at (declines, correctly, now) — confirmed the dominant
+  shape systematically, not anecdotally: 111 of 145 total "lost" cases across all 9 ATSes match
+  this exact shape on direct measurement; (b) genuine multi-value text (a multi-degree pay table,
+  a per-country salary listing, two separately-stated figures in one description) where the old
+  buggy parser "resolved" the ambiguity only because it happened to mangle every candidate but one
+  into unparseable garbage — the new parser correctly sees all the real candidates and declines
+  rather than picking one arbitrarily, exactly the no-fabrication principle already governing every
+  other ambiguity case in this module.
+- **Net coverage effect on the other 8 already-merged ATSes** (gains minus losses, both real):
+  workable +7/−1, workday +16/−5 (1 value changed), greenhouse +490/−41 (4 changed), smartrecruiters
+  +18/−3, zoho +78/−55, teamtailor +181/−2, ashby +35/−34 (1 changed), recruitee +58/−4 — a net
+  gain of roughly 940 jobs across the initiative's already-shipped ATSes, the majority from
+  teamtailor and greenhouse specifically (both carry real European-market postings the `_num()` fix
+  now reads correctly). This is the strongest evidence that the international-number-format fix
+  reaches well beyond personio — worth remembering on every future ATS pass, per the standing
+  methodology change below, not just this one.
+- Full test suite: 1,409 passed, 0 regressions, re-verified after every fix in this section.
+
+**Live-verified**: a fresh, differently-seeded 60-board sample (seed 4242) against real, current
+`*.jobs.personio.{com,de}` hosts — 59/60 clean (1 Vercel-challenge, consistent with the
+already-documented, already-accepted platform behavior above, not a new failure), 20/317 jobs
+showing a real signal, several genuine Tier-2 hits confirming the new patterns fire on live data,
+not just the frozen capture.
+
+### Standing methodology change, per explicit instruction
+
+Going forward, every ATS pass audits its own "no signal" bucket for language-independent
+currency-shaped content (a symbol/code adjacent to a number, no keyword gate) *before* reporting a
+coverage ceiling as final — this is what turns "coverage looks low" into a measured claim ("X% is
+genuinely undisclosed, Y% is a real, now-fixed gap") instead of an assumption. This pass is the
+template: measure the no-signal bucket's currency-shaped fraction, read real examples from it
+rather than sampling by eye, bucket by structural shape before proposing a fix, and run the full
+cross-ATS diff on anything that touches shared code — which is precisely what caught both real bugs
+in this section before they shipped.
 
 ## Carried forward from workable through recruitee — and new lessons
 
