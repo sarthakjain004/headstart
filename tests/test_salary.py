@@ -95,18 +95,21 @@ def test_field_teamtailor_bare_unit_word_period_markers():
 def test_field_generic_bare_word_period_not_recognized_in_free_text():
     # Real, demonstrated regression, caught by code review before merge (PR #239): the bare-word
     # period recognition above is safe ONLY for a known-structured field shape (lever/recruitee/
-    # teamtailor/ashby, all sharing _field_range_currency_interval), not for genuinely free-text
-    # fields like personio's, which reach _field_generic. (Ashby itself moved OFF _field_generic
-    # in PR #240, once its own compensation data turned out to be structured after all — see
-    # test_field_range_currency_interval_ashby_structured_tier below — so this regression test now
-    # uses personio, still confirmed free text, to keep covering _field_generic's own safety.)
+    # teamtailor/ashby/personio, all sharing _field_range_currency_interval), not for genuinely
+    # free-text fields, which reach _field_generic. (Both ashby, PR #240, and personio, PR #243,
+    # moved OFF _field_generic once their own data turned out to be structured after all — see
+    # test_field_range_currency_interval_ashby_structured_tier and this file's personio-structured
+    # test below — so this regression test uses a synthetic, never-to-be-real ats name rather than
+    # a real one that this initiative's own next pass could just as easily move off _field_generic
+    # again; "some-new-ats" is the same placeholder already used elsewhere in this file for "any
+    # ats with no calibrated parser.")
     # Before this test's underlying fix (splitting _period_multiplier_structured out from the safe
     # default), this exact string silently misread "month" (from the severance clause, nothing to
     # do with the salary's own period) as a monthly marker and 12x-inflated a correct $40k-$50k
     # annual figure into a wrong $480k-$600k one that still happened to clear the plausibility
     # bounds — a silent corruption, not a safe decline. Must still read as annual here.
     assert from_field(
-        "40,000 - 50,000 USD with 1 month severance included", "personio"
+        "40,000 - 50,000 USD with 1 month severance included", "some-new-ats"
     ) == SalarySpan(40000, 50000, "USD", "field")
 
 
@@ -121,6 +124,28 @@ def test_field_range_currency_interval_ashby_structured_tier():
     )
     assert from_field("25-30 USD 1 HOUR", "ashby") == SalarySpan(
         25 * 2080, 30 * 2080, "USD", "field"
+    )
+
+
+def test_field_range_currency_interval_personio_structured_tier():
+    # Real, direct API inspection (2026-08-22, PR #243): personio.py's own _salary() now assembles
+    # this shape from the structured <salaryInformation><min>/<max>/<currencyCode>/<type> element
+    # (see the personio-structured test in test_scrapers.py for the raw-object extraction itself)
+    # — a genuine range+currency+interval string, not free text. personio's own <type> values
+    # ("yearly"/"monthly"/"hourly") reach this function UNMAPPED, on purpose: an earlier version
+    # mapped them to _period_multiplier_structured's bare-word set, assuming the "-ly" suffix
+    # would break word-boundary matching — code review found this was speculative (3 of 5 map
+    # entries provably redundant, the other 2 unevidenced) and it was removed once direct testing
+    # confirmed _period_multiplier's own hardcoded "monthly"/"hourly" checks and annual default
+    # already handle every real value correctly with no mapping at all.
+    assert from_field("3200.00-4600.00 EUR monthly", "personio") == SalarySpan(
+        3200 * 12, 4600 * 12, "EUR", "field"
+    )
+    assert from_field("48000.00 EUR yearly", "personio") == SalarySpan(
+        48000, None, "EUR", "field"
+    )
+    assert from_field("25.00 GBP hourly", "personio") == SalarySpan(
+        25 * 2080, None, "GBP", "field"
     )
 
 
@@ -171,15 +196,18 @@ def test_field_generic_fallback_for_unlisted_ats():
 
 
 def test_field_generic_up_to_states_a_ceiling_not_a_floor():
-    # Real, code review, PR #238: personio passes an HR system's raw free-text field straight into
-    # Job.salary with no scraper-side normalization, so _field_generic hits the exact same
-    # ceiling-vs-floor risk Tier 2 has — "Up to €50,000" must decline, not report €50,000 as a
-    # floor. A real range is unaffected. (Originally tested against ashby too — ashby moved OFF
-    # _field_generic in PR #240 once its own compensation data turned out to be structured after
-    # all; see test_field_range_currency_interval_ashby_structured_tier for its own coverage now.)
-    assert from_field("Up to €50,000", "personio") is None
-    assert from_field("Salary up to €50,000 per year", "personio") is None
-    assert from_field("40000-50000 EUR", "personio") == SalarySpan(
+    # Real, code review, PR #238: an ATS with no calibrated parser passes its raw free-text field
+    # straight into Job.salary with no scraper-side normalization, so _field_generic hits the
+    # exact same ceiling-vs-floor risk Tier 2 has — "Up to €50,000" must decline, not report
+    # €50,000 as a floor. A real range is unaffected. (Originally tested against ashby, then
+    # personio — both moved OFF _field_generic, PR #240 and PR #243 respectively, once their own
+    # data turned out to be structured after all; using a synthetic "some-new-ats" placeholder now
+    # rather than a third real ATS name this initiative's own next pass could just as easily move
+    # off _field_generic again — see test_field_range_currency_interval_ashby_structured_tier and
+    # this file's personio-structured test for their own now-real coverage.)
+    assert from_field("Up to €50,000", "some-new-ats") is None
+    assert from_field("Salary up to €50,000 per year", "some-new-ats") is None
+    assert from_field("40000-50000 EUR", "some-new-ats") == SalarySpan(
         40000, 50000, "EUR", "field"
     )
 
