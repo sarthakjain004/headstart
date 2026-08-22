@@ -62,7 +62,9 @@ def _salary(rng: dict | None) -> str | None:
     lo, hi = rng.get("minimum") or None, rng.get("maximum") or None
     if not lo and not hi:
         return None
-    span = f"{_format_num(lo)}-{_format_num(hi)}" if lo and hi else _format_num(lo or hi)
+    span = (
+        f"{_format_num(lo)}-{_format_num(hi)}" if lo and hi else _format_num(lo or hi)
+    )
     return " ".join(str(x) for x in (span, rng.get("currency")) if x)
 
 
