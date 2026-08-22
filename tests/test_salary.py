@@ -403,6 +403,90 @@ def test_field_chf_below_its_own_floor_rejected_though_it_cleared_the_old_usd_fa
     assert from_field("12000 CHF", "some-new-ats") is None
 
 
+def test_field_aed_currency_recognized_and_bounded():
+    # keka pass (2026-08-22): real, multi-company evidence (11 distinct companies).
+    span = from_field("50000-70000 AED", "some-new-ats")
+    assert span == SalarySpan(50000, 70000, "AED", "field")
+
+
+def test_field_aed_below_its_own_floor_rejected():
+    # Real observed keka AED figures are monthly-scale (topping at 25,000) — the calibrated AED
+    # floor (30,000) correctly rejects them as implausible if read as annual, the safe outcome
+    # given keka's own payload has no period to annualize against.
+    assert from_field("25000 AED", "some-new-ats") is None
+
+
+def test_description_labeled_currency_code_before_the_number():
+    # Real, general gap found via the AED addition above (keka pass, 2026-08-22): a currency CODE
+    # immediately BEFORE the number ("Salary: AED 30,000-35,000/month") was never supported by
+    # _LABELED — only a leading symbol ("$X") or a trailing code ("X USD") were. Not AED-specific:
+    # confirmed the identical failure for an already-registered code ("Salary: USD 70,000-90,000")
+    # before this fix. Real examples recovered on other already-merged ATSes (zoho, teamtailor),
+    # found via this addition's own mandatory cross-ATS diff, not assumed.
+    span = extract(
+        None,
+        "Direct Reports: 4 Talent Acquisition Specialists Salary: AED 30,000-35,000/month "
+        "+ Benefits",
+        "zoho",
+    )
+    assert span == SalarySpan(30000 * 12, 35000 * 12, "AED", "regex")
+    # The code can also repeat on each side, not just once for the whole range.
+    span2 = extract(
+        None,
+        "Compensation and benefits Monthly salary: AED 12,000 to AED 20,000, dependent on "
+        "experience",
+        "teamtailor",
+    )
+    assert span2 == SalarySpan(12000 * 12, 20000 * 12, "AED", "regex")
+    # The general (non-AED) case: an already-registered code, leading instead of trailing.
+    assert from_description("Salary: USD 70,000-90,000 depending on experience") == SalarySpan(
+        70000, 90000, "USD", "regex"
+    )
+
+
+def test_description_aed_defibrillator_acronym_not_a_currency_false_positive():
+    # Real risk checked directly, salary-extraction pass 2026-08-22: "AED" is also the common
+    # English/Dutch abbreviation for "Automated External Defibrillator", appearing in healthcare/
+    # fitness job postings unrelated to compensation. A bare mention produces no match (nothing
+    # here looks like a labeled figure), and Dutch text using "AED's" for defibrillator units
+    # near an unrelated number stays correctly unmatched too — real text, not constructed.
+    assert from_description(
+        "Must be CPR and AED certified. This role requires standing for 8 hours per shift."
+    ) is None
+    assert from_description(
+        "Inmiddels staan er meer dan 5.000 AED's van Pulse4all in acht Europese landen "
+        "geinstalleerd"
+    ) is None
+
+
+def test_description_aed_company_revenue_not_salary():
+    # Real, lever pass (found via the AED addition's own cross-ATS diff): "AED 500 million" /
+    # "AED 2 billion" business-scale mentions, the same false-positive class the existing
+    # revenue/valuation guards already cover for other currencies.
+    assert from_description(
+        "management of large residential and retail real estate assets of over AED 500 "
+        "million in value. YOE in management required"
+    ) is None
+    assert from_description(
+        "real estate development projects with annual revenue of at least AED 2 billion. "
+        "FIELD OF EXPERIENCE required"
+    ) is None
+
+
+def test_description_stipend_label_recognized():
+    # Real, keka pass (2026-08-22): "stipend" is the standard term for an internship/trainee
+    # role's primary compensation in this corpus — 13 distinct companies, always the stated pay
+    # itself, not a side benefit alongside a separately-disclosed salary. The connector is a bare
+    # hyphen here ("Stipend-"), not the colon every other label already handled.
+    span = extract(
+        None,
+        "Duration: 3 months Stipend- 15000 INR/ month. About BECO BECO is a revolutionary "
+        "home care company",
+        "keka",
+    )
+    assert span == SalarySpan(15000 * 12, None, "INR", "regex")
+
+
 def test_description_none_or_empty():
     assert from_description(None) is None
     assert from_description("") is None
@@ -477,6 +561,29 @@ def test_guard_401k_benefit_list_does_not_reject_a_real_salary():
         "workable",
     )
     assert span2 == SalarySpan(71700, 85300, "USD", "regex")
+
+
+def test_guard_401k_itself_not_misread_as_the_salary_figure():
+    # A DIFFERENT 401(k) risk from the one above: there, "401(k)" sits NEAR a real match and must
+    # not suppress it. Here, "401k" IS what gets matched — real, found via the label+hyphen-
+    # connector fix (keka pass, 2026-08-22) combining with the pre-existing "k" shorthand:
+    # "Equity compensation - 401K program" reads as label "compensation" + connector "-" + "401"
+    # + k-shorthand, misreading the retirement-plan name as $401,000. _has_false_positive_context
+    # can't catch this — "401k" is the matched number itself, not context around it.
+    assert from_description(
+        "Equity compensation - 401K program with 3% matching for all employees"
+    ) is None
+    # The real match this exact text pattern was found to be crowding out is recovered once the
+    # guard is in place, not just silenced to None.
+    span = from_description(
+        "The base compensation for this role is $146,500-$175,000. When determining "
+        "compensation BENEFITS - Equity compensation - 401K program with 3% matching"
+    )
+    assert span == SalarySpan(146500, 175000, "USD", "regex")
+    # A genuine "$50k-$60k" shorthand range must still work — this isn't a blanket ban on "k".
+    assert from_description("Salary: $50k - $60k depending on experience") == SalarySpan(
+        50000, 60000, "USD", "regex"
+    )
 
 
 def test_guard_trigger_word_well_after_match_still_caught():
@@ -1104,3 +1211,48 @@ def test_description_pay_transparency_provision_boilerplate_not_a_commission_gua
     )
     span = from_description(text)
     assert span == SalarySpan(146500, 183000, "USD", "regex")
+
+
+def test_description_l_suffix_lakh_shorthand_recognized():
+    # keka pass, 2026-08-22: "L" (lakh, x100,000) alongside the existing "k" shorthand — real,
+    # label-anchored evidence across 5 companies ("Compensation: ₹30L to ₹50L", "Salary : INR
+    # 3.0L to 4.5L", "CTC - 7L-8L/annum").
+    assert from_description(
+        "Compensation: ₹30L to ₹50L cash, plus an equity component.", ats="keka"
+    ) == SalarySpan(3_000_000, 5_000_000, "INR", "regex")
+    assert from_description(
+        "Salary : INR 3.0L to 4.5L Position : Full-time", ats="keka"
+    ) == SalarySpan(300_000, 400_000, "INR", "regex")
+
+
+def test_description_l_suffix_does_not_swallow_lakhs_word():
+    # The trailing \b on the "L" alternative (unlike "k", which has none) is what keeps this from
+    # partially matching "Lakhs"/"Location"/any other L-word as if it were the shorthand — real
+    # keka text, an insurance-coverage mention that must NOT be misread as a salary via a label
+    # this pass also added ("stipend"/"ctc" aren't present here, so this exercises the boundary
+    # directly rather than relying on a label absence to keep it safe).
+    text = "Medical Insurance: Benefits of group insurance of 3 lakhs for family including spouse."
+    assert from_description(text, ats="keka") is None
+
+
+def test_description_ctc_label_recognized():
+    # keka pass, 2026-08-22: "CTC" (Cost To Company, India's standard total-compensation term) —
+    # real, 33 distinct companies, evidenced independently of the "L" suffix above (a plain
+    # "to"-range with an explicit "Per month" period marker, no L-shorthand involved).
+    span = from_description(
+        "www.gibs.edu.in CTC :20000 to 25000 Per month + Incentives", ats="keka"
+    )
+    assert span == SalarySpan(240_000, 300_000, None, "regex")
+
+
+def test_guard_ctc_business_unit_name_not_a_salary_label():
+    # Real collision risk, checked directly (same discipline as the AED/401(k) acronym checks):
+    # "CTC" also names an unrelated business unit in real keka text, with no digit anywhere near
+    # the label the way _LABELED's own narrow connector requires — must stay None, not misread the
+    # far-away audit-department figures elsewhere in the posting as this unit's compensation.
+    text = (
+        "The purpose of this role is to investigate, analyze, and validate Freight charges for "
+        "CTC Business units. The Freight Audit Representative will be involved in creating "
+        "efficiencies, documenting new processes, and ensuring knowledge is transferred."
+    )
+    assert from_description(text, ats="keka") is None

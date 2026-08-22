@@ -134,7 +134,7 @@ the planning record; the table below is the live status.
 | personio | 2,534 (2,534 sampled, 2,510 clean; 2,992 was a stale liveness snapshot) | done | 10.7% field, 10.5% overall (corrected, was 10.2% — see personio.md's "Post-merge coverage audit" for the full investigation and its real, hand-traced side effects on every other ATS below) | [personio.md](personio.md) |
 | rippling | 2,062 (2,062 sampled, 2,058 clean; 2,941 was a stale liveness snapshot) | done | 24.3% field, 46.4% overall | [rippling.md](rippling.md) |
 | lever | 2,179 (2,187 sampled pre-fix, 2,165 clean; 2,784 was a stale liveness snapshot; 8 vendor demo tenants found and excluded, PR #246) | done | 30.5% field, 41.3% overall | [lever.md](lever.md) |
-| keka | 916 | not started | — | — |
+| keka | 819 (819 sampled, full population; 916 was a stale liveness snapshot; 2 vendor demo tenants found and excluded, PR #248) | done | 27.8% field, 29.1% overall | [keka.md](keka.md) |
 | darwinbox | 446 | not started | — | — |
 | ripplehire | 79 | not started | — | — |
 | successfactors | 2,204 | not started | — | — |

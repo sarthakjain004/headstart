@@ -253,6 +253,35 @@ def test_keka_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def test_keka_salary_no_scientific_notation_for_large_amounts():
+    # Real bug, salary-extraction pass 2026-08-22: Python's `:g` format (the previous
+    # implementation) switches to scientific notation ("1e+06") for values >= 1,000,000 — neither
+    # headstart.salary's _RANGE regex nor _num() can parse an exponent, so every genuine keka
+    # figure at or above ₹1,000,000 was silently discarded. 27% of a 300-job sample of rejected
+    # Job.salary values showed this shape, across 19 distinct companies. Fixing it recovered
+    # ~1,550 jobs on re-measurement (Tier 1 coverage 15.8% -> 27.8% of the full sampled corpus).
+    from headstart.scrapers.keka import _salary
+
+    assert _salary({"minimum": 500000.0, "maximum": 1000000.0, "currency": "INR"}) == (
+        "500000-1000000 INR"
+    )
+    assert _salary({"minimum": 1000000.0, "maximum": 1800000.0, "currency": "INR"}) == (
+        "1000000-1800000 INR"
+    )
+    assert _salary({"minimum": 4000000.0, "maximum": 5000000.0, "currency": "INR"}) == (
+        "4000000-5000000 INR"
+    )
+    # A bare single value at or above the same threshold (the `lo or hi` ceiling-only branch).
+    assert _salary({"minimum": 0.0, "maximum": 2000000.0, "currency": "INR"}) == (
+        "2000000 INR"
+    )
+    # Small LPA-shorthand decimals (well below the threshold) stay exactly as before.
+    assert _salary({"minimum": 2.5, "maximum": 3.5, "currency": "INR"}) == "2.5-3.5 INR"
+    assert _salary({"minimum": 25000.0, "maximum": 30000.0, "currency": "INR"}) == (
+        "25000-30000 INR"
+    )
+
+
 def _keka_stub_get(portal, page="", jobs="[]"):
     """Stub BaseScraper._get, dispatching on the requested URL (careerportalinfo / careers page /
     embedjobs) so KekaScraper.fetch_raw can be exercised without network."""
