@@ -21,29 +21,36 @@ def _text(pos: ET.Element, tag: str) -> str | None:
     return e.text.strip() if e is not None and e.text and e.text.strip() else None
 
 
-#: Personio's own `<type>` values ("yearly"/"monthly"/"hourly", confirmed real; "daily"/"weekly"
-#: not yet observed but the same naming convention, included for completeness) don't match
-#: `_period_multiplier_structured`'s bare-word regex (`\bmonth\b` etc. — no boundary between "h"
-#: and "l" in "monthly"), so map to the recognized word here rather than widen that shared regex
-#: for a single ATS's own suffix convention.
-_PERIOD_WORD = {
-    "yearly": "year",
-    "monthly": "month",
-    "hourly": "hour",
-    "daily": "day",
-    "weekly": "week",
-}
-
-
 def _salary(pos: ET.Element) -> str | None:
     """A real, structured `<salaryInformation>` element (`<min>`/`<max>`/`<currencyCode>`/
-    `<type>`) formatted as "50000-70000 EUR year" — the same RANGE + CODE + interval shape
+    `<type>`) formatted as "50000-70000 EUR yearly" — the same RANGE + CODE + interval shape
     `_field_range_currency_interval` already parses for lever/recruitee/teamtailor/ashby. Found
     via direct API inspection (2026-08-22): 13.4% of positions carry this structured element; the
     scraper previously read only `<salaryInformation>`'s own direct text via `_text()`, which is
     always empty when the element is structured like this (`.text` is the text *before* the first
     child, and Personio never puts any there) — so this was a real, silent Tier-1 dead end, not a
-    genuinely-absent field. `min` is always present when the element carries content; `max` is
+    genuinely-absent field.
+
+    `<type>`'s real values ("yearly"/"monthly"/"hourly" — confirmed, 80 real boards) are passed
+    through unmapped, on purpose: `_period_multiplier`'s own hardcoded phrase checks already
+    recognize bare "monthly"/"hourly" as substrings, and "yearly" already gets the correct
+    multiplier (1) from that function's own annual default — verified directly, not assumed, that
+    `from_field()` on each of these three raw strings already returns the correct span with no
+    mapping at all. An earlier version of this function mapped `<type>` to `_period_multiplier_
+    structured`'s bare-word set ("month"/"hour"/etc.) on the assumption the "-ly" suffix would
+    break word-boundary matching — true for that function, irrelevant in practice, since
+    `_period_multiplier` runs first and already handles every real value; code review caught the
+    mapping was speculative generality (3 of 5 entries provably redundant, the other 2 —
+    "daily"/"weekly" — unevidenced in any real sample) and it was removed. An unrecognized
+    `<type>` (or a genuinely absent one) safely defaults to the annual multiplier and gets caught
+    by `_bounded`'s plausibility floor if that default is wrong for the real value, same as any
+    other unrecognized period marker elsewhere in this module — a decline, not a silent
+    corruption.
+
+    `min` is present whenever `<salaryInformation>` carries any content in every real element
+    checked (0 max-only/no-min cases across 94 real structured elements, live-checked 2026-08-22
+    specifically because ashby.md flagged this exact shape — a ceiling with no stated floor — as
+    an unresolved risk for any future caller of `_field_range_currency_interval`); `max` is
     sometimes absent (a fixed-rate or floor-only figure) — left as a bare single value for
     `_field_range_currency_interval`'s own `_SINGLE_NUM` fallback to handle, not guessed at as a
     range.
@@ -65,7 +72,7 @@ def _salary(pos: ET.Element) -> str | None:
         else (lo if lo is not None else hi)
     )
     code = sal.findtext("currencyCode")
-    period = _PERIOD_WORD.get((sal.findtext("type") or "").strip().lower())
+    period = sal.findtext("type")
     return " ".join(x for x in (span, code, period) if x)
 
 

@@ -39,12 +39,24 @@ reason: XML text is always a string, so the ashby-class truthy bug can't reach i
 - **Fixed at the source**: new `_salary(pos)` in `personio.py` reads `<min>`/`<max>`/
   `<currencyCode>`/`<type>` and formats `"MIN-MAX CODE period"` (or `"MIN CODE period"` for a
   floor/fixed-rate-only tier, no `<max>`) — the same shape `_field_range_currency_interval`
-  already parses for lever/recruitee/teamtailor/ashby. Personio's own `<type>` values
-  ("yearly"/"monthly"/"hourly", all three confirmed real; "daily"/"weekly" not observed but the
-  same naming convention) don't match `_period_multiplier_structured`'s bare-word regex — the
-  "-ly" suffix breaks the `\bmonth\b`-style word-boundary check — so `_PERIOD_WORD` maps each to
-  the already-recognized word in `personio.py` itself, a narrow, local fix rather than widening a
-  shared regex for one ATS's own suffix convention. Registered `"personio"` in `_FIELD_PARSERS`.
+  already parses for lever/recruitee/teamtailor/ashby. Registered `"personio"` in
+  `_FIELD_PARSERS`.
+- **A `<type>`-mapping mechanism was built, then removed after code review showed it was
+  unnecessary — the assumption behind it was never directly tested before shipping.** The first
+  version assumed personio's own `<type>` values ("yearly"/"monthly"/"hourly", all three confirmed
+  real) wouldn't match `_period_multiplier_structured`'s bare-word regex — true of that specific
+  function, but irrelevant, since `_period_multiplier` (checked *first*, in the shared cascade)
+  already has its own hardcoded "monthly"/"hourly" substring checks and an annual default that
+  already gives "yearly" the correct multiplier with no mapping at all. Standards review ran the
+  actual code and found 3 of the mapping's 5 entries were provably redundant (identical output
+  mapped or not) and the remaining 2 ("daily"/"weekly") were unevidenced in any real sample —
+  speculative generality on both counts. Verified directly before removing it, not just on the
+  reviewer's say-so: `from_field()` on each of the three real, raw, unmapped `<type>` strings
+  already returns the correct span. `<type>` now passes through to `_field_range_currency_interval`
+  unmapped; an unrecognized value (or a genuinely-absent one) safely defaults to the annual
+  multiplier and gets caught by `_bounded`'s plausibility floor if that default is wrong for the
+  real value — a decline, not a silent corruption, the same safe-failure shape every other
+  unrecognized period marker in this module already has.
 - **Two existing tests needed the same swap ashby's own pass caused, and were fixed to stop this
   from recurring a third time**: `test_field_generic_bare_word_period_not_recognized_in_free_text`
   and `test_field_generic_up_to_states_a_ceiling_not_a_floor` used "personio" as `_field_generic`'s
@@ -52,6 +64,24 @@ reason: XML text is always a string, so the ashby-class truthy bug can't reach i
   synthetic `"some-new-ats"` placeholder (already established elsewhere in the same test file for
   "any ATS with no calibrated parser") rather than a third real ATS name that a future pass could
   just as easily move off `_field_generic` again.
+- **A follow-up ashby.md itself asked for was checked, not skipped**: ashby.md's own "Known gaps"
+  flagged the max-set/min-unset shape (a ceiling with no stated floor) as "worth a direct re-check
+  on the next pass that touches this parser," since `_field_range_currency_interval`'s
+  `_SINGLE_NUM` fallback reads any bare single value as a floor — inverting a real ceiling-only
+  disclosure the same way the ashby zero-value bug once did. Checked directly against 94 real
+  structured `<salaryInformation>` elements across 80 boards: 0 max-only cases, 8 min-only
+  (floor-only, the safe, already-handled direction), 86 with both bounds. Real, zero-evidence
+  gap — same conclusion ashby's own pass reached for the identical shape — now documented with
+  personio's own measurement rather than left as an inherited, unverified assumption.
+- **A code-review finding on shared logic shape, considered and deliberately deferred, not
+  ignored**: `_salary()`'s `is not None` span-ternary is structurally close to `ashby.py`'s own
+  (and, with truthiness instead, `recruitee.py`'s) — Standards review flagged it as worth a shared
+  helper before a third ATS copies the shape again. Not extracted here: unifying it would mean
+  deciding whether to standardize on the stricter `is not None` check across all three
+  (`recruitee.py`'s own truthy choice was itself a deliberate, already-reviewed, evidence-backed
+  decision for its string-typed fields, not an oversight) — a real design call that would touch an
+  already-merged, unrelated file, out of scope for a surgical personio-only pass. Left as a
+  documented, considered "not now" rather than silently accepted or silently ignored.
 - **Tier-1 residual failures (136 of 2,076 field-present jobs, 6.6%) traced to their root cause,
   not just counted**: every one is an unsupported currency, and every one of those traces to
   exactly ONE company each — GEL/BGN/CRC/LKR all from a single globally-distributed remote-first
@@ -160,9 +190,13 @@ flags.
   currency** — six distinct currencies observed from one company alone (EUR plus five unsupported
   ones), a reminder — echoing zoho's `ascor` and recruitee's `rebootmonkey` — that a repeat-poster
   can make a currency-diversity finding look broader than the real evidence supports.
-- **Personio's own `<type>` "-ly" suffix convention doesn't match the shared bare-word period
-  regex** — a narrow, ATS-local mapping fix, not a shared-regex change, since the underlying
-  words ("year"/"month"/"hour") are already correctly recognized once the suffix is stripped.
+- **An assumption about personio's own `<type>` "-ly" suffix turned out wrong on direct testing**
+  — it looked like it would break the shared bare-word period regex, but the *other*, phrase-based
+  checker in the same cascade already recognizes "monthly"/"hourly" as literal substrings and
+  already annual-defaults "yearly" correctly, so no mapping was actually needed. Worth remembering
+  as a pattern: check what the EXISTING code already does with a raw value before building a
+  translation layer for it, not just whether the specific function you're about to feed it into
+  would fail.
 - **A DACH-region-dominant, heavily non-English description corpus** — the most lopsided
   language split measured in this initiative so far (79.8% German).
 - **A Vercel bot-mitigation challenge as a third distinct rate-limit-adjacent failure shape** —
@@ -195,21 +229,24 @@ predominantly non-disclosing even where it is English.
 ## What changed in code, and why
 
 - `src/headstart/scrapers/personio.py`: new `_salary(pos)` reading the structured
-  `<salaryInformation>` element instead of its own (always-empty-when-structured) direct text;
-  new `_PERIOD_WORD` mapping personio's "-ly"-suffixed `<type>` values to the bare words
-  `_period_multiplier_structured` already recognizes. `url()` is unchanged (the XML feed was
-  already being fetched in full; the fix only changes which part of the already-parsed document
-  `parse()` reads for `salary=`) — confirmed no `verify-search-filters` re-run is needed, since
-  that skill exists to catch a URL-shape gap and none changed here.
+  `<salaryInformation>` element instead of its own (always-empty-when-structured) direct text,
+  passing `<type>` through to `_field_range_currency_interval` unmapped (see Methods tried for why
+  a mapping layer was built, then removed, during this same pass). `url()` is unchanged (the XML
+  feed was already being fetched in full; the fix only changes which part of the already-parsed
+  document `parse()` reads for `salary=`) — confirmed no `verify-search-filters` re-run is needed,
+  since that skill exists to catch a URL-shape gap and none changed here.
 - `src/headstart/salary.py`: registered `"personio"` in `_FIELD_PARSERS` → the existing
   `_field_range_currency_interval` (now a 5th caller); docstring updated to describe personio's
-  own real shape. No other change — the function's own logic didn't need to change for personio's
-  data (unlike ashby's pass, which needed a WEEK-interval and bare-single-value fix, or
-  recruitee's, which needed new currency support).
-- `tests/test_salary.py`: 2 new tests
-  (`test_field_range_currency_interval_personio_structured_tier`, covering both the range and
-  single-value-floor shapes) plus 2 existing tests rewritten to stop using "personio" as
-  `_field_generic`'s free-text example (see Methods tried).
+  own real shape; 3 stale comments naming ashby/personio as `_field_generic`'s canonical free-text
+  examples (now both moved off it) generalized to "any ATS with no dedicated parser," catching a
+  staleness pattern this same pass had already fixed once in `tests/test_salary.py` but initially
+  missed in `salary.py` itself (code-review finding). No functional logic changed — the function's
+  own parsing didn't need to change for personio's data (unlike ashby's pass, which needed a
+  WEEK-interval and bare-single-value fix, or recruitee's, which needed new currency support).
+- `tests/test_salary.py`: 1 new test function
+  (`test_field_range_currency_interval_personio_structured_tier`, 3 assertions covering the range,
+  floor-only-single-value, and hourly shapes) plus 2 existing tests rewritten to stop using
+  "personio" as `_field_generic`'s free-text example (see Methods tried).
 - `tests/test_scrapers.py`: 1 new parametrized test
   (`test_personio_salary_from_structured_salary_information`, 5 cases: a range, a floor-only
   single value, an hourly rate, an empty `<salaryInformation>`, and no element at all).
@@ -273,3 +310,13 @@ change shared logic and therefore had real, non-zero, hand-traced diffs to repor
   broad multi-company evidence in a raw scan — always check distinct-company counts before
   treating a currency-prevalence number as real population evidence, a lesson zoho's `ascor` and
   recruitee's `rebootmonkey` already taught and personio's `flatrock` confirms generalizes.
+- **New, caught by code review rather than caught before shipping**: an assumption that a raw
+  value "won't match" some function's recognition logic needs to be tested against what actually
+  happens end-to-end, not reasoned about from reading that one function's pattern in isolation.
+  `_PERIOD_WORD` was built because "monthly" doesn't match `_period_multiplier_structured`'s
+  `\bmonth\b` bare-word check — true, but irrelevant, because `_period_multiplier` (checked
+  *first*, in the same cascade) already recognizes "monthly"/"hourly" as literal substrings and
+  already annual-defaults "yearly" correctly. The fix would have been unnecessary from the start
+  if `from_field()` had been run on the raw, unmapped value before building a translation layer
+  for it — a two-line check that would have caught this before it ever reached review. Do that
+  check first on any future "this won't be recognized" assumption, not just when a reviewer asks.

@@ -82,11 +82,14 @@ def extract(
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
 # Mostly OUR OWN output shapes (each scraper's private `_salary()`-style helper: lever, recruitee,
-# teamtailor, keka, darwinbox each get a calibrated `_field_*` parser below) — but not always: an
-# ATS with no dedicated parser falls through to `_field_generic`, and at least two (ashby, personio
-# — corrected claim, code review, PR #238) pass an HR system's own raw free-text field straight
-# into `Job.salary` with zero scraper-side normalization, so `_field_generic` has to treat its
-# input as organic free text too, not assume it's one of our own formats.
+# teamtailor, ashby, personio, keka, darwinbox each get a calibrated `_field_*` parser below) — but
+# not always: an ATS with no dedicated parser falls through to `_field_generic`, and any such ATS
+# may pass an HR system's own raw free-text field straight into `Job.salary` with zero scraper-side
+# normalization (corrected claim, code review, PR #238 — ashby and personio were both once believed
+# to be exactly this, until each pass's own direct API inspection found a structured field one
+# level deeper instead; check freshly for every new ATS rather than assuming either way), so
+# `_field_generic` has to treat its input as organic free text too, not assume it's one of our own
+# formats.
 
 # Shared alternation for the ISO codes this module recognizes — several independent regexes
 # below embed it; kept as one string (code review finding, PR #235) so they can't drift apart.
@@ -138,7 +141,8 @@ def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
 def _period_multiplier(text: str) -> int:
     """Phrase-shaped period markers only ("per hour", "/hr", "monthly", ...) — safe for ANY
     Tier-1 field value, including one that's genuinely free text an HR system supplied verbatim
-    (ashby, personio, darwinbox — see the Tier-1 section comment above). Used directly by
+    (darwinbox, or any ATS with no dedicated `_field_*` parser that falls to `_field_generic` —
+    see the Tier-1 section comment above). Used directly by
     `_field_generic` and `_field_darwinbox`; see :func:`_period_multiplier_structured` for the
     narrower, bare-word-recognizing variant safe only for known-structured field shapes."""
     low = text.lower()
@@ -211,7 +215,7 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
     """lever: "50000-70000 USD per-year-salary" | recruitee: "50000-70000 EUR per year" |
     teamtailor: "40000-60000 EUR YEAR" | ashby: "80000-100000 USD 1 YEAR" (assembled by
     ashby.py's own `_salary()` from the structured Salary-typed `compensationTiers[].components[]`
-    entry) | personio: "48000 EUR year" (assembled by personio.py's own `_salary()` from the
+    entry) | personio: "48000.00 EUR yearly" (assembled by personio.py's own `_salary()` from the
     structured `<salaryInformation><min>/<max>/<currencyCode>/<type>` element — `_text()`'s prior
     read of the element's own direct text was always empty for this shape, a real Tier-1 dead end
     fixed the same way ashby's own was) — the "fix ambiguity at the source" latitude the
@@ -301,9 +305,10 @@ def _field_generic(value: str) -> SalarySpan | None:
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
     if single:
-        # Real free-text ATS fields reach this branch (ashby, personio — see the Tier-1 section
-        # comment above), so the same ceiling-vs-floor risk Tier 2 has applies here too: "Up to
-        # €50,000" would otherwise misreport €50,000 as a floor (code review, PR #238).
+        # Real free-text ATS fields reach this branch (any ATS with no dedicated `_field_*`
+        # parser — see the Tier-1 section comment above), so the same ceiling-vs-floor risk
+        # Tier 2 has applies here too: "Up to €50,000" would otherwise misreport €50,000 as a
+        # floor (code review, PR #238).
         if _states_a_ceiling_only(value, single.start(1)):
             return None
         v = _num(single.group(1)) * mult

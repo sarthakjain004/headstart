@@ -132,14 +132,20 @@ def test_field_range_currency_interval_personio_structured_tier():
     # this shape from the structured <salaryInformation><min>/<max>/<currencyCode>/<type> element
     # (see the personio-structured test in test_scrapers.py for the raw-object extraction itself)
     # — a genuine range+currency+interval string, not free text. personio's own <type> values
-    # ("yearly"/"monthly"/"hourly") are mapped to the bare words this function already recognizes
-    # (personio.py's own _PERIOD_WORD) before reaching here, since "monthly" itself doesn't match
-    # the \bmonth\b boundary check.
-    assert from_field("3200.00-4600.00 EUR month", "personio") == SalarySpan(
+    # ("yearly"/"monthly"/"hourly") reach this function UNMAPPED, on purpose: an earlier version
+    # mapped them to _period_multiplier_structured's bare-word set, assuming the "-ly" suffix
+    # would break word-boundary matching — code review found this was speculative (3 of 5 map
+    # entries provably redundant, the other 2 unevidenced) and it was removed once direct testing
+    # confirmed _period_multiplier's own hardcoded "monthly"/"hourly" checks and annual default
+    # already handle every real value correctly with no mapping at all.
+    assert from_field("3200.00-4600.00 EUR monthly", "personio") == SalarySpan(
         3200 * 12, 4600 * 12, "EUR", "field"
     )
-    assert from_field("48000.00 EUR year", "personio") == SalarySpan(
+    assert from_field("48000.00 EUR yearly", "personio") == SalarySpan(
         48000, None, "EUR", "field"
+    )
+    assert from_field("25.00 GBP hourly", "personio") == SalarySpan(
+        25 * 2080, None, "GBP", "field"
     )
 
 

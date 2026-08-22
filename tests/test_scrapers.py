@@ -1502,18 +1502,18 @@ def test_personio_parse():
             """<position><salaryInformation><min>3200.00</min><max>4600.00</max>
             <currencyCode>EUR</currencyCode><currencySymbol>€</currencySymbol>
             <type>monthly</type></salaryInformation></position>""",
-            "3200.00-4600.00 EUR month",
+            "3200.00-4600.00 EUR monthly",
         ),
         (
             """<position><salaryInformation><min>48000.00</min>
             <currencyCode>EUR</currencyCode><currencySymbol>€</currencySymbol>
             <type>yearly</type></salaryInformation></position>""",
-            "48000.00 EUR year",
+            "48000.00 EUR yearly",
         ),
         (
             """<position><salaryInformation><min>25.00</min>
             <currencyCode>GBP</currencyCode><type>hourly</type></salaryInformation></position>""",
-            "25.00 GBP hour",
+            "25.00 GBP hourly",
         ),
         ("<position><salaryInformation></salaryInformation></position>", None),
         ("<position></position>", None),
@@ -1523,10 +1523,12 @@ def test_personio_salary_from_structured_salary_information(position_xml, expect
     """Real, direct API inspection (2026-08-22, PR #243): personio's <salaryInformation> element
     is structured (min/max/currencyCode/type), one level deeper than the direct element text
     _text() used to read — always empty for this shape, so this was a real Tier-1 dead end, not
-    genuinely-absent data. 13.4% of positions carry it in a live 80-board sample. <type> values
-    ("yearly"/"monthly"/"hourly") are mapped to the bare period words _field_range_currency_
-    interval already recognizes, since the "-ly" suffix itself doesn't match that word-boundary
-    check."""
+    genuinely-absent data. 13.4% of positions carry it in a live 80-board sample. <type> passes
+    through unmapped: an earlier version mapped "yearly"/"monthly"/"hourly" to the bare words
+    _period_multiplier_structured recognizes, on the assumption the "-ly" suffix broke that
+    function's word-boundary check — code review found this was speculative (3 of 5 map entries
+    provably redundant, since _period_multiplier's own hardcoded checks and annual default
+    already handle every real value correctly) and it was removed."""
     from headstart.scrapers.personio import _salary
 
     pos = ET.fromstring(position_xml)
