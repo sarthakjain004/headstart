@@ -15,13 +15,28 @@ to the rendered ``<div class="jobdesciption">`` container (that's the tenant tem
 spelling, not a typo here). Detail pages go through curl_cffi (TLS impersonation) since they
 sit behind the same DataDome edge; a failed fetch leaves description None — the job is still
 kept.
+
+**Known gap, under active investigation (2026-08-22): the careers page above silently caps at
+25 rendered job cards.** Confirmed live on a real board (exotel: 25 rendered, 45 real, via its
+RSS feed) and measured at ~10% of a random live-board sample hitting the cap. Trakstar also
+serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``/
+``fetch_via_feed`` below) that carries every job with no such cap, embeds the full description
+inline (no per-job detail fetch needed), and — unlike the detail pages — is reachable through
+plain ``http.fetch`` with no DataDome/curl_cffi involved (confirmed: 0 errors across 40 sampled
+boards). It is NOT universal (~2.5% of tenants 404, confirmed: sleekr), so it can't unconditionally
+replace the path above yet. ``fetch_via_feed`` (below) exposes it as a second, independent entry
+point so ``scripts/eval/trakstar_feed_compare.py`` can call both paths on the same boards and
+compare their real output at scale before any cutover — it is deliberately not wired into
+``fetch_raw()``/``parse()`` yet, and a normal scrape run still uses only the path above.
 """
 
 from __future__ import annotations
 
+import email.utils
 import html as _html
 import json
 import re
+import xml.etree.ElementTree as ET
 from typing import Any
 
 from headstart import http
@@ -43,6 +58,25 @@ _JSONLD = re.compile(
 _DESC_DIV = re.compile(r'<div class="jobdesciption">', re.IGNORECASE)
 _DIV_TAG = re.compile(r"<div\b|</div\s*>", re.IGNORECASE)
 _DETAIL_WORKERS = 4  # detail pages sit behind DataDome — keep the concurrency gentle
+
+# The RSS feed's own XML namespace for its job:* elements (locationCity/State/Country, team,
+# positionType) — confirmed via the feed's own <channel xmlns:job="..."> declaration, not
+# guessed.
+_FEED_NS = {"job": "https://recruiterbox.com/rss/job/"}
+_FEED_CODE = re.compile(r"/jobs/([^/]+?)/?$")
+# The feed's own <description> embeds a duplicate "Location: ..." line (<h2 id="job_meta">)
+# before the real content and an "Apply to this job" link (<div id="how_to_apply">) after —
+# isolate just the real container, confirmed present across every tenant checked (exotel,
+# dripcapital, hazelhawkins, colcare, 2026-08-22).
+_FEED_DESC_DIV = re.compile(r'<div id="job_description">', re.IGNORECASE)
+# Evidence: every job:positionType value seen across a 989-item, 50-board live sample
+# (2026-08-22) — full_time (942), part_time (24), contract (23), the rest unset. No other value
+# observed; left unmapped (None) rather than guessed at.
+_FEED_POSITION_TYPE = {
+    "full_time": "Full-time",
+    "part_time": "Part-time",
+    "contract": "Contract",
+}
 
 
 class TrakstarScraper(BaseScraper):
@@ -72,6 +106,21 @@ class TrakstarScraper(BaseScraper):
         self.report_detail_gaps(results, "JSON-LD postings")
         postings = dict(zip(codes, results))
         return {"html": html, "postings": postings}
+
+    def fetch_via_feed(self, scraped_at: str) -> list[Job] | None:
+        """Investigative alternate path, not yet wired into ``fetch_raw()``/``parse()`` — see
+        the module docstring's "Known gap" note. One request to the tenant's RSS feed
+        (``/jobfeeds/{slug}``) returns every job with its full description already inline, no
+        per-job detail fetch and no careers-page render cap. Returns ``None`` if the feed isn't
+        available for this tenant (404, or 200 with no parseable items) so a caller can fall
+        back to ``fetch_raw()``/``parse()`` — never raises past a missing feed."""
+        xml_text = _fetch_feed(self.slug)
+        if xml_text is None:
+            return None
+        items = _feed_items(xml_text)
+        if not items:
+            return None
+        return _jobs_from_feed(self.ats, self.slug, self.company, items, scraped_at)
 
     def _detail_url(self, code: str) -> str:
         return f"https://{self.slug}.hire.trakstar.com/jobs/{code}/"
@@ -187,3 +236,117 @@ def _html_description(html: str) -> str | None:
         if depth == 0:
             return html[match.end() : tag.start()]
     return None
+
+
+def _fetch_feed(slug: str) -> str | None:
+    """GET the tenant's RSS job feed. Reached through plain ``http.fetch``, not ``curl_cffi``:
+    unlike the per-job detail pages, it isn't behind DataDome (confirmed live, 0 errors across
+    40 sampled boards, 2026-08-22). Returns ``None`` on any non-200 (most commonly a 404 — the
+    feed isn't offered for every tenant, confirmed: sleekr) so a caller treats it as "fall back
+    to the HTML+JSON-LD path", never as "this board has no jobs"."""
+    try:
+        response = http.fetch(
+            "GET",
+            f"https://{slug}.hire.trakstar.com/jobfeeds/{slug}",
+            timeout=30,
+            headers={"User-Agent": USER_AGENT},
+        )
+    except http.RequestsError:
+        return None
+    if response.status_code != 200:
+        return None
+    return response.text
+
+
+def _feed_description(description_field: str) -> str | None:
+    """Isolate the ``<div id="job_description">`` container's inner HTML out of a feed item's
+    full ``<description>`` field (which also carries a duplicate "Location: ..." line before it
+    and an "Apply to this job" link after — see the module docstring). Open/close tag counting,
+    not a non-greedy regex, for the same nested-``<div>`` reason as ``_html_description``."""
+    match = _FEED_DESC_DIV.search(description_field)
+    if not match:
+        return None
+    depth = 1
+    for tag in _DIV_TAG.finditer(description_field, match.end()):
+        depth += -1 if tag.group(0).startswith("</") else 1
+        if depth == 0:
+            return description_field[match.end() : tag.start()]
+    return None
+
+
+def _feed_posted_at(pub_date: str | None) -> str | None:
+    """RFC-822 (the feed's own ``pubDate`` format, e.g. "Fri, 21 Aug 2026 00:00:00 +0530") to a
+    plain ISO date, matching the JSON-LD path's own ``datePosted`` convention. ``None`` on
+    anything unparseable rather than raising — a malformed date shouldn't drop the job."""
+    if not pub_date:
+        return None
+    try:
+        return email.utils.parsedate_to_datetime(pub_date).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def _feed_items(xml_text: str) -> list[dict] | None:
+    """Parse an RSS feed's ``<item>`` elements into plain dicts, one per posting. ``None`` if
+    the XML itself doesn't parse (shouldn't happen for a 200 response, but a caller must be able
+    to fall back rather than crash on a malformed feed)."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+    items = []
+    for item in root.iter("item"):
+        code_m = _FEED_CODE.search(item.findtext("link") or "")
+        if not code_m:
+            continue
+        location = ", ".join(
+            part
+            for part in (
+                item.findtext("job:locationCity", default="", namespaces=_FEED_NS),
+                item.findtext("job:locationState", default="", namespaces=_FEED_NS),
+                item.findtext("job:locationCountry", default="", namespaces=_FEED_NS),
+            )
+            if part
+        )
+        items.append(
+            {
+                "code": code_m.group(1),
+                "title": (item.findtext("title") or "").strip(),
+                "location": location or None,
+                "description": _feed_description(item.findtext("description") or ""),
+                "posted_at": _feed_posted_at(item.findtext("pubDate")),
+                "department": (
+                    item.findtext("job:team", default="", namespaces=_FEED_NS).strip()
+                    or None
+                ),
+                "employment_type": _FEED_POSITION_TYPE.get(
+                    item.findtext("job:positionType", default="", namespaces=_FEED_NS)
+                ),
+            }
+        )
+    return items
+
+
+def _jobs_from_feed(
+    ats: str, slug: str, company: str | None, items: list[dict], scraped_at: str
+) -> list[Job]:
+    """Build ``Job``s directly from :func:`_feed_items`' output — every field the HTML-card +
+    JSON-LD-detail path assembles across two fetches, from one. A free function (not a method)
+    so it's testable against a plain items list with no live scraper instance needed."""
+    return [
+        Job(
+            id=f"{ats}:{slug}:{item['code']}",
+            ats=ats,
+            company=company,
+            title=item["title"],
+            location=item["location"],
+            remote=is_remote(item["location"]),
+            department=item["department"],
+            url=f"https://{slug}.hire.trakstar.com/jobs/{item['code']}/",
+            posted_at=item["posted_at"],
+            scraped_at=scraped_at,
+            employment_type=item["employment_type"],
+            description=html_to_text(item["description"]),
+        )
+        for item in items
+    ]
