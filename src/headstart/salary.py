@@ -82,11 +82,14 @@ def extract(
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
 # Mostly OUR OWN output shapes (each scraper's private `_salary()`-style helper: lever, recruitee,
-# teamtailor, keka, darwinbox each get a calibrated `_field_*` parser below) — but not always: an
-# ATS with no dedicated parser falls through to `_field_generic`, and at least two (ashby, personio
-# — corrected claim, code review, PR #238) pass an HR system's own raw free-text field straight
-# into `Job.salary` with zero scraper-side normalization, so `_field_generic` has to treat its
-# input as organic free text too, not assume it's one of our own formats.
+# teamtailor, ashby, personio, keka, darwinbox each get a calibrated `_field_*` parser below) — but
+# not always: an ATS with no dedicated parser falls through to `_field_generic`, and any such ATS
+# may pass an HR system's own raw free-text field straight into `Job.salary` with zero scraper-side
+# normalization (corrected claim, code review, PR #238 — ashby and personio were both once believed
+# to be exactly this, until each pass's own direct API inspection found a structured field one
+# level deeper instead; check freshly for every new ATS rather than assuming either way), so
+# `_field_generic` has to treat its input as organic free text too, not assume it's one of our own
+# formats.
 
 # Shared alternation for the ISO codes this module recognizes — several independent regexes
 # below embed it; kept as one string (code review finding, PR #235) so they can't drift apart.
@@ -118,10 +121,11 @@ def _num(s: str) -> int:
 # an actual stated range ("up to $50,000-$60,000") already states both bounds regardless of the
 # connector, so it's unaffected. Shared by both tiers (not just Tier 2's description mining) —
 # code review, PR #238: Tier 1's `_field_generic` fallback has the identical bare-single-value
-# shape, and it's live-reachable, not theoretical: ashby/personio pass an HR system's raw free-text
-# field straight into `Job.salary` with no scraper-side normalization (unlike lever/recruitee/
-# teamtailor/keka/darwinbox, each of which has its own calibrated `_field_*` parser for a shape
-# *we* format), so "Up to €50,000" from either of those ATSes hit this exact bug too.
+# shape, and it's live-reachable, not theoretical: any ATS with no dedicated `_field_*` parser
+# passes an HR system's raw free-text field straight into `Job.salary` with no scraper-side
+# normalization (unlike lever/recruitee/teamtailor/ashby/personio/keka/darwinbox, each of which
+# has its own calibrated `_field_*` parser for a shape *we* format), so "Up to €50,000" from such
+# an ATS would hit this exact bug too.
 _CEILING_CONNECTOR_WINDOW = (
     15  # chars scanned before the number; mirrors _CONTEXT_WINDOW's naming
 )
@@ -138,7 +142,8 @@ def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
 def _period_multiplier(text: str) -> int:
     """Phrase-shaped period markers only ("per hour", "/hr", "monthly", ...) — safe for ANY
     Tier-1 field value, including one that's genuinely free text an HR system supplied verbatim
-    (ashby, personio, darwinbox — see the Tier-1 section comment above). Used directly by
+    (darwinbox, or any ATS with no dedicated `_field_*` parser that falls to `_field_generic` —
+    see the Tier-1 section comment above). Used directly by
     `_field_generic` and `_field_darwinbox`; see :func:`_period_multiplier_structured` for the
     narrower, bare-word-recognizing variant safe only for known-structured field shapes."""
     low = text.lower()
@@ -160,13 +165,14 @@ def _period_multiplier_structured(text: str) -> int:
     correctly-but-wrongly getting rejected by the plausibility bounds.
 
     Deliberately NOT the default `_period_multiplier` behavior, and used only by
-    `_field_range_currency_interval` (whose four callers — lever.py, recruitee.py, teamtailor.py,
-    ashby.py — all assemble their string from a structured min/max/currency/interval quad,
-    confirmed by reading each scraper's own formatter, never free text): a bare word is NOT safe
-    against genuine free text, where it can match an unrelated mention instead of the salary's own
-    period. Real, demonstrated regression caught by code review before merge (PR #239): applying
-    bare-word matching to `_field_generic` (personio's free-text fields — ashby moved OFF
-    `_field_generic` once its own compensation data turned out to be structured, PR #240) silently
+    `_field_range_currency_interval` (whose five callers — lever.py, recruitee.py, teamtailor.py,
+    ashby.py, personio.py — all assemble their string from a structured min/max/currency/interval
+    quad, confirmed by reading each scraper's own formatter, never free text): a bare word is NOT
+    safe against genuine free text, where it can match an unrelated mention instead of the
+    salary's own period. Real, demonstrated regression caught by code review before merge
+    (PR #239): applying bare-word matching to `_field_generic` (a genuinely free-text field, at
+    the time reached via ashby and personio — both later moved OFF `_field_generic` once their own
+    compensation data turned out to be structured, PR #240 and PR #243 respectively) silently
     misread "40,000 - 50,000 USD with 1 month severance included" as MONTHLY, 12x-inflating a
     correct annual figure into a wrong one that still happened to clear the plausibility bounds —
     a silent corruption, not a safe decline. `_field_darwinbox`'s `salary_timeframe` is equally
@@ -211,10 +217,14 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
     """lever: "50000-70000 USD per-year-salary" | recruitee: "50000-70000 EUR per year" |
     teamtailor: "40000-60000 EUR YEAR" | ashby: "80000-100000 USD 1 YEAR" (assembled by
     ashby.py's own `_salary()` from the structured Salary-typed `compensationTiers[].components[]`
-    entry — the "fix ambiguity at the source" latitude the salary-extraction plan already grants,
-    not organic text) — all converge on RANGE + CODE + optional period. Named for the shape, not
-    each ATS that happens to produce it (renamed from `_field_lever_recruitee_teamtailor` when
-    ashby joined — see CLAUDE.md's "re-check the name whenever what it does changes").
+    entry) | personio: "48000.00 EUR yearly" (assembled by personio.py's own `_salary()` from the
+    structured `<salaryInformation><min>/<max>/<currencyCode>/<type>` element — `_text()`'s prior
+    read of the element's own direct text was always empty for this shape, a real Tier-1 dead end
+    fixed the same way ashby's own was) — the "fix ambiguity at the source" latitude the
+    salary-extraction plan already grants, not organic text, for both. All converge on RANGE +
+    CODE + optional period. Named for the shape, not each ATS that happens to produce it (renamed
+    from `_field_lever_recruitee_teamtailor` when ashby joined — see CLAUDE.md's "re-check the
+    name whenever what it does changes").
 
     A bare SINGLE value with no range ("60000 USD 1 YEAR", "35 USD 1 HOUR") falls back to
     `_SINGLE_NUM` — real on ashby's structured data specifically (a fixed-rate tier with only one
@@ -278,6 +288,7 @@ _FIELD_PARSERS = {
     "recruitee": _field_range_currency_interval,
     "teamtailor": _field_range_currency_interval,
     "ashby": _field_range_currency_interval,
+    "personio": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
 }
@@ -296,9 +307,10 @@ def _field_generic(value: str) -> SalarySpan | None:
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _SINGLE_NUM.search(value)
     if single:
-        # Real free-text ATS fields reach this branch (ashby, personio — see the Tier-1 section
-        # comment above), so the same ceiling-vs-floor risk Tier 2 has applies here too: "Up to
-        # €50,000" would otherwise misreport €50,000 as a floor (code review, PR #238).
+        # Real free-text ATS fields reach this branch (any ATS with no dedicated `_field_*`
+        # parser — see the Tier-1 section comment above), so the same ceiling-vs-floor risk
+        # Tier 2 has applies here too: "Up to €50,000" would otherwise misreport €50,000 as a
+        # floor (code review, PR #238).
         if _states_a_ceiling_only(value, single.start(1)):
             return None
         v = _num(single.group(1)) * mult

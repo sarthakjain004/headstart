@@ -21,6 +21,61 @@ def _text(pos: ET.Element, tag: str) -> str | None:
     return e.text.strip() if e is not None and e.text and e.text.strip() else None
 
 
+def _salary(pos: ET.Element) -> str | None:
+    """A real, structured `<salaryInformation>` element (`<min>`/`<max>`/`<currencyCode>`/
+    `<type>`) formatted as "50000-70000 EUR yearly" — the same RANGE + CODE + interval shape
+    `_field_range_currency_interval` already parses for lever/recruitee/teamtailor/ashby. Found
+    via direct API inspection (2026-08-22): 13.4% of positions carry this structured element; the
+    scraper previously read only `<salaryInformation>`'s own direct text via `_text()`, which is
+    always empty when the element is structured like this (`.text` is the text *before* the first
+    child, and Personio never puts any there) — so this was a real, silent Tier-1 dead end, not a
+    genuinely-absent field.
+
+    `<type>`'s real values ("yearly"/"monthly"/"hourly" — confirmed, 80 real boards) are passed
+    through unmapped, on purpose: `_period_multiplier`'s own hardcoded phrase checks already
+    recognize bare "monthly"/"hourly" as substrings, and "yearly" already gets the correct
+    multiplier (1) from that function's own annual default — verified directly, not assumed, that
+    `from_field()` on each of these three raw strings already returns the correct span with no
+    mapping at all. An earlier version of this function mapped `<type>` to `_period_multiplier_
+    structured`'s bare-word set ("month"/"hour"/etc.) on the assumption the "-ly" suffix would
+    break word-boundary matching — true for that function, irrelevant in practice, since
+    `_period_multiplier` runs first and already handles every real value; code review caught the
+    mapping was speculative generality (3 of 5 entries provably redundant, the other 2 —
+    "daily"/"weekly" — unevidenced in any real sample) and it was removed. An unrecognized
+    `<type>` (or a genuinely absent one) safely defaults to the annual multiplier and gets caught
+    by `_bounded`'s plausibility floor if that default is wrong for the real value, same as any
+    other unrecognized period marker elsewhere in this module — a decline, not a silent
+    corruption.
+
+    `min` is present whenever `<salaryInformation>` carries any content in every real element
+    checked (0 max-only/no-min cases across 94 real structured elements, live-checked 2026-08-22
+    specifically because ashby.md flagged this exact shape — a ceiling with no stated floor — as
+    an unresolved risk for any future caller of `_field_range_currency_interval`); `max` is
+    sometimes absent (a fixed-rate or floor-only figure) — left as a bare single value for
+    `_field_range_currency_interval`'s own `_SINGLE_NUM` fallback to handle, not guessed at as a
+    range.
+
+    `lo`/`hi` are checked with `is not None`, not truthiness — XML text is always a string here
+    (`findtext` never returns a raw numeric type), so a real "0.00" would already be truthy and
+    this specific ashby-class bug can't occur (verified: 0 zero-valued and 0 non-string min/max
+    across a live 80-board check) — but the explicit check costs nothing and removes any doubt for
+    a future reader, given this exact shape has already caused a real bug once in this module."""
+    sal = pos.find("salaryInformation")
+    if sal is None:
+        return None
+    lo, hi = sal.findtext("min"), sal.findtext("max")
+    if lo is None and hi is None:
+        return None
+    span = (
+        f"{lo}-{hi}"
+        if lo is not None and hi is not None
+        else (lo if lo is not None else hi)
+    )
+    code = sal.findtext("currencyCode")
+    period = sal.findtext("type")
+    return " ".join(x for x in (span, code, period) if x)
+
+
 def _description(pos: ET.Element) -> str | None:
     """Concatenate the <jobDescription> sections (name + CDATA HTML value) into clean text."""
     block = pos.find("jobDescriptions")
@@ -94,7 +149,7 @@ class PersonioScraper(BaseScraper):
                     experience=_text(pos, "seniority")
                     or _text(pos, "yearsOfExperience"),
                     employment_type=" / ".join(x for x in (etype, sched) if x) or None,
-                    salary=_text(pos, "salaryInformation"),
+                    salary=_salary(pos),
                 )
             )
         return jobs
