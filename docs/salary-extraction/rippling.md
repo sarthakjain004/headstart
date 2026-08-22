@@ -97,15 +97,18 @@ replay of the frozen capture:
   to the hourly/annual classification logic in `_period_from_window`, since "an hour" already
   contains "hour" as a substring and is caught by the existing check.
 - **Genuine multi-value ambiguity, correctly surfaced, not a bug**: the mandatory cross-ATS diff
-  (below) found 4 cases across 3 other already-merged ATSes where the "an hour" fix made a
-  previously-invisible hourly mention visible, and that mention genuinely disagreed with another
-  real figure already in the same description (a second "between $X and $Y an hour" range at a
-  different rate; a company's own precomputed "($45,000 to $50,000 if annualized)" parenthetical
-  next to its hourly rate; a stated annual figure for an explicitly part-time role that doesn't
-  match a standard 40hr/week FTE annualization of its own hourly rate; an "on-target" wage
-  figure next to a separately-stated base hourly rate). Each hand-traced to its real source text,
-  not just counted — every one is the same pattern this initiative's personio pass already
-  established: a previously-masked genuine second figure, not new fabrication or a wrong number.
+  (below) found 4 distinct mechanisms across 3 other already-merged ATSes (5 job-level instances —
+  greenhouse's freedomcare mechanism recurs on 2 near-duplicate postings from the same company)
+  where the "an hour" fix made a previously-invisible hourly mention visible, and that mention
+  genuinely disagreed with another real figure already in the same description: a second "between
+  $X and $Y an hour" range at a different rate (greenhouse: freedomcare, both postings); a
+  company's own precomputed "($45,000 to $50,000 if annualized)" parenthetical next to its hourly
+  rate (greenhouse: pomelocare); a stated annual figure for an explicitly part-time role that
+  doesn't match a standard 40hr/week FTE annualization of its own hourly rate (zoho:
+  redliontruckstop); an "on-target" wage figure next to a separately-stated base hourly rate
+  (ashby: neofinancial). Each hand-traced to its real source text, not just counted — every one is
+  the same pattern this initiative's personio pass already established: a previously-masked
+  genuine second figure, not new fabrication or a wrong number.
 
 ## Coverage
 
@@ -156,9 +159,11 @@ every difference hand-traced to its exact source text, not just counted. Net: wo
 workday +28/−0, greenhouse +163/−2 (1 changed), smartrecruiters +13/−0, zoho +12/−1, teamtailor
 +11/−0, ashby +14/−0 (1 changed), recruitee +3/−0, personio +0/−0/0 changed (personio's own German
 corpus has no "an hour"-shaped English mentions, and isn't affected by a `rippling`-keyed field
-registration). All 4 losses/changes trace to the same mechanism described in Patterns found — a
-newly-visible genuine second figure, not a wrong extraction. A ~240-job net gain across the
-initiative's already-shipped ATSes from one narrow, well-evidenced period-marker addition.
+registration). Summed and verified, not approximated: 250 gains − 3 losses = **247 net new
+extractions** across the initiative's already-shipped ATSes, from one narrow, well-evidenced
+period-marker addition. The 5 job-level losses/changes (2 greenhouse lost + 1 greenhouse changed +
+1 zoho lost + 1 ashby changed) trace to the 4 distinct mechanisms described in Patterns found — a
+newly-visible genuine second figure, not a wrong extraction.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
