@@ -72,9 +72,104 @@ def test_ashby_parse_skips_unlisted():
     assert j.remote is True
     assert j.employment_type == "FullTime"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
-    assert j.salary == "$150K – $200K • Offers Equity"  # compensationTierSummary
+    # this fixture predates compensationTiers (only compensationTierSummary is present) — real,
+    # current ashby responses always carry the key (empty or populated); _salary() correctly
+    # returns None rather than falling back to the unstructured summary string (code review,
+    # PR #240 — see test_ashby_salary_from_structured_compensation_tier below for the real shape).
+    assert j.salary is None
     # the board URL must request compensation or the block is absent
     assert "includeCompensation=true" in get_scraper("ashby", "ramp", "Ramp").url()
+
+
+@pytest.mark.parametrize(
+    ("compensation", "expected"),
+    [
+        (
+            {
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 YEAR",
+                                "currencyCode": "USD",
+                                "minValue": 80000,
+                                "maxValue": 100000,
+                            }
+                        ]
+                    }
+                ]
+            },
+            "80000-100000 USD 1 YEAR",
+        ),
+        (
+            {
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 HOUR",
+                                "currencyCode": "USD",
+                                "minValue": 25,
+                                "maxValue": 30,
+                            }
+                        ]
+                    }
+                ]
+            },
+            "25-30 USD 1 HOUR",
+        ),
+        (
+            {
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "EquityPercentage",
+                                "interval": "NONE",
+                                "currencyCode": None,
+                                "minValue": None,
+                                "maxValue": None,
+                            }
+                        ]
+                    }
+                ]
+            },
+            None,
+        ),
+        (
+            {
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 TIME",
+                                "currencyCode": "EUR",
+                                "minValue": 650,
+                                "maxValue": 700,
+                            }
+                        ]
+                    }
+                ]
+            },
+            None,
+        ),
+        ({"compensationTiers": []}, None),
+        (None, None),
+    ],
+)
+def test_ashby_salary_from_structured_compensation_tier(compensation, expected):
+    """Real, direct API inspection (2026-08-22, code review PR #240): ashby's compensation object
+    carries a structured Salary-typed component (min/max/currency/interval) one level deeper than
+    the compensationTierSummary string this scraper used to extract — 34% of jobs have it
+    populated, close to 4x teamtailor's field-presence rate. A "1 TIME" interval (a one-off
+    payment, not a recurring salary — real: "Compensation per finished project") is deliberately
+    excluded rather than guessed at as annual."""
+    from headstart.scrapers.ashby import _salary
+
+    assert _salary(compensation) == expected
 
 
 def test_darwinbox_parse():
