@@ -128,10 +128,14 @@ def build_doc(job: dict) -> str:
 # already-shipped values across 5 ATSes (18 ashby, 53 greenhouse, 1 smartrecruiters, 1 teamtailor,
 # 9 zoho — re-verified directly against the frozen corpora, not transcribed from memory) from a
 # floor-only reading to the correct, fuller one — see docs/salary-extraction/trakstar.md.
-# Successfactors' pass was comment-only, no sweep-worthy change. Found while investigating a real
+# Successfactors' pass was comment-only, no sweep-worthy change. This bump was prompted by a real
 # user report (a live Ashby posting whose stated "€90,000 – €110,000 per year" wasn't reflected in
-# served data) — `extract()` itself returns the correct span for that exact text today, so the gap
-# is a stale already-indexed row, not a code defect; a version bump is the fix, not a new pattern.
+# served data) — `extract()` itself returns the correct span for that exact text today, confirming
+# there's no code defect to chase there. But that posting's own description carries only ONE salary
+# mention, so `_resolve()` never reaches the multi-span tie-break v5 actually fixes — this bump is
+# confirmed to correct 82 OTHER already-shipped values across 5 ATSes, not shown to explain that
+# specific posting, whose own gap (never-yet-scraped vs. genuinely stale vs. something else) is
+# still open and tracked separately, not resolved by this change.
 DERIVATIONS_VERSION = 5
 
 
