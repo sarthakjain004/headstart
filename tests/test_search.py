@@ -60,6 +60,7 @@ def test_eval_filters_combine_with_and():
 def _clause(**kw):
     kw.setdefault("atses", ("greenhouse", "lever"))
     kw.setdefault("has_first_seen", True)
+    kw.setdefault("has_min_salary_annual", True)
     return build_filter(**kw)
 
 
@@ -173,7 +174,9 @@ class _Query:
 
 
 class _Table:
-    schema = types.SimpleNamespace(names=["ats", "title", "first_seen"])
+    schema = types.SimpleNamespace(
+        names=["ats", "title", "first_seen", "min_salary_annual"]
+    )
 
     def __init__(self, rows):
         self.rows = rows
@@ -313,6 +316,43 @@ def test_filters_reach_the_where_clause():
     searcher.run({"q": "x", "remote": "true", "ats": "darwinbox"})
     assert "remote = true" in table.last_where
     assert "ats = 'darwinbox'" in table.last_where
+
+
+def test_has_salary_matches_a_description_only_derived_value():
+    # A Job whose only known salary is Tier-2-derived from the description (ADR-0082) has
+    # `salary` (the raw display string) null — it only ever gets populated from a scraper's
+    # own structured field. Filtering has_salary on `salary IS NOT NULL` alone silently
+    # excludes every description-only extraction, which is most of this initiative's own
+    # measured coverage on most ATSes. Real example: ashby:clera:17e1a31f-3923-4af4-8b40-
+    # 8fdbbc7c83d6 states "Salary range: €90,000 – €110,000 per year" only in
+    # its description; `salary` is null, `min_salary_annual`/`max_salary_annual` are not.
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "has_salary": "true"})
+    assert "min_salary_annual IS NOT NULL" in table.last_where
+    assert "salary IS NOT NULL" not in table.last_where
+
+
+def test_has_salary_stays_dark_without_the_column():
+    # Mirrors test_first_seen_filters_stay_dark_without_the_column: a table LanceDB hasn't
+    # migrated onto the ADR-0082 salary columns yet must not 500 on has_salary=true — the
+    # feature stays dark, like every other optional-column filter in this file.
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["ats", "title"])  # no salary columns
+    searcher = JobSearch(_Model(), table)
+    searcher.run({"q": "x", "has_salary": "true"})
+    assert table.last_where is None
+
+
+def test_run_projects_the_derived_salary_columns():
+    row = dict(_ROW)
+    row["min_salary_annual"] = 90000
+    row["max_salary_annual"] = 110000
+    row["salary_currency"] = "EUR"
+    table = _Table([row])
+    rows = JobSearch(_Model(), table).run({"q": "x"})
+    assert rows[0]["min_salary_annual"] == 90000
+    assert rows[0]["max_salary_annual"] == 110000
+    assert rows[0]["salary_currency"] == "EUR"
 
 
 def test_k_is_capped():
