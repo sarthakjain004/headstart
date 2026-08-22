@@ -141,5 +141,5 @@ the planning record; the table below is the live status.
 | trakstar | 968 (968 sampled, full population; 1,632 was a stale liveness snapshot; 3 vendor demo/QA tenants found and excluded, PR #255) | done | 0.00% field, 19.78% overall | [trakstar.md](trakstar.md) |
 | freshteam | 989 (989 sampled, full population; 1,412 was a stale liveness snapshot) | done | 0.00% field, 14.73% overall | [freshteam.md](freshteam.md) |
 | eightfold | 99 (99 sampled, full population; 103 was a stale liveness snapshot) | done | 0.00% field, 33.79% overall | [eightfold.md](eightfold.md) |
-| oracle | — (single-company) | not started | — | — |
-| sensehq | — (single-company) | not started | — | — |
+| oracle | — (no liveness ledger; deferred, real candidate pool is 1,042 tenants, not single-company) | deferred | — | — |
+| sensehq | 57 candidates, no liveness ledger (17 real live boards, 1 demo tenant excluded) | done | 0.00% field, 1.78% overall | [sensehq.md](sensehq.md) |

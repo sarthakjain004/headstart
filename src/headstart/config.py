@@ -158,6 +158,14 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "trakstar:bbtest",  # 1 posting
         "trakstar:smoketest",  # 66 postings (jobfeeds RSS count)
         "trakstar:testbass",  # 1 posting
+        # SenseHQ's own dev/test tenant (found during sensehq's salary-extraction pass,
+        # 2026-08-23, reading real board content). Confirmed by content: 204 postings, the
+        # large majority literal placeholder titles ("TESTING" x60+, "sdaa" x10+, "dep test",
+        # "copy test") plus real-looking titles duplicated with " copy" appended ("Sales
+        # development Representative" / "Sales development Representative copy") — a
+        # feature-testing sandbox, not a real employer. The "-dev" slug matches, but per this
+        # list's own rule that alone would not have been enough.
+        "sensehq:trm-dev",  # 204 postings
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
