@@ -139,7 +139,7 @@ the planning record; the table below is the live status.
 | ripplehire | 55 (55 sampled, full population; 79 was a stale liveness snapshot) | done | 0.00% field, 0.08% overall | [ripplehire.md](ripplehire.md) |
 | successfactors | 2,164 (2,164 sampled, full population; 2,204 was a stale liveness snapshot) | done | 0.00% field, 9.8% overall | [successfactors.md](successfactors.md) |
 | trakstar | 968 (968 sampled, full population; 1,632 was a stale liveness snapshot; 3 vendor demo/QA tenants found and excluded, PR #255) | done | 0.00% field, 19.78% overall | [trakstar.md](trakstar.md) |
-| freshteam | 1,412 | not started (Tier-2-only; Tier 1 already known dead) | — | — |
+| freshteam | 989 (989 sampled, full population; 1,412 was a stale liveness snapshot) | done | 0.00% field, 14.73% overall | [freshteam.md](freshteam.md) |
 | eightfold | 103 | not started | — | — |
 | oracle | — (single-company) | not started | — | — |
 | sensehq | — (single-company) | not started | — | — |
