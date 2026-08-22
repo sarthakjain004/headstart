@@ -439,9 +439,9 @@ def test_description_labeled_currency_code_before_the_number():
     )
     assert span2 == SalarySpan(12000 * 12, 20000 * 12, "AED", "regex")
     # The general (non-AED) case: an already-registered code, leading instead of trailing.
-    assert from_description("Salary: USD 70,000-90,000 depending on experience") == SalarySpan(
-        70000, 90000, "USD", "regex"
-    )
+    assert from_description(
+        "Salary: USD 70,000-90,000 depending on experience"
+    ) == SalarySpan(70000, 90000, "USD", "regex")
 
 
 def test_description_aed_defibrillator_acronym_not_a_currency_false_positive():
@@ -450,27 +450,39 @@ def test_description_aed_defibrillator_acronym_not_a_currency_false_positive():
     # fitness job postings unrelated to compensation. A bare mention produces no match (nothing
     # here looks like a labeled figure), and Dutch text using "AED's" for defibrillator units
     # near an unrelated number stays correctly unmatched too — real text, not constructed.
-    assert from_description(
-        "Must be CPR and AED certified. This role requires standing for 8 hours per shift."
-    ) is None
-    assert from_description(
-        "Inmiddels staan er meer dan 5.000 AED's van Pulse4all in acht Europese landen "
-        "geinstalleerd"
-    ) is None
+    assert (
+        from_description(
+            "Must be CPR and AED certified. This role requires standing for 8 hours per shift."
+        )
+        is None
+    )
+    assert (
+        from_description(
+            "Inmiddels staan er meer dan 5.000 AED's van Pulse4all in acht Europese landen "
+            "geinstalleerd"
+        )
+        is None
+    )
 
 
 def test_description_aed_company_revenue_not_salary():
     # Real, lever pass (found via the AED addition's own cross-ATS diff): "AED 500 million" /
     # "AED 2 billion" business-scale mentions, the same false-positive class the existing
     # revenue/valuation guards already cover for other currencies.
-    assert from_description(
-        "management of large residential and retail real estate assets of over AED 500 "
-        "million in value. YOE in management required"
-    ) is None
-    assert from_description(
-        "real estate development projects with annual revenue of at least AED 2 billion. "
-        "FIELD OF EXPERIENCE required"
-    ) is None
+    assert (
+        from_description(
+            "management of large residential and retail real estate assets of over AED 500 "
+            "million in value. YOE in management required"
+        )
+        is None
+    )
+    assert (
+        from_description(
+            "real estate development projects with annual revenue of at least AED 2 billion. "
+            "FIELD OF EXPERIENCE required"
+        )
+        is None
+    )
 
 
 def test_description_stipend_label_recognized():
@@ -570,9 +582,12 @@ def test_guard_401k_itself_not_misread_as_the_salary_figure():
     # "Equity compensation - 401K program" reads as label "compensation" + connector "-" + "401"
     # + k-shorthand, misreading the retirement-plan name as $401,000. _has_false_positive_context
     # can't catch this — "401k" is the matched number itself, not context around it.
-    assert from_description(
-        "Equity compensation - 401K program with 3% matching for all employees"
-    ) is None
+    assert (
+        from_description(
+            "Equity compensation - 401K program with 3% matching for all employees"
+        )
+        is None
+    )
     # The real match this exact text pattern was found to be crowding out is recovered once the
     # guard is in place, not just silenced to None.
     span = from_description(
@@ -581,9 +596,9 @@ def test_guard_401k_itself_not_misread_as_the_salary_figure():
     )
     assert span == SalarySpan(146500, 175000, "USD", "regex")
     # A genuine "$50k-$60k" shorthand range must still work — this isn't a blanket ban on "k".
-    assert from_description("Salary: $50k - $60k depending on experience") == SalarySpan(
-        50000, 60000, "USD", "regex"
-    )
+    assert from_description(
+        "Salary: $50k - $60k depending on experience"
+    ) == SalarySpan(50000, 60000, "USD", "regex")
 
 
 def test_guard_trigger_word_well_after_match_still_caught():
