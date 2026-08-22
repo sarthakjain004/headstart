@@ -1519,6 +1519,15 @@ def test_trakstar_feed_items_none_on_malformed_xml():
     assert _feed_items("not xml at all <<<") is None
 
 
+def test_trakstar_feed_items_empty_channel_is_empty_list_not_none():
+    # a real, distinct case from malformed XML or a 404 — a tenant whose feed works but
+    # currently has zero open postings (confirmed live: grassrootsvoter, knowingtechnologies)
+    from headstart.scrapers.trakstar import _feed_items
+
+    xml = '<?xml version="1.0"?><rss version="2.0"><channel><title>Jobs at Acme</title>\n</channel></rss>'
+    assert _feed_items(xml) == []
+
+
 def test_trakstar_feed_items_skips_item_with_unparseable_link():
     from headstart.scrapers.trakstar import _feed_items
 
@@ -1556,6 +1565,21 @@ def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable(monkeypatch)
     monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
     s = get_scraper("trakstar", "acme", "Acme")
     assert s.fetch_via_feed(SCRAPED_AT) is None
+
+
+def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs(
+    monkeypatch,
+):
+    # a working feed reporting zero current openings must be distinguishable from "no feed at
+    # all" — a caller checking `is None` sees the difference; one that checks truthiness doesn't
+    import headstart.scrapers.trakstar as trakstar_module
+
+    empty_feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: empty_feed)
+    s = get_scraper("trakstar", "acme", "Acme")
+    result = s.fetch_via_feed(SCRAPED_AT)
+    assert result == []
+    assert result is not None
 
 
 def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):

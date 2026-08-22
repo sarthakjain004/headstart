@@ -2,10 +2,12 @@
 """Compare trakstar's two fetch paths on real live boards before any cutover decision.
 
 ``trakstar.py``'s production path (``fetch_raw()`` + ``parse()``) reads the careers-page HTML,
-which silently caps at 25 rendered job cards — confirmed live and measured at ~10% of boards
-hitting it (see the scraper module's own docstring, "Known gap" note, 2026-08-22). The
-alternate ``fetch_via_feed()`` path reads the tenant's RSS feed instead, which carries every
-job with no such cap — but it isn't available for every tenant (~2.5% 404).
+which silently caps at 25 rendered job cards — confirmed live and measured at 5.4% of a
+148-board sample hitting it (see the scraper module's own docstring, "Known gap" note,
+2026-08-22). The alternate ``fetch_via_feed()`` path reads the tenant's RSS feed instead, which
+carries every job with no such cap — but it isn't reachable for every tenant (7.4% 404 or
+unparseable in that same sample); a working feed reporting zero current openings is a distinct,
+real result (``feed_available=True``, ``feed_job_count=0``), not counted as unavailable.
 
 This script runs BOTH paths against the same sample of real boards and reports, per board:
 recovered jobs (in the feed but not the HTML page — the truncation this exists to measure),

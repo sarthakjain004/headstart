@@ -18,13 +18,17 @@ kept.
 
 **Known gap, under active investigation (2026-08-22): the careers page above silently caps at
 25 rendered job cards.** Confirmed live on a real board (exotel: 25 rendered, 45 real, via its
-RSS feed) and measured at ~10% of a random live-board sample hitting the cap. Trakstar also
-serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``/
+RSS feed) and measured at 5.4% of a 148-board live sample (``scripts/eval/trakstar_feed_compare.py
+--n 150``, seed=7) hitting the cap — 154 real jobs recovered by the feed across that one run.
+Trakstar also serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``/
 ``fetch_via_feed`` below) that carries every job with no such cap, embeds the full description
 inline (no per-job detail fetch needed), and — unlike the detail pages — is reachable through
-plain ``http.fetch`` with no DataDome/curl_cffi involved (confirmed: 0 errors across 40 sampled
-boards). It is NOT universal (~2.5% of tenants 404, confirmed: sleekr), so it can't unconditionally
-replace the path above yet. ``fetch_via_feed`` (below) exposes it as a second, independent entry
+plain ``http.fetch`` with no DataDome/curl_cffi involved (confirmed: 0 errors across 148 sampled
+boards). It is NOT universal — the same run found the feed unreachable (404 or unparseable) on
+7.4% of tenants (confirmed: sleekr 404s), distinct from a working feed that genuinely reports
+zero current openings (confirmed 200s with an empty channel: grassrootsvoter,
+knowingtechnologies) — so it can't unconditionally replace the path above yet. ``fetch_via_feed``
+(below) exposes it as a second, independent entry
 point so ``scripts/eval/trakstar_feed_compare.py`` can call both paths on the same boards and
 compare their real output at scale before any cutover — it is deliberately not wired into
 ``fetch_raw()``/``parse()`` yet, and a normal scrape run still uses only the path above.
@@ -111,14 +115,17 @@ class TrakstarScraper(BaseScraper):
         """Investigative alternate path, not yet wired into ``fetch_raw()``/``parse()`` — see
         the module docstring's "Known gap" note. One request to the tenant's RSS feed
         (``/jobfeeds/{slug}``) returns every job with its full description already inline, no
-        per-job detail fetch and no careers-page render cap. Returns ``None`` if the feed isn't
-        available for this tenant (404, or 200 with no parseable items) so a caller can fall
-        back to ``fetch_raw()``/``parse()`` — never raises past a missing feed."""
+        per-job detail fetch and no careers-page render cap. Returns ``None`` only when the feed
+        itself is unreachable (404, network error, or a 200 body that doesn't parse as XML) so a
+        caller can fall back to ``fetch_raw()``/``parse()``. A working feed reporting zero
+        current openings is a real, different result — an empty list, not ``None`` — confirmed
+        live: `grassrootsvoter`/`knowingtechnologies` are genuine 200s with an empty
+        ``<channel>``, not 404s like `sleekr`."""
         xml_text = _fetch_feed(self.slug)
         if xml_text is None:
             return None
         items = _feed_items(xml_text)
-        if not items:
+        if items is None:
             return None
         return _jobs_from_feed(self.ats, self.slug, self.company, items, scraped_at)
 
@@ -215,19 +222,19 @@ def _jsonld_posting(html: str) -> dict | None:
     return None
 
 
-def _html_description(html: str) -> str | None:
-    """Raw inner HTML of the ``.jobdesciption`` container (None if the container itself is
-    missing). Found by open/close tag counting, not a non-greedy regex, because the
-    container's content is sometimes itself wrapped in a nested ``<div>`` (e.g. cityflo,
-    dripcapital) that a naive ``.*?`` match would truncate at. ``html_to_text`` (called by
-    ``parse``) strips the markup and turns an empty match into None, so a present-but-blank
-    container (a job with no real description body) still ends up None rather than "".
+def _isolate_div(html: str, opening_div: re.Pattern) -> str | None:
+    """Inner HTML of the first div matching ``opening_div`` (None if it's missing). Open/close
+    tag counting, not a non-greedy regex, because the container's content is sometimes itself
+    wrapped in a nested ``<div>`` that a naive ``.*?`` match would truncate at. Shared by
+    :func:`_html_description` (the detail page's ``.jobdesciption`` container) and
+    :func:`_feed_description` (a feed item's ``id="job_description"`` container) — same
+    technique, two different opening patterns, both within this one module.
 
     ``successfactors.py``'s ``_matched_content`` does the same open/close counting for a
-    different tag; not shared here, on purpose (CLAUDE.md: no cross-scraper abstraction for
-    one more caller) — flagging the resemblance rather than silently duplicating it unnoted.
-    """
-    match = _DESC_DIV.search(html)
+    different tag in a different scraper; not shared with THAT one, on purpose (CLAUDE.md: no
+    cross-scraper abstraction for one more caller) — flagging the resemblance rather than
+    silently duplicating it unnoted."""
+    match = opening_div.search(html)
     if not match:
         return None
     depth = 1
@@ -238,12 +245,22 @@ def _html_description(html: str) -> str | None:
     return None
 
 
+def _html_description(html: str) -> str | None:
+    """Raw inner HTML of the ``.jobdesciption`` container. ``html_to_text`` (called by
+    ``parse``) strips the markup and turns an empty match into None, so a present-but-blank
+    container (a job with no real description body) still ends up None rather than ""."""
+    return _isolate_div(html, _DESC_DIV)
+
+
 def _fetch_feed(slug: str) -> str | None:
     """GET the tenant's RSS job feed. Reached through plain ``http.fetch``, not ``curl_cffi``:
     unlike the per-job detail pages, it isn't behind DataDome (confirmed live, 0 errors across
-    40 sampled boards, 2026-08-22). Returns ``None`` on any non-200 (most commonly a 404 — the
+    148 sampled boards, 2026-08-22). Returns ``None`` on any non-200 (most commonly a 404 — the
     feed isn't offered for every tenant, confirmed: sleekr) so a caller treats it as "fall back
-    to the HTML+JSON-LD path", never as "this board has no jobs"."""
+    to the HTML+JSON-LD path". A 200 with an empty channel (confirmed: grassrootsvoter,
+    knowingtechnologies) is NOT this case — it's real feed text, still returned here; the "no
+    jobs" vs. "no feed" distinction is made one layer up, in :func:`_feed_items`/
+    ``fetch_via_feed``, never collapsed into a single ``None`` at this layer."""
     try:
         response = http.fetch(
             "GET",
@@ -260,18 +277,10 @@ def _fetch_feed(slug: str) -> str | None:
 
 def _feed_description(description_field: str) -> str | None:
     """Isolate the ``<div id="job_description">`` container's inner HTML out of a feed item's
-    full ``<description>`` field (which also carries a duplicate "Location: ..." line before it
-    and an "Apply to this job" link after — see the module docstring). Open/close tag counting,
-    not a non-greedy regex, for the same nested-``<div>`` reason as ``_html_description``."""
-    match = _FEED_DESC_DIV.search(description_field)
-    if not match:
-        return None
-    depth = 1
-    for tag in _DIV_TAG.finditer(description_field, match.end()):
-        depth += -1 if tag.group(0).startswith("</") else 1
-        if depth == 0:
-            return description_field[match.end() : tag.start()]
-    return None
+    full ``<description>`` field, which also carries a duplicate "Location: ..." line before it
+    and an "Apply to this job" link after (see the module docstring) — both excluded by only
+    ever returning the one container's own content."""
+    return _isolate_div(description_field, _FEED_DESC_DIV)
 
 
 def _feed_posted_at(pub_date: str | None) -> str | None:
@@ -287,9 +296,11 @@ def _feed_posted_at(pub_date: str | None) -> str | None:
 
 
 def _feed_items(xml_text: str) -> list[dict] | None:
-    """Parse an RSS feed's ``<item>`` elements into plain dicts, one per posting. ``None`` if
-    the XML itself doesn't parse (shouldn't happen for a 200 response, but a caller must be able
-    to fall back rather than crash on a malformed feed)."""
+    """Parse an RSS feed's ``<item>`` elements into plain dicts, one per posting. ``None`` only
+    if the XML itself doesn't parse (shouldn't happen for a 200 response, but a caller must be
+    able to fall back rather than crash on a malformed feed) — an empty, well-formed channel
+    (confirmed live: grassrootsvoter, knowingtechnologies) is a real, different result and
+    returns ``[]``, not ``None``; callers must check ``is None`` specifically, never falsy."""
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
