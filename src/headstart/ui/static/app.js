@@ -497,6 +497,10 @@ async function toggleStar(jobId){
 
   const row = drawnRows.get(jobId);
   if (!row) return;
+  // TODO: a Tier-2-only pay tag (payLabel(), above) is real in search results but is lost
+  // once starred — SavedJob (alerts/store.py) only ever persists a raw `salary` string, so
+  // there's nowhere to carry min_salary_annual/max_salary_annual/salary_currency through.
+  // Fixing this needs a SavedJob schema change, not a display fix; out of scope here.
   const copy = { title: row.title, company: row.company, url: row.url,
                  location: row.location || '', remote: !!row.remote, salary: row.salary || '' };
   // optimistic star: a placeholder record until the server answers with the real one

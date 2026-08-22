@@ -184,15 +184,17 @@ def build_filter(
     first_seen_after: str | None = None,
     atses: Collection[str],
     has_first_seen: bool,
+    has_min_salary_annual: bool,
 ) -> str | None:
     """The prod-table where-clause — the reference Search-filter compiler (ADR-0031).
 
-    ``atses`` is the whitelist of ATSes actually present in the served table and
-    ``has_first_seen`` whether the table carries that column — both runtime facts of the
-    index a :class:`JobSearch` learns once at startup and passes through. Deliberately
-    required, not defaulted: a caller that forgot them would silently drop the ATS
-    whitelist and turn the alerts Watermark cutoff into no clause at all (ADR-0035's
-    exactness guarantee).
+    ``atses`` is the whitelist of ATSes actually present in the served table,
+    ``has_first_seen`` whether the table carries that column, and ``has_min_salary_annual``
+    likewise for the ADR-0082 salary columns — all runtime facts of the index a
+    :class:`JobSearch` learns once at startup and passes through. Deliberately required, not
+    defaulted: a caller that forgot them would silently drop the ATS whitelist and turn the
+    alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
+    ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
     """
     filters: list[str] = []
     if remote:
@@ -211,13 +213,15 @@ def build_filter(
         filters.append(f"lower(location) LIKE '%{_like(location)}%'")
     if company:
         filters.append(f"lower(company) LIKE '%{_like(company)}%'")
-    if has_salary:
+    if has_salary and has_min_salary_annual:
         # `min_salary_annual` (ADR-0082), not the raw `salary` string: `salary` is only ever
         # populated from a scraper's own structured field, so gating on it silently excluded
         # every Job whose salary is only known via Tier-2 description-mining — most of this
         # initiative's own measured coverage on most ATSes. `min_salary_annual` is the fully
         # reconciled cascade result (Tier 1 or Tier 2), so it's the correct "do we have a real
-        # number" check either way.
+        # number" check either way. Guarded like `has_first_seen` above: a table LanceDB
+        # hasn't migrated onto the new columns yet would error on every query otherwise —
+        # the feature stays dark until then rather than 500ing.
         filters.append("min_salary_annual IS NOT NULL")
     if posted_within is not None:
         # posted_at is a raw string; ISO-prefixed values (97%) compare correctly. The LIKE
@@ -312,6 +316,10 @@ class JobSearch:
         # `first_seen` only appears on the first pipeline run after ADR-0031; filtering on
         # a column the table lacks errors every query, so the feature stays dark until then.
         self.has_first_seen = "first_seen" in table.schema.names
+        # Same reasoning for the ADR-0082 salary columns, added by the same class of
+        # idempotent migration (`index.py`'s `_salary_fields`) — a table that hasn't synced
+        # since would error on `has_salary=true` rather than just not supporting it yet.
+        self.has_min_salary_annual = "min_salary_annual" in table.schema.names
 
     def run(self, args: Mapping[str, str]) -> list[dict]:
         query = (args.get("q") or "").strip()
@@ -338,6 +346,7 @@ class JobSearch:
             first_seen_after=(args.get("first_seen_after") or "").strip() or None,
             atses=self.atses,
             has_first_seen=self.has_first_seen,
+            has_min_salary_annual=self.has_min_salary_annual,
         )
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
         # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same

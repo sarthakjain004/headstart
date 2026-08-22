@@ -60,6 +60,7 @@ def test_eval_filters_combine_with_and():
 def _clause(**kw):
     kw.setdefault("atses", ("greenhouse", "lever"))
     kw.setdefault("has_first_seen", True)
+    kw.setdefault("has_min_salary_annual", True)
     return build_filter(**kw)
 
 
@@ -173,7 +174,9 @@ class _Query:
 
 
 class _Table:
-    schema = types.SimpleNamespace(names=["ats", "title", "first_seen"])
+    schema = types.SimpleNamespace(
+        names=["ats", "title", "first_seen", "min_salary_annual"]
+    )
 
     def __init__(self, rows):
         self.rows = rows
@@ -329,20 +332,23 @@ def test_has_salary_matches_a_description_only_derived_value():
     assert "salary IS NOT NULL" not in table.last_where
 
 
+def test_has_salary_stays_dark_without_the_column():
+    # Mirrors test_first_seen_filters_stay_dark_without_the_column: a table LanceDB hasn't
+    # migrated onto the ADR-0082 salary columns yet must not 500 on has_salary=true — the
+    # feature stays dark, like every other optional-column filter in this file.
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["ats", "title"])  # no salary columns
+    searcher = JobSearch(_Model(), table)
+    searcher.run({"q": "x", "has_salary": "true"})
+    assert table.last_where is None
+
+
 def test_run_projects_the_derived_salary_columns():
     row = dict(_ROW)
     row["min_salary_annual"] = 90000
     row["max_salary_annual"] = 110000
     row["salary_currency"] = "EUR"
     table = _Table([row])
-    table.schema = types.SimpleNamespace(
-        names=[
-            *table.schema.names,
-            "min_salary_annual",
-            "max_salary_annual",
-            "salary_currency",
-        ]
-    )
     rows = JobSearch(_Model(), table).run({"q": "x"})
     assert rows[0]["min_salary_annual"] == 90000
     assert rows[0]["max_salary_annual"] == 110000
