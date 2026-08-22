@@ -75,6 +75,7 @@ from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
 from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
+from headstart.scrapers.successfactors import _job_urls_from
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
@@ -305,19 +306,50 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
     return scraper.parse(items, datetime.now(UTC).isoformat())
 
 
+def _fetch_successfactors(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for successfactors: one sitemap fetch via the scraper's own
+    ``_fetch_sitemap()``, never ``fetch_raw()``, which fans out a per-job detail fetch over EVERY
+    listed posting (workers=6, one host) — every job on the board, not a capped subset.
+    ``_fetch_sitemap()`` is already cheap for a sampling pass by construction, not just here: it
+    reads a urlset to completion (compact — the scraper's own module docstring puts the largest
+    observed at ~3 MB) but *classifies and abandons* an RSS feed after ~64 KB
+    (`_CLASSIFY_BYTES`), specifically so the trickling generator (jobs.sap.com's real feed is
+    16.6 MB, confirmed live) never stalls a caller — confirmed this abandoned-early prefix still
+    carries real job links (4 found in SAP's own ~75 KB prefix). Job URLs come from the module's
+    own ``_job_urls_from()`` (shared across all three listing surfaces by design — the underlying
+    regex just looks for ``/job/.../{id}/``, independent of urlset/RSS/search-page markup), so
+    this needs no format-specific branching. Deliberately does NOT replicate ``fetch_raw()``'s
+    `_search_job_urls()`/`_rss_job_urls()` fallbacks (used in production when the sitemap surface
+    alone comes up empty) — for a bounded sample, a board with nothing in its sitemap contributes
+    zero jobs rather than paying for the full fallback chain, an acceptable sampling loss given
+    2000+ other boards. Detail-fetches only the first :data:`_DETAIL_FETCH_CAP` postings via the
+    scraper's own ``_job_fields()``, then parses just those."""
+    kind, text, _cut_short = scraper._fetch_sitemap()
+    if kind not in ("urlset", "rss"):
+        return []
+    urls = _job_urls_from(text, scraper.slug)[:_DETAIL_FETCH_CAP]
+    raw = [
+        {"url": url, "id": job_id, "fields": scraper._job_fields(url) or {}}
+        for url, job_id in urls
+    ]
+    return scraper.parse(raw, datetime.now(UTC).isoformat())
+
+
 #: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
-#: researched — see the module docstring). workday/smartrecruiters/rippling/ripplehire cap detail
-#: fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters' listings paginate too, so `fetch_raw()`
-#: itself is expensive to call from a sampling script; rippling's/ripplehire's listings are cheap
-#: but their `fetch_raw()` bakes in an uncapped detail fan-out — see each adapter's own docstring);
-#: zoho is uncapped — its listing never paginates, so `fetch_raw()` costs nothing extra there, and
-#: capping its *detail* fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
+#: researched — see the module docstring). workday/smartrecruiters/rippling/ripplehire/
+#: successfactors cap detail fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters' listings
+#: paginate too, so `fetch_raw()` itself is expensive to call from a sampling script; rippling's/
+#: ripplehire's/successfactors' listings are cheap but their `fetch_raw()` bakes in an uncapped
+#: detail fan-out — see each adapter's own docstring); zoho is uncapped — its listing never
+#: paginates, so `fetch_raw()` costs nothing extra there, and capping its *detail* fetches was
+#: undercounting real coverage (see `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,
     "zoho": _fetch_zoho,
     "rippling": _fetch_rippling,
     "ripplehire": _fetch_ripplehire,
+    "successfactors": _fetch_successfactors,
 }
 
 
