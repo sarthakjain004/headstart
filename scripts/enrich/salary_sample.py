@@ -57,15 +57,19 @@ import json
 import random
 import re
 import sys
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from headstart import http
 from headstart.config import CompanyRef, load_active_companies
 from headstart.models import Job
 from headstart.scrapers import registry
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
+from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
@@ -229,18 +233,80 @@ def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
     return scraper.parse(sample, datetime.now(UTC).isoformat())
 
 
+def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for ripplehire: one listing POST (page 0 only, at production's own
+    ``_PAGE_SIZE``) via the scraper's own token handshake, never ``fetch_raw()``, which loops the
+    search POST across every page AND bakes an uncapped per-posting detail fan-out into the same
+    call — every job on the board, not a capped subset. The token step calls ``http.fetch``
+    directly (matching ``ripplehire.py``'s own ``fetch_raw()``, not ``BaseScraper._get()``): it
+    needs the redirected response's own ``.url`` to pull the token from, which ``_get()`` doesn't
+    expose (it returns only ``.text``) — this isn't a missed egress-wrapped primitive (lesson 40),
+    it's the one step that structurally can't use it.
+
+    Deliberately asymmetric, unlike every other capped adapter here: ``compensationRange``/
+    ``compensationInfo`` (Tier 1) are already on the LISTING response — real, found while building
+    this adapter (an initial version requested only :data:`_DETAIL_FETCH_CAP` listing rows via
+    ``pagesize``, silently starving field coverage to 3 jobs/board on boards documented at
+    hundreds — LTIMindtree, ~937 jobs, `ripplehire.py`'s own module docstring — with no network-
+    cost reason to, since the field costs nothing extra to read). So the FULL page (up to
+    ``_PAGE_SIZE`` real listing rows) is kept for field coverage; only the expensive per-job
+    detail fetch (``jobDesc``, never on the listing — confirmed in ``ripplehire.py``'s own
+    docstring) is capped at :data:`_DETAIL_FETCH_CAP`, via the scraper's own ``_job_description()``.
+    Consequence, stated plainly rather than silently absorbed: on any board with more than
+    :data:`_DETAIL_FETCH_CAP` jobs, the description-hint measurement undercounts (rows past the
+    cap keep an empty ``description``, correctly read as "no hint" rather than fabricating one) —
+    a conservative bias on the coarser Tier-2 signal only, never on Tier 1's own field coverage,
+    which is exactly what this fix exists to make accurate."""
+    response = http.fetch(
+        "GET", scraper.url(), headers={"User-Agent": USER_AGENT}, timeout=30
+    )
+    response.raise_for_status()
+    match = _RIPPLEHIRE_TOKEN.search(response.url)
+    if not match:
+        return []
+    token = match.group(1)
+    api = f"https://{scraper.slug}.ripplehire.com/candidate/candidatejobsearch"
+    params = json.dumps(
+        {
+            "page": 0,
+            "search": "*:*",
+            "token": token,
+            "source": "CAREERSITE",
+            "pagesize": _RIPPLEHIRE_PAGE_SIZE,
+        }
+    )
+    body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
+    data = http.fetch(
+        "POST",
+        api,
+        data=body,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        },
+        timeout=30,
+    ).json()
+    items = data.get("jobVoList") or []
+    for item in items[:_DETAIL_FETCH_CAP]:
+        item["jobDesc"] = scraper._job_description(token, item.get("jobSeq"))
+    return scraper.parse(items, datetime.now(UTC).isoformat())
+
+
 #: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
-#: researched — see the module docstring). workday/smartrecruiters/rippling cap detail fetches at
-#: `_DETAIL_FETCH_CAP` (workday/smartrecruiters' listings paginate too, so `fetch_raw()` itself is
-#: expensive to call from a sampling script; rippling's listing is cheap but its `fetch_raw()`
-#: bakes in an uncapped detail fan-out — see `_fetch_rippling`'s own docstring); zoho is uncapped —
-#: its listing never paginates, so `fetch_raw()` costs nothing extra there, and capping its
-#: *detail* fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
+#: researched — see the module docstring). workday/smartrecruiters/rippling/ripplehire cap detail
+#: fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters' listings paginate too, so `fetch_raw()`
+#: itself is expensive to call from a sampling script; rippling's/ripplehire's listings are cheap
+#: but their `fetch_raw()` bakes in an uncapped detail fan-out — see each adapter's own docstring);
+#: zoho is uncapped — its listing never paginates, so `fetch_raw()` costs nothing extra there, and
+#: capping its *detail* fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,
     "zoho": _fetch_zoho,
     "rippling": _fetch_rippling,
+    "ripplehire": _fetch_ripplehire,
 }
 
 
