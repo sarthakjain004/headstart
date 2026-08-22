@@ -26,9 +26,9 @@
   hits showed rich, well-labeled US/Canada disclosure language ("Base Pay: \$18hr", "Pay Range:
   \$16.00 - \$18.00 an hour", "the salary range for this position starts at \$235,00 to
   \$250,000") the mature cascade already handles.
-- **Three real Tier-2 candidates measured and declined, each below this initiative's
-  multi-company evidence bar** (the same bar applied throughout this initiative — see
-  `lever.md`, `personio.md`, and `zoho.md`'s own single-company declines):
+- **Four real Tier-2 candidates measured, three declined for thin evidence** (the same
+  multi-company bar applied throughout this initiative — see `lever.md`, `personio.md`, and
+  `zoho.md`'s own single-company declines):
   - A label immediately followed by a parenthetical period marker ("Pay Rate (per hour):
     \$18.75") — `_LABELED` doesn't match this shape at all (confirmed directly: `.search()`
     returns `None`), but real evidence is 1 occurrence, 1 company. Declined.
@@ -42,6 +42,33 @@
     `_PERIOD_HINT`, plus the corresponding weekly-to-annual multiplier branch it needs) and
     diffing `from_description()` old-vs-new (`repr()`-compared, per lesson 11) across every real
     occurrence in the corpus found the true yield: 4 jobs, 2 companies. Declined — below the bar.
+- **A fourth candidate — "base rate"/"hourly rate"/"starting rate" as a new label — cleared the
+  evidence bar (7 companies) but was ultimately declined anyway, after exposing two separate,
+  real bugs in shared resolution code along the way.** Building it and diffing the full corpus
+  first surfaced a genuine, pre-existing bug in `_resolve()`'s own tie-break (its docstring
+  already promised "the more informative span wins," but the code only ever checked
+  currency-presence, never completeness): on a real board (`greenhouse:carvana`) the new label
+  matched a second, incomplete mention of a wage a description ALSO stated completely elsewhere,
+  and the old tie-break kept whichever mention came first in the text regardless of completeness
+  — silently discarding hundreds of already-correct `max_annual` values the moment the new label
+  made both mentions match. **Fixed — this ships in this pass, independent of the label's own
+  fate** (see `_resolve()`'s own docstring for the full account; verified via the mandatory full
+  cross-ATS diff: 82 jobs across 5 ATSes gained a previously-lost `max_annual`, zero
+  regressions). But re-running the full diff with the fix in place found a SECOND, separate,
+  deeper issue the tie-break fix can't touch: 8 further real cases (`lever:andersencorp`,
+  `smartrecruiters:hillstonerestaurantgroup`, `workday:ucar/ucar_careers`, and 5 more) where the
+  new label matched a genuinely LESS representative mention early in a description (e.g. a bare,
+  incentive-framed rate — "your hourly rate is \$16... but the real reward comes from your
+  incentive payments... making \$20-\$25" — where \$20-\$25 is the realistic figure a LOWER-
+  priority tier used to correctly find), and because `_LABELED` is the FIRST tier tried in
+  `from_description()`'s confidence-ordered cascade, the cascade stopped there — the later,
+  correct tier never even ran. Fixing that safely means redesigning the cascade's own tier-
+  precedence, not patching one function — disproportionate to one label's 7-company gain, and a
+  materially bigger, riskier change than this pass's own scope. **Declined; reverted.** (A
+  separate 19 cases surfaced by the same label, not counted against it, were legitimate NEW
+  ambiguity — two genuinely different real figures, like a base hourly rate vs. a stated total
+  annualized salary including commission — correctly declining rather than guessing, the same
+  acceptable shape already established for the "ctc" label's own 7 cases, lesson 48.)
 - **Audited the no-signal bucket for currency-shaped content genuinely missed** (the mandatory
   audit, lesson 39): of the currency-adjacent no-signal jobs read, the dominant reason is neither
   a missing pattern nor a missing label — `_LABELED` already matches most of these via its own
@@ -55,9 +82,16 @@
   phrasing (the existing `_states_a_ceiling_only` guard), and genuinely ambiguous multi-level
   postings stating two different real figures for two different roles in one description
   (`_resolve()`'s existing mutual-consistency check correctly declining rather than guessing).
-- **No `salary.py` changes ship this pass** — Tier 1 has nothing to wire, and all three real
-  Tier-2 candidates were measured and declined. The mandatory full cross-ATS diff is correctly
-  N/A, matching lever's/ripplehire's/successfactors' own precedent.
+- **One `salary.py` change ships this pass, but it's a shared bug fix, not a new trakstar
+  pattern**: `_resolve()`'s tie-break now correctly prefers a span with `max_annual` set over one
+  without (previously it only checked currency-presence) — found while building the declined
+  "rate" label above, kept regardless of that label's own fate since it's a real, independently-
+  evidenced correctness fix. No new Tier-1 field (nothing to wire) and no new Tier-2 pattern
+  (all four real candidates measured and declined) — trakstar's own coverage number is unchanged
+  by this fix, since it only affects resolution across MULTIPLE matches, and trakstar's own
+  no-new-pattern outcome means no case here ever produces more than one match. The mandatory
+  full cross-ATS diff for the fix is real (82 jobs, 5 ATSes, zero regressions) even though
+  trakstar's own corpus isn't among them.
 - **A real, unrelated production bug was found and separately fixed while sampling**: the
   careers-page HTML this scraper reads for its production `fetch_raw()`/`parse()` path silently
   caps at 25 rendered job cards — confirmed live and measured at 5.4% of a 148-board sample
@@ -77,22 +111,30 @@
   the demo/QA exclusion (958 boards succeeded, 10 errored — a real, low ~1.0% failure rate).
 - Measured both required percentages: **yes** — 0.00% field, 19.78% overall (Tier1+Tier2),
   against 1,946 jobs.
-- Live-verified after code changes: **yes** — the only code change here is the sampling adapter
-  itself (`salary.py` ships unchanged); a fresh, differently-seeded 30-board reseed (seed=313)
-  confirms it works correctly against real current boards, consistent shape with the full
-  sample's own coarse *sampling-stage* signal (0% field, ~31.5% description-hint — the loose,
-  keyword-based detector `salary_sample.py` itself reports while measuring, not the calibrated
-  `salary.py` cascade rate reported under Coverage below; the full 968-board sample's own
-  equivalent figure is 30.9%, see the Live-verification review section).
+- Live-verified after code changes: **yes**, on two levels. The sampling adapter itself: a
+  fresh, differently-seeded 30-board reseed (seed=313) confirms it works correctly against real
+  current boards, consistent shape with the full sample's own coarse *sampling-stage* signal (0%
+  field, ~31.5% description-hint — the loose, keyword-based detector `salary_sample.py` itself
+  reports while measuring, not the calibrated `salary.py` cascade rate reported under Coverage
+  below; the full 968-board sample's own equivalent figure is 30.9%, see the Live-verification
+  review section). The `_resolve()` tie-break fix: verified via the mandatory full cross-ATS
+  diff required for any shared `salary.py` change (82 jobs, 5 ATSes, zero regressions — see
+  Methods tried's fourth candidate for the full account), even though it happens not to move
+  trakstar's own corpus (confirmed directly: 0/1,946 jobs change).
 - **Audited the no-signal bucket for language-independent currency-shaped content before
   trusting the coverage number as a ceiling**: yes — read directly, traced to specific reasons
   (see Methods tried and Patterns found).
 - Went beyond the ask: measured every candidate Tier-2 pattern at full-corpus scale via a real
   `from_description()` diff before declining any of them, not just an isolated regex-match test
   or a loose proximity heuristic (the "week" candidate specifically needed this — an initial
-  loose measurement overstated its real yield by roughly 10x). Also found, scoped, and separately
-  fixed a real, unrelated production data-completeness bug (the 25-job HTML truncation) rather
-  than letting it sit unreported because it wasn't what this pass was measuring for.
+  loose measurement overstated its real yield by roughly 10x). Found, diagnosed precisely, and
+  fixed a real, pre-existing bug in shared `_resolve()` code that a new label's own diff
+  incidentally exposed — then, rather than stopping at "the diff looks clean," kept measuring
+  and found a SECOND, deeper issue the first fix didn't touch, correctly declining the label that
+  found it rather than shipping a fix that was necessary but not sufficient. Also found, scoped,
+  and separately fixed a real, unrelated production data-completeness bug (the 25-job HTML
+  truncation) rather than letting it sit unreported because it wasn't what this pass was
+  measuring for.
 
 ## Live-verification review
 
@@ -142,11 +184,15 @@ Real, worked examples the existing shared cascade already extracts, unmodified:
 
 ## What changed in code, and why
 
-Nothing in `salary.py`. Tier 1 has no field to wire (confirmed absent, not just unread — no
-`baseSalary` anywhere in the JSON-LD, no salary field in the raw payload at all). All three real
-Tier-2 candidates found this pass were measured at full-corpus scale and declined as below the
-multi-company evidence bar (1, 1, and 2 companies respectively) — "no new pattern needed" is a
-legitimate, evidence-backed outcome here (lesson 42), not a sign the research was shallow: the
+One line in `salary.py`: `_resolve()`'s tie-break, extended to prefer a span with `max_annual`
+set over one without (see Methods tried's fourth candidate, and `_resolve()`'s own docstring, for
+the full account of how this was found and verified). No new Tier-1 field — confirmed absent,
+not just unread: no `baseSalary` anywhere in the JSON-LD, no salary field in the raw payload at
+all. No new Tier-2 pattern — all four real candidates found this pass were measured at
+full-corpus scale; three declined as below the multi-company evidence bar (1, 1, and 2 companies
+respectively), and the fourth cleared the bar but was declined anyway once it exposed a second,
+deeper cascade-precedence issue disproportionate to fix in this pass. "No new pattern needed" is
+a legitimate, evidence-backed outcome here (lesson 42), not a sign the research was shallow: the
 existing shared cascade already delivers 19.78% coverage on trakstar without any ATS-specific
 extension, driven by trakstar's own real company mix skewing toward US/Canada pay-transparency-
 jurisdiction employers.
@@ -189,3 +235,25 @@ see Methods tried above for the full account.
   25-job HTML truncation) is worth surfacing and scoping as its own investigation immediately,
   not silently worked around or silently ignored just because it isn't what the current pass is
   measuring for — see PR #256 for the full account.
+- **New**: a new label/pattern can fail in TWO distinct ways once it starts matching text a
+  description already states correctly elsewhere, and fixing one does not fix the other. (1) A
+  *tie-break* failure — the new match and an existing match land in the SAME tier and are close
+  enough to be judged "the same figure," so `_resolve()`'s own preference logic decides which
+  wins; a preference that only checks one dimension of informativeness (here, currency-presence)
+  can pick the less complete of two agreeing spans. This is fixable with a narrow, low-risk
+  change to that one function, verified by the mandatory full cross-ATS diff. (2) A *cascade-
+  precedence* failure — the new match lands in an EARLIER tier than a different, already-correct
+  match that used to be found by a LATER tier, and `from_description()`'s own "stop at the first
+  tier that succeeds" design means the later tier never runs at all once the earlier one
+  produces anything. This is NOT fixable with a small patch — it requires redesigning tier
+  precedence itself, since the cascade's confidence-ordering assumption (earlier tiers are more
+  trustworthy) is exactly what breaks. Before trusting a full cross-ATS diff's "zero regressions"
+  after fixing (1), specifically check for values that got LESS complete or plain wrong (not
+  just those that became `None`) — that's the signature of (2), and it can hide inside a diff
+  that otherwise looks clean if you only grep for `-> None`.
+- **New**: don't write a specific measured number (a company count, a "confirmed via the diff"
+  claim, a regression count) into a code comment or docstring before actually running the
+  measurement that number describes — caught myself doing this twice in the same pass, once
+  claiming a combined-diff result before running the combined diff, once claiming an ATS count
+  that turned out to be one off (5, not 6) once actually counted. Write the comment AFTER the
+  measurement returns, not before, even when the number feels predictable.
