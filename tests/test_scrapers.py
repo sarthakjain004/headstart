@@ -1458,6 +1458,140 @@ def test_trakstar_extract_posting_none_when_neither_jsonld_nor_html_present():
     assert TrakstarScraper._extract_posting(_TrakstarDetailResp(text=page)) is None
 
 
+_TRAKSTAR_FEED = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel xmlns:job="https://recruiterbox.com/rss/job/">
+<title>Jobs at Acme</title>
+<item><title>Backend Engineer</title>
+<link>http://acme.hire.trakstar.com/jobs/fk0abc1</link>
+<description>&lt;h2 id="job_meta"&gt;&lt;p&gt;Location: Austin, Texas, United States&lt;/p&gt;&lt;/h2&gt;&lt;div id="job_description"&gt;&lt;p&gt;Build the platform.&lt;/p&gt;&lt;/div&gt;&lt;div id="how_to_apply"&gt;&lt;a href="#"&gt;Apply&lt;/a&gt;&lt;/div&gt;</description>
+<pubDate>Fri, 21 Aug 2026 00:00:00 +0530</pubDate>
+<guid>http://acme.hire.trakstar.com/jobs/fk0abc1</guid>
+<job:locationCity>Austin</job:locationCity><job:locationState>Texas</job:locationState><job:locationCountry>United States</job:locationCountry>
+<job:positionType>full_time</job:positionType><job:team>Engineering</job:team></item>
+<item><title>Store Associate</title>
+<link>http://acme.hire.trakstar.com/jobs/fk0xyz2/</link>
+<description>&lt;div id="job_description"&gt;&lt;p&gt;Help customers.&lt;/p&gt;&lt;/div&gt;</description>
+<pubDate></pubDate>
+<guid>http://acme.hire.trakstar.com/jobs/fk0xyz2</guid>
+<job:locationCity></job:locationCity><job:locationState></job:locationState><job:locationCountry></job:locationCountry>
+<job:positionType>part_time</job:positionType><job:team></job:team></item>
+</channel></rss>"""
+
+
+def test_trakstar_feed_items_parses_real_shape():
+    from headstart.scrapers.trakstar import _feed_items
+
+    items = _feed_items(_TRAKSTAR_FEED)
+    assert len(items) == 2
+    first = items[0]
+    assert first["code"] == "fk0abc1"  # trailing slash absent
+    assert first["title"] == "Backend Engineer"
+    assert first["location"] == "Austin, Texas, United States"
+    assert (
+        first["description"] == "<p>Build the platform.</p>"
+    )  # job_meta/how_to_apply excluded
+    assert first["posted_at"] == "2026-08-21"
+    assert first["department"] == "Engineering"
+    assert first["employment_type"] == "Full-time"
+
+
+def test_trakstar_feed_items_code_from_trailing_slash_link():
+    from headstart.scrapers.trakstar import _feed_items
+
+    items = _feed_items(_TRAKSTAR_FEED)
+    assert items[1]["code"] == "fk0xyz2"  # trailing slash present on this item's <link>
+
+
+def test_trakstar_feed_items_handles_missing_optional_fields():
+    from headstart.scrapers.trakstar import _feed_items
+
+    items = _feed_items(_TRAKSTAR_FEED)
+    second = items[1]
+    assert second["location"] is None  # all three location parts blank
+    assert second["posted_at"] is None  # blank pubDate
+    assert second["department"] is None  # blank job:team
+    assert second["employment_type"] == "Part-time"
+
+
+def test_trakstar_feed_items_none_on_malformed_xml():
+    from headstart.scrapers.trakstar import _feed_items
+
+    assert _feed_items("not xml at all <<<") is None
+
+
+def test_trakstar_feed_items_empty_channel_is_empty_list_not_none():
+    # a real, distinct case from malformed XML or a 404 — a tenant whose feed works but
+    # currently has zero open postings (confirmed live: grassrootsvoter, knowingtechnologies)
+    from headstart.scrapers.trakstar import _feed_items
+
+    xml = '<?xml version="1.0"?><rss version="2.0"><channel><title>Jobs at Acme</title>\n</channel></rss>'
+    assert _feed_items(xml) == []
+
+
+def test_trakstar_feed_items_skips_item_with_unparseable_link():
+    from headstart.scrapers.trakstar import _feed_items
+
+    xml = """<rss><channel><item><title>Bad Link</title><link>not-a-jobs-url</link>
+    <description></description></item></channel></rss>"""
+    assert _feed_items(xml) == []
+
+
+def test_trakstar_feed_posted_at_unparseable_returns_none():
+    from headstart.scrapers.trakstar import _feed_posted_at
+
+    assert _feed_posted_at("not a date") is None
+    assert _feed_posted_at(None) is None
+
+
+def test_trakstar_jobs_from_feed_builds_job_objects():
+    from headstart.scrapers.trakstar import _feed_items, _jobs_from_feed
+
+    items = _feed_items(_TRAKSTAR_FEED)
+    jobs = _jobs_from_feed("trakstar", "acme", "Acme", items, SCRAPED_AT)
+    assert len(jobs) == 2
+    j = jobs[0]
+    assert j.id == "trakstar:acme:fk0abc1"
+    assert j.ats == "trakstar"
+    assert j.company == "Acme"
+    assert j.url == "https://acme.hire.trakstar.com/jobs/fk0abc1/"
+    assert j.description == "Build the platform."
+    assert j.scraped_at == SCRAPED_AT
+    assert j.remote is False
+
+
+def test_trakstar_fetch_via_feed_returns_none_when_feed_unavailable(monkeypatch):
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    s = get_scraper("trakstar", "acme", "Acme")
+    assert s.fetch_via_feed(SCRAPED_AT) is None
+
+
+def test_trakstar_fetch_via_feed_returns_empty_list_when_feed_has_zero_jobs(
+    monkeypatch,
+):
+    # a working feed reporting zero current openings must be distinguishable from "no feed at
+    # all" — a caller checking `is None` sees the difference; one that checks truthiness doesn't
+    import headstart.scrapers.trakstar as trakstar_module
+
+    empty_feed = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: empty_feed)
+    s = get_scraper("trakstar", "acme", "Acme")
+    result = s.fetch_via_feed(SCRAPED_AT)
+    assert result == []
+    assert result is not None
+
+
+def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: _TRAKSTAR_FEED)
+    s = get_scraper("trakstar", "acme", "Acme")
+    jobs = s.fetch_via_feed(SCRAPED_AT)
+    assert len(jobs) == 2
+    assert jobs[0].id == "trakstar:acme:fk0abc1"
+
+
 def test_recruitee_url_ignores_the_customers_vanity_domain():
     """The API's `careers_url` is whatever domain the customer configured, and a third of
     those do not serve the board (transperfect.com/o/… 404s while the job is open). Build the
