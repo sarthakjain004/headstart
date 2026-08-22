@@ -92,6 +92,30 @@ def test_field_teamtailor_bare_unit_word_period_markers():
     )
 
 
+def test_field_generic_bare_word_period_not_recognized_in_free_text():
+    # Real, demonstrated regression, caught by code review before merge (PR #239): the bare-word
+    # period recognition above is safe ONLY for teamtailor's known-structured field shape, not for
+    # ashby/personio's genuinely free-text fields, which reach _field_generic. Before this test's
+    # underlying fix (splitting _period_multiplier_structured out from the safe default), this
+    # exact string silently misread "month" (from the severance clause, nothing to do with the
+    # salary's own period) as a monthly marker and 12x-inflated a correct $40k-$50k annual figure
+    # into a wrong $480k-$600k one that still happened to clear the plausibility bounds — a silent
+    # corruption, not a safe decline. Must still read as annual (unmultiplied) here.
+    assert from_field(
+        "40,000 - 50,000 USD with 1 month severance included", "ashby"
+    ) == SalarySpan(40000, 50000, "USD", "field")
+
+
+def test_field_darwinbox_bare_word_period_not_recognized_either():
+    # Same risk class as the ashby case above: darwinbox's salary_timeframe is equally unvalidated
+    # free text from Darwinbox's own API (darwinbox.py never enumerates its possible values), so
+    # it must stay on the safe default too. A genuine "30 day probation" mention must not be
+    # misread as a daily rate — the un-multiplied lakhs figure is the correct, honest answer here.
+    assert from_field("INR 3 - 5 (30 day probation)", "darwinbox") == SalarySpan(
+        300_000, 500_000, "INR", "field"
+    )
+
+
 def test_field_generic_fallback_for_unlisted_ats():
     # an ATS with no calibrated Tier-1 parser yet still gets a best-effort range/currency read.
     assert from_field("80000-100000 USD", "some-new-ats") == SalarySpan(

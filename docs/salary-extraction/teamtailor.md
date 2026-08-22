@@ -48,10 +48,17 @@ the large majority of genuinely correct field values — see What changed in cod
   matched none of the phrase-shaped checks, so the multiplier silently defaulted to 1 (annual),
   and the un-multiplied tiny "annual" figure then correctly-but-wrongly failed the plausibility
   bounds. Also found DAY had no Tier-1 handling at all (only Tier 2 had `_DAILY_TO_ANNUAL`).
-  **Fixed**: word-bounded bare hour/day/month recognition added to `_period_multiplier`. Measured
-  impact: the field-present-but-unparseable rate dropped from 45.7% to 4.2%; the residual 4.2% is
-  genuinely broken/mislabeled source data (see What changed in code) — the 45.7%→4.2% drop alone
-  recovered roughly 1,885 jobs.
+  **Fixed**: word-bounded bare hour/day/month recognition added — in a dedicated
+  `_period_multiplier_structured`, not the base `_period_multiplier`, after a second review round
+  found the bare-word version wasn't safe for every caller (see What changed in code). Measured
+  impact of this fix in isolation (`from_field()` alone, not the full Tier1+Tier2 cascade): the
+  field-present-but-unparseable rate dropped from 49.1% to 4.4%, recovering exactly 1,885 jobs.
+  The residual 4.4% is genuinely broken/mislabeled source data (see What changed in code). A
+  related but distinct number appears in Coverage below — 45.7%→4.2% is what the SAME transition
+  looks like through the full `extract()` cascade (Tier 1 plus whatever Tier 2 mining catches on
+  top), after all three of this pass's fixes, not the multiplier fix in isolation; keep the two
+  measurements separate rather than treating one as a restatement of the other (Spec-review
+  finding, second round: an earlier draft of this paragraph conflated them).
 - **A second, real, shared-code bug found the same way**: `_PERIOD_HINT`'s slash-prefixed
   alternatives (`/hr`, `/hour`, `/mo`, `/month`, `/yr`, `/year`, `/day`) required a leading `\b`
   that never matches when a SPACE precedes the slash (`"£40 /hour"` — a space and a slash are both
@@ -170,12 +177,27 @@ merges and the pipeline's derived-field refresh next runs. Verified via the mand
 cross-ATS diff (main's frozen `salary.py` vs. the fully-fixed working tree, across all 6 ATS
 corpora), with every `LOST` example hand-traced against real text, not just the aggregate counts.
 
-- **`_period_multiplier`**: added word-bounded bare `hour`/`day`/`month` recognition (alongside
-  the existing phrase-shaped checks), and added a `day` case entirely (previously Tier 1 had no
-  day-rate handling at all — only Tier 2 did). Safe for every Tier-1 caller (`_field_lever_
-  recruitee_teamtailor`, `_field_darwinbox`, `_field_generic`) since a Tier-1 field value is
-  always a short, structured `"NUMBER-NUMBER CURRENCY UNIT"` string, not free text where a bare
-  word risks a false match.
+- **`_period_multiplier_structured`** (new function, split out from `_period_multiplier` in a
+  second code-review round — see below): word-bounded bare `hour`/`day`/`month` recognition
+  (alongside the existing phrase-shaped checks), plus a `day` case entirely new to Tier 1
+  (previously only Tier 2 had day-rate handling). Used *only* by `_field_lever_recruitee_
+  teamtailor`, whose three callers (`lever.py`, `recruitee.py`, `teamtailor.py`) all assemble
+  their field string from a structured min/max/currency/interval quad — confirmed safe by reading
+  each scraper's own formatter, never free text. **The first version of this fix applied bare-word
+  matching to plain `_period_multiplier` itself**, on the claim that "a Tier-1 field value is
+  always a short, structured string, not free text" — Standards review found and demonstrated this
+  was false for `_field_generic` (reached by ashby/personio, which pass an HR system's raw
+  free-text field straight into `Job.salary` with no scraper-side normalization — an already-
+  documented fact from PR #238's own review that the first version of this fix contradicted
+  without re-checking) and, as an unconfirmed but plausible related risk, for `_field_darwinbox`
+  (whose `salary_timeframe` is equally unvalidated free text). Demonstrated, not hypothetical: `"40,000
+  - 50,000 USD with 1 month severance included"` silently misread "month" from the severance
+  clause — nothing to do with the salary's own period — as a monthly marker, 12x-inflating a
+  correct $40k–$50k annual figure into a wrong $480k–$600k one that still happened to clear the
+  plausibility bounds. A silent corruption, not a safe decline. Fixed by splitting the bare-word
+  behavior into its own function used only where it's confirmed safe; `_period_multiplier` itself
+  (phrase-shaped markers only — "per hour", "/hr", "monthly", ...) stays the default for
+  `_field_generic` and `_field_darwinbox`, unchanged from before this pass.
 - **`_PERIOD_HINT`**: slash-prefixed alternatives (`/hr`, `/hour`, `/mo`, `/month`, `/yr`,
   `/year`, `/day`) moved outside the leading `\b(...)` group — they no longer require a leading
   word boundary (which can't reliably form when a space or another non-word character precedes
@@ -183,11 +205,13 @@ corpora), with every `LOST` example hand-traced against real text, not just the 
 - **`_mutually_consistent` / `_resolve`**: a `None` currency no longer counts as conflicting with
   a sibling span's resolved currency; among mutually-consistent spans, `_resolve` now prefers the
   currency-bearing one.
-- `tests/test_salary.py`: 77 tests total (up from 74 at zoho's merge) — one new test each for the
+- `tests/test_salary.py`: 79 tests total (up from 74 at zoho's merge) — one new test each for the
   period-multiplier fix (`test_field_teamtailor_bare_unit_word_period_markers`), the
-  space-before-slash fix (`test_description_period_marker_space_before_slash`), and the
+  space-before-slash fix (`test_description_period_marker_space_before_slash`), the
   currency-consistency fix (`test_description_same_amount_currency_resolved_once_is_not_
-  ambiguous`).
+  ambiguous`), and two more from the second review round locking in the `_field_generic`/
+  `_field_darwinbox` regression fix (`test_field_generic_bare_word_period_not_recognized_in_
+  free_text`, `test_field_darwinbox_bare_word_period_not_recognized_either`).
 - No changes to `teamtailor.py` itself — the existing `_salary()` formatting was already correct;
   the bug was entirely in how `salary.py` interpreted the string it produces.
 
@@ -215,17 +239,37 @@ Known gaps.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
-- **A `_num()`-rounding / 5%-consistency-tolerance interaction** (`radfieldhomecare`, real text:
-  "£13.00/ hour weekdays, £13.50 / hour weekends"): both rates are genuine (a real, small
-  weekday/weekend differential), but `_num`'s round-before-multiply behavior on "13.50" (banker's
-  rounding: `round(13.50) == 14`) pushes the two annualized figures (27,040 vs. 29,120) just past
-  the existing 5% mutual-consistency threshold (1,352), so a description that would have extracted
-  fine before (when only one of the two rates was even matchable) now triggers a false ambiguity.
-  One confirmed occurrence across the full 6-ATS corpus — below this initiative's yield bar for
-  adjusting a general tolerance that every other ATS's ambiguity detection also depends on.
+- **A 5%-consistency-tolerance gap for legitimate small wage differentials** (weekday/weekend,
+  base/premium, and similar) — corrected here after a Standards-review finding that this pass's
+  first draft undercounted it as "one occurrence." `radfieldhomecare`'s real text has two separate
+  real pairs, each failing for a different reason (verified precisely, not assumed): "£13.00/ hour
+  weekdays, £13.50 / hour weekends" is a genuine `_num()`-rounding artifact — the raw, unrounded
+  gap (3.8%) is comfortably under the 5% threshold, but `_num`'s round-before-multiply behavior on
+  "13.50" (banker's rounding to 14) pushes the *annualized* gap just over it (2,080 vs. a 1,352
+  threshold). A second pair in the same description, "£13.75... £14.75", fails for a genuinely
+  different reason: its raw gap (7.3%) is large enough to exceed the threshold regardless of
+  rounding. Measured properly this time (not
+  assumed): a broad "any two close-but-inconsistent figures" proxy found over a thousand hits, but
+  almost all of those are genuinely DIFFERENT figures (job levels, unrelated roles) correctly
+  declined, not this shape — tightening the proxy to require "weekday"/"weekend" language nearby
+  found 145 across all 6 ATSes, but 111 of greenhouse's 132 turned out to be `spacex`, a *different*,
+  already-known pattern (the same multi-level compensation disclosure `_LEVEL_BAND` already
+  handles elsewhere, just in a shape that doesn't match that pattern here) coincidentally
+  mentioning "weekday"/"weekend" in unrelated benefits text, not a genuine differential. Excluding
+  that, the real count is roughly 30–40, genuinely diverse across companies, not one template. A
+  real, non-trivial pattern — but NOT fixed in this pass: unlike this pass's other fixes (pure
+  additions to what gets recognized), loosening the ambiguity tolerance is inherently riskier
+  (it can also suppress genuinely-different figures that happen to be numerically close), and
+  building it safely — most likely a `_LEVEL_BAND`-style envelope for differential-language-marked
+  pairs specifically, not a blanket tolerance widen — would need its own dedicated measurement and
+  full corpus diff cycle that this already-extensive pass's scope doesn't stretch to. A genuine
+  candidate for the next ATS pass or a dedicated follow-up, not silently dropped.
 - **`_period_from_window`'s proximity search can cross an unrelated dollar figure to steal its
-  period hint** (`marcusknightley`, real text: "£45,000-£65,000 base salary + £550 / month car
-  allowance") — the base salary range has no period marker of its own (correctly implying
+  period hint** (found on a **zoho** tenant, `marcusknightley.zohorecruit.eu`, while hand-tracing
+  zoho's own `LOST` entries in the same cross-ATS diff this pass ran — not teamtailor's own data,
+  cited here because it's the same general mechanism this pass's fixes exposed; real text:
+  "£45,000-£65,000 base salary + £550 / month car allowance") — the base salary range has no
+  period marker of its own (correctly implying
   already-annual), but the window search reaches past the £550 car-allowance figure to grab ITS
   "/ month" marker, wrongly multiplying the base salary by 12 and producing an implausible value
   that gets correctly rejected — losing the correct, un-multiplied answer as a side effect. One
@@ -267,3 +311,12 @@ Known gaps.
   just add coverage — it also expands the RISK SURFACE for every OTHER mechanism that depends on
   match density (ambiguity resolution, proximity-based hint search). Budget time to hand-trace the
   `LOST` bucket specifically after any recall-improving fix, not just celebrate the `gained` count.
+- **New, and this pass's own sharpest self-caught mistake**: a new safety-justifying code comment
+  ("safe for every Tier-1 caller...") was written and shipped for review WITHOUT re-reading an
+  already-existing, already-correct comment three lines above it in the same file — one that
+  already documented, from a prior PR's own review, exactly the free-text-field risk the new
+  comment's claim contradicted. Standards review caught it and demonstrated a real, silent 12x
+  corruption. When a new comment makes a blanket safety claim, grep the surrounding file for any
+  existing comment touching the same functions or callers first — contradicting an
+  already-established, already-reviewed finding without noticing is a stronger signal something's
+  wrong than getting a genuinely novel case wrong would be.

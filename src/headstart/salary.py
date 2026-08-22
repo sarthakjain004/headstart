@@ -124,26 +124,52 @@ def _states_a_ceiling_only(text: str, lo_start: int) -> bool:
 
 
 def _period_multiplier(text: str) -> int:
-    # Real teamtailor field, confirmed on live data (PR #239): the schema.org unitText this
-    # scraper's own _salary() passes through is a BARE word ("15-17.5 GBP HOUR", "1500-1800 EUR
-    # MONTH", "120-130 GBP DAY") — none of the phrase-shaped checks below ("per hour", "/hr", ...)
-    # match a bare "HOUR", so every hourly/monthly/daily teamtailor figure was silently defaulting
-    # to the annual multiplier and then correctly-but-wrongly getting rejected by the plausibility
-    # bounds (a genuine £15-18/hr rate reads as an absurd £15-18/year). Word-bounded so it can't
-    # false-positive inside an unrelated word — safe for every Tier-1 caller, since a Tier-1 field
-    # value is always a short, structured "NUMBER-NUMBER CURRENCY UNIT" string, not free text.
+    """Phrase-shaped period markers only ("per hour", "/hr", "monthly", ...) — safe for ANY
+    Tier-1 field value, including one that's genuinely free text an HR system supplied verbatim
+    (ashby, personio, darwinbox — see the Tier-1 section comment above). Used directly by
+    `_field_generic` and `_field_darwinbox`; see :func:`_period_multiplier_structured` for the
+    narrower, bare-word-recognizing variant safe only for known-structured field shapes."""
     low = text.lower()
-    if any(p in low for p in ("per-hour", "per hour", "/hr", "hourly")) or re.search(
-        r"\bhour\b", low
-    ):
+    if any(p in low for p in ("per-hour", "per hour", "/hr", "hourly")):
+        return _HOURLY_TO_ANNUAL
+    if any(p in low for p in ("per-month", "per month", "/mo", "monthly", "mensual")):
+        return 12
+    return 1  # annual is the default for every known Tier-1 format
+
+
+def _period_multiplier_structured(text: str) -> int:
+    """:func:`_period_multiplier`, plus BARE unit-word recognition ("HOUR", "DAY", "MONTH" with
+    no "per"/slash) for a field value KNOWN to be a short, machine-assembled
+    "NUMBER-NUMBER CURRENCY UNIT" string with no other prose — real teamtailor field, confirmed
+    on live data: the schema.org unitText this scraper's own _salary() passes through is exactly
+    that shape ("15-17.5 GBP HOUR", "1500-1800 EUR MONTH", "120-130 GBP DAY"), and none of
+    `_period_multiplier`'s phrase-shaped checks match a bare "HOUR", so every hourly/monthly/daily
+    teamtailor figure was silently defaulting to the annual multiplier and then
+    correctly-but-wrongly getting rejected by the plausibility bounds.
+
+    Deliberately NOT the default `_period_multiplier` behavior, and used only by
+    `_field_lever_recruitee_teamtailor` (whose three callers — lever.py, recruitee.py,
+    teamtailor.py — all assemble their string from a structured min/max/currency/interval quad,
+    confirmed by reading each scraper's own formatter, never free text): a bare word is NOT safe
+    against genuine free text, where it can match an unrelated mention instead of the salary's own
+    period. Real, demonstrated regression caught by code review before merge (PR #239): applying
+    bare-word matching to `_field_generic` (ashby/personio's free-text fields) silently misread
+    "40,000 - 50,000 USD with 1 month severance included" as MONTHLY, 12x-inflating a correct
+    annual figure into a wrong one that still happened to clear the plausibility bounds — a silent
+    corruption, not a safe decline. `_field_darwinbox`'s `salary_timeframe` is equally unvalidated
+    free text from Darwinbox's own API (confirmed: darwinbox.py never enumerates its possible
+    values), so it stays on the safe `_period_multiplier` too."""
+    mult = _period_multiplier(text)
+    if mult != 1:
+        return mult
+    low = text.lower()
+    if re.search(r"\bhour\b", low):
         return _HOURLY_TO_ANNUAL
     if re.search(r"\bday\b", low):
         return _DAILY_TO_ANNUAL
-    if any(
-        p in low for p in ("per-month", "per month", "/mo", "monthly", "mensual")
-    ) or re.search(r"\bmonth\b", low):
+    if re.search(r"\bmonth\b", low):
         return 12
-    return 1  # annual is the default for every known Tier-1 format
+    return 1
 
 
 def _bounded(
@@ -169,7 +195,7 @@ def _field_lever_recruitee_teamtailor(value: str) -> SalarySpan | None:
         return None
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
-    mult = _period_multiplier(value)
+    mult = _period_multiplier_structured(value)
     lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
     return _bounded(min(lo, hi), max(lo, hi), currency)
 
