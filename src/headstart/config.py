@@ -88,6 +88,21 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # (the match is on `slug_from`'s URL, not the `tenant` column, so only the URL's two
         # casings matter) — the lowercased key here covers both.
         "workday:https://walmart.wd5.myworkdayjobs.com/non-workdayinternal",
+        # Lever's own demo/sandbox/QA tenants (found during lever's salary-extraction pass,
+        # 2026-08-22, reading real board content — not from the slug alone, per this list's own
+        # rule). 1,769 fabricated postings total. Confirmed by content: template/placeholder
+        # titles ("[TEMPLATE] Customer Experience Specialist", "***POSTING TEMPLATE - ENGINEERING",
+        # "Account Executive (copy)", "Draft External Job", "Ice cream eater", "# Test Job 123",
+        # "[JEN TEST] WHITELISTED POSTING FOR RESUME REQ OVERRIDE") with no real company name
+        # attached, unlike `lever:sandboxvr` (Sandbox VR, a real VR entertainment company; kept).
+        "lever:leverdemo",  # 383 postings
+        "lever:leverdemo-8",  # 429 postings
+        "lever:leverdemo193",  # 16 postings
+        "lever:leverdemo50000",  # 7 postings
+        "lever:leverdemo93321",  # 4 postings
+        "lever:leverdemo956",  # 15 postings
+        "lever:levertest",  # 894 postings
+        "lever:salesdemo-jr",  # 21 postings
     }
 )
 
