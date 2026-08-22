@@ -275,6 +275,18 @@ Known gaps.
   that gets correctly rejected — losing the correct, un-multiplied answer as a side effect. One
   confirmed occurrence; the general fix (don't let a hint search cross a different currency
   figure) is more invasive than this pass's yield justifies building blind.
+- **`_mutually_consistent`'s hub-topology gap** (second review round, Standards axis): it compares
+  every span only to `spans[0]`, never pairwise among all of them, so a currency-LESS first span
+  can let two LATER spans with genuinely different currencies both "agree" with it independently,
+  never being compared against each other. Confirmed directly:
+  `_mutually_consistent([SalarySpan(60000, None, None, "regex"), SalarySpan(60500, None, "USD",
+  "regex"), SalarySpan(61000, None, "GBP", "regex")])` returns `True` (wrong — USD and GBP should
+  never silently agree), and `_resolve()` would pick the first currency-bearing span, dropping the
+  real conflict. Pre-existing (this pass's currency-consistency fix widened how it's reached, by
+  letting a `None`-currency span survive as a comparison anchor at all, but didn't create the gap
+  itself) — measured directly against all 6 ATS corpora: zero real occurrences, matching the
+  reviewer's own assessment. Not fixed here given the lack of real-world evidence; worth a
+  dedicated pairwise-comparison rewrite if a future ATS's data ever surfaces a real case.
 - **Unsupported currencies** (THB, MXN, PKR observed in real, otherwise-well-formed Tier-1 field
   values) — 11 confirmed cases in an earlier measurement, too small to justify adding speculative
   plausibility bounds for currencies this module has no calibrated sense of.
