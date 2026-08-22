@@ -369,15 +369,68 @@ is a representative single-board example: all 62 now genuinely read in 2.9 secon
 concurrent fetch, none of them stating a salary — a real board this initiative's own numbers were
 blind to before, not diluting the corrected total, just no longer silently excluded from it.
 
-This correction does not touch `src/headstart/salary.py` or any production scraper — only
-`scripts/enrich/salary_sample.py`'s zoho-specific sampling adapter. No cross-ATS diff applies (no
-shared extraction code changed); no `verify-search-filters` re-run applies (no scraper URL or
-production behavior changed). The comparison tables in `teamtailor.md`, `ashby.md`, and
-`recruitee.md` still cite zoho's pre-correction 9.2% figure as of their own respective merge
-dates — deliberately not rewritten here, consistent with treating each pass's doc as a point-in-time
-snapshot rather than a living document; this section is the correction's permanent record. Zoho's
-corrected 10.0% is now roughly tied with smartrecruiters' 10.0% rather than strictly the lowest of
-the passes done so far.
+This correction does not touch `src/headstart/salary.py` — no cross-ATS diff applies, no shared
+extraction code changed. It does add a documentation-only comment to `src/headstart/scrapers/
+zoho.py` (see the next subsection); no `verify-search-filters` re-run applies since `url()` and
+every other function's behavior is byte-for-byte unchanged. The comparison tables in `teamtailor.
+md`, `ashby.md`, and `recruitee.md` still cite zoho's pre-correction 9.2% figure as of their own
+respective merge dates — deliberately not rewritten here, consistent with treating each pass's doc
+as a point-in-time snapshot rather than a living document; this section is the correction's
+permanent record. Zoho's corrected 10.0% is now roughly tied with smartrecruiters' 10.0% rather
+than strictly the lowest of the passes done so far.
+
+### A second, larger finding from the same investigation: a hard ~750-job listing ceiling
+
+Removing the detail-fetch cap prompted a direct check of an assumption this whole correction had
+been resting on — that "zoho's listing never paginates" — rather than continuing to assume it.
+**It was wrong in the way that matters for large boards, though right in the narrower sense the
+original claim needed**: a single `_get()` genuinely is the whole request (no follow-up call is
+needed to walk pages), but the *response itself* is not guaranteed to contain a board's true full
+population. Direct investigation (hitting the real API, not reasoning about it, per this repo's
+own standing rule) found a hard ceiling: **the public, unauthenticated career-site widget embeds
+at most ~750 jobs into that one response.**
+
+Evidence, not assertion:
+- **3 independent tenants** in this pass's 3,000-board sample (`maydaydentalstaffing`, `kgoci`,
+  `harrisonconsultingsolutions`) each landed on **exactly 750** — the sample-wide maximum job
+  count across all 3,000 boards; nothing observed exceeds it.
+- **URL query-string variants never changed the response**: `?page=2`, `?start=751`,
+  `?fromIndex=751`, `?offset=750`, `?pageIndex=2`, all tested directly against a 750-job board —
+  identical 750 records, identical first record ID, every time.
+- **The front-end JS makes no follow-up request.** `career-website-common.js`'s
+  `initializeJobList()` reads `jobs=JSON.parse($L("#jobs").val())` — exclusively from the same
+  server-embedded blob this scraper already parses — and `renderJobListing()` only groups/sorts/
+  facets that in-memory array client-side (for display: grouping by job type, layout options).
+  No `fetch`/`XMLHttpRequest`/`.ajax()` call anywhere in that file loads additional records.
+- **No field anywhere reveals a true total.** Checked every hidden-input config blob on the page
+  (`#jobs`, `#meta`, `#pageJson`, `#moduleMeta`) for a count/total field distinct from the
+  embedded array's own length — none exists. A board with exactly 750 real openings and one with
+  5,000 (750 shown) are indistinguishable from the outside.
+- **Real pagination exists, but not here.** Zoho Recruit's own public documentation confirms
+  `fromIndex`/`toIndex` pagination on the authenticated private API's `getRecords` method
+  (`recruit.zoho.com/recruit/private/xml/...` or the newer `/recruit/v2/...`) — but that requires
+  a per-tenant OAuth token, which this scraper has no path to obtaining for the thousands of
+  unaffiliated companies it reads without any relationship to them.
+
+**Scale of impact, honestly bounded, not exaggerated**: only 3/3,000 sampled boards (0.1%) hit the
+ceiling exactly. This is not a general-population problem — it affects a small minority of very
+high-volume boards (the three identified are staffing/recruiting agencies, consistent with this
+pass's own earlier finding that zoho's population skews international/agency-heavy). But for an
+affected board, an *unknown* number of real jobs beyond 750 are silently invisible — not just to
+this sampling script, but to `zoho.py`'s own production `fetch_raw()`, which makes the identical
+single request. There is no way, from outside Zoho's authenticated API, to even measure how many
+real jobs are being missed on any given board — the ceiling is silent, with no truncation signal.
+
+**Not fixed here, and not decided unilaterally**: closing this gap would need either (a) a
+headless browser driving the widget's real UI (a fundamentally different scraping architecture
+from every other scraper in this codebase, all of which are lightweight HTTP/`curl_cffi`-based),
+or (b) per-tenant authenticated API access (impractical at this scale — thousands of unaffiliated
+companies, no existing relationship with any of them to request OAuth grants from). Both are real,
+substantial architectural decisions squarely inside CLAUDE.md's "Weigh Design Choices on Big Work"
+rule — flagged here with the evidence behind it, not built without sign-off. `src/headstart/
+scrapers/zoho.py`'s own module docstring now documents this limit directly, so a future reader
+investigating a large zoho board's missing postings finds the explanation immediately rather than
+re-discovering it.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
@@ -389,6 +442,12 @@ the passes done so far.
 - **Parenthesis or em-dash between a label and its connector**, and **expanding the detail-fetch
   pass to every job** (Option B, see Methods tried) — both real, both measured, both deliberately
   left for a human call rather than decided silently.
+- **A hard ~750-job ceiling on the public career-site widget's single listing response** (see
+  "Post-merge correction" above for the full investigation) — affects 3/3,000 sampled boards
+  (0.1%), all high-volume staffing agencies, silently and unmeasurably beyond the ceiling. No fix
+  available inside this scraper's current unauthenticated-HTTP architecture; closing it would need
+  a headless browser or per-tenant authenticated API access, both real architectural decisions
+  flagged for a human call rather than built unilaterally.
 
 ## Carried forward from workable, workday, greenhouse, and smartrecruiters — and new lessons for future ATSes
 
@@ -436,3 +495,15 @@ the passes done so far.
   the ATS's own production `fetch_raw()` compute the identical eligibility set (confirmed here:
   `_fetch_zoho`'s `missing_desc` and `fetch_raw()`'s `empty` used the same four conditions), check
   whether the cap is still earning its cost, not just whether its symptom is measured correctly.
+- **New, the second post-merge finding**: an existing code comment asserting a scraper's own
+  endpoint behavior ("the listing never paginates") is a claim someone made once, not a fact
+  re-verified since — treat it the same as any other unverified assumption CLAUDE.md's own rules
+  warn about, especially when a fix's whole justification leans on it. This pass's original PR
+  correctly avoided calling `fetch_raw()` for workday/smartrecruiters because THEIR listings
+  genuinely do paginate expensively — but the inverse claim about zoho ("costs nothing extra")
+  was never independently hit-the-API-and-checked until directly asked to. It turned out to be
+  right in the sense the fix needed (no extra *request* is required to walk pages) but wrong in a
+  more consequential sense nobody had checked (the *response itself* silently truncates at ~750).
+  A claim can be true enough to justify the immediate fix and still be hiding a bigger, unasked
+  question — check the actual API behavior directly rather than trusting an inherited comment,
+  even one that sounds authoritative and even when the narrower claim you need turns out correct.

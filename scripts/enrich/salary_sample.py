@@ -116,11 +116,13 @@ def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
     return random.Random(seed).sample(all_companies, n)
 
 
-#: How many per-job detail fetches a detail-pass adapter may spend on one board — the ~3/board
-#: cap the sampling design commits to (docs/salary-extraction/README.md). Only the detailed jobs
-#: are counted toward coverage stats: an undetailed posting has no description to mine, and
-#: lumping it in as a "no signal" job would dilute the measurement with jobs never actually read,
-#: not jobs genuinely found to say nothing.
+#: How many per-job detail fetches a BOUNDED detail-pass adapter may spend on one board — the
+#: ~3/board cap the sampling design commits to (docs/salary-extraction/README.md). Only the
+#: detailed jobs are counted toward coverage stats: an undetailed posting has no description to
+#: mine, and lumping it in as a "no signal" job would dilute the measurement with jobs never
+#: actually read, not jobs genuinely found to say nothing. NOT used by ``_fetch_zoho`` (PR #242):
+#: zoho's listing never paginates, so capping its *detail* fetches was undercounting real
+#: coverage for no corresponding cost saving — see that function's own docstring.
 _DETAIL_FETCH_CAP = 3
 
 
@@ -156,9 +158,30 @@ def _fetch_smartrecruiters(scraper: BaseScraper) -> list[Job]:
 
 def _fetch_zoho(scraper: BaseScraper) -> list[Job]:
     """Uncapped adapter for zoho: calls the scraper's own ``fetch_raw()`` directly, unlike every
-    other detail-pass adapter here. Zoho's listing (``_get()``, one page — zoho never paginates
-    the listing itself, so ``fetch_raw()`` costs nothing extra there) already carries
-    ``Job_Description`` for most tenants; some tenants configure their careers site without that
+    other detail-pass adapter here. Zoho's listing is one page (``_get()``) with no *further*
+    request needed to page through it — but it is not unbounded: direct investigation (2026-08-22,
+    hitting the real API rather than assuming — see ``zoho.py``'s own module docstring for the
+    full account) found a hard ~750-job ceiling on what the public, unauthenticated career-site
+    widget embeds into that single response, with no working mechanism to request more. Confirmed
+    across this pass's 3,000-board sample: 3 independent tenants landed on exactly 750 (the
+    sample-wide maximum; nothing exceeded it), query-string variants (``page``, ``offset``,
+    ``start``, ``fromIndex``, ``pageIndex``) on the same URL never changed the response, and the
+    page's own front-end JS (`career-website-common.js`) reads jobs exclusively from the
+    server-embedded blob with no follow-up AJAX call — real pagination exists only in Zoho
+    Recruit's authenticated private API (confirmed via Zoho's own public documentation:
+    `fromIndex`/`toIndex` on `getRecords`), which needs a per-tenant OAuth token this scraper has
+    no way to obtain for the thousands of unaffiliated companies it reads. So "zoho's listing
+    costs nothing extra to call in full" is true for the ≤750 jobs it returns, not a claim that
+    every board's true population is ≤750 — a board with more real openings than that silently
+    loses the excess, in both this adapter and zoho.py's own production `fetch_raw()`, since both
+    make the identical single request. Left as a documented platform limit, not a bug this
+    adapter (or any code change within the current unauthenticated-scraping architecture) can fix
+    — see docs/salary-extraction/zoho.md's "Post-merge correction" section for the full writeup
+    and the open question of whether a heavier fix (e.g. a headless browser, or per-tenant API
+    access) is worth pursuing.
+
+    Independent of that ceiling: the listing already carries ``Job_Description`` for most tenants
+    among whichever jobs it does return; some tenants configure their careers site without that
     column (28/71 in the scraper's own docstring) and need a per-job detail fetch instead.
 
     This used to cap those detail fetches at :data:`_DETAIL_FETCH_CAP` (3/board, serial, its own

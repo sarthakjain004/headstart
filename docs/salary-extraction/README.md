@@ -27,11 +27,14 @@ reader can also open `workday.md` alone and get everything about workday specifi
    same liveness-ledger source and dedup every other production consumer uses — never hand-parse
    the CSV, it has documented duplicate-row issues that function already handles). Fetches through
    the *real* registered scraper and its real `parse()`, not a reimplementation. Listing-only ATSes
-   (`has_detail_pass = False`) get one request per board — that's the whole sample. Detail-pass
+   (`has_detail_pass = False`) get one request per board — that's the whole sample. Most detail-pass
    ATSes get a bounded adapter (~3 per-job detail fetches/board, calling the scraper's own endpoint
    methods directly — several detail-pass scrapers bake a full per-board fan-out into `fetch_raw()`
    itself, which a naive call would trigger, blowing past the bounded-request intent) — built
-   per-ATS as that ATS is reached, never assumed in advance. Runs at `--workers 32` by default
+   per-ATS as that ATS is reached, never assumed in advance. **zoho is the deliberate exception**
+   (PR #242): its listing never paginates, so calling `fetch_raw()` directly costs nothing beyond
+   the detail fetches it needs anyway, and capping those specifically was undercounting real
+   coverage for no cost saving — see `zoho.md`'s "Post-merge correction" section. Runs at `--workers 32` by default
    (bumped from an initial 8 partway through the workday pass, since 3000 boards at 8 workers was
    impractically slow) — safe at that width specifically because sampled boards spread across many
    different companies/instances, not one tenant's own rate limit. Spare egress is automatic:
