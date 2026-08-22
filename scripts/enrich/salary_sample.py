@@ -58,6 +58,7 @@ since board sampling order isn't guaranteed to spread evenly across instances.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import random
 import re
@@ -69,7 +70,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart import http
-from headstart.config import CompanyRef, load_active_companies
+from headstart.config import EXCLUDED_BOARDS, CompanyRef, load_active_companies
 from headstart.models import Job
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
@@ -82,6 +83,12 @@ from headstart.scrapers.trakstar import _codes_from
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
 ARTIFACTS_ROOT = ROOT / "experiment" / "salary-extraction"
+#: Fallback candidate-tenant source for an ATS with no liveness ledger at all (oracle,
+#: sensehq — see docs/salary-extraction/README.md's own processing-order note). Raw
+#: discovery output (Common Crawl / fingerprint mining), never liveness-checked — dead
+#: candidates simply error during the normal per-board fetch, the same as any other ATS's
+#: occasional dead board.
+CANDIDATES_DIR = ROOT / "data" / "ats-tenants-merged"
 
 #: Default board-level concurrency. Deliberately well above any single ATS's own production
 #: per-tenant bound (see the module docstring's concurrency note for why that's safe here — 32
@@ -123,9 +130,32 @@ class BoardResult:
 
 def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
     all_companies = [c for c in load_active_companies(LEDGER_DIR) if c.ats == ats]
+    if not all_companies and not (LEDGER_DIR / f"{ats}.csv").exists():
+        all_companies = _candidates_without_ledger(ats)
     if len(all_companies) <= n:
         return all_companies
     return random.Random(seed).sample(all_companies, n)
+
+
+def _candidates_without_ledger(ats: str) -> list[CompanyRef]:
+    """Fallback for an ATS with no liveness ledger at all (:data:`CANDIDATES_DIR`'s own
+    docstring) — reads the raw candidate-tenant discovery file directly, applying the same
+    :data:`~headstart.config.EXCLUDED_BOARDS` filter :func:`load_active_companies` would.
+    Unlike that function, this does NOT itself check liveness — for a population this small
+    (dozens, not thousands), the caller's own per-board fetch during sampling already is
+    the liveness check, so a candidate that turns out dead simply errors there, same as any
+    ATS's occasional dead board."""
+    path = CANDIDATES_DIR / f"{ats}.csv"
+    if not path.exists():
+        return []
+    companies = []
+    with path.open(newline="") as f:
+        for row in csv.DictReader(f):
+            slug = row["tenant"]
+            if f"{ats}:{slug}".lower() in EXCLUDED_BOARDS:
+                continue
+            companies.append(CompanyRef(ats=ats, slug=slug, name=slug))
+    return companies
 
 
 #: How many per-job detail fetches a BOUNDED detail-pass adapter may spend on one board — the
