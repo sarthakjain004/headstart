@@ -31,6 +31,21 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "darwinbox:training",  # company "training"; "Ali marketing Executive", "SK_Jr. Associate"
         "greenhouse:staging",  # company "Staging Site Board"; its one posting is titled "TEST"
         "greenhouse:test1",  # company "Test"
+        # Lever's own demo/sandbox/QA tenants (found during lever's salary-extraction pass,
+        # 2026-08-22, reading real board content — not from the slug alone, per this list's own
+        # rule). 1,769 fabricated postings total. Confirmed by content: template/placeholder
+        # titles ("[TEMPLATE] Customer Experience Specialist", "***POSTING TEMPLATE - ENGINEERING",
+        # "Account Executive (copy)", "Draft External Job", "Ice cream eater", "# Test Job 123",
+        # "[JEN TEST] WHITELISTED POSTING FOR RESUME REQ OVERRIDE") with no real company name
+        # attached, unlike `lever:sandboxvr` (Sandbox VR, a real VR entertainment company; kept).
+        "lever:leverdemo",  # 383 postings
+        "lever:leverdemo-8",  # 429 postings
+        "lever:leverdemo193",  # 16 postings
+        "lever:leverdemo50000",  # 7 postings
+        "lever:leverdemo93321",  # 4 postings
+        "lever:leverdemo956",  # 15 postings
+        "lever:levertest",  # 894 postings
+        "lever:salesdemo-jr",  # 21 postings
         "ripplehire:prodtest",  # 863 postings, company "prodtest"
         "ripplehire:qa1-tataaia",  # 209 postings, company "qa1-tataaia"
         "ripplehire:qa1-ust-app",  # 300 postings, company "qa1-ust-app"; "software developement"
