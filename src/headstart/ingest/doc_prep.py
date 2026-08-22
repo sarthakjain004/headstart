@@ -114,11 +114,12 @@ def build_doc(job: dict) -> str:
 # v3: added the salary cascade (min_salary_annual/max_salary_annual/salary_currency/salary_source).
 # v4: covers 10 salary.py-changing commits since v3 that none bumped this despite each measurably
 # changing `extract()`'s output on its own mandatory cross-ATS diff (workday through rippling, full
-# list: `git log 42665d9..HEAD -- src/headstart/salary.py`) plus keka's own pass (AED currency,
-# leading-currency-code labels, "stipend"/"ctc" labels, an "L"/lakh numeric shorthand, and a 401(k)
-# false-positive guard that also corrects the same pre-existing false positive on 8 already-merged
-# ATSes — see docs/salary-extraction/keka.md). One bump sweeps in all of it; the counter has no way
-# to distinguish which change it's covering.
+# list: `git log 42665d9..24dee34 -- src/headstart/salary.py` — a fixed range, not `..HEAD`, which
+# would drift as later commits land) plus keka's own pass (AED currency, leading-currency-code
+# labels, "stipend"/"ctc" labels, an "L"/lakh numeric shorthand, and a 401(k) false-positive guard
+# that also corrects the same pre-existing false positive on 8 already-merged ATSes — see
+# docs/salary-extraction/keka.md). One bump sweeps in all of it; the counter has no way to
+# distinguish which change it's covering.
 DERIVATIONS_VERSION = 4
 
 
