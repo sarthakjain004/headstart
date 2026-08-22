@@ -139,6 +139,25 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # not two boards. Not an independent tenant, so dropping it removes the duplicate, not
         # Bombardier's jobs. Found by #218's sweep.
         "successfactors:www.jobs.bombardier.com",
+        # Trakstar Hire's own demo/QA tenants (found during trakstar's salary-extraction pass,
+        # 2026-08-22, reading real board content — not from the slug alone, per this list's own
+        # rule). Confirmed by content: `bbtest`'s sole posting is titled "Bug Buster"; `smoketest`
+        # (66 postings, confirmed via its own `jobfeeds` RSS feed — the careers-page HTML this
+        # scraper reads renders only the first 25 of them, a separate, real truncation bug under
+        # its own investigation, unrelated to this exclusion) is unmistakably a vendor
+        # feature-testing sandbox — "Custom Fields - No Fields", "Custom Fields - With all 9
+        # Fields", "Django Upgrade Final Test", "Example Logo", "filter test" (x2), "google account
+        # 2", "Google Smoke Testing", "IT Coordinator job description" — scattered across many
+        # countries (Tijuana x18, Chennai x9, Bengaluru x8, and 20+ singletons), not city-clustered
+        # like the other two; `testbass`'s sole posting ("Ruby on Rails Developer") reads plausibly
+        # on its own but shares `bbtest`'s same Bangalore, India location and single-generic-
+        # posting shape, with no independent company signal anywhere. Checked and deliberately
+        # kept: `zutest` (a "System Administrator – Computing Services Department" posting in Abu
+        # Dhabi, UAE — detailed, professionally formatted, no test/dummy signal in the content
+        # itself) — exactly the slug-pattern-alone reasoning this list's own rule warns against.
+        "trakstar:bbtest",  # 1 posting
+        "trakstar:smoketest",  # 66 postings (jobfeeds RSS count)
+        "trakstar:testbass",  # 1 posting
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
