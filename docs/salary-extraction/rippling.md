@@ -11,10 +11,12 @@
   capped subset) — the sampling script's own safety check (`has_detail_pass and adapter is None`)
   correctly refused to run rather than risk an unbounded fan-out across 2,062 boards. Built
   `_fetch_rippling` in `scripts/enrich/salary_sample.py`, mirroring workday's/smartrecruiters'
-  shape (one direct listing GET, cap detail fetches at `_DETAIL_FETCH_CAP`=3/board via the
-  scraper's own `_detail()`) rather than zoho's uncapped shape — rippling's listing is cheap like
-  zoho's, but its `fetch_raw()`'s *fan-out*, not its listing, is what's unbounded, so the
-  workday/smartrecruiters cap-the-detail-calls pattern is the right fit, not zoho's.
+  shape (one listing fetch through the scraper's own egress-wrapped primitive, cap detail fetches
+  at `_DETAIL_FETCH_CAP`=3/board via the scraper's own `_detail()`) rather than zoho's uncapped
+  shape — rippling's listing is cheap like zoho's, but its `fetch_raw()`'s *fan-out*, not its
+  listing, is what's unbounded, so the workday/smartrecruiters cap-the-detail-calls pattern is the
+  right fit, not zoho's. First version called `http.fetch` directly instead of routing through the
+  scraper (see What changed in code — a real code-review finding, fixed before merge).
 - **Dry-run first**: 40 boards, seed=1, 32 workers, 1/40 errored — no rate-limit pattern, cleared
   to sample the full population at the standing default concurrency.
 - **Checked for structure one level deeper** (asked of every already-populated ATS per this
@@ -134,9 +136,14 @@ reach this level.
   "an hour" already contains "hour" as a substring, so `_period_from_window`'s existing
   classification (`"hour" in hint`) needed no change.
 - `scripts/enrich/salary_sample.py`: new `_fetch_rippling(scraper)` adapter (bounded at
-  `_DETAIL_FETCH_CAP`, mirroring workday's/smartrecruiters' shape), registered in
-  `_DETAIL_ADAPTERS`; imports `headstart.http` and `USER_AGENT` (previously only `BaseScraper` was
-  imported from `headstart.scrapers.base`).
+  `_DETAIL_FETCH_CAP`), registered in `_DETAIL_ADAPTERS`. Code review caught a real violation of a
+  rule this same file's own module docstring states: the first version called `http.fetch`
+  directly for the listing GET (near-verbatim duplicating `RipplingScraper.fetch_raw()`'s own
+  listing block), silently bypassing the spare-egress fallback path every other adapter routes
+  through. Fixed by calling the scraper's own inherited `_get()` (`BaseScraper`'s, egress-wrapped —
+  `rippling.py` doesn't override it) instead, mirroring `_fetch_smartrecruiters`'s exact
+  `json.loads(scraper._get())` shape — zero changes to `rippling.py` needed after all, since a
+  reusable, already-egress-wrapped primitive was already there to call.
 - `tests/test_salary.py`: 2 new tests —
   `test_field_range_currency_interval_rippling_structured_tier` (the two real raw formats) and
   `test_description_an_hour_period_marker` (the real Tier-2 phrasing).

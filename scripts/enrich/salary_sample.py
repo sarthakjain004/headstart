@@ -62,11 +62,10 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import http
 from headstart.config import CompanyRef, load_active_companies
 from headstart.models import Job
 from headstart.scrapers import registry
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import BaseScraper
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
@@ -211,21 +210,14 @@ def _fetch_zoho(scraper: BaseScraper) -> list[Job]:
 
 
 def _fetch_rippling(scraper: BaseScraper) -> list[Job]:
-    """Bounded adapter for rippling: one listing GET (rippling's listing never paginates — a
-    single request the way zoho's does), but unlike zoho, ``fetch_raw()`` bakes the FULL
-    per-posting detail fan-out into that same call — every job on the board, not a capped subset
-    — so it's the *fan-out*, not the listing, that makes calling ``fetch_raw()`` directly unsafe
-    for a sampling pass here. Detail-fetches only the first :data:`_DETAIL_FETCH_CAP` postings via
-    the scraper's own ``_detail()``, then parses just those, mirroring workday's/smartrecruiters'
-    shape rather than zoho's uncapped one."""
-    resp = http.fetch(
-        "GET",
-        scraper.url(),
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    """Bounded adapter for rippling: one listing GET via the scraper's own inherited ``_get()``
+    primitive (``BaseScraper``'s, egress-wrapped — rippling.py doesn't override it), never
+    ``fetch_raw()``, which bakes the FULL per-posting detail fan-out into that same call — every
+    job on the board, not a capped subset. It's the *fan-out*, not the listing, that makes calling
+    ``fetch_raw()`` directly unsafe for a sampling pass here. Detail-fetches only the first
+    :data:`_DETAIL_FETCH_CAP` postings via the scraper's own ``_detail()``, then parses just
+    those, mirroring workday's/smartrecruiters' capped shape rather than zoho's uncapped one."""
+    data = json.loads(scraper._get())
     items = (
         data
         if isinstance(data, list)
