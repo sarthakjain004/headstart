@@ -76,6 +76,8 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
 from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
 from headstart.scrapers.successfactors import _job_urls_from
+from headstart.scrapers.trakstar import _CODE as _TRAKSTAR_CODE
+from headstart.scrapers.trakstar import _ITEM as _TRAKSTAR_ITEM
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
@@ -335,14 +337,38 @@ def _fetch_successfactors(scraper: BaseScraper) -> list[Job]:
     return scraper.parse(raw, datetime.now(UTC).isoformat())
 
 
+def _fetch_trakstar(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for trakstar: one listing GET via the scraper's own inherited ``_get()``
+    primitive, never ``fetch_raw()``, which bakes the FULL per-posting JSON-LD detail fan-out into
+    that same call (workers=4, DataDome-fronted) — every job on the board, not a capped subset.
+    Detail-fetches only the first :data:`_DETAIL_FETCH_CAP` postings via the scraper's own
+    ``_job_posting()``. Unlike workday/rippling/smartrecruiters (which slice the raw item list
+    itself before calling ``parse()``), trakstar's ``parse()`` walks every job card found in the
+    FULL listing HTML regardless of which postings were fetched — so the result is post-filtered
+    down to just the detail-fetched codes afterward, the same "don't count a never-read job as a
+    no-signal one" discipline zoho's adapter already established via its own ``keep_ids`` filter."""
+    html = scraper._get()
+    codes = [
+        m.group(1)
+        for block in html.split(_TRAKSTAR_ITEM)[1:]
+        if (m := _TRAKSTAR_CODE.search(block))
+    ]
+    sample = set(codes[:_DETAIL_FETCH_CAP])
+    postings = {code: scraper._job_posting(code) for code in sample}
+    jobs = scraper.parse(
+        {"html": html, "postings": postings}, datetime.now(UTC).isoformat()
+    )
+    return [j for j in jobs if j.id.split(":", 2)[2] in sample]
+
+
 #: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
 #: researched — see the module docstring). workday/smartrecruiters/rippling/ripplehire/
-#: successfactors cap detail fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters' listings
-#: paginate too, so `fetch_raw()` itself is expensive to call from a sampling script; rippling's/
-#: ripplehire's/successfactors' listings are cheap but their `fetch_raw()` bakes in an uncapped
-#: detail fan-out — see each adapter's own docstring); zoho is uncapped — its listing never
-#: paginates, so `fetch_raw()` costs nothing extra there, and capping its *detail* fetches was
-#: undercounting real coverage (see `_fetch_zoho`'s own docstring).
+#: successfactors/trakstar cap detail fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters'
+#: listings paginate too, so `fetch_raw()` itself is expensive to call from a sampling script;
+#: rippling's/ripplehire's/successfactors'/trakstar's listings are cheap but their `fetch_raw()`
+#: bakes in an uncapped detail fan-out — see each adapter's own docstring); zoho is uncapped — its
+#: listing never paginates, so `fetch_raw()` costs nothing extra there, and capping its *detail*
+#: fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,
@@ -350,6 +376,7 @@ _DETAIL_ADAPTERS = {
     "rippling": _fetch_rippling,
     "ripplehire": _fetch_ripplehire,
     "successfactors": _fetch_successfactors,
+    "trakstar": _fetch_trakstar,
 }
 
 
