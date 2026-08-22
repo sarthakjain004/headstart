@@ -125,7 +125,7 @@ def test_field_darwinbox_already_absolute_rupees_monthly():
 
 def test_field_darwinbox_magnitude_threshold_boundary():
     # _DARWINBOX_LAKHS_THRESHOLD sits in a wide, evidence-based gap (real lakhs values top out at
-    # 19, real absolute values start at 5,000) — exercise the exact 1,000 boundary mechanically.
+    # 19, real absolute values start at 10,000) — exercise the exact 1,000 boundary mechanically.
     # Just below: treated as lakhs (x100,000) -> a large but in-bounds figure.
     assert from_field("INR 999 (Annual)", "darwinbox") == SalarySpan(
         99_900_000, 99_900_000, "INR", "field"

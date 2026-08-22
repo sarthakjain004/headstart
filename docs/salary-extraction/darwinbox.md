@@ -183,7 +183,7 @@ rate incorrectly measured.
     (lakhs) or ×1 (already-absolute) multiplier based on `max(raw_lo, raw_hi)` against a new
     `_DARWINBOX_LAKHS_THRESHOLD = 1_000` constant, before applying the existing period multiplier
     on top. The threshold sits in a wide, empirically-confirmed gap (real lakhs values: 1-19; real
-    absolute values: 5,000+) with room either side, not tuned to either boundary.
+    absolute values: 10,000+) with room either side, not tuned to either boundary.
   - No other `salary.py` function touched — `_field_darwinbox` is private, per-ATS dispatch with
     zero shared-code blast radius, confirmed by the mandatory cross-ATS diff (see below).
 - **`src/headstart/scrapers/darwinbox.py`**: `parse()`'s redundant `salary_timeframe` append
