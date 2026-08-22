@@ -112,7 +112,14 @@ def build_doc(job: dict) -> str:
 # — revisit only if that stops being true).
 # v2: Tier 2 answers with the smallest stated requirement rather than the first (ADR-0079).
 # v3: added the salary cascade (min_salary_annual/max_salary_annual/salary_currency/salary_source).
-DERIVATIONS_VERSION = 3
+# v4: accumulated salary.py changes since v3 that none of the intermediate merges bumped this for
+# (ashby's truthy-check fix, personio's numeric/period-marker fixes, rippling's period marker) plus
+# keka's own pass (AED currency, leading-currency-code labels, "stipend"/"ctc" labels, an "L"/lakh
+# numeric shorthand, and a 401(k) false-positive guard that also corrects the same pre-existing
+# false positive on 8 already-merged ATSes — see docs/salary-extraction/keka.md). One bump sweeps
+# in all of it; the counter has no way
+# to distinguish which change it's covering.
+DERIVATIONS_VERSION = 4
 
 
 def to_meta(job: dict) -> dict:
