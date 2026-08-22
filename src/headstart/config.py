@@ -160,11 +160,13 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "trakstar:testbass",  # 1 posting
         # SenseHQ's own dev/test tenant (found during sensehq's salary-extraction pass,
         # 2026-08-23, reading real board content). Confirmed by content: 204 postings, the
-        # large majority literal placeholder titles ("TESTING" x60+, "sdaa" x10+, "dep test",
-        # "copy test") plus real-looking titles duplicated with " copy" appended ("Sales
-        # development Representative" / "Sales development Representative copy") — a
-        # feature-testing sandbox, not a real employer. The "-dev" slug matches, but per this
-        # list's own rule that alone would not have been enough.
+        # large majority QA/testing-tool placeholder titles — "Cypress 1" (41), "QA test" (13),
+        # "TESTING" (19), "Cypress test" (3), "QA testTest Lead" (3), template stand-ins
+        # "Job template"/"Crm template"/"Crm job" (6+3+3), "sdaa" (9) — plus real-looking
+        # titles duplicated with " copy" appended ("Sales development Representative" /
+        # "Sales development Representative copy"). A feature-testing sandbox, not a real
+        # employer. The "-dev" slug matches, but per this list's own rule that alone would
+        # not have been enough.
         "sensehq:trm-dev",  # 204 postings
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.

@@ -18,9 +18,10 @@
   `Timeout`. Not investigated further per the plan's own explicit "do not over-invest here"
   guidance for this ATS.
 - **One demo/test tenant found and excluded**: `trm-dev` (204 postings) — the large majority
-  literal placeholder titles ("TESTING" ×60+, "sdaa" ×10+, "dep test", "copy test") plus
-  real-looking titles duplicated with " copy" appended ("Sales development Representative" /
-  "Sales development Representative copy"), a clear feature-testing sandbox. Excluded via
+  QA/testing-tool placeholder titles ("Cypress 1" ×41, "QA test" ×13, "TESTING" ×19, "sdaa" ×9,
+  template stand-ins "Job template"/"Crm template"/"Crm job" ×6/×3/×3) plus real-looking titles
+  duplicated with " copy" appended ("Sales development Representative" / "Sales development
+  Representative copy"), a clear feature-testing sandbox. Excluded via
   `EXCLUDED_BOARDS` (`config.py`), per this initiative's own established discipline (found on
   lever/keka/darwinbox/trakstar before this).
 - **17 real, legitimate boards, 618 jobs** — real Indian and international companies (LTIMindtree
