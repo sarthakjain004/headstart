@@ -542,6 +542,37 @@ _CURRENCY_SYM = {
 # excluded ("Company paid life insurance of 1x annual base pay ($50,000 minimum)" — the
 # parenthesized figure is an insurance-payout minimum, not the job's salary) — below this
 # initiative's multi-company bar.
+#
+# trakstar's pass (2026-08-22) built, measured, and ultimately declined "base rate"/"hourly
+# rate"/"starting rate" as a new label alternative. The evidence for the label itself was real
+# and cleared this initiative's own bar (7 distinct companies not already extracted via any
+# other label or the label-less bare-hourly pattern: "Expected base rate: $35.00/hour", "The
+# hourly rate for this position is $47.00"), and building it surfaced a genuine, separate,
+# pre-existing bug in _resolve()'s own tie-break (see its docstring) that was fixed in this same
+# pass and kept regardless of this label's own fate — on a real board (greenhouse:carvana) a
+# second, incomplete mention of a wage was winning over a complete one stated elsewhere in the
+# same description purely because it came first in the text. With the label still in place (the
+# state that demonstrated the bug, not the state that ships), this discarded max_annual on 392
+# carvana jobs alone; see _resolve()'s own docstring for what the tie-break fix recovers on its
+# own, without this label, which is what actually ships. The label itself was declined even
+# after that fix: the mandatory full cross-ATS diff found 8 further real cases (lever:andersencorp,
+# smartrecruiters:hillstonerestaurantgroup, workday:ucar/ucar_careers, and 5 more) where the new
+# label matched a genuinely LESS representative mention (e.g. a bare, incentive-framed base rate
+# — "your hourly rate is $16... but the real reward comes from your incentive payments... making
+# $20-$25" — where $20-$25 is the realistic figure) and, because it's the first tier tried in
+# from_description()'s confidence-ordered cascade, the cascade stopped there — never reaching the
+# later, lower-priority tier (here, a bare unlabeled range) that used to correctly find the more
+# representative number. Unlike the tie-break bug, this isn't a small fix: it means the cascade's
+# own "stop at the first tier that succeeds" design can be wrong whenever a new, earlier-tier
+# label collides with an already-correct later-tier match, and fixing it safely means redesigning
+# tier precedence, not patching one function — disproportionate to one label's 7-company gain.
+# Reverted; the tie-break fix ships alone. A separate 19 cases (not counted against the label)
+# were legitimate NEW ambiguity — two genuinely different real figures (e.g. a base hourly rate
+# vs. a stated total annualized salary including commission) correctly declining rather than
+# guessing, the same acceptable shape already established for the "ctc" label's own 7 cases.
+# Two other candidates declined for thinner evidence, independent of any of the above: "salary
+# starts at" (present tense, vs. the already-recognized "starting at") — 2 companies; a two-word
+# "starting from" connector — 1 company.
 _LABELED = re.compile(
     r"""
     (?:annual\s+)?
@@ -953,16 +984,34 @@ _AMBIGUOUS = object()
 
 def _resolve(spans: list[SalarySpan]) -> SalarySpan | None | object:
     """One match wins outright; several mutually-consistent ones agree, so the more informative
-    one stands (a currency-bearing span over a currency-less one, if both are present — see
+    one stands (a currency-bearing span over a currency-less one, and — among spans that agree
+    on currency-presence — one with a stated ceiling over one without, if both are present — see
     :func:`_mutually_consistent`); several that disagree are ambiguous (:data:`_AMBIGUOUS`); none
     means this tier found nothing, try the next. Shared by every Tier-2 pattern so the "don't
-    guess when ambiguous" rule can't drift between them."""
+    guess when ambiguous" rule can't drift between them.
+
+    The `max_annual` half of this tie-break was added on trakstar's pass (2026-08-22): the
+    docstring already promised "the more informative one stands," but the code only ever checked
+    currency-presence, never completeness. Real, live consequence found while trying (and, for
+    unrelated reasons — see the "rate" label's own comment above `_LABELED` — ultimately
+    reverting) a new label candidate: the flaw itself predates this fix and isn't specific to
+    that candidate, it had just never been triggered on real data before, since it takes TWO
+    genuinely matching spans in one description to reach this tie-break at all. A bare "starting
+    hourly rate of $16/hr" mention earlier in a real greenhouse:carvana description and a
+    fully-correct "Pay Range: $16-$17 hourly" mention later in the SAME description both carried
+    currency='USD' and agreed on min_annual, so the old first-with-currency tie-break kept
+    whichever came first in the text — the incomplete one — silently discarding the correct
+    range's own max_annual. Confirmed via the mandatory full cross-ATS diff this fix required:
+    82 jobs across 5 ATSes gained a previously-lost max_annual (or, in a few cases, a more
+    complete span within `_mutually_consistent()`'s existing tolerance), zero regressions."""
     if not spans:
         return None
     if len(spans) == 1:
         return spans[0]
     if _mutually_consistent(spans):
-        return next((s for s in spans if s.currency), spans[0])
+        return max(
+            spans, key=lambda s: (s.currency is not None, s.max_annual is not None)
+        )
     return _AMBIGUOUS
 
 

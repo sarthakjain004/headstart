@@ -666,6 +666,33 @@ def test_description_same_amount_currency_resolved_once_is_not_ambiguous():
     assert span == SalarySpan(round(25.96) * 2080, None, "USD", "regex")
 
 
+def test_resolve_prefers_a_more_complete_span_over_a_less_complete_one():
+    # Real, trakstar pass (2026-08-22, found via the cross-ATS diff a since-declined label
+    # candidate required): _resolve()'s own docstring already promised "the more informative span
+    # wins," but the code only ever checked currency-presence, never whether max_annual was set.
+    # Two mutually-consistent, currency-bearing spans in one real greenhouse:carvana description —
+    # a bare hourly mention with no range, and a fully-correct "Pay Range" a few sentences later —
+    # used to resolve to whichever came first in the text, silently discarding the second span's
+    # own max_annual. Structurally mirrors the real text ("...hourly rate of $16/hr...Pay Range:
+    # $16-$17 hourly...") without reproducing it verbatim.
+    text = "Compensation: hourly rate of $16/hr, with growth potential. Pay Range: $16-$17 hourly."
+    span = from_description(text)
+    assert span == SalarySpan(16 * 2080, 17 * 2080, "USD", "regex")
+
+
+def test_resolve_tie_break_ignores_max_annual_when_currency_presence_already_decides():
+    # The tie-break's first criterion (currency-presence) still takes priority over the second
+    # (max_annual-presence) when they'd otherwise disagree — a currency-less range must not beat
+    # a currency-bearing single value just because the range is more complete.
+    from headstart.salary import _resolve
+
+    spans = [
+        SalarySpan(50000, 60000, None, "regex"),
+        SalarySpan(52000, None, "USD", "regex"),
+    ]
+    assert _resolve(spans) == SalarySpan(52000, None, "USD", "regex")
+
+
 # --- Cascade ordering: field always wins, no third tier ----------------------------------------
 
 
