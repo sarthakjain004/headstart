@@ -514,6 +514,34 @@ _CURRENCY_SYM = {
 # _LABELED's own connector is narrow (`[:\-]?` plus a small lead-in-word set) and demands a digit
 # immediately after, so a bare mention with no adjacent figure never reaches the number groups at
 # all; confirmed directly against that exact real text, not just reasoned about.
+#
+# Two candidates measured on successfactors's pass (2026-08-22), both declined after proper
+# full-corpus verification, not just an isolated match test: a reversed-order "rate of pay" label
+# ("Rate of Pay: $31.94 - $35.93") looked promising in isolation and initially seemed to clear the
+# evidence bar (19 occurrences, 4 companies "not already extracted" by a first, flawed count), but
+# `_LABELED` is UNCHANGED on main and already matches all 19 on its own — `re.search()` doesn't
+# anchor to string start, so its existing `pay(?:ing)?` keyword matches "Pay: $X..." starting
+# mid-string, leaving "Rate of" as unconsumed leading text it never has to reach. 12 of those 19
+# go on to resolve via `_LABELED`'s own tier (first in the `from_description()` cascade, so no
+# lower tier is even reached once it returns a definitive answer). The other 7 decline for a
+# reason unrelated to any label: no period marker (hr/day/mo/yr) sits near the match, so
+# `_period_from_window` defaults to an annual multiplier and the resulting figure (e.g. "$33.35"
+# read as $33/year) falls below `_bounded()`'s USD floor ($10,000) — verified directly against
+# real text, not inferred. `_BARE_RANGE` plays no role either way: cascade order makes it moot for
+# the 12 that already resolve via `_LABELED`, and on the 2 of the 7 fallthrough texts where it
+# separately matches, it hits the identical period-defaulting/bounds rejection (`_span_from_match`
+# and `_bounded` are shared by every Tier-2 scanner, regardless of which regex fed them). Net: the
+# reversed-order label was never filling a real gap — `_LABELED` itself already carries the
+# keyword, and `_BARE_RANGE` never once supplies the resolved value across any of the 19 real
+# occurrences. Reverted once measured properly. Lesson: neither a sub-pattern matching in
+# isolation, nor a correct full `extract()` diff proving zero net change, explains WHY — that
+# takes tracing which tier of the actual cascade resolves the text (and whether a lower tier is
+# even reached), not assuming a plausible-sounding pattern elsewhere in the file is the mechanism.
+# A label immediately followed by a parenthesized range ("Base Salary ($87,199 - $95,482)") was
+# also declined: real evidence narrows to 2 genuine companies once a confirmed false positive is
+# excluded ("Company paid life insurance of 1x annual base pay ($50,000 minimum)" — the
+# parenthesized figure is an insurance-payout minimum, not the job's salary) — below this
+# initiative's multi-company bar.
 _LABELED = re.compile(
     r"""
     (?:annual\s+)?

@@ -137,7 +137,7 @@ the planning record; the table below is the live status.
 | keka | 819 (819 sampled, full population; 916 was a stale liveness snapshot; 2 vendor demo tenants found and excluded, PR #248) | done | 27.8% field, 29.1% overall | [keka.md](keka.md) |
 | darwinbox | 281 (290 sampled, full population; 446 was a stale liveness snapshot; 9 vendor demo/QA tenants found and excluded, PR #250) | done | 13.0% field, 13.4% overall | [darwinbox.md](darwinbox.md) |
 | ripplehire | 55 (55 sampled, full population; 79 was a stale liveness snapshot) | done | 0.00% field, 0.08% overall | [ripplehire.md](ripplehire.md) |
-| successfactors | 2,204 | not started | — | — |
+| successfactors | 2,164 (2,164 sampled, full population; 2,204 was a stale liveness snapshot) | done | 0.00% field, 9.8% overall | [successfactors.md](successfactors.md) |
 | trakstar | 1,632 | not started | — | — |
 | freshteam | 1,412 | not started (Tier-2-only; Tier 1 already known dead) | — | — |
 | eightfold | 103 | not started | — | — |
