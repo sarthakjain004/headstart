@@ -27,11 +27,14 @@ reader can also open `workday.md` alone and get everything about workday specifi
    same liveness-ledger source and dedup every other production consumer uses — never hand-parse
    the CSV, it has documented duplicate-row issues that function already handles). Fetches through
    the *real* registered scraper and its real `parse()`, not a reimplementation. Listing-only ATSes
-   (`has_detail_pass = False`) get one request per board — that's the whole sample. Detail-pass
+   (`has_detail_pass = False`) get one request per board — that's the whole sample. Most detail-pass
    ATSes get a bounded adapter (~3 per-job detail fetches/board, calling the scraper's own endpoint
    methods directly — several detail-pass scrapers bake a full per-board fan-out into `fetch_raw()`
    itself, which a naive call would trigger, blowing past the bounded-request intent) — built
-   per-ATS as that ATS is reached, never assumed in advance. Runs at `--workers 32` by default
+   per-ATS as that ATS is reached, never assumed in advance. **zoho is the deliberate exception**
+   (PR #242): its listing never paginates, so calling `fetch_raw()` directly costs nothing beyond
+   the detail fetches it needs anyway, and capping those specifically was undercounting real
+   coverage for no cost saving — see `zoho.md`'s "Post-merge correction" section. Runs at `--workers 32` by default
    (bumped from an initial 8 partway through the workday pass, since 3000 boards at 8 workers was
    impractically slow) — safe at that width specifically because sampled boards spread across many
    different companies/instances, not one tenant's own rate limit. Spare egress is automatic:
@@ -114,7 +117,7 @@ the planning record; the table below is the live status.
 | workday | 16,964 (3,000 sampled) | done | 0.0% field, 27.6% overall | [workday.md](workday.md) |
 | greenhouse | 7,503 (3,000 sampled; 9,152 was a stale liveness snapshot) | done | 0.0% field, 36.1% overall | [greenhouse.md](greenhouse.md) |
 | smartrecruiters | 5,659 (3,000 sampled; 10,845 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall | [smartrecruiters.md](smartrecruiters.md) |
-| zoho | 5,337 (3,000 sampled; 6,550 was a stale liveness snapshot) | done | 0.0% field, 9.2% overall | [zoho.md](zoho.md) |
+| zoho | 5,337 (3,000 sampled; 6,550 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall (corrected PR #242, was 9.2%) | [zoho.md](zoho.md) |
 | teamtailor | 3,764 (2,985 sampled after a rate-limit retry; 4,686 was a stale liveness snapshot) | done | 9.8% field, 14.1% overall | [teamtailor.md](teamtailor.md) |
 | ashby | 3,823 (3,000 sampled; 4,347 was a stale liveness snapshot) | done | 38.9% field, 49.7% overall | [ashby.md](ashby.md) |
 | recruitee | 3,534 (3,000 sampled, 2,995 clean after a rate-limit retry; 3,970 was a stale liveness snapshot) | done | 36.5% field, 38.2% overall | [recruitee.md](recruitee.md) |

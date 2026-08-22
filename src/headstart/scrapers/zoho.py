@@ -7,6 +7,23 @@ listing — we GET the page and extract that array.
 
 A Zoho company's `slug` is its full careers host, e.g. "pnbcsl.zohorecruit.in"
 (the data center varies: .in / .com / .eu), so the slug carries the right host.
+
+**Known limit, confirmed not a bug in this scraper**: the public, unauthenticated career-site
+widget embeds at most ~750 jobs into that one response, with no working pagination mechanism
+this scraper (or any unauthenticated HTTP client) can reach. Confirmed 2026-08-22 by direct
+investigation, not assumed: 3 independent tenants in a 3,000-board sample each landed on exactly
+750 (the sample-wide maximum — nothing observed exceeds it); URL query-string variants (page,
+offset, start, fromIndex, pageIndex) never changed the response; the page's own front-end JS
+(`career-website-common.js`) reads jobs exclusively from this server-embedded blob with no
+follow-up AJAX call for more; no field anywhere in the page (`#jobs`, `#meta`, `#pageJson`,
+`#moduleMeta`) reveals a true total distinct from what's embedded, so a board with exactly 750
+real openings and one with 5,000 (750 shown) are indistinguishable from here. Real pagination
+exists only in Zoho Recruit's authenticated private API (`fromIndex`/`toIndex` on `getRecords`,
+per Zoho's own public docs), which needs a per-tenant OAuth token this scraper has no way to
+obtain for the thousands of unaffiliated companies it reads — a board over the ceiling silently
+loses the excess here, not from a defect in this file. See docs/salary-extraction/zoho.md's
+"Post-merge correction" section for the full writeup and the open question of whether pursuing a
+fix (a headless browser, or per-tenant API access) is worth its cost.
 """
 
 from __future__ import annotations
