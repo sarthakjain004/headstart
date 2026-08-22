@@ -34,7 +34,9 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "HKD": 6_000_000,
     "SEK": 6_000_000,
     "PLN": 3_000_000,
-    "CHF": 900_000,
+    "CHF": 900_000,  # same raw figure as CAD/AUD, but CHF trades stronger than either — genuinely
+    # more generous in real terms, a deliberate choice given Swiss finance/pharma pay, not a
+    # same-tier match (code review finding, PR #241: the original comment implied equivalence)
 }
 _MIN_PLAUSIBLE_ANNUAL = {
     "USD": 10_000,

@@ -21,13 +21,13 @@ the count rather than guessed at.
 - **Live board count re-measured: 3,534** (the plan's 3,970 figure was stale). Listing-only
   (`has_detail_pass = False`, confirmed by reading the scraper), so no bounded sampling adapter
   was needed.
-- **Applied ashby's lesson 18 (check for structure one level deeper) — negative result, confirmed
+- **Applied ashby.md's "check for structure one level deeper" lesson — negative result, confirmed
   by direct API inspection**: every real `salary` object seen across 861 real offers (60 boards)
   had exactly one shape, `{currency, max, min, period}` — no nested tiers, no additional
   compensation-type breakdown the way ashby's `compensationTiers[]` had. `_salary()` in
   `recruitee.py` already reads every key present. Nothing to fix here.
-- **Applied ashby's lesson 19 (check `is not None` vs. truthiness on any raw-numeric-field
-  formatter) — also a negative result, but for a genuinely different, verified reason**:
+- **Applied ashby.md's "check `is not None` vs. truthiness on any raw-numeric-field formatter"
+  lesson — also a negative result, but for a genuinely different, verified reason**:
   `recruitee.py`'s `_salary()` has the *exact same* code shape as ashby's pre-fix bug
   (`rng = f"{lo}-{hi}" if lo and hi else str(lo or hi)`), which would carry the identical risk if
   `min`/`max` were ever a falsy JSON integer `0`. Verified directly against 48 real boards / 357
@@ -46,14 +46,20 @@ the count rather than guessed at.
   data (Poland: PLN 4,806/mo gross, PLN 31.40/hr, effective 2026-01-01, no mid-year change;
   Switzerland: no national minimum wage, cantonal floors from CHF 20.00-24.59/hr where a canton
   has one at all) rather than guessed round numbers — floor PLN 30,000 (~52% of Polish minimum
-  wage annualized), CHF 20,000 (below every 2026 cantonal floor); ceilings PLN 3,000,000, CHF
-  900,000 (matching USD/CAD/AUD's generosity tier, appropriate for CHF's strong face value).
+  wage annualized), CHF 20,000 (below every 2026 cantonal floor). Ceilings are a garbage backstop
+  rather than a tight real-world cap, so precision matters less here, but the reasoning is stated
+  honestly rather than dressed up: PLN 3,000,000 leaves generous headroom for senior Polish
+  tech/finance pay; CHF 900,000 reuses CAD/AUD's raw figure, which — since CHF trades meaningfully
+  stronger than either — is genuinely *more* generous in real terms, not merely "matching," a
+  deliberate choice given Switzerland's high-earning finance/pharma sector rather than an
+  equivalence claim (corrected during code review, which caught the original wording implying a
+  same-tier match it didn't actually make).
   A handful of weaker-evidence currencies (JPY 4 companies, DKK 3, and 25 more codes at 1-2
   companies each) were measured and deliberately left unsupported — see Known gaps.
 - **A large, real, well-measured Tier-1 parse-failure class was investigated and deliberately left
   unfixed**: 1,736 jobs (8.4% of field-present jobs) have a populated `salary` field that still
-  fails to parse. Reading the real values split this cleanly into two buckets, both genuinely
-  ambiguous, not a code bug:
+  fails to parse. Reading the real values found period unreliability behind all of them, in
+  several shapes — the two largest, individually verified:
   1. **`period` is populated but appears wrong for a real subset of tenants** (533 postings, 117
      distinct companies) — many EUR/"month" values are clearly hourly rates (`"15-25 EUR month"`,
      `"14.50-14.50 EUR month"` — both bounds in a 10-25 band, an unmistakably hourly not monthly
@@ -66,12 +72,16 @@ the count rather than guessed at.
   2. **`period` is entirely absent** (740 postings, 191 distinct companies) — `"1500-2700 EUR"`,
      `"16-18 EUR"`, both plausible but for different periods (monthly vs. hourly) with nothing in
      the field itself to disambiguate.
-  Both buckets would require inferring the period from magnitude alone (a value under ~30 is
-  "obviously" hourly, one in the low thousands is "obviously" monthly) — a materially different,
-  more speculative kind of inference than anything else this initiative has built: every other
-  guard/pattern infers from stated text or structure, never from overriding a source's own field
-  based on what the number "looks like." Declining to build this is a direct application of the
-  no-fabrication principle, not an oversight — see Known gaps for the full, honest accounting.
+  The remaining 463 (27%) are smaller variations on the same root problem — including the same
+  mislabeling running in the opposite direction, an annual figure read as monthly — plus a few
+  genuinely distinct minor patterns (placeholder sentinel values, non-EUR zero-pairs); none change
+  the conclusion, so none are guessed at either. All would require inferring the period from
+  magnitude alone (a value under ~30 is "obviously" hourly, one in the low thousands is "obviously"
+  monthly) — a materially different, more speculative kind of inference than anything else this
+  initiative has built: every other guard/pattern infers from stated text or structure, never from
+  overriding a source's own field based on what the number "looks like." Declining to build this
+  is a direct application of the no-fabrication principle, not an oversight — see Known gaps for
+  the full accounting of every sub-pattern found.
 - **Tier-2 gap analysis, English-language misses only**: sampled real "no field, no Tier-2 hit"
   descriptions that mention a currency symbol or salary-adjacent word. The dominant classes were
   already-correctly-declined funding/valuation narrative (`"$85M in the bank"`, `"€1.2B exit"`) —
@@ -112,13 +122,22 @@ the count rather than guessed at.
   (seed=101, 8 workers — deliberately reduced given this pass's own rate-limit finding, not the
   standing 32-worker default, since 32 is now a known-bad concurrency for this specific host) after
   the PLN/CHF fix, 45/50 clean.
-- Went beyond the ask: applied ashby's lessons 18 and 19 proactively at the start of the pass
-  rather than waiting to rediscover them — both came back negative, and the negative result is
-  reported with the same rigor as a positive one (two independent live-data checks, not an
-  assumption). Ran a real `langdetect` measurement (not a guess) to characterize the non-English
-  miss population precisely rather than asserting a vague impression from a handful of examples.
-  Measured a candidate Tier-2 pattern (`"X to Y"`) directly, found it both rare and risky, and
-  documented the specific false-positive it produces rather than just noting a low count.
+- Checked the coverage claim against a more durable source than the frozen sample, per the plan's
+  own verification checklist: **partially, same tradeoff ashby.md already named, not silently
+  repeated**. The served table's `/search` HTTP endpoint is still behind ADR-0042's sign-in wall,
+  and a full LanceDB `snapshot_download` is still ~1.87 GB against CLAUDE.md's documented
+  storage-cost constraint — the same reasoning ashby's pass gave for substituting a fresher live
+  resample instead of the literal served-table check. This pass's own 50-board seed=101 sample
+  (above) serves that same role here; called out explicitly in this checklist rather than left for
+  a reader to notice its absence, which is the gap this exact line exists to prevent repeating.
+- Applying ashby.md's two carried-forward lessons at the start of the pass (rather than
+  rediscovering them) is what README.md's own process asks for every pass, not extra scope — both
+  came back negative here, and the negative result is reported with the same rigor as a positive
+  one would be (two independent live-data checks, not an assumption). Genuinely additional beyond
+  the baseline ask: a real `langdetect` measurement (not a guess) to characterize the non-English
+  miss population precisely, and directly measuring a candidate Tier-2 pattern (`"X to Y"`) rather
+  than skipping it on intuition — it turned out both rare and risky, with the specific
+  false-positive it produces documented rather than just a low count reported.
 - Did not: build magnitude-based period-inference for the two large, honestly-declined ambiguity
   buckets (1,273 jobs, 73% of all parse failures) — real coverage left on the table, but building
   it would cross from evidence-based extraction into guessing at what a field's own label should
@@ -199,8 +218,9 @@ single dominant fix.
   before trusting a label-less number range as a wage at all — previously invisible because PLN
   wasn't a recognized code, now correctly visible because it is.
 - `src/headstart/scrapers/recruitee.py`: **unchanged**. `_salary()`'s existing truthy-check shape
-  was investigated (ashby's lesson 19) and confirmed safe for this ATS's actual data (string-typed
-  fields, no observed zero values) rather than changed defensively without evidence.
+  was investigated (per ashby.md's "check `is not None` vs. truthiness" lesson) and confirmed safe
+  for this ATS's actual data (string-typed fields, no observed zero values) rather than changed
+  defensively without evidence.
 - `tests/test_salary.py`: 4 new tests — PLN/CHF recognition (`test_field_pln_currency_recognized_
   and_bounded`, `test_field_chf_currency_recognized_and_bounded`) and, for each, a case that
   clears the *old* USD-shaped fallback floor but correctly fails the *new*, properly-calibrated
@@ -255,13 +275,28 @@ evidence — consistent with this pass's own declined period-ambiguity buckets a
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
-- **The two period-ambiguity buckets** (1,273 jobs, 73% of all Tier-1 parse failures: 533 postings
-  / 117 companies with a `period` that appears mislabeled, 740 postings / 191 companies with no
-  `period` at all) — real, substantial, but would require inferring a stated field's true meaning
-  from the number's magnitude rather than from anything the source actually said. This is a
-  materially different, more speculative kind of inference than any guard or pattern already built
-  in this module, and is deliberately left unbuilt rather than risk the exact silent-corruption
-  class the no-fabrication principle exists to prevent.
+- **Period unreliability accounts for all 1,736 Tier-1 parse failures (8.4% of field-present
+  jobs), not a clean two-bucket split** — the two clearest, largest, individually-verified
+  patterns are a `period` that appears mislabeled (533 postings / 117 companies — mostly real EUR
+  hourly rates carrying `period: "month"`) and a `period` entirely absent (740 postings / 191
+  companies). The remaining 463 (27%) were checked, not left silently unexplained: more of the
+  same mislabeling in shapes the two headline patterns' own regex characterization didn't happen
+  to match — single-value (non-range) low figures (`"400 EUR month"`, `"564 EUR month"`),
+  small-magnitude values labeled `"year"` instead of `"month"` (`"54.00-60.00 EUR year"`, an
+  hourly rate by its size), and the *same* mislabeling running in the opposite direction
+  (`"36000-70000 EUR month"` — 36k-70k EUR is a wholly plausible **annual** senior salary, almost
+  certainly mislabeled the other way) — plus a handful of genuinely distinct, smaller patterns:
+  placeholder-zero pairs in non-EUR currencies (`"0-0 DKK month"`, `"0-0 USD year"`), a sentinel
+  max value that reads as a "no real ceiling" placeholder (`"36000-999999 EUR year"`), and
+  low-value declines in currencies far below even the 27-currency long tail's weakest evidence
+  (`"1-2 AFN hour"`). Every one of these is the same underlying problem in a different shape: a
+  structured field's own stated value can't be trusted at face value for a real subset of
+  tenants, and fixing any of them would mean inferring the field's true meaning from the number's
+  magnitude rather than from anything the source actually said — a materially different, more
+  speculative kind of inference than any guard or pattern already built in this module. Same
+  conclusion across every sub-shape: deliberately left unbuilt rather than risk the exact
+  silent-corruption class the no-fabrication principle exists to prevent, and reported as one
+  connected 1,736-job finding rather than an under-counted 1,273 with an unexplained remainder.
 - **27 unsupported currencies below the PLN/CHF evidence threshold** (JPY the strongest at 4
   companies, DKK at 3, the remaining 25 codes at 1-2 companies each — mostly `rebootmonkey`'s own
   repeated multi-currency repost) — measured, real, but too fragmented to responsibly calibrate
@@ -277,9 +312,9 @@ evidence — consistent with this pass's own declined period-ambiguity buckets a
 ## Carried forward from workable through ashby — and new lessons
 
 - **Applied directly, both came back negative but were checked with the same rigor as if they
-  might not have been**: ashby's lesson 18 (check for structure one level deeper — recruitee's
-  field is already flat) and lesson 19 (check `is not None` vs. truthiness on any raw-numeric
-  formatter — recruitee's fields are strings, so the same code shape as ashby's bug isn't
+  might not have been**: ashby.md's "check for structure one level deeper" lesson (recruitee's
+  field is already flat) and its "check `is not None` vs. truthiness on any raw-numeric formatter"
+  lesson (recruitee's fields are strings, so the same code shape as ashby's bug isn't
   exploitable here). A negative finding checked with real data is worth exactly as much as a
   positive one — it closes a question instead of leaving it open by assumption.
 - **Applied**: measure before building, every time — the PLN/CHF addition, both declined
