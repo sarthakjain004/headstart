@@ -121,10 +121,11 @@ def _num(s: str) -> int:
 # an actual stated range ("up to $50,000-$60,000") already states both bounds regardless of the
 # connector, so it's unaffected. Shared by both tiers (not just Tier 2's description mining) —
 # code review, PR #238: Tier 1's `_field_generic` fallback has the identical bare-single-value
-# shape, and it's live-reachable, not theoretical: ashby/personio pass an HR system's raw free-text
-# field straight into `Job.salary` with no scraper-side normalization (unlike lever/recruitee/
-# teamtailor/keka/darwinbox, each of which has its own calibrated `_field_*` parser for a shape
-# *we* format), so "Up to €50,000" from either of those ATSes hit this exact bug too.
+# shape, and it's live-reachable, not theoretical: any ATS with no dedicated `_field_*` parser
+# passes an HR system's raw free-text field straight into `Job.salary` with no scraper-side
+# normalization (unlike lever/recruitee/teamtailor/ashby/personio/keka/darwinbox, each of which
+# has its own calibrated `_field_*` parser for a shape *we* format), so "Up to €50,000" from such
+# an ATS would hit this exact bug too.
 _CEILING_CONNECTOR_WINDOW = (
     15  # chars scanned before the number; mirrors _CONTEXT_WINDOW's naming
 )
@@ -164,13 +165,14 @@ def _period_multiplier_structured(text: str) -> int:
     correctly-but-wrongly getting rejected by the plausibility bounds.
 
     Deliberately NOT the default `_period_multiplier` behavior, and used only by
-    `_field_range_currency_interval` (whose four callers — lever.py, recruitee.py, teamtailor.py,
-    ashby.py — all assemble their string from a structured min/max/currency/interval quad,
-    confirmed by reading each scraper's own formatter, never free text): a bare word is NOT safe
-    against genuine free text, where it can match an unrelated mention instead of the salary's own
-    period. Real, demonstrated regression caught by code review before merge (PR #239): applying
-    bare-word matching to `_field_generic` (personio's free-text fields — ashby moved OFF
-    `_field_generic` once its own compensation data turned out to be structured, PR #240) silently
+    `_field_range_currency_interval` (whose five callers — lever.py, recruitee.py, teamtailor.py,
+    ashby.py, personio.py — all assemble their string from a structured min/max/currency/interval
+    quad, confirmed by reading each scraper's own formatter, never free text): a bare word is NOT
+    safe against genuine free text, where it can match an unrelated mention instead of the
+    salary's own period. Real, demonstrated regression caught by code review before merge
+    (PR #239): applying bare-word matching to `_field_generic` (a genuinely free-text field, at
+    the time reached via ashby and personio — both later moved OFF `_field_generic` once their own
+    compensation data turned out to be structured, PR #240 and PR #243 respectively) silently
     misread "40,000 - 50,000 USD with 1 month severance included" as MONTHLY, 12x-inflating a
     correct annual figure into a wrong one that still happened to clear the plausibility bounds —
     a silent corruption, not a safe decline. `_field_darwinbox`'s `salary_timeframe` is equally
