@@ -31,6 +31,19 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "darwinbox:training",  # company "training"; "Ali marketing Executive", "SK_Jr. Associate"
         "greenhouse:staging",  # company "Staging Site Board"; its one posting is titled "TEST"
         "greenhouse:test1",  # company "Test"
+        # Keka's own demo/QA tenants (found during keka's salary-extraction pass, 2026-08-22,
+        # reading real board content — not from the slug alone). Confirmed by content: `csdemo`'s
+        # organization name is literally "keka cs" (Keka's own Customer Success team), with job
+        # titles including "ABC", "Bacancy - Demo", "Keka Test Engineer", and several employees'
+        # own personal test postings ("Chaitanya test", "Demo Sneh"); `salesdemo`'s organization
+        # name is the nonsensical "Out comes Operating" and its own LinkedIn link points to Keka's
+        # own company page, not an independent client. Checked and deliberately kept:
+        # `keka:lambdatest` and `keka:testsigma` (real companies whose own brand names happen to
+        # contain "test"), `keka:vtest` (a single real-looking job posting, not enough evidence
+        # either way to exclude) — exactly the false-positive risk this list's own rule warns
+        # against.
+        "keka:csdemo",  # 681 postings
+        "keka:salesdemo",  # 153 postings
         # Lever's own demo/sandbox/QA tenants (found during lever's salary-extraction pass,
         # 2026-08-22, reading real board content — not from the slug alone, per this list's own
         # rule). 1,769 fabricated postings total. Confirmed by content: template/placeholder
