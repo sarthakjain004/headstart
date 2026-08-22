@@ -46,6 +46,7 @@ _MIN_PLAUSIBLE_ANNUAL = {
 }
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
+_WEEKLY_TO_ANNUAL = 52
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,17 +149,23 @@ def _period_multiplier_structured(text: str) -> int:
     correctly-but-wrongly getting rejected by the plausibility bounds.
 
     Deliberately NOT the default `_period_multiplier` behavior, and used only by
-    `_field_lever_recruitee_teamtailor` (whose three callers — lever.py, recruitee.py,
-    teamtailor.py — all assemble their string from a structured min/max/currency/interval quad,
+    `_field_range_currency_interval` (whose four callers — lever.py, recruitee.py, teamtailor.py,
+    ashby.py — all assemble their string from a structured min/max/currency/interval quad,
     confirmed by reading each scraper's own formatter, never free text): a bare word is NOT safe
     against genuine free text, where it can match an unrelated mention instead of the salary's own
     period. Real, demonstrated regression caught by code review before merge (PR #239): applying
-    bare-word matching to `_field_generic` (ashby/personio's free-text fields) silently misread
-    "40,000 - 50,000 USD with 1 month severance included" as MONTHLY, 12x-inflating a correct
-    annual figure into a wrong one that still happened to clear the plausibility bounds — a silent
-    corruption, not a safe decline. `_field_darwinbox`'s `salary_timeframe` is equally unvalidated
-    free text from Darwinbox's own API (confirmed: darwinbox.py never enumerates its possible
-    values), so it stays on the safe `_period_multiplier` too."""
+    bare-word matching to `_field_generic` (personio's free-text fields — ashby moved OFF
+    `_field_generic` once its own compensation data turned out to be structured, PR #240) silently
+    misread "40,000 - 50,000 USD with 1 month severance included" as MONTHLY, 12x-inflating a
+    correct annual figure into a wrong one that still happened to clear the plausibility bounds —
+    a silent corruption, not a safe decline. `_field_darwinbox`'s `salary_timeframe` is equally
+    unvalidated free text from Darwinbox's own API (confirmed: darwinbox.py never enumerates its
+    possible values), so it stays on the safe `_period_multiplier` too.
+
+    `week` joined the recognized bare words on ashby's own pass (PR #240): real, structured
+    `interval` values include "1 WEEK" (a contractor-style weekly rate, confirmed on live data —
+    "796 USD 1 WEEK", "2500-3500 USD 1 WEEK" — both annualize to plausible figures at ×52, 50 real
+    occurrences measured before adding)."""
     mult = _period_multiplier(text)
     if mult != 1:
         return mult
@@ -167,6 +174,8 @@ def _period_multiplier_structured(text: str) -> int:
         return _HOURLY_TO_ANNUAL
     if re.search(r"\bday\b", low):
         return _DAILY_TO_ANNUAL
+    if re.search(r"\bweek\b", low):
+        return _WEEKLY_TO_ANNUAL
     if re.search(r"\bmonth\b", low):
         return 12
     return 1
@@ -187,17 +196,32 @@ def _bounded(
     return SalarySpan(min_annual, max_annual, currency, "field")
 
 
-def _field_lever_recruitee_teamtailor(value: str) -> SalarySpan | None:
+def _field_range_currency_interval(value: str) -> SalarySpan | None:
     """lever: "50000-70000 USD per-year-salary" | recruitee: "50000-70000 EUR per year" |
-    teamtailor: "40000-60000 EUR YEAR" — all converge on RANGE + CODE + optional period."""
-    m = _RANGE.search(value)
-    if not m:
-        return None
+    teamtailor: "40000-60000 EUR YEAR" | ashby: "80000-100000 USD 1 YEAR" (assembled by
+    ashby.py's own `_salary()` from the structured Salary-typed `compensationTiers[].components[]`
+    entry — the "fix ambiguity at the source" latitude the salary-extraction plan already grants,
+    not organic text) — all converge on RANGE + CODE + optional period. Named for the shape, not
+    each ATS that happens to produce it (renamed from `_field_lever_recruitee_teamtailor` when
+    ashby joined — see CLAUDE.md's "re-check the name whenever what it does changes").
+
+    A bare SINGLE value with no range ("60000 USD 1 YEAR", "35 USD 1 HOUR") falls back to
+    `_SINGLE_NUM` — real on ashby's structured data specifically (a fixed-rate tier with only one
+    of minValue/maxValue set, not a range; 24 confirmed real cases, zero on teamtailor's own
+    corpus when checked, so this was a genuine gap in the shared parser, not a latent bug already
+    shipped to an already-merged ATS)."""
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
     mult = _period_multiplier_structured(value)
-    lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
-    return _bounded(min(lo, hi), max(lo, hi), currency)
+    m = _RANGE.search(value)
+    if m:
+        lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
+        return _bounded(min(lo, hi), max(lo, hi), currency)
+    single = _SINGLE_NUM.search(value)
+    if single:
+        v = _num(single.group(1)) * mult
+        return _bounded(v, None, currency)
+    return None
 
 
 def _field_keka(value: str) -> SalarySpan | None:
@@ -239,9 +263,10 @@ def _field_darwinbox(value: str) -> SalarySpan | None:
 #: ATS -> its Tier-1 parser. An ATS not listed here (including one not yet given its own research
 #: pass) falls through to `_field_generic`.
 _FIELD_PARSERS = {
-    "lever": _field_lever_recruitee_teamtailor,
-    "recruitee": _field_lever_recruitee_teamtailor,
-    "teamtailor": _field_lever_recruitee_teamtailor,
+    "lever": _field_range_currency_interval,
+    "recruitee": _field_range_currency_interval,
+    "teamtailor": _field_range_currency_interval,
+    "ashby": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
 }
@@ -430,6 +455,32 @@ _BARE_RANGE_CODE_EACH = re.compile(
 # docs/salary-extraction/workday.md's known-gaps section — proper support needs real
 # locale-aware number parsing (distinguishing "," and "." as decimal vs. thousands separator),
 # which this module doesn't have.
+
+# "minimum annual salary of $X, a midpoint of $Y, and a maximum salary of $Z" / "Minimum $X -
+# Maximum $Y" — a real, explicit min/max compensation-band disclosure (ashby pass: 23 real
+# occurrences, jobber + xero — a genuine range stated across two labeled endpoints, not two
+# competing figures). Checked BEFORE _LABELED, same reason _scan_level_bands/_LPA are: _LABELED's
+# own "salary...of $X" shape independently matches "minimum annual salary of $169,200" AND
+# "maximum salary of $228,900" as two SEPARATE spans (169,200 vs 228,900 fail the 5% consistency
+# check), so without running first, this band gets fragmented into a false ambiguity and declined
+# before ever reaching here. A broader "minimum ... maximum" shape was also found on a third
+# company (scribdinc, 16 jobs) but turned out to be a different pattern on closer reading — a
+# "between $X [bracketed geographic aside] to $Y" range, not a minimum/maximum-labeled pair at
+# all — left as a known gap (see docs/salary-extraction/ashby.md) rather than widening this
+# pattern to a shape it wasn't built or verified for.
+_MIN_MAX_BAND = re.compile(
+    r"\bminimum\b.{0,40}?(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r".{0,150}?\bmaximum\b.{0,40}?(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _scan_min_max_band(text: str) -> SalarySpan | None:
+    m = _MIN_MAX_BAND.search(text)
+    if not m:
+        return None
+    return _span_from_match(text, m, m.group("lo"), m.group("hi"))
+
 
 # LPA ("Lakhs Per Annum") gets its own first-class pattern rather than falling through the
 # generic currency-symbol patterns above — it names neither a symbol nor a period marker those
@@ -684,8 +735,12 @@ def from_description(
 ) -> SalarySpan | None:
     """Scan free text for a stated salary, trying patterns in confidence order: leveled
     compensation bands (several genuinely different numbers that are still one real, stated
-    envelope — see :func:`_scan_level_bands`), LPA (a distinctive, unambiguous marker when
-    present), an explicit "Salary:"/"Compensation:"-style label, a bare currency-symbol range, a
+    envelope — see :func:`_scan_level_bands`), an explicit "minimum $X ... maximum $Y" band
+    (:func:`_scan_min_max_band` — also checked before `_LABELED`, for the same reason: `_LABELED`
+    would otherwise independently match "minimum...salary of $X" and "maximum salary of $Y" as
+    two separate, mutually-inconsistent spans and decline the whole thing as ambiguous), LPA (a
+    distinctive, unambiguous marker when present), an explicit "Salary:"/"Compensation:"-style
+    label, a bare currency-symbol range, a
     bare number range anchored by a trailing currency code, an anchored "between $X and $Y"
     phrase, then — last, lowest-priority of all — a bare hourly/daily rate with no label at all
     ("$X/hour" or "$X per day" standing alone). "Between" runs before the fully bare hourly/daily
@@ -703,6 +758,9 @@ def from_description(
     level_bands = _scan_level_bands(text)
     if level_bands is not None:
         return level_bands
+    min_max_band = _scan_min_max_band(text)
+    if min_max_band is not None:
+        return min_max_band
     for pattern in (
         _scan_lpa(text),
         *(

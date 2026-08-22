@@ -94,16 +94,63 @@ def test_field_teamtailor_bare_unit_word_period_markers():
 
 def test_field_generic_bare_word_period_not_recognized_in_free_text():
     # Real, demonstrated regression, caught by code review before merge (PR #239): the bare-word
-    # period recognition above is safe ONLY for teamtailor's known-structured field shape, not for
-    # ashby/personio's genuinely free-text fields, which reach _field_generic. Before this test's
-    # underlying fix (splitting _period_multiplier_structured out from the safe default), this
-    # exact string silently misread "month" (from the severance clause, nothing to do with the
-    # salary's own period) as a monthly marker and 12x-inflated a correct $40k-$50k annual figure
-    # into a wrong $480k-$600k one that still happened to clear the plausibility bounds — a silent
-    # corruption, not a safe decline. Must still read as annual (unmultiplied) here.
+    # period recognition above is safe ONLY for a known-structured field shape (lever/recruitee/
+    # teamtailor/ashby, all sharing _field_range_currency_interval), not for genuinely free-text
+    # fields like personio's, which reach _field_generic. (Ashby itself moved OFF _field_generic
+    # in PR #240, once its own compensation data turned out to be structured after all — see
+    # test_field_range_currency_interval_ashby_structured_tier below — so this regression test now
+    # uses personio, still confirmed free text, to keep covering _field_generic's own safety.)
+    # Before this test's underlying fix (splitting _period_multiplier_structured out from the safe
+    # default), this exact string silently misread "month" (from the severance clause, nothing to
+    # do with the salary's own period) as a monthly marker and 12x-inflated a correct $40k-$50k
+    # annual figure into a wrong $480k-$600k one that still happened to clear the plausibility
+    # bounds — a silent corruption, not a safe decline. Must still read as annual here.
     assert from_field(
-        "40,000 - 50,000 USD with 1 month severance included", "ashby"
+        "40,000 - 50,000 USD with 1 month severance included", "personio"
     ) == SalarySpan(40000, 50000, "USD", "field")
+
+
+def test_field_range_currency_interval_ashby_structured_tier():
+    # Real, direct API inspection (2026-08-22, PR #240): ashby.py's own _salary() now assembles
+    # this shape from a structured Salary-typed compensationTiers[] component (see
+    # test_ashby_salary_from_structured_compensation_tier in test_scrapers.py for the raw-object
+    # extraction itself) — a genuine range+currency+interval string, not free text, so it's safe
+    # for the bare-word-recognizing _field_range_currency_interval, unlike _field_generic.
+    assert from_field("80000-100000 USD 1 YEAR", "ashby") == SalarySpan(
+        80000, 100000, "USD", "field"
+    )
+    assert from_field("25-30 USD 1 HOUR", "ashby") == SalarySpan(
+        25 * 2080, 30 * 2080, "USD", "field"
+    )
+
+
+def test_field_range_currency_interval_bare_week():
+    # Real, ashby pass (PR #240): a contractor-style weekly rate ("1 WEEK" interval), 50 real
+    # occurrences measured across 10 distinct values before adding — "796 USD 1 WEEK",
+    # "2500-3500 USD 1 WEEK" both annualize to plausible figures at x52.
+    assert from_field("796 USD 1 WEEK", "ashby") == SalarySpan(
+        796 * 52, None, "USD", "field"
+    )
+    assert from_field("2500-3500 USD 1 WEEK", "ashby") == SalarySpan(
+        2500 * 52, 3500 * 52, "USD", "field"
+    )
+
+
+def test_field_range_currency_interval_bare_single_value():
+    # Real, ashby pass (PR #240): a fixed-rate compensation tier has only one of minValue/maxValue
+    # set, not a range — _field_range_currency_interval previously only handled _RANGE and
+    # silently dropped every bare single value (24 confirmed real cases on ashby, 0 on teamtailor's
+    # own corpus when checked, so this was a genuine gap in the shared parser, not a bug already
+    # shipped to an already-merged ATS). A placeholder/test value (real: "0.01 USD 1 HOUR", "0 USD
+    # 1 YEAR") must still correctly decline via the plausibility bounds, not extract as if real.
+    assert from_field("60000 USD 1 YEAR", "ashby") == SalarySpan(
+        60000, None, "USD", "field"
+    )
+    assert from_field("35 USD 1 HOUR", "ashby") == SalarySpan(
+        35 * 2080, None, "USD", "field"
+    )
+    assert from_field("0.01 USD 1 HOUR", "ashby") is None
+    assert from_field("0 USD 1 YEAR", "ashby") is None
 
 
 def test_field_darwinbox_bare_word_period_not_recognized_either():
@@ -124,13 +171,15 @@ def test_field_generic_fallback_for_unlisted_ats():
 
 
 def test_field_generic_up_to_states_a_ceiling_not_a_floor():
-    # Real, code review, PR #238: ashby/personio pass an HR system's raw free-text field straight
-    # into Job.salary with no scraper-side normalization, so _field_generic hits the exact same
+    # Real, code review, PR #238: personio passes an HR system's raw free-text field straight into
+    # Job.salary with no scraper-side normalization, so _field_generic hits the exact same
     # ceiling-vs-floor risk Tier 2 has — "Up to €50,000" must decline, not report €50,000 as a
-    # floor. A real range is unaffected.
-    assert from_field("Up to €50,000", "ashby") is None
+    # floor. A real range is unaffected. (Originally tested against ashby too — ashby moved OFF
+    # _field_generic in PR #240 once its own compensation data turned out to be structured after
+    # all; see test_field_range_currency_interval_ashby_structured_tier for its own coverage now.)
+    assert from_field("Up to €50,000", "personio") is None
     assert from_field("Salary up to €50,000 per year", "personio") is None
-    assert from_field("40000-50000 EUR", "ashby") == SalarySpan(
+    assert from_field("40000-50000 EUR", "personio") == SalarySpan(
         40000, 50000, "EUR", "field"
     )
 
@@ -790,6 +839,39 @@ def test_description_level_bands_without_period_hint_stay_unresolved():
         "salary will be determined on a case-by-case basis."
     )
     assert extract(None, text, "greenhouse") is None
+
+
+def test_description_min_max_band():
+    # Real, ashby pass (PR #240, 2 of 3 companies found — jobber and xero): an explicit
+    # "minimum $X ... maximum $Y" compensation-band disclosure. Checked before _LABELED, which
+    # would otherwise independently match "minimum annual salary of $X" and "maximum salary of $Y"
+    # as two separate spans that fail the 5% consistency check and decline the whole thing as
+    # ambiguous — a real false-ambiguity case this pattern exists to prevent, not just an
+    # aesthetic reordering of the cascade.
+    jobber_text = (
+        "This role has a minimum annual salary of $169,200, a midpoint of $199,100, "
+        "and a maximum salary of $228,900, designed to reflect the progression from "
+        "learning the ropes to truly excelling."
+    )
+    assert extract(None, jobber_text, "ashby") == SalarySpan(
+        169200, 228900, "USD", "regex"
+    )
+    xero_text = (
+        "Minimum $320K - Maximum $390K USD Individual pay is determined by various "
+        "factors, including geography, level of experience"
+    )
+    assert extract(None, xero_text, "ashby") == SalarySpan(
+        320000, 390000, "USD", "regex"
+    )
+
+
+def test_description_min_max_band_without_a_maximum_falls_through():
+    # A bare "minimum" with no matching "maximum" anywhere must not match this pattern at all —
+    # falls through to whatever else the cascade finds (or None), not a fabricated single-sided
+    # band.
+    assert extract(None, "The minimum salary for this role is $80,000.", "ashby") == (
+        SalarySpan(80000, None, "USD", "regex")
+    )
 
 
 def test_description_labeled_currency_code_requires_word_boundary():
