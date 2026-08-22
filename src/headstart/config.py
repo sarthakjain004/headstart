@@ -29,6 +29,41 @@ class CompanyRef:
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
         "darwinbox:training",  # company "training"; "Ali marketing Executive", "SK_Jr. Associate"
+        # More of Darwinbox's own demo/QA/training tenants (found during darwinbox's salary-
+        # extraction pass, 2026-08-22, reading real board content — not from the slug alone).
+        # Confirmed by content: `minion` ("abc1", "Testing", "Animator USA" repeated, nonsensical
+        # salary_range values like "INR 100-150"); `southuat` ("Test Pre Offer", "Gulf Dummy",
+        # "Demo_Unicommerce"); `darwinboxdemo` (title/description MISMATCH — the "Customer Success
+        # Manager" posting's own description is for a "Chemistry Teacher" role, plus literal
+        # "Please enter job description" placeholders elsewhere — Darwinbox's own literal demo
+        # tenant); `spoc` ("SUPERADMINSUPERADMINSUPERADMIN SUPERADMIN" x3, "Sai_Test341", "VP HR
+        # Test Test", "Test 123", "Job created for 7.6 on all servers"); `treebotest` ("Tera Soft
+        # Recruitment Testing", 61% empty/placeholder descriptions); `homecredituat` and
+        # `partnerdemodeloitte` (unfilled template merge-fields verbatim in the description,
+        # "#*Group Company*# Designation: #*Designation*#..."); `training14` (same "training"
+        # family as the entry above — a numeric template ID contaminates BOTH the title AND
+        # location fields identically and repeatedly: "3891_Manager" @ "3891_Singapore, Singapore,
+        # Singapore, Singapore", "DB156_Manager" @ "DB156_Hyderabad, ...", "00002_Manager" @
+        # "00002_Los Angeles, ...", "DB163 MANAGER" @ "DB163 Los Angeles, ..." — plus a literal
+        # "Darwinbox Sample" title and gibberish ("sasasa")); `training2` (same family, weaker
+        # signal — "COE senior manager472"/"Sr.Manager_KK" carry the same stray-numeric-suffix
+        # shape, title-only on its 8 postings, none of `training14`'s title/location contamination
+        # since there's no location field affected in this smaller sample). Checked
+        # and deliberately kept: `banyanhcmuat` (a "uat"-shaped slug, same risk class as
+        # `homecredituat`/`southuat`, but its content is genuinely realistic hospitality-role
+        # postings — real titles like "Chief Steward", "Sushi Chef", even a Chinese-language
+        # "预订经理" (Reservations Manager) — with no test/dummy signal anywhere and no separate
+        # "banyantree" tenant to suggest this is a redundant staging copy; excluding it would be
+        # exactly the slug-pattern reasoning this list's own rule warns against).
+        "darwinbox:darwinboxdemo",  # 17 postings
+        "darwinbox:homecredituat",  # 34 postings
+        "darwinbox:minion",  # 135 postings
+        "darwinbox:partnerdemodeloitte",  # 3 postings
+        "darwinbox:southuat",  # 59 postings
+        "darwinbox:spoc",  # 88 postings
+        "darwinbox:training14",  # 30 postings
+        "darwinbox:training2",  # 8 postings
+        "darwinbox:treebotest",  # 142 postings
         "greenhouse:staging",  # company "Staging Site Board"; its one posting is titled "TEST"
         "greenhouse:test1",  # company "Test"
         # Keka's own demo/QA tenants (found during keka's salary-extraction pass, 2026-08-22,
