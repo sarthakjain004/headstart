@@ -514,6 +514,20 @@ _CURRENCY_SYM = {
 # _LABELED's own connector is narrow (`[:\-]?` plus a small lead-in-word set) and demands a digit
 # immediately after, so a bare mention with no adjacent figure never reaches the number groups at
 # all; confirmed directly against that exact real text, not just reasoned about.
+#
+# Two candidates measured on successfactors's pass (2026-08-22), both declined after proper
+# full-corpus verification, not just an isolated match test: a reversed-order "rate of pay" label
+# ("Rate of Pay: $31.94 - $35.93") looked promising in isolation and initially seemed to clear the
+# evidence bar (19 occurrences, 4 companies "not already extracted" by a first, flawed count), but
+# building it and diffing old-vs-new `extract()` output across every real "rate of pay" occurrence
+# showed ZERO net change — `_BARE_RANGE` already catches the bare "$X - $Y" shape independent of
+# any label, so the label was never the blocker; reverted once measured properly (this is why a
+# sub-pattern matching in isolation, e.g. `_LABELED.search()` alone, is not sufficient evidence —
+# only a full `extract()` diff against the real corpus is). A label immediately followed by a
+# parenthesized range ("Base Salary ($87,199 - $95,482)") was also declined: real evidence narrows
+# to 2 genuine companies once a confirmed false positive is excluded ("Company paid life insurance
+# of 1x annual base pay ($50,000 minimum)" — the parenthesized figure is an insurance-payout
+# minimum, not the job's salary) — below this initiative's multi-company bar.
 _LABELED = re.compile(
     r"""
     (?:annual\s+)?
