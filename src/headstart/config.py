@@ -139,6 +139,23 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # not two boards. Not an independent tenant, so dropping it removes the duplicate, not
         # Bombardier's jobs. Found by #218's sweep.
         "successfactors:www.jobs.bombardier.com",
+        # Trakstar Hire's own demo/QA tenants (found during trakstar's salary-extraction pass,
+        # 2026-08-22, reading real board content — not from the slug alone, per this list's own
+        # rule). All three cluster on the same city (Bangalore/Bengaluru, India), Trakstar's own
+        # apparent dev/QA base. Confirmed by content: `bbtest`'s sole posting is titled "Bug
+        # Buster"; `smoketest` (25 postings) is unmistakably a vendor feature-testing sandbox —
+        # "Custom Fields - No Fields", "Custom Fields - With all 9 Fields", "Django Upgrade Final
+        # Test", "Example Logo", "filter test" (x2), "google account 2", "Google Smoke Testing",
+        # "IT Coordinator job description"; `testbass`'s sole posting ("Ruby on Rails Developer")
+        # reads plausibly on its own but shares `bbtest`/`smoketest`'s exact Bangalore location and
+        # single-generic-posting shape, with no independent company signal anywhere. Checked and
+        # deliberately kept: `zutest` (a "System Administrator – Computing Services Department"
+        # posting in Abu Dhabi, UAE — detailed, professionally formatted, no Bangalore clustering
+        # with the three above, no test/dummy signal in the content itself) — exactly the
+        # slug-pattern-alone reasoning this list's own rule warns against.
+        "trakstar:bbtest",  # 1 posting
+        "trakstar:smoketest",  # 25 postings
+        "trakstar:testbass",  # 1 posting
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
