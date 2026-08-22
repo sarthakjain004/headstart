@@ -132,10 +132,48 @@ recognized as genuinely different). Losing a wrong "confident" single answer to 
 **Of the 153 "changed" cases**: 147 are pure currency corrections (identical `min_annual`/
 `max_annual`, only the currency label improved — the CA$ fix, general this time; confirmed spread
 across 3+ distinct companies on recruitee alone, not one repeated template). The remaining 6 are
-genuine value shifts, all on `workday`, all traced to the same multi-region mechanism as the
-losses (a `_mutually_consistent()` merge or tie-break landing on a different, still-real regional
-figure than before) — read individually, none is a fabricated or implausible number, all are
-figures genuinely present in their own job's description.
+genuine value shifts, all on `workday`, all individually read — none is a fabricated or
+implausible number, every figure is genuinely present in its own job's description — but **not
+all the same mechanism**, an inaccuracy an earlier draft of this section claimed (asserting one
+uniform "`_mutually_consistent()` merge or tie-break" story) and Spec-axis code review caught by
+independently re-tracing two of the six against the real descriptions; all six are now fully
+retraced, not just the two the review sampled:
+
+- **`teliacompany` and `blackrock` are genuine bug fixes, not multi-region cases at all.** Each
+  description states only ONE range. `teliacompany`'s "3500 - 5500 Eur" (monthly) had its floor
+  ("3500") swallowed by the OLD filler's unbounded `\w+` treating the number itself as a filler
+  "word", truncating the match to a ceiling-only reading. `blackrock`'s "salary range for France
+  is 97500 - 147500 EUR" had the SAME shape of undercapture (old only kept "147500"). The
+  `[^\W\d]` filler guard (this pass's own digit-exclusion fix, built for the CHF-Switzerland case)
+  independently fixes both — a real, useful side effect not specifically called out until this
+  correction found it.
+- **`crowdstrike` (both postings) and `ciena` share a real, deeper mechanism this pass does NOT
+  fix: a genuine second regional range exists in the same description, but is found only by a
+  DIFFERENT, lower-priority pattern than the one that already "succeeded", so the cascade never
+  even looks at it.** `crowdstrike`: "for all U.S. candidates is $120,000 - $180,000" and "in
+  Canada is $115,000 - $165,000 CAD" are both real — `_LABELED.finditer()` finds only the Canada
+  one, since the U.S. mention's own filler contains a second "for" AND a period inside "U.S.",
+  either alone enough to stop the filler's word-matching from reaching past it (confirmed by
+  testing each condition in isolation). `ciena`: "annual pay range for this position in Canada is
+  C$89,100-C$142,300" and a separate, unlabeled "$127,100-$203,000" are both real —
+  `_LABELED.finditer()` finds only the Canada one (it has an actual label; the other doesn't), and
+  `_BARE_RANGE` — which WOULD independently find the second, unlabeled one too — never runs at
+  all, because `from_description()` stops at the first tier that returns anything. In both cases,
+  `_resolve()` never reaches its own tie-break or mutual-consistency logic, because it only ever
+  sees ONE span from ONE tier — which region "wins" is an accident of which tier's own pattern
+  happens to reach it first, not a principled choice between two real candidates. **Carried
+  forward, not fixed this pass**: this is a real, if narrow, instance of a more general
+  limitation — matches across DIFFERENT tiers are never cross-checked against each other for
+  mutual consistency, only matches WITHIN the same tier are. Worth a future pass's own attention
+  if it recurs with real multi-company evidence, not redesigned here on 2 examples.
+- **`linklogistics` is the CDN-currency-label finding already documented under "Deferred: new
+  currencies"'s own note** (the word "CDN" for Canadian dollars, not "CAD" the code or "CA$" the
+  symbol) — the same cross-tier blindness as the pair above (`_LABELED` finds the CDN-labeled
+  "150,000-$200,000" alone; `_BARE_RANGE`'s own separate "$185,000-$225,000" match never runs),
+  compounded by "CDN" itself not being a recognized currency marker, giving `currency=None` on the
+  one span that IS reached. A real, if unusually layered, single example — not built into a
+  currency addition on its own (1 company, well below the evidence bar the "Deferred" table's own
+  candidates already clear far more convincingly).
 
 ## Deferred: new currencies
 
@@ -156,9 +194,19 @@ prior currency addition:
 | TWD | 27 | 4 | | KRW | 2 | 2 |
 | NZD | 1 | 1 | | ZAR | 4 | 2 |
 
-Not built this pass, for real reasons, not just time pressure:
+**None of these were built this pass. The one reason that applies to every single one of them,
+including the currencies with no other blocker at all**: `_bounded()`'s plausibility floor/ceiling
+is currently keyed only on the currencies `salary.py` already supports, each calibrated against
+real minimum-wage/salary data at the time it was added (recruitee's own PLN/CHF precedent,
+ADR-0082) — not reused wholesale from USD-shaped bounds. Adding a new `_CURRENCY_CODES` entry
+without ALSO adding its own calibrated bound would either reject every real value for that
+currency (an implausible-looking floor) or, worse, silently accept implausible ones — this is real
+work for every currency in the table below, no exceptions, and none of it happened this pass.
 
-- **A real acronym-collision trap, already found once**: "PHP" (Philippine Peso) collides
+**On top of that shared reason, several — not all — of these currencies have an ADDITIONAL,
+currency-specific blocker, checked directly, not assumed uniform across the table**:
+
+- **PHP and, likely, SAR have a real acronym-collision trap**: "PHP" (Philippine Peso) collides
   constantly with PHP the programming language, especially in numbered skill lists ("1. PHP
   2. MySQL 3. AWS") — a naive "PHP adjacent to any digit" sweep found 678 false "occurrences"; a
   stricter 3+-digit-amount filter cut this to 31 genuine ones. "SAR" likely has the same problem
@@ -172,18 +220,29 @@ Not built this pass, for real reasons, not just time pressure:
   adding the currency code risks turning an honest decline into a wrong, arbitrarily-picked single
   country's figure — worth verifying `_mutually_consistent()` still correctly declines these once
   the codes ARE added, not assuming it does.
-- **Real per-currency plausibility bounds need calibrating against real minimum-wage/salary data**,
-  matching recruitee's own PLN/CHF precedent (ADR-0082) — not reused wholesale from USD-shaped
-  bounds. JPY/MXN/TWD/IDR in particular have naturally large nominal salary figures (weak
-  currencies) that would need their own floor/ceiling, not a scaled-down USD assumption.
-- **Locale-format nuances per currency**: MYR's dominant range separator is "~" not "-"/"–"; BRL
-  and IDR use "." as a thousands separator (European-style), interacting with `_num()`'s own
-  locale-decimal disambiguation (lesson 36) in ways that need individually checking, not assumed
-  safe by analogy.
+- **JPY/MXN/TWD/IDR have naturally large nominal salary figures** (weak currencies relative to
+  USD) that would need their own genuinely different floor/ceiling, not a scaled-down USD
+  assumption — a calibration question specifically about the SHAPE of the bound, on top of the
+  baseline "needs a bound at all" reason above.
+- **MYR/BRL/IDR have their own locale-format nuances**: MYR's dominant range separator is "~" not
+  "-"/"–"; BRL and IDR use "." as a thousands separator (European-style), interacting with
+  `_num()`'s own locale-decimal disambiguation (lesson 36) in ways that need individually
+  checking, not assumed safe by analogy.
 
-This is real, substantial, well-evidenced follow-on work — likely its own PR (or several), given
-the calibration care each currency needs — not folded into this pass to keep this fix reviewable
-and its own diff traceable to what it actually changed.
+**SGD (258 jobs, 10 companies — the single strongest line in the whole table) hits none of the
+four currency-specific blockers above** — its own real evidence (`"Compensation: SGD 2,800 -
+SGD 3,500"`-shaped mentions, already sampled during the sweep) is clean, unambiguous, and not
+multi-country-listed in what was read. It is deferred for the SAME shared reason every currency
+here is — no calibrated plausibility bound exists for it yet — not a currency-specific issue.
+Naming this explicitly rather than letting SGD sit undifferentiated among currencies that DO have
+real, additional problems: this initiative's own established precedent (AED shipped same-pass on
+keka, PLN/CHF shipped same-pass on recruitee, both with less evidence than SGD's own 10 companies)
+would normally have built at least SGD by now. It wasn't, this pass, to keep this fix's own diff
+reviewable and traceable to exactly what it changed — a deliberate batching choice, not a verdict
+that SGD itself needs more evidence or has some problem the table's other rows don't.
+
+This is real, substantial, well-evidenced follow-on work — likely its own PR (or several, given
+SGD alone could reasonably ship on its own once calibrated) — not folded into this pass.
 
 ## Instruction-adherence self-assessment
 
@@ -193,10 +252,19 @@ and its own diff traceable to what it actually changed.
 - Read real misses, not just measured a percentage: yes — 350 residual rows read directly, every
   real candidate pattern individually re-verified against real code before being counted as
   evidence, matching lesson 42.
-- Nothing regressed: yes — the mandatory full cross-ATS diff ran three times across this pass's
-  own iteration (catching two real regressions before they shipped, both reverted/fixed in the
-  same pass, not left in), and the final, shipped state's own 12 losses and 76 changes were each
-  individually traced to their real mechanism, not assumed safe from the aggregate counts alone.
-- New tests: 7 regression tests added to `tests/test_salary.py`, one per real mechanism fixed
-  (filler-reach, filler-non-reach-by-design, between+code+and, between+code+dash,
-  between+symbol-regression, CA$-alone, CA$-plus-trailing-code-agreement).
+- Nothing regressed: yes — the mandatory full cross-ATS diff ran multiple times across this pass's
+  own iteration (catching three real regressions before they shipped — two in the filler-length
+  fix, one in the CA$ fix's own first attempt — all reverted/fixed in the same pass, not left in),
+  and the final, shipped state's own 21 losses and 153 changes were each individually traced to
+  their real mechanism (see Verification above), not assumed safe from the aggregate counts alone
+  — including catching that the "changed" bucket's own first-drafted mechanism claim was itself
+  inaccurate for at least one case (spec-axis code review), and correcting it rather than leaving
+  a confident-sounding but wrong explanation in place.
+- New tests: 10 regression tests added to `tests/test_salary.py`
+  (`test_description_labeled_filler_reaches_a_short_geography_clause`,
+  `..._still_declines_a_reachable_second_mention`, `..._does_not_reach_a_distant_second_mention`,
+  `test_description_between_code_and`, `..._code_dash`, `..._symbol_still_works`,
+  `test_description_ca_dollar_prefix_resolves_as_cad`,
+  `..._prefix_works_without_a_swallowing_filler` [added after code review showed the first CA$
+  test alone couldn't distinguish a general fix from an accidental one],
+  `..._bare_range_multi_region_still_ambiguous`, `..._and_trailing_cad_code_agree`).
