@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from headstart.salary import SalarySpan, extract, from_description, from_field
 
-
 # --- Shared: _num(), US and European number formats -------------------------------------------
 
 

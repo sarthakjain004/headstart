@@ -293,18 +293,27 @@ language-independent currency-shaped content — a symbol or ISO code adjacent t
 (`[€$£]\d`, `\d[€$£]`, `\bEUR\b\d`, etc.) — deliberately not gated on any English or German label
 word, so the audit can't just be re-finding the same keyword blind spot it's meant to check for.
 
-**Result, precise and measured, not estimated**: of 17,400 no-signal jobs (90.5% of the full
+**Result, precise and measured, not estimated**: of 17,400 no-signal jobs (89.8% of the full
 19,384-job corpus), 15,560 (89.4% of no-signal) have no currency-shaped content anywhere in the
 description — genuinely undisclosed, confirming the "Known gaps" bullet above rather than
 correcting it. The remaining 1,840 (10.6% of no-signal, 9.5% of all jobs) do contain
-currency-shaped content that wasn't being extracted — read in full, not sampled by eye, and
-bucketed by shape (regex counts, not keyword guesses): 90 are a range with a real salary keyword
-nearby (15/15 hand-spot-checked clean, zero false positives), 57 carry an explicit German
-salary-compound label (Jahresgehalt/Monatsgehalt/Bruttogehalt/Jahresbrutto) on a single value, 3
-are range-shaped near a benefit keyword, and 4 fit neither bucket — the last two categories turned
-out, on reading, to include real hourly/Spanish-language disclosures an incomplete first-pass
-keyword list had miscategorized (fixed by widening the audit's own keywords, not by touching
-`salary.py`, since the audit script's keyword list is diagnostic tooling, not shipped logic).
+currency-shaped content that wasn't being extracted; a 500-job manual read of this population
+(before the finer categorization below was built) found it dominated by benefit/perk/company-
+financial mentions — commission, revenue, valuation, deal-size metrics — consistent with, not
+contradicted by, the false-positive guard classes this module already excludes.
+
+**Within that 1,840, two independent structural checks — narrower filters, not an exhaustive
+partition of the full 1,840 — quantified the highest-confidence sub-populations worth building
+patterns for**: a range shape with a trailing symbol/code marker matched 97 jobs, split by what
+appears nearby (regex counts, not keyword guesses): 90 with a real salary keyword (15/15
+hand-spot-checked clean, zero false positives), 3 near a benefit keyword instead, and 4 near
+neither — the last two turned out, on reading, to include real hourly/Spanish-language disclosures
+an incomplete first-pass keyword list had miscategorized (fixed by widening the audit script's own
+keywords, not `salary.py`, since the script's keyword list is diagnostic tooling, not shipped
+logic). A separate check for an explicit German salary-compound label
+(Jahresgehalt/Monatsgehalt/Bruttogehalt/Jahresbrutto) near any single value matched 57 more. The
+remaining ~1,686 were not re-bucketed by this precise a shape — the 500-job read above is what
+this pass has on their composition, not a further breakdown.
 
 **Patterns found and fixed**, all evidence-based (every pattern below is backed by real examples
 read from the corpus, not written ahead of them):
@@ -400,10 +409,12 @@ substantial differences. Every category was hand-traced to its exact mechanism, 
   into unparseable garbage — the new parser correctly sees all the real candidates and declines
   rather than picking one arbitrarily, exactly the no-fabrication principle already governing every
   other ambiguity case in this module.
-- **Net coverage effect on the other 8 already-merged ATSes** (gains minus losses, both real):
-  workable +7/−1, workday +16/−5 (1 value changed), greenhouse +490/−41 (4 changed), smartrecruiters
-  +18/−3, zoho +78/−55, teamtailor +181/−2, ashby +35/−34 (1 changed), recruitee +58/−4 — a net
-  gain of roughly 940 jobs across the initiative's already-shipped ATSes, the majority from
+- **Net coverage effect on the other 8 already-merged ATSes** (gains minus losses, both real; value
+  changed shown for every ATS, not just the ones where it's nonzero): workable +7/−1 (0 changed),
+  workday +16/−5 (1 changed), greenhouse +490/−41 (4 changed), smartrecruiters +18/−3 (0 changed),
+  zoho +78/−55 (0 changed), teamtailor +181/−2 (0 changed), ashby +35/−34 (1 changed), recruitee
+  +58/−4 (0 changed) — a net gain of roughly 940 jobs across the initiative's already-shipped
+  ATSes, the majority from
   teamtailor and greenhouse specifically (both carry real European-market postings the `_num()` fix
   now reads correctly). This is the strongest evidence that the international-number-format fix
   reaches well beyond personio — worth remembering on every future ATS pass, per the standing

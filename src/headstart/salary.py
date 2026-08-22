@@ -138,7 +138,9 @@ def _num(s: str) -> int:
     if "," in s:
         head, _, tail = s.rpartition(",")
         if len(tail) == 2:
-            return round(float(head.replace(",", "") + "." + tail))  # European decimal: 14,00
+            return round(
+                float(head.replace(",", "") + "." + tail)
+            )  # European decimal: 14,00
         return round(float(s.replace(",", "")))  # US thousands: 50,000
     if "." in s and re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
         return round(float(s.replace(".", "")))  # European thousands: 49.000
@@ -725,8 +727,12 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     # "hr" and would otherwise misclassify a German annual marker as hourly.
     if "jahr" in hint:
         return 1
-    if "hr" in hint or "hour" in hint or "stunde" in hint or "std" in hint or "p/h" in hint.replace(
-        " ", ""
+    if (
+        "hr" in hint
+        or "hour" in hint
+        or "stunde" in hint
+        or "std" in hint
+        or "p/h" in hint.replace(" ", "")
     ):
         return _HOURLY_TO_ANNUAL
     if "day" in hint or "daily" in hint:
