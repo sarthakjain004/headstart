@@ -138,10 +138,10 @@ the count rather than guessed at.
   miss population precisely, and directly measuring a candidate Tier-2 pattern (`"X to Y"`) rather
   than skipping it on intuition — it turned out both rare and risky, with the specific
   false-positive it produces documented rather than just a low count reported.
-- Did not: build magnitude-based period-inference for the two large, honestly-declined ambiguity
-  buckets (1,273 jobs, 73% of all parse failures) — real coverage left on the table, but building
-  it would cross from evidence-based extraction into guessing at what a field's own label should
-  have said, a different and more speculative class of inference than anything else in this
+- Did not: build magnitude-based period-inference for the period-unreliability problem behind all
+  1,736 Tier-1 parse failures (8.4% of field-present jobs) — real coverage left on the table, but
+  building it would cross from evidence-based extraction into guessing at what a field's own label
+  should have said, a different and more speculative class of inference than anything else in this
   module. Did not build German/Dutch/French Tier-2 patterns despite them covering the majority of
   Tier-2 misses — consistent with, not a deviation from, the project's own English-only search
   scope. Did not add the 27 weaker-evidence currencies (JPY down to single-company codes) —
@@ -201,8 +201,8 @@ greenhouse 36.1%, smartrecruiters 10.0%, zoho 9.2%, teamtailor 14.1%, ashby 49.7
 **recruitee 38.2%**) — ahead of greenhouse, behind ashby. Unlike ashby's pass (where one
 structural fix drove nearly the entire number), recruitee's coverage was already largely
 realized by the existing shared parser; this pass's real contribution is measuring and honestly
-accounting for the residual gap (the two period-ambiguity buckets, 1,273 jobs) rather than a
-single dominant fix.
+accounting for the residual gap (all 1,736 Tier-1 parse failures, traced to one root cause across
+several shapes — see Known gaps) rather than a single dominant fix.
 
 ## What changed in code, and why
 
