@@ -370,37 +370,45 @@ def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
     group_id = scraper._group_id()
     if group_id:
         first = scraper._get(scraper._search_url(group_id, 0), marks_wall=False)
+        # None = API unavailable; [] = API works, board genuinely empty
+        positions = None
         if first.status_code == 200:
             try:
                 positions = (first.json().get("data") or {}).get("positions") or []
             except ValueError:
-                positions = []
-            if positions:
-                sample = positions[:_DETAIL_FETCH_CAP]
-                records = scraper._api_records(group_id, sample)
-                return scraper.parse(records, datetime.now(UTC).isoformat())
+                positions = None
+        if positions is not None:
+            sample = positions[:_DETAIL_FETCH_CAP]
+            records = scraper._api_records(group_id, sample)
+            return scraper.parse(records, datetime.now(UTC).isoformat())
     urls = scraper._job_urls()[:_DETAIL_FETCH_CAP]
-    records = [
-        {
-            "id": _sitemap_position_id(u),
-            "url": u,
-            "fields": scraper._jsonld(u),
-            "detail_fetched": True,
-        }
-        for u in urls
-    ]
+    records = []
+    for u in urls:
+        fields = scraper._jsonld(u)
+        records.append(
+            {
+                "id": _sitemap_position_id(u),
+                "url": u,
+                "fields": fields,
+                "detail_fetched": fields is not None,
+            }
+        )
     return scraper.parse(records, datetime.now(UTC).isoformat())
 
 
 #: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
 #: researched — see the module docstring). workday/smartrecruiters/rippling/ripplehire/
-#: successfactors/trakstar/eightfold cap detail fetches at `_DETAIL_FETCH_CAP` (workday/
-#: smartrecruiters' listings paginate too, so `fetch_raw()` itself is expensive to call from a
-#: sampling script; rippling's/ripplehire's/successfactors'/trakstar's/eightfold's listings are
-#: cheap but their `fetch_raw()` bakes in an uncapped detail fan-out — see each adapter's own
-#: docstring); zoho is uncapped — its listing never paginates, so `fetch_raw()` costs nothing
-#: extra there, and capping its *detail* fetches was undercounting real coverage (see
-#: `_fetch_zoho`'s own docstring).
+#: successfactors/trakstar cap detail fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters'
+#: listings paginate too, so `fetch_raw()` itself is expensive to call from a sampling script;
+#: rippling's/ripplehire's/successfactors'/trakstar's listings are cheap but their `fetch_raw()`
+#: bakes in an uncapped detail fan-out — see each adapter's own docstring). eightfold caps the
+#: same way but for a different reason: its own listing/search call, not a downstream detail
+#: fan-out, is the expensive part — `fetch_raw()`'s primary path calls `_api_search()`, a
+#: multi-sweep, replica-disagreement-tolerant crawl of the FULL board (#142) — so the adapter
+#: issues one raw single-page search request directly instead, then caps *that* page's positions
+#: before the detail fetch (see `_fetch_eightfold`'s own docstring). zoho is uncapped — its
+#: listing never paginates, so `fetch_raw()` costs nothing extra there, and capping its *detail*
+#: fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
     "workday": _fetch_workday,
     "smartrecruiters": _fetch_smartrecruiters,

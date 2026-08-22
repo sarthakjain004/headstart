@@ -4,21 +4,48 @@
 
 - **Sampled the full live population**: 99 live boards (`config.load_active_companies`), the
   plan's stale figure was 103 — every ATS so far has had a stale plan-stage count, this one only
-  slightly. `fetch_raw()` bakes a full multi-sweep, replica-disagreement-tolerant crawl of the
-  entire board into itself (the PCSX API's own `_api_search()`, built to solve a real completeness
-  problem, #142 — not something a bounded sample should trigger), so sampling needed a new bounded
-  adapter (`_fetch_eightfold`, `scripts/enrich/salary_sample.py`) mirroring `fetch_raw()`'s own
-  primary/fallback branching but built from the scraper's own smaller primitives: one raw
-  `_search_url(group_id, 0)` GET (bypassing `_api_search()`'s own completeness crawl) for the
-  primary PCSX path, capped to `_DETAIL_FETCH_CAP` before calling the scraper's own
-  `_api_records()`; a capped slice of `_job_urls()` (already cheap, fan-out-free) plus the
-  scraper's own `_jsonld()` per-job fetch for the sitemap fallback. Both branches verified
-  directly against real boards before running the full sample (a primary-path board — qualcomm —
-  and three fallback-path boards the scraper's own docstring names — bayer/hsbc/libertymutual —
-  though all three resolved via the primary path on this pass's own run, suggesting the API's
-  ~20%-tenant-403 rate the docstring documents may have shifted since it was last measured,
-  2026-07-21; not re-verified at the aggregate level, since the bounded sample doesn't need to
-  know which path it took to be correct).
+  slightly, and (per the freshness re-check below) closer to today's true count than any other
+  ATS in this initiative has been. `fetch_raw()` bakes a full multi-sweep,
+  replica-disagreement-tolerant crawl of the entire board into itself (the PCSX API's own
+  `_api_search()`, built to solve a real completeness problem, #142 — not something a bounded
+  sample should trigger), so sampling needed a new bounded adapter (`_fetch_eightfold`,
+  `scripts/enrich/salary_sample.py`) mirroring `fetch_raw()`'s own primary/fallback branching but
+  built from the scraper's own smaller primitives: one raw `_search_url(group_id, 0)` GET
+  (bypassing `_api_search()`'s own completeness crawl) for the primary PCSX path, capped to
+  `_DETAIL_FETCH_CAP` before calling the scraper's own `_api_records()`; a capped slice of
+  `_job_urls()` (already cheap, fan-out-free) plus the scraper's own `_jsonld()` per-job fetch for
+  the sitemap fallback. Both branches verified directly against real boards before running the
+  full sample (a primary-path board — qualcomm — and three fallback-path boards the scraper's own
+  docstring names — bayer/hsbc/libertymutual — though all three resolved via the primary path on
+  this pass's own run, suggesting the API's ~20%-tenant-403 rate the docstring documents may have
+  shifted since it was last measured, 2026-07-21; not re-verified at the aggregate level, since
+  the bounded sample doesn't need to know which path it took to be correct). Re-verified again
+  during this PR's own code review (2026-08-22): a fresh probe of live boards found both branches
+  still work correctly, and this second run found several genuine 403s on the primary path
+  (`lgcns`, `bayer`, `insight`, `stmicroelectronics`, `faurecia`) that correctly fell through to
+  the sitemap fallback — consistent with the scraper's own `egress_fallback_on = {403, 405}`
+  wiring and its ADR-0063 `marks_wall=False` semantics for this specific probe (a 403 here can
+  legitimately mean "this tenant has no API," not "our IP is blocked," so it must not itself
+  trigger a wall) — no adapter change needed, the fallback path is exercised on real data either
+  way.
+- **A direct challenge to the 99-board count, investigated rather than dismissed**: mid-review, a
+  concern was raised that eightfold should have far more live boards than 99. Investigated by
+  checking, in order: (a) local git sync — current, not stale; (b) the liveness ledger's own TTL —
+  every eightfold row was past its 7-day live TTL; (c) a real re-probe via `check_liveness.py`
+  over the full known 745-board candidate pool, not a re-read of the existing CSV. Result: live
+  103→102 raw boards, 99→100 via `load_active_companies()`'s own dedup/exclusion filtering — the
+  ledger genuinely was stale by TTL, but the fresh count is barely different from what this pass
+  already sampled, so ledger staleness explains almost none of the gap the concern anticipated.
+  That splits into two separate questions: (1) is the ledger fresh? — yes, confirmed by a real
+  re-probe, merged separately as PR #260 (`a885b53`); (2) is the known candidate pool itself
+  complete? — genuinely open, and **not** answered by this pass. Eightfold tenant discovery
+  (`scripts/discover/eightfold_dns_sweep.py`) is wordlist-bounded — it only finds tenants whose
+  subdomain matches a known company-name pattern, so a real eightfold customer using a name the
+  wordlist doesn't cover is invisible to the candidate pool regardless of how fresh the liveness
+  check is. Decision: keep this pass's salary sample on the current ~99/100-board population
+  rather than block on expanding discovery — the sample is representative of the *known*
+  population, which is what a coverage measurement needs; widening eightfold's own tenant
+  discovery is separate, future work, out of scope for a salary-extraction pass.
 - **Contrary to the plan's own "historically fragile" flag, this pass hit zero fetch errors**:
   99/99 boards succeeded on the full sample, 20/20 on the live-verification reseed. The bounded,
   small-per-board sampling shape (one search page, 3 detail fetches) likely avoids whatever
@@ -151,6 +178,21 @@ eightfold's own large-enterprise, pay-transparency-jurisdiction-heavy company mi
 mirroring both of `fetch_raw()`'s own primary/fallback paths (no `salary.py` involvement — pure
 sampling infrastructure), plus one new import (`_sitemap_position_id` from `eightfold.py`, a
 pre-existing module-level helper, reused rather than reimplemented).
+
+**Code review found and fixed two real bugs in that adapter, both about correctly distinguishing
+"nothing to report" from "didn't check"**: (1) the primary-path guard originally read
+`if positions:` (truthy), collapsing "API unavailable" and "API works, board genuinely has zero
+open positions" into the same branch and silently skipping straight to the sitemap fallback for
+a genuinely-empty-but-working board; fixed to a `None`-sentinel (`positions = None` unless a 200
+response parses to a real, possibly-empty, list), matching `_api_search()`'s own production
+semantics exactly. (2) the sitemap-fallback branch hardcoded `"detail_fetched": True` regardless
+of whether `_jsonld()` actually returned fields, violating ADR-0050's two-state description rule;
+fixed to `"detail_fetched": fields is not None`, computed once and reused for both dict entries
+(avoiding a double fetch), matching `_sitemap_records()`'s own correct pattern. Both fixes
+re-verified live against real boards after the change (see Live-verification review) — the
+original bugs never affected this pass's own reported coverage numbers (the sampled boards
+happened not to trigger either edge case), but would have silently corrupted a future re-run
+against a board that did.
 
 ## Carried forward
 
