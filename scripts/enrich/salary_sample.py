@@ -25,9 +25,14 @@ exits with a clear message rather than guessing.
 ``**self._egress()`` — so an ATS with ``egress_fallback_on`` set (workday: ``{429}``) transparently
 routes through `headstart.spare_egress`'s WARP fallback the same way the real pipeline does,
 reactively, the first time this process meets a wall. No adapter here should ever call
-``http.fetch`` directly; that would silently skip it. One real local limitation, verified
-2026-08-21: rotation (`systemctl restart warp-svc`) needs systemd and doesn't exist on macOS, so a
-local run gets one alternate route per process, not full adaptive rotation — CI still gets that.
+``http.fetch`` directly; that would silently skip it. **Narrow, named exception:**
+``_fetch_ripplehire`` calls ``http.fetch`` directly twice, mirroring ``ripplehire.py``'s own
+production ``fetch_raw()`` exactly (which does the same for the identical reason — see that
+adapter's own docstring) — harmless today only because ``RippleHireScraper.egress_fallback_on`` is
+unset; re-check this exception if ripplehire is ever added to that set. One real local limitation,
+verified 2026-08-21: rotation (`systemctl restart warp-svc`) needs systemd and doesn't exist on
+macOS, so a local run gets one alternate route per process, not full adaptive rotation — CI still
+gets that.
 
 Raw captures land in ``experiment/salary-extraction/<ats>/artifacts/<slug>.json`` (the full parsed
 Job list, for reading the real API shape) plus one ``coverage_summary_<n>_seed<seed>.json`` per
@@ -241,7 +246,13 @@ def _fetch_ripplehire(scraper: BaseScraper) -> list[Job]:
     directly (matching ``ripplehire.py``'s own ``fetch_raw()``, not ``BaseScraper._get()``): it
     needs the redirected response's own ``.url`` to pull the token from, which ``_get()`` doesn't
     expose (it returns only ``.text``) — this isn't a missed egress-wrapped primitive (lesson 40),
-    it's the one step that structurally can't use it.
+    it's the one step that structurally can't use it. The search POST that follows ALSO calls
+    ``http.fetch`` directly, for a different reason: unlike workday (``_post()``) or smartrecruiters/
+    rippling (``_get()``), ``RippleHireScraper`` exposes no single-page search primitive to
+    delegate to — ``fetch_raw()`` builds the same request inline too, so this mirrors production's
+    own necessary duplication rather than introducing a new one. Both calls are genuinely inert
+    here (see the module docstring's own named exception for this adapter) since ripplehire has no
+    ``egress_fallback_on`` set; revisit if that ever changes.
 
     Deliberately asymmetric, unlike every other capped adapter here: ``compensationRange``/
     ``compensationInfo`` (Tier 1) are already on the LISTING response — real, found while building
