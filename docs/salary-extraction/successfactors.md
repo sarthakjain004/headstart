@@ -39,19 +39,37 @@
   all three of this ATS's own structured-data mechanisms, not just one — the most thoroughly
   cross-checked "flat-dead" finding in this initiative so far.
 - **A real Tier-2 candidate was built, then found to be fully redundant, then reverted — a new,
-  more rigorous verification step this pass added**: "Rate of Pay: $X - $Y" (a reversed-order
-  label `_LABELED` couldn't reach) looked like a clean, evidence-backed fix in isolation — the
-  regex change correctly matched the target text once built, and an initial frequency count
-  suggested real value (19 occurrences, 4 companies "not already extracted"). Built it, then ran
-  the *actual* verification this initiative's own discipline requires — a full old-vs-new
-  `extract()` diff over every real "rate of pay" occurrence in the corpus (`repr()`-compared, per
-  lesson 11, not bare `!=`) — and found **zero** net change: `_BARE_RANGE` already catches the
-  bare `$X - $Y` shape independent of any label, so the label was never actually the blocker for
-  any real job. Reverted immediately once measured properly. The lesson this sharpens: a
-  sub-pattern matching correctly in isolation (`_LABELED.search()` alone) is necessary but NOT
-  sufficient evidence — only a full-pipeline diff against the real corpus, the same discipline
-  already mandatory for shipped changes, catches a candidate that's fully redundant with an
-  existing unguarded pattern elsewhere in the cascade.
+  more rigorous verification step this pass added**: "Rate of Pay: $X - $Y" looked like a clean,
+  evidence-backed fix in isolation — the regex change correctly matched the target text once
+  built, and an initial frequency count suggested real value (19 occurrences, 4 companies "not
+  already extracted"). Built it, then ran the *actual* verification this initiative's own
+  discipline requires — a full old-vs-new `extract()` diff over every real "rate of pay"
+  occurrence in the corpus (`repr()`-compared, per lesson 11, not bare `!=`) — and found **zero**
+  net change. Reverted immediately once measured properly.
+  The premise behind building it — "a reversed-order label `_LABELED` couldn't reach" — was itself
+  wrong, not just the fix. `_LABELED` is UNCHANGED on main and already MATCHES all 19 real
+  occurrences on its own: `re.search()` doesn't anchor to string start, so its existing
+  `pay(?:ing)?` keyword matches "Pay: $X..." starting mid-string, with "Rate of" simply unconsumed
+  leading text it never has to reach. Of those 19, 12 go on to RESOLVE via `_LABELED`'s own tier —
+  the first one tried in the `from_description()` cascade, so no lower tier is even reached once it
+  returns a definitive answer. The other 7 decline for a reason unrelated to any label: no period
+  marker (hr/day/mo/yr) sits near the match, so `_period_from_window` defaults to an annual
+  multiplier and the resulting figure (e.g. "$33.35" read as $33/year) falls below `_bounded()`'s
+  USD floor ($10,000) — verified directly against the real text, not inferred (the footnoted "Rate
+  of Pay: $31.94 - $35.93*" example under Patterns found below is one of these 7). `_BARE_RANGE`
+  plays no role either way: cascade order makes it moot for the 12 that already resolve via
+  `_LABELED`, and on the 2 of the 7 fallthrough texts where it separately matches, it hits the
+  identical period-defaulting/bounds rejection, since `_span_from_match`/`_bounded` are shared by
+  every Tier-2 scanner regardless of which regex fed them. Across all 19 real occurrences,
+  `_BARE_RANGE` never once supplies the resolved value — crediting it as the redundant mechanism
+  (a first attempt at this explanation did) is as wrong as the original "label gap" premise.
+  The lesson this sharpens, in two parts: a sub-pattern matching correctly in isolation
+  (`_LABELED.search()` on the *new* pattern) is necessary but NOT sufficient evidence a gap is
+  real — test the unmodified cascade against the same real text first; and even a correct
+  full-pipeline diff proving zero net change only establishes the aggregate, not which tier of the
+  cascade actually resolves each case — that takes tracing the cascade itself (which tier fires,
+  and whether a lower one is even reached), not assuming a plausible-sounding pattern elsewhere in
+  the file is the mechanism.
 - **A second Tier-2 candidate measured and declined for thinner reasons**: a label immediately
   followed by a parenthesized range ("Base Salary ($87,199 - $95,482)") — real evidence narrows to
   2 genuine companies (both NSW, Australia government agencies) once a confirmed false positive is
@@ -224,12 +242,26 @@ verification, so there is no shared-code change that could have moved any other 
   passed an initial frequency check and an isolated match test, and still turned out to be fully
   redundant once the real, mandatory full-pipeline diff was run.
 - **New**: a sub-pattern matching its target text correctly in isolation (e.g. `_LABELED.search()`
-  returning the expected groups) is necessary but not sufficient evidence that a fix adds value —
-  a full `extract()` pipeline diff (old vs. new, `repr()`-compared per lesson 11) against the real
-  corpus is the only check that reveals whether an EARLIER-or-LATER, unguarded pattern in the same
-  cascade (here, `_BARE_RANGE`) was already independently catching the same text. Run this
-  specific check — not just "does my new sub-pattern match" — before concluding any label/phrase
-  addition is worth keeping, even when an initial frequency count looks promising.
+  returning the expected groups on a *proposed new* pattern) is necessary but not sufficient
+  evidence that a fix adds value — and confirming "zero net change" via a full `extract()` pipeline
+  diff (old vs. new, `repr()`-compared per lesson 11) is necessary but not sufficient to explain
+  WHY. This pass's own explanation for that finding took THREE attempts to get right (see Methods
+  tried), and the failure mode was different each time: attempt one credited a different, later
+  pattern in the cascade (`_BARE_RANGE`) with the redundancy, on the strength of it matching the
+  same *kind* of text in isolation — never checked against the real 19 occurrences at all. Attempt
+  two correctly identified that the SAME sub-pattern the new candidate was meant to extend
+  (`_LABELED`) was the real mechanism, via its own pre-existing keyword and `re.search()`'s
+  non-anchored matching — but still asserted a specific split ("`_BARE_RANGE` independently
+  succeeds on 3 of those 12") that a raw regex-match count made plausible without ever tracing
+  which tier of `from_description()`'s cascade actually produces the resolved value. Only running
+  every one of the 19 real occurrences through the actual cascade — which tier's `_resolve()` fires,
+  whether it returns a value, `_AMBIGUOUS`, or plain `None`, and whether a lower tier is even
+  reached — showed `_BARE_RANGE` contributes to zero of the 19, not 3: cascade order (it runs after
+  `_LABELED`) makes it moot wherever `_LABELED` already resolves, and where it separately matches
+  on a fallthrough text, it hits the identical `_bounded()` plausibility floor and still fails.
+  Before writing down why a candidate is redundant, don't stop at "does pattern X also match this
+  text" — trace the real cascade against the real corpus and read which tier, if any, actually
+  resolves each case.
 - **New**: when a scraper's own docstring characterizes a listing/detail-page format ("classic RMK
   pages embed JSON-LD") that this pass's own direct sampling doesn't reproduce (zero JSON-LD found
   across 23 checked tenants), trust the fresh measurement over the inherited characterization for
