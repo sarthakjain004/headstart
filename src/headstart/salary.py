@@ -551,9 +551,11 @@ _CURRENCY_SYM = {
 # pre-existing bug in _resolve()'s own tie-break (see its docstring) that was fixed in this same
 # pass and kept regardless of this label's own fate — on a real board (greenhouse:carvana) a
 # second, incomplete mention of a wage was winning over a complete one stated elsewhere in the
-# same description purely because it came first in the text, discarding hundreds of
-# already-correct max_annual values. But the label itself was declined even after that fix: the
-# mandatory full cross-ATS diff found 8 further real cases (lever:andersencorp,
+# same description purely because it came first in the text. With the label still in place (the
+# state that demonstrated the bug, not the state that ships), this discarded max_annual on 392
+# carvana jobs alone; see _resolve()'s own docstring for what the tie-break fix recovers on its
+# own, without this label, which is what actually ships. The label itself was declined even
+# after that fix: the mandatory full cross-ATS diff found 8 further real cases (lever:andersencorp,
 # smartrecruiters:hillstonerestaurantgroup, workday:ucar/ucar_careers, and 5 more) where the new
 # label matched a genuinely LESS representative mention (e.g. a bare, incentive-framed base rate
 # — "your hourly rate is $16... but the real reward comes from your incentive payments... making

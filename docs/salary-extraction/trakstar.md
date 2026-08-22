@@ -50,11 +50,14 @@
   currency-presence, never completeness): on a real board (`greenhouse:carvana`) the new label
   matched a second, incomplete mention of a wage a description ALSO stated completely elsewhere,
   and the old tie-break kept whichever mention came first in the text regardless of completeness
-  — silently discarding hundreds of already-correct `max_annual` values the moment the new label
-  made both mentions match. **Fixed — this ships in this pass, independent of the label's own
-  fate** (see `_resolve()`'s own docstring for the full account; verified via the mandatory full
-  cross-ATS diff: 82 jobs across 5 ATSes gained a previously-lost `max_annual`, zero
-  regressions). But re-running the full diff with the fix in place found a SECOND, separate,
+  — with the label still in place (the state that demonstrated the bug, not the state that
+  ships), this silently discarded `max_annual` on 392 `carvana` jobs alone. **Fixed — this ships
+  in this pass, independent of the label's own fate** (see `_resolve()`'s own docstring for the
+  full account). What actually recovers WITHOUT the label — i.e. what this fix alone contributes
+  to the shipped state — is smaller: verified via the mandatory full cross-ATS diff, 82 jobs
+  across 5 ATSes gained a previously-lost `max_annual`, zero regressions (the 392-carvana figure
+  needed the now-reverted label to create that many colliding matches in the first place). But
+  re-running the full diff with the fix in place found a SECOND, separate,
   deeper issue the tie-break fix can't touch: 8 further real cases (`lever:andersencorp`,
   `smartrecruiters:hillstonerestaurantgroup`, `workday:ucar/ucar_careers`, and 5 more) where the
   new label matched a genuinely LESS representative mention early in a description (e.g. a bare,
