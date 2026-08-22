@@ -211,9 +211,13 @@ class DarwinboxScraper(BaseScraper):
                 location = ", ".join(cities) or None
             else:
                 location = j.get("locations") or None
+            # `salary_range` already carries its own "(Annual)"/"(Monthly)" suffix whenever one
+            # exists — confirmed against every job in a 290-board sample (salary-extraction pass,
+            # 2026-08-22): 1,874/1,874 suffixed values showed the identical suffix twice when
+            # `salary_timeframe` was also appended, and `salary_timeframe` was null in every case
+            # where `salary_range` had no suffix. Appending it was pure duplication ("INR 3 - 5
+            # (Annual) (Annual)", ADR-0019's own documented example), never a source of new info.
             salary = (j.get("salary_range") or "").strip() or None
-            if salary and j.get("salary_timeframe"):
-                salary = f"{salary} ({j['salary_timeframe']})"
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{j['id']}",

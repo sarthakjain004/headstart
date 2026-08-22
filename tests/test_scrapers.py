@@ -1674,6 +1674,38 @@ def test_darwinbox_iso_date():
     assert _iso_date(0) is None  # falsy -> unknown, not 1970
 
 
+def test_darwinbox_salary_range_not_double_suffixed():
+    # Real bug, salary-extraction pass 2026-08-22: `salary_range` already carries its own
+    # "(Annual)"/"(Monthly)" suffix whenever one exists (confirmed: 1,874/1,874 real suffixed
+    # values in a 290-board sample), so appending `salary_timeframe` on top only ever duplicated
+    # it ("INR 3 - 5 (Annual) (Annual)", ADR-0019's own documented example) — never added info.
+    raw = [
+        {
+            "id": "abc123",
+            "title": "Test Role",
+            "salary_range": "INR 600000 - 1000000 (Annual)",
+            "salary_timeframe": "Annual",
+        }
+    ]
+    jobs = get_scraper("darwinbox", "yesforyou", "Yes For You").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary == "INR 600000 - 1000000 (Annual)"
+
+
+def test_darwinbox_salary_range_without_timeframe_unaffected():
+    # salary_timeframe is null whenever salary_range has no suffix baked in (confirmed: real,
+    # zero counterexamples) — the field carries nothing the string doesn't already have.
+    raw = [
+        {
+            "id": "abc124",
+            "title": "Test Role",
+            "salary_range": "INR 250000 - 400000",
+            "salary_timeframe": None,
+        }
+    ]
+    jobs = get_scraper("darwinbox", "disha", "Disha").parse(raw, SCRAPED_AT)
+    assert jobs[0].salary == "INR 250000 - 400000"
+
+
 def test_successfactors_parse():
     jobs = get_scraper("successfactors", "jobs.sap.com", "SAP").parse(
         _load("successfactors_pages.json"), SCRAPED_AT
