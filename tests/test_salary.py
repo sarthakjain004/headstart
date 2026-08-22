@@ -69,6 +69,53 @@ def test_field_darwinbox_monthly_timeframe_honored():
     )
 
 
+def test_field_teamtailor_bare_unit_word_period_markers():
+    # Real, teamtailor pass (PR #239): the schema.org unitText this scraper's own _salary() passes
+    # through is a BARE word ("15-17.5 GBP HOUR", "1500-1800 EUR MONTH", "120-130 GBP DAY"), not a
+    # phrase like "per hour" — none of the old phrase-shaped checks matched it, so every hourly/
+    # monthly/daily teamtailor figure silently defaulted to the annual multiplier and then
+    # correctly-but-wrongly failed the plausibility bounds (a genuine £15-18/hr rate read as an
+    # absurd £15-18/year). Recovered ~1,885 jobs once fixed — the single highest-value fix in this
+    # pass. Day had no Tier-1 handling at all before this fix, not just a boundary miss.
+    assert from_field("15-17.5 GBP HOUR", "teamtailor") == SalarySpan(
+        15 * 2080, round(17.5) * 2080, "GBP", "field"
+    )
+    assert from_field("1500-1800 EUR MONTH", "teamtailor") == SalarySpan(
+        1500 * 12, 1800 * 12, "EUR", "field"
+    )
+    assert from_field("120-130 GBP DAY", "teamtailor") == SalarySpan(
+        120 * 260, 130 * 260, "GBP", "field"
+    )
+    # Already-annual real teamtailor phrasing (the module's own pilot-era example) is unaffected.
+    assert from_field("40000-60000 EUR YEAR", "teamtailor") == SalarySpan(
+        40000, 60000, "EUR", "field"
+    )
+
+
+def test_field_generic_bare_word_period_not_recognized_in_free_text():
+    # Real, demonstrated regression, caught by code review before merge (PR #239): the bare-word
+    # period recognition above is safe ONLY for teamtailor's known-structured field shape, not for
+    # ashby/personio's genuinely free-text fields, which reach _field_generic. Before this test's
+    # underlying fix (splitting _period_multiplier_structured out from the safe default), this
+    # exact string silently misread "month" (from the severance clause, nothing to do with the
+    # salary's own period) as a monthly marker and 12x-inflated a correct $40k-$50k annual figure
+    # into a wrong $480k-$600k one that still happened to clear the plausibility bounds — a silent
+    # corruption, not a safe decline. Must still read as annual (unmultiplied) here.
+    assert from_field(
+        "40,000 - 50,000 USD with 1 month severance included", "ashby"
+    ) == SalarySpan(40000, 50000, "USD", "field")
+
+
+def test_field_darwinbox_bare_word_period_not_recognized_either():
+    # Same risk class as the ashby case above: darwinbox's salary_timeframe is equally unvalidated
+    # free text from Darwinbox's own API (darwinbox.py never enumerates its possible values), so
+    # it must stay on the safe default too. A genuine "30 day probation" mention must not be
+    # misread as a daily rate — the un-multiplied lakhs figure is the correct, honest answer here.
+    assert from_field("INR 3 - 5 (30 day probation)", "darwinbox") == SalarySpan(
+        300_000, 500_000, "INR", "field"
+    )
+
+
 def test_field_generic_fallback_for_unlisted_ats():
     # an ATS with no calibrated Tier-1 parser yet still gets a best-effort range/currency read.
     assert from_field("80000-100000 USD", "some-new-ats") == SalarySpan(
@@ -138,6 +185,18 @@ def test_description_hourly_range():
     assert span.min_annual == 23 * 2080
     assert span.max_annual == 25 * 2080
     assert span.source == "regex"
+
+
+def test_description_period_marker_space_before_slash():
+    # Real, teamtailor pass (PR #239): "£40 /hour" has a SPACE before the slash, unlike the glued
+    # "$25/hr" case above — a space and a slash are both non-word characters, so _PERIOD_HINT's
+    # old leading \b (anchored right before the slash) never matched. 597 real occurrences on
+    # greenhouse alone once measured across all ATSes, not a one-off.
+    span = from_description("Get paid between £20 and £40 /hour.")
+    assert span == SalarySpan(41600, 83200, "GBP", "regex")
+    # A double space (" / hour") is the same shape and must work too.
+    span2 = from_description("Compensation Range: $43.67 - $43.67 / hr Benefits")
+    assert span2 == SalarySpan(round(43.67) * 2080, round(43.67) * 2080, "USD", "regex")
 
 
 def test_description_bare_hr_no_slash():
@@ -285,6 +344,19 @@ def test_guard_repeated_consistent_mentions_still_extract():
     span = from_description(text)
     assert span is not None
     assert span.min_annual == 60000
+
+
+def test_description_same_amount_currency_resolved_once_is_not_ambiguous():
+    # Real, teamtailor pass (PR #239, found via the cross-ATS diff): the exact same wage stated
+    # twice, once with a currency symbol and once without ("Compensation: $25.96 / hour ... Salary:
+    # 25.96/hour" — real zoho text), used to be flagged ambiguous solely because one span resolved
+    # a currency and the other didn't. A None currency means "couldn't tell from THIS mention", not
+    # "a distinct value that clashes with a sibling mention that did resolve one" — 24 confirmed
+    # real cases across the corpus, already latent in already-merged ATSes before this fix, not
+    # introduced by it. The currency-bearing span should win, not get discarded as a conflict.
+    text = "Compensation : $25.96 / hour to start. ... Salary: 25.96/hour"
+    span = from_description(text)
+    assert span == SalarySpan(round(25.96) * 2080, None, "USD", "regex")
 
 
 # --- Cascade ordering: field always wins, no third tier ----------------------------------------

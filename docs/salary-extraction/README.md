@@ -115,7 +115,7 @@ the planning record; the table below is the live status.
 | greenhouse | 7,503 (3,000 sampled; 9,152 was a stale liveness snapshot) | done | 0.0% field, 36.1% overall | [greenhouse.md](greenhouse.md) |
 | smartrecruiters | 5,659 (3,000 sampled; 10,845 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall | [smartrecruiters.md](smartrecruiters.md) |
 | zoho | 5,337 (3,000 sampled; 6,550 was a stale liveness snapshot) | done | 0.0% field, 9.2% overall | [zoho.md](zoho.md) |
-| teamtailor | 4,686 | not started | — | — |
+| teamtailor | 3,764 (2,985 sampled after a rate-limit retry; 4,686 was a stale liveness snapshot) | done | 9.8% field, 14.1% overall | [teamtailor.md](teamtailor.md) |
 | ashby | 4,347 | not started | — | — |
 | recruitee | 3,970 | not started | — | — |
 | personio | 2,992 | not started | — | — |
