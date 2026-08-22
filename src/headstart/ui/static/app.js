@@ -74,6 +74,21 @@ const isNew = s => {
   const hours = Number((el('seen') && el('seen').value) || 24);
   return Date.now() - t < hours * 3600000;
 };
+// `salary` (the raw display string, per-ATS formatted) is only ever populated from a
+// scraper's own structured field — most of this initiative's own measured salary coverage
+// comes from Tier-2 description-mining instead (ADR-0082), which only ever reaches
+// min_salary_annual/max_salary_annual/salary_currency. Fall back to building a label from
+// those so a Tier-2-only Job still shows a pay tag instead of silently showing none.
+const payLabel = r => {
+  if (r.salary) return r.salary;
+  if (r.min_salary_annual == null) return '';
+  const fmt = n => Number(n).toLocaleString();
+  const cur = r.salary_currency ? r.salary_currency + ' ' : '';
+  const range = (r.max_salary_annual != null && r.max_salary_annual !== r.min_salary_annual)
+    ? fmt(r.min_salary_annual) + '–' + fmt(r.max_salary_annual)
+    : fmt(r.min_salary_annual) + '+';
+  return cur + range + '/yr';
+};
 // The Match ring (ADR-0042): raw cosine lives in a narrow band (a strong on-topic query
 // tops out ≈0.78; an absurd one still scores ≈0.66), so the displayed % stretches it
 // through two fixed anchors — 0.60 → 0%, 0.85 → 100% — tuned once against real queries
@@ -222,7 +237,7 @@ function draw(rows, target){
       <div class="tags">
         ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
         ${r.remote? '<span class="tag rem">remote</span>':''}
-        ${r.salary? '<span class="tag pay">'+esc(r.salary)+'</span>':''}
+        ${payLabel(r)? '<span class="tag pay">'+esc(payLabel(r))+'</span>':''}
         ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
         ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
         ${age(r.posted_at)? '<span class="tag mono">'+age(r.posted_at)+'</span>':''}
@@ -482,6 +497,10 @@ async function toggleStar(jobId){
 
   const row = drawnRows.get(jobId);
   if (!row) return;
+  // TODO: a Tier-2-only pay tag (payLabel(), above) is real in search results but is lost
+  // once starred — SavedJob (alerts/store.py) only ever persists a raw `salary` string, so
+  // there's nowhere to carry min_salary_annual/max_salary_annual/salary_currency through.
+  // Fixing this needs a SavedJob schema change, not a display fix; out of scope here.
   const copy = { title: row.title, company: row.company, url: row.url,
                  location: row.location || '', remote: !!row.remote, salary: row.salary || '' };
   // optimistic star: a placeholder record until the server answers with the real one
