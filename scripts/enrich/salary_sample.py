@@ -73,6 +73,7 @@ from headstart.config import CompanyRef, load_active_companies
 from headstart.models import Job
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.eightfold import _sitemap_position_id
 from headstart.scrapers.ripplehire import _PAGE_SIZE as _RIPPLEHIRE_PAGE_SIZE
 from headstart.scrapers.ripplehire import _TOKEN as _RIPPLEHIRE_TOKEN
 from headstart.scrapers.successfactors import _job_urls_from
@@ -355,12 +356,57 @@ def _fetch_trakstar(scraper: BaseScraper) -> list[Job]:
     return [j for j in jobs if j.id.split(":", 2)[2] in sample]
 
 
+def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
+    """Bounded adapter for eightfold: mirrors ``fetch_raw()``'s own primary/fallback branching,
+    but never calls ``fetch_raw()`` (via ``_api_search()``) itself — that method runs a
+    multi-sweep, replica-disagreement-tolerant crawl to reconstruct the FULL position list
+    (see its own docstring, #142), expensive and unnecessary for a bounded sample. Instead:
+    one raw ``_search_url(group_id, 0)`` GET via the scraper's own ``_get()`` gets the first
+    page (up to 10 positions) directly, capped to :data:`_DETAIL_FETCH_CAP` before calling the
+    scraper's own ``_api_records()`` (which fans out ``_description()`` only over the positions
+    it's given, not the whole board). Falls back to a capped slice of ``_job_urls()`` (the
+    sitemap listing, itself already cheap and fan-out-free) plus the scraper's own ``_jsonld()``
+    per-job detail fetch when the API 403s — matching ``fetch_raw()``'s own fallback branch."""
+    group_id = scraper._group_id()
+    if group_id:
+        first = scraper._get(scraper._search_url(group_id, 0), marks_wall=False)
+        # None = API unavailable; [] = API works, board genuinely empty
+        positions = None
+        if first.status_code == 200:
+            try:
+                positions = (first.json().get("data") or {}).get("positions") or []
+            except ValueError:
+                positions = None
+        if positions is not None:
+            sample = positions[:_DETAIL_FETCH_CAP]
+            records = scraper._api_records(group_id, sample)
+            return scraper.parse(records, datetime.now(UTC).isoformat())
+    urls = scraper._job_urls()[:_DETAIL_FETCH_CAP]
+    records = []
+    for u in urls:
+        fields = scraper._jsonld(u)
+        records.append(
+            {
+                "id": _sitemap_position_id(u),
+                "url": u,
+                "fields": fields,
+                "detail_fetched": fields is not None,
+            }
+        )
+    return scraper.parse(records, datetime.now(UTC).isoformat())
+
+
 #: ATS -> detail-pass adapter, built per-ATS as that ATS is reached (never assumed for one not yet
 #: researched — see the module docstring). workday/smartrecruiters/rippling/ripplehire/
 #: successfactors/trakstar cap detail fetches at `_DETAIL_FETCH_CAP` (workday/smartrecruiters'
 #: listings paginate too, so `fetch_raw()` itself is expensive to call from a sampling script;
 #: rippling's/ripplehire's/successfactors'/trakstar's listings are cheap but their `fetch_raw()`
-#: bakes in an uncapped detail fan-out — see each adapter's own docstring); zoho is uncapped — its
+#: bakes in an uncapped detail fan-out — see each adapter's own docstring). eightfold caps the
+#: same way but for a different reason: its own listing/search call, not a downstream detail
+#: fan-out, is the expensive part — `fetch_raw()`'s primary path calls `_api_search()`, a
+#: multi-sweep, replica-disagreement-tolerant crawl of the FULL board (#142) — so the adapter
+#: issues one raw single-page search request directly instead, then caps *that* page's positions
+#: before the detail fetch (see `_fetch_eightfold`'s own docstring). zoho is uncapped — its
 #: listing never paginates, so `fetch_raw()` costs nothing extra there, and capping its *detail*
 #: fetches was undercounting real coverage (see `_fetch_zoho`'s own docstring).
 _DETAIL_ADAPTERS = {
@@ -371,6 +417,7 @@ _DETAIL_ADAPTERS = {
     "ripplehire": _fetch_ripplehire,
     "successfactors": _fetch_successfactors,
     "trakstar": _fetch_trakstar,
+    "eightfold": _fetch_eightfold,
 }
 
 
