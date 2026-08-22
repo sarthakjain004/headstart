@@ -112,6 +112,16 @@ def extract(
 _CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED"
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
+# The shared currency-symbol fragment every `sym`/`sym2` capture group below interpolates,
+# rather than each independently spelling out `[$£€₹]`. Full-corpus audit, 2026-08-23: "CA$"/"C$"
+# (real Canadian-dollar notation) was silently defaulting to USD, since a bare `[$£€₹]` character
+# class can only ever capture the "$" itself — whether the "CA"/"C" prefix immediately before it
+# also became part of the overall match depended entirely on whether some UNRELATED earlier part
+# of that specific pattern (a label's own filler, say) happened to consume it too, which is real
+# for some phrasings and not others. Folding the prefix into the shared symbol fragment itself
+# means every caller captures it reliably, not by accident of surrounding text — see
+# `_guess_currency`'s own handling of a `sym` value longer than one character.
+_SYM = r"(?:(?:CA|C)?\$|[£€₹])"
 _RANGE = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*[-–]\s*(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 _SINGLE_NUM = re.compile(r"(\d(?:[\d,]*\d)?(?:\.\d+)?)")
 
@@ -578,28 +588,29 @@ _LABELED = re.compile(
     (?:annual\s+)?
     (?:
         (?:salary|compensation|pay(?:ing)?|remuneration|base\s+salary|wage|stipend|ctc)\s*(?:range|rate)?
-        (?:\s+for\s+\w+(?:\s+\w+){0,2})?\s*[:\-]?\s*
+        (?:\s+for\s+(?!between\b)(?![^\W\d]\w*@SYM@)[^\W\d]\w*
+           (?:\s+(?!between\b)(?![^\W\d]\w*@SYM@)[^\W\d]\w*){0,3})?\s*[:\-]?\s*
         (?:upto|up\s+to|of\s+up\s+to|is\s+up\s+to|of|is|from|starting(?:\s+(?:salary|at|rate))?)?
         | (?P<bare_starting>starting\s+at)  # bare "starting at $X" — no salary/pay/wage word;
                                             # named so _scan can demand a period hint nearby (see
                                             # its call site) rather than default-annual-guessing,
                                             # since nothing else here confirms this is even a wage
     )\s*
-    (?P<sym>[$£€₹])?\s*
+    (?P<sym>@SYM@)?\s*
     (?:(?:@CODES@)\b\s*)?
     (?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK]|[lL]\b)?
     (?:\s*(?:@CODES@)\b)?
-    (?:\s*[-–—to]{1,3}\s*(?P<sym2>[$£€₹])?\s*(?:(?:@CODES@)\b\s*)?
+    (?:\s*[-–—to]{1,3}\s*(?P<sym2>@SYM@)?\s*(?:(?:@CODES@)\b\s*)?
        (?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK]|[lL]\b)?
        (?:\s*(?:@CODES@)\b)?)?
-    """.replace("@CODES@", _CURRENCY_CODES),
+    """.replace("@CODES@", _CURRENCY_CODES).replace("@SYM@", _SYM),
     re.IGNORECASE | re.VERBOSE,
 )
 
 _BARE_RANGE = re.compile(
-    r"(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    rf"(?P<sym>{_SYM})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
     r"(?:\s*[-–—]\s*|\s+to\s+)"
-    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    rf"(?P<sym2>{_SYM})?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
 
@@ -610,10 +621,29 @@ _BARE_RANGE = re.compile(
 # "is", "is expected to be", ...), and a bare, unanchored "and" would risk joining two unrelated
 # dollar mentions ("$50,000 in RSUs and $10,000 signing bonus"). Anchoring on the literal word
 # "between" immediately before the first number is what makes this safe without a label word.
+#
+# Extended (full-corpus audit, 2026-08-23) two ways: (1) also accepts a currency CODE, not just
+# a symbol — "between CAD 82,000 and CAD 100,000" was falling through entirely, since the
+# original only recognized $£€₹. The first number still REQUIRES a symbol or a code (same safety
+# anchor as before, now widened); the second stays optional either way, matching how every other
+# paired pattern here only needs the currency stated once. `_guess_currency` finds a code
+# anywhere in the overall match text on its own — no new named group needed for that half.
+# (2) also accepts a dash separator, not just " and " — a real, if less common, hybrid phrasing
+# ("is between CAD 82,000 - CAD 100,000", mixing "between" with a dash instead of "and"). This
+# deliberately stays inside `_BARE_BETWEEN` rather than widening `_LABELED`'s own connector list
+# to include "between": `_LABELED` runs earlier in the cascade and has no "and" branch in its own
+# separator, so a "between X and Y" description would have matched `_LABELED` first with only the
+# floor captured (no separator = no ceiling), short-circuiting `_BARE_BETWEEN`'s own complete
+# match — the identical cascade-precedence failure mode found and reverted on trakstar's own pass
+# (the declined "rate" label). Keeping "between" solely in its own purpose-built, lower-priority
+# tier avoids that trap entirely.
 _BARE_BETWEEN = re.compile(
-    r"\bbetween\s+(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
-    r"\s+and\s+"
-    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    rf"\bbetween\s+"
+    rf"(?:(?P<sym>{_SYM})\s*(?:(?:{_CURRENCY_CODES})\b\s*)?|(?:{_CURRENCY_CODES})\b\s*)"
+    r"(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    r"(?:\s+and\s+|\s*[-–—]\s*)"
+    rf"(?P<sym2>{_SYM})?\s*(?:(?:{_CURRENCY_CODES})\b\s*)?"
+    r"(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
 
@@ -633,7 +663,7 @@ _BARE_BETWEEN = re.compile(
 # an add-on, not the rate itself — excluding it fixes the mechanism at its source rather than
 # guessing which survivor to trust.
 _BARE_HOURLY_OR_DAILY = re.compile(
-    r"(?<!\+)(?P<sym>[$£€₹])\s?(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*"
+    rf"(?<!\+)(?P<sym>{_SYM})\s?(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*"
     r"(?:/\s*hr\b|/\s*hour\b|per\s+hour|hourly\b|/\s*day\b|per\s+day\b|daily\b)",
     re.IGNORECASE,
 )
@@ -703,8 +733,8 @@ _BARE_RANGE_SYMBOL_EACH = re.compile(
 # all — left as a known gap (see docs/salary-extraction/ashby.md) rather than widening this
 # pattern to a shape it wasn't built or verified for.
 _MIN_MAX_BAND = re.compile(
-    r"\bminimum\b.{0,40}?(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
-    r".{0,150}?\bmaximum\b.{0,40}?(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    rf"\bminimum\b.{{0,40}}?(?P<sym>{_SYM})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    rf".{{0,150}}?\bmaximum\b.{{0,40}}?(?P<sym2>{_SYM})?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -735,9 +765,9 @@ _LPA = re.compile(
 # wins over the ambiguous-therefore-None outcome the bands would otherwise produce.
 _LEVEL_BAND = re.compile(
     r"Level\s+\d+\s*:\s*"
-    r"(?P<sym>[$£€₹])\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
+    rf"(?P<sym>{_SYM})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
     r"\s*[-–—]\s*"
-    r"(?P<sym2>[$£€₹])?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
+    rf"(?P<sym2>{_SYM})?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
 
@@ -779,6 +809,11 @@ _STRONG_PERIOD_HINT = re.compile(
 
 
 def _guess_currency(sym: str | None, code_context: str) -> str | None:
+    if sym and sym.endswith("$") and sym != "$":
+        return (
+            "CAD"  # "CA$"/"C$" — see _SYM's own docstring for why this must be checked
+        )
+        # against `sym` itself, not searched for separately in the surrounding match text.
     if sym and sym != "$":
         return _CURRENCY_SYM.get(sym)
     code_m = _CURRENCY_CODE.search(code_context)

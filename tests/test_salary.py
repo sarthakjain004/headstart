@@ -1327,3 +1327,149 @@ def test_guard_ctc_business_unit_name_not_a_salary_label():
         "efficiencies, documenting new processes, and ensuring knowledge is transferred."
     )
     assert from_description(text, ats="keka") is None
+
+
+# --- Full-HF-corpus recall audit, 2026-08-23: _LABELED's own filler/connector gaps -------------
+
+
+def test_description_labeled_filler_reaches_a_short_geography_clause():
+    # Full-corpus audit: real eightfold text — "The typical base pay range for this role across
+    # Switzerland is CHF 146,200.00 - CHF 245,900.00 per year" — was invisible to _LABELED
+    # entirely; its old 3-word "for X Y Z" filler cap couldn't reach past "this role across
+    # Switzerland" (4 words) to the connector/number. Widened to {0,3} (max 4 words) — enough for
+    # this real shape and the bulk of the corpus's own measured filler-length distribution
+    # (79.8% of real "for X...connector CODE" occurrences use 1-3 words; this one needs exactly
+    # 4), deliberately NOT widened further: a wider cap was measured (via a full cross-ATS diff)
+    # to risk swallowing genuinely unrelated text — see the "not swallowed" test below.
+    text = (
+        "The typical base pay range for this role across Switzerland is CHF 146,200.00 - "
+        "CHF 245,900.00 per year. Certain roles may be eligible for benefits"
+    )
+    assert from_description(text, ats="eightfold") == SalarySpan(
+        146_200, 245_900, "CHF", "regex"
+    )
+
+
+def test_description_labeled_filler_still_declines_a_reachable_second_mention():
+    # The other half of the calibration above: when a second, genuinely different regional range
+    # sits within the SAME widened reach as the first (both fillers ≤4 words — real eightfold
+    # shape, e.g. "for this role across France"), _LABELED must correctly decline as ambiguous
+    # (the established multi-region pattern, eightfold.md/successfactors.md's own precedent), not
+    # silently pick one. A too-wide filler cap (measured via a full cross-ATS diff against the
+    # whole production corpus, then reverted down to {0,3}) let _LABELED reach mentions several
+    # sentences apart, which correctly still declines here but was found to risk swallowing
+    # unrelated distant text in rarer cases — {0,3} keeps the reach local to genuinely adjacent
+    # phrasing, not because reaching further wouldn't ALSO correctly decline this specific
+    # example, but because the real corpus showed reaching further isn't uniformly safe.
+    text = (
+        "The typical base pay range for this role across France is €113,330 - €151,550 per year. "
+        "The typical base pay range for this role across Spain is €98,000 - €130,000 per year."
+    )
+    assert from_description(text, ats="workday") is None
+
+
+def test_description_labeled_filler_does_not_reach_a_distant_second_mention():
+    # Real workday/Salesforce shape: the SAME description states a second, genuinely different
+    # regional range several sentences later ("the base pay range for this role in those
+    # locations is $124,670 - $166,810"), but its own filler ("for this role in those locations",
+    # 5 words) exceeds the {0,3} cap — so _LABELED only ever reaches the FIRST mention, same as
+    # before this pass, and correctly extracts it rather than reaching for a distant conflict.
+    # This is the real, measured reason the cap was calibrated to {0,3} and not wider: a wider
+    # cap reached this exact conflict and correctly declined it (see the test above), but a full
+    # cross-ATS diff found OTHER real descriptions where reaching further caused genuine harm
+    # (a European trailing-currency-symbol format, a missing-separator source typo) — {0,3} is
+    # the width that fixes the real, evidenced gap (see the first test above) without reaching
+    # far enough to trigger either of those.
+    text = (
+        "The typical base salary range for this position is $113,330 - $151,550 annually. "
+        "There is a different range applicable to specific work locations. In California and "
+        "New York, the base pay range for this role in those locations is $124,670 - $166,810 "
+        "per year."
+    )
+    assert from_description(text, ats="workday") == SalarySpan(
+        113_330, 151_550, "USD", "regex"
+    )
+
+
+def test_description_between_code_and():
+    # Full-corpus audit: "between CAD 82,000 and CAD 100,000" — real greenhouse phrasing,
+    # invisible to the pre-existing _BARE_BETWEEN (symbols only: $£€₹, no currency codes).
+    text = "the estimated base salary range is between CAD 82,000 and CAD 100,000 plus bonus."
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        82_000, 100_000, "CAD", "regex"
+    )
+
+
+def test_description_between_code_dash():
+    # Same finding, the less common but real dash-separated hybrid ("between X - Y" instead of
+    # "between X and Y") — kept inside _BARE_BETWEEN itself (widened to accept a dash separator
+    # too) rather than added to _LABELED's own connector list: _LABELED runs earlier in the
+    # cascade and has no "and" branch in its own range separator, so adding "between" there
+    # instead would have _LABELED match "between X and Y" text with only the floor captured
+    # (no separator = no ceiling) and short-circuit _BARE_BETWEEN's own complete match — the
+    # identical cascade-precedence trap already found and reverted on trakstar's own pass.
+    text = "the estimated base salary range is between CAD 82,000 - CAD 100,000 plus bonus."
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        82_000, 100_000, "CAD", "regex"
+    )
+
+
+def test_description_between_symbol_still_works():
+    # Regression check: the pre-existing symbol-only shape this pattern was originally built for
+    # (greenhouse's own PR #236 precedent) must still work unchanged.
+    text = "the base pay for this role will be between $60,000 and $70,000."
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        60_000, 70_000, "USD", "regex"
+    )
+
+
+def test_description_ca_dollar_prefix_resolves_as_cad():
+    # Full-corpus audit: "CA$105,000" — a real, common Canadian-dollar notation (30 occurrences,
+    # 10 distinct companies) _guess_currency's bare-"$"-defaults-to-USD fallback was silently
+    # misreading, since the symbol capture only ever grabs the "$" character itself, not the "CA"
+    # prefix immediately before it.
+    text = "annual base salary range for this position is CA$105,000 to $145,000"
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        105_000, 145_000, "CAD", "regex"
+    )
+
+
+def test_description_ca_dollar_prefix_works_without_a_swallowing_filler():
+    # Code review caught that the first version of the fix above only worked when an unrelated
+    # earlier part of the SAME _LABELED match happened to have already consumed the "CA" letters
+    # as generic filler text ("for this position" left "is" to eat "CA" as an incidental extra
+    # filler word) — real for that one phrasing, not general. This shorter phrasing has no filler
+    # at all to accidentally swallow "CA" first, so it isolates whether _SYM itself now captures
+    # the prefix directly, the way every other symbol-capturing pattern in the file needs it to.
+    text = "We offer CA$105,000 to $145,000 per year"
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        105_000, 145_000, "CAD", "regex"
+    )
+
+
+def test_description_ca_dollar_bare_range_multi_region_still_ambiguous():
+    # Real ashby:docker posting: two genuinely different regional ranges, one in CA$ and one in
+    # bare $, both matched by _BARE_RANGE (not _LABELED — no label word precedes either range
+    # here). Before the general fix, "CA$225,300 – CA$361,750" wasn't recognized as CAD at all
+    # via this pattern, so the two ranges could resolve inconsistently instead of correctly
+    # declining as the ambiguous multi-region case they actually are.
+    text = (
+        "Compensation & Equity Canada: CA$225,300 – CA$361,750 + equity "
+        "United States: $160,900 – $260,700 + equity"
+    )
+    assert from_description(text, ats="ashby") is None
+
+
+def test_description_ca_dollar_and_trailing_cad_code_agree():
+    # Real guidepoint case: the SAME company states the SAME range once with a "CA$" prefix and
+    # once with a trailing "CAD" code — before the fix above, these disagreed on currency (one
+    # fell through to the USD default, the other correctly read the trailing code), and
+    # _resolve()'s mutual-consistency check declined the whole thing as ambiguous even though the
+    # dollar amounts themselves were identical.
+    text = (
+        "annual base salary range for this position is CA$105,000 to $145,000. "
+        "Compensation $105,000 — $145,000 CAD"
+    )
+    assert from_description(text, ats="greenhouse") == SalarySpan(
+        105_000, 145_000, "CAD", "regex"
+    )
