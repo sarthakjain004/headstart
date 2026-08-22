@@ -5,14 +5,22 @@
 - **Sampled the full candidate population directly — no liveness ledger exists for this ATS**,
   unlike every other pass in this initiative: `data/validate/liveness/sensehq.csv` does not exist
   (matching the plan's own "no liveness CSV — named single-company unlocks" note for oracle/
-  sensehq), so `config.load_active_companies()` had nothing to read. Sampled directly from
-  `data/ats-tenants-merged/sensehq.csv` (58 rows including header, from `cc2026`/`fingerprint`
-  discovery) instead: probed every one of the 57 candidate tenants through the real registered
-  scraper's own `fetch()`, since `has_detail_pass = False` (confirmed — no override in
-  `sensehq.py`) and `fetch_raw()` already pages through the entire board with
-  `description_external` inline (no separate detail fetch, so no bounded sampling adapter is
-  needed — matching workable/greenhouse/oracle's own listing-only shape).
-- **Live 18 of 57, dead/error 39** — the dead/error set is dominated by a consistent HTTP 500 (34
+  sensehq), so `config.load_active_companies()` had nothing to read. `scripts/enrich/
+  salary_sample.py` gained a small fallback for exactly this shape (`_candidates_without_ledger`,
+  used automatically whenever an ATS has no liveness CSV at all) rather than sampling this ATS
+  through an ad hoc, untracked mechanism the way an earlier draft of this pass did — caught by
+  this PR's own code review (Spec axis), since every other ATS's sample has always been
+  reproducible from the tracked tool. It reads `data/ats-tenants-merged/sensehq.csv` (58 rows
+  including header, from `cc2026`/`fingerprint` discovery) directly, applies the same
+  `EXCLUDED_BOARDS` filter `load_active_companies()` would, and does not itself probe liveness —
+  for a population this small (dozens, not thousands), the normal per-board fetch already is the
+  liveness check, so a dead candidate simply errors there like any ATS's occasional dead board.
+  `has_detail_pass = False` (confirmed — no override in `sensehq.py`) and `fetch_raw()` already
+  pages through the entire board with `description_external` inline, so no separate bounded
+  detail-pass adapter was needed either — matching workable/greenhouse/oracle's own listing-only
+  shape. `.venv/bin/python scripts/enrich/salary_sample.py sensehq` now reproduces this pass's own
+  numbers exactly: 56 boards sampled (57 candidates minus the 1 excluded demo tenant), 618 jobs.
+- **Live 17 of 56, dead/error 39** — the dead/error set is dominated by a consistent HTTP 500 (34
   of 39), not a mix of shapes, suggesting most of the mined `cc2026` candidates are tenants whose
   boards genuinely no longer exist on this host rather than a transient probing issue; one
   `Timeout`. Not investigated further per the plan's own explicit "do not over-invest here"
@@ -146,10 +154,12 @@ independent data-quality finding, not a salary-extraction one.
   discipline has paid off in this initiative (lever, keka, darwinbox, trakstar, now sensehq), and
   the first time a "-dev"-suffixed slug turned out to be the real positive rather than the false
   positive trakstar's own `zutest` was.
-- **New**: when an ATS has no liveness ledger at all (a genuine architectural gap, not a stale
-  count — see the eightfold pass's own distinction between ledger staleness and discovery-
-  coverage completeness), the candidate-tenant discovery file (`data/ats-tenants-merged/<ats>.csv`)
-  is the right fallback population to sample directly, probed one-by-one through the real
-  registered scraper rather than through `config.load_active_companies()` (which has nothing to
-  read without a liveness CSV). Worth remembering for any future ATS reached before its own
-  liveness ledger exists.
+- **New, and now built rather than just noted**: when an ATS has no liveness ledger at all (a
+  genuine architectural gap, not a stale count — see the eightfold pass's own distinction between
+  ledger staleness and discovery-coverage completeness), `_candidates_without_ledger` in
+  `salary_sample.py` reads the candidate-tenant discovery file (`data/ats-tenants-merged/
+  <ats>.csv`) directly and applies `EXCLUDED_BOARDS`, since `config.load_active_companies()` has
+  nothing to read without a liveness CSV. This pass's own first draft sampled through an ad hoc,
+  untracked script instead — real, but not reproducible from the repo, caught by this PR's own
+  code review. Any future ATS reached before its own liveness ledger exists (a revisited oracle,
+  say) now gets this for free from the standing tool, not a repeat of that same gap.
