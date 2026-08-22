@@ -111,9 +111,21 @@
   boards succeeded, 0 errored).
 - Measured both required percentages: **yes** — 0.00% field, 33.79% overall (Tier1+Tier2),
   against 293 jobs.
-- Live-verified after code changes: **yes** — the only code change here is the sampling adapter
-  itself (`salary.py` ships unchanged); a fresh, differently-seeded 20-board reseed (seed=313)
-  confirms it works correctly against real current boards (0 errors, consistent shape).
+- Live-verified after code changes: **yes, on the second attempt** — the only code change here is
+  the sampling adapter itself (`salary.py` ships unchanged). The first reseed (seed=313) was run
+  before code review found two real bugs in that adapter and was wrongly presented as a post-fix
+  check in an earlier draft of this doc; a genuinely fresh reseed (seed=811), run after the fix
+  commit and confirmed to exercise both the primary and fallback paths on real current boards
+  (two of its 20 boards independently confirmed to 403 and fall through), is what actually
+  verifies the fix — see Live-verification review.
+- Checked the coverage claim against a more durable source than the frozen sample, per the
+  plan's own verification checklist: **partially, same tradeoff ashby.md first named and
+  recruitee.md carried forward, not silently repeated here either**. The served table's
+  `/search` HTTP endpoint is still behind ADR-0042's sign-in wall, and a full LanceDB
+  `snapshot_download` is still ~1.87 GB against CLAUDE.md's documented storage-cost constraint.
+  The seed=811 reseed above (run for live-verification, not built for this purpose) fills the
+  same role a fresh live resample serves in ashby's/recruitee's own passes — called out
+  explicitly here rather than left for a reader to notice its absence.
 - **Audited the no-signal bucket for language-independent currency-shaped content before
   trusting the coverage number as a ceiling**: yes — all 37 currency-adjacent no-signal jobs
   read directly (not just a sample — the full set, given the smaller corpus size), traced to
@@ -128,13 +140,23 @@
 
 ## Live-verification review
 
-Fresh, differently-seeded 20-board sample (seed=313) against real current eightfold hosts: 20/20
-succeeded (0 errored), 60 jobs seen, 0% field, 26.7% description-hint — consistent shape with the
-full 99-board sample (47.8%; the smaller reseed's lower rate reflects normal small-sample
-variance across a tiny, 99-board total population, not a discrepancy). No new patterns shipped
-this pass, so there is nothing for a code change to have silently broken; this re-run confirms
-the sampling adapter — both its primary and fallback paths — still works against real, current
-boards.
+**First reseed (seed=313, run before the adapter fix-up below) predates the two bug fixes and
+does not verify them** — an earlier draft of this section presented it as a post-fix check, which
+it was not (caught in this PR's own code review). For the record: 20/20 succeeded (0 errored),
+60 jobs seen, 0% field, 26.7% description-hint — consistent shape with the full 99-board sample's
+own description-hint rate of 47.8% (140/293; a *different* metric from the 33.79% Tier1+Tier2
+figure reported elsewhere in this doc — description-hint is the sampling script's coarse regex
+signal, not real `headstart.salary` extraction — the smaller reseed's lower rate reflects normal
+small-sample variance across a tiny, 99-board total population, not a discrepancy).
+
+**Second reseed (seed=811), run after the fix-up commit, is the one that actually verifies it**:
+20/20 succeeded (0 errored), 59 jobs seen, 0% field, 59.3% description-hint (35/59). Two of the
+20 boards (`faurecia.eightfold.ai`, `coca-colafemsa.eightfold.ai`) confirmed via a direct status
+check to genuinely 403 on the primary PCSX path and fall through to the sitemap adapter — real
+exercise of the exact branch the `detail_fetched` fix touched, on real current boards, not a
+replay. No new patterns shipped this pass, so there was nothing for the salary-extraction logic
+itself to have silently broken; this run confirms the sampling adapter — both its primary and
+fallback paths, and the two fixed edge cases — works correctly against real, current boards.
 
 ## Patterns found
 
@@ -189,10 +211,17 @@ semantics exactly. (2) the sitemap-fallback branch hardcoded `"detail_fetched": 
 of whether `_jsonld()` actually returned fields, violating ADR-0050's two-state description rule;
 fixed to `"detail_fetched": fields is not None`, computed once and reused for both dict entries
 (avoiding a double fetch), matching `_sitemap_records()`'s own correct pattern. Both fixes
-re-verified live against real boards after the change (see Live-verification review) — the
-original bugs never affected this pass's own reported coverage numbers (the sampled boards
-happened not to trigger either edge case), but would have silently corrupted a future re-run
-against a board that did.
+re-verified live against real boards after the change (see Live-verification review). Neither
+bug affected this pass's own reported coverage numbers, for two different reasons: bug (1)
+changes control flow (which path a board takes), and directly checking the one 0-job board in
+the original 99-board sample (`10xgenomics.eightfold.ai`) confirmed it has no `group_id` at all —
+it never reaches the `positions` branch either way, and no other sampled board returned an empty
+list there; bug (2) never could have mattered regardless of sampling, since `detail_fetched` is
+metadata this script's own coverage counting never reads (`jobs_with_salary_field`/
+`jobs_with_desc_hint` come from `job.description`/`job.salary`, set from `fields` itself, not
+from the flag describing whether fetching it succeeded). Both bugs would still silently corrupt a
+future re-run or the ADR-0050 description-store pipeline downstream, which does read
+`detail_fetched` — worth fixing regardless of whether this pass's own numbers moved.
 
 ## Carried forward
 
