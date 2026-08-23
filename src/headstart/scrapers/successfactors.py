@@ -12,8 +12,11 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
 2. ``/sitemap.xml`` as the **Google-jobs RSS feed** — a minority (SAP, Alstom, Voith, ...). The
    feed carries full descriptions but its generator trickles at ~30 KB/s, so it is never read
    whole up-front; these tenants list via the server-rendered ``/search/?startrow=N`` pages
-   instead (page size varies per tenant, 25–100 rows — pagination steps by the observed size
-   and stops when a page adds no new ids, which also guards against offset wrap-around).
+   instead (page size varies per tenant — 10 to 100 rows, measured across sampled boards.
+   Pagination steps by the size of the page it got and stops when a page adds no new ids, which
+   also guards against offset wrap-around; it then checks what it read against the total the
+   board advertises, because running off the end and stopping two-thirds of the way through
+   otherwise look identical).
 3. The patient full RSS stream — last resort for RSS tenants whose ``/search/`` is CSB-rendered
    and lists nothing (Voith, Tetra Pak). Read with a long timeout, keeping whatever arrived if
    the tenant's own generator aborts mid-feed (Voith's dies ~2 MB in): partial beats none.
@@ -46,8 +49,7 @@ _log = log.get(__name__)
 _CLASSIFY_BYTES = 64 * 1024  # enough sitemap head to tell urlset from RSS
 _SITEMAP_CAP = 30 * 1024 * 1024  # runaway guard; largest observed urlset is ~3 MB
 _RSS_TIMEOUT = 300  # the RSS generator trickles (~30 KB/s); a full feed is minutes
-_SEARCH_STEP_FLOOR = 25  # the smallest observed /search/ page size
-_MAX_SEARCH_PAGES = 400  # loop bound: 400 pages x 25 rows covers any real board
+_MAX_SEARCH_PAGES = 400  # loop bound; 4,000 rows at the smallest measured page (10)
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 
 # ``/job/{slug}/{id}/`` — the one URL shape all three listing surfaces share. The slug part may
@@ -143,8 +145,14 @@ class SuccessFactorsScraper(BaseScraper):
         surface that lost the fallback race must not be attached to the list that won it
         (ADR-0053)."""
         seen: dict[str, str] = {}  # id -> url, insertion-ordered
+        page_size: int | None = (
+            None  # both from the board's own pagination label, when it
+        )
+        advertised_total: int | None = (
+            None  # renders one; None leaves the walk as it was
+        )
         startrow = 0
-        for _ in range(_MAX_SEARCH_PAGES):
+        for page_index in range(_MAX_SEARCH_PAGES):
             response = http.fetch(
                 "GET",
                 f"https://{self.slug}/search/?startrow={startrow}",
@@ -159,12 +167,25 @@ class SuccessFactorsScraper(BaseScraper):
                     f"HTTP {response.status_code} at startrow {startrow} — "
                     f"{len(seen)} postings read before the walk stopped"
                 )
+            if page_index == 0:
+                paging = _advertised_paging(response.text)
+                if paging:
+                    page_size, advertised_total = paging
             found = _job_urls_from(response.text, self.slug)
             fresh = [(u, i) for u, i in found if i not in seen]
             if not fresh:
                 break
             seen.update({i: u for u, i in fresh})
-            startrow += max(len(found), _SEARCH_STEP_FLOOR)
+            # Step by the board's own stated page size, falling back to the links we counted.
+            # A fixed 25-row floor here skipped the difference on every tenant serving fewer
+            # rows than that, silently, for months (docs/pipeline/2026-08-23_false-board-
+            # eviction-root-cause.md §4.2). The link count is the better guess but still only a
+            # guess: not every /job/ link on a page is one of that page's results, and
+            # `jobs.kaufland.com` renders 19 for a stated 15, so stepping by what we counted
+            # would skip 4 rows of every window — the same bug in a new disguise. An empty page
+            # cannot loop here: `fresh` is then empty and the walk breaks above, which is what
+            # the floor was really guarding against.
+            startrow += page_size or len(found)
         else:
             # Ran out of pages rather than reaching the end. Eightfold and Workday both mark
             # their equivalent ceilings; this one returned None and the short list read as the
@@ -172,6 +193,24 @@ class SuccessFactorsScraper(BaseScraper):
             return [(u, i) for i, u in seen.items()], (
                 f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
                 f"{len(seen)} postings read, the rest unread"
+            )
+        # Reaching the natural end is not proof the walk read everything — the stride bug above
+        # exited by exactly this path for months. The board states its own total on the search
+        # page, so compare against it and report a shortfall rather than presenting a short list
+        # as the whole Board (ADR-0053). Only when the label parses, which is far from universal:
+        # 17 of 30 sampled tenants render one, and the rest must walk exactly as before and claim
+        # nothing. So this is a second line of defence over roughly half the estate, not the fix
+        # — the stride above is the fix, and it applies to every board.
+        #
+        # `len(seen)` counts links, so a board rendering extras beyond its results (kaufland
+        # again) compares slightly high and can mask a shortfall smaller than the extras. That is
+        # the safe direction and deliberately left alone: under-reporting costs one run's
+        # eviction, while over-reporting marks the Board unauthoritative and serves its closed
+        # postings indefinitely.
+        if advertised_total is not None and len(seen) < advertised_total:
+            return [(u, i) for i, u in seen.items()], (
+                f"read {len(seen)} of the {advertised_total} postings the board advertises — "
+                "the rest were not listed"
             )
         return [(u, i) for i, u in seen.items()], None
 
@@ -342,6 +381,52 @@ def _sitemap_kind(text: str) -> str:
     if "<urlset" in text:
         return "urlset"
     return "other"
+
+
+# The pagination label's *structure*, never its words: the surrounding text is localised per
+# tenant — "Results 1 – 10 of 219", "Ergebnisse 1 – 46 von 46", "Resultados 1 – 50 de 813" — and
+# matching on "of" reads every non-English board as having no total at all. The shape is stable
+# across all of them: inside the label, a bold range followed by a bold grand total.
+#
+# Matched in two bounded steps rather than one loose pattern. A single `.*?` from the class name
+# to a pair of <b> spans is not anchored to the end of the label, so a tenant whose label is some
+# *other* shape lets the match run on into unrelated markup and return a number scavenged from
+# elsewhere on the page. That direction is the dangerous one — see :func:`_advertised_paging`.
+_PAGINATION_LABEL = re.compile(
+    r"paginationLabel[^>]*>((?:(?!</span>).)*)</span>", re.IGNORECASE | re.DOTALL
+)
+_LABEL_FIGURES = re.compile(
+    r"<b>\s*([\d,]+)\s*[–—-]\s*([\d,]+)\s*</b>[^<]*<b>\s*([\d,]+)\s*</b>",
+    re.IGNORECASE,
+)
+
+
+def _advertised_paging(page: str) -> tuple[int, int] | None:
+    """``(rows this page lists, postings the board holds)`` per the ``/search/`` page's own
+    pagination label, or None when it carries none this function recognizes.
+
+    The label reads ``Results <b>1 – 10</b> of <b>219</b>`` in English and
+    ``Ergebnisse <b>1 – 46</b> von <b>46</b>`` in German, so this matches its shape rather than
+    its words. It answers the walk's two questions at once, both of which it otherwise has to
+    guess from the page's link count: how far to step, and whether it reached the end.
+
+    Returns None when the label is absent or unrecognised, and the caller then steps by what it
+    counted and makes no claim about completeness. That direction matters in both roles: a
+    wrongly-parsed total reads as a shortfall, which marks the Board unauthoritative and takes it
+    out of the eviction scope entirely (ADR-0053), so closed postings would be served forever.
+    An unknown total must never become a zero, which is why the figures are matched only *inside*
+    the label element and rejected unless they order sanely.
+    """
+    label = _PAGINATION_LABEL.search(page)
+    if not label:
+        return None
+    figures = _LABEL_FIGURES.search(label.group(1))
+    if not figures:
+        return None
+    first, last, total = (int(g.replace(",", "")) for g in figures.groups())
+    if not 0 < first <= last <= total:
+        return None
+    return last - first + 1, total
 
 
 def _job_urls_from(text: str, host: str) -> list[tuple[str, str]]:
