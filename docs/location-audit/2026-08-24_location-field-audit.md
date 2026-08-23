@@ -44,9 +44,10 @@ scraper's real `fetch_raw()` + `parse()` against a sample of live boards drawn f
 `load_active_companies()`, then scored the resulting `Job.location` values for null rate, HTML
 entities, whitespace, and rollup-string leaks. Anything flagged was investigated by hand against
 the scraper's actual code and, where the finding warranted it, a live re-fetch of the specific raw
-record or detail page — never accepted on the strength of a single small sample. Two false
-positives (ashby, lever) were closed by widening the sample and inspecting the actual flagged
-values, which turned out to be legitimate country codes.
+record or detail page — never accepted on the strength of a single small sample. Three false
+positives (ashby, lever, trakstar) were closed by widening the sample and inspecting the actual
+flagged values, which turned out to be legitimate short place names — two 2-letter country codes
+and one genuinely short city name, not the garbage a "looks short" heuristic alone would suggest.
 
 ## Fix 1 — darwinbox: an embedded `\r` and empty comma segments
 
@@ -110,8 +111,13 @@ sequence, not just a fragment, is what has to match.
 - Original punctuation: words are joined with plain spaces, so a multi-part prefix like
   "Gaoming District, Foshan City" (comma in the source) comes back as "Gaoming District Foshan
   City" — recovering which gap was a comma would mean guessing, so it doesn't.
+- Recall on titles containing a literal `/` (found in code review, round 1): the character
+  decodes from its percent-encoded form before the URL path is split on `/`, which shifts every
+  segment after it and breaks the id/slug alignment the function relies on. It fails safe —
+  returns `None`, never a wrong location — rather than guess from the misaligned pieces.
 
-Both are deliberate: a location that is always genuinely a place beats one that occasionally isn't.
+All three are deliberate: a location that is always genuinely a place beats one that occasionally
+isn't.
 
 **Verified — three independent checks, not one:**
 
