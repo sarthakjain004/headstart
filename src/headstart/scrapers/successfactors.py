@@ -327,7 +327,7 @@ class SuccessFactorsScraper(BaseScraper):
         )
         if response.status_code != 200:
             return None
-        return _titled_fields(response.text)
+        return _titled_fields(response.text, url)
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
         response = await http.fetch_async(
@@ -335,7 +335,7 @@ class SuccessFactorsScraper(BaseScraper):
         )
         if response.status_code != 200:
             return None
-        return _titled_fields(response.text)
+        return _titled_fields(response.text, url)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
@@ -441,9 +441,13 @@ def _job_urls_from(text: str, host: str) -> list[tuple[str, str]]:
     return [(url, job_id) for job_id, url in pairs.items()]
 
 
-def _page_fields(page: str) -> dict[str, Any]:
+def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
     """Every indexable field a job page yields. JSON-LD first, then the CSB microdata /
-    label-token fallbacks — per field, because tenants mix the shapes."""
+    label-token fallbacks — per field, because tenants mix the shapes.
+
+    ``url`` is optional and used only for the location's last-resort tier
+    (:func:`_location_from_slug`); every existing caller that has no URL handy keeps working
+    unchanged and simply doesn't get that tier."""
     fields = _jsonld_fields(page) or {}
     if not fields.get("title"):
         fields["title"] = _csb_title(page)
@@ -451,12 +455,14 @@ def _page_fields(page: str) -> dict[str, Any]:
         fields["description"] = _csb_description(page)
     if not fields.get("location"):
         fields["location"] = _csb_location(page)
+    if not fields.get("location") and url and fields.get("title"):
+        fields["location"] = _location_from_slug(fields["title"], url)
     if not fields.get("posted_at"):
         fields["posted_at"] = _csb_posted_at(page)
     return fields
 
 
-def _titled_fields(page: str) -> dict[str, Any] | None:
+def _titled_fields(page: str, url: str | None = None) -> dict[str, Any] | None:
     """:func:`_page_fields`, but None on a page that loaded (200 OK) without a parseable title —
     a temporary placeholder, an anti-bot interstitial served with 200, or any page shape neither
     parser recognizes. `parse()` drops a Job with no title either way (there is nothing to keep
@@ -465,7 +471,7 @@ def _titled_fields(page: str) -> dict[str, Any] | None:
     and `mark_truncated` never fired — `index sync` read the board as fully, authoritatively
     scraped and evicted the Job as a delisting (docs/pipeline/2026-08-23_false-board-eviction-
     root-cause.md §4)."""
-    fields = _page_fields(page)
+    fields = _page_fields(page, url)
     return fields if fields.get("title") else None
 
 
@@ -603,6 +609,72 @@ def _csb_location(page: str) -> str | None:
         or _meta_itemprop(page, "addressCountry"),
     ]
     return ", ".join(p for p in parts if p) or None
+
+
+# `[^\W_]+` rather than `\w+`: `\w` includes `_`, and SuccessFactors's own slug encoder uses `_`
+# as its own separator (a literal "." in a title becomes "_" — measured on
+# tuyendung.vietcombank.com.vn's "[II.2026_Nam ...]" titles), so keeping it as a token character
+# would glue two real words together instead of splitting them.
+_SLUG_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _location_from_slug(title: str, url: str) -> str | None:
+    """The posting's location recovered from its own URL slug, when the page carries no location
+    markup at all — some CSB tenants' job pages genuinely never render one (measured 2026-08-24,
+    30-board sample: 29.9% of jobs null, 62.5% of those on tenants where the page has neither
+    JSON-LD nor CSB markup, only title/description). The slug itself still carries it:
+    SuccessFactors builds job URLs as ``{location}-{title}[-{state}-{zip}]/{id}/`` — e.g.
+    ``/job/Charlotte-Account-Manager-Customer-Development-NC-28277/1407690100/`` for a posting
+    titled "Account Manager - Customer Development".
+
+    Anchored on the title, which is already reliably extracted: tokenize both into words and
+    require the title's own token sequence to appear *exactly*, contiguously, in the slug's.
+    Whatever comes before that match is the location. Anything AFTER it is never used — that is
+    where a trailing requisition id lives (``.../Foshan-City-Sr-Technician-528513/...`` for a
+    title of just "Sr Technician" leaves a bare ``528513``, not a place), and appending it would
+    fabricate a location worse than reporting none. This costs precision on US-style postings
+    that do carry a real ``-NC-28277`` state/zip suffix — those are simply reported at city grain
+    — but a location that is always genuinely a place beats one that occasionally isn't. It also
+    costs the original punctuation: words are joined with plain spaces, so a multi-part prefix
+    like "Gaoming District, Foshan City" (comma in the source) comes back as "Gaoming District
+    Foshan City" — recovering which gap was a comma would mean guessing, so this doesn't.
+
+    Returns None whenever the title cannot be found as an exact contiguous run (title-cased
+    differently than the slug encodes it, punctuation the encoder dropped mid-title, or a tenant
+    whose slug is the title with no location component at all — confirmed on careers.ijm.com,
+    whose job URLs are the bare title verbatim) rather than guess from a partial match.
+    """
+    from urllib.parse import unquote, urlparse
+
+    path = unquote(urlparse(url).path)
+    segments = [s for s in path.split("/") if s]
+    if not segments:
+        return None
+    # the id is its own trailing segment (`_JOB_PATH`'s own shape); the slug is the one before it
+    slug = (
+        segments[-2] if len(segments) >= 2 and segments[-1].isdigit() else segments[-1]
+    )
+    slug_words = _SLUG_WORD.findall(slug)
+    title_words = _SLUG_WORD.findall(title)
+    if not slug_words or not title_words:
+        return None
+    slug_lower = [w.lower() for w in slug_words]
+    title_lower = [w.lower() for w in title_words]
+    n = len(title_lower)
+    match_at = next(
+        (
+            i
+            for i in range(len(slug_lower) - n + 1)
+            if slug_lower[i : i + n] == title_lower
+        ),
+        None,
+    )
+    if match_at is None:
+        return None
+    prefix = slug_words[:match_at]
+    if not prefix or all(w.isdigit() for w in prefix):
+        return None
+    return " ".join(prefix)
 
 
 def _csb_posted_at(page: str) -> str | None:

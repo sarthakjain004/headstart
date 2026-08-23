@@ -56,7 +56,10 @@ class GreenhouseScraper(BaseScraper):
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for j in raw.get("jobs", []):
-            location = (j.get("location") or {}).get("name")
+            # `location.name` ships with un-trimmed padding on a real minority of tenants —
+            # measured 2026-08-24, 22/178 sampled jobs ("Hybrid in Boston, MA   ", three
+            # trailing spaces) — and nothing downstream strips it.
+            location = ((j.get("location") or {}).get("name") or "").strip() or None
             department = (j.get("departments") or [{}])[0].get("name") or None
             jobs.append(
                 Job(
