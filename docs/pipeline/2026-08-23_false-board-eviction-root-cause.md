@@ -35,16 +35,34 @@ any cause, becomes an immediate, permanent delete.
   unexplained; see §4.1. **The other 7 (all of `vast`) were not false evictions
   at all** — that board scraped complete (166/166) and those 7 are non-tech (mechanical/thermal/
   structures/test-technician roles), so evicting them from a tech-only index is correct behaviour.
-- **SuccessFactors — same shape as Greenhouse, confirmed root cause, fixed.** 22 false evictions
-  on 6 boards (updated 2026-08-23: a follow-up pass resolved the 90 ids the original 120s timeout
-  left inconclusive and found 2 more false evictions, on `careers.bv.com` and
-  `careers.hcltech.com` — see §4). Most are clustered into 1-2 runs per board, same as Greenhouse.
+- **SuccessFactors — TWO independent root causes, both fixed.** *Corrected 2026-08-23, after this
+  doc first shipped:* the detail-path gap below is real but was **not the whole story, and not the
+  larger half**. A second, unrelated bug lived in the *listing*: the `/search/` walk stepped its
+  offset by a 25-row floor regardless of the page it actually got, so every tenant serving fewer
+  than 25 rows a page silently skipped the difference — `jobs.chartindustries.com` read 90 of 219,
+  `jobs.bayer.com` 241 of 601 — and exited by the natural-end path reporting no truncation at all.
+  The boards §4's table names below (`chartindustries`, `bayer`, `careers.gic.com.sg`) are exactly
+  those sub-25-row tenants, so their evictions are listing losses, not detail losses. See §4.2.
+- **SuccessFactors (detail path) — same shape as Greenhouse, confirmed root cause, fixed.** Of the
+  22 false evictions on 6 boards originally attributed here, §4's own table apportions 9 of them
+  (`chartindustries` 1, `bayer` 5, `careers.gic.com.sg` 3) to boards the listing bug above
+  explains, leaving this mechanism **13 on 3 boards** (`jobs-offshore.hanwhaocean.com` 11,
+  `careers.bv.com` 1, `careers.hcltech.com` 1). The split is not a convenient guess: measured
+  2026-08-23, all three of those boards serve a `urlset` sitemap, so they never run the `/search/`
+  walk and the listing bug cannot reach them — while all three boards moved to the listing bug do
+  run it, at 10, 10 and 20 rows a page, every one under the 25-row floor. (The original 22 itself came from a
+  follow-up pass that resolved the 90 ids the first 120s timeout left inconclusive, finding 2 more
+  on `careers.bv.com` and `careers.hcltech.com` — see §4.) Most are clustered into 1-2 runs per
+  board, same as Greenhouse.
   Precise mechanism confirmed by code and pinned by a regression test (§4): a detail page that
   loads (200 OK) but yields no parseable title falls through as a dict, not `None`, so the loss
   was invisible to the truncation-detection `mark_truncated` relies on — `sync` reads the board as
-  fully scraped and evicts the Job. **Fixed and merged (PR #266)**, and independently confirmed on
-  `jobs.bayer.com` by the §4.1 artifact method. The count of 22 is an upper bound — only 5 have
-  been re-checked against §4.1's tech-filter predicate (see the caveat in §4).
+  fully scraped and evicts the Job. **Fixed and merged (PR #266)**. The `jobs.bayer.com` artifact
+  check once cited here as independent confirmation does **not** support this mechanism — that
+  board's shortfall is the listing bug's (see the correction in §4) — so the detail path rests on
+  code reading and its regression test, not on artifact evidence. The 13 is an upper bound: none
+  of them has been re-checked against §4.1's tech-filter predicate, and Greenhouse's own recheck
+  turned half its count into correct evictions.
 - **Every other ATS with evictions — clean across every evicted id, not just a sample.** ashby
   (40/40 genuine), darwinbox (4/4), eightfold (62/62), keka (3/3), lever (75/75, plus a
   separately-confirmed 72/72 repeat-eviction check), recruitee (3/3), ripplehire (10/10),
@@ -223,7 +241,7 @@ do happen for Workday tenants, a second, smaller, already-mitigated failure mode
 
 Both ATSes' ids are the platform's own stable numeric job id
 (`src/headstart/scrapers/greenhouse.py:31`: `id=f"{self.ats}:{self.slug}:{j['id']}"`;
-`src/headstart/scrapers/successfactors.py:314`: `id=f"{self.ats}:{self.slug}:{item['id']}"`) — so
+`src/headstart/scrapers/successfactors.py:353`: `id=f"{self.ats}:{self.slug}:{item['id']}"`) — so
 this isn't Workday's mechanism. What they share instead: every false-evicted id on a given board
 was evicted in the *same one or two pipeline runs*, not scattered across the 15-run window —
 
@@ -256,7 +274,7 @@ the signature of that one scrape being incomplete, not several unrelated real cl
 **SuccessFactors: confirmed root cause, fixed.** The module docstring already named the shape —
 *"A page that yields no title drops that job for the run... it returns next scrape"* — but the
 precise gap was narrower and code-confirmed, not just inferred from the comment.
-`_job_fields()`/`_job_fields_async()` (`src/headstart/scrapers/successfactors.py:285-299`)
+`_job_fields()`/`_job_fields_async()` (`src/headstart/scrapers/successfactors.py:324-338`)
 returned `None` — the signal `report_detail_gaps` counts as a loss and that feeds `mark_truncated`
 (ADR-0053) — **only on a hard fetch failure** (non-200, or an exception `fan_out` isolates to
 `None`). A page that loaded fine (200 OK) but whose content didn't yield a parseable title (a
@@ -278,9 +296,17 @@ directly, unchanged, by three existing unit tests). Merged as PR #266.
 **Independently confirmed by the same artifact method as §4.1**, for one board: `jobs.bayer.com`
 in run `32592349834` scraped **242** jobs and all 5 of its evicted ids were **absent** from that
 raw output, while `_shard_report.json` recorded the board with **no error and no truncation** —
-the exact silent-loss signature the fix closes (a page that loads but yields no title is dropped
-without ever being counted as a loss). Note this is the opposite finding from Greenhouse's `vast`:
-these ids really were missing from the scrape, not present-but-non-tech.
+a silent-loss signature. Note this is the opposite finding from Greenhouse's `vast`: these ids
+really were missing from the scrape, not present-but-non-tech.
+
+> **Correction, 2026-08-23 (later the same day).** This paragraph originally read that as *"the
+> exact silent-loss signature **the fix** closes"*, meaning the detail-path fix. That attribution
+> is wrong. §4.2 shows `jobs.bayer.com` was reading **241 of 601** postings because of the
+> listing-side stride bug — so 242 scraped jobs is that bug's signature, not the detail path's,
+> and these 5 absences are explained by it. The detail-path gap in this section is real, code-
+> confirmed and worth fixing on its own, but **this board is not evidence for it**, and §4 is
+> left without an independent artifact confirmation of the detail mechanism specifically. The
+> caveat below applies with more force, not less.
 
 **Caveat on the count.** Only `bayer`'s 5 were re-checked this way; the other 17 of the 22 have
 not been re-tested against §4.1's tech-filter predicate, so some may turn out to be correct
@@ -370,6 +396,48 @@ absence as authoritative with no cross-run confirmation. Greenhouse's origin-sid
 SuccessFactors's silent detail-fetch loss are different mechanisms that meet at the same place —
 and Option B absorbs both **without needing to know either mechanism**, which is exactly why it
 is the stronger fix for Greenhouse specifically, where the per-ATS guard is still unproven.
+
+### 4.2 SuccessFactors — a second root cause, in the listing, found 2026-08-23
+
+The detail-path fix (PR #266) shipped and the boards **kept flapping**. Chasing that (issue #269,
+`/diagnosing-bugs`) found a second bug that is independent of the first, larger, and older.
+
+`_search_job_urls` advanced its offset by `startrow += max(len(found), _SEARCH_STEP_FLOOR)`, with
+the floor at 25. `jobs.chartindustries.com` serves **10 rows a page**, so the walk read rows 0-9,
+then 25-34, then 50-59 — **skipping 15 of every 25 rows, permanently**. It then ran off the end,
+saw no fresh ids, and exited by the *natural-end* path with `cut_short=None`. A board missing 59%
+of its postings was handed to `index sync` as complete, and everything unread was evicted as
+delisted. The module docstring already claimed the correct behaviour — *"pagination steps by the
+observed size"* — the code just never did it.
+
+Measured live against the total each board advertises in its own pagination label:
+
+| board | page size | board says | walk got | missing |
+|---|---:|---:|---:|---:|
+| `jobs.chartindustries.com` | 10 | 219 | **90** | **129** |
+| `jobs.bayer.com` | 10 | 601 | **241** | **360** |
+| `mycareer.heraeus.com` | 20 | 222 | **180** | **42** |
+| `careers.gic.com.sg` | 20 | 171 | **140** | **31** |
+| `jobs.hollister.com` | 25 | 98 | 98 | 0 |
+| `jobs.exxonmobil.com` | 25 | 606 | 606 | 0 |
+
+Every board paging under 25 was short; every board at or above it was whole. That is the floor and
+nothing else — `ceil(219/25) = 9` windows x 10 rows = the 90 observed.
+
+**Why it presents as flapping rather than as a stable shortfall:** as new postings shift rows down
+the server's ordering, a job crosses in or out of one of the sampled windows, so it appears and
+disappears between runs — evicted, then re-added, each re-add re-stamping `first_seen` (ADR-0031)
+and surfacing a year-old posting as brand new. That is the user-visible symptom in issue #269. On
+the run-pair from that issue, 19 of 90 chartindustries ids swapped between two runs 46 minutes
+apart, which is not plausible churn.
+
+Fixed in PR #274, two parts: step by the board's own stated page size (falling back to the link
+count), and check what was read against the advertised total before claiming the end, reporting a
+shortfall through the ADR-0053 channel. A caveat worth carrying forward — **the link count is not
+the page size**: `jobs.kaufland.com` labels 15 results but renders 19 `/job/` links (4 recurring
+extras), so stepping by what you counted reintroduces the same skip at a smaller scale. The
+board's own figure is the only trustworthy stride. The self-check covers only the ~17 of 30
+sampled tenants that render a label; the stride fix covers all of them.
 
 ## 5. Every other ATS
 

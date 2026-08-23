@@ -2424,7 +2424,10 @@ def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_th
     found, why = scraper._search_job_urls()
 
     assert [job_id for _url, job_id in found] == ["11"]
-    assert why and "503" in why and "startrow 25" in why
+    # startrow 1, not 25: the walk steps by the page it got (one posting here). It used to step
+    # by the larger of that and a 25-row floor, which is the overshoot that silently skipped rows
+    # on every tenant paging under the floor — the offset reported here moved with that fix.
+    assert why and "503" in why and "startrow 1" in why
     assert scraper.truncated is None  # the caller decides, not the walk
 
 
@@ -2454,6 +2457,163 @@ def test_successfactors_search_walk_reports_its_page_ceiling(monkeypatch):
     assert (
         scraper.truncated is None
     )  # the caller decides which surface answers, not the walk
+
+
+def test_successfactors_search_walk_reads_every_row_of_a_small_page(monkeypatch):
+    """The walk must step by the page it actually got, not by a floor that overshoots it.
+
+    Stepping by `max(len(found), 25)` skips rows whenever a tenant's page holds
+    fewer than the floor. Measured live: `jobs.chartindustries.com` serves 10 rows a page and
+    advertises 219 postings, and the walk returned 90 — rows 0-9, 25-34, 50-59 ... with the 15
+    rows between each window never read. `jobs.bayer.com` (also 10/page) returned 241 of 601.
+    Every sampled board with a page under 25 was short and every board at or above it was whole,
+    which is the floor and nothing else. Nothing marked it: the walk runs off the end of the
+    board, sees no fresh ids, and exits by the natural-end path with `cut_short=None`, so a
+    Board missing 59% of its postings reads as complete and `index sync` evicts the difference.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    page, total = (
+        10,
+        25,
+    )  # a page smaller than the old 25-row floor, as chartindustries is
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + page, total))
+        return _SearchPage(200, "".join(f'<a href="/job/x/{i}/">a</a>' for i in rows))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+
+    found, why = scraper._search_job_urls()
+
+    assert {i for _u, i in found} == {str(i) for i in range(total)}, (
+        f"read {len(found)} of {total} postings — the step overshot the page and skipped rows"
+    )
+    assert why is None, "it did reach the end, so there is nothing to report"
+
+
+def _labelled_search_page(rows, total, label="Results", connector="of", extras=()):
+    """A /search/ page carrying the pagination label the walk reads its yardstick from.
+
+    ``extras`` are job links that are *not* results of this page — the shape jobs.kaufland.com
+    renders, where 4 recurring links sit alongside the 15 rows the label counts."""
+    rows = list(rows)
+    body = "".join(f'<a href="/job/x/{i}/">a</a>' for i in [*rows, *extras])
+    last = len(rows)
+    return (
+        f'<span class="paginationLabel">{label} <b>1 \u2013 {last}</b> '
+        f"{connector} <b>{total}</b></span>{body}"
+    )
+
+
+def test_successfactors_reports_reading_fewer_than_the_board_advertises(monkeypatch):
+    """Reaching the natural end is not proof the walk read everything — the stride bug exited by
+    exactly that path. The board states its own total, so a shortfall must be reported through
+    the ADR-0053 channel rather than presented as the whole Board."""
+    from headstart.scrapers import successfactors as sf
+
+    # the board says 40, but only ever serves the first 10 and then nothing
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + 10, 10))
+        return _SearchPage(200, _labelled_search_page(rows, 40))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+
+    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+
+    assert len(found) == 10
+    assert why and "10 of the 40" in why
+
+
+def test_successfactors_makes_no_completeness_claim_without_a_label(monkeypatch):
+    """An unknown total must never become a zero: a wrongly-inferred shortfall marks the Board
+    unauthoritative and removes it from the eviction scope entirely, so closed postings would be
+    served indefinitely. A board that states no total is simply not checked."""
+    from headstart.scrapers import successfactors as sf
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + 10, 10))
+        return _SearchPage(200, "".join(f'<a href="/job/x/{i}/">a</a>' for i in rows))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+
+    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+
+    assert len(found) == 10
+    assert why is None, "no total advertised, so nothing to compare against"
+
+
+@pytest.mark.parametrize(
+    ("label", "connector"),
+    [("Results", "of"), ("Ergebnisse", "von"), ("Resultados", "de")],
+)
+def test_successfactors_reads_the_total_in_any_locale(label, connector):
+    """The label's wording is localised per tenant — measured live on career.deutz.com (German)
+    and canaldeempleo.es (Spanish). Matching on the English "of" read every other board as having
+    no total, silently disabling the check exactly where boards are largest."""
+    from headstart.scrapers.successfactors import _advertised_paging
+
+    page = _labelled_search_page(range(10), 219, label, connector)
+    assert _advertised_paging(page) == (10, 219)
+
+
+def test_successfactors_walks_a_board_that_renders_more_links_than_it_lists(
+    monkeypatch,
+):
+    """jobs.kaufland.com labels 15 results and renders 19 job links — 4 recurring extras that are
+    not rows of this page. Stepping by the link count skips 4 rows of every window, the stride bug
+    wearing a different disguise, so the board's own stated page size wins wherever it gives one.
+
+    Driven through the walk rather than the parser: a parser-level assertion passes just as well
+    with the stride reverted to `len(found)`, which is the bug. Here rows 15-18 go missing if it
+    is."""
+    from headstart.scrapers import successfactors as sf
+
+    board, page, extras = 45, 15, [9001, 9002, 9003, 9004]
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + page, board))
+        return _SearchPage(200, _labelled_search_page(rows, board, extras=extras))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+
+    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    ids = {i for _u, i in found}
+
+    assert {str(i) for i in range(board)} <= ids, "a window's worth of rows went unread"
+    assert why is None, "the whole board was read, so nothing was cut short"
+
+
+def test_successfactors_ignores_numbers_outside_the_pagination_label():
+    """An unrecognised label must yield nothing rather than a number scavenged from elsewhere on
+    the page. A too-high total reads as a shortfall, which marks the Board unauthoritative and
+    drops it from the eviction scope entirely (ADR-0053) — closed postings then served forever.
+    So the figures are matched only within the label element."""
+    from headstart.scrapers.successfactors import _advertised_paging
+
+    stray = (
+        '<span class="paginationLabel">Results <b>1-10</b></span>'
+        "<div>see <b>note</b> and <b>12</b></div>"
+    )
+    assert _advertised_paging(stray) is None
+
+
+def test_successfactors_rejects_a_label_whose_figures_do_not_order_sanely():
+    """A range running past the grand total is not a label this parser understands; guessing
+    from it risks the same false-shortfall direction as scavenging."""
+    from headstart.scrapers.successfactors import _advertised_paging
+
+    assert (
+        _advertised_paging(
+            '<span class="paginationLabel">Results <b>1 \u2013 90</b> of <b>40</b></span>'
+        )
+        is None
+    )
 
 
 def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):
