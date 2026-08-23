@@ -39,25 +39,18 @@ class GreenhouseScraper(BaseScraper):
         602/602, which only establishes they agree while the response is *healthy* — whether
         ``total`` stays authoritative *during* a short response is exactly the unknown, and
         marking a Board unauthoritative on a signal that might fire always (or never) is the
-        failure ADR-0053's guards exist to avoid. So this logs and does nothing else.
-
-        **Reading the result.** A warning here means the envelope contradicts itself, so the guard
-        would work — ship it. Silence is ambiguous on its own and has to be read against a board
-        that is *known* to have gone short that run (diff a board's job count across two runs'
-        ``scrape-fragment`` artifacts, the method §4.1 used): short board **with** a warning
-        confirms the guard; short board **without** one means ``total`` shrank too and the guard
-        is useless, which is worth knowing before writing it.
+        failure ADR-0053's guards exist to avoid. So this logs and does nothing else; §4.1 records
+        how to read a warning (and, harder, a silence) into a decision on shipping the guard.
         """
         raw = super().fetch_raw()
-        if isinstance(raw, dict):
-            total = (raw.get("meta") or {}).get("total")
-            listed = len(raw.get("jobs") or [])
-            if isinstance(total, int) and total != listed:
-                _log.warning(
-                    f"{self.board_key()}: envelope disagrees — {listed} jobs listed but "
-                    f"meta.total={total} (delta {total - listed}); the response is short and "
-                    "says so, so a mark_truncated guard on this signal would fire here"
-                )
+        total = (raw.get("meta") or {}).get("total")
+        listed = len(raw.get("jobs") or [])
+        if isinstance(total, int) and total != listed:
+            _log.warning(
+                f"{self.board_key()}: envelope disagrees — {listed} jobs listed but "
+                f"meta.total={total} (delta {total - listed}); the response is short and "
+                "says so, so a mark_truncated guard on this signal would fire here"
+            )
         return raw
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

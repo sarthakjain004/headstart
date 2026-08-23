@@ -346,7 +346,8 @@ worthless. Disambiguating needs a board *known* to have gone short that run — 
 across two runs' `scrape-fragment` artifacts, the method this section used — and then checking
 whether a warning fired for it. Short board **with** warning confirms the guard; short board
 **without** one kills it. Until one of those two things is observed, Greenhouse stays unfixed at
-the per-ATS level, and Option B (§6) is what actually covers it.
+the per-ATS level, and Option B (§6) is what actually covers it. **Tracked as issue #268**, so
+the instrumentation has an owner rather than sitting unread.
 
 The one case this section does **not** explain: `metrostarsystems` in run `32606136882` scraped
 **90 of 90** — not short at all — yet `7797942003` was absent from it while a different posting
