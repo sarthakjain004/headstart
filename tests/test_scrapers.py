@@ -3163,6 +3163,64 @@ def test_successfactors_marks_truncation_when_detail_pages_are_lost(monkeypatch)
     assert scraper.truncated and "unreadable" in scraper.truncated
 
 
+def test_successfactors_marks_truncation_when_a_page_loads_but_has_no_title(
+    monkeypatch,
+):
+    """docs/pipeline/2026-08-23_false-board-eviction-root-cause.md §4: a live-verified real-world
+    gap the sibling test above (`_job_fields` returning `None`) doesn't cover. `_job_fields` only
+    returns None on a hard fetch failure (non-200, or an exception isolated by `fan_out`) —
+    `_page_fields` itself always returns a dict (`_jsonld_fields(page) or {}`), never None, even
+    when the page loaded (200 OK) but its content didn't yield a parseable title (a temporary
+    placeholder, an anti-bot interstitial served with 200, or any page shape the parser doesn't
+    recognize).
+
+    `parse()` correctly drops the Job either way — there's nothing to keep it by — but before the
+    fix, `report_detail_gaps` only counted `None` results, so this loss was invisible to it and
+    `mark_truncated` never fired: `index sync` read the board as fully, authoritatively scraped
+    and evicted the Job as a delisting, though its detail page never told the scraper anything was
+    wrong.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+    monkeypatch.setattr(scraper, "_fetch_sitemap", lambda: ("urlset", "", None))
+    monkeypatch.setattr(
+        scraper,
+        "_search_job_urls",
+        lambda: (
+            [(f"https://jobs.example.com/job/x/{i}/", str(i)) for i in (1, 2, 3)],
+            None,
+        ),
+    )
+
+    class _Response:
+        def __init__(self, text):
+            self.status_code = 200
+            self.text = text
+
+    good_page = """<html><head><script type="application/ld+json">
+    {"@context": "http://schema.org", "@type": "JobPosting", "title": "Engineer"}
+    </script></head><body></body></html>"""
+
+    def fake_fetch(method, url, **kw):
+        # every page returns 200; the middle one's body has no title in any shape the parser
+        # recognizes (a placeholder page) — exercises the real _job_fields -> _titled_fields
+        # path, not a mock that bypasses it
+        if url.endswith("/2/"):
+            return _Response("<html><body>Temporarily unavailable.</body></html>")
+        return _Response(good_page)
+
+    monkeypatch.setattr(sf.http, "fetch", fake_fetch)
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    raw = scraper.fetch_raw()
+
+    assert len(scraper.parse(raw, "2026-01-01")) == 2, (
+        "the title-less page's Job is dropped"
+    )
+    assert scraper.truncated and "unreadable" in scraper.truncated
+
+
 def test_eightfold_sitemap_fallback_marks_truncation_when_pages_are_lost(monkeypatch):
     """Same ADR-0053 hole on the surface eightfold takes whenever the API 403s."""
     from headstart.scrapers import eightfold as ef
