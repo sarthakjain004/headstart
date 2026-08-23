@@ -425,6 +425,7 @@ class WorkdayScraper(BaseScraper):
             "location": info.get("location"),
             "additionalLocations": info.get("additionalLocations"),
             "remoteType": info.get("remoteType"),
+            "jobReqId": info.get("jobReqId"),
         }
 
     def _job_detail(self, external_path: str | None) -> dict[str, Any] | None:
@@ -694,13 +695,67 @@ class WorkdayScraper(BaseScraper):
         return jobs
 
 
+# A requisition id's shape, live-validated against 1,029 real listing items across 129 tenants
+# (docs/pipeline/2026-08-23_false-board-eviction-root-cause.md §6, option A1): a short
+# letter-prefix plus digits (``JR00258``, ``R-0012714``, ``PT-JR042569``, ``REQ2026 - 9929``), a
+# digit-then-letter-suffix form (``2409195-R``), or a bare 4+-digit number. ``bulletFields[0]`` —
+# what the code used to trust unconditionally — was never actually the req id on any of 25 boards
+# checked live: a location, a relative posted-date, a closing-date label, an employment-type tag,
+# a store name, or a subsidiary name, all of which change value across scrapes for the same live
+# posting and so were silently evicted-then-reinserted every run.
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{1,2}$")
+_REQ_ID_SHAPE = re.compile(
+    r"^(?:[A-Za-z]{1,5}[-_ ]?){1,2}\d[\dA-Za-z]*(?:[-_ ]+\d[\dA-Za-z]*)*$"
+    r"|^\d[\dA-Za-z]*[-_][A-Za-z]{1,3}$"
+)
+_BARE_NUMERIC = re.compile(r"^\d+$")
+
+
+def _looks_like_req_id(field: str) -> bool:
+    field = field.strip()
+    if not field or _ISO_DATE.match(field):
+        return False
+    if _BARE_NUMERIC.match(field):
+        # A short bare number is as likely to be a stray flag/count as a req id (measured: a
+        # "0"/"1" bulletFields entry on one tenant that isn't one) — 4+ digits before trusting it.
+        return len(field) >= 4
+    return bool(_REQ_ID_SHAPE.match(field))
+
+
 def _posting_key(item: dict[str, Any]) -> str:
-    """Stable per-posting id: bulletFields[0] (requisition id on tenants that
-    surface it) else the externalPath tail."""
-    bullet = (item.get("bulletFields") or [None])[0]
-    if bullet:
-        return str(bullet)
-    return (item.get("externalPath") or "").rsplit("/", 1)[-1] or "unknown"
+    """Stable per-posting id. Prefers, in order: the detail response's own ``jobReqId`` (only
+    present once :meth:`WorkdayScraper.parse` runs, after the per-job detail fetch has attached
+    ``item["_detail"]`` — absent during :meth:`WorkdayScraper.fetch_raw`'s earlier, pre-detail
+    dedup pass, which falls through to the next tier); the ``bulletFields`` entry shaped like a
+    requisition id, wherever it falls in the array — never a fixed index, which varies by tenant
+    (index 1 on most affected tenants, index 2 on others); the ``externalPath`` tail — Workday's
+    own URL slug, ``{title}_{req-id-or-similar}``, so specific to one posting by construction;
+    ``bulletFields[0]`` dead last, only when ``externalPath`` is itself empty.
+
+    ``externalPath`` outranks ``bulletFields[0]`` here — tempting to reach for first since it at
+    least came from the same array the real req id sometimes lives in — because live tenants
+    exist (``tutorperini``, ``nkg``) where *every* posting shares one ``bulletFields[0]`` value
+    (their employer/subsidiary name), collapsing hundreds of distinct postings onto a handful of
+    ids: measured live, 228 real ``tutorperini`` postings resolved to just 15 distinct ids under
+    the bulletFields[0]-preferred order — an id *collision*, actively worse than the instability
+    this function exists to fix, since a collision silently drops postings rather than merely
+    cycling their id."""
+    detail_req_id = (item.get("_detail") or {}).get("jobReqId")
+    if detail_req_id:
+        return str(detail_req_id)
+    bullet_fields = item.get("bulletFields") or []
+    candidates = [
+        field
+        for field in bullet_fields
+        if isinstance(field, str) and _looks_like_req_id(field)
+    ]
+    if candidates:
+        return re.sub(r"\s+", "", candidates[0])
+    tail = (item.get("externalPath") or "").rsplit("/", 1)[-1]
+    if tail:
+        return tail
+    bullet = (bullet_fields or [None])[0]
+    return str(bullet) if bullet else "unknown"
 
 
 def _slice_label(applied: dict[str, list[str]]) -> str:
