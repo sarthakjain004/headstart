@@ -30,10 +30,12 @@ greenhouse · **Method:** live-sampled every scraper via the real registered `fe
 | workday | clean | already has sophisticated rollup-detection + detail-page repair (see below) — the reference bar the other fixes were measured against |
 | zoho | clean | 38.5% null on a 1,305-job sample, **100% correlated with `Remote_Job: True`** — fully-remote postings genuinely have no physical location upstream; the scraper is correctly passing that through |
 
-Six of twenty needed nothing. Two (oracle, sensehq) have no live boards to sample — curated
-single-company unlocks per the CLAUDE.md ATS-expansion notes, not a scraped population. Four had
-real, fixed bugs. Two flagged as suspicious by an automated heuristic (ashby, lever) turned out to
-be correct 2-letter country codes — a reminder that "looks short" is not itself evidence.
+Fourteen of twenty were genuinely clean, four had real bugs fixed here, and two (oracle,
+sensehq) have no live boards to sample — curated single-company unlocks per the CLAUDE.md
+ATS-expansion notes, not a scraped population. Three of the fourteen clean ones (ashby, lever,
+trakstar) were flagged as suspicious by an automated heuristic and turned out to be correct
+short values on inspection — two 2-letter country codes and one genuinely short city name — a
+reminder that "looks short" is not itself evidence.
 
 ## Method
 

@@ -2118,6 +2118,18 @@ def test_successfactors_location_from_slug_none_when_slug_is_the_title_verbatim(
     assert _location_from_slug("ENGINEER, PLANNING", url) is None
 
 
+def test_successfactors_location_from_slug_title_with_an_encoded_slash_fails_safe():
+    # A title containing a literal "/" (percent-encoded %2F in the real URL) decodes BEFORE the
+    # path is split on "/", so it fragments the slug into an extra path segment and the id/slug
+    # segments no longer line up as expected. Found in code review, round 1 — confirmed here to
+    # degrade to a safe None rather than a wrong location: the token match then fails against a
+    # misaligned segment, which is the same fail-safe path a punctuation mismatch takes.
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = "https://x/job/Charlotte-IT%2FOT-Engineer-NC-28277/1234567/"
+    assert _location_from_slug("IT/OT Engineer", url) is None
+
+
 def test_successfactors_location_from_slug_repeated_place_name_in_title():
     # tuyendung.vietcombank.com.vn: the location text ("Bình Dương") appears a SECOND time
     # embedded inside the title's own bracketed code. Exact contiguous-match on the title's full

@@ -640,9 +640,11 @@ def _location_from_slug(title: str, url: str) -> str | None:
     Foshan City" — recovering which gap was a comma would mean guessing, so this doesn't.
 
     Returns None whenever the title cannot be found as an exact contiguous run (title-cased
-    differently than the slug encodes it, punctuation the encoder dropped mid-title, or a tenant
-    whose slug is the title with no location component at all — confirmed on careers.ijm.com,
-    whose job URLs are the bare title verbatim) rather than guess from a partial match.
+    differently than the slug encodes it, punctuation the encoder dropped mid-title, a title
+    containing a literal "/" — which decodes before the path is split on "/" and shifts every
+    segment after it, so the id/slug split below no longer lines up — or a tenant whose slug is
+    the title with no location component at all — confirmed on careers.ijm.com, whose job URLs
+    are the bare title verbatim) rather than guess from a partial match.
     """
     from urllib.parse import unquote, urlparse
 
