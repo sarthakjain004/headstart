@@ -155,10 +155,10 @@ def scrape_plan_report(run: Run) -> None:
         )
         for board, rate in boards[:10]:
             print(f"    {board} ({rate}/min)", flush=True)
-        if "more" in sample:
+        if int(n) > len(boards):
             print(
-                "    (sample capped at 10 by observability.named_sample — a count above 10 "
-                "means more were skipped than shown)",
+                f"    ({len(boards)} of {n} shown — observability.named_sample caps the "
+                "printed list at 10)",
                 flush=True,
             )
     else:

@@ -111,6 +111,15 @@ def report(run: Run) -> None:
         print("  no embed shards in this run", flush=True)
         return
 
+    models = {r.model for r in rows if r.model}
+    if len(models) > 1:
+        print(
+            f"  NB: shards loaded DIFFERENT models this run — {sorted(models)}",
+            flush=True,
+        )
+    elif models:
+        print(f"  model: {models.pop()}", flush=True)
+
     devices = {r.device for r in rows if r.device}
     if len(devices) > 1:
         print(

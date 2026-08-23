@@ -110,8 +110,9 @@ PRUNE_DONE = re.compile(
 # ("workday:gianteagle/GEExternalcareers:0018 - Shaler - Supermarket") or a full address with
 # embedded spaces/commas — `str.split()` on the batch line shreds a single id into several
 # fake ones. Splitting instead on a lookahead for a known ATS-prefix boundary recovers the real
-# ids, verified against a real `[1-16 of 16]` batch line: it yields exactly 16 pieces where a
-# blind whitespace split yields 50+.
+# ids, verified against two real batch lines from run 32621581881: a `[1-16 of 16]` add batch
+# splits correctly into 16 (a blind `.split()` gives 46), and a `[1-50 of 50]` evict batch splits
+# correctly into 50 (a blind `.split()` gives 143).
 _ATS = (
     "ashby",
     "darwinbox",
@@ -150,6 +151,15 @@ TRENDS_NONTECH = re.compile(
 TRENDS_ASSIGNMENTS = re.compile(
     r"\[role_trends\] assignments: (\d+) of (\d+) rows changed family \(([\d.]+)%\), "
     r"(\d+) transition rows(?: \| top: (.+))?"
+)
+# role_trends' three distinct skip paths — matched on its own line, never on a substring of the
+# whole job log, which `update_meta` can also emit "missing"/"empty" text into.
+TRENDS_SKIP_MISSING = re.compile(
+    r"\[role_trends\] skipping trends this run — missing (.+)"
+)
+TRENDS_SKIP_EMPTY = re.compile(r"\[role_trends\] served table '\S+' is empty")
+TRENDS_SKIP_TAXONOMY = re.compile(
+    r"\[role_trends\] role taxonomy unusable, no trends this run"
 )
 
 # --- storage (workflow-embedded, not the Python package) -------------------------------------
@@ -347,8 +357,15 @@ def role_trends_report(text: str) -> None:
             f"{rows} transition rows" + (f" | top: {top}" if top else ""),
             flush=True,
         )
-    elif "missing" in text and "role_trends" in text:
-        print("  skipped this run — missing centroids/family map", flush=True)
+    elif m := TRENDS_SKIP_MISSING.search(text):
+        print(f"  skipped this run — missing {m.group(1)}", flush=True)
+    elif TRENDS_SKIP_EMPTY.search(text):
+        print("  skipped this run — served table is empty", flush=True)
+    elif TRENDS_SKIP_TAXONOMY.search(text):
+        print(
+            "  skipped this run — role taxonomy unusable (see the job log for the exception)",
+            flush=True,
+        )
 
 
 def storage_report(text: str) -> None:
