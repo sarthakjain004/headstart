@@ -1032,6 +1032,7 @@ def test_workday_extract_detail_carries_the_location_fields():
                     "location": "London",
                     "additionalLocations": ["Dublin"],
                     "remoteType": "Remote Available",
+                    "jobReqId": "JR00258",
                 }
             }
 
@@ -1041,6 +1042,7 @@ def test_workday_extract_detail_carries_the_location_fields():
     assert got["location"] == "London"
     assert got["additionalLocations"] == ["Dublin"]
     assert got["remoteType"] == "Remote Available"
+    assert got["jobReqId"] == "JR00258"  # _posting_key's preferred source (option A2)
 
 
 def test_workday_keeps_the_rollup_when_the_detail_never_arrived():
@@ -2906,6 +2908,118 @@ def test_workday_a_malformed_additional_locations_does_not_explode_into_letters(
         "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
     ).parse(raw, SCRAPED_AT)
     assert jobs[0].location == "London"
+
+
+# _posting_key: docs/pipeline/2026-08-23_false-board-eviction-root-cause.md found bulletFields[0]
+# is never actually the req id on any of 25 live-checked boards — a location, a relative
+# posted-date, a closing-date label, an employment-type tag, a store name, or a subsidiary name,
+# all of which change value across scrapes for the same live posting. These fixtures are the real
+# shapes found on those boards (values only, not full postings) plus the tenant that motivated the
+# fallback-index case (solenis: req id at index 2, not 1) and the two (tutorperini, nkg) that
+# motivated ranking externalPath above bulletFields[0]: bulletFields[0] is the SAME literal string
+# on every posting for those tenants (an employer/subsidiary name), so trusting it as a last
+# resort collided hundreds of distinct real postings onto a handful of ids.
+
+
+def _wd_key(bullet_fields, detail=None, external_path="/job/x/Some-Title_FALLBACK-999"):
+    from headstart.scrapers.workday import _posting_key
+
+    item = {"bulletFields": bullet_fields, "externalPath": external_path}
+    if detail is not None:
+        item["_detail"] = detail
+    return _posting_key(item)
+
+
+@pytest.mark.parametrize(
+    ("bullet_fields", "expected"),
+    [
+        (["Posted 30+ Days Ago", "JR00258"], "JR00258"),  # astro — date first
+        (["John C Lincoln - 250 E Dunlap Ave Phoenix, AZ 85020", "JR11133"], "JR11133"),
+        (["TN - Memphis - 1100 Ridgeway Loop Rd", "R-0012714"], "R-0012714"),
+        (
+            ["Duba, Saudi Arabia", "JR-2026-21904", "ICS Network Engineer"],
+            "JR-2026-21904",
+        ),
+        (["Data Scientist", "JR2025005486"], "JR2025005486"),  # title first
+        (  # solenis — req id at index 2, not 1
+            [
+                "Florence, Kentucky, United States of America",
+                "Florence, Kentucky, United States of America",
+                "R0030539",
+            ],
+            "R0030539",
+        ),
+        (["Closing Date:", "Closing Date: 25/08/2026", "JR55512"], "JR55512"),
+        (["PT-JR042569"], "PT-JR042569"),  # multi-letter-prefix shape
+        (["REQ2026 - 9929"], "REQ2026-9929"),  # spaced shape, whitespace stripped
+        (["2409195-R"], "2409195-R"),  # digits-then-letter-suffix shape
+        (["26027605"], "26027605"),  # bare numeric, long enough to trust
+    ],
+)
+def test_workday_posting_key_finds_the_req_id_wherever_it_falls(
+    bullet_fields, expected
+):
+    assert _wd_key(bullet_fields) == expected
+
+
+@pytest.mark.parametrize(
+    "bullet_fields",
+    [
+        ["0018 - Shaler - Supermarket"],  # store name, no req id
+        ["Casual"],  # employment-type tag, no req id
+        ["Apogee Services Inc."],  # subsidiary name, no req id
+        ["5 Locations"],  # location rollup, no req id
+        ["0", "1"],  # short bare numbers — a stray flag/count seen live, not a req id
+    ],
+)
+def test_workday_posting_key_falls_to_external_path_when_no_candidate_found(
+    bullet_fields,
+):
+    """externalPath outranks bulletFields[0] once no field in bulletFields looks like a req id —
+    see the module comment above `_posting_key` for why (tutorperini/nkg collision evidence)."""
+    assert _wd_key(bullet_fields) == "Some-Title_FALLBACK-999"
+
+
+def test_workday_posting_key_avoids_the_measured_collision():
+    """The live-measured failure mode this ordering fixes: two DIFFERENT postings sharing the
+    exact same non-req-id bulletFields[0] (tutorperini's is literally identical across all of a
+    tenant's postings) must not collapse onto the same id — their distinct externalPath does."""
+    shared_bullet = ["Tutor Perini Corporation"]
+    key_a = _wd_key(
+        shared_bullet, external_path="/job/White-Plains/Superintendent_JR102942"
+    )
+    key_b = _wd_key(
+        shared_bullet, external_path="/job/Newark-NJ/Project-Accountant_JR102927"
+    )
+    assert key_a != key_b
+
+
+def test_workday_posting_key_falls_to_bullet_fields_zero_as_the_last_resort():
+    """bulletFields[0] is only reached when externalPath is ALSO empty — the one situation left
+    where it's the sole available signal."""
+    assert _wd_key(["Casual"], external_path="") == "Casual"
+    assert _wd_key(["Casual"], external_path=None) == "Casual"
+
+
+def test_workday_posting_key_rejects_an_iso_date():
+    """theirc's bulletFields carries a real req id alongside a plain ISO date — the date must
+    never be picked over it, in either position."""
+    assert _wd_key(["JR00004545", "2026-09-22"]) == "JR00004545"
+    assert _wd_key(["2026-09-22", "JR00004545"]) == "JR00004545"
+
+
+def test_workday_posting_key_falls_back_to_external_path_tail_without_bullet_fields():
+    assert _wd_key([]) == "Some-Title_FALLBACK-999"
+    assert _wd_key(None) == "Some-Title_FALLBACK-999"
+
+
+def test_workday_posting_key_prefers_the_detail_response_req_id():
+    """Only available once `parse()` runs, after the detail fetch has attached `_detail` —
+    absent during `fetch_raw()`'s earlier, pre-detail dedup pass (covered by the fixture-less
+    fallback cases above, which never pass a `_detail` key)."""
+    assert _wd_key(
+        ["Some Location", "JR00258"], detail={"jobReqId": "JR00258-CANONICAL"}
+    ) == ("JR00258-CANONICAL")
 
 
 def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):
