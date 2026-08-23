@@ -2494,6 +2494,67 @@ def test_successfactors_search_walk_reads_every_row_of_a_small_page(monkeypatch)
     assert why is None, "it did reach the end, so there is nothing to report"
 
 
+def _labelled(rows, total, label="Results", connector="of"):
+    """A /search/ page carrying the pagination label the walk reads its yardstick from."""
+    body = "".join(f'<a href="/job/x/{i}/">a</a>' for i in rows)
+    return (
+        f'<span class="paginationLabel">{label} <b>1 \u2013 10</b> '
+        f"{connector} <b>{total}</b></span>{body}"
+    )
+
+
+def test_successfactors_reports_reading_fewer_than_the_board_advertises(monkeypatch):
+    """Reaching the natural end is not proof the walk read everything — the stride bug exited by
+    exactly that path. The board states its own total, so a shortfall must be reported through
+    the ADR-0053 channel rather than presented as the whole Board."""
+    from headstart.scrapers import successfactors as sf
+
+    # the board says 40, but only ever serves the first 10 and then nothing
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + 10, 10))
+        return _SearchPage(200, _labelled(rows, 40))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+
+    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+
+    assert len(found) == 10
+    assert why and "10 of the 40" in why
+
+
+def test_successfactors_makes_no_completeness_claim_without_a_label(monkeypatch):
+    """An unknown total must never become a zero: a wrongly-inferred shortfall marks the Board
+    unauthoritative and removes it from the eviction scope entirely, so closed postings would be
+    served indefinitely. A board that states no total is simply not checked."""
+    from headstart.scrapers import successfactors as sf
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + 10, 10))
+        return _SearchPage(200, "".join(f'<a href="/job/x/{i}/">a</a>' for i in rows))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+
+    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+
+    assert len(found) == 10
+    assert why is None, "no total advertised, so nothing to compare against"
+
+
+@pytest.mark.parametrize(
+    ("label", "connector"),
+    [("Results", "of"), ("Ergebnisse", "von"), ("Resultados", "de")],
+)
+def test_successfactors_reads_the_total_in_any_locale(label, connector):
+    """The label's wording is localised per tenant — measured live on career.deutz.com (German)
+    and canaldeempleo.es (Spanish). Matching on the English "of" read every other board as having
+    no total, silently disabling the check exactly where boards are largest."""
+    from headstart.scrapers.successfactors import _advertised_total
+
+    assert _advertised_total(_labelled(range(10), 219, label, connector)) == 219
+
+
 def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):
     """The bug this pins: the ``/search/`` walk 503s on its *first* page, so it lists nothing and
     the RSS stream answers with the complete board. Carrying the walk's truncation onto that

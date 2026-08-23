@@ -12,11 +12,11 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
 2. ``/sitemap.xml`` as the **Google-jobs RSS feed** — a minority (SAP, Alstom, Voith, ...). The
    feed carries full descriptions but its generator trickles at ~30 KB/s, so it is never read
    whole up-front; these tenants list via the server-rendered ``/search/?startrow=N`` pages
-   instead (page size varies per tenant — measured 10–62 across sampled boards, not the 25–100
-   this once claimed. Pagination steps by the size of the page it got and stops when a page adds
-   no new ids, which also guards against offset wrap-around; it then checks what it read against
-   the total the board advertises, because running off the end and stopping two-thirds of the way
-   through otherwise look identical).
+   instead (page size varies per tenant — 10 to 100 rows, measured across sampled boards.
+   Pagination steps by the size of the page it got and stops when a page adds no new ids, which
+   also guards against offset wrap-around; it then checks what it read against the total the
+   board advertises, because running off the end and stopping two-thirds of the way through
+   otherwise look identical).
 3. The patient full RSS stream — last resort for RSS tenants whose ``/search/`` is CSB-rendered
    and lists nothing (Voith, Tetra Pak). Read with a long timeout, keeping whatever arrived if
    the tenant's own generator aborts mid-feed (Voith's dies ~2 MB in): partial beats none.
@@ -49,7 +49,10 @@ _log = log.get(__name__)
 _CLASSIFY_BYTES = 64 * 1024  # enough sitemap head to tell urlset from RSS
 _SITEMAP_CAP = 30 * 1024 * 1024  # runaway guard; largest observed urlset is ~3 MB
 _RSS_TIMEOUT = 300  # the RSS generator trickles (~30 KB/s); a full feed is minutes
-_MAX_SEARCH_PAGES = 400  # loop bound: 400 pages x 25 rows covers any real board
+_MAX_SEARCH_PAGES = (
+    400  # loop bound; at the smallest measured page (10 rows) that is 4,000
+)
+#                          postings, well past the largest board sampled
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 
 # ``/job/{slug}/{id}/`` — the one URL shape all three listing surfaces share. The slug part may
@@ -368,19 +371,27 @@ def _sitemap_kind(text: str) -> str:
     return "other"
 
 
+# The pagination label's *structure*, never its words: the surrounding text is localised per
+# tenant — "Results 1 – 10 of 219", "Ergebnisse 1 – 46 von 46", "Resultados 1 – 50 de 813" — and
+# matching on "of" reads every non-English board as having no total at all. The shape is stable
+# across all of them: inside the label, a bold range followed by a bold grand total.
 _SEARCH_TOTAL = re.compile(
-    r"Results\s*<b>\s*[\d,]+\s*[\u2013\u2014-]\s*[\d,]+\s*</b>\s*of\s*<b>\s*([\d,]+)",
-    re.IGNORECASE,
+    r"paginationLabel[^>]*>.*?<b>[^<]*</b>[^<]*<b>\s*([\d,]+)\s*</b>", re.IGNORECASE
 )
 
 
 def _advertised_total(page: str) -> int | None:
     """How many postings the ``/search/`` page says the board holds, or None if it does not say.
 
-    The pagination label reads ``Results <b>1 – 10</b> of <b>219</b>``. It is the only figure the
-    walk can check itself against — without it, running off the end of the board and stopping
-    two-thirds of the way through look identical. Optional by design: 3 of 10 sampled tenants
-    render no label, and a board that does not state a total must not be read as short.
+    The label reads ``Results <b>1 – 10</b> of <b>219</b>`` in English and
+    ``Ergebnisse <b>1 – 46</b> von <b>46</b>`` in German, so this matches its shape rather than
+    its words. It is the only figure the walk can check itself against — without it, running off
+    the end of the board and stopping two-thirds of the way through look identical.
+
+    Returns None when the label is absent or unrecognised, and the caller then makes no claim
+    about completeness. That direction matters: a wrongly-parsed total reads as a shortfall,
+    which marks the Board unauthoritative and takes it out of the eviction scope entirely
+    (ADR-0053) — so an unknown total must never become a zero.
     """
     match = _SEARCH_TOTAL.search(re.sub(r"\s+", " ", page))
     return int(match.group(1).replace(",", "")) if match else None
