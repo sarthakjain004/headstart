@@ -17,19 +17,24 @@ quietly missing a handful of ids on an otherwise-normal-looking board. Any trans
 any cause, becomes an immediate, permanent delete.
 
 - **Workday — systemic, the dominant offender, confirmed root cause.** `_posting_key()` treats
-  `bulletFields[0]` as the stable requisition id. It never is — across 121 confirmed false
+  `bulletFields[0]` as the stable requisition id. It never is — across 87 confirmed false
   evictions on 25 different boards, `bulletFields[0]` was a location, a relative posted-date, a
   closing-date label, an employment-type tag, a store name, or a company subsidiary name, never a
   requisition id. The derived "id" changes almost every scrape for affected tenants, so `sync`
   evicts-and-reinserts the same live job forever. 24.3% of all fully-checked Workday evictions
   (87/358) were false; among ids evicted **repeatedly** across separate runs — the clearest
   fingerprint of this bug — the rate is 95%.
-- **Greenhouse — real, but a different mechanism: transient scrape misses, not an id bug.** 14
-  false evictions on 3 boards (`databricks`, `metrostarsystems`, `vast`). Greenhouse's id is the
-  platform's own stable numeric job id, so this isn't id instability — every false-evicted id on a
-  given board was evicted in the *same one or two pipeline runs*, the signature of a single bad
-  scrape (not many independent real closures, which would scatter across runs) that `sync`'s
-  no-grace-period design converted straight into permanent deletes.
+- **Greenhouse — 7 real false evictions, mechanism proven for 6 of them; the other 7 were never false.**
+  Corrected 2026-08-23 by pulling the runs' actual scrape-fragment artifacts (§4.1). Greenhouse's
+  API returns **silently short lists** — HTTP 200, valid JSON, no error — and `greenhouse.py` has
+  no truncation detection at all, so `sync` evicts against the short list. Measured: `databricks`
+  returned **816** jobs in run `32574982652` (821 live), `metrostarsystems` **84** in
+  `32612152291` (90 live); the evicted ids were simply absent from those responses, and the shard
+  reported the boards as cleanly scraped. The 7th (`metrostarsystems` in `32606136882`) came
+  from a run whose scrape was *not* short (90 of 90) — same board, different run, still
+  unexplained; see §4.1. **The other 7 (all of `vast`) were not false evictions
+  at all** — that board scraped complete (166/166) and those 7 are non-tech (mechanical/thermal/
+  structures/test-technician roles), so evicting them from a tech-only index is correct behaviour.
 - **SuccessFactors — same shape as Greenhouse, confirmed root cause, fixed.** 22 false evictions
   on 6 boards (updated 2026-08-23: a follow-up pass resolved the 90 ids the original 120s timeout
   left inconclusive and found 2 more false evictions, on `careers.bv.com` and
@@ -37,8 +42,9 @@ any cause, becomes an immediate, permanent delete.
   Precise mechanism confirmed by code and pinned by a regression test (§4): a detail page that
   loads (200 OK) but yields no parseable title falls through as a dict, not `None`, so the loss
   was invisible to the truncation-detection `mark_truncated` relies on — `sync` reads the board as
-  fully scraped and evicts the Job. Fixed in `fix/successfactors-truncation-detection`, not yet
-  merged.
+  fully scraped and evicts the Job. **Fixed and merged (PR #266)**, and independently confirmed on
+  `jobs.bayer.com` by the §4.1 artifact method. The count of 22 is an upper bound — only 5 have
+  been re-checked against §4.1's tech-filter predicate (see the caveat in §4).
 - **Every other ATS with evictions — clean across every evicted id, not just a sample.** ashby
   (40/40 genuine), darwinbox (4/4), eightfold (62/62), keka (3/3), lever (75/75, plus a
   separately-confirmed 72/72 repeat-eviction check), recruitee (3/3), ripplehire (10/10),
@@ -46,9 +52,13 @@ any cause, becomes an immediate, permanent delete.
   found anywhere, every id resolved (see §1 for the 2026-08-23 follow-up that closed the remaining
   timeouts, and §5.1 for eightfold's own bot-wall detour along the way).
 
-No fix is implemented yet — §6 lays out options for a decision, now including a concrete,
-live-validated replacement pattern for Workday's `_posting_key()` (129 tenants sampled, 0
-regressions found).
+**Fix status.** Workday's id derivation is fixed and merged (PR #265, options A1+A2 in §6).
+SuccessFactors's silent detail-loss is fixed and merged (PR #266). **Greenhouse is diagnosed but
+not fixed** — the natural per-ATS guard (`meta.total`) is deliberately unshipped because it is
+unverified for the failure case, see §4.1. **Option B — the general cross-run grace period in
+`plan_sync` — remains open, and is now the strongest remaining lever**: it is the only proposal
+that covers Greenhouse without first proving Greenhouse's guard, and it would have absorbed every
+false eviction in this document regardless of mechanism.
 
 ---
 
@@ -60,8 +70,8 @@ boards**. Every single one of those 1,217 ids was re-fetched live — not sample
 | ATS | boards checked | ids: still live (false) | ids: confirmed gone (genuine) | ids: inconclusive | boards w/ ≥1 false evict |
 |---|---:|---:|---:|---:|---:|
 | workday | 148 | **87** | 271 | 0 | **25** |
-| greenhouse | 24 | **14** | 318 | 0 | **3** |
-| successfactors | 45 | **22** | 170 | 0 | **6** |
+| greenhouse | 24 | **7** (was 14 — see §4.1) | 325 | 0 | **2** |
+| successfactors | 45 | **22** (upper bound — see §4) | 170 | 0 | **6** |
 | zoho | 9 | 0 | 112 | 0 | 0 |
 | eightfold | 20 | **0** | 62 | 0 | 0 |
 | lever | 3 | 0 | 75 | 0 | 0 |
@@ -146,7 +156,7 @@ def _posting_key(item: dict[str, Any]) -> str:
 ```
 
 The docstring's premise — that `bulletFields[0]` is the requisition id — is false on every one of
-the 25 affected boards. The 121 confirmed false-eviction ids show `bulletFields[0]` playing at
+the 25 affected boards. The 87 confirmed Workday false-eviction ids show `bulletFields[0]` playing at
 least **six different roles**, never the req id:
 
 | role | examples |
@@ -159,11 +169,11 @@ least **six different roles**, never the req id:
 | company/subsidiary name | `Apogee Services Inc.` (`apog`); `NKG Commercial Services Company Ltd` (`nkg`); `Roy Anderson Corp` (`tutorperini`) |
 | location rollup | `5 Locations` (`taylor`) |
 
-Two of the 121 (`cba/CommBank_Careers:REQ261245`, `frenckengroup/External:JR101259`) *look*
+Two of the 87 (`cba/CommBank_Careers:REQ261245`, `frenckengroup/External:JR101259`) *look*
 req-id-shaped and still false-evicted — worth the caveat that a plausible-looking id isn't proof
 of stability either; a job can also close and reopen under a fresh req id, which is
-indistinguishable from this bug by id shape alone. These two don't overturn the pattern (119 of
-121 are unambiguously non-req-id text) but they're a reason a fix should verify stability
+indistinguishable from this bug by id shape alone. These two don't overturn the pattern (85 of
+87 are unambiguously non-req-id text) but they're a reason a fix should verify stability
 empirically, not just by shape, before shipping.
 
 **Two eviction rates, measuring different things:** 24.3% of *all* fully-checked Workday
@@ -211,7 +221,7 @@ was evicted in the *same one or two pipeline runs*, not scattered across the 15-
 |---|---:|---|
 | greenhouse `databricks` | 2 | one run (`32574982652`) |
 | greenhouse `metrostarsystems` | 5 | two runs (`32606136882`, `32612152291`) |
-| greenhouse `vast` | 7 | one run (`32592349834`) |
+| ~~greenhouse `vast`~~ | ~~7~~ | **not false evictions — non-tech, correctly evicted (§4.1)** |
 | successfactors `careers.gic.com.sg` | 3 | two runs (`32568669902`, `32579833859`) |
 | successfactors `jobs-offshore.hanwhaocean.com` | 11 | one run (`32594712165`) |
 | successfactors `jobs.chartindustries.com` | 1 | one run (`32571222780`) |
@@ -253,40 +263,103 @@ shows `scraper.truncated` staying `None` on the unfixed code.
 **Fixed**: a new `_titled_fields()` wraps `_page_fields()` and returns `None` when the parsed
 `title` is empty, so a title-less-but-200 page now counts as a loss the same way a fetch failure
 already did — closing the gap without touching `_page_fields()`'s own contract (still used
-directly, unchanged, by three existing unit tests). `fix/successfactors-truncation-detection`,
-not yet merged.
+directly, unchanged, by three existing unit tests). Merged as PR #266.
 
-**Greenhouse has no equivalent documented mechanism**, but the same clustering evidence applies.
-Its `.url()` is a single GET returning the whole board in one response
-(`boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true`, no pagination on our side), fetched
-via `BaseScraper._get()` with a 30s timeout and "retry lives there" per its own docstring
-(`src/headstart/scrapers/base.py:168-180`). `?content=true` inlines full descriptions at "~12x the
-payload" per `greenhouse.py`'s own docstring — a large board's single response is a large,
-slower download, and a transient timeout, retry-exhaustion, or an incomplete response from
-Greenhouse's own side would show up exactly this way: several ids from one board, missing in one
-run, never seen missing again. This is the best available explanation given the clustering
-pattern, but — unlike Workday's and SuccessFactors's — it isn't independently confirmed by a
-scraper-side comment or a directly observed partial-response event; flagged as inferred, not
-proven, pending further instrumentation if it recurs.
+**Independently confirmed by the same artifact method as §4.1**, for one board: `jobs.bayer.com`
+in run `32592349834` scraped **242** jobs and all 5 of its evicted ids were **absent** from that
+raw output, while `_shard_report.json` recorded the board with **no error and no truncation** —
+the exact silent-loss signature the fix closes (a page that loads but yields no title is dropped
+without ever being counted as a loss). Note this is the opposite finding from Greenhouse's `vast`:
+these ids really were missing from the scrape, not present-but-non-tech.
 
-Two things ruled out attempting to build a Phase-1 feedback loop (`/diagnosing-bugs`) for this
-specifically: `fetch_raw()` uses the default `BaseScraper.fetch_raw` (`json.loads(self._get())`)
-— an all-or-nothing parse, so a torn/truncated download raises rather than silently yielding a
-shorter-but-valid job list, which rules out simple client-side truncation as the mechanism for a
-handful of *specific* jobs going missing while hundreds of others in the same response survive.
-And a differential poll (`databricks`/`metrostarsystems`/`vast`, 5 rounds, 3s apart) found zero
-flapping — expected, given the historical incidents are 1-2 per board across a 15-hour, 15-run
-window; a few seconds of polling isn't the right timescale to catch something that rare, so this
-neither confirms nor rules out a genuine Greenhouse-side transient state. No further client-side
-avenue was found; per the skill's own guidance, this is reported as genuinely unconfirmed rather
-than forcing a specific fix onto unverified evidence. Greenhouse remains a candidate for Option B
-(§6) — a general grace period would absorb whatever this turns out to be without needing to know
-the exact mechanism.
+**Caveat on the count.** Only `bayer`'s 5 were re-checked this way; the other 17 of the 22 have
+not been re-tested against §4.1's tech-filter predicate, so some may turn out to be correct
+evictions of non-tech jobs rather than false ones, exactly as 7 of Greenhouse's 14 did. The fix
+itself does not depend on that number — the gap it closes is real and demonstrated — but the 22
+should be read as an upper bound until re-audited.
 
-**Both are explained by the same general root cause (§6):** `plan_sync` treats a single scrape's
-absence as authoritative with no cross-run confirmation, so whatever produces the transient miss —
-SuccessFactors's documented detail-fetch failure, Greenhouse's inferred large-payload timeout —
-becomes a permanent delete instead of surviving to the next scrape.
+### 4.1 Greenhouse — corrected 2026-08-23, from inference to proof
+
+An earlier pass called Greenhouse's mechanism "inferred, not proven" (a suspected large-payload
+timeout) and put its false-eviction count at 14. Both were wrong, and the method that settled it
+is worth keeping: **the pipeline's own `scrape-fragment-N` run artifacts are still on GitHub, and
+they contain the exact raw scrape output for that run.** Instead of reasoning about what the
+scrape *might* have returned, download the fragment for the shard that owned the board (find it in
+the same run's `scrape-assignments` artifact) and read what it actually got, alongside
+`_shard_report.json`'s own `errors`/`truncated` entries for that board. That turns "was this a
+scrape miss?" from an inference into a lookup.
+
+**Finding 1 — 7 of the 14 were never false evictions.** All 7 `vast` ids were **present** in the
+raw scrape, which was **complete** (166 of 166 — no shortfall at all). They were evicted because
+they are not tech: `Senior Mechanical Engineer, Thermal Control Systems`, `Manager, Loads &
+Dynamics`, `Test Technician (Second Shift)`, `SMT Test Technician`, and three like them, on
+departments `Station Engineering` / `Structures and Dynamics` / `Fluid Systems`. `index sync`
+takes its fresh ids from `data/jobs/tech/` (`index.py:92`, `_SOURCE`) while taking its eviction
+*scope* from the full pre-filter scrape — deliberately, and documented in that module's own header.
+So a scraped-but-non-tech job is **correctly** evicted from a tech-only index. The original
+verification asked "is this job still on the company's careers board?", which is the wrong question
+here: for a tech-filtered index the test is "still on the board **and** still tech". That flaw
+inflated Greenhouse's count and would inflate any future audit run the same way — see §7.
+
+**Finding 2 — the remaining 7 are real, and the mechanism is now directly observed.** Greenhouse's
+API returned a **silently short list**: HTTP 200, valid JSON, no error, no truncation reported.
+
+| board | run | jobs in that run's raw scrape | live now | evicted ids present in the scrape? | shard report |
+|---|---|---:|---:|---|---|
+| `databricks` | `32574982652` | **816** | 821 | no — both absent | no error, no truncation |
+| `metrostarsystems` | `32612152291` | **84** | 90 | no — all 4 absent | no error, no truncation |
+| `metrostarsystems` | `32606136882` | 90 | 90 | no — the 1 absent (composition differed) | no error, no truncation |
+
+All 5 `metrostarsystems` ids are genuinely tech once their real departments are read
+(`National Security`, `USCIS ESIS`, `AFM`, `DOS INR Cyber`, `DOS ADD` — a `?content=true` fetch
+carries departments, the bare endpoint does not), as are both `databricks` ids (two
+`Senior Software Engineer` roles). So these 7 are true false evictions.
+
+This also retires the earlier "client-side truncation is ruled out" reasoning. That reasoning was
+correct as far as it went — `fetch_raw()` is `json.loads(self._get())`, all-or-nothing, so a torn
+download raises rather than yielding a short list — but it only ruled out *our* side. The short
+list came from the origin already short and well-formed, which no client-side parse can detect.
+
+**`greenhouse.py` has no truncation detection at all** — unlike `workday`, `eightfold`,
+`successfactors`, `sensehq`, `darwinbox`, `join`, `ripplehire` and `smartrecruiters`, which all
+call `mark_truncated`. It is the only scraper in this class that cannot report a short board.
+
+**About `meta.total` — the obvious guard, deliberately NOT shipped on this evidence.** The
+response carries a `meta` object, and it holds exactly one field: `{"total": N}`, the board's own
+count. `greenhouse.py` never reads it (`parse()` takes `raw.get("jobs", [])`; the only occurrence
+of "meta" in the file is an unrelated docstring line) — an omission, not a decision. A
+`len(jobs) != meta.total -> mark_truncated` guard is the natural fix and is three lines. **But it
+is unverified for the case that matters**: a sweep of **602 live boards** found `len(jobs)` and
+`meta.total` agreeing **602/602** — which only establishes that they agree when the response is
+healthy. Whether `total` stays authoritative *during* a partial response is exactly what would
+make the guard work, and it cannot be recovered retroactively (the fragments hold parsed jobs, not
+the raw envelope). Per CLAUDE.md's own rule — "a plausible-sounding guard built on an assumed
+response is worse than none", learned from the #160 guard that died on contact — this is left
+unshipped pending a real captured partial response, rather than merged on a guess.
+
+**That capture is now instrumented** (same PR): `GreenhouseScraper.fetch_raw` logs a warning when
+`len(jobs) != meta.total`, and does nothing else — no `mark_truncated`, no behaviour change.
+Reading the result needs care in both directions. A warning means the envelope contradicts itself,
+so the guard would fire on a real short response — ship it. **Silence is ambiguous on its own**:
+it could mean no board went short, or that `total` shrank in step with `jobs` and the guard is
+worthless. Disambiguating needs a board *known* to have gone short that run — diff its job count
+across two runs' `scrape-fragment` artifacts, the method this section used — and then checking
+whether a warning fired for it. Short board **with** warning confirms the guard; short board
+**without** one kills it. Until one of those two things is observed, Greenhouse stays unfixed at
+the per-ATS level, and Option B (§6) is what actually covers it. **Tracked as issue #268**, so
+the instrumentation has an owner rather than sitting unread.
+
+The one case this section does **not** explain: `metrostarsystems` in run `32606136882` scraped
+**90 of 90** — not short at all — yet `7797942003` was absent from it while a different posting
+was present. A same-size response with different membership is not the short-list mechanism, and
+nothing here accounts for it; a brief unpublish/republish on Greenhouse's side would, but that is
+inference, not evidence. Six of the seven are explained; this one is honestly open.
+
+**Both ATSes still share the same general root cause (§6):** `plan_sync` treats one scrape's
+absence as authoritative with no cross-run confirmation. Greenhouse's origin-side short list and
+SuccessFactors's silent detail-fetch loss are different mechanisms that meet at the same place —
+and Option B absorbs both **without needing to know either mechanism**, which is exactly why it
+is the stronger fix for Greenhouse specifically, where the per-ATS guard is still unproven.
 
 ## 5. Every other ATS
 
@@ -533,3 +606,21 @@ smaller scale — sampling 1 id per board and trusting the result, which underst
 and SuccessFactors's real incidence by an order of magnitude until every id was checked. The check
 now exists for both (§3, §4): sample widely and completely before trusting a rate, not narrowly
 and once.
+
+**A third lesson, from this investigation's own wrong answer (§4.1).** "Is the job still on the
+company's careers board?" was used as the definition of a false eviction. For a **tech-filtered**
+index that is the wrong predicate, and it silently inflated Greenhouse's count from 7 to 14: a
+non-tech job that is still posted is *supposed* to be evicted. The correct predicate is "still on
+the board **and** still passes `tech_filter.classify()`" — and it needs the job's **department**,
+not just its title, because department flips the answer both ways (Greenhouse's bare `/jobs`
+endpoint omits departments; only `?content=true` carries them, and every one of the five
+`metrostarsystems` ids reads differently with and without). Any future eviction audit should
+classify before concluding.
+
+**And a method worth reusing.** The thing that finally settled Greenhouse — after a shared-
+`updated_at` correlation looked compelling and then collapsed under its own control (all 166
+`vast` jobs shared the timestamp, so it carried no signal at all) — was not more reasoning about
+the scraper. It was reading the pipeline's own `scrape-fragment-N` artifacts, which persist on
+the run and contain the literal raw scrape output plus a `_shard_report.json` naming every board
+that errored or truncated. When a question is "what did this run actually see?", that artifact
+answers it directly; several hours of plausible inference here were worth less than one download.

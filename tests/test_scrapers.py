@@ -38,6 +38,46 @@ def test_greenhouse_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+@pytest.mark.parametrize(
+    ("envelope", "should_warn"),
+    [
+        ({"jobs": [{"id": 1}], "meta": {"total": 5}}, True),  # short and says so
+        ({"jobs": [{"id": 1}], "meta": {"total": 1}}, False),  # healthy: agrees
+        ({"jobs": [{"id": 1}]}, False),  # no meta at all — nothing to compare
+        ({"jobs": [{"id": 1}], "meta": {}}, False),  # meta present but no total
+        ({"jobs": [{"id": 1}], "meta": {"total": None}}, False),  # total not an int
+        ({"jobs": [], "meta": {"total": 0}}, False),  # empty board, consistent
+    ],
+)
+def test_greenhouse_reports_an_envelope_that_contradicts_itself(
+    monkeypatch, caplog, envelope, should_warn
+):
+    """docs/pipeline/2026-08-23_false-board-eviction-root-cause.md §4.1: greenhouse's API can
+    return a silently short list (200, valid JSON, no error) and this scraper had no way to see
+    it. `meta.total` is the one self-contradiction signal the envelope offers; this logs it and
+    deliberately does NOT mark the Board truncated, because the guard is still unverified for the
+    short-response case. Observation only — so the assertion is on the log, not on `truncated`.
+    """
+    s = get_scraper("greenhouse", "acme", "Acme")
+    monkeypatch.setattr(type(s), "_get", lambda self: json.dumps(envelope))
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.greenhouse")
+
+    raw = s.fetch_raw()
+
+    assert raw == envelope, "the envelope must pass through untouched"
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert bool(warnings) is should_warn
+    if should_warn:
+        assert (
+            "meta.total=5" in warnings[0].message
+            and "greenhouse:acme" in warnings[0].message
+        )
+    assert s.truncated is None, (
+        "observation only — wiring this to mark_truncated is the unverified guard §4.1 declines "
+        "to ship until a real short response is captured"
+    )
+
+
 def test_lever_parse():
     jobs = get_scraper("lever", "palantir", "Palantir").parse(
         _load("lever_palantir.json"), SCRAPED_AT
