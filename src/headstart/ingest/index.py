@@ -8,19 +8,22 @@ Stage 5 runs these back-to-back against the same table, so they live in one modu
     python -m headstart.ingest.index compact           # ADR-0020, ADR-0023
 
 **sync** reconciles the table against the embedding store incrementally: fresh ids are the corpus
-ids that have a vector, and the scraped-Board set is taken from the *full* scrape (``data/jobs/``),
-not the tech subset — so a Board that was scraped but dropped to zero *tech* jobs still has its
-closed postings evicted (a Board only in the tech snapshot would leave those rows stranded). A
-posting that vanished from a scraped Board is evicted; Boards absent from the scrape are never
-touched (partial-harvest safety). On the first run the table is created empty and the plan is
-all-add; the identical path does true incremental add/evict on every later run — no
-overwrite-rebuild (ADR-0019). Corpus ids without a vector (non-English, or not yet embedded) are
-reported and skipped — run ``embed_run --resume`` first to close that gap. Each row added is
-stamped ``first_seen`` with the run's time, which is when *we* indexed it rather than the company's
-``posted_at``; sync adds the column to a table that predates it before writing (ADR-0031). Sync
-reads the liveness ledger too (``--ledger``), but only to name Boards the same way prune does
-(ADR-0049). It needs no keep-set guard of its own: a broken ledger degrades resolution on both
-sides of its scope comparison at once, which narrows nothing and widens nothing.
+ids that have a vector, and the scraped-Board set is taken from the *full* scrape
+(``data/jobs/``), not the tech subset — so a Board that was scraped but dropped to zero *tech*
+jobs still has its closed postings evicted (a Board only in the tech snapshot would leave those
+rows stranded). A posting absent from a scraped Board is evicted once a *second* scrape of that
+Board misses it too (ADR-0083); Boards absent from the scrape are never touched (partial-harvest
+safety). On the first run the table is created empty and the plan is all-add; the identical path
+does true incremental add/evict on every later run — no overwrite-rebuild (ADR-0019). Corpus ids
+without a vector (non-English, or not yet embedded) are reported and skipped — run ``embed_run
+--resume`` first to close that gap. Each row added is stamped ``first_seen`` with the run's time,
+which is when *we* indexed it rather than the company's ``posted_at``; sync adds the column to a
+table that predates it before writing (ADR-0031). Sync reads the liveness ledger too
+(``--ledger``), but only to name Boards the same way prune does (ADR-0049). It needs no keep-set
+guard of its own: a broken ledger degrades resolution on both sides of its scope comparison at
+once, which narrows nothing and widens nothing.
+
+
 
 **prune** sweeps what the board-scoped sync structurally cannot reach:
 
@@ -69,8 +72,10 @@ from headstart.corpus import iter_jobs
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
+    UNCONFIRMED_PATH,
     observability,
     read_id_list,
+    write_id_list,
 )
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
@@ -97,6 +102,7 @@ _DB = REPO_ROOT / "data" / "lancedb"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 # Written by embed_plan, consumed here and by embed_merge (ADR-0050).
 _UPGRADES = PENDING_UPGRADES_PATH
+_UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
@@ -447,7 +453,13 @@ def sync(args: argparse.Namespace) -> int:
     taken = _take_upgrades(table, Path(args.upgrades))
     index_ids = [job_id for job_id in index_ids if job_id not in taken]
 
-    plan = plan_sync(index_ids, fresh, boards, live, stamps)
+    # The ADR-0083 grace period. The file simply not existing yet reads as an empty set, so the
+    # first run after this ships withholds every absence and deletes nothing — a deliberate cold
+    # start: one run of retained-but-closed rows is the price of never needing a migration, and
+    # the run after it evicts normally.
+    plan = plan_sync(
+        index_ids, fresh, boards, live, stamps, read_id_list(Path(args.unconfirmed))
+    )
     # `add` counts every row written, and an upgrade is a delete-then-re-add of a Job that never
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
     # 19 runs that read as +4,376 while the table actually fell by 388 rows. Spell out the split
@@ -473,6 +485,20 @@ def sync(args: argparse.Namespace) -> int:
         )
         for board, count in plan.held:
             _log.warning(f"  withheld {count} evictions on {board}")
+    # Written before the delete rather than after, and the reason is not crash-replay: `delete`
+    # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
+    # ids simply read as a first absence again next run, costing one extra cycle and nothing else.
+    # What the ordering buys is that the file is never *stale* relative to the table. Written
+    # after a partial failure, it could name ids the run had already evicted, and a later
+    # absent -> present -> absent id would then be read as twice-absent and deleted on its first
+    # miss — reintroducing the exact false eviction ADR-0083 exists to prevent. Erring toward an
+    # extra look is the safe direction; erring toward a stale streak is not.
+    write_id_list(Path(args.unconfirmed), plan.unconfirmed)
+    if plan.unconfirmed:
+        _log.info(
+            f"grace period: {len(plan.unconfirmed)} id(s) absent from their Board's last "
+            "scrape are held for one more look before eviction (ADR-0083)"
+        )
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
@@ -647,6 +673,12 @@ def main() -> int:
         default=str(_UPGRADES),
         help="file of Job ids re-embedded with a newly-available description; their rows are "
         "replaced and their first_seen preserved (ADR-0050)",
+    )
+    p_sync.add_argument(
+        "--unconfirmed",
+        default=str(_UNCONFIRMED),
+        help="file of Job ids absent from their Board's last scrape but not yet from a second "
+        "consecutive one; read and rewritten each run (the ADR-0083 grace period)",
     )
     p_sync.add_argument(
         "--ledger",

@@ -46,6 +46,7 @@ path reaches them too, and the pipeline must not become a dependency of that.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 # src/headstart/ingest/__init__.py -> the repo root. Every stage reads and writes the repo's
@@ -78,6 +79,18 @@ PENDING_UPGRADES_PATH = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 # settled" again).
 PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 
+# The ADR-0083 eviction grace period: Job ids that were absent from their Board's most recent
+# scrape but have not yet been absent from a *second consecutive* one, so `index sync` withheld
+# their eviction pending another look. Written and read only by `index sync` — unlike the paths
+# above it has one owner — but it belongs here beside them because it is the same kind of thing:
+# a small newline-delimited id list under data/state that round-trips through the HF dataset, and
+# putting it anywhere else would leave the state directory's contents documented in two places.
+#
+# Rewritten in full each run rather than appended, which is what keeps it from accreting: the set
+# is derived fresh from the run's own scrape plus whatever it carries forward, so an id that has
+# reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
+UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
+
 
 def read_id_list(path: Path) -> set[str]:
     """The non-blank lines of a newline-delimited id file; empty when it does not exist.
@@ -106,3 +119,17 @@ def append_id_list(path: Path, ids: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write("".join(f"{i}\n" for i in ids))
+
+
+def write_id_list(path: Path, ids: Iterable[str]) -> None:
+    """Replace a newline-delimited id file with exactly ``ids``, sorted.
+
+    The counterpart to :func:`append_id_list`, for a set that is *derived* fresh each run rather
+    than accumulated: rewriting is what stops it growing without bound. Writes the file even when
+    ``ids`` is empty — an empty set is a real state ("nothing is awaiting a second look"), and
+    skipping the write would leave the previous run's ids in place to be read back as current,
+    which is the failure `write_unauthoritative_boards` documents for the same reason. Sorted so a
+    set's arbitrary iteration order cannot produce a spurious diff in the dataset.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(f"{i}\n" for i in sorted(ids)), encoding="utf-8")

@@ -120,6 +120,11 @@ def _sync(
             # Same reason, and absent on purpose: every Board's list is authoritative, so the
             # scope is the infer-from-lines one these tests were written against (ADR-0053).
             unauthoritative_boards=str(tmp_path / "unauthoritative_boards.json"),
+            # Pinned into tmp_path for the same reason as `upgrades`. The grace period is left
+            # ON so these tests exercise the real production path; the file starts absent, which
+            # reads as an empty set — so a first absence is withheld here exactly as it would be
+            # in a real cold start. Tests that need an eviction to land run sync twice.
+            unconfirmed=str(tmp_path / "unconfirmed_ids.txt"),
         )
     )
 
@@ -342,3 +347,37 @@ def test_sync_refresh_writes_nothing_when_the_table_already_matches(
     caplog.set_level("INFO")
     _sync(tmp_path, monkeypatch, ids)
     assert any("already matches the store" in r.getMessage() for r in caplog.records)
+
+
+def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):
+    """End-to-end at the `sync` seam (ADR-0083): a posting that vanishes from one scrape survives
+    that run and is only evicted if it is still absent from the next one. The planner tests pin
+    the decision; this pins the file actually being written and read back.
+    """
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    assert set(_rows(tmp_path)) == {"greenhouse:a:1", "greenhouse:a:2"}
+
+    # Run 2: :2 is absent from the scrape — a first absence, so it must survive.
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    assert set(_rows(tmp_path)) == {
+        "greenhouse:a:1",
+        "greenhouse:a:2",
+    }, "a single absence must not evict"
+    owed = (tmp_path / "unconfirmed_ids.txt").read_text().split()
+    assert owed == ["greenhouse:a:2"], "and it is recorded as owing a second look"
+
+    # Run 3: still absent — now it goes.
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    assert set(_rows(tmp_path)) == {"greenhouse:a:1"}
+    assert (tmp_path / "unconfirmed_ids.txt").read_text().split() == []
+
+
+def test_a_posting_that_reappears_is_never_evicted(tmp_path, monkeypatch):
+    """The measured false-eviction shape: absent once, back the next scrape. Under the old
+    evict-on-first-absence rule this lost a live posting every time it happened."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])  # a short scrape
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])  # it is back
+
+    assert set(_rows(tmp_path)) == {"greenhouse:a:1", "greenhouse:a:2"}
+    assert (tmp_path / "unconfirmed_ids.txt").read_text().split() == []

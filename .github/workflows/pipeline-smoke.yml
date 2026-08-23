@@ -224,9 +224,18 @@ jobs:
           t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
           ids = {r["id"] for r in t.search().select(["id"]).limit(max(t.count_rows(), 1)).to_list()}
 
-          # A real delisting still evicts — the guard must not become "never evict anything".
-          assert hid(0) not in ids, (
-              f"{hid(0)} was delisted by a complete scrape and should have been evicted")
+          # A real delisting is now *withheld* for one scrape, not evicted (ADR-0083): one
+          # absence cannot tell a closure from a scrape that came back short, so the id is
+          # marked Unconfirmed and gets a second look. Cycle 3 below is what proves the guard
+          # has not become "never evict anything" — this assertion and that one are a pair, and
+          # weakening either turns the other into a test of nothing.
+          assert hid(0) in ids, (
+              f"{hid(0)} went missing from ONE complete scrape and must be withheld for a "
+              "second look, not evicted (ADR-0083)")
+          owed = set(pathlib.Path("data/state/unconfirmed_ids.txt").read_text().split())
+          assert hid(0) in owed, (
+              f"{hid(0)} was withheld but not recorded in unconfirmed_ids.txt — nothing would "
+              "make the next cycle evict it, so the withholding would be permanent")
           # ...but the truncated Board's missing Jobs are still open; they were simply not returned.
           # Evicting them is the index flap: they vanish from search for one run cycle and come
           # back in the next, over and over (whole NVIDIA/Qualcomm/Micron Boards, measured 5 runs
@@ -243,7 +252,78 @@ jobs:
               "hard-killed by the step timeout writes none, and only ADR-0046's ratio guard covers "
               "that, which exempts Boards under COLLAPSE_FLOOR rows like this one.")
 
+          expected = {hid(n) for n in range(10)} | {fid(n) for n in range(6)}
+          assert ids == expected, f"unexpected table contents: {ids ^ expected}"
+          print(f"OK: the delisted Job is withheld for a second look, {len(ids)} rows kept; "
+                "the truncated Board was left alone")
+          PY
+
+      # ── Cycle 3 ─────────────────────────────────────────────────────────────────────────────
+      # The other half of ADR-0083. Cycle 2 proved one absence does not evict; this proves a
+      # *second* one does — without it the grace period would be indistinguishable from having
+      # switched eviction off, which is the failure mode ADR-0055 spent a whole revision undoing.
+      - name: Cycle 3 — the same Job is still absent from a second complete scrape
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
+          healthy, flaky = boards["healthy"], boards["flaky"]
+
+          def rewrite(k, board, lines, error=None, truncated=None):
+              d = pathlib.Path(f"data/scrape/fragments/shard-{k}")
+              path = d / f"{board['ats']}.jsonl"
+              kept = path.read_text(encoding="utf-8").splitlines(keepends=True)
+              path.write_text("".join(lines(kept)), encoding="utf-8")
+              report = json.loads((d / "_shard_report.json").read_text())
+              key = f"{board['ats']}:{board['slug']}"
+              report["errors"] = {key: error} if error else {}
+              report["truncated"] = {key: truncated} if truncated else {}
+              (d / "_shard_report.json").write_text(json.dumps(report), encoding="utf-8")
+
+          # Both Boards repeat cycle 2's state: the healthy one is complete and still does not
+          # list job :0 (already trimmed by cycle 2, so the fragment is left as-is), and the
+          # flaky one is still truncated — so its Jobs must stay protected across both cycles,
+          # never accumulating a streak that could evict them.
+          rewrite(0, healthy, lambda lines: lines)
+          rewrite(1, flaky, lambda lines: lines[:1],
+                  truncated="HTTP 429 on page 2 — got 1 of 6 postings")
+          print("cycle 3 snapshot: healthy Board still without job :0, flaky Board still truncated")
+          PY
+      - name: Re-join and re-filter the third cycle's snapshot
+        run: |
+          python -m headstart.ingest.scrape_join
+          python -m headstart.ingest.filter_tech
+      - name: Sync the third cycle
+        run: python -m headstart.ingest.index sync
+      - name: Assert the second consecutive absence finally evicts
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          import lancedb
+          from headstart.search import PROD_TABLE
+
+          boards = json.loads(pathlib.Path("data/scrape/boards.json").read_text())
+          healthy, flaky = boards["healthy"], boards["flaky"]
+          hid = lambda n: f"{healthy['ats']}:{healthy['slug']}:{n}"
+          fid = lambda n: f"{flaky['ats']}:{flaky['slug']}:{n}"
+
+          t = lancedb.connect("data/lancedb").open_table(PROD_TABLE)
+          ids = {r["id"] for r in t.search().select(["id"]).limit(max(t.count_rows(), 1)).to_list()}
+
+          assert hid(0) not in ids, (
+              f"{hid(0)} was absent from TWO consecutive complete scrapes and should have been "
+              "evicted — the grace period must delay eviction, never cancel it (ADR-0083)")
+          # The truncated Board is excluded from the eviction scope every cycle (ADR-0053), so its
+          # Jobs never accrue a streak at all. Two truncated cycles must not add up to one eviction.
+          stranded = [fid(n) for n in range(1, 6) if fid(n) not in ids]
+          assert not stranded, (
+              f"INDEX FLAP ACROSS CYCLES: {len(stranded)} Jobs evicted from "
+              f"{flaky['ats']}:{flaky['slug']} after two truncated scrapes — e.g. {stranded[:3]}. "
+              "An Unauthoritative Board is no evidence, so repeated truncation must never "
+              "accumulate into an eviction the way repeated *complete* scrapes do.")
+
           expected = {hid(n) for n in range(1, 10)} | {fid(n) for n in range(6)}
           assert ids == expected, f"unexpected table contents: {ids ^ expected}"
-          print(f"OK: 1 delisted Job evicted, {len(ids)} rows kept; the truncated Board was left alone")
+          print(f"OK: the delisted Job evicted on its second consecutive absence, {len(ids)} rows "
+                "kept; the truncated Board was left alone in both cycles")
           PY

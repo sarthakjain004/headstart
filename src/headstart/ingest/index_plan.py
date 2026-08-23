@@ -7,14 +7,18 @@ the table and executes these plans; ``apply_sync`` is the one mutation helper, s
 
 Two layers, because they reach different rows:
 
-**Freshness sync** (ADR-0014) — after a scrape, an index row is stale iff its Board was scraped this
-run but its id is absent from the fresh output. New ids are added; re-seen ids are left untouched
-(id-only, v1). Crucially the delete is *scoped to the Boards actually scraped*, so a partial harvest
-never evicts Boards it didn't touch — and a dead Board (scraped, yields nothing) has all its rows
-drop out for free. That scope is per-Board but all-or-nothing, so a Board whose scrape came back
-*truncated* still looks fully covered; the **collapse guard** (ADR-0046, bounded by ADR-0055)
-caps what a Board may lose in one run at a quarter of its rows, so a truncation cannot collapse it
-and a persistently missing row still drains.
+**Freshness sync** (ADR-0014) — after a scrape, an index row is stale once its Board has been
+scraped **twice running** without re-emitting its id (ADR-0083; a single absence only marks it
+**Unconfirmed**, because a scrape that came back short is indistinguishable from a closure). New
+ids are added; re-seen ids are left untouched (id-only, v1). Crucially the delete is *scoped to
+the Boards actually scraped*, so a partial harvest never evicts Boards it didn't touch — and a
+dead Board (scraped, yields nothing) has all its rows drop out for free. That scope is per-Board
+but all-or-nothing, so a Board whose scrape came back *truncated* still looks fully covered; the
+**collapse guard** (ADR-0046, bounded by ADR-0055) caps what a Board may lose in one run at a
+quarter of its rows, so a truncation cannot collapse it and a persistently missing row still
+drains.
+
+
 
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
@@ -49,14 +53,24 @@ COLLAPSE_FLOOR = 20
 
 @dataclass(frozen=True, slots=True)
 class SyncPlan:
-    """Ids to add to the index and ids to evict from it, plus the Boards the guard held back.
+    """Ids to add to the index and ids to evict from it, plus what was withheld and why.
 
     ``held`` pairs a Board key with the number of evictions withheld from it — not its row count.
+
+    ``unconfirmed`` is the grace period's own output (ADR-0083) and is deliberately a *separate*
+    field from ``held``: they withhold evictions for unrelated reasons and at different
+    granularities. ``held`` is a **Board**-level cap — "this Board may not shed more than a
+    quarter of its rows in one run". ``unconfirmed`` is **per-id** evidence — "this id has been
+    absent for one scrape of its Board, and needs a second before it is believed". Folding them
+    into one number would answer neither question when a Board is being diagnosed.
+
+    The caller persists ``unconfirmed`` and hands it back next run as ``was_unconfirmed``.
     """
 
     add: frozenset[str]
     delete: frozenset[str]
     held: tuple[tuple[str, int], ...] = ()
+    unconfirmed: frozenset[str] = frozenset()
 
 
 def plan_sync(
@@ -65,6 +79,7 @@ def plan_sync(
     scraped_boards: Iterable[str],
     live: dict[str, str],
     first_seen: Mapping[str, str] | None = None,
+    was_unconfirmed: Iterable[str] | None = None,
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -105,11 +120,43 @@ def plan_sync(
     ``first_seen`` maps id to its ISO stamp and orders that drain; pass ``None`` and the drain
     falls back to id order, which is stable but carries no age signal. It is a plain mapping so
     this module stays free of any table dependency.
+
+    **The grace period (ADR-0083).** ``was_unconfirmed`` is the ``unconfirmed`` set this function
+    returned on the previous run. An id missing from ``fresh_ids`` is only *eligible* for deletion
+    if it was already in that set — i.e. it has now been absent for **two consecutive scrapes of
+    its own Board**. A first absence is returned in ``unconfirmed`` instead and nothing is deleted
+    for it.
+
+    The unit is *scrapes of that Board*, not runs, and that distinction is the whole point: only
+    ~20,000 of ~66,000 live Boards are in any run's slice, and ``index sync`` already keeps
+    Unauthoritative Boards out of ``scraped_boards`` (ADR-0053) — so a Board this run did not
+    read is no evidence either way. Its ids keep their previous state rather than being counted
+    as confirmed-present (which would reset the streak and make the grace period unreachable) or
+    as absent (which would evict on a Board nobody looked at).
+
+    Measured basis for two rather than three: every false eviction in
+    ``docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`` was a *single isolated* miss.
+    The one id evicted twice (``successfactors:careers.hcltech.com:1364226855``) was verified
+    present in the scrape between its two evictions — and the mechanics force that, since a
+    second eviction requires a re-add, which requires reappearing in ``fresh_ids``.
+
+    ``None`` and an empty set are **opposites** here, and the distinction is load-bearing.
+    ``None`` disables the grace period entirely, restoring the previous evict-on-first-absence
+    behaviour; it exists for callers written before this and is not what the pipeline passes. An
+    empty set means the grace period is *on* and nothing is owed a second look yet — which is the
+    cold-start path, since ``index sync`` reads a missing state file as an empty set. Cold start
+    is therefore safe by construction: nothing is eligible, so that run deletes nothing and merely
+    records what was absent.
     """
     index = set(index_ids)
     fresh = set(fresh_ids)
     boards = set(scraped_boards)
     add = fresh - index
+    # None means "no grace period" (the pre-ADR-0083 behaviour); an empty set means "the grace
+    # period is on and nothing is owed a second look yet". Those are different, so the None check
+    # cannot collapse into `or set()`.
+    grace_on = was_unconfirmed is not None
+    previously = set(was_unconfirmed or ())
 
     indexed_by_board: dict[str, set[str]] = defaultdict(set)
     for job_id in index:
@@ -120,9 +167,16 @@ def plan_sync(
     stamps = first_seen or {}
     delete: set[str] = set()
     held: list[tuple[str, int]] = []
+    unconfirmed: set[str] = set()
     for board, ids in indexed_by_board.items():
-        missing = {i for i in ids if i not in fresh}
-        if len(ids) >= COLLAPSE_FLOOR and len(missing) > COLLAPSE_RATIO * len(ids):
+        absent = {i for i in ids if i not in fresh}
+        # Eligible = absent now *and* absent at this Board's previous scrape. A first absence is
+        # not eligible; it lands in `unconfirmed` below and gets one more look. Named apart from
+        # `absent` on purpose — they differ by exactly the grace period, and reusing one word for
+        # both is how this reads as "missing" twice and means two things.
+        eligible = absent & previously if grace_on else absent
+        evicted_here: set[str] = set()
+        if len(ids) >= COLLAPSE_FLOOR and len(eligible) > COLLAPSE_RATIO * len(ids):
             # Drain at the guard's own threshold rather than refusing outright (ADR-0055). A
             # Board still cannot collapse in one run — which is all ADR-0046 set out to stop —
             # but a row that stays missing does eventually leave, so a Board the scrape can
@@ -136,14 +190,44 @@ def plan_sync(
             # ratchet this replaces. Unreachable while COLLAPSE_FLOOR is 20 (cap >= 5), but the
             # two constants are declared far apart and nothing else couples them.
             cap = max(1, int(COLLAPSE_RATIO * len(ids)))
-            drain = sorted(missing, key=lambda i: (stamps.get(i) or "", i))[:cap]
-            delete |= set(drain)
-            held.append((board, len(missing) - len(drain)))
-            continue
-        delete |= missing
+            drain = sorted(eligible, key=lambda i: (stamps.get(i) or "", i))[:cap]
+            evicted_here = set(drain)
+            held.append((board, len(eligible) - len(drain)))
+        else:
+            evicted_here = eligible
+        delete |= evicted_here
+        # Everything still absent and still in the table is unconfirmed — first absences *and*
+        # the ids the collapse guard just withheld. Carrying the withheld ones matters: they are
+        # already past the grace period, and dropping them here would make each read as a fresh
+        # first absence next run, resetting the streak so the Board evicts only every other run.
+        # Measured on a 200-row Board short by 140 every scrape, that alternated 0, 50, 0, 37 —
+        # halving ADR-0055's drain, the ratchet it exists to prevent.
+        if grace_on:
+            unconfirmed |= absent - evicted_here
+
+    if grace_on:
+        # An id whose Board this run did not scrape keeps the state it had: no evidence arrived,
+        # so its streak neither advances nor resets. Without this the set would be rebuilt from
+        # the slice alone and a Board's ids would silently reset every run it sat out — with
+        # ~20,000 of ~66,000 Boards scraped per run, most ids would never reach a second absence
+        # and the grace period would never evict anything.
+        #
+        # Carried forward only while the Board is *still live*, which bounds the set. A Board
+        # that leaves the ledger is never scraped again, so its entries would otherwise persist
+        # for good — the same slow accretion ADR-0055 had to unwind for `held`. Those rows leave
+        # the index through `plan_prune`'s off-Board sweep, and their entries leave here with
+        # them. The check is per-Board, not per-id, so it costs a handful of lookups rather than
+        # an intersection against the whole index.
+        for job_id in previously:
+            board = resolve_board(job_id, live)
+            if board not in boards and board.lower() in live:
+                unconfirmed.add(job_id)
 
     return SyncPlan(
-        add=frozenset(add), delete=frozenset(delete), held=tuple(sorted(held))
+        add=frozenset(add),
+        delete=frozenset(delete),
+        held=tuple(sorted(held)),
+        unconfirmed=frozenset(unconfirmed),
     )
 
 
