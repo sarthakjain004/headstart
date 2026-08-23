@@ -35,7 +35,15 @@ any cause, becomes an immediate, permanent delete.
   unexplained; see §4.1. **The other 7 (all of `vast`) were not false evictions
   at all** — that board scraped complete (166/166) and those 7 are non-tech (mechanical/thermal/
   structures/test-technician roles), so evicting them from a tech-only index is correct behaviour.
-- **SuccessFactors — same shape as Greenhouse, confirmed root cause, fixed.** 22 false evictions
+- **SuccessFactors — TWO independent root causes, both fixed.** *Corrected 2026-08-23, after this
+  doc first shipped:* the detail-path gap below is real but was **not the whole story, and not the
+  larger half**. A second, unrelated bug lived in the *listing*: the `/search/` walk stepped its
+  offset by a 25-row floor regardless of the page it actually got, so every tenant serving fewer
+  than 25 rows a page silently skipped the difference — `jobs.chartindustries.com` read 90 of 219,
+  `jobs.bayer.com` 241 of 601 — and exited by the natural-end path reporting no truncation at all.
+  The boards §4's table names below (`chartindustries`, `bayer`, `careers.gic.com.sg`) are exactly
+  those sub-25-row tenants, so their evictions are listing losses, not detail losses. See §4.2.
+- **SuccessFactors (detail path) — same shape as Greenhouse, confirmed root cause, fixed.** 22 false evictions
   on 6 boards (updated 2026-08-23: a follow-up pass resolved the 90 ids the original 120s timeout
   left inconclusive and found 2 more false evictions, on `careers.bv.com` and
   `careers.hcltech.com` — see §4). Most are clustered into 1-2 runs per board, same as Greenhouse.
@@ -370,6 +378,48 @@ absence as authoritative with no cross-run confirmation. Greenhouse's origin-sid
 SuccessFactors's silent detail-fetch loss are different mechanisms that meet at the same place —
 and Option B absorbs both **without needing to know either mechanism**, which is exactly why it
 is the stronger fix for Greenhouse specifically, where the per-ATS guard is still unproven.
+
+### 4.2 SuccessFactors — a second root cause, in the listing, found 2026-08-23
+
+The detail-path fix (PR #266) shipped and the boards **kept flapping**. Chasing that (issue #269,
+`/diagnosing-bugs`) found a second bug that is independent of the first, larger, and older.
+
+`_search_job_urls` advanced its offset by `startrow += max(len(found), _SEARCH_STEP_FLOOR)`, with
+the floor at 25. `jobs.chartindustries.com` serves **10 rows a page**, so the walk read rows 0-9,
+then 25-34, then 50-59 — **skipping 15 of every 25 rows, permanently**. It then ran off the end,
+saw no fresh ids, and exited by the *natural-end* path with `cut_short=None`. A board missing 59%
+of its postings was handed to `index sync` as complete, and everything unread was evicted as
+delisted. The module docstring already claimed the correct behaviour — *"pagination steps by the
+observed size"* — the code just never did it.
+
+Measured live against the total each board advertises in its own pagination label:
+
+| board | page size | board says | walk got | missing |
+|---|---:|---:|---:|---:|
+| `jobs.chartindustries.com` | 10 | 219 | **90** | **129** |
+| `jobs.bayer.com` | 10 | 601 | **241** | **360** |
+| `mycareer.heraeus.com` | 20 | 222 | **180** | **42** |
+| `careers.gic.com.sg` | 20 | 171 | **140** | **31** |
+| `jobs.hollister.com` | 25 | 98 | 98 | 0 |
+| `jobs.exxonmobil.com` | 25 | 606 | 606 | 0 |
+
+Every board paging under 25 was short; every board at or above it was whole. That is the floor and
+nothing else — `ceil(219/25) = 9` windows x 10 rows = the 90 observed.
+
+**Why it presents as flapping rather than as a stable shortfall:** as new postings shift rows down
+the server's ordering, a job crosses in or out of one of the sampled windows, so it appears and
+disappears between runs — evicted, then re-added, each re-add re-stamping `first_seen` (ADR-0031)
+and surfacing a year-old posting as brand new. That is the user-visible symptom in issue #269. On
+the run-pair from that issue, 19 of 90 chartindustries ids swapped between two runs 46 minutes
+apart, which is not plausible churn.
+
+Fixed in PR #274, two parts: step by the board's own stated page size (falling back to the link
+count), and check what was read against the advertised total before claiming the end, reporting a
+shortfall through the ADR-0053 channel. A caveat worth carrying forward — **the link count is not
+the page size**: `jobs.kaufland.com` labels 15 results but renders 19 `/job/` links (4 recurring
+extras), so stepping by what you counted reintroduces the same skip at a smaller scale. The
+board's own figure is the only trustworthy stride. The self-check covers only the ~17 of 30
+sampled tenants that render a label; the stride fix covers all of them.
 
 ## 5. Every other ATS
 

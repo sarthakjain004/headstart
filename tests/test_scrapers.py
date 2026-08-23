@@ -2494,11 +2494,16 @@ def test_successfactors_search_walk_reads_every_row_of_a_small_page(monkeypatch)
     assert why is None, "it did reach the end, so there is nothing to report"
 
 
-def _labelled(rows, total, label="Results", connector="of"):
-    """A /search/ page carrying the pagination label the walk reads its yardstick from."""
-    body = "".join(f'<a href="/job/x/{i}/">a</a>' for i in rows)
+def _labelled_search_page(rows, total, label="Results", connector="of", extras=()):
+    """A /search/ page carrying the pagination label the walk reads its yardstick from.
+
+    ``extras`` are job links that are *not* results of this page — the shape jobs.kaufland.com
+    renders, where 4 recurring links sit alongside the 15 rows the label counts."""
+    rows = list(rows)
+    body = "".join(f'<a href="/job/x/{i}/">a</a>' for i in [*rows, *extras])
+    last = len(rows)
     return (
-        f'<span class="paginationLabel">{label} <b>1 \u2013 10</b> '
+        f'<span class="paginationLabel">{label} <b>1 \u2013 {last}</b> '
         f"{connector} <b>{total}</b></span>{body}"
     )
 
@@ -2513,7 +2518,7 @@ def test_successfactors_reports_reading_fewer_than_the_board_advertises(monkeypa
     def _serve(method, url, **kw):
         startrow = int(url.rsplit("startrow=", 1)[1])
         rows = range(startrow, min(startrow + 10, 10))
-        return _SearchPage(200, _labelled(rows, 40))
+        return _SearchPage(200, _labelled_search_page(rows, 40))
 
     monkeypatch.setattr(sf.http, "fetch", _serve)
 
@@ -2550,9 +2555,53 @@ def test_successfactors_reads_the_total_in_any_locale(label, connector):
     """The label's wording is localised per tenant — measured live on career.deutz.com (German)
     and canaldeempleo.es (Spanish). Matching on the English "of" read every other board as having
     no total, silently disabling the check exactly where boards are largest."""
-    from headstart.scrapers.successfactors import _advertised_total
+    from headstart.scrapers.successfactors import _advertised_paging
 
-    assert _advertised_total(_labelled(range(10), 219, label, connector)) == 219
+    page = _labelled_search_page(range(10), 219, label, connector)
+    assert _advertised_paging(page) == (10, 219)
+
+
+def test_successfactors_steps_by_the_size_the_board_states_not_the_links_it_renders():
+    """jobs.kaufland.com labels 15 results and renders 19 job links — 4 recurring extras that
+    are not rows of this page. Stepping by the link count skips 4 rows of every window, which is
+    the stride bug this branch fixes wearing a different disguise, so the board's own stated page
+    size wins wherever it gives one."""
+    from headstart.scrapers.successfactors import _advertised_paging
+
+    page = _labelled_search_page(
+        range(15), 1764, extras=["x9001", "x9002", "x9003", "x9004"]
+    )
+
+    assert _advertised_paging(page)[0] == 15, (
+        "the label counts results, not every /job/ link"
+    )
+
+
+def test_successfactors_ignores_numbers_outside_the_pagination_label():
+    """An unrecognised label must yield nothing rather than a number scavenged from elsewhere on
+    the page. A too-high total reads as a shortfall, which marks the Board unauthoritative and
+    drops it from the eviction scope entirely (ADR-0053) — closed postings then served forever.
+    So the figures are matched only within the label element."""
+    from headstart.scrapers.successfactors import _advertised_paging
+
+    stray = (
+        '<span class="paginationLabel">Results <b>1-10</b></span>'
+        "<div>see <b>note</b> and <b>12</b></div>"
+    )
+    assert _advertised_paging(stray) is None
+
+
+def test_successfactors_rejects_a_label_whose_figures_do_not_order_sanely():
+    """A range running past the grand total is not a label this parser understands; guessing
+    from it risks the same false-shortfall direction as scavenging."""
+    from headstart.scrapers.successfactors import _advertised_paging
+
+    assert (
+        _advertised_paging(
+            '<span class="paginationLabel">Results <b>1 \u2013 90</b> of <b>40</b></span>'
+        )
+        is None
+    )
 
 
 def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):
