@@ -37,11 +37,30 @@ class _Proc:
         self.stderr = stderr
 
 
+def _canned_trace(monkeypatch):
+    """Answer the egress-IP trace from memory, for every stub in this file.
+
+    `_observe_egress_ip` reads Cloudflare's `/cdn-cgi/trace` *through the proxy* on both the
+    `rotate` and the `proxy_url` paths, and `_rq` is `curl_cffi`, a base dependency — so
+    unstubbed it leaves the machine for real, and does so invisibly in both directions: every
+    exception is swallowed as telemetry, while the port these tests stub (`127.0.0.1:40000`) is
+    WARP's own, so on a developer's machine the call *succeeds* down the real tunnel and spends
+    ~80-110 ms of live latency inside tests that budget milliseconds. Tests that drive the trace
+    deliberately override this afterwards.
+    """
+
+    class _Trace:  # RFC 5737 TEST-NET-3, so it can never be a real address
+        text = "fl=123abc\nip=203.0.113.7\ncolo=SJC\nts=1\nwarp=on\n"
+
+    monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Trace())
+
+
 def _stub(monkeypatch, handler, ready=lambda: True):
     """Route `subprocess.run` through `handler(args) -> _Proc | Exception`, recording the calls.
 
     ``ready`` stands in for the SOCKS5 handshake — the thing that decides whether a proxy is
-    handed out at all.
+    handed out at all. Stubs the trace too: `proxy_url` observes the egress IP on success, so
+    this path reaches the network exactly as the rotate path does.
     """
     calls: list[list[str]] = []
 
@@ -57,6 +76,7 @@ def _stub(monkeypatch, handler, ready=lambda: True):
     # The SOCKS5 handshake is a real socket connect; left unstubbed the readiness wait spins for
     # _CONNECT_TIMEOUT of wall clock in every test (it took the suite from 6s to 66s).
     monkeypatch.setattr(spare_egress, "_socks5_ready", lambda *a, **k: ready())
+    _canned_trace(monkeypatch)
     return calls
 
 
@@ -290,7 +310,7 @@ def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog
 
 
 def _rotating(monkeypatch, *, restart_ok=True, comes_back=True):
-    """Stub a rotation: sudo/systemctl outcome and whether SOCKS5 answers afterwards."""
+    """Stub a rotation: sudo/systemctl outcome, whether SOCKS5 answers afterwards, and the trace."""
     calls: list[list[str]] = []
 
     def _run(argv, **kw):
@@ -306,6 +326,7 @@ def _rotating(monkeypatch, *, restart_ok=True, comes_back=True):
     monkeypatch.setattr(spare_egress.time, "sleep", lambda *a: None)
     monkeypatch.setattr(spare_egress, "_socks5_ready", lambda: comes_back)
     monkeypatch.setattr(spare_egress, "_CONNECT_TIMEOUT", 0.01)
+    _canned_trace(monkeypatch)
     return calls
 
 
