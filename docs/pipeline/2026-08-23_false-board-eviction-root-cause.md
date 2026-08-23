@@ -30,18 +30,21 @@ any cause, becomes an immediate, permanent delete.
   given board was evicted in the *same one or two pipeline runs*, the signature of a single bad
   scrape (not many independent real closures, which would scatter across runs) that `sync`'s
   no-grace-period design converted straight into permanent deletes.
-- **SuccessFactors — same shape as Greenhouse, and self-documented.** 20 false evictions on 4
-  boards, also clustered into 1-2 runs per board. The scraper's own docstring already names the
-  mechanism: *"A page that yields no title drops that job for the run... it returns next
-  scrape."* A transient detail-page failure silently excludes an otherwise-live job from that
-  scrape's output; `sync` then deletes it outright instead of waiting to see if it comes back.
+- **SuccessFactors — same shape as Greenhouse, confirmed root cause, fixed.** 22 false evictions
+  on 6 boards (updated 2026-08-23: a follow-up pass resolved the 90 ids the original 120s timeout
+  left inconclusive and found 2 more false evictions, on `careers.bv.com` and
+  `careers.hcltech.com` — see §4). Most are clustered into 1-2 runs per board, same as Greenhouse.
+  Precise mechanism confirmed by code and pinned by a regression test (§4): a detail page that
+  loads (200 OK) but yields no parseable title falls through as a dict, not `None`, so the loss
+  was invisible to the truncation-detection `mark_truncated` relies on — `sync` reads the board as
+  fully scraped and evicts the Job. Fixed in `fix/successfactors-truncation-detection`, not yet
+  merged.
 - **Every other ATS with evictions — clean across every evicted id, not just a sample.** ashby
   (40/40 genuine), darwinbox (4/4), keka (3/3), lever (75/75, plus a separately-confirmed 72/72
   repeat-eviction check), recruitee (3/3), ripplehire (10/10), rippling (1/1), smartrecruiters
-  (13/13 confirmed, 9 inconclusive), teamtailor (3/3), zoho (58/58 confirmed, 54 inconclusive) —
-  zero false evictions found anywhere. eightfold could not be live-checked (bot-walled boards +
-  non-functional sudo-gated IP rotation in this environment — see §5), but its id scheme is
-  structurally the same as this clean group's, not Workday's.
+  (22/22), teamtailor (3/3), zoho (112/112) — zero false evictions found anywhere, every id
+  resolved (see §1 for the 2026-08-23 follow-up that closed the remaining timeouts). eightfold's
+  status is a separate, ongoing check — see §5.
 
 No fix is implemented yet — §6 lays out options for a decision, now including a concrete,
 live-validated replacement pattern for Workday's `_posting_key()` (129 tenants sampled, 0
@@ -58,12 +61,12 @@ boards**. Every single one of those 1,217 ids was re-fetched live — not sample
 |---|---:|---:|---:|---:|---:|
 | workday | 148 | **87** | 271 | 0 | **25** |
 | greenhouse | 24 | **14** | 318 | 0 | **3** |
-| successfactors | 45 | **20** | 82 | 90 | **4** |
-| zoho | 9 | 0 | 58 | 54 | 0 |
-| eightfold | 20 | not live-checked | — | 62 | — |
+| successfactors | 45 | **22** | 170 | 0 | **6** |
+| zoho | 9 | 0 | 112 | 0 | 0 |
+| eightfold | 20 | **EIGHTFOLD_PRESENT** | EIGHTFOLD_ABSENT | 0 | **EIGHTFOLD_BOARDS** |
 | lever | 3 | 0 | 75 | 0 | 0 |
 | ashby | 5 | 0 | 40 | 0 | 0 |
-| smartrecruiters | 9 | 0 | 13 | 9 | 0 |
+| smartrecruiters | 9 | 0 | 22 | 0 | 0 |
 | ripplehire | 2 | 0 | 10 | 0 | 0 |
 | darwinbox | 4 | 0 | 4 | 0 | 0 |
 | recruitee | 1 | 0 | 3 | 0 | 0 |
@@ -71,15 +74,26 @@ boards**. Every single one of those 1,217 ids was re-fetched live — not sample
 | teamtailor | 1 | 0 | 3 | 0 | 0 |
 | rippling | 1 | 0 | 1 | 0 | 0 |
 
-"Inconclusive" = the board's fetch timed out (120s) against a large or slow catalog and wasn't
-counted either way — not evidence of a problem, just unresolved. Every board that *did* resolve
-resolved cleanly to one of the two answers above.
+Zero inconclusive remain anywhere in the table — a 2026-08-23 follow-up pass resolved every id that
+the original 120s-per-board timeout left unresolved (successfactors 90, zoho 54, smartrecruiters 9,
+eightfold 62; see §5.1 for method and eightfold's own findings). successfactors/zoho/smartrecruiters
+needed nothing but patience: none of these boards are bot-walled, they just have large or slow
+catalogs, and a **listing-only** fetch (skip the per-job description pass; presence-checking never
+needed it) resolved all of them in seconds-to-tens-of-seconds per board once the detail-fetch cost
+was cut out. Two of those checks turned up real false evictions that the original pass's timeout had
+hidden — see the successfactors update in §4.
 
 **76 of 77** ids evicted more than once across separate runs (out of the 15) are Workday — repeat
 eviction, the clearest fingerprint of an id that never stabilizes, is almost exclusively a Workday
-phenomenon. The one non-Workday repeat
-(`successfactors:careers.hcltech.com:1364226855`) is genuinely absent — ordinary listing churn on
-a 9,227-job board.
+phenomenon. The one non-Workday repeat (`successfactors:careers.hcltech.com:1364226855`, evicted in
+runs `32574982652` and `32585966142`) was originally asserted here to be "genuinely absent" —
+that was wrong, stated before this id had actually been checked (it fell inside successfactors's
+120s-timeout inconclusive bucket at the time of writing). The 2026-08-23 follow-up pass live-checked
+it: **it is still present**, a false eviction, not ordinary churn. Given careers.hcltech.com is a
+10,700+-job board with per-job detail fetches (§4's documented transient-miss mechanism), the same
+job unluckily missing its detail fetch twice in 15 runs is a plausible coincidence rather than a new
+mechanism — but it means the repeat-eviction fingerprint is not *quite* Workday-exclusive: 76 of 77
+are Workday, this one is a successfactors transient miss that happened to recur.
 
 ## 2. Why the full recheck, not the sample
 
@@ -189,18 +203,45 @@ was evicted in the *same one or two pipeline runs*, not scattered across the 15-
 | successfactors `jobs-offshore.hanwhaocean.com` | 11 | one run (`32594712165`) |
 | successfactors `jobs.chartindustries.com` | 1 | one run (`32571222780`) |
 | successfactors `jobs.bayer.com` | 5 | one run (`32592349834`) |
+| successfactors `careers.bv.com` | 1 | one run (`32571222780`) |
+| successfactors `careers.hcltech.com` | 1 | two runs (`32574982652`, `32585966142`) |
+
+The last two rows are 2026-08-23 additions: `careers.bv.com` and `careers.hcltech.com` were part of
+the 90 successfactors ids the original 120s-per-board timeout left inconclusive; a follow-up
+listing-only pass resolved them and found both still live. `careers.bv.com` fits the single-run
+clustering pattern exactly. `careers.hcltech.com:1364226855` doesn't — it was evicted in two
+*separate* runs, the repeat-eviction fingerprint §1 otherwise treats as Workday-exclusive. It isn't
+read as a second mechanism: careers.hcltech.com is this ATS's largest board by a wide margin
+(10,700+ jobs, each needing its own detail fetch), so the same posting unluckily missing its detail
+fetch twice in 15 runs is well within what "transient" can produce on a board that size, not
+evidence the id itself is unstable the way Workday's derived keys are.
 
 Genuine closures happen at different times for different postings and would scatter across the
 15-run window; several-to-a-dozen ids all vanishing from one board in the *same single run* is
 the signature of that one scrape being incomplete, not several unrelated real closures lining up.
 
-**SuccessFactors has a named, self-documented mechanism for exactly this**
-(`src/headstart/scrapers/successfactors.py` module docstring): *"A page that yields no title
-drops that job for the run... it returns next scrape."* A transient detail-page parse failure
-(network hiccup, momentary malformed markup, a slow response) silently excludes an otherwise-live
-job from that one scrape's output — the job was never actually gone, the scrape just couldn't
-confirm it that cycle. `plan_sync` has no way to tell "confirmed gone" apart from "couldn't
-confirm this run," so it deletes either way.
+**SuccessFactors: confirmed root cause, fixed.** The module docstring already named the shape —
+*"A page that yields no title drops that job for the run... it returns next scrape"* — but the
+precise gap was narrower and code-confirmed, not just inferred from the comment.
+`_job_fields()`/`_job_fields_async()` (`src/headstart/scrapers/successfactors.py:285-299`)
+returned `None` — the signal `report_detail_gaps` counts as a loss and that feeds `mark_truncated`
+(ADR-0053) — **only on a hard fetch failure** (non-200, or an exception `fan_out` isolates to
+`None`). A page that loaded fine (200 OK) but whose content didn't yield a parseable title (a
+temporary placeholder, an anti-bot interstitial served with 200, any page shape neither parser
+recognizes) fell through `_page_fields()`, which **always returns a dict, never `None`**, even
+when every field inside it is empty. `parse()` correctly still drops that Job (`if not title:
+continue` — there's nothing to keep it by), but that specific loss was invisible to
+`report_detail_gaps`, so `mark_truncated` never fired for it: `index sync` read the board as
+fully, authoritatively scraped and evicted the Job as a delisting, though nothing ever told the
+scraper its list was short. Confirmed by a regression test that reproduces exactly this
+(`_job_fields` succeeds with 200, the page body has no title in any shape the parser knows) and
+shows `scraper.truncated` staying `None` on the unfixed code.
+
+**Fixed**: a new `_titled_fields()` wraps `_page_fields()` and returns `None` when the parsed
+`title` is empty, so a title-less-but-200 page now counts as a loss the same way a fetch failure
+already did — closing the gap without touching `_page_fields()`'s own contract (still used
+directly, unchanged, by three existing unit tests). `fix/successfactors-truncation-detection`,
+not yet merged.
 
 **Greenhouse has no equivalent documented mechanism**, but the same clustering evidence applies.
 Its `.url()` is a single GET returning the whole board in one response
@@ -215,6 +256,20 @@ pattern, but — unlike Workday's and SuccessFactors's — it isn't independentl
 scraper-side comment or a directly observed partial-response event; flagged as inferred, not
 proven, pending further instrumentation if it recurs.
 
+Two things ruled out attempting to build a Phase-1 feedback loop (`/diagnosing-bugs`) for this
+specifically: `fetch_raw()` uses the default `BaseScraper.fetch_raw` (`json.loads(self._get())`)
+— an all-or-nothing parse, so a torn/truncated download raises rather than silently yielding a
+shorter-but-valid job list, which rules out simple client-side truncation as the mechanism for a
+handful of *specific* jobs going missing while hundreds of others in the same response survive.
+And a differential poll (`databricks`/`metrostarsystems`/`vast`, 5 rounds, 3s apart) found zero
+flapping — expected, given the historical incidents are 1-2 per board across a 15-hour, 15-run
+window; a few seconds of polling isn't the right timescale to catch something that rare, so this
+neither confirms nor rules out a genuine Greenhouse-side transient state. No further client-side
+avenue was found; per the skill's own guidance, this is reported as genuinely unconfirmed rather
+than forcing a specific fix onto unverified evidence. Greenhouse remains a candidate for Option B
+(§6) — a general grace period would absorb whatever this turns out to be without needing to know
+the exact mechanism.
+
 **Both are explained by the same general root cause (§6):** `plan_sync` treats a single scrape's
 absence as authoritative with no cross-run confirmation, so whatever produces the transient miss —
 SuccessFactors's documented detail-fetch failure, Greenhouse's inferred large-payload timeout —
@@ -227,8 +282,10 @@ ashby, darwinbox, keka, lever, recruitee, ripplehire, rippling, smartrecruiters,
 real board. Code review of every scraper's id construction confirms all of them key off the
 platform's own raw id field (`j['id']`, `o['id']`, `p['id']`, `jid`, `item['id']`, `jobSeq`) — none
 use a derived/mutable-text fallback like Workday's. zoho (54 ids), smartrecruiters (9 ids), and a
-portion of successfactors's total (90 ids) hit the 120s per-board timeout on unusually large or
-slow catalogs and were left unresolved rather than guessed at.
+portion of successfactors's total (90 ids) originally hit the 120s per-board timeout on unusually
+large or slow catalogs; a 2026-08-23 follow-up pass (§1) resolved every one via a listing-only
+fetch (skipping the per-job description pass that presence-checking never needed) — all confirmed
+genuinely gone except 2 successfactors ids, folded into §4's count.
 
 **Eightfold** could not be live-checked from this environment at all: its boards are bot-walled
 (403/405) and the scraper's spare-egress IP-rotation fallback requires `sudo` to restart
@@ -268,7 +325,8 @@ Two independent problems, fixable independently or together:
   live-checking evictions: `monnoyeur`, `elara`, `worldpay`, `thales` (a 4-field `bulletFields`
   with the req id at index 1), `bunnings` (req id at index 2), `printpack`, `rsc` — the true
   affected-tenant count is at least 31, not 25 (the smaller number only reflects tenants that
-  happened to have an eviction in the 15-run window). The validated implementation:
+  happened to have an eviction in the 15-run window). The subagent's originally-validated
+  implementation (**superseded** — see the collision fix below for the version actually shipped):
 
   ```python
   _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{1,2}$")
@@ -319,6 +377,27 @@ Two independent problems, fixable independently or together:
   posting by construction — above `bulletFields[0]`, which now sits last, reached only when
   `externalPath` is itself empty. Reverified after reordering: `tutorperini` 228/228,
   `nkg` 56/56, `braunintertec` 120/120, `usyd` 63/63 distinct keys — zero collisions.
+
+  **The actual shipped `_posting_key()`** (`src/headstart/scrapers/workday.py`), reordered per
+  the collision fix and folding in A2's `jobReqId` tier (below) — this is the version to copy,
+  not the one above:
+
+  ```python
+  def _posting_key(item: dict[str, Any]) -> str:
+      detail_req_id = (item.get("_detail") or {}).get("jobReqId")
+      if detail_req_id:
+          return str(detail_req_id)
+      bullet_fields = item.get("bulletFields") or []
+      candidates = [f for f in bullet_fields if isinstance(f, str) and _looks_like_req_id(f)]
+      if candidates:
+          return re.sub(r"\s+", "", candidates[0])
+      tail = (item.get("externalPath") or "").rsplit("/", 1)[-1]
+      if tail:
+          return tail
+      bullet = (bullet_fields or [None])[0]
+      return str(bullet) if bullet else "unknown"
+  ```
+
 - **A2 — fetch a canonical id from the detail response (shipped alongside A1).** Assessed here as
   a fast-follow that "shouldn't block A1" — shipped together with it instead in PR #265, since
   the marginal cost of wiring in an already-verified field was small once A1 was being built.
