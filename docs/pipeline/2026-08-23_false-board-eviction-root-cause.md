@@ -118,6 +118,16 @@ job unluckily missing its detail fetch twice in 15 runs is a plausible coinciden
 mechanism — but it means the repeat-eviction fingerprint is not *quite* Workday-exclusive: 76 of 77
 are Workday, this one is a successfactors transient miss that happened to recur.
 
+**And the two absences were not consecutive**, which matters enough to record because ADR-0083's
+choice of N=2 rests on it. `careers.hcltech.com` was in the slice of **all 15** runs, so the two
+evictions (`32574982652`, `32585966142`) had three scrapes between them; the scrape-fragment for
+the middle one, `32579833859`, lists **9,230** jobs for the board and contains `1364226855`
+among them. So the id went absent, came back, and went absent again — never twice running. The
+eviction mechanics force that shape anyway (a second eviction requires a re-add, which requires
+reappearing in `fresh_ids`), but it is checked here rather than argued: a grace period keyed on
+*consecutive* absences only helps if the observed misses really are isolated, and this was the
+one case that could have shown otherwise.
+
 ## 2. Why the full recheck, not the sample
 
 The first pass sampled up to 10 ids per ATS (104 total) and found the greenhouse/successfactors

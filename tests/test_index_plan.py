@@ -519,3 +519,174 @@ def test_the_drain_always_takes_at_least_one_row():
     )
     assert len(plan.delete) >= 1
     assert dict(plan.held)[board] == COLLAPSE_FLOOR - len(plan.delete)
+
+
+# --- the ADR-0083 eviction grace period ------------------------------------------------------
+# `was_unconfirmed` is the `unconfirmed` set the previous run returned. An absence only becomes
+# an eviction on the *second consecutive scrape of that Board* that misses it.
+
+
+def test_a_first_absence_is_withheld_and_recorded():
+    """The Greenhouse case: a silently short response drops live postings from one scrape."""
+    indexed = _board("greenhouse:databricks", 30)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:28],  # two postings absent, still live on the real board
+        scraped_boards=["greenhouse:databricks"],
+        live={},
+        was_unconfirmed=set(),  # grace period on, nothing owed a second look yet
+    )
+    assert plan.delete == frozenset(), "a single absence must not evict"
+    assert plan.unconfirmed == frozenset(indexed[28:])
+
+
+def test_a_second_consecutive_absence_evicts():
+    indexed = _board("greenhouse:databricks", 30)
+    absent = set(indexed[28:])
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:28],
+        scraped_boards=["greenhouse:databricks"],
+        live={},
+        was_unconfirmed=absent,  # already missed at the previous scrape of this Board
+    )
+    assert plan.delete == frozenset(absent)
+    assert plan.unconfirmed == frozenset(), "nothing left owing a second look"
+
+
+def test_reappearing_clears_the_streak():
+    """The measured pattern: absent, re-added, absent again — never twice in a row, so it must
+    never be evicted. `successfactors:careers.hcltech.com:1364226855` did exactly this and was
+    verified still live."""
+    indexed = _board("successfactors:careers.hcltech.com", 30)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed,  # everything present this scrape
+        scraped_boards=["successfactors:careers.hcltech.com"],
+        live={},
+        was_unconfirmed=set(indexed[:3]),  # these were absent last scrape
+    )
+    assert plan.delete == frozenset()
+    assert plan.unconfirmed == frozenset(), "present again — the streak resets"
+
+
+def test_an_unscraped_board_is_no_evidence_and_carries_its_ids_forward():
+    """Only ~20k of ~66k Boards are in a run's slice, and an Unauthoritative Board is kept out of
+    `scraped_boards` too (ADR-0053). Neither is evidence: the ids must keep their state, or a
+    Board sitting out a run would silently reset and never reach a second absence."""
+    indexed = _board("greenhouse:vast", 10)
+    owed = set(indexed[:4])
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=[],
+        scraped_boards=[],  # this Board was not scraped this run
+        live={"greenhouse:vast": "greenhouse:vast"},
+        was_unconfirmed=owed,
+    )
+    assert plan.delete == frozenset(), "nothing was looked at, so nothing is delisted"
+    assert plan.unconfirmed == frozenset(owed), "state carried forward unchanged"
+
+
+def test_ids_on_a_board_that_left_the_ledger_are_not_carried_forever():
+    """The bound on the file. A Board that leaves the ledger is never scraped again, so its
+    entries would accrete for good — the ADR-0055 ratchet in a new place. Those rows leave the
+    index via `plan_prune`'s off-Board sweep; their entries leave here with them."""
+    indexed = _board("greenhouse:gone", 10)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=[],
+        scraped_boards=[],
+        live={},  # the Board is no longer live
+        was_unconfirmed=set(indexed[:4]),
+    )
+    assert plan.unconfirmed == frozenset(), "dropped, not carried"
+
+
+def test_the_collapse_guard_measures_the_eligible_set_not_the_raw_absences():
+    """The two guards compose rather than duplicate. On the first run of a mass truncation the
+    grace period holds everything, so the ratio has nothing to cap and never fires."""
+    indexed = _board("eightfold:nvidia.eightfold.ai", 200)
+    first = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:60],  # 140 absent — far over COLLAPSE_RATIO
+        scraped_boards=["eightfold:nvidia.eightfold.ai"],
+        live={},
+        was_unconfirmed=set(),
+    )
+    assert first.delete == frozenset(), "grace period holds them all"
+    assert first.held == (), "so the collapse guard has nothing to withhold"
+    assert len(first.unconfirmed) == 140
+
+    # Still short on the next scrape: now they are eligible, and the ratio caps the drain.
+    second = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:60],
+        scraped_boards=["eightfold:nvidia.eightfold.ai"],
+        live={},
+        was_unconfirmed=first.unconfirmed,
+    )
+    assert len(second.delete) == 50
+    assert second.held == (("eightfold:nvidia.eightfold.ai", 90),)
+
+
+def test_none_disables_the_grace_period_entirely():
+    """The escape hatch, and the pre-ADR-0083 behaviour. Distinct from an empty set, which means
+    the grace period is on and nothing is owed a second look."""
+    indexed = _board("greenhouse:databricks", 30)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:28],
+        scraped_boards=["greenhouse:databricks"],
+        live={},
+        was_unconfirmed=None,
+    )
+    assert plan.delete == frozenset(indexed[28:]), "evicts on a single absence"
+    assert plan.unconfirmed == frozenset()
+
+
+def test_the_grace_period_is_off_by_default():
+    """Every existing caller and test omits the parameter, so the default must be the old
+    behaviour — the new one is opted into by `index sync` passing the persisted set."""
+    indexed = _board("greenhouse:databricks", 30)
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[:28],
+        scraped_boards=["greenhouse:databricks"],
+        live={},
+    )
+    assert plan.delete == frozenset(indexed[28:])
+
+
+def test_a_collapse_held_id_stays_unconfirmed_and_keeps_draining():
+    """Regression: a held id must remain eligible, not fall back to a first absence.
+
+    The collapse guard withholds ids that are already *past* the grace period. If they were left
+    out of `unconfirmed`, each would read as a fresh first absence next run, the streak would
+    reset, and the Board would evict only every other run — halving ADR-0055's drain, the exact
+    ratchet it exists to prevent. Measured before the fix: 0, 50, 0, 37, 0, 28.
+    """
+    board = "eightfold:nvidia.eightfold.ai"
+    indexed = _board(board, 200)
+    fresh = indexed[:60]  # 140 absent every scrape — a persistently truncated Board
+
+    owed: frozenset[str] = frozenset()
+    drained = []
+    for _ in range(4):
+        plan = plan_sync(
+            index_ids=indexed,
+            fresh_ids=fresh,
+            scraped_boards=[board],
+            live={},
+            was_unconfirmed=owed,
+        )
+        drained.append(len(plan.delete))
+        # the guard's own withheld ids must still be owed a look, or the next run resets them
+        assert plan.unconfirmed >= frozenset(plan.held and indexed[60:]) - plan.delete
+        owed = plan.unconfirmed
+        indexed = [i for i in indexed if i not in plan.delete]
+
+    # run 1 withholds (first absence); every run after it drains — never an alternating 0
+    assert drained[0] == 0, "first absence is always withheld"
+    assert all(n > 0 for n in drained[1:]), (
+        f"drain stalled on alternate runs: {drained}"
+    )

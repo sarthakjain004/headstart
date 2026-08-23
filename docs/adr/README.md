@@ -91,3 +91,4 @@ supersedes it and note the supersession in both.
 | [0080](0080-trends-chart-redesign.md) | Trends chart redesign — validated palette, Other bucket, hover layer, radiogroup ARIA | 2026-08-20 |
 | [0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md) | The spare-egress pool is deep, not 1–3 addresses | 2026-08-21 |
 | [0082](0082-salary-extraction-a-two-tier-cascade-no-estimate.md) | Salary extraction — a two-tier cascade, period-normalized, no estimate tier | 2026-08-21 |
+| [0083](0083-evict-only-on-a-second-consecutive-absence.md) | Evict only on a second consecutive absence | 2026-08-23 |
