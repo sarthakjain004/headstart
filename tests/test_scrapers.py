@@ -2424,7 +2424,10 @@ def test_successfactors_search_walk_reports_where_it_stopped_without_claiming_th
     found, why = scraper._search_job_urls()
 
     assert [job_id for _url, job_id in found] == ["11"]
-    assert why and "503" in why and "startrow 25" in why
+    # startrow 1, not 25: the walk steps by the page it got (one posting here). It used to step
+    # by the larger of that and a 25-row floor, which is the overshoot that silently skipped rows
+    # on every tenant paging under the floor — the offset reported here moved with that fix.
+    assert why and "503" in why and "startrow 1" in why
     assert scraper.truncated is None  # the caller decides, not the walk
 
 
@@ -2454,6 +2457,41 @@ def test_successfactors_search_walk_reports_its_page_ceiling(monkeypatch):
     assert (
         scraper.truncated is None
     )  # the caller decides which surface answers, not the walk
+
+
+def test_successfactors_search_walk_reads_every_row_of_a_small_page(monkeypatch):
+    """The walk must step by the page it actually got, not by a floor that overshoots it.
+
+    Stepping by `max(len(found), 25)` skips rows whenever a tenant's page holds
+    fewer than the floor. Measured live: `jobs.chartindustries.com` serves 10 rows a page and
+    advertises 219 postings, and the walk returned 90 — rows 0-9, 25-34, 50-59 ... with the 15
+    rows between each window never read. `jobs.bayer.com` (also 10/page) returned 241 of 601.
+    Every sampled board with a page under 25 was short and every board at or above it was whole,
+    which is the floor and nothing else. Nothing marked it: the walk runs off the end of the
+    board, sees no fresh ids, and exits by the natural-end path with `cut_short=None`, so a
+    Board missing 59% of its postings reads as complete and `index sync` evicts the difference.
+    """
+    from headstart.scrapers import successfactors as sf
+
+    page, total = (
+        10,
+        25,
+    )  # a page smaller than the old 25-row floor, as chartindustries is
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + page, total))
+        return _SearchPage(200, "".join(f'<a href="/job/x/{i}/">a</a>' for i in rows))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+    scraper = sf.SuccessFactorsScraper("jobs.example.com")
+
+    found, why = scraper._search_job_urls()
+
+    assert {i for _u, i in found} == {str(i) for i in range(total)}, (
+        f"read {len(found)} of {total} postings — the step overshot the page and skipped rows"
+    )
+    assert why is None, "it did reach the end, so there is nothing to report"
 
 
 def test_successfactors_keeps_a_whole_rss_board_off_the_truncated_list(monkeypatch):

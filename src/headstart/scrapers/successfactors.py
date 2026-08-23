@@ -12,8 +12,11 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
 2. ``/sitemap.xml`` as the **Google-jobs RSS feed** — a minority (SAP, Alstom, Voith, ...). The
    feed carries full descriptions but its generator trickles at ~30 KB/s, so it is never read
    whole up-front; these tenants list via the server-rendered ``/search/?startrow=N`` pages
-   instead (page size varies per tenant, 25–100 rows — pagination steps by the observed size
-   and stops when a page adds no new ids, which also guards against offset wrap-around).
+   instead (page size varies per tenant — measured 10–62 across sampled boards, not the 25–100
+   this once claimed. Pagination steps by the size of the page it got and stops when a page adds
+   no new ids, which also guards against offset wrap-around; it then checks what it read against
+   the total the board advertises, because running off the end and stopping two-thirds of the way
+   through otherwise look identical).
 3. The patient full RSS stream — last resort for RSS tenants whose ``/search/`` is CSB-rendered
    and lists nothing (Voith, Tetra Pak). Read with a long timeout, keeping whatever arrived if
    the tenant's own generator aborts mid-feed (Voith's dies ~2 MB in): partial beats none.
@@ -46,7 +49,6 @@ _log = log.get(__name__)
 _CLASSIFY_BYTES = 64 * 1024  # enough sitemap head to tell urlset from RSS
 _SITEMAP_CAP = 30 * 1024 * 1024  # runaway guard; largest observed urlset is ~3 MB
 _RSS_TIMEOUT = 300  # the RSS generator trickles (~30 KB/s); a full feed is minutes
-_SEARCH_STEP_FLOOR = 25  # the smallest observed /search/ page size
 _MAX_SEARCH_PAGES = 400  # loop bound: 400 pages x 25 rows covers any real board
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 
@@ -143,6 +145,7 @@ class SuccessFactorsScraper(BaseScraper):
         surface that lost the fallback race must not be attached to the list that won it
         (ADR-0053)."""
         seen: dict[str, str] = {}  # id -> url, insertion-ordered
+        total: int | None = None
         startrow = 0
         for _ in range(_MAX_SEARCH_PAGES):
             response = http.fetch(
@@ -159,12 +162,23 @@ class SuccessFactorsScraper(BaseScraper):
                     f"HTTP {response.status_code} at startrow {startrow} — "
                     f"{len(seen)} postings read before the walk stopped"
                 )
+            if total is None:
+                total = _advertised_total(response.text)
             found = _job_urls_from(response.text, self.slug)
             fresh = [(u, i) for u, i in found if i not in seen]
             if not fresh:
                 break
             seen.update({i: u for u, i in fresh})
-            startrow += max(len(found), _SEARCH_STEP_FLOOR)
+            # Step by the page we actually got. This used to take the larger of that and a
+            # 25-row floor, which overshoots every tenant whose page holds fewer rows than the
+            # floor and silently skips the difference: measured
+            # 2026-08-23, `jobs.chartindustries.com` serves 10 a page and advertises 219, and the
+            # walk read 90 — rows 0-9, 25-34, 50-59, with 15 of every 25 never fetched;
+            # `jobs.bayer.com` read 241 of 601 the same way. Every sampled board under 25 a page
+            # was short and every board at or above it was whole, so the floor was the whole
+            # cause. An empty page cannot loop here: `fresh` is then empty and the walk breaks
+            # above, which is what the floor was really guarding against.
+            startrow += len(found)
         else:
             # Ran out of pages rather than reaching the end. Eightfold and Workday both mark
             # their equivalent ceilings; this one returned None and the short list read as the
@@ -172,6 +186,16 @@ class SuccessFactorsScraper(BaseScraper):
             return [(u, i) for i, u in seen.items()], (
                 f"hit the {_MAX_SEARCH_PAGES}-page search ceiling at startrow {startrow} — "
                 f"{len(seen)} postings read, the rest unread"
+            )
+        # Reaching the natural end is not proof the walk read everything — the stride bug above
+        # exited by exactly this path for months. The board states its own total on the search
+        # page, so compare against it and report a shortfall rather than presenting a short list
+        # as the whole Board (ADR-0053). Only when the label parses: 3 of 10 sampled tenants
+        # render no pagination label at all, and their walks must stay unaffected.
+        if total is not None and len(seen) < total:
+            return [(u, i) for i, u in seen.items()], (
+                f"read {len(seen)} of the {total} postings the board advertises — "
+                "the rest were not listed"
             )
         return [(u, i) for i, u in seen.items()], None
 
@@ -342,6 +366,24 @@ def _sitemap_kind(text: str) -> str:
     if "<urlset" in text:
         return "urlset"
     return "other"
+
+
+_SEARCH_TOTAL = re.compile(
+    r"Results\s*<b>\s*[\d,]+\s*[\u2013\u2014-]\s*[\d,]+\s*</b>\s*of\s*<b>\s*([\d,]+)",
+    re.IGNORECASE,
+)
+
+
+def _advertised_total(page: str) -> int | None:
+    """How many postings the ``/search/`` page says the board holds, or None if it does not say.
+
+    The pagination label reads ``Results <b>1 – 10</b> of <b>219</b>``. It is the only figure the
+    walk can check itself against — without it, running off the end of the board and stopping
+    two-thirds of the way through look identical. Optional by design: 3 of 10 sampled tenants
+    render no label, and a board that does not state a total must not be read as short.
+    """
+    match = _SEARCH_TOTAL.search(re.sub(r"\s+", " ", page))
+    return int(match.group(1).replace(",", "")) if match else None
 
 
 def _job_urls_from(text: str, host: str) -> list[tuple[str, str]]:
