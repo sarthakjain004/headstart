@@ -23,7 +23,7 @@ greenhouse · **Method:** live-sampled every scraper via the real registered `fe
 | rippling | clean | no issues found |
 | sensehq | not sampled | zero live boards in the liveness ledger |
 | smartrecruiters | clean | no issues found |
-| successfactors | **fixed** | 29.9% null on a 1,805-job sample; some CSB tenants' job pages carry no location markup anywhere, though the URL SuccessFactors itself generated still has it |
+| successfactors | **fixed** | 35.2% null across the full live population (156,215 jobs, all 2,164 boards); some CSB tenants' job pages carry no location markup anywhere, though the URL SuccessFactors itself generated still has it |
 | teamtailor | clean | no issues found |
 | trakstar | clean | flagged "short" values are legitimate short place names ("Gurgaon") |
 | workable | clean | no issues found |
@@ -128,15 +128,14 @@ isn't.
    Every fill was a real place name across many locales — Ottawa, München, Shenzhen, Hong Kong,
    Singapore, Wien, Linz.
 3. **Full-population fill-rate + gating check, all 2,164 live boards** (job cap 200/board to bound
-   wall-clock). Real per-job detail fetches make this the slow one — reported here at **1,200 of
-   2,164 boards (55%), 80,672 jobs checked**, still running in the background at merge time
-   rather than blocked on to 100%. Reporting the sample size honestly rather than waiting
-   indefinitely: through 80,672 jobs, the fill rate held stable and climbing slightly (50.1% →
-   52.8% → 55.3% → 56.2% → 57.6% → **59.1%** at the last checkpoint) as previously-null jobs got
-   filled, and the gating invariant (the new tier can only fire when both prior tiers found
-   nothing — provable directly from the `if not fields.get("location")` guard, not just measured)
-   held with zero violations across every one of the 80,672 jobs checked so far. If the run
-   finishes before this lands, the PR thread carries the final number.
+   wall-clock; real per-job detail fetches made this the slow check — full run took several hours).
+   **Completed: 2,142 boards processed (22 errored, independent of this change — same order of
+   magnitude as the other three fixes' own error counts), 156,215 real jobs checked. Old-code
+   nulls: 54,948 (35.2% of jobs checked). New code fills 31,070 of those (56.5% of nulls) — the
+   rest genuinely have no location signal anywhere, on the page or in the slug, and correctly stay
+   None. The gating invariant (the new tier can only fire when both prior tiers found nothing —
+   provable directly from the `if not fields.get("location")` guard, not just measured) held with
+   zero violations across all 156,215 jobs. Zero regressions.**
 
 ## Fix 3 — greenhouse: un-trimmed `location.name`
 
