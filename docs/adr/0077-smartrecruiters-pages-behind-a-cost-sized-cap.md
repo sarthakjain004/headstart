@@ -3,10 +3,10 @@
 **Amended same day, same PR:** the cap this ADR derives (`_MAX_PAGES = 50`) is not currently
 enforced. Rather than pre-committing to a cap from these projected numbers, the decision was to
 ship uncapped for the initial rollout and watch what real, uncapped pipeline runs actually cost —
-tracked in [#227](https://github.com/sarthakjain004/headstart/issues/227). The cap's derivation
-below, the code (`_MAX_PAGES = 50`), and its tests all stay in place, commented rather than
-deleted, so re-enabling it is restoring two commented-out conditions in `smartrecruiters.py`, not
-re-running this analysis. See "Amendment" under Consequences.
+tracked in [#227](https://github.com/sarthakjain004/headstart/issues/227), **resolved 2026-08-23:
+stay uncapped, no static cap re-enabled.** The cap's derivation below, the code
+(`_MAX_PAGES = 50`), and its tests all stay in place, commented rather than deleted, in case a
+future measurement reverses this. See "Amendment" entries under Consequences, most recent last.
 
 **Status:** accepted · **Date:** 2026-08-20 · **Resolves:**
 [ADR-0070](0070-smartrecruiters-does-not-cap-a-board-at-100-postings.md) (which marked the
@@ -180,3 +180,42 @@ the constant removed, so restoring it needs no new analysis. Tracked in
 corpus/LFS growth, and ADR-0064 gate interaction across a few post-rollout pipeline runs, then
 decide — re-enable this cap, pick a different number, or leave it uncapped — from measured impact
 rather than from this ADR's projection a second time.
+
+## Amendment (2026-08-23, resolving #227)
+
+Three baseline runs (pre-2026-08-20T13:30:56Z merge) against five post-merge runs spread over the
+following 2.5 days, via `scripts/runlog/` and `data/state/board_cost.csv` /
+`board_priority.csv` (full numbers: `docs/pipeline/2026-08-23_smartrecruiters-uncapped-review.md`).
+
+**Decision: stay uncapped. `_MAX_PAGES` is not re-enabled, and no other static cap replaces it.**
+
+The corpus gain is real and stable: SmartRecruiters volume rose ~4.9× (48K → 237K scraped/run,
+13.3K → 45.7K tech-kept/run), plateauing by the second post-merge run rather than still climbing —
+this is steady-state re-scrape headroom recovered, not a one-time backlog draining. No shard hit
+the 60-minute CI budget in any of the eight runs sampled, and per-run wall-clock and LFS `live` size
+both track their pre-merge trend with no step change at the merge boundary.
+
+One board, `smartrecruiters:AdeebaEServicesPvtLtd`, is now the slowest board in its shard in 4 of 5
+post-merge runs (87–91% of that shard's wall-clock, 22–28 minutes) — the single-Board-floor shape
+ADR-0064 names. It was pre-sorted into this ADR's "0–1% tech, retail-shaped" bucket on the original
+probe sample, and a direct read of `board_cost.csv`/`board_priority.csv` confirms that density held
+under full scraping: 136 tech jobs out of 23,806 total (0.57%). But at 6.25 tech-jobs per minute of
+shard time it clears ADR-0064's 2.0/min floor on absolute yield, so the gate correctly leaves it
+un-gated — a low-density board can still out-yield a gated one on sheer size. This is the case a
+flat page cap cannot make: capping Adeeba's read at 5,000 postings would have cut its measured tech
+yield by the same ~79% it cuts off `dominos`'s.
+
+Meanwhile `smartrecruiters:dominos` (0.82 tech/min) and `smartrecruiters:crossmark1` (0.30 tech/min)
+both started appearing in `value gate: skipped` lines within one to two post-merge runs — genuinely
+low-yield giants, caught and excluded automatically after a single uncapped measurement pass,
+exactly the reactive half of the cap+gate design this ADR's "cost gate cannot substitute for a cap"
+section originally argued the gate alone couldn't cover for an *unmeasured* board. It still can't
+cover the first, uncosted run of a new giant — that risk stands, unchanged — but for every
+SmartRecruiters board that has now been measured at least once uncapped, the gate is doing exactly
+the job this ADR designed it to do, with no static cap in front of it.
+
+Open watch, not a blocker: a board landing this close to the ADR-0064 floor (87–91% of a shard) two
+or three doublings in size away from threatening a 60-minute makespan the way `dollartree` did
+before. If Adeeba or another IT-staffing-shaped giant grows enough to risk a budget kill, revisit
+per-board rather than reaching for a flat cap again — the measurement above is exactly why a flat
+cap is the wrong instrument for this population.
