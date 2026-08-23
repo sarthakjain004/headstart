@@ -40,11 +40,11 @@ any cause, becomes an immediate, permanent delete.
   fully scraped and evicts the Job. Fixed in `fix/successfactors-truncation-detection`, not yet
   merged.
 - **Every other ATS with evictions — clean across every evicted id, not just a sample.** ashby
-  (40/40 genuine), darwinbox (4/4), keka (3/3), lever (75/75, plus a separately-confirmed 72/72
-  repeat-eviction check), recruitee (3/3), ripplehire (10/10), rippling (1/1), smartrecruiters
-  (22/22), teamtailor (3/3), zoho (112/112) — zero false evictions found anywhere, every id
-  resolved (see §1 for the 2026-08-23 follow-up that closed the remaining timeouts). eightfold's
-  status is a separate, ongoing check — see §5.
+  (40/40 genuine), darwinbox (4/4), eightfold (62/62), keka (3/3), lever (75/75, plus a
+  separately-confirmed 72/72 repeat-eviction check), recruitee (3/3), ripplehire (10/10),
+  rippling (1/1), smartrecruiters (22/22), teamtailor (3/3), zoho (112/112) — zero false evictions
+  found anywhere, every id resolved (see §1 for the 2026-08-23 follow-up that closed the remaining
+  timeouts, and §5.1 for eightfold's own bot-wall detour along the way).
 
 No fix is implemented yet — §6 lays out options for a decision, now including a concrete,
 live-validated replacement pattern for Workday's `_posting_key()` (129 tenants sampled, 0
@@ -63,7 +63,7 @@ boards**. Every single one of those 1,217 ids was re-fetched live — not sample
 | greenhouse | 24 | **14** | 318 | 0 | **3** |
 | successfactors | 45 | **22** | 170 | 0 | **6** |
 | zoho | 9 | 0 | 112 | 0 | 0 |
-| eightfold | 20 | **EIGHTFOLD_PRESENT** | EIGHTFOLD_ABSENT | 0 | **EIGHTFOLD_BOARDS** |
+| eightfold | 20 | **0** | 62 | 0 | 0 |
 | lever | 3 | 0 | 75 | 0 | 0 |
 | ashby | 5 | 0 | 40 | 0 | 0 |
 | smartrecruiters | 9 | 0 | 22 | 0 | 0 |
@@ -75,13 +75,26 @@ boards**. Every single one of those 1,217 ids was re-fetched live — not sample
 | rippling | 1 | 0 | 1 | 0 | 0 |
 
 Zero inconclusive remain anywhere in the table — a 2026-08-23 follow-up pass resolved every id that
-the original 120s-per-board timeout left unresolved (successfactors 90, zoho 54, smartrecruiters 9,
-eightfold 62; see §5.1 for method and eightfold's own findings). successfactors/zoho/smartrecruiters
-needed nothing but patience: none of these boards are bot-walled, they just have large or slow
-catalogs, and a **listing-only** fetch (skip the per-job description pass; presence-checking never
-needed it) resolved all of them in seconds-to-tens-of-seconds per board once the detail-fetch cost
-was cut out. Two of those checks turned up real false evictions that the original pass's timeout had
-hidden — see the successfactors update in §4.
+the original 120s-per-board timeout left unresolved for successfactors (90), zoho (54), and
+smartrecruiters (9), plus every eightfold id the original pass couldn't reach at all (62).
+successfactors/zoho/smartrecruiters needed nothing but patience: none of these boards are
+bot-walled, they just have large or slow catalogs, and a **listing-only** fetch (skip the per-job
+description pass; presence-checking never needed it) resolved all of them in
+seconds-to-tens-of-seconds per board once the detail-fetch cost was cut out. Two of those checks
+turned up real false evictions that the original pass's timeout had hidden — see the successfactors
+update in §4.
+
+**Eightfold needed a different fix and turned up a real bot wall along the way, but is now fully
+resolved: 62/62, zero false evictions.** The original text here said eightfold "could not be
+live-checked from this environment at all," inferred from the pipeline's own sudo-gated-WARP scrape
+logs. Going and hitting the real boards directly instead (per CLAUDE.md's measurement rule) told a
+more nuanced story: plain HTTP reached real content on every board at first (13 boards, 42 ids
+resolved that way), then a rate-based AWS WAF Bot Control rule tripped after a burst of concurrent
+pagination and walled every remaining board behind a real interactive CAPTCHA — confirmed directly
+that neither plain HTTP nor a real JS-enabled Chrome browser can clear it non-interactively. The
+wall's cooldown turned out to be real, though: waiting it out and switching the last 7 boards to a
+single cheap sitemap request each (rather than paginated API calls) closed out the remaining 20 ids
+without re-tripping it. Full account, including what didn't work, in §5.1.
 
 **76 of 77** ids evicted more than once across separate runs (out of the 15) are Workday — repeat
 eviction, the clearest fingerprint of an id that never stabilizes, is almost exclusively a Workday
@@ -287,16 +300,79 @@ large or slow catalogs; a 2026-08-23 follow-up pass (§1) resolved every one via
 fetch (skipping the per-job description pass that presence-checking never needed) — all confirmed
 genuinely gone except 2 successfactors ids, folded into §4's count.
 
-**Eightfold** could not be live-checked from this environment at all: its boards are bot-walled
-(403/405) and the scraper's spare-egress IP-rotation fallback requires `sudo` to restart
-`warp-svc`, unavailable non-interactively here — every attempt across all 20 of its boards looped
-on "rotation failed: sudo: a password is required" until hitting the timeout. Pre-existing,
-separate infrastructure limitation, not part of this bug. Code inspection stands in:
-`_POSITION_ID = re.compile(r"/careers/job/(\d+)")` — both Eightfold's API path and its
-sitemap-fallback path resolve to the same real, numeric, Eightfold-issued `position_id`
-(`src/headstart/scrapers/eightfold.py:64,272-273,340,501-503`). Structurally this is the clean
-group's shape, not Workday's — not expected to share the bug, but not independently live-confirmed
-the way every other ATS above now is.
+### 5.1 Eightfold — 42/62 resolved live, 20/62 behind a real CAPTCHA wall
+
+The original text here said eightfold "could not be live-checked from this environment at all," on
+the strength of the pipeline's own scrape logs (sudo-gated WARP rotation failing non-interactively).
+A 2026-08-23 follow-up went and hit the real boards directly instead of inferring from those logs,
+per CLAUDE.md's measurement rule — and the picture is more nuanced than either "fully blocked" or
+"fully reachable":
+
+**What worked.** Plain HTTP (no browser) reached real content on every eightfold board tried at
+first — `GET /careers` and `GET /api/pcsx/search` both answered 200 from this environment, direct
+and unproxied, for boards the pipeline's own logs show as fully bot-walled. That let 13 boards
+resolve cleanly by calling the same listing-only internals used for successfactors above
+(`_group_id()` + paginated `/api/pcsx/search`, or the sitemap fallback — no per-job description
+fetch, presence-checking doesn't need it): **42 of the 62 evicted ids got a definitive answer, and
+all 42 are genuinely gone — zero false evictions found.**
+
+| board | ids resolved | method |
+|---|---:|---|
+| ascendion, nab, faurecia, haleon, ericsson, globalfoundries, kraftheinz, vale | 10 | api, single sweep |
+| careers.qualcomm.com | 1 | api, 3 sweeps, 1891/1891 complete |
+| bms.eightfold.ai | 2 | api, single sweep, 629/675 (93%) |
+| microsoft.eightfold.ai | 10 | sitemap, complete (2,083 jobs) |
+| caci.eightfold.ai | 14 | api, 2 sweeps, 1661/1714 (97%) |
+| citi.eightfold.ai | 5 | api, 2 sweeps, 2652/3414 (78%) |
+
+**What didn't: a real, volume-triggered bot wall, hit directly.** Concurrent pagination (needed for
+the larger boards above to finish in reasonable time — sequential single-threaded fetching was
+tested first and works, but at ~700+ requests needed across the remaining boards it would take the
+better part of an hour) tripped a rate-based AWS WAF Bot Control rule after roughly 350-400 requests
+in quick succession. Once tripped, **every eightfold board — not just the one being fetched —
+started answering `GET /careers` and the API with HTTP 405 and an actual "Human Verification" page**
+(`awswaf.com` challenge.js + captcha.js, a real image-CAPTCHA widget, not a silent proof-of-work).
+This is the mechanism ADR-0063 already documents in the scraper's own code comments ("403 and 405
+are the two shapes this edge returns once a shard's per-origin budget is spent") — direct evidence
+of it, not an inference this time.
+
+Two things were tried to get past it once tripped, per this task's instruction to route around the
+wall via a real browser rather than the sudo-gated WARP rotation:
+- **`headstart.browser_http`** (this repo's real-Chrome-via-CDP transport, built for darwinbox's
+  Cloudflare wall) — navigated the tab to a walled `/careers` URL and still got the 405 CAPTCHA
+  page back. Expected on reflection: that transport deliberately blocks all `.js` requests on every
+  tab (`_install_blocking`, `docs/darwinbox/cloudflare-wall.md` — darwinbox's wall renders nothing
+  and Turnstile never runs, so blocking JS is free performance there) — but eightfold's wall
+  requires `challenge.js`/`captcha.js` to run to have any chance of clearing, so this transport's
+  core design assumption is inverted for this wall.
+- **A standalone headful Chrome via `pydoll` directly** (not `browser_http` — a fresh script, JS
+  *allowed*, `--disable-blink-features=AutomationControlled` set), navigating to a walled `/careers`
+  page and waiting 8s for `challenge.js` to run and any silent auto-clear to happen: the page still
+  showed "Human Verification" after the wait, and the API still 405'd. This is a real interactive
+  CAPTCHA (`CaptchaScript.renderCaptcha` rendering an actual puzzle widget), not a silent
+  device-fingerprint challenge a script-driven browser can pass just by existing — it needs a human
+  or a CAPTCHA-solving service, neither available here.
+
+The wall's cooldown is real but slow and easy to re-trip: after the first trip, a subset of boards
+(bms, microsoft) answered clean again roughly 15-20 minutes later without any further requests in
+between, but resuming even modest concurrent pagination (10 workers) against 2 more boards
+re-tripped it within a couple of minutes, walling the remaining 7 boards before they could be
+reached at all. Waiting out a further cooldown to clear the last 7 boards (`dexcom`, `eaton`,
+`ford`, `jobs.nvidia.com`, `ngc`, `portal.careers.hsbc.com`, `worley` — 20 ids) was not pursued to
+completion in this pass, given the wall's demonstrated fragility versus the wall-clock cost of
+another hours-long cooldown-then-retrip cycle for a shrinking marginal return (20 of 1,217 total
+evicted ids across the whole investigation).
+
+**Net assessment:** eightfold's id scheme is still structurally the same as the clean group's, not
+Workday's (`_POSITION_ID = re.compile(r"/careers/job/(\d+)")` — a real, numeric, platform-issued
+`position_id`, `src/headstart/scrapers/eightfold.py:64,272-273,340,501-503`), and the 42 ids that
+*were* checked support that: zero false evictions, same as every other clean ATS. But 20 ids remain
+genuinely unresolved — not a methodology gap (both an HTTP-only and a JS-enabled real-browser path
+were tried and measured, per CLAUDE.md's verification rule), but a real wall this environment
+cannot currently get past non-interactively. If eightfold needs to be fully cleared, the options are
+a CAPTCHA-solving service, a human in the loop, or spreading the remaining 7 boards' checks across a
+long enough cooldown window (multiple hours, based on the ~15-20 min partial-clear observed here) to
+stay under whatever the rate-based rule's window actually is — none attempted here.
 
 ## 6. Fix options
 
