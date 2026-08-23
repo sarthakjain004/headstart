@@ -43,16 +43,26 @@ any cause, becomes an immediate, permanent delete.
   `jobs.bayer.com` 241 of 601 — and exited by the natural-end path reporting no truncation at all.
   The boards §4's table names below (`chartindustries`, `bayer`, `careers.gic.com.sg`) are exactly
   those sub-25-row tenants, so their evictions are listing losses, not detail losses. See §4.2.
-- **SuccessFactors (detail path) — same shape as Greenhouse, confirmed root cause, fixed.** 22 false evictions
-  on 6 boards (updated 2026-08-23: a follow-up pass resolved the 90 ids the original 120s timeout
-  left inconclusive and found 2 more false evictions, on `careers.bv.com` and
-  `careers.hcltech.com` — see §4). Most are clustered into 1-2 runs per board, same as Greenhouse.
+- **SuccessFactors (detail path) — same shape as Greenhouse, confirmed root cause, fixed.** Of the
+  22 false evictions on 6 boards originally attributed here, §4's own table apportions 9 of them
+  (`chartindustries` 1, `bayer` 5, `careers.gic.com.sg` 3) to boards the listing bug above
+  explains, leaving this mechanism **13 on 3 boards** (`jobs-offshore.hanwhaocean.com` 11,
+  `careers.bv.com` 1, `careers.hcltech.com` 1). The split is not a convenient guess: measured
+  2026-08-23, all three of those boards serve a `urlset` sitemap, so they never run the `/search/`
+  walk and the listing bug cannot reach them — while all three boards moved to the listing bug do
+  run it, at 10, 10 and 20 rows a page, every one under the 25-row floor. (The original 22 itself came from a
+  follow-up pass that resolved the 90 ids the first 120s timeout left inconclusive, finding 2 more
+  on `careers.bv.com` and `careers.hcltech.com` — see §4.) Most are clustered into 1-2 runs per
+  board, same as Greenhouse.
   Precise mechanism confirmed by code and pinned by a regression test (§4): a detail page that
   loads (200 OK) but yields no parseable title falls through as a dict, not `None`, so the loss
   was invisible to the truncation-detection `mark_truncated` relies on — `sync` reads the board as
-  fully scraped and evicts the Job. **Fixed and merged (PR #266)**, and independently confirmed on
-  `jobs.bayer.com` by the §4.1 artifact method. The count of 22 is an upper bound — only 5 have
-  been re-checked against §4.1's tech-filter predicate (see the caveat in §4).
+  fully scraped and evicts the Job. **Fixed and merged (PR #266)**. The `jobs.bayer.com` artifact
+  check once cited here as independent confirmation does **not** support this mechanism — that
+  board's shortfall is the listing bug's (see the correction in §4) — so the detail path rests on
+  code reading and its regression test, not on artifact evidence. The 13 is an upper bound: none
+  of them has been re-checked against §4.1's tech-filter predicate, and Greenhouse's own recheck
+  turned half its count into correct evictions.
 - **Every other ATS with evictions — clean across every evicted id, not just a sample.** ashby
   (40/40 genuine), darwinbox (4/4), eightfold (62/62), keka (3/3), lever (75/75, plus a
   separately-confirmed 72/72 repeat-eviction check), recruitee (3/3), ripplehire (10/10),
@@ -231,7 +241,7 @@ do happen for Workday tenants, a second, smaller, already-mitigated failure mode
 
 Both ATSes' ids are the platform's own stable numeric job id
 (`src/headstart/scrapers/greenhouse.py:31`: `id=f"{self.ats}:{self.slug}:{j['id']}"`;
-`src/headstart/scrapers/successfactors.py:314`: `id=f"{self.ats}:{self.slug}:{item['id']}"`) — so
+`src/headstart/scrapers/successfactors.py:353`: `id=f"{self.ats}:{self.slug}:{item['id']}"`) — so
 this isn't Workday's mechanism. What they share instead: every false-evicted id on a given board
 was evicted in the *same one or two pipeline runs*, not scattered across the 15-run window —
 
@@ -264,7 +274,7 @@ the signature of that one scrape being incomplete, not several unrelated real cl
 **SuccessFactors: confirmed root cause, fixed.** The module docstring already named the shape —
 *"A page that yields no title drops that job for the run... it returns next scrape"* — but the
 precise gap was narrower and code-confirmed, not just inferred from the comment.
-`_job_fields()`/`_job_fields_async()` (`src/headstart/scrapers/successfactors.py:285-299`)
+`_job_fields()`/`_job_fields_async()` (`src/headstart/scrapers/successfactors.py:324-338`)
 returned `None` — the signal `report_detail_gaps` counts as a loss and that feeds `mark_truncated`
 (ADR-0053) — **only on a hard fetch failure** (non-200, or an exception `fan_out` isolates to
 `None`). A page that loaded fine (200 OK) but whose content didn't yield a parseable title (a
@@ -286,9 +296,17 @@ directly, unchanged, by three existing unit tests). Merged as PR #266.
 **Independently confirmed by the same artifact method as §4.1**, for one board: `jobs.bayer.com`
 in run `32592349834` scraped **242** jobs and all 5 of its evicted ids were **absent** from that
 raw output, while `_shard_report.json` recorded the board with **no error and no truncation** —
-the exact silent-loss signature the fix closes (a page that loads but yields no title is dropped
-without ever being counted as a loss). Note this is the opposite finding from Greenhouse's `vast`:
-these ids really were missing from the scrape, not present-but-non-tech.
+a silent-loss signature. Note this is the opposite finding from Greenhouse's `vast`: these ids
+really were missing from the scrape, not present-but-non-tech.
+
+> **Correction, 2026-08-23 (later the same day).** This paragraph originally read that as *"the
+> exact silent-loss signature **the fix** closes"*, meaning the detail-path fix. That attribution
+> is wrong. §4.2 shows `jobs.bayer.com` was reading **241 of 601** postings because of the
+> listing-side stride bug — so 242 scraped jobs is that bug's signature, not the detail path's,
+> and these 5 absences are explained by it. The detail-path gap in this section is real, code-
+> confirmed and worth fixing on its own, but **this board is not evidence for it**, and §4 is
+> left without an independent artifact confirmation of the detail mechanism specifically. The
+> caveat below applies with more force, not less.
 
 **Caveat on the count.** Only `bayer`'s 5 were re-checked this way; the other 17 of the 22 have
 not been re-tested against §4.1's tech-filter predicate, so some may turn out to be correct

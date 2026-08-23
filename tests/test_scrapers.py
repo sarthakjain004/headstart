@@ -2561,20 +2561,32 @@ def test_successfactors_reads_the_total_in_any_locale(label, connector):
     assert _advertised_paging(page) == (10, 219)
 
 
-def test_successfactors_steps_by_the_size_the_board_states_not_the_links_it_renders():
-    """jobs.kaufland.com labels 15 results and renders 19 job links — 4 recurring extras that
-    are not rows of this page. Stepping by the link count skips 4 rows of every window, which is
-    the stride bug this branch fixes wearing a different disguise, so the board's own stated page
-    size wins wherever it gives one."""
-    from headstart.scrapers.successfactors import _advertised_paging
+def test_successfactors_walks_a_board_that_renders_more_links_than_it_lists(
+    monkeypatch,
+):
+    """jobs.kaufland.com labels 15 results and renders 19 job links — 4 recurring extras that are
+    not rows of this page. Stepping by the link count skips 4 rows of every window, the stride bug
+    wearing a different disguise, so the board's own stated page size wins wherever it gives one.
 
-    page = _labelled_search_page(
-        range(15), 1764, extras=["x9001", "x9002", "x9003", "x9004"]
-    )
+    Driven through the walk rather than the parser: a parser-level assertion passes just as well
+    with the stride reverted to `len(found)`, which is the bug. Here rows 15-18 go missing if it
+    is."""
+    from headstart.scrapers import successfactors as sf
 
-    assert _advertised_paging(page)[0] == 15, (
-        "the label counts results, not every /job/ link"
-    )
+    board, page, extras = 45, 15, [9001, 9002, 9003, 9004]
+
+    def _serve(method, url, **kw):
+        startrow = int(url.rsplit("startrow=", 1)[1])
+        rows = range(startrow, min(startrow + page, board))
+        return _SearchPage(200, _labelled_search_page(rows, board, extras=extras))
+
+    monkeypatch.setattr(sf.http, "fetch", _serve)
+
+    found, why = sf.SuccessFactorsScraper("jobs.example.com")._search_job_urls()
+    ids = {i for _u, i in found}
+
+    assert {str(i) for i in range(board)} <= ids, "a window's worth of rows went unread"
+    assert why is None, "the whole board was read, so nothing was cut short"
 
 
 def test_successfactors_ignores_numbers_outside_the_pagination_label():

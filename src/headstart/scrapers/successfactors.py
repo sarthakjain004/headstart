@@ -145,7 +145,12 @@ class SuccessFactorsScraper(BaseScraper):
         surface that lost the fallback race must not be attached to the list that won it
         (ADR-0053)."""
         seen: dict[str, str] = {}  # id -> url, insertion-ordered
-        paging: tuple[int, int] | None = None
+        page_size: int | None = (
+            None  # both from the board's own pagination label, when it
+        )
+        advertised_total: int | None = (
+            None  # renders one; None leaves the walk as it was
+        )
         startrow = 0
         for page_index in range(_MAX_SEARCH_PAGES):
             response = http.fetch(
@@ -164,26 +169,23 @@ class SuccessFactorsScraper(BaseScraper):
                 )
             if page_index == 0:
                 paging = _advertised_paging(response.text)
+                if paging:
+                    page_size, advertised_total = paging
             found = _job_urls_from(response.text, self.slug)
             fresh = [(u, i) for u, i in found if i not in seen]
             if not fresh:
                 break
             seen.update({i: u for u, i in fresh})
             # Step by the board's own stated page size, falling back to the links we counted.
-            # This used to take the larger of that count and a 25-row floor, which overshoots
-            # every tenant whose page holds fewer rows than the floor and silently skips the
-            # difference: measured 2026-08-23, `jobs.chartindustries.com` serves 10 a page and
-            # advertises 219, and the walk read 90 — rows 0-9, 25-34, 50-59, with 15 of every 25
-            # never fetched; `jobs.bayer.com` read 241 of 601 the same way.
-            #
-            # The link count is the better guess but still only a guess, because not every /job/
-            # link on the page is one of that page's results: `jobs.kaufland.com` labels 15
-            # results and renders 19 job links (4 recurring extras), so stepping by 19 would skip
-            # 4 rows of every window — the same bug in a new disguise, 1 of the 23 labelled
-            # boards sampled. Where the board states its page size, that is the authority.
-            # An empty page cannot loop here: `fresh` is then empty and the walk breaks above,
-            # which is what the floor was really guarding against.
-            startrow += paging[0] if paging else len(found)
+            # A fixed 25-row floor here skipped the difference on every tenant serving fewer
+            # rows than that, silently, for months (docs/pipeline/2026-08-23_false-board-
+            # eviction-root-cause.md §4.2). The link count is the better guess but still only a
+            # guess: not every /job/ link on a page is one of that page's results, and
+            # `jobs.kaufland.com` renders 19 for a stated 15, so stepping by what we counted
+            # would skip 4 rows of every window — the same bug in a new disguise. An empty page
+            # cannot loop here: `fresh` is then empty and the walk breaks above, which is what
+            # the floor was really guarding against.
+            startrow += page_size or len(found)
         else:
             # Ran out of pages rather than reaching the end. Eightfold and Workday both mark
             # their equivalent ceilings; this one returned None and the short list read as the
@@ -199,9 +201,15 @@ class SuccessFactorsScraper(BaseScraper):
         # 17 of 30 sampled tenants render one, and the rest must walk exactly as before and claim
         # nothing. So this is a second line of defence over roughly half the estate, not the fix
         # — the stride above is the fix, and it applies to every board.
-        if paging is not None and len(seen) < paging[1]:
+        #
+        # `len(seen)` counts links, so a board rendering extras beyond its results (kaufland
+        # again) compares slightly high and can mask a shortfall smaller than the extras. That is
+        # the safe direction and deliberately left alone: under-reporting costs one run's
+        # eviction, while over-reporting marks the Board unauthoritative and serves its closed
+        # postings indefinitely.
+        if advertised_total is not None and len(seen) < advertised_total:
             return [(u, i) for i, u in seen.items()], (
-                f"read {len(seen)} of the {paging[1]} postings the board advertises — "
+                f"read {len(seen)} of the {advertised_total} postings the board advertises — "
                 "the rest were not listed"
             )
         return [(u, i) for i, u in seen.items()], None
@@ -389,7 +397,7 @@ _PAGINATION_LABEL = re.compile(
 )
 _LABEL_FIGURES = re.compile(
     r"<b>\s*([\d,]+)\s*[–—-]\s*([\d,]+)\s*</b>[^<]*<b>\s*([\d,]+)\s*</b>",
-    re.IGNORECASE | re.DOTALL,
+    re.IGNORECASE,
 )
 
 
