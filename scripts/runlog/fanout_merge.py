@@ -152,6 +152,14 @@ TRENDS_ASSIGNMENTS = re.compile(
     r"\[role_trends\] assignments: (\d+) of (\d+) rows changed family \(([\d.]+)%\), "
     r"(\d+) transition rows(?: \| top: (.+))?"
 )
+# The other real, non-error shape `assignments:` takes: no PREVIOUS snapshot to diff against
+# (first run ever, or a centroid refit discarded it) — reachable on any run, not just the first.
+TRENDS_FIRST_SNAPSHOT = re.compile(
+    r"\[role_trends\] assignments: (.+) — wrote (\d+) rows to \S+; transitions start next run"
+)
+# The reassignment diff is `except Exception` (never fails the run) — a real, reachable warning
+# distinct from the three pre-run skip paths below, which abort BEFORE assigning anything.
+TRENDS_DIFF_SKIPPED = re.compile(r"\[role_trends\] assignment diff skipped: (.+)")
 # role_trends' three distinct skip paths — matched on its own line, never on a substring of the
 # whole job log, which `update_meta` can also emit "missing"/"empty" text into.
 TRENDS_SKIP_MISSING = re.compile(
@@ -350,6 +358,8 @@ def role_trends_report(text: str) -> None:
             flush=True,
         )
     asn = TRENDS_ASSIGNMENTS.search(text)
+    fs = TRENDS_FIRST_SNAPSHOT.search(text)
+    ds = TRENDS_DIFF_SKIPPED.search(text)
     if asn:
         moved, total, pct, rows, top = asn.groups()
         print(
@@ -357,6 +367,15 @@ def role_trends_report(text: str) -> None:
             f"{rows} transition rows" + (f" | top: {top}" if top else ""),
             flush=True,
         )
+    elif fs:
+        why, rows = fs.groups()
+        print(
+            f"  no previous snapshot to diff — {why}, wrote {rows} rows; "
+            "transitions start next run",
+            flush=True,
+        )
+    elif ds:
+        print(f"  reassignment diff skipped: {ds.group(1)}", flush=True)
     elif m := TRENDS_SKIP_MISSING.search(text):
         print(f"  skipped this run — missing {m.group(1)}", flush=True)
     elif TRENDS_SKIP_EMPTY.search(text):

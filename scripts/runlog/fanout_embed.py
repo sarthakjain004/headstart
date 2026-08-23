@@ -41,7 +41,7 @@ DONE = re.compile(
 )
 BATCH_FAILED = re.compile(r"batch FAILED \(([^)]+)\)")
 WEDGED = re.compile(r"(\d+) consecutive failures — allocator looks wedged")
-PLAN_SHARD = re.compile(r"\[embed_plan\] shard (\d+): (\d+) docs, ~([\d.]+) min")
+EMBED_PLAN_SHARD = re.compile(r"\[embed_plan\] shard (\d+): (\d+) docs, ~([\d.]+) min")
 
 
 class Shard(NamedTuple):
@@ -70,7 +70,7 @@ def _plan_predictions(run: Run) -> dict[int, float]:
     if not jobs:
         return {}
     text = run.log(jobs[0])
-    return {int(m[0]): float(m[2]) for m in PLAN_SHARD.findall(text)}
+    return {int(m[0]): float(m[2]) for m in EMBED_PLAN_SHARD.findall(text)}
 
 
 def report(run: Run) -> None:
