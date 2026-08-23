@@ -288,7 +288,7 @@ class SuccessFactorsScraper(BaseScraper):
         )
         if response.status_code != 200:
             return None
-        return _page_fields(response.text)
+        return _titled_fields(response.text)
 
     async def _job_fields_async(self, session: Any, url: str) -> dict[str, Any] | None:
         response = await http.fetch_async(
@@ -296,7 +296,7 @@ class SuccessFactorsScraper(BaseScraper):
         )
         if response.status_code != 200:
             return None
-        return _page_fields(response.text)
+        return _titled_fields(response.text)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
@@ -369,6 +369,19 @@ def _page_fields(page: str) -> dict[str, Any]:
     if not fields.get("posted_at"):
         fields["posted_at"] = _csb_posted_at(page)
     return fields
+
+
+def _titled_fields(page: str) -> dict[str, Any] | None:
+    """:func:`_page_fields`, but None on a page that loaded (200 OK) without a parseable title —
+    a temporary placeholder, an anti-bot interstitial served with 200, or any page shape neither
+    parser recognizes. `parse()` drops a Job with no title either way (there is nothing to keep
+    it by), so a title-less page must count as a loss the same as a fetch failure: `_page_fields`
+    alone always returns a dict, never None, so that loss was invisible to `report_detail_gaps`
+    and `mark_truncated` never fired — `index sync` read the board as fully, authoritatively
+    scraped and evicted the Job as a delisting (docs/pipeline/2026-08-23_false-board-eviction-
+    root-cause.md §4)."""
+    fields = _page_fields(page)
+    return fields if fields.get("title") else None
 
 
 def _jsonld_fields(page: str) -> dict[str, Any] | None:
