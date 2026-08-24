@@ -163,9 +163,10 @@ def build_doc(job: dict) -> str:
 # ("10 To 12 LPA" — Zoho Recruit's own salary-widget phrasing, live-verified) matched only the
 # high number as a bare, hi-less figure: a 10-12 range read as a floor of 12 with no ceiling.
 # Fixed by accepting `\bto\b` alongside `[-–]` (`git log 0d030f7..98ad53d --
-# src/headstart/salary.py` — one commit). Purely additive to the alternation inside the optional
-# hi-group, so it can only ADD a hi bound where one previously failed to match; verified against
-# 526 local LPA-bearing records with zero disagreements between old and new.
+# src/headstart/salary.py` — one commit). Not a structural guarantee — a doubled "to" ("5 to 10
+# to 20 LPA") shifts which `lo` the match captures, not just adds a `hi` — but that shape does
+# not occur in real postings: verified against 526 local LPA-bearing records with zero
+# disagreements between old and new.
 DERIVATIONS_VERSION = 7
 
 
