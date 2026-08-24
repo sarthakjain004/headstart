@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -160,6 +161,32 @@ def held_descriptions(
                 rows if keep is None else {k: v for k, v in rows.items() if k in keep}
             )
     return held
+
+
+def derivation_delta(
+    before: dict, after: dict, source_field: str, fields: tuple[str, ...]
+) -> str | None:
+    """Classify one row's derivation change: "gained", "lost", "moved", or None if unchanged.
+
+    A bare "N rows with changed derivations" cannot answer the one question a DERIVATIONS_VERSION
+    bump exists to ask — did the fix win coverage or lose it? Those are opposite outcomes behind
+    one number, and a sweep that silently strips 4,000 answers reports the same count as one that
+    adds 4,000. ADR-0066 already makes gained/lost/moved mandatory when a pattern change is
+    verified locally; this reports the same split for the sweep that applies it to production,
+    where nobody is watching a diff.
+
+    "moved" is ADR-0066's same-tier value change: an answer the cascade already produced, now a
+    different answer. It is the one a coverage total hides completely.
+
+    Pure, like `refresh_row`, so the policy stays unit-testable with no store on disk.
+    """
+    if all(before.get(f) == after.get(f) for f in fields):
+        return None
+    had = before.get(source_field) is not None
+    has = after.get(source_field) is not None
+    if had == has:
+        return "moved" if had else None
+    return "gained" if has else "lost"
 
 
 def refresh_row(
@@ -324,6 +351,8 @@ def refresh(
     detail_pass = registry.detail_pass_atses()
     tmp = meta_path.with_suffix(".jsonl.refresh")
     rows = fact_hits = derived_hits = backfilled = 0
+    exp_delta: Counter[str] = Counter()
+    sal_delta: Counter[str] = Counter()
     try:
         with (
             meta_path.open(encoding="utf-8") as src,
@@ -344,6 +373,15 @@ def refresh(
                 rows += 1
                 fact_hits += fact_changed
                 derived_hits += derived_changed
+                # `meta` is untouched (refresh_row copies), so it is the genuine "before".
+                if derived_changed:
+                    for counts, source, fields in (
+                        (exp_delta, "experience_source", DERIVED_FIELDS),
+                        (sal_delta, "salary_source", SALARY_DERIVED_FIELDS),
+                    ):
+                        move = derivation_delta(meta, row, source, fields)
+                        if move:
+                            counts[move] += 1
                 # Written once, on the rows that never had it. A row that carries the flag keeps
                 # it: it is a fact about the vector, and only a re-embed may change it.
                 #
@@ -370,6 +408,12 @@ def refresh(
         f"{derived_hits} with changed derivations, "
         f"{backfilled} given a has_description they never had"
     )
+    for label, counts in (("experience", exp_delta), ("salary", sal_delta)):
+        if counts:
+            _log.info(
+                f"{label} derivations: {counts['gained']} gained, {counts['lost']} lost, "
+                f"{counts['moved']} moved (same-tier value change) (ADR-0066)"
+            )
     if sweep and not descriptions:
         # The merge job downloads the description store on `continue-on-error`, so an empty one
         # here means the artifact was lost, not that nothing is held. Stamping now would record a

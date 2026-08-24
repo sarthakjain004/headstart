@@ -70,3 +70,32 @@ def test_context_is_silent_off_ci(monkeypatch, caplog):
     monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
     observability.context("scrape")
     assert not caplog.records
+
+
+def test_error_summary_groups_by_type_and_ats():
+    errors = {
+        "lever:a": "Timeout: slow",
+        "lever:b": "Timeout: slower",
+        "workday:c": "Timeout: slowest",
+        "greenhouse:d": "HTTPError: 500",
+    }
+    assert observability.error_summary(errors) == (
+        "3 Timeout (lever 2, workday 1); 1 HTTPError (greenhouse 1)"
+    )
+
+
+def test_error_summary_caps_atses_at_three_with_more_tail():
+    atses = ["a", "a", "a", "b", "b", "c", "d", "e"]
+    errors = {f"{ats}:{i}": "Timeout: x" for i, ats in enumerate(atses)}
+    assert observability.error_summary(errors) == "8 Timeout (a 3, b 2, c 1, +2 more)"
+
+
+def test_error_summary_no_tail_at_exactly_three_atses():
+    errors = {"a:1": "E: x", "b:1": "E: y", "c:1": "E: z"}
+    assert observability.error_summary(errors) == "3 E (a 1, b 1, c 1)"
+
+
+def test_error_summary_empty_and_colonless_message():
+    assert observability.error_summary({}) == ""
+    # a message with no ":" groups under the whole message
+    assert observability.error_summary({"x:a": "boom"}) == "1 boom (x 1)"
