@@ -750,8 +750,14 @@ def _scan_min_max_band(text: str) -> SalarySpan | None:
 # generic currency-symbol patterns above — it names neither a symbol nor a period marker those
 # patterns look for, and it's the standard way Indian tech postings state a salary (this repo's
 # scope note: "India is a strong sub-segment", CLAUDE.md). "8-12 LPA", "8 LPA", "Rs 8-12 LPA".
+#
+# The range separator accepts "to"/"To" alongside the hyphen forms — Zoho Recruit's own salary
+# widget renders a range as "{lo} To {hi} LPA" (live, verified 2026-08-24 on a real posting), and
+# the hyphen-only pattern was silently dropping the low bound: "10 To 12 LPA" matched only "12
+# LPA" as a bare, hi-less figure, misreporting a 10-12 range as a floor of 12 with no ceiling.
 _LPA = re.compile(
-    r"(?:₹|rs\.?|inr)?\s*(?P<lo>\d+(?:\.\d+)?)\s*(?:[-–]\s*(?P<hi>\d+(?:\.\d+)?))?\s*LPA\b",
+    r"(?:₹|rs\.?|inr)?\s*(?P<lo>\d+(?:\.\d+)?)\s*"
+    r"(?:(?:[-–]|\bto\b)\s*(?P<hi>\d+(?:\.\d+)?))?\s*LPA\b",
     re.IGNORECASE,
 )
 

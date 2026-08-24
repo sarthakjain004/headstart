@@ -378,6 +378,21 @@ def test_description_lpa_pattern():
     assert span.currency is None or span.currency == "INR"
 
 
+def test_description_lpa_word_separator_keeps_both_bounds():
+    # Live, verified 2026-08-24: Zoho Recruit's own salary widget renders a range as
+    # "{lo} To {hi} LPA". The hyphen-only pattern silently dropped the low bound here —
+    # "10 To 12 LPA" matched only "12 LPA" as a bare, hi-less figure, reporting a 10-12 range
+    # as a floor of 1,200,000 with no ceiling instead of the real 1,000,000-1,200,000 span.
+    span = from_description("Salary: 10 To 12 LPA")
+    assert span is not None
+    assert (span.min_annual, span.max_annual) == (1_000_000, 1_200_000)
+    assert span.currency == "INR"
+
+    # lowercase "to" must work the same way — the pattern is case-insensitive throughout.
+    span_lower = from_description("Salary: 10 to 12 LPA")
+    assert (span_lower.min_annual, span_lower.max_annual) == (1_000_000, 1_200_000)
+
+
 def test_description_bare_dollar_range_no_label():
     span = from_description(
         "What we offer: base pay of $60,000 - $75,000 annually plus bonus"
