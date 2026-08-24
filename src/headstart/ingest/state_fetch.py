@@ -181,6 +181,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
     from huggingface_hub import snapshot_download
 
     spent = 0  # seconds slept so far, against _WAIT_BUDGET
+    began = time.monotonic()  # the whole fetch, across every attempt and every wait
     for attempt in range(1, _ATTEMPTS + 1):
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
@@ -196,11 +197,24 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             absent = absent_locally(wanted, REPO_ROOT)
             if not absent:
                 # the seconds are the point: HF download variance is what makes the merge
-                # job's wall time swing 2-3x run to run (per-attempt, so a retried success
-                # reports the attempt that landed, not the waits before it)
+                # job's wall time swing 2-3x run to run. Report the retries and the waits
+                # too — a success on attempt 4 costs `spent` seconds of sleeping that the
+                # landing attempt's own duration does not include, and reporting only the
+                # latter makes a five-minute stall read as a fast fetch.
+                took = time.monotonic() - started
+                # `started` resets each attempt, so `took` is only the attempt that landed.
+                # The true cost also includes every failed attempt's own download time, which
+                # `began` is here to capture — reporting `took + spent` would omit exactly that
+                # and under-report a slow failure as a fast fetch.
+                retried = (
+                    f" on attempt {attempt} of {_ATTEMPTS}"
+                    f" (+{spent}s of it waiting, {time.monotonic() - began:.0f}s total)"
+                    if attempt > 1
+                    else ""
+                )
                 _log.info(
-                    f"fetched {len(wanted)} file(s) in "
-                    f"{time.monotonic() - started:.0f}s: {' '.join(patterns)}"
+                    f"fetched {len(wanted)} file(s) in {took:.0f}s{retried}: "
+                    f"{' '.join(patterns)}"
                 )
                 return 0
             reason = (

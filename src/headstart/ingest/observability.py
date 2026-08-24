@@ -1,6 +1,6 @@
 """What a pipeline run tells you about itself, beyond the raw log lines.
 
-Three seams, each closing a gap that made a real run undiagnosable:
+Four seams, each closing a gap that made a real run undiagnosable:
 
 **Run context.** GitHub prefixes every raw log line with an ISO timestamp, so the missing
 correlation is not the date — it is *which* run, attempt and shard a log belongs to once it
@@ -15,12 +15,20 @@ It no-ops off CI, so local runs are unaffected.
 fragment artifact the stage already uploads. :func:`write_shard` drops one JSON beside the
 fragment; the joining stage reads them back with :func:`read_shards` and can then state
 per-shard facts — predicted vs actual, retries, error classes — that no single job can see.
+
+**Error summary.** A count of failures names no cause. :func:`error_summary` groups
+``{board: "ExcType: message"}`` by exception type x ATS, so one line separates throttling from
+a dead host from a parse bug. It lives here rather than in either caller because both ends of
+the fan-out need the same shape: a shard summarising its own errors, and the join summarising
+the run's — and the run-level view is the one that turns fifteen shards each reporting "3 board
+errors" into a single named failure mode.
 """
 
 from __future__ import annotations
 
 import json
 import os
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -124,3 +132,23 @@ def percentiles(values: list[float]) -> dict[str, float]:
         "p99": round(at(0.99), 1),
         "max": round(ordered[-1], 1),
     }
+
+
+def error_summary(errors: dict[str, str]) -> str:
+    """Group board errors ("ats:slug" -> "ExcType: message") by exception type x ATS.
+
+    Renders types sorted by count desc as ``{n} {ExcType} ({ats1} n1, {ats2} n2, {ats3} n3,
+    +k more)`` (top 3 ATSes), joined by "; "."""
+    by_type: dict[str, Counter] = defaultdict(Counter)
+    for key, message in errors.items():
+        by_type[message.split(":", 1)[0]][key.split(":", 1)[0]] += 1
+    parts = []
+    for exc_type, atses in sorted(
+        by_type.items(), key=lambda item: (-sum(item[1].values()), item[0])
+    ):
+        ranked = sorted(atses.items(), key=lambda item: (-item[1], item[0]))
+        detail = ", ".join(f"{ats} {n}" for ats, n in ranked[:3])
+        if len(ranked) > 3:
+            detail += f", +{len(ranked) - 3} more"
+        parts.append(f"{sum(atses.values())} {exc_type} ({detail})")
+    return "; ".join(parts)

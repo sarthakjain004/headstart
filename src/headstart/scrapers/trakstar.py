@@ -45,9 +45,15 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+
+_log = log.get(__name__)
+
+#: The careers page renders at most this many job cards. Documented and measured in the
+#: module docstring above; a Board landing exactly on it is very likely truncated.
+_CARD_CAP = 25
 
 _ITEM = "js-careers-page-job-list-item"
 _CODE = re.compile(r'data-href="/jobs/([^/"]+)/?"')
@@ -95,6 +101,23 @@ class TrakstarScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
         codes = _codes_from(html)
+        if len(codes) >= _CARD_CAP:
+            # The known cap was visible only by running scripts/eval/trakstar_feed_compare.py by
+            # hand, so a run never said which Boards hit it and the cost could not be tracked.
+            #
+            # `>=`, not `==`: the day Trakstar raises the cap, `==` would silently stop warning on
+            # every truncated Board, which is the failure mode this line exists to prevent.
+            #
+            # Deliberately not mark_truncated: landing on the cap is strong evidence, not proof.
+            # (The docstring's 5.4% counts boards landing on exactly 25, via
+            # trakstar_feed_compare.py's own `html_job_count == 25`. That measures how often the
+            # cap is *reached*, not that reaching it always means truncation — exotel's 25-vs-45
+            # feed comparison is the evidence for that.) ADR-0053 exclusion has no drain, so a
+            # wrong call there is permanent.
+            _log.warning(
+                f"{self.board_key()}: {len(codes)} cards, at or over the {_CARD_CAP}-card render cap, so "
+                "this Board is probably short; its RSS feed carries the full list"
+            )
         # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
         # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
         # pins the multiplexing width to the gentle _DETAIL_WORKERS rather than the global

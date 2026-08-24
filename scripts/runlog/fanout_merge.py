@@ -64,6 +64,12 @@ MERGE_UPGRADE_DROP = re.compile(
     r"\[embed_merge\] upgrades: dropped (\d+) stale rows for (\d+) ids"
 )
 MERGE_UPGRADE_HOLD = re.compile(r"\[embed_merge\] upgrades: holding (\d+) id\(s\)")
+# A shortfall against the plan's own shard count. Before it existed, a missing shard showed
+# up only as a smaller-than-expected vector total — i.e. as a mystery.
+MERGE_SHORTFALL = re.compile(r"only (\d+) of (\d+) shard fragment\(s\) arrived")
+# Fires only when --expect-shards was never passed (an unknown expectation) — the healthy
+# nothing-was-planned case is a separate, differently-worded info line and must not be conflated.
+MERGE_NO_FRAGS = re.compile(r"no fragments under (\S+) — nothing to merge")
 
 # --- update_meta -----------------------------------------------------------------------------
 META_LINE = re.compile(
@@ -73,6 +79,12 @@ META_LINE = re.compile(
 META_REFRESHED = re.compile(
     r"\[update_meta\] refreshed (\d+) rows: (\d+) with changed facts, "
     r"(\d+) with changed derivations, (\d+) given a has_description"
+)
+# Which *direction* the sweep moved things (ADR-0066). "N with changed derivations" above is
+# the same number whether a version bump won 4,000 answers or stripped them.
+META_DIRECTION = re.compile(
+    r"(experience|salary) derivations: (\d+) gained, (\d+) lost, (\d+) retiered, "
+    r"(\d+) moved"
 )
 META_WATERMARK = re.compile(r"\[update_meta\] watermark -> v(\d+)")
 
@@ -85,6 +97,21 @@ COLLAPSE_GUARD = re.compile(
     r"collapse guard: withheld (\d+) evictions across (\d+) Boards"
 )
 WITHHELD_BOARD = re.compile(r"withheld (\d+) evictions on (\S+)")
+# ADR-0083's per-Job grace period — the THIRD withholding mechanism, distinct from the two
+# above (ADR-0053 scope exclusion is per-Board, ADR-0046's collapse guard is a per-Board cap).
+GRACE = re.compile(
+    r"grace period: (\d+) id\(s\) unconfirmed.*?of the (\d+) carried in, (\d+) reappeared "
+    r"in this scrape and (\d+) are unconfirmed again"
+)
+# What ADR-0053 exclusion withholds, in ROWS. The collapse guard has always reported rows,
+# which is the only reason its 267 -> 953 ratchet was ever caught; this one reported only a
+# Board count until PR #280.
+SCOPE_ROWS = re.compile(
+    r"scope exclusion keeps (\d+) eviction-candidate row\(s\) out of scope across (\d+) Board"
+)
+SCOPE_ROW_BOARD = re.compile(
+    r"(\d+) eviction-candidate row\(s\) kept out of scope on (\S+)"
+)
 SYNC_PLAN = re.compile(
     r"\[index\] plan: add (\d+) \((\d+) new listings \+ (\d+) re-embedded\), "
     r"evict (\d+) -> net ([+-]\d+) rows"
@@ -205,6 +232,21 @@ def embed_merge_report(text: str) -> None:
             "this run — check whether an embed shard failed",
             flush=True,
         )
+    sf = MERGE_SHORTFALL.search(text)
+    if sf:
+        arrived, expected = sf.groups()
+        print(
+            f"  NB: only {arrived} of {expected} shard fragment(s) arrived — the missing "
+            "shard(s)' Docs are absent from this merge until a later run re-plans them",
+            flush=True,
+        )
+    nf = MERGE_NO_FRAGS.search(text)
+    if nf:
+        print(
+            f"  NB: no fragments at all under {nf.group(1)} — unexpected unless the embed "
+            "stage produced nothing, was skipped, or its artifacts did not download",
+            flush=True,
+        )
 
 
 def update_meta_report(text: str) -> None:
@@ -233,6 +275,15 @@ def update_meta_report(text: str) -> None:
             f"{backfilled} backfilled has_description",
             flush=True,
         )
+    for label, gained, lost, retiered, moved in META_DIRECTION.findall(text):
+        print(
+            f"  {label} derivations: {gained} gained, {lost} lost, {retiered} retiered, "
+            f"{moved} moved — `lost` is the one worth alarm; `retiered` is direction-blind "
+            '(a demotion counts the same as a promotion) so read it as "go look", not a '
+            "verdict (ADR-0066)",
+            flush=True,
+        )
+
     w = META_WATERMARK.search(text)
     if w:
         print(f"  watermark -> v{w.group(1)}", flush=True)
@@ -269,6 +320,27 @@ def index_sync_report(text: str) -> None:
             print(f"    {board} — {why[:100]}", flush=True)
         if len(excluded) > 5:
             print(f"    +{len(excluded) - 5} more", flush=True)
+        sr = SCOPE_ROWS.search(text)
+        if sr:
+            rows, n_boards = sr.groups()
+            print(
+                f"  ADR-0053 is keeping {rows} eviction-candidate row(s) out of scope across "
+                f"{n_boards} Board(s) — no drain exists, so watch this ACROSS runs, not within "
+                "one; a Board short on every run never re-enters scope",
+                flush=True,
+            )
+            for count, board in SCOPE_ROW_BOARD.findall(text)[:5]:
+                print(f"    {count} kept out of scope on {board}", flush=True)
+
+    g = GRACE.search(text)
+    if g:
+        unconfirmed, carried_in, reappeared, still_waiting = g.groups()
+        print(
+            f"  ADR-0083 grace period: {unconfirmed} id(s) unconfirmed; of {carried_in} carried "
+            f"in from last run, {reappeared} reappeared (evicted nothing) and {still_waiting} "
+            "are unconfirmed again",
+            flush=True,
+        )
 
     cg = COLLAPSE_GUARD.search(text)
     if cg:

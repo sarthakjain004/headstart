@@ -112,6 +112,9 @@ _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progr
 _TOP_UNCONFIRMED_BOARDS = (
     10  # Boards named per run; enough to show concentration, not enough to bury the log
 )
+_TOP_OUT_OF_SCOPE_BOARDS = (
+    10  # Boards named when reporting what scope exclusion withholds
+)
 _MIN_KEEP_BOARDS = (
     1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
 )
@@ -419,6 +422,47 @@ def sync(args: argparse.Namespace) -> int:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
         index_ids, stamps = [], {}
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
+    if excluded:
+        # How many rows the ADR-0053 exclusion actually withholds — deliberately a second line
+        # here rather than folded into the warning above, because `index_ids` is only read from
+        # the table further down and the exclusion has to be decided before that.
+        #
+        # Why it is worth a line at all: the sibling ADR-0046 collapse guard reports a *row* count
+        # (`withheld N evictions on {board}`), and that is the only reason its ratchet was ever
+        # caught — someone could watch the number climb 267 -> 953 and ADR-0055 followed. This
+        # mechanism reports only a Board count, has no bound, and has no drain (`boards -=
+        # excluded` removes the Board outright, and `prune` cannot reach it while the Board is
+        # Live), so a Board that comes back short on every run keeps its rows out of scope forever and
+        # nothing says so. An exclusion withholding 30 rows and one withholding 30,000 log
+        # identically today.
+        # `index_ids - fresh` is `plan_sync`'s eviction-candidate set before it narrows further
+        # (it also scopes to scraped Boards, and under ADR-0083 a first absence only marks a Job
+        # Unconfirmed) — an upper bound on what the exclusion withholds, which is the honest
+        # thing to trend. Filter to it, because:
+        # counting every indexed row on an excluded Board would report the Board's *population*,
+        # and a Board that came back 99% complete would log its whole corpus while the trend
+        # tracked board size rather than the exclusion's effect.
+        #
+        # Not called "unreturned": `fresh` is corpus ∩ *embedded* (see its binding above), so a
+        # row the scrape did return but that carries no vector yet — non-English, or awaiting an
+        # embed — is in this set too. "Eviction candidate" is what the set actually is.
+        out_of_scope: Counter[str] = Counter()
+        for job_id in index_ids:
+            if job_id in fresh:
+                continue
+            board = resolve_board(job_id, live)
+            if board in excluded:
+                out_of_scope[board] += 1
+        _log.warning(
+            f"scope exclusion keeps {sum(out_of_scope.values())} eviction-candidate row(s) out of "
+            f"scope across {len(excluded)} Board(s) — ADR-0053 has no drain, so a "
+            "Board short on every run never re-enters scope; watch this number across runs, not "
+            "within one"
+        )
+        for board, count in out_of_scope.most_common(_TOP_OUT_OF_SCOPE_BOARDS):
+            _log.warning(
+                f"  {count} eviction-candidate row(s) kept out of scope on {board}"
+            )
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
     # existed keeps its frozen schema — and `apply_sync` requires rows to match it exactly. Add the

@@ -243,7 +243,24 @@ def _report_shards(reports: list[dict], lines: int, ats_files: int) -> None:
         if lost:
             _log.warning("deferred boards: " + observability.named_sample(lost))
     if errors:
-        _log.warning(f"{errors} board errors across {len(reports)} shards")
+        # Classified and with a denominator, not a bare count. "N board errors across 15 shards"
+        # cannot say whether the run met throttling, dead hosts, or a parse bug, nor on which
+        # ATS — and answering that meant opening all 15 shard logs, because each shard classifies
+        # only its own. The rate matters as much as the count: the same 400 errors against 20,000
+        # Boards and against 2,000 are different runs.
+        # `done` counts every Board a shard finished an *attempt* on: Progress.on_board appends
+        # to `seconds` before it branches on error, so errored Boards are already inside it.
+        # Adding `errors` on top would double-count them and understate the rate.
+        attempted = sum(int(r.get("done") or 0) for r in reports)
+        rate = (
+            f" ({errors / attempted:.1%} of {attempted} attempted)" if attempted else ""
+        )
+        _log.warning(
+            f"{errors} board errors across {len(reports)} shards{rate}: "
+            + observability.error_summary(
+                {k: v for r in reports for k, v in (r.get("errors") or {}).items()}
+            )
+        )
     _log.info(
         f"fan-out: {len(reports)} shards | slowest {slowest_seconds / 60:.1f} min "
         f"| worst single board {worst_board:.0f}s | retries {sum(retries.values())}"

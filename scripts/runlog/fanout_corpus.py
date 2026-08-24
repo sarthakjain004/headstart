@@ -47,6 +47,15 @@ STORE = re.compile(
     r"\[update_descriptions\] prior store: ([\d,]+) already-embedded ids"
 )
 SKIP = re.compile(r"\[update_descriptions\] skip-list: ([\d,]+) Jobs held")
+# filter_tech's two zero-output warnings — an ATS scraped this run but empty, and the corpus-wide
+# case where nothing at all reached the filter. Both used to be near-silent: the per-ATS table
+# simply omitted the row, and a zero-total run printed its header and stopped.
+TECH_EMPTY = re.compile(
+    r"(\d+) ATS\(es\) were in this run's slice but contributed zero rows: ([^—]+)—(.+)"
+)
+TECH_ZERO_TOTAL = re.compile(
+    r"no rows at all reached the tech filter -> (\S+) is empty"
+)
 
 num = lambda s: int(s.replace(",", ""))
 
@@ -67,6 +76,21 @@ def report(run: Run) -> None:
         if m[0] != "TOTAL"
     }
     desc = {m[0]: tuple(num(x) for x in m[1:]) for m in DESC.findall(text)}
+
+    te = TECH_EMPTY.search(text)
+    if te:
+        n, atses, why = te.groups()
+        print(
+            f"  {n} ATS(es) scraped but contributed zero tech rows: {atses.strip()}— "
+            f"{why.strip()}",
+            flush=True,
+        )
+    tz = TECH_ZERO_TOTAL.search(text)
+    if tz:
+        print(
+            f"  CORPUS-WIDE: nothing reached the tech filter -> {tz.group(1)} is empty",
+            flush=True,
+        )
 
     names = sorted(
         set(scraped) | set(tech) | set(desc), key=lambda a: -scraped.get(a, 0)

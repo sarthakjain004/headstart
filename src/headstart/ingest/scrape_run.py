@@ -25,7 +25,7 @@ import os
 import signal
 import sys
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 from headstart import http, log, spare_egress
@@ -172,26 +172,6 @@ def _plan_minutes(assignment: str | None, field: str) -> float | None:
         return None  # an older plan, or a non-shard run: absence is not an error
 
 
-def _error_summary(errors: dict[str, str]) -> str:
-    """Group board errors ("ats:slug" -> "ExcType: message") by exception type x ATS.
-
-    Renders types sorted by count desc as ``{n} {ExcType} ({ats1} n1, {ats2} n2, {ats3} n3,
-    +k more)`` (top 3 ATSes), joined by "; "."""
-    by_type: dict[str, Counter] = defaultdict(Counter)
-    for key, message in errors.items():
-        by_type[message.split(":", 1)[0]][key.split(":", 1)[0]] += 1
-    parts = []
-    for exc_type, atses in sorted(
-        by_type.items(), key=lambda item: (-sum(item[1].values()), item[0])
-    ):
-        ranked = sorted(atses.items(), key=lambda item: (-item[1], item[0]))
-        detail = ", ".join(f"{ats} {n}" for ats, n in ranked[:3])
-        if len(ranked) > 3:
-            detail += f", +{len(ranked) - 3} more"
-        parts.append(f"{sum(atses.values())} {exc_type} ({detail})")
-    return "; ".join(parts)
-
-
 def _raise_on_term(signum: int, frame: object) -> None:
     """SIGTERM as an exception, so the shutdown path is ordinary Python and `finally` runs."""
     raise SystemExit(f"signal {signum}")
@@ -230,7 +210,7 @@ def _report(
             _log.warning("deferred: " + observability.named_sample(deferred))
     if progress.errors:
         _log.warning(
-            f"{len(progress.errors)} board errors: {_error_summary(progress.errors)}"
+            f"{len(progress.errors)} board errors: {observability.error_summary(progress.errors)}"
         )
     if retries:
         _log.info(

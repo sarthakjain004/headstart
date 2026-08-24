@@ -81,6 +81,12 @@ class RippleHireScraper(BaseScraper):
             batch = data.get("jobVoList") or []
             jobs.extend(batch)
             page += 1
+            # Same shape as sensehq's guard, same review question: does a missing
+            # `totalJobCount` make this stop after one page? The repo's own liveness ledger
+            # answers it — `axisbank` reports 7,716 jobs, over 77 pages at this page size, which
+            # this exact guard collected. If `totalJobCount` were commonly absent that board
+            # would show ~100, not 7,716. Left unguarded for the same reason as sensehq: no live
+            # evidence of the failure mode to fix against.
             if len(batch) < _PAGE_SIZE or len(jobs) >= data.get("totalJobCount", 0):
                 break
         else:

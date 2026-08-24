@@ -422,6 +422,7 @@ jobs:
     outputs:
       count: ${{ steps.plan.outputs.count || '0' }}
       shards: ${{ steps.plan.outputs.shards || '[]' }}
+      shard_count: ${{ steps.plan.outputs.shard_count || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -497,6 +498,8 @@ jobs:
           plan = json.load(open("data/embeddings/assignments/plan.json"))
           print("count=%d" % plan["count"])
           print("shards=%s" % json.dumps(plan["shards"]))
+          # merge compares this against the fragments that actually arrive
+          print("shard_count=%d" % len(plan["shards"]))
           PY
       - name: Upload embed assignments (one file per shard)
         if: steps.plan.outputs.count != '0'
@@ -639,7 +642,12 @@ jobs:
         # rather than after: this merge appends without deduping by id, so a later eviction would
         # take out the vector it had just written. `index sync` then replaces the table row and
         # carries its `first_seen` across.
-        run: python -m headstart.ingest.embed_merge
+        # `--expect-shards` is what the embed planner fanned out, so a merge that sees fewer
+        # fragments says so instead of merging a short set quietly. `join` already publishes the
+        # matrix it planned, and `merge` already needs `join`, so this costs no new artifact.
+        run: |
+          python -m headstart.ingest.embed_merge \
+            --expect-shards "${{ needs.join.outputs.shard_count }}"
       - name: Refresh stored metadata (ADR-0061)
         # Re-observes the scrape facts on Jobs the store already holds, and re-derives the
         # experience numbers when `doc_prep.DERIVATIONS_VERSION` moves. Must run BEFORE sync —

@@ -3,7 +3,7 @@
 The scrape-shard (``--assignment``) mode (ADR-0026) must read the planner's board list verbatim
 and scrape exactly those boards into its own fragment dir — no slice selection. ``scrape_all`` is
 faked, so no network / real scraping. Also pins the run's logging helpers: ``_Progress.on_board``
-(live per-board lines) and ``_error_summary`` (the type x ATS grouping behind the warning line).
+(live per-board lines).
 """
 
 from __future__ import annotations
@@ -84,35 +84,6 @@ def test_log_board_slow_board_surfaces_at_info(caplog):
     (slow,) = caplog.records
     assert slow.levelno == logging.INFO
     assert slow.getMessage() == "slow board workday:giant/External: 9000 jobs in 1830s"
-
-
-def test_error_summary_groups_by_type_and_ats():
-    errors = {
-        "lever:a": "Timeout: slow",
-        "lever:b": "Timeout: slower",
-        "workday:c": "Timeout: slowest",
-        "greenhouse:d": "HTTPError: 500",
-    }
-    assert scrape_run._error_summary(errors) == (
-        "3 Timeout (lever 2, workday 1); 1 HTTPError (greenhouse 1)"
-    )
-
-
-def test_error_summary_caps_atses_at_three_with_more_tail():
-    atses = ["a", "a", "a", "b", "b", "c", "d", "e"]
-    errors = {f"{ats}:{i}": "Timeout: x" for i, ats in enumerate(atses)}
-    assert scrape_run._error_summary(errors) == "8 Timeout (a 3, b 2, c 1, +2 more)"
-
-
-def test_error_summary_no_tail_at_exactly_three_atses():
-    errors = {"a:1": "E: x", "b:1": "E: y", "c:1": "E: z"}
-    assert scrape_run._error_summary(errors) == "3 E (a 1, b 1, c 1)"
-
-
-def test_error_summary_empty_and_colonless_message():
-    assert scrape_run._error_summary({}) == ""
-    # a message with no ":" groups under the whole message
-    assert scrape_run._error_summary({"x:a": "boom"}) == "1 boom (x 1)"
 
 
 def test_progress_tracks_what_is_left_undone():

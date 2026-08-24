@@ -130,11 +130,30 @@ def failures(args: argparse.Namespace) -> int:
     reports = observability.read_shards(args.fragments)
     gone: dict[str, str] = {}
     alive: set[str] = set()
+    # `is_gone` matches a literal "HTTP Error 404" in the reason text (board_failures._GONE), a
+    # convention every scraper has to emit by hand — so a scraper that phrases its 404 any other
+    # way silently never earns a strike, and its Board ages forever. `len(gone)` alone cannot
+    # distinguish "nothing 404'd this run" from "the matcher no longer recognises how this
+    # scraper says 404". Counting what was examined, and naming the shapes that did NOT match,
+    # is what makes that visible: a real example is `browser_http.BrowserHTTPError`, recorded by
+    # `harvest` as "BrowserHTTPError: HTTP 404: ..." — a genuine 404 that never matches the
+    # pattern, because `_GONE` looks for "HTTP Error 404" and this says "HTTP 404".
+    examined = 0
+    unmatched: Counter[str] = Counter()
     for report in reports:
         for key, reason in (report.get("errors") or {}).items():
             board = board_failures.board_key_of(key)
-            if board is not None and board_failures.is_gone(str(reason)):
+            if board is None:
+                continue
+            examined += 1
+            if board_failures.is_gone(str(reason)):
                 gone[board] = str(reason)
+            else:
+                # The class, not the message: messages carry per-board detail (hosts, ids) and
+                # would never group. `ats` alongside it because a matcher gap is usually one
+                # scraper's phrasing, not a global one.
+                head = str(reason).split(":", 1)[0].strip()[:60] or "unknown"
+                unmatched[f"{board.split(':', 1)[0]} {head}"] += 1
         # boards_ok carries the zero-job successes the corpus can't: alive-and-empty must
         # clear a streak, or a board that empties after a few 404s stays one strike from
         # quarantine forever
@@ -156,10 +175,19 @@ def failures(args: argparse.Namespace) -> int:
     quarantined = board_failures.quarantined(rows)
     cleared = sum(1 for b in prev if b not in rows)
     _log.info(
-        f"failures: {len(gone)} board(s) reported gone (404/410) across {len(reports)} shard(s) | "
-        f"{len(rows)} ledger rows ({cleared} cleared by a successful scrape) | "
-        f"{len(quarantined)} at/over {board_failures.QUARANTINE_AT} strikes -> {args.ledger}"
+        f"failures: {len(gone)} of {examined} board error(s) read as gone (404/410) across "
+        f"{len(reports)} shard(s) | {len(rows)} ledger rows ({cleared} cleared by a successful "
+        f"scrape) | {len(quarantined)} at/over {board_failures.QUARANTINE_AT} strikes -> "
+        f"{args.ledger}"
     )
+    if unmatched:
+        # Info, not warning: most of these are ordinary live failures (timeouts, 429s) that
+        # *should* not be gone-strikes. It is the shape of the list that diagnoses a matcher gap —
+        # a 404-ish class sitting here run after run is the signal, not the volume.
+        _log.info(
+            f"  {sum(unmatched.values())} error(s) did not read as gone; top classes: "
+            + ", ".join(f"{cls} x{n}" for cls, n in unmatched.most_common(5))
+        )
     for board in sorted(quarantined)[:20]:
         row = rows[board]
         _log.info(f"  quarantined  {board} ({row.strikes} strikes, {row.last_reason})")

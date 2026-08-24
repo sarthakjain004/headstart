@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -160,6 +161,44 @@ def held_descriptions(
                 rows if keep is None else {k: v for k, v in rows.items() if k in keep}
             )
     return held
+
+
+def derivation_delta(
+    before: dict, after: dict, source_field: str, fields: tuple[str, ...]
+) -> str | None:
+    """Classify a row's derivation change: "gained", "lost", "retiered", "moved", or None.
+
+    A bare "N rows with changed derivations" cannot answer the one question a DERIVATIONS_VERSION
+    bump exists to ask — did the fix win coverage or lose it? Those are opposite outcomes behind
+    one number, and a sweep that silently strips 4,000 answers reports the same count as one that
+    adds 4,000. ADR-0066 already makes this split mandatory when a pattern change is verified
+    locally; this reports it for the sweep that applies the change to production, where nobody is
+    watching a diff.
+
+    ADR-0066 asks for old-tier -> new-tier bucketing **and** same-tier value changes, and the
+    source field *is* the tier (experience: "field" / "regex" / "seniority"; salary has no
+    seniority tier), so those are two outcomes and not one. "retiered" is an answer that changed
+    which tier produced it, and it is deliberately **direction-blind**: a regex pattern winning a
+    row that fell through to a seniority guess and a regex pattern losing one to that guess both
+    land here. Coverage is flat either way, so neither is gained/lost — read the bucket as "this
+    many answers changed provenance, go look", not as a quality verdict. "moved" is the strict
+    same-tier value change, the one a coverage total hides completely.
+
+    Pure, like `refresh_row`, so the policy stays unit-testable with no store on disk.
+    """
+    if all(before.get(f) == after.get(f) for f in fields):
+        return None
+    old, new = before.get(source_field), after.get(source_field)
+    if (old is None) != (new is None):
+        return "gained" if new is not None else "lost"
+    if old != new:
+        return "retiered"
+    # Same tier on both sides. `old is None` here means a row whose stored fields disagree with
+    # its own source — a value with no tier, which this code never writes (a null span nulls
+    # every field together) but a pre-ADR-0061 row can carry. Its fields differed, so the sweep
+    # just cleared that value: an answer went away, which is "lost". Returning None instead would
+    # drop it from every bucket and understate exactly the direction most worth seeing.
+    return "moved" if old is not None else "lost"
 
 
 def refresh_row(
@@ -324,6 +363,8 @@ def refresh(
     detail_pass = registry.detail_pass_atses()
     tmp = meta_path.with_suffix(".jsonl.refresh")
     rows = fact_hits = derived_hits = backfilled = 0
+    exp_delta: Counter[str] = Counter()
+    sal_delta: Counter[str] = Counter()
     try:
         with (
             meta_path.open(encoding="utf-8") as src,
@@ -344,6 +385,15 @@ def refresh(
                 rows += 1
                 fact_hits += fact_changed
                 derived_hits += derived_changed
+                # `meta` is untouched (refresh_row copies), so it is the genuine "before".
+                if derived_changed:
+                    for counts, source, fields in (
+                        (exp_delta, "experience_source", DERIVED_FIELDS),
+                        (sal_delta, "salary_source", SALARY_DERIVED_FIELDS),
+                    ):
+                        move = derivation_delta(meta, row, source, fields)
+                        if move:
+                            counts[move] += 1
                 # Written once, on the rows that never had it. A row that carries the flag keeps
                 # it: it is a fact about the vector, and only a re-embed may change it.
                 #
@@ -370,6 +420,13 @@ def refresh(
         f"{derived_hits} with changed derivations, "
         f"{backfilled} given a has_description they never had"
     )
+    for label, counts in (("experience", exp_delta), ("salary", sal_delta)):
+        if counts:
+            _log.info(
+                f"{label} derivations: {counts['gained']} gained, {counts['lost']} lost, "
+                f"{counts['retiered']} retiered, {counts['moved']} moved (same tier, new "
+                f"value) (ADR-0066)"
+            )
     if sweep and not descriptions:
         # The merge job downloads the description store on `continue-on-error`, so an empty one
         # here means the artifact was lost, not that nothing is held. Stamping now would record a
