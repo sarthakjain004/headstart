@@ -158,7 +158,15 @@ def build_doc(job: dict) -> str:
 # accidentally blind to the second mention), 153 changed (147 currency-only corrections, 6 real
 # value shifts, all the same already-established multi-region mechanism) — see
 # docs/salary-extraction/full-corpus-audit.md for the complete accounting.
-DERIVATIONS_VERSION = 6
+#
+# v7: `_LPA`'s range separator only recognized the hyphen forms, so a word-separated range
+# ("10 To 12 LPA" — Zoho Recruit's own salary-widget phrasing, live-verified) matched only the
+# high number as a bare, hi-less figure: a 10-12 range read as a floor of 12 with no ceiling.
+# Fixed by accepting `\bto\b` alongside `[-–]` (`git log 0d030f7..98ad53d --
+# src/headstart/salary.py` — one commit). Purely additive to the alternation inside the optional
+# hi-group, so it can only ADD a hi bound where one previously failed to match; verified against
+# 526 local LPA-bearing records with zero disagreements between old and new.
+DERIVATIONS_VERSION = 7
 
 
 def to_meta(job: dict) -> dict:
