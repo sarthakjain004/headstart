@@ -80,30 +80,33 @@ class ZohoScraper(BaseScraper):
         return f"https://{self.slug}/jobs/Careers"
 
     def fetch_raw(self) -> Any:
-        # The careers page carries the whole list, but some tenants configure the careers
-        # site without the Job_Description column (28 of 71 in the corpus) — for those,
-        # each job's detail page does carry it, so fill the gap with a low-concurrency
-        # detail pass.
+        # Every published, non-locked job gets a detail-page fetch — not just the ones whose
+        # listing lacks Job_Description. This used to be gated on a missing description (some
+        # tenants configure the careers site without that column, 28 of 71 in the corpus), but
+        # Salary/Currency live ONLY on the detail page (`_description_of`'s docstring), never on
+        # the listing, so gating on description presence meant the ~60% of jobs whose listing
+        # already carries a description (live-measured 2026-08-24: 150 tenants sampled, 130
+        # successfully probed) never had
+        # their detail page fetched at all — Salary was structurally invisible for them,
+        # independent of any extraction bug. User decision 2026-08-24: pay the bandwidth cost
+        # (detail pages are ~1.7MB each) for full Salary coverage rather than leave the gap.
         page = self._get()
-        empty = [
+        ids = [
             r["id"]
             for r in self._records(page)
-            if r.get("id")
-            and not r.get("Job_Description")
-            and not r.get("Is_Locked")
-            and r.get("Publish", True)
+            if r.get("id") and not r.get("Is_Locked") and r.get("Publish", True)
         ]
         details = {}
-        if empty:
+        if ids:
             # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
             if self.async_fanout_enabled():
-                fetched = self.fan_out_async(empty, self._detail_description_async)
+                fetched = self.fan_out_async(ids, self._detail_description_async)
             else:
                 fetched = self.fan_out(
-                    empty, self._detail_description, workers=_DETAIL_WORKERS
+                    ids, self._detail_description, workers=_DETAIL_WORKERS
                 )
-            self.report_detail_gaps(fetched, "description backfills")
-            details = {jid: d for jid, d in zip(empty, fetched) if d}
+            self.report_detail_gaps(fetched, "detail pages")
+            details = {jid: d for jid, d in zip(ids, fetched) if d}
         return {"page": page, "details": details}
 
     @staticmethod
@@ -211,8 +214,11 @@ class ZohoScraper(BaseScraper):
                     url=f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite",
                     posted_at=r.get("Date_Opened") or None,
                     scraped_at=scraped_at,
+                    # The detail page wins when it landed: `_description_of` appends Salary/
+                    # Currency to it, so it is a strict superset of the listing's bare
+                    # Job_Description. Falls back to the listing only if the detail fetch failed.
                     description=html_to_text(
-                        r.get("Job_Description") or details.get(jid)
+                        details.get(jid) or r.get("Job_Description")
                     ),
                     experience=r.get("Work_Experience"),
                     employment_type=r.get("Job_Type"),

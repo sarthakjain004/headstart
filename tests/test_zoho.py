@@ -102,7 +102,9 @@ def test_zoho_fetch_raw_detail_pass(monkeypatch):
     monkeypatch.setenv(
         "HEADSTART_ASYNC_FANOUT", "0"
     )  # keep the detail pass on the sync path
-    # only the published, description-less record triggers a detail fetch
+    # Every published, non-locked record gets a detail fetch, not just description-less ones —
+    # Salary/Currency live ONLY on the detail page, so gating on a listing-level description
+    # meant most jobs never had it fetched at all (user decision 2026-08-24).
     records = [
         {"id": "1", "Posting_Title": "Backend Engineer"},
         {"id": "2", "Posting_Title": "Filled", "Job_Description": "<p>x</p>"},
@@ -120,7 +122,16 @@ def test_zoho_fetch_raw_detail_pass(monkeypatch):
     s = get_scraper("zoho", "acme.zohorecruit.com")
     monkeypatch.setattr(type(s), "_get", _get)
     raw = s.fetch_raw()
-    assert fetched == ["https://acme.zohorecruit.com/jobs/Careers/1"]
-    assert raw["details"] == {"1": "<div>4+ years of Go</div>"}
+    assert fetched == [
+        "https://acme.zohorecruit.com/jobs/Careers/1",
+        "https://acme.zohorecruit.com/jobs/Careers/2",
+    ]  # not "3" — locked
+    assert raw["details"] == {
+        "1": "<div>4+ years of Go</div>",
+        "2": "<div>4+ years of Go</div>",
+    }
     jobs = s.parse(raw, SCRAPED_AT)
+    # The detail-page text wins over the listing's own Job_Description for both jobs — it is a
+    # strict superset (the same text plus any Salary/Currency the detail page carries).
     assert jobs[0].description == "4+ years of Go"
+    assert jobs[1].description == "4+ years of Go"

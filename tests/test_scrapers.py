@@ -3175,6 +3175,92 @@ def test_zoho_detail_description_appends_salary_and_currency(record, expected):
     assert ZohoScraper._description_of(page) == expected
 
 
+def _zoho_listing(records):
+    import html as _html
+
+    return (
+        f'<input type="hidden" value="{_html.escape(json.dumps(records))}" id="jobs">'
+    )
+
+
+def test_zoho_fetches_every_job_detail_not_just_empty_descriptions(monkeypatch):
+    """Salary/Currency live ONLY on the detail page, never the listing — gating the detail
+    fetch on a missing listing description meant the majority of jobs (whose listing already
+    carries a description) never had their detail page fetched at all, so Salary was invisible
+    for them regardless of any extraction fix. User decision 2026-08-24: fetch every job's
+    detail page, accepting the bandwidth cost, for full Salary coverage."""
+    records = [
+        {
+            "id": "1",
+            "Job_Description": "Has a description already.",
+            "Is_Locked": False,
+        },
+        {"id": "2", "Is_Locked": False},  # the old gate's only trigger case
+        {
+            "id": "3",
+            "Job_Description": "Also has one.",
+            "Is_Locked": True,
+        },  # excluded: locked
+        {
+            "id": "4",
+            "Job_Description": "Also has one.",
+            "Publish": False,
+        },  # excluded: unpublished
+    ]
+    s = get_scraper("zoho", "acme.zohorecruit.in", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _zoho_listing(records))
+    monkeypatch.setattr(s, "async_fanout_enabled", lambda: False)
+    fetched_ids = []
+
+    def fake_fan_out(items, fn, workers=None):
+        fetched_ids.extend(items)
+        return [None] * len(items)
+
+    monkeypatch.setattr(s, "fan_out", fake_fan_out)
+    s.fetch_raw()
+
+    assert sorted(fetched_ids) == ["1", "2"]  # not "3" (locked) or "4" (unpublished)
+
+
+def test_zoho_parse_prefers_the_salary_enriched_detail_description(monkeypatch):
+    """The detail page is a strict superset of the listing's bare Job_Description — it carries
+    the same text PLUS Salary/Currency appended. Preferring the listing (the old precedence)
+    would silently discard the Salary text a detail fetch just paid bandwidth to collect."""
+    records = [
+        {"id": "1", "Job_Description": "Plain listing text.", "Is_Locked": False}
+    ]
+    s = get_scraper("zoho", "acme.zohorecruit.in", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _zoho_listing(records))
+    monkeypatch.setattr(s, "async_fanout_enabled", lambda: False)
+    monkeypatch.setattr(
+        s,
+        "fan_out",
+        lambda items, fn, workers=None: ["Plain listing text. Salary: 10-12 LPA"],
+    )
+
+    raw = s.fetch_raw()
+    jobs = s.parse(raw, SCRAPED_AT)
+
+    assert jobs[0].description == "Plain listing text. Salary: 10-12 LPA"
+
+
+def test_zoho_parse_falls_back_to_the_listing_if_the_detail_fetch_failed(monkeypatch):
+    records = [
+        {"id": "1", "Job_Description": "Plain listing text.", "Is_Locked": False}
+    ]
+    s = get_scraper("zoho", "acme.zohorecruit.in", "Acme")
+    monkeypatch.setattr(type(s), "_get", lambda self, url=None: _zoho_listing(records))
+    monkeypatch.setattr(type(s), "async_fanout_enabled", lambda self: False)
+    monkeypatch.setattr(
+        type(s), "fan_out", staticmethod(lambda items, fn, workers=None: [None])
+    )
+
+    raw = s.fetch_raw()
+    jobs = s.parse(raw, SCRAPED_AT)
+
+    assert jobs[0].description == "Plain listing text."
+
+
 def test_zoho_slug_from_keeps_only_the_host():
     """Same shape as the personio bug: `url()` appends `/jobs/Careers`, so a stored job deep link
     would put that suffix inside the path or query and fetch something that is not the board.

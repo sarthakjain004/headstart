@@ -443,9 +443,23 @@ overlooked.
 - **A bare hourly figure occasionally extracted from a "tip" sub-clause instead of the wage** — one
   confirmed real occurrence across the full 5-ATS corpus (see Methods tried); below this
   initiative's yield bar for a dedicated guard.
-- **Parenthesis or em-dash between a label and its connector**, and **expanding the detail-fetch
-  pass to every job** (Option B, see Methods tried) — both real, both measured, both deliberately
-  left for a human call rather than decided silently.
+- **Parenthesis or em-dash between a label and its connector** — real, measured, deliberately left
+  for a human call rather than decided silently.
+- ~~**Expanding the detail-fetch pass to every job**~~ **Resolved 2026-08-24.** A user-reported
+  live posting (`symbtechnologies.zohorecruit.com`, job `667516000005381058`) surfaced the same
+  gap this doc already flagged: its listing carried a description, so `fetch_raw()` never fetched
+  its detail page, and its `Salary: 10 To 12 LPA` field was invisible regardless of any extraction
+  fix. Independently re-measured against a fresh sample (150 tenants drawn, 130 successfully
+  probed — not this doc's 71-tenant scraper-docstring figure): **59.9% of jobs already have a
+  listing-level description** — the
+  majority, not the minority — so Salary was structurally unreachable for most zoho jobs. Put to
+  the user with the bandwidth cost stated plainly (`fetch_raw()` now details every published,
+  non-locked job — roughly 2.5x the detail-page volume, ~1.7MB each, ~110,073 live jobs); they
+  chose full coverage over the cheaper options. `zoho.py`'s `empty` filter is gone, and `parse()`
+  now prefers the detail-fetched (Salary-enriched) description over the bare listing one whenever
+  both exist, since the detail version is a strict superset. Live-verified end to end on the
+  reported job: `fetch()` now returns "Salary: 10 To 12 LPA" in its description, and
+  `salary.extract()` reads it as `min_annual=1,000,000, max_annual=1,200,000, currency=INR`.
 - **A hard ~750-job ceiling on the public career-site widget's single listing response** (see
   "Post-merge correction" above for the full investigation) — affects 3/3,000 sampled boards
   (0.1%), all high-volume staffing agencies, silently and unmeasurably beyond the ceiling. Closing
