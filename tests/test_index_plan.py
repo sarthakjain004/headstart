@@ -690,3 +690,44 @@ def test_a_collapse_held_id_stays_unconfirmed_and_keeps_draining():
     assert all(n > 0 for n in drained[1:]), (
         f"drain stalled on alternate runs: {drained}"
     )
+
+
+def test_grace_period_reappeared_and_drained_counters():
+    """The three numbers `sync` logs about the grace period must mean what they say.
+
+    A bare held-count cannot distinguish a working grace period from a queue quietly growing —
+    the shape ADR-0055 had to fix on the collapse guard — so the log reports *reappeared* (the
+    absence was transient, which is the case ADR-0083 exists for) and *evicted-on-second-miss*
+    alongside it. Both are derived in `sync` rather than carried on `SyncPlan`, so this pins the
+    derivation against real `plan_sync` output instead of the arithmetic being re-invented.
+    """
+    board = "ats:B"
+    indexed = ["ats:B:kept", "ats:B:first_miss", "ats:B:second_miss"]
+    was_unconfirmed = frozenset({"ats:B:second_miss"})  # already missed once
+
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids={"ats:B:kept"},
+        scraped_boards=[board],
+        live={},
+        was_unconfirmed=was_unconfirmed,
+    )
+
+    # a second consecutive absence evicts; a first one is only held
+    assert plan.delete == frozenset({"ats:B:second_miss"})
+    assert plan.unconfirmed == frozenset({"ats:B:first_miss"})
+
+    reappeared = len(was_unconfirmed - plan.unconfirmed - plan.delete)
+    drained = len(was_unconfirmed & plan.delete)
+    assert (reappeared, drained) == (0, 1)
+
+    # and when the carried-in id comes back, it counts as reappeared rather than vanishing
+    back = plan_sync(
+        index_ids=indexed,
+        fresh_ids={"ats:B:kept", "ats:B:second_miss"},
+        scraped_boards=[board],
+        live={},
+        was_unconfirmed=was_unconfirmed,
+    )
+    assert "ats:B:second_miss" not in back.delete
+    assert len(was_unconfirmed - back.unconfirmed - back.delete) == 1

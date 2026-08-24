@@ -347,6 +347,34 @@ name and whether it's live. A raw `wc -l` or per-row count on a liveness CSV ove
 count by however many duplicates exist; go through `load_active_companies()` (or an equivalent
 `board_key()`-grouped count) for anything that needs to be accurate, not the CSV directly.
 
+### Reading eviction, flapping, or "we deleted a live job" data
+
+**An id absent from one scrape is NOT evicted.** Since ADR-0083 (live 2026-08-23), a missing id
+is recorded as **Unconfirmed** (`data/state/unconfirmed_ids.txt`) and evicted only if the *next*
+scrape of that Board misses it too. Measured across 10 runs on 2026-08-24: 425–1,176 ids held per
+run against 129–605 evicted, so this is doing real work, not a no-op.
+
+This changes what the numbers *mean*, not just their size. A "flapped" row was missed by **two
+consecutive scrapes** and then seen again — a far stronger signal than one unlucky crawl — and
+any claim of the form "a single transient miss deletes a live job" has been false since
+2026-08-23. Before writing anything about evictions, confirm the runs you read post-date it
+(`git merge-base --is-ancestor ee97ebc <run-sha>`).
+
+Three different mechanisms withhold evictions, are reported separately on purpose, and must not
+be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries are authoritative:
+- **Unconfirmed** (ADR-0083) — per-*Job*; one absence isn't enough. The unit is *scrapes of that
+  Board*, never runs: only ~20k of ~66k live Boards are in any run's slice, and a Board the run
+  did not read is no evidence, so its ids keep the state they had.
+- **held** (ADR-0046 collapse guard) — per-*Board* cap; a Board may not shed more than a quarter
+  of its rows at once. Bounded drain added by ADR-0055.
+- **scope-excluded** (ADR-0053) — the Board's scrape was not authoritative, so it leaves the
+  eviction scope entirely that run. Note this one has **no bound and no drain**: a Board that is
+  short on every run never re-enters scope, and its closed postings are served indefinitely
+  (measured: 105 dead rows on `careers.qualcomm.com`, oldest 22 days —
+  `docs/eightfold/no-client-side-fix-for-replica-instability.md`). Unlike the collapse guard it
+  reports only a Board count, never a row count, so the accretion is invisible unless you go
+  looking for it.
+
 ### Verifying experience-extraction coverage
 Whenever you change `experience.py`'s patterns, gauge the effect with
 `scripts/enrich/experience_coverage.py`: it runs `extract(field, description, title)` over
