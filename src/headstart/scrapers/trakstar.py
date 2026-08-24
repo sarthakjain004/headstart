@@ -109,10 +109,11 @@ class TrakstarScraper(BaseScraper):
             # every truncated Board, which is the failure mode this line exists to prevent.
             #
             # Deliberately not mark_truncated: landing on the cap is strong evidence, not proof.
-            # (The docstring's 5.4% is the *frequency* of boards sitting exactly on 25, measured
-            # with this same predicate — it is not independent evidence that each is truncated;
-            # exotel's 25-vs-45 feed comparison is.) ADR-0053 exclusion has no drain, so a wrong
-            # call there is permanent.
+            # (The docstring's 5.4% counts boards landing on exactly 25, via
+            # trakstar_feed_compare.py's own `html_job_count == 25`. That measures how often the
+            # cap is *reached*, not that reaching it always means truncation — exotel's 25-vs-45
+            # feed comparison is the evidence for that.) ADR-0053 exclusion has no drain, so a
+            # wrong call there is permanent.
             _log.warning(
                 f"{self.board_key()}: {len(codes)} cards, at or over the {_CARD_CAP}-card render cap, so "
                 "this Board is probably short; its RSS feed carries the full list"

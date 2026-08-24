@@ -183,9 +183,11 @@ def main() -> int:
     ap.add_argument(
         "--expect-shards",
         type=int,
-        default=0,
+        default=None,
         help="how many shard fragments the embed planner fanned out; a shortfall is warned "
-        "about rather than merged silently. 0 (default) disables the check",
+        "about rather than merged silently. Pass 0 to say the planner fanned out nothing, "
+        "which makes an empty fragment set the expected outcome; omit it (the default) when "
+        "the count is simply unknown, e.g. a local run",
     )
     args = ap.parse_args()
 
@@ -247,10 +249,14 @@ def main() -> int:
             "shard(s)' Docs are not in this merge and will not be indexed until a later run "
             "re-plans them"
         )
+    elif args.expect_shards == 0 and not frags:
+        # The planner fanned out nothing, so no fragments is the *correct* outcome — every run
+        # with no new Docs lands here. Deliberately info: a warning that fires on healthy runs
+        # trains the reader to skip it, which costs more than the line ever buys.
+        _log.info("nothing was planned for embedding this run — no fragments to merge")
     elif not frags:
-        # Distinct from the shortfall above: with no expectation passed we cannot call it a
-        # shortfall, but zero fragments is never a healthy merge and used to read as `merged 0
-        # new vectors` at info.
+        # Only when the expectation is unknown (the flag was omitted). Zero fragments is then
+        # unexplained rather than expected, and it used to read as `merged 0 new vectors` at info.
         _log.warning(
             f"no fragments under {frag_root} — nothing to merge; the embed stage produced "
             "nothing, was skipped, or its artifacts did not download"

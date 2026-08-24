@@ -135,8 +135,9 @@ def failures(args: argparse.Namespace) -> int:
     # way silently never earns a strike, and its Board ages forever. `len(gone)` alone cannot
     # distinguish "nothing 404'd this run" from "the matcher no longer recognises how this
     # scraper says 404". Counting what was examined, and naming the shapes that did NOT match,
-    # is what makes that visible: a real example is `browser_http.BrowserHTTPError`, which
-    # stringifies as "(404, '...')" and never matches the pattern.
+    # is what makes that visible: a real example is `browser_http.BrowserHTTPError`, recorded by
+    # `harvest` as "BrowserHTTPError: HTTP 404: ..." — a genuine 404 that never matches the
+    # pattern, because `_GONE` looks for "HTTP Error 404" and this says "HTTP 404".
     examined = 0
     unmatched: Counter[str] = Counter()
     for report in reports:
