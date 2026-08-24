@@ -755,8 +755,36 @@ def test_grace_period_counts_exclude_an_id_whose_board_left_the_ledger():
     assert grace_period_counts(was_unconfirmed, fresh, plan) == (0, 0)
 
 
+def test_grace_period_still_waiting_counts_a_collapse_guard_cap_too():
+    """`still_waiting` has TWO causes, and the log line must not claim only one.
+
+    An earlier wording said these ids' "Board was not scraped this run". That is wrong for the
+    second cause: a Board that *was* scraped, whose id was absent again, but whose evictions the
+    ADR-0046 collapse guard capped before reaching it. Both land in
+    `was_unconfirmed & plan.unconfirmed`, and this is the one worth watching — it is the shape
+    ADR-0055 had to unwind for the guard's own `held`.
+    """
+    board = "ats:BIG"
+    indexed = _board(board, 200)
+    was_unconfirmed = frozenset(indexed[60:])  # 140 carried in, all absent again
+    fresh = set(indexed[:60])
+
+    plan = plan_sync(
+        index_ids=indexed,
+        fresh_ids=fresh,
+        scraped_boards=[board],  # the Board WAS scraped
+        live={},
+        was_unconfirmed=was_unconfirmed,
+    )
+    assert plan.held, "the guard must cap this Board for the test to mean anything"
+    reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)
+    assert reappeared == 0
+    # every one of them is on a scraped Board — so "not scraped this run" would be a false claim
+    assert still_waiting == len(was_unconfirmed & plan.unconfirmed) == 90
+
+
 def test_grace_period_still_waiting_counts_an_unscraped_board():
-    """The accretion signal: carried-in ids whose Board this run did not read."""
+    """The other cause of `still_waiting`: carried-in ids whose Board this run did not read."""
     was_unconfirmed = frozenset({"ats:SKIPPED:x1"})
     plan = plan_sync(
         index_ids=["ats:SKIPPED:x1", "ats:LIVE:y1"],

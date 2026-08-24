@@ -89,11 +89,16 @@ def grace_period_counts(
     reappearance; the other two are rows on their way out via ``plan_prune``'s off-Board sweep,
     and folding them in would report churn that never happened.
 
-    ``still_waiting`` is the carried-in ids whose Board this run did not scrape, so their streak
-    neither advanced nor reset. **This is the accretion signal**: only ~20,000 of ~66,000 live
-    Boards are in any run's slice, so a healthy set is dominated by ids simply awaiting their
-    Board's next turn — but a set where this number only ever grows is a queue that never gets
-    looked at, the shape ADR-0055 had to unwind for the collapse guard's ``held``.
+    ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
+    neither came back nor were evicted. **This is the accretion signal**, and it has two distinct
+    causes that this single number deliberately does not separate: the id's Board was not in this
+    run's slice at all (only ~20,000 of ~66,000 live Boards are, so this dominates a healthy set
+    and is entirely benign — the streak simply did not advance), or its Board *was* scraped, the
+    id was absent again, and the ADR-0046 collapse guard capped its Board's evictions before
+    reaching it. The second is the one worth watching: a number that only ever grows is a queue
+    nothing looks at, the shape ADR-0055 had to unwind for the guard's own ``held``. Read it
+    against the ``collapse guard:`` line in the same log, which names the capped Boards — do not
+    read this number alone as "waiting for their Board's next turn".
 
     Deliberately does *not* return an evicted count. With the grace period on, ``plan.delete`` is
     a subset of ``was_unconfirmed`` by construction (``eligible = absent & previously``), so such
