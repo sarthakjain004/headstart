@@ -44,14 +44,24 @@ def main() -> int:
         if t:
             _log.info(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
         else:
-            # An ATS that scraped nothing used to be skipped here, so a wholly broken scraper
-            # left no trace in this table at all — it read as "not in this run's slice", which
-            # looks the same and is the far more common case. Name it instead.
+            # An ATS that scraped nothing used to be skipped here, leaving a wholly broken
+            # scraper no trace in this table at all.
+            #
+            # Every ATS reaching `stats` was in this run's slice: `filter_jobs` keys off
+            # `src_dir.glob("*.jsonl")`, and `harvest` opens one handle per ATS *in the shard's
+            # list* precisely so a zero-yield ATS still leaves an empty file. An ATS outside the
+            # slice has no file at all and never lands here — so "not in the slice" is not one of
+            # the readings, and offering it would blunt the signal this line exists to give.
+            #
+            # Deferral IS one, though: `harvest` opens those handles before the resume filter, so
+            # an ATS whose every Board was deferred by a budget kill also leaves an empty file and
+            # arrives here having been neither attempted nor empty. `scrape_join`'s own
+            # "deferred boards" line is where that is diagnosed.
             empty.append(ats)
     if empty:
         _log.warning(
-            f"{len(empty)} ATS(es) contributed zero rows: {', '.join(empty)} — either they "
-            "were not in this run's slice, or every board failed"
+            f"{len(empty)} ATS(es) were in this run's slice but contributed zero rows: "
+            f"{', '.join(empty)} — their boards failed, were deferred, or are genuinely empty"
         )
     if total:
         _log.info(

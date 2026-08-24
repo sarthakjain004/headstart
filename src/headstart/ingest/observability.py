@@ -1,6 +1,6 @@
 """What a pipeline run tells you about itself, beyond the raw log lines.
 
-Three seams, each closing a gap that made a real run undiagnosable:
+Four seams, each closing a gap that made a real run undiagnosable:
 
 **Run context.** GitHub prefixes every raw log line with an ISO timestamp, so the missing
 correlation is not the date — it is *which* run, attempt and shard a log belongs to once it
@@ -15,6 +15,13 @@ It no-ops off CI, so local runs are unaffected.
 fragment artifact the stage already uploads. :func:`write_shard` drops one JSON beside the
 fragment; the joining stage reads them back with :func:`read_shards` and can then state
 per-shard facts — predicted vs actual, retries, error classes — that no single job can see.
+
+**Error summary.** A count of failures names no cause. :func:`error_summary` groups
+``{board: "ExcType: message"}`` by exception type x ATS, so one line separates throttling from
+a dead host from a parse bug. It lives here rather than in either caller because both ends of
+the fan-out need the same shape: a shard summarising its own errors, and the join summarising
+the run's — and the run-level view is the one that turns fifteen shards each reporting "3 board
+errors" into a single named failure mode.
 """
 
 from __future__ import annotations
@@ -129,10 +136,6 @@ def percentiles(values: list[float]) -> dict[str, float]:
 
 def error_summary(errors: dict[str, str]) -> str:
     """Group board errors ("ats:slug" -> "ExcType: message") by exception type x ATS.
-
-    Shared because both ends of the fan-out need the same shape: a shard summarising its own
-    errors, and `scrape_join` summarising the run's. The run-level view is the one that turns a
-    handful of shards each reporting "3 board errors" into a single named failure mode.
 
     Renders types sorted by count desc as ``{n} {ExcType} ({ats1} n1, {ats2} n2, {ats3} n3,
     +k more)`` (top 3 ATSes), joined by "; "."""

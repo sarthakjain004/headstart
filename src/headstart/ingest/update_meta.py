@@ -166,27 +166,39 @@ def held_descriptions(
 def derivation_delta(
     before: dict, after: dict, source_field: str, fields: tuple[str, ...]
 ) -> str | None:
-    """Classify one row's derivation change: "gained", "lost", "moved", or None if unchanged.
+    """Classify a row's derivation change: "gained", "lost", "retiered", "moved", or None.
 
     A bare "N rows with changed derivations" cannot answer the one question a DERIVATIONS_VERSION
     bump exists to ask — did the fix win coverage or lose it? Those are opposite outcomes behind
     one number, and a sweep that silently strips 4,000 answers reports the same count as one that
-    adds 4,000. ADR-0066 already makes gained/lost/moved mandatory when a pattern change is
-    verified locally; this reports the same split for the sweep that applies it to production,
-    where nobody is watching a diff.
+    adds 4,000. ADR-0066 already makes this split mandatory when a pattern change is verified
+    locally; this reports it for the sweep that applies the change to production, where nobody is
+    watching a diff.
 
-    "moved" is ADR-0066's same-tier value change: an answer the cascade already produced, now a
-    different answer. It is the one a coverage total hides completely.
+    ADR-0066 asks for old-tier -> new-tier bucketing **and** same-tier value changes, and the
+    source field *is* the tier (experience: "field" / "regex" / "seniority"; salary has no
+    seniority tier), so those are two outcomes and not one. "retiered" is an answer that changed
+    which tier produced it, and it is deliberately **direction-blind**: a regex pattern winning a
+    row that fell through to a seniority guess and a regex pattern losing one to that guess both
+    land here. Coverage is flat either way, so neither is gained/lost — read the bucket as "this
+    many answers changed provenance, go look", not as a quality verdict. "moved" is the strict
+    same-tier value change, the one a coverage total hides completely.
 
     Pure, like `refresh_row`, so the policy stays unit-testable with no store on disk.
     """
     if all(before.get(f) == after.get(f) for f in fields):
         return None
-    had = before.get(source_field) is not None
-    has = after.get(source_field) is not None
-    if had == has:
-        return "moved" if had else None
-    return "gained" if has else "lost"
+    old, new = before.get(source_field), after.get(source_field)
+    if (old is None) != (new is None):
+        return "gained" if new is not None else "lost"
+    if old != new:
+        return "retiered"
+    # Same tier on both sides. `old is None` here means a row whose stored fields disagree with
+    # its own source — a value with no tier, which this code never writes (a null span nulls
+    # every field together) but a pre-ADR-0061 row can carry. Its fields differed, so the sweep
+    # just cleared that value: an answer went away, which is "lost". Returning None instead would
+    # drop it from every bucket and understate exactly the direction most worth seeing.
+    return "moved" if old is not None else "lost"
 
 
 def refresh_row(
@@ -412,7 +424,8 @@ def refresh(
         if counts:
             _log.info(
                 f"{label} derivations: {counts['gained']} gained, {counts['lost']} lost, "
-                f"{counts['moved']} moved (same-tier value change) (ADR-0066)"
+                f"{counts['retiered']} retiered, {counts['moved']} moved (same tier, new "
+                f"value) (ADR-0066)"
             )
     if sweep and not descriptions:
         # The merge job downloads the description store on `continue-on-error`, so an empty one

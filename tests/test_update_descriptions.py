@@ -105,7 +105,7 @@ def test_a_detail_that_answered_with_no_description_is_settled(tmp_path):
     assert ud.read_store(store) == {"eightfold:acme:1": None}
 
 
-def test_a_failed_fetch_is_counted_as_unfetched(tmp_path):
+def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
     """The same Job as the test below, from the reporting side. It is learned nothing about and
     recorded nowhere, so it used to leave no trace in the log at all — the run reported filled,
     learned and settled, and this Job was in none of them."""
@@ -113,10 +113,10 @@ def test_a_failed_fetch_is_counted_as_unfetched(tmp_path):
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=False)])
 
-    assert ud.reconcile(jobs, store).unfetched == 1
+    assert ud.reconcile(jobs, store).unrecorded == 1
 
 
-def test_a_settled_null_is_not_recounted_as_unfetched(tmp_path):
+def test_a_settled_null_is_not_recounted_as_unrecorded(tmp_path):
     """A Job already recorded as having none is answered, not outstanding — it must not inflate
     the backlog every run forever."""
     jobs = tmp_path / "tech" / "eightfold.jsonl"
@@ -124,7 +124,7 @@ def test_a_settled_null_is_not_recounted_as_unfetched(tmp_path):
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=True)])
     ud.reconcile(jobs, store)  # settles it as null
 
-    assert ud.reconcile(jobs, store).unfetched == 0
+    assert ud.reconcile(jobs, store).unrecorded == 0
 
 
 def test_a_failed_fetch_is_not_settled(tmp_path):

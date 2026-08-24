@@ -483,12 +483,42 @@ def test_derivation_delta_moved_is_a_same_tier_value_change():
     )
 
 
-def test_derivation_delta_counts_a_tier_swap_as_moved_not_gained():
-    # Both tiers produced an answer, so coverage neither rose nor fell — only the value did.
+def test_derivation_delta_calls_a_tier_swap_retiered_not_moved():
+    # Coverage neither rose nor fell, so it is not gained/lost — but the source field IS the tier,
+    # so a seniority guess replaced by a regex answer is ADR-0066's old-tier -> new-tier bucket,
+    # not its same-tier value change. Folding the two together hides a real quality gain.
     before, after = _exp(3, None, "seniority"), _exp(4, 6, "regex")
     assert (
         um.derivation_delta(before, after, "experience_source", um.DERIVED_FIELDS)
-        == "moved"
+        == "retiered"
+    )
+
+
+def test_derivation_delta_is_direction_blind_about_retiering():
+    """Both directions are "retiered" on purpose: coverage is flat either way, so neither is a
+    gain or a loss. Pinned so the bucket is never quietly read as a quality verdict."""
+    promoted = um.derivation_delta(
+        _exp(3, None, "seniority"),
+        _exp(4, 6, "regex"),
+        "experience_source",
+        um.DERIVED_FIELDS,
+    )
+    demoted = um.derivation_delta(
+        _exp(4, 6, "regex"),
+        _exp(3, None, "seniority"),
+        "experience_source",
+        um.DERIVED_FIELDS,
+    )
+    assert promoted == demoted == "retiered"
+
+
+def test_derivation_delta_calls_a_stripped_untiered_value_lost():
+    # A pre-ADR-0061 row can carry a value with no source. Clearing it is an answer going away;
+    # returning None there would drop it from every bucket.
+    before, after = _exp(3, 5, None), _exp(None, None, None)
+    assert (
+        um.derivation_delta(before, after, "experience_source", um.DERIVED_FIELDS)
+        == "lost"
     )
 
 

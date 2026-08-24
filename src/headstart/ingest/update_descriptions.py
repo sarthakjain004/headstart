@@ -125,10 +125,10 @@ class Reconciled(NamedTuple):
     filled: int
     learned: int
     settled: int
-    #: No fresh text, nothing stored, and the detail was never fetched — so nothing was learned
-    #: and nothing recorded. These Jobs come back unchanged every run: the backlog that does not
-    #: shrink on its own, invisible until it was counted.
-    unfetched: int
+    #: No fresh text, nothing stored, and no authoritative "has none" recorded. These Jobs come
+    #: back unchanged every run: the backlog that does not shrink on its own, invisible until it
+    #: was counted. Says nothing about *why* — see the comment at the branch that counts it.
+    unrecorded: int
     rederive_ids: list[str]
 
 
@@ -137,7 +137,7 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
 
     Returns a :class:`Reconciled` — corpus rows repaired from the store, descriptions newly
     stored or changed, postings recorded as authoritatively having none, postings left with no
-    description and no record of why, and the ids behind the second and third.
+    description and no stored answer either way, and the ids behind the second and third.
 
     ``rederive_ids`` is the ADR-0062 marking. A Job whose description settles *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
@@ -147,7 +147,7 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = settled = unfetched = 0
+    filled = settled = unrecorded = 0
 
     # The rewrite streams through a temp file rather than buffering the corpus a second time —
     # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
@@ -180,16 +180,22 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
                     learned.append({"id": job_id, "description": None})
                     settled += 1
                 elif stored is _MISSING:
-                    # Neither fetched nor stored: this run learned nothing about it and left no
-                    # record, so the next run starts here again.
-                    unfetched += 1
+                    # No text, nothing stored, and `detail_fetched` falsy — so this run learned
+                    # nothing about it and recorded nothing, and the next run starts here again.
+                    #
+                    # Deliberately NOT called "the detail never ran": `detail_fetched` is set by
+                    # eightfold alone, while nine scrapers declare `has_detail_pass`, so on the
+                    # other eight a detail that *did* run and found nothing lands here too. The
+                    # count is exact — these Jobs really are unrecorded and really do return every
+                    # run — but the cause behind it is not one this field can distinguish.
+                    unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
     return Reconciled(
-        filled, len(learned) - settled, settled, unfetched, [r["id"] for r in learned]
+        filled, len(learned) - settled, settled, unrecorded, [r["id"] for r in learned]
     )
 
 
@@ -326,7 +332,7 @@ def main() -> int:
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 
-    queued = unfetched = 0
+    queued = unrecorded = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
         done = reconcile(path, store / ats)
@@ -336,20 +342,21 @@ def main() -> int:
         # not lose the ids of the ATSes already reconciled.
         append_id_list(Path(args.pending_rederive), rederive)
         queued += len(rederive)
-        unfetched += done.unfetched
+        unrecorded += done.unrecorded
         _log.info(
             f"{ats}: filled {done.filled:,} from the store, learned {done.learned:,}, "
             f"settled {done.settled:,} as having none, queued {len(rederive):,} to re-derive"
-            + (f", {done.unfetched:,} still unfetched" if done.unfetched else "")
+            + (f", {done.unrecorded:,} still unrecorded" if done.unrecorded else "")
         )
     _log.info(
         f"skip-list: {write_held_details(store, Path(args.held_details)):,} Jobs held"
     )
     _log.info(f"re-derive queue: {queued:,} newly settled -> {args.pending_rederive}")
-    if unfetched:
+    if unrecorded:
         _log.info(
-            f"{unfetched:,} Job(s) still carry no description and no record of why — "
-            "their detail was never fetched, so they return unchanged next run (ADR-0050)"
+            f"{unrecorded:,} Job(s) carry no description and no stored answer either way — "
+            "nothing was learned or recorded for them this run, so they stay outside Tier-2 "
+            "extraction until some later run's detail fetch settles them (ADR-0050)"
         )
     return 0
 

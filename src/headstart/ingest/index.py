@@ -433,18 +433,31 @@ def sync(args: argparse.Namespace) -> int:
         # Live), so a Board that comes back short on every run shields its rows forever and
         # nothing says so. An exclusion withholding 30 rows and one withholding 30,000 log
         # identically today.
+        # `index_ids - fresh` is exactly `plan_sync`'s eviction-candidate set, so filter to it:
+        # counting every indexed row on an excluded Board would report the Board's *population*,
+        # and a Board that came back 99% complete would log its whole corpus while the trend
+        # tracked board size rather than the exclusion's effect.
+        #
+        # Not called "unreturned": `fresh` is corpus ∩ *embedded* (see its binding above), so a
+        # row the scrape did return but that carries no vector yet — non-English, or awaiting an
+        # embed — is in this set too. "Eviction candidate" is what the set actually is.
         shielded: Counter[str] = Counter()
         for job_id in index_ids:
+            if job_id in fresh:
+                continue
             board = resolve_board(job_id, live)
             if board in excluded:
                 shielded[board] += 1
         _log.warning(
-            f"scope exclusion is shielding {sum(shielded.values())} indexed row(s) from eviction "
-            f"across {len(excluded)} Board(s) — ADR-0053 has no drain, so a Board short on every "
-            "run never re-enters scope; watch this number across runs, not within one"
+            f"scope exclusion is holding {sum(shielded.values())} eviction-candidate row(s) "
+            f"out of scope across {len(excluded)} Board(s) — ADR-0053 has no drain, so a "
+            "Board short on every run never re-enters scope; watch this number across runs, not "
+            "within one"
         )
         for board, count in shielded.most_common(_TOP_SHIELDED_BOARDS):
-            _log.warning(f"  {count} row(s) shielded on {board}")
+            _log.warning(
+                f"  {count} eviction-candidate row(s) held out of scope on {board}"
+            )
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
     # existed keeps its frozen schema — and `apply_sync` requires rows to match it exactly. Add the
