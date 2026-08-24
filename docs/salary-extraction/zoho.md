@@ -449,8 +449,9 @@ overlooked.
   live posting (`symbtechnologies.zohorecruit.com`, job `667516000005381058`) surfaced the same
   gap this doc already flagged: its listing carried a description, so `fetch_raw()` never fetched
   its detail page, and its `Salary: 10 To 12 LPA` field was invisible regardless of any extraction
-  fix. Independently re-measured against a fresh 150-tenant sample (not this doc's 71-tenant
-  scraper-docstring figure): **59.9% of jobs already have a listing-level description** — the
+  fix. Independently re-measured against a fresh sample (150 tenants drawn, 130 successfully
+  probed — not this doc's 71-tenant scraper-docstring figure): **59.9% of jobs already have a
+  listing-level description** — the
   majority, not the minority — so Salary was structurally unreachable for most zoho jobs. Put to
   the user with the bandwidth cost stated plainly (`fetch_raw()` now details every published,
   non-locked job — roughly 2.5x the detail-page volume, ~1.7MB each, ~110,073 live jobs); they

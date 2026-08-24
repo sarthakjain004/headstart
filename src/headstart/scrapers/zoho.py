@@ -85,7 +85,8 @@ class ZohoScraper(BaseScraper):
         # tenants configure the careers site without that column, 28 of 71 in the corpus), but
         # Salary/Currency live ONLY on the detail page (`_description_of`'s docstring), never on
         # the listing, so gating on description presence meant the ~60% of jobs whose listing
-        # already carries a description (live-measured 2026-08-24, 130-tenant sample) never had
+        # already carries a description (live-measured 2026-08-24: 150 tenants sampled, 130
+        # successfully probed) never had
         # their detail page fetched at all — Salary was structurally invisible for them,
         # independent of any extraction bug. User decision 2026-08-24: pay the bandwidth cost
         # (detail pages are ~1.7MB each) for full Salary coverage rather than leave the gap.
