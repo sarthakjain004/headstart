@@ -33,8 +33,15 @@ import json
 import re
 from typing import Any
 
+from headstart import log
 from headstart.models import Job, host_of, html_to_text
 from headstart.scrapers.base import BaseScraper
+
+_log = log.get(__name__)
+
+#: The widget embeds at most ~this many jobs in one response and offers no working
+#: pagination; the docstring above records it as the sample-wide maximum.
+_EMBED_CEILING = 750
 
 _JOBS_INPUT = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _CONFIG_AFTER_JOBS = re.compile(r'id="jobs">\s*<input[^>]*\bvalue="([^"]*)"')
@@ -167,6 +174,16 @@ class ZohoScraper(BaseScraper):
         records = self._records(page)
         if not records:
             return []
+        if len(records) >= _EMBED_CEILING:
+            # The docstring calls this out as silent, and it was: a board with exactly 750 real
+            # openings and one with 5,000 look identical from here, and nothing said which run
+            # hit it. Not mark_truncated — the widget exposes no true total to compare against,
+            # so landing on the ceiling is strong evidence, not proof, and ADR-0053 exclusion
+            # has no drain.
+            _log.warning(
+                f"{self.board_key()}: {len(records)} records, at or over the ~{_EMBED_CEILING} "
+                "widget ceiling — anything past it is unread, not absent"
+            )
 
         company = self._company_name(page) or self.company
         jobs: list[Job] = []
