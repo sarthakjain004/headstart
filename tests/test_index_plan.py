@@ -798,3 +798,33 @@ def test_grace_period_still_waiting_counts_an_unscraped_board():
     )
     assert "ats:SKIPPED:x1" in plan.unconfirmed  # streak neither advanced nor reset
     assert grace_period_counts(was_unconfirmed, {"ats:LIVE:y1"}, plan) == (0, 1)
+
+
+def test_grace_period_buckets_are_disjoint_for_a_scope_excluded_board():
+    """`reappeared` and `still_waiting` must never count the same id twice.
+
+    `fresh` is not filtered by `boards`, and ADR-0053 drops an Unauthoritative Board *from*
+    `boards` — so a carried-in id on a scope-excluded Board that genuinely came back lands in
+    `fresh` *and* is re-added by the carry-forward loop, which asks only whether its Board went
+    unscraped. Before the fix the line could report more ids than it carried in, inflating the
+    accretion signal with one that demonstrably returned.
+    """
+    was_unconfirmed = frozenset({"ats:EXCL:x1"})
+    fresh = {"ats:EXCL:x1", "ats:LIVE:y1"}  # the carried-in id is back in this scrape
+    plan = plan_sync(
+        index_ids=["ats:EXCL:x1", "ats:LIVE:y1"],
+        fresh_ids=fresh,
+        scraped_boards=[
+            "ats:LIVE"
+        ],  # ats:EXCL was scope-excluded, so it is not in `boards`
+        live={"ats:excl": "ats:EXCL", "ats:live": "ats:LIVE"},
+        was_unconfirmed=was_unconfirmed,
+    )
+    # the carry-forward loop re-adds it (it only asks whether the Board went unscraped)...
+    assert "ats:EXCL:x1" in plan.unconfirmed
+    reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)
+    # ...but it came back, so it counts once, as a reappearance
+    assert (reappeared, still_waiting) == (1, 0)
+    assert reappeared + still_waiting <= len(was_unconfirmed), (
+        "buckets must not overlap"
+    )

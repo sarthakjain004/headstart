@@ -1,4 +1,5 @@
-"""Pure planners for the search index: what to add, evict, and prune (ADR-0014, ADR-0023).
+"""Pure planners for the search index — what to add, evict, and prune (ADR-0014, ADR-0023) —
+and the pure derivations that report on a finished plan.
 
 Everything here computes row sets without touching LanceDB, so the scoping invariants stay
 unit-testable on CI's base-deps-only install. :mod:`headstart.ingest.index` is the CLI that opens
@@ -33,6 +34,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -74,7 +76,7 @@ class SyncPlan:
 
 
 def grace_period_counts(
-    was_unconfirmed: set[str], fresh: set[str], plan: SyncPlan
+    was_unconfirmed: AbstractSet[str], fresh: AbstractSet[str], plan: SyncPlan
 ) -> tuple[int, int]:
     """``(reappeared, still_waiting)`` for the ids the last run left unconfirmed (ADR-0083).
 
@@ -105,7 +107,14 @@ def grace_period_counts(
     a number would be exactly the ``evict`` figure the plan line already prints — an intersection
     implying a distinction that cannot exist.
     """
-    return len(was_unconfirmed & fresh), len(was_unconfirmed & plan.unconfirmed)
+    reappeared = was_unconfirmed & fresh
+    # Subtract `fresh`: the two buckets must be disjoint or the line can print more than it
+    # carried in. `fresh` is not filtered by `boards`, and ADR-0053 drops an Unauthoritative
+    # Board *from* `boards` — so a carried-in id on a scope-excluded Board that genuinely came
+    # back is both in `fresh` and re-added by the carry-forward loop, which asks only whether its
+    # Board went unscraped. Counting it in each bucket inflates the accretion signal with an id
+    # that demonstrably returned.
+    return len(reappeared), len(was_unconfirmed & plan.unconfirmed - reappeared)
 
 
 def plan_sync(
