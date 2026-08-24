@@ -107,18 +107,15 @@ class KekaScraper(BaseScraper):
         jobs: list[Job] = []
         for j in raw:
             loc = (j.get("jobLocations") or [{}])[0]
-            location = (
-                ", ".join(
-                    x
-                    for x in (
-                        loc.get("city") or loc.get("name"),
-                        loc.get("state"),
-                        loc.get("countryName"),
-                    )
-                    if x
-                )
-                or None
+            # `city` carries a trailing space on some tenants' data (e.g. "Ahmedabad Center "
+            # while the sibling `name` field for the same location is clean) — `.strip()` each
+            # part so it can't leak into the joined string.
+            parts = (
+                (loc.get("city") or loc.get("name") or "").strip(),
+                (loc.get("state") or "").strip(),
+                (loc.get("countryName") or "").strip(),
             )
+            location = ", ".join(p for p in parts if p) or None
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{j['id']}",

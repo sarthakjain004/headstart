@@ -210,7 +210,20 @@ class DarwinboxScraper(BaseScraper):
                         cities.append(city)
                 location = ", ".join(cities) or None
             else:
-                location = j.get("locations") or None
+                # Comma-split and stripped, the same treatment the multi-location branch above
+                # gives each tip: the raw `locations` string has shipped a literal embedded `\r`
+                # right before its comma on some tenants ("...Maharashtra\r, India" — measured
+                # 2026-08-24, 31/67 sampled jobs), which a bare `.strip()` on the whole string
+                # would miss since it sits mid-string, not at an edge.
+                raw_location = j.get("locations")
+                location = (
+                    ", ".join(
+                        p for p in (s.strip() for s in raw_location.split(",")) if p
+                    )
+                    or None
+                    if raw_location
+                    else None
+                )
             # `salary_range` already carries its own "(Annual)"/"(Monthly)" suffix whenever one
             # exists — confirmed against every job in a 290-board sample (salary-extraction pass,
             # 2026-08-22): 1,874/1,874 suffixed values showed the identical suffix twice when
