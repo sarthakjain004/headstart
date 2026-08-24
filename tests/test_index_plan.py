@@ -717,17 +717,51 @@ def test_grace_period_reappeared_and_drained_counters():
     assert plan.delete == frozenset({"ats:B:second_miss"})
     assert plan.unconfirmed == frozenset({"ats:B:first_miss"})
 
-    reappeared = len(was_unconfirmed - plan.unconfirmed - plan.delete)
-    drained = len(was_unconfirmed & plan.delete)
-    assert (reappeared, drained) == (0, 1)
+    fresh = {"ats:B:kept"}
+    assert (len(was_unconfirmed & fresh), len(was_unconfirmed & plan.delete)) == (0, 1)
 
     # and when the carried-in id comes back, it counts as reappeared rather than vanishing
+    fresh_back = {"ats:B:kept", "ats:B:second_miss"}
     back = plan_sync(
         index_ids=indexed,
-        fresh_ids={"ats:B:kept", "ats:B:second_miss"},
+        fresh_ids=fresh_back,
         scraped_boards=[board],
         live={},
         was_unconfirmed=was_unconfirmed,
     )
     assert "ats:B:second_miss" not in back.delete
-    assert len(was_unconfirmed - back.unconfirmed - back.delete) == 1
+    assert len(was_unconfirmed & fresh_back) == 1
+
+
+def test_grace_period_reappeared_excludes_an_id_whose_board_left_the_ledger():
+    """Regression: `reappeared` must be measured against the scrape, not by subtraction.
+
+    A carried-in id whose Board has since left the ledger is dropped from `unconfirmed` by
+    `plan_sync`'s own carry-forward guard (`board.lower() in live`) and is not evicted either,
+    because its Board was never scraped. Inferring "came back" as
+    `was_unconfirmed - unconfirmed - delete` therefore counts it as a reappearance when the row is
+    really just waiting for `plan_prune`'s off-Board sweep — the log would report churn that never
+    happened. Intersecting with `fresh` asks the question directly instead.
+    """
+    index_ids = ["ats:DEAD:x1", "ats:LIVE:y1"]
+    fresh = {"ats:LIVE:y1"}
+    was_unconfirmed = frozenset({"ats:DEAD:x1"})
+
+    plan = plan_sync(
+        index_ids=index_ids,
+        fresh_ids=fresh,
+        scraped_boards=["ats:LIVE"],  # ats:DEAD was not scraped
+        live={"ats:live": "ats:LIVE"},  # ...and is no longer in the ledger
+        was_unconfirmed=was_unconfirmed,
+    )
+    assert (
+        "ats:DEAD:x1" not in plan.unconfirmed
+    )  # carry-forward drops an off-ledger Board
+    assert (
+        "ats:DEAD:x1" not in plan.delete
+    )  # and it is not evicted, its Board went unscraped
+
+    assert len(was_unconfirmed - plan.unconfirmed - plan.delete) == 1, (
+        "subtraction is the buggy definition this test exists to rule out"
+    )
+    assert len(was_unconfirmed & fresh) == 0, "it never reappeared — nothing in fresh"

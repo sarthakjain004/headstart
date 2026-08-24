@@ -500,15 +500,27 @@ def sync(args: argparse.Namespace) -> int:
     if plan.unconfirmed or was_unconfirmed:
         # Three numbers, not one. A bare held-count cannot say whether the grace period is
         # *working* — a set that neither drains nor resolves is a queue quietly growing, which is
-        # exactly the shape ADR-0055 had to fix on the collapse guard. `resolved` (came back, so
-        # the absence was transient — the case ADR-0083 exists for) and `drained` (missed twice,
-        # so evicted now) are what distinguish a healthy grace period from an accreting one.
-        resolved = len(was_unconfirmed - plan.unconfirmed - plan.delete)
+        # exactly the shape ADR-0055 had to fix on the collapse guard. `reappeared` (the absence
+        # was transient, which is the case ADR-0083 exists for) and `drained` (missed a second
+        # time, so evicted now) are what separate a healthy grace period from an accreting one.
+        #
+        # `reappeared` is measured against `fresh` directly rather than inferred by subtracting
+        # the other two sets. Subtraction over-counts: a carried-in id whose Board has since left
+        # the ledger is dropped from `unconfirmed` by `plan_sync`'s own carry-forward guard and is
+        # not evicted either (its Board was never scraped), so it would fall into the remainder
+        # and read as "came back" when it did nothing of the sort — it is waiting for
+        # `plan_prune`'s off-Board sweep. Same for a row `_take_upgrades` lifted out of
+        # `index_ids` before planning. Intersecting with `fresh` asks the question directly: is
+        # this id in the scrape we just took?
+        reappeared = len(was_unconfirmed & fresh)
         drained = len(was_unconfirmed & plan.delete)
+        # The three need not sum to the carried-in total, and saying so in the line keeps a reader
+        # from treating a shortfall as a lost id: the remainder is ids still held (absent again
+        # this run, on a Board that was scraped) plus the off-Board cases described above.
         _log.info(
             f"grace period: {len(plan.unconfirmed)} id(s) held for one more look before eviction; "
-            f"of the {len(was_unconfirmed)} carried in, {resolved} reappeared and {drained} were "
-            "missed a second time and evicted now (ADR-0083)"
+            f"of the {len(was_unconfirmed)} carried in, {reappeared} reappeared in this scrape and "
+            f"{drained} were missed a second time and evicted now (ADR-0083)"
         )
         # Which Boards dominate the held set. A grace period spread thinly over many Boards is
         # ordinary churn; one concentrated on a handful is a scrape that keeps coming back short,
