@@ -32,8 +32,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from headstart import log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+_log = log.get(__name__)
+
+#: The widget caps a tenant at this many jobs and takes no pagination parameter,
+#: per the module docstring above.
+_WIDGET_CAP = 1000
 
 
 def _branch_location(branch: dict) -> str | None:
@@ -64,8 +71,17 @@ class FreshteamScraper(BaseScraper):
         branch_loc = {b["id"]: _branch_location(b) for b in raw.get("branches") or []}
         role_name = {r["id"]: r.get("name") for r in raw.get("job_roles") or []}
 
+        listed = raw.get("jobs") or []
+        if len(listed) >= _WIDGET_CAP:
+            # Same shape as zoho's and trakstar's ceilings: documented, silent until now. No
+            # pagination parameter exists, so the excess is simply unreachable this run.
+            _log.warning(
+                f"{self.board_key()}: {len(listed)} jobs, at or over the {_WIDGET_CAP}-job "
+                "widget cap — the rest is unread, not absent"
+            )
+
         jobs: list[Job] = []
-        for j in raw.get("jobs") or []:
+        for j in listed:
             if j.get("deleted"):
                 continue
             location = branch_loc.get(j.get("branch_id"))

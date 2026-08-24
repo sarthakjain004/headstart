@@ -442,3 +442,91 @@ def test_a_consumed_queue_is_emptied_not_unlinked(tmp_path):
 
     assert queue.exists(), "the file must survive so it overwrites the remote copy"
     assert queue.read_text(encoding="utf-8").strip() == ""
+
+
+# --- derivation_delta: which *direction* a sweep moved a row (ADR-0066) -----------------------
+#
+# The counter these feed exists because "N rows with changed derivations" gives a
+# DERIVATIONS_VERSION bump the same number whether it won 4,000 answers or stripped them.
+
+
+def _exp(min_years, max_years, source):
+    return {"min_years": min_years, "max_years": max_years, "experience_source": source}
+
+
+def test_derivation_delta_none_when_every_field_holds():
+    row = _exp(3, 5, "regex")
+    assert (
+        um.derivation_delta(row, dict(row), "experience_source", um.DERIVED_FIELDS)
+        is None
+    )
+
+
+def test_derivation_delta_gained_and_lost_are_opposite_directions():
+    empty, filled = _exp(None, None, None), _exp(3, 5, "regex")
+    assert (
+        um.derivation_delta(empty, filled, "experience_source", um.DERIVED_FIELDS)
+        == "gained"
+    )
+    assert (
+        um.derivation_delta(filled, empty, "experience_source", um.DERIVED_FIELDS)
+        == "lost"
+    )
+
+
+def test_derivation_delta_moved_is_a_same_tier_value_change():
+    # The ADR-0066 case a coverage total hides completely: still "regex", different answer.
+    before, after = _exp(1, 5, "regex"), _exp(5, None, "regex")
+    assert (
+        um.derivation_delta(before, after, "experience_source", um.DERIVED_FIELDS)
+        == "moved"
+    )
+
+
+def test_derivation_delta_calls_a_tier_swap_retiered_not_moved():
+    # Coverage neither rose nor fell, so it is not gained/lost — but the source field IS the tier,
+    # so a seniority guess replaced by a regex answer is ADR-0066's old-tier -> new-tier bucket,
+    # not its same-tier value change. Folding the two together hides a real quality gain.
+    before, after = _exp(3, None, "seniority"), _exp(4, 6, "regex")
+    assert (
+        um.derivation_delta(before, after, "experience_source", um.DERIVED_FIELDS)
+        == "retiered"
+    )
+
+
+def test_derivation_delta_is_direction_blind_about_retiering():
+    """Both directions are "retiered" on purpose: coverage is flat either way, so neither is a
+    gain or a loss. Pinned so the bucket is never quietly read as a quality verdict."""
+    promoted = um.derivation_delta(
+        _exp(3, None, "seniority"),
+        _exp(4, 6, "regex"),
+        "experience_source",
+        um.DERIVED_FIELDS,
+    )
+    demoted = um.derivation_delta(
+        _exp(4, 6, "regex"),
+        _exp(3, None, "seniority"),
+        "experience_source",
+        um.DERIVED_FIELDS,
+    )
+    assert promoted == demoted == "retiered"
+
+
+def test_derivation_delta_calls_a_stripped_untiered_value_lost():
+    # A pre-ADR-0061 row can carry a value with no source. Clearing it is an answer going away;
+    # returning None there would drop it from every bucket.
+    before, after = _exp(3, 5, None), _exp(None, None, None)
+    assert (
+        um.derivation_delta(before, after, "experience_source", um.DERIVED_FIELDS)
+        == "lost"
+    )
+
+
+def test_derivation_delta_reads_the_source_field_it_is_given():
+    # Salary shares the helper; it must key off salary_source, not experience's.
+    before = {"min_salary_annual": None, "salary_source": None}
+    after = {"min_salary_annual": 90_000, "salary_source": "field"}
+    assert (
+        um.derivation_delta(before, after, "salary_source", ("min_salary_annual",))
+        == "gained"
+    )

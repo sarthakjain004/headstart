@@ -36,9 +36,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
+
+_log = log.get(__name__)
 
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
 _MAX_PAGES = (
@@ -174,6 +176,12 @@ class DarwinboxScraper(BaseScraper):
             # by the wrong TLD's 500, the bug #137 fixed: it now routes before any reporting.)
             walled = next((h for h, e in errors if _is_wall(e)), None)
             if walled is not None:
+                # The most expensive path any scraper takes — a real browser, for one Board —
+                # and it was entered silently, so a run whose cost was dominated by escalations
+                # looked identical to one where none fired.
+                _log.info(
+                    f"{self.board_key()}: walled on {walled}, escalating to a browser"
+                )
                 return self._fetch_raw_browser(walled)
             raise errors[-1][1]
         self._host = host

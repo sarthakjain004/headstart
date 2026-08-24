@@ -3747,3 +3747,65 @@ def test_ripplehire_marks_its_page_cap_but_not_a_board_that_ended(monkeypatch):
     capped = _board(total=10**9, per_page=rh._PAGE_SIZE)
     capped.fetch_raw()
     assert capped.truncated and f"{rh._MAX_PAGES}-page cap" in capped.truncated
+
+
+# --- oracle: the requisition list is paged, not one shot -------------------------------------
+#
+# Measured live 2026-08-24 on fa-etvl-saasfaprod1: TotalJobsCount 299 against a 200-row first
+# page. The scraper read only that page and reported it as the whole board, so a third of it was
+# dropped every run with no error and no truncation marker.
+
+
+def _oracle_page(reqs: list[dict], total: int) -> str:
+    return json.dumps(
+        {"items": [{"requisitionList": reqs, "TotalJobsCount": total, "Limit": 200}]}
+    )
+
+
+def _oracle_reqs(start: int, n: int) -> list[dict]:
+    return [{"Id": str(start + i), "Title": f"Engineer {start + i}"} for i in range(n)]
+
+
+def test_oracle_pages_past_the_first_200(monkeypatch):
+    """The live shape: 299 across a full page and a short one. Both must arrive."""
+    pages = [
+        _oracle_page(_oracle_reqs(0, 200), 299),
+        _oracle_page(_oracle_reqs(200, 99), 299),
+    ]
+    seen: list[int] = []
+    s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
+
+    def _get(self, url=None):
+        seen.append(self._offset)
+        return pages[len(seen) - 1]
+
+    monkeypatch.setattr(type(s), "_get", _get)
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+
+    assert seen == [0, 200]  # the offset really advanced
+    assert len(jobs) == 299
+    assert len({j.id for j in jobs}) == 299
+
+
+def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
+    """A missing TotalJobsCount must fall back to the short-page end, never to `>= 0`.
+
+    Guards the exact shape a review found latent elsewhere: `len(reqs) >= total` with `total`
+    defaulting to 0 is always true, which stops after one page while looking like a natural end.
+    """
+    pages = [
+        json.dumps({"items": [{"requisitionList": _oracle_reqs(0, 200)}]}),
+        json.dumps({"items": [{"requisitionList": _oracle_reqs(200, 5)}]}),
+    ]
+    seen: list[int] = []
+    s = get_scraper("oracle", "acme.fa.ocs.oraclecloud.com", "Acme")
+
+    def _get(self, url=None):
+        seen.append(self._offset)
+        return pages[len(seen) - 1]
+
+    monkeypatch.setattr(type(s), "_get", _get)
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+
+    assert seen == [0, 200]  # it did NOT stop after page 1
+    assert len(jobs) == 205

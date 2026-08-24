@@ -37,16 +37,42 @@ def main() -> int:
     stats = filter_jobs(args.src, args.dst)
     _log.info(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")
     kept = total = 0
+    empty = []
     for ats, (k, t) in sorted(stats.items()):
         kept += k
         total += t
         if t:
             _log.info(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
+        else:
+            # An ATS that scraped nothing used to be skipped here, leaving a wholly broken
+            # scraper no trace in this table at all.
+            #
+            # Every ATS reaching `stats` was in this run's slice: `filter_jobs` keys off
+            # `src_dir.glob("*.jsonl")`, and `harvest` opens one handle per ATS *in the shard's
+            # list* precisely so a zero-yield ATS still leaves an empty file. An ATS outside the
+            # slice has no file at all and never lands here — so "not in the slice" is not one of
+            # the readings, and offering it would blunt the signal this line exists to give.
+            #
+            # Deferral IS one, though: `harvest` opens those handles before the resume filter, so
+            # an ATS whose every Board was deferred by a budget kill also leaves an empty file and
+            # arrives here having been neither attempted nor empty. `scrape_join`'s own
+            # "deferred boards" line is where that is diagnosed.
+            empty.append(ats)
+    if empty:
+        _log.warning(
+            f"{len(empty)} ATS(es) were in this run's slice but contributed zero rows: "
+            f"{', '.join(empty)} — their boards failed, were deferred, or are genuinely empty"
+        )
     if total:
         _log.info(
             f"{'TOTAL':<16}{kept:>9}{total:>9}{100 * kept / total:>7.1f}%"
             f"  (dropped {total - kept} non-tech) -> {args.dst}"
         )
+    else:
+        # A zero-row run used to be near-silent: the table printed its header and stopped, which
+        # is a hard shape to notice in a green log. Everything downstream reads this corpus, so
+        # say it plainly. Not an abort — this stage does not own that call.
+        _log.error(f"no rows at all reached the tech filter -> {args.dst} is empty")
     return 0
 
 

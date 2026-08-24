@@ -121,6 +121,20 @@ class EightfoldScraper(BaseScraper):
             positions = self._api_search(group_id)
             if positions is not None:
                 return self._api_records(group_id, positions)
+        # Which surface answered, and why the cheap one did not — the sibling successfactors
+        # scraper logs exactly this and it is the first thing asked when a Board's cost or
+        # completeness changes shape. The two paths have entirely different failure modes (the
+        # API is replica-unstable and re-swept; the sitemap is batch-generated and stable but
+        # can be a stale or wrong-tenant index), so reading a Board's numbers without knowing
+        # which one produced them has repeatedly meant re-probing the host by hand to find out.
+        _log.info(
+            f"{self.board_key()}: falling back to the sitemap — "
+            + (
+                "the PCSX API did not answer"
+                if group_id
+                else "no group id on the careers page"
+            )
+        )
         return self._sitemap_records()
 
     def _group_id(self) -> str | None:
@@ -203,6 +217,20 @@ class EightfoldScraper(BaseScraper):
                 start += _PAGE
                 pages += 1
             if len(seen) >= total:
+                # Only when a re-sweep was actually needed. Converging on sweep 1 is the ordinary
+                # case across ~100 Boards a run and would be pure noise; needing a second or third
+                # pass is the replica instability being *survived*, and it is otherwise invisible —
+                # this path is silent success, indistinguishable in the log from a Board that
+                # never wobbled. That distinction is the whole input to "would raising
+                # _MAX_SWEEPS help?", which docs/eightfold/ could only reason about, not measure:
+                # a fleet mostly converging on sweep 3 is one bad run away from falling short,
+                # while one mostly converging on sweep 2 has real headroom.
+                if sweep:
+                    _log.info(
+                        f"{self.board_key()}: converged on sweep {sweep + 1} of {_MAX_SWEEPS} "
+                        f"({pages} page(s), {len(seen)} of {total}) — the earlier sweep(s) missed "
+                        f"{total - before} posting(s) a differently-ordered replica then dealt"
+                    )
                 break
             if pages >= _MAX_PAGES:
                 self.mark_truncated(

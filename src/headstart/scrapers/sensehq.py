@@ -37,6 +37,12 @@ class SenseHQScraper(BaseScraper):
             batch = data.get("rows", [])
             rows.extend(batch)
             self._page += 1
+            # `data.get("count", 0)` would be a latent truncation bug if the live API ever
+            # omitted `count` (a fixture missing it made this look broken in review) — but
+            # probed live 2026-08-24 against zetwerk: `count` is always present (32, matching
+            # 4 real pages of 10+10+10+2), so `len(rows) >= 0` never happens in practice. Not
+            # fixed defensively: guarding against an input the real API never sends would be
+            # untestable speculation, the opposite of what CLAUDE.md's measure-first rule asks.
             if len(batch) < _PAGE_SIZE or len(rows) >= data.get("count", 0):
                 break
             if self._page > _MAX_PAGES:

@@ -58,7 +58,7 @@ def test_a_failed_fetch_is_repaired_from_the_store(tmp_path):
 
     # next run: the detail fetch 405s, so the scrape emits the Job with no description at all
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=False)])
-    filled, _, _, _ = ud.reconcile(jobs, store)
+    filled = ud.reconcile(jobs, store).filled
 
     assert filled == 1
     assert _rows(jobs)[0]["description"] == "We are hiring."
@@ -99,10 +99,32 @@ def test_a_detail_that_answered_with_no_description_is_settled(tmp_path):
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=True)])
 
-    _, _, settled, _ = ud.reconcile(jobs, store)
+    settled = ud.reconcile(jobs, store).settled
 
     assert settled == 1
     assert ud.read_store(store) == {"eightfold:acme:1": None}
+
+
+def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
+    """The same Job as the test below, from the reporting side. It is learned nothing about and
+    recorded nowhere, so it used to leave no trace in the log at all — the run reported filled,
+    learned and settled, and this Job was in none of them."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=False)])
+
+    assert ud.reconcile(jobs, store).unrecorded == 1
+
+
+def test_a_settled_null_is_not_recounted_as_unrecorded(tmp_path):
+    """A Job already recorded as having none is answered, not outstanding — it must not inflate
+    the backlog every run forever."""
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=True)])
+    ud.reconcile(jobs, store)  # settles it as null
+
+    assert ud.reconcile(jobs, store).unrecorded == 0
 
 
 def test_a_failed_fetch_is_not_settled(tmp_path):
@@ -112,7 +134,7 @@ def test_a_failed_fetch_is_not_settled(tmp_path):
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None, detail_fetched=False)])
 
-    _, _, settled, _ = ud.reconcile(jobs, store)
+    settled = ud.reconcile(jobs, store).settled
 
     assert settled == 0
     assert ud.read_store(store) == {}
@@ -216,7 +238,8 @@ def test_reconcile_reports_the_ids_it_settled(tmp_path):
         ],
     )
 
-    _, learned, settled, ids = ud.reconcile(jobs, store)
+    done = ud.reconcile(jobs, store)
+    learned, settled, ids = done.learned, done.settled, done.rederive_ids
 
     assert (learned, settled) == (1, 1)
     assert set(ids) == {"eightfold:acme:1", "eightfold:acme:2"}, (
@@ -233,7 +256,7 @@ def test_an_unchanged_description_is_not_requeued(tmp_path):
     ud.reconcile(jobs, store)
 
     _corpus(jobs, [_job("eightfold:acme:1", "We are hiring.", detail_fetched=True)])
-    _, _, _, ids = ud.reconcile(jobs, store)
+    ids = ud.reconcile(jobs, store).rederive_ids
 
     assert ids == []
 
@@ -246,7 +269,7 @@ def test_an_edited_description_is_requeued(tmp_path):
     ud.reconcile(jobs, store)
 
     _corpus(jobs, [_job("eightfold:acme:1", "8+ years.", detail_fetched=True)])
-    _, _, _, ids = ud.reconcile(jobs, store)
+    ids = ud.reconcile(jobs, store).rederive_ids
 
     assert ids == ["eightfold:acme:1"]
 

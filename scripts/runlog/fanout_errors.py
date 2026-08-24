@@ -7,7 +7,10 @@ and they have different fixes:
 **Board errors** (`done: ... (N board errors)`) are boards whose scrape raised. The per-shard
 count is on the `done:` line; the classes are digested into a `N board errors: ...` warning. These
 are usually origin-side (HTTP 4xx/5xx, connection resets) and their fix is retry policy or a
-scraper change.
+scraper change. A second, run-level digest lives one job over: `scrape_join`, in the JOIN job, not
+any scrape shard, adds a shard count and a rate — `N board errors across S shards (R% of A
+attempted): ...` — because "N errors" alone cannot say whether a run met throttling or dead hosts
+without knowing how much it attempted.
 
 **Budget kills** (`time budget reached after N min`) are shards that ran out of wall clock and
 banked a partial fragment. Everything they had not reached is *deferred* to the next run and named
@@ -52,6 +55,12 @@ import re
 from run_logs import DONE, Run, common_args, runs_from, unstamp
 
 ERR_DIGEST = re.compile(r"\d+ board errors: (.+)")
+# `scrape_join`'s run-level digest, read from the JOIN job — not the same line as ERR_DIGEST
+# above, which is per-shard and lives in the SCRAPE job. This one adds a shard count and a rate,
+# so it needs its own pattern rather than reusing ERR_DIGEST against the wrong job's text.
+JOIN_ERR_DIGEST = re.compile(
+    r"(\d+) board errors across (\d+) shards(?: \(([\d.]+)% of (\d+) attempted\))?: (.+)"
+)
 KILLED = re.compile(r"time budget reached after ([\d.]+) min")
 DEFERRED = re.compile(r"\[scrape_run\] deferred: (.+)")
 QUARANTINE = re.compile(
@@ -64,6 +73,10 @@ FAILURES = re.compile(
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
+# `failures`'s own second line: how much of the run's error volume did NOT read as a gone-board
+# 404/410, with the top classes named. A 404-ish class sitting here run after run means the
+# matcher is missing a genuine gone-response — read the shape, not the volume.
+UNMATCHED = re.compile(r"(\d+) error\(s\) did not read as gone; top classes: (.+)")
 
 
 def scrape_errors(run: Run) -> None:
@@ -129,6 +142,14 @@ def quarantines(run: Run) -> None:
         return
     text = run.log(jobs[0])
     totals = FAILURES.search(text)
+    um = UNMATCHED.search(text)
+    if um:
+        n, classes_txt = um.groups()
+        print(
+            f"  {n} error(s) did not read as gone (not a gone-strike); top classes: "
+            f"{classes_txt}",
+            flush=True,
+        )
     if totals:
         gone, shards, ledger, cleared, quarantined, at = totals.groups()
         print(
@@ -155,11 +176,31 @@ def quarantines(run: Run) -> None:
         print(f"    +{len(sample) - 10} more in the sample", flush=True)
 
 
+def run_level_errors(run: Run) -> None:
+    """`scrape_join`'s classified digest — lives in the JOIN job, not the scrape shards, and
+    answers a different question than the per-shard lines above: not "which shard failed" but
+    "what failed across the whole run, and how does that compare to how much was attempted"."""
+    jobs = run.stage_jobs("join")
+    if not jobs:
+        return
+    m = JOIN_ERR_DIGEST.search(run.log(jobs[0]))
+    if not m:
+        return
+    errs, shards, rate, attempted, digest = m.groups()
+    rate_txt = f" ({rate}% of {attempted} attempted)" if rate else ""
+    print(
+        f"\n  run-level: {errs} board errors across {shards} shards{rate_txt}: "
+        f"{unstamp(digest)}",
+        flush=True,
+    )
+
+
 def main() -> None:
     args = common_args(__doc__.split("\n")[0]).parse_args()
     for run in runs_from(args):
         print(f"\n===== run {run.id} head={run.head} — errors =====", flush=True)
         scrape_errors(run)
+        run_level_errors(run)
         quarantines(run)
 
 
