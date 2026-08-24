@@ -14,6 +14,7 @@ from headstart.ingest.index_plan import (
     _live_board_end,
     apply_sync,
     boards_by_canon,
+    grace_period_counts,
     live_keep_set,
     plan_prune,
     plan_sync,
@@ -692,35 +693,32 @@ def test_a_collapse_held_id_stays_unconfirmed_and_keeps_draining():
     )
 
 
-def test_grace_period_reappeared_and_drained_counters():
-    """The three numbers `sync` logs about the grace period must mean what they say.
+def test_grace_period_counts_measure_reappearance_against_the_scrape():
+    """`reappeared` must mean "in the scrape we just took", not "not in the other two buckets".
 
-    A bare held-count cannot distinguish a working grace period from a queue quietly growing —
-    the shape ADR-0055 had to fix on the collapse guard — so the log reports *reappeared* (the
-    absence was transient, which is the case ADR-0083 exists for) and *evicted-on-second-miss*
-    alongside it. Both are derived in `sync` rather than carried on `SyncPlan`, so this pins the
-    derivation against real `plan_sync` output instead of the arithmetic being re-invented.
+    ADR-0083: "An id that reappeared, was pruned, or sat on a board that left the ledger is simply
+    not written again." Only the first is a reappearance, so a remainder-by-subtraction lumps all
+    three together and reports churn that never happened. This calls the real helper `sync` uses,
+    so restating the arithmetic here cannot make a wrong implementation pass.
     """
     board = "ats:B"
     indexed = ["ats:B:kept", "ats:B:first_miss", "ats:B:second_miss"]
     was_unconfirmed = frozenset({"ats:B:second_miss"})  # already missed once
+    fresh = {"ats:B:kept"}
 
     plan = plan_sync(
         index_ids=indexed,
-        fresh_ids={"ats:B:kept"},
+        fresh_ids=fresh,
         scraped_boards=[board],
         live={},
         was_unconfirmed=was_unconfirmed,
     )
-
-    # a second consecutive absence evicts; a first one is only held
+    # a second consecutive absence evicts; a first one is only unconfirmed
     assert plan.delete == frozenset({"ats:B:second_miss"})
     assert plan.unconfirmed == frozenset({"ats:B:first_miss"})
+    assert grace_period_counts(was_unconfirmed, fresh, plan) == (0, 0)
 
-    fresh = {"ats:B:kept"}
-    assert (len(was_unconfirmed & fresh), len(was_unconfirmed & plan.delete)) == (0, 1)
-
-    # and when the carried-in id comes back, it counts as reappeared rather than vanishing
+    # ...and when the carried-in id comes back, it counts as a reappearance
     fresh_back = {"ats:B:kept", "ats:B:second_miss"}
     back = plan_sync(
         index_ids=indexed,
@@ -730,38 +728,45 @@ def test_grace_period_reappeared_and_drained_counters():
         was_unconfirmed=was_unconfirmed,
     )
     assert "ats:B:second_miss" not in back.delete
-    assert len(was_unconfirmed & fresh_back) == 1
+    assert grace_period_counts(was_unconfirmed, fresh_back, back) == (1, 0)
 
 
-def test_grace_period_reappeared_excludes_an_id_whose_board_left_the_ledger():
-    """Regression: `reappeared` must be measured against the scrape, not by subtraction.
+def test_grace_period_counts_exclude_an_id_whose_board_left_the_ledger():
+    """Regression: an off-ledger id is not a reappearance.
 
-    A carried-in id whose Board has since left the ledger is dropped from `unconfirmed` by
-    `plan_sync`'s own carry-forward guard (`board.lower() in live`) and is not evicted either,
-    because its Board was never scraped. Inferring "came back" as
-    `was_unconfirmed - unconfirmed - delete` therefore counts it as a reappearance when the row is
-    really just waiting for `plan_prune`'s off-Board sweep — the log would report churn that never
-    happened. Intersecting with `fresh` asks the question directly instead.
+    `plan_sync`'s carry-forward guard drops it from `unconfirmed` (`board.lower() in live`) and it
+    is not evicted either, because its Board went unscraped — so subtracting the other buckets
+    would count it as "came back" when the row is really waiting for `plan_prune`'s off-Board
+    sweep. Sibling of `test_ids_on_a_board_that_left_the_ledger_are_not_carried_forever`, which
+    pins the drop this counter must not misread.
     """
-    index_ids = ["ats:DEAD:x1", "ats:LIVE:y1"]
-    fresh = {"ats:LIVE:y1"}
     was_unconfirmed = frozenset({"ats:DEAD:x1"})
-
+    fresh = {"ats:LIVE:y1"}
     plan = plan_sync(
-        index_ids=index_ids,
+        index_ids=["ats:DEAD:x1", "ats:LIVE:y1"],
         fresh_ids=fresh,
         scraped_boards=["ats:LIVE"],  # ats:DEAD was not scraped
         live={"ats:live": "ats:LIVE"},  # ...and is no longer in the ledger
         was_unconfirmed=was_unconfirmed,
     )
-    assert (
-        "ats:DEAD:x1" not in plan.unconfirmed
-    )  # carry-forward drops an off-ledger Board
-    assert (
-        "ats:DEAD:x1" not in plan.delete
-    )  # and it is not evicted, its Board went unscraped
+    assert "ats:DEAD:x1" not in plan.unconfirmed and "ats:DEAD:x1" not in plan.delete
+    # the buggy definition this test exists to rule out would report 1 reappearance
+    assert len(was_unconfirmed - plan.unconfirmed - plan.delete) == 1
+    assert grace_period_counts(was_unconfirmed, fresh, plan) == (0, 0)
 
-    assert len(was_unconfirmed - plan.unconfirmed - plan.delete) == 1, (
-        "subtraction is the buggy definition this test exists to rule out"
+
+def test_grace_period_still_waiting_counts_an_unscraped_board():
+    """The accretion signal: carried-in ids whose Board this run did not read."""
+    was_unconfirmed = frozenset({"ats:SKIPPED:x1"})
+    plan = plan_sync(
+        index_ids=["ats:SKIPPED:x1", "ats:LIVE:y1"],
+        fresh_ids={"ats:LIVE:y1"},
+        scraped_boards=["ats:LIVE"],  # ats:SKIPPED sat out this run's slice...
+        live={
+            "ats:skipped": "ats:SKIPPED",
+            "ats:live": "ats:LIVE",
+        },  # ...but is still live
+        was_unconfirmed=was_unconfirmed,
     )
-    assert len(was_unconfirmed & fresh) == 0, "it never reappeared — nothing in fresh"
+    assert "ats:SKIPPED:x1" in plan.unconfirmed  # streak neither advanced nor reset
+    assert grace_period_counts(was_unconfirmed, {"ats:LIVE:y1"}, plan) == (0, 1)

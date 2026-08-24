@@ -349,10 +349,14 @@ count by however many duplicates exist; go through `load_active_companies()` (or
 
 ### Reading eviction, flapping, or "we deleted a live job" data
 
-**An id absent from one scrape is NOT evicted.** Since ADR-0083 (live 2026-08-23), a missing id
-is recorded as **Unconfirmed** (`data/state/unconfirmed_ids.txt`) and evicted only if the *next*
-scrape of that Board misses it too. Measured across 10 runs on 2026-08-24: 425–1,176 ids held per
-run against 129–605 evicted, so this is doing real work, not a no-op.
+**An id absent from one scrape is NOT evicted by `sync`.** Since ADR-0083 (live 2026-08-23), a
+missing id is recorded as **Unconfirmed** (`data/state/unconfirmed_ids.txt`) and evicted only if
+the *next* scrape of that Board misses it too. Measured across the 10 runs
+`32671773723`→`32719831948` (2026-08-24, from their merge logs' own `grace period:` lines):
+425–1,176 ids unconfirmed per run against 129–605 evicted, so this is doing real work, not a
+no-op. **One live exception:** `prune` is a different path with no grace period at all — it
+evicts off-Board and duplicate rows outright (ADR-0023), so "one absence never deletes anything"
+is true of `sync` specifically, not of the merge stage as a whole.
 
 This changes what the numbers *mean*, not just their size. A "flapped" row was missed by **two
 consecutive scrapes** and then seen again — a far stronger signal than one unlucky crawl — and

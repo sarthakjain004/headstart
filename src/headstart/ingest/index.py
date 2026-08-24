@@ -82,6 +82,7 @@ from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
     boards_by_canon,
+    grace_period_counts,
     in_predicate,
     live_keep_set,
     plan_prune,
@@ -108,10 +109,9 @@ _UNCONFIRMED = UNCONFIRMED_PATH
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
-# Grace-period Boards named in the log. Enough to see the concentration that makes a held set
-# diagnosable rather than a bare count; capped so an ordinary run spread over hundreds of Boards
-# cannot bury the rest of the merge log.
-_TOP_HELD_BOARDS = 10
+_TOP_UNCONFIRMED_BOARDS = (
+    10  # Boards named per run; enough to show concentration, not enough to bury the log
+)
 _MIN_KEEP_BOARDS = (
     1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
 )
@@ -498,41 +498,24 @@ def sync(args: argparse.Namespace) -> int:
     # extra look is the safe direction; erring toward a stale streak is not.
     write_id_list(Path(args.unconfirmed), plan.unconfirmed)
     if plan.unconfirmed or was_unconfirmed:
-        # Three numbers, not one. A bare held-count cannot say whether the grace period is
-        # *working* — a set that neither drains nor resolves is a queue quietly growing, which is
-        # exactly the shape ADR-0055 had to fix on the collapse guard. `reappeared` (the absence
-        # was transient, which is the case ADR-0083 exists for) and `drained` (missed a second
-        # time, so evicted now) are what separate a healthy grace period from an accreting one.
-        #
-        # `reappeared` is measured against `fresh` directly rather than inferred by subtracting
-        # the other two sets. Subtraction over-counts: a carried-in id whose Board has since left
-        # the ledger is dropped from `unconfirmed` by `plan_sync`'s own carry-forward guard and is
-        # not evicted either (its Board was never scraped), so it would fall into the remainder
-        # and read as "came back" when it did nothing of the sort — it is waiting for
-        # `plan_prune`'s off-Board sweep. Same for a row `_take_upgrades` lifted out of
-        # `index_ids` before planning. Intersecting with `fresh` asks the question directly: is
-        # this id in the scrape we just took?
-        reappeared = len(was_unconfirmed & fresh)
-        drained = len(was_unconfirmed & plan.delete)
-        # The three need not sum to the carried-in total, and saying so in the line keeps a reader
-        # from treating a shortfall as a lost id: the remainder is ids still held (absent again
-        # this run, on a Board that was scraped) plus the off-Board cases described above.
+        reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)
         _log.info(
-            f"grace period: {len(plan.unconfirmed)} id(s) held for one more look before eviction; "
-            f"of the {len(was_unconfirmed)} carried in, {reappeared} reappeared in this scrape and "
-            f"{drained} were missed a second time and evicted now (ADR-0083)"
+            f"grace period: {len(plan.unconfirmed)} id(s) unconfirmed, awaiting a second look "
+            f"before eviction; of the {len(was_unconfirmed)} carried in, {reappeared} reappeared "
+            f"in this scrape and {still_waiting} are still waiting — their Board was not scraped "
+            "this run, so their streak neither advanced nor reset (ADR-0083)"
         )
-        # Which Boards dominate the held set. A grace period spread thinly over many Boards is
-        # ordinary churn; one concentrated on a handful is a scrape that keeps coming back short,
-        # and naming them is the difference between "570 ids held" and a diagnosis.
+        # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
+        # is ordinary churn; one concentrated on a handful is a scrape that keeps coming back
+        # short, and naming them is the difference between "570 unconfirmed" and a diagnosis.
         by_board: dict[str, int] = {}
         for job_id in plan.unconfirmed:
             board = resolve_board(job_id, live)
             by_board[board] = by_board.get(board, 0) + 1
         for board, count in sorted(by_board.items(), key=lambda kv: -kv[1])[
-            :_TOP_HELD_BOARDS
+            :_TOP_UNCONFIRMED_BOARDS
         ]:
-            _log.info(f"  {count} held on {board}")
+            _log.info(f"  {count} unconfirmed on {board}")
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)

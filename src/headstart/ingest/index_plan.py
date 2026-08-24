@@ -73,6 +73,36 @@ class SyncPlan:
     unconfirmed: frozenset[str] = frozenset()
 
 
+def grace_period_counts(
+    was_unconfirmed: set[str], fresh: set[str], plan: SyncPlan
+) -> tuple[int, int]:
+    """``(reappeared, still_waiting)`` for the ids the last run left unconfirmed (ADR-0083).
+
+    Public and separate from :func:`sync` so a test can pin the derivation against real
+    ``plan_sync`` output. Inlined in ``sync``, the only way to test it was to restate the same
+    expressions in the test, which passes just as happily when they are wrong.
+
+    ``reappeared`` is measured against ``fresh`` — "is this id in the scrape we just took?" —
+    rather than inferred as the remainder after subtracting the other buckets. Subtraction
+    over-counts, and ADR-0083 names exactly why: "An id that reappeared, was pruned, or sat on a
+    board that left the ledger is simply not written again." Only the first of those three is a
+    reappearance; the other two are rows on their way out via ``plan_prune``'s off-Board sweep,
+    and folding them in would report churn that never happened.
+
+    ``still_waiting`` is the carried-in ids whose Board this run did not scrape, so their streak
+    neither advanced nor reset. **This is the accretion signal**: only ~20,000 of ~66,000 live
+    Boards are in any run's slice, so a healthy set is dominated by ids simply awaiting their
+    Board's next turn — but a set where this number only ever grows is a queue that never gets
+    looked at, the shape ADR-0055 had to unwind for the collapse guard's ``held``.
+
+    Deliberately does *not* return an evicted count. With the grace period on, ``plan.delete`` is
+    a subset of ``was_unconfirmed`` by construction (``eligible = absent & previously``), so such
+    a number would be exactly the ``evict`` figure the plan line already prints — an intersection
+    implying a distinction that cannot exist.
+    """
+    return len(was_unconfirmed & fresh), len(was_unconfirmed & plan.unconfirmed)
+
+
 def plan_sync(
     index_ids: Iterable[str],
     fresh_ids: Iterable[str],
