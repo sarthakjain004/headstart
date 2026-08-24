@@ -41,10 +41,11 @@ for any id caught in the cycle) but not currently a source of real data loss on 
 **Dead-job verification: every evicted job sampled and checked was confirmed genuinely gone from
 its live board.** 2,572 ids were net-evicted (evicted, never re-added) across the 10-run window.
 Sampled the largest-moving boards across five different ATSes — workday (3 boards), zoho,
-successfactors — and re-scraped each board fresh, live, through the real registered scraper.
-**16 of 16 checked in the first pass were confirmed absent from the current live listing**; see
-§4 for the full table and the two ATSes checked by a different method (eightfold, which needed a
-detail-fetch oracle rather than listing-membership — see the caveat in §4).
+successfactors, eightfold — and re-scraped each board fresh, live, through the real registered
+scraper. **24 of 24 checked were confirmed genuinely gone**, 0 false evictions found; see §4 for
+the full table and the one ATS (eightfold) checked by a different method — listing-membership
+alone isn't a trustworthy oracle there, so a detail-fetch check was used instead (see the
+caveat in §4).
 
 ## 1. Critical path
 
@@ -200,23 +201,19 @@ absence alone is not proof of death on this ATS specifically. Used the scraper's
 | workday:cat/CaterpillarCareers | 4 | fresh listing | 851 | 4/4 confirmed gone |
 | workday:boeing/EXTERNAL_CAREERS | 4 | fresh listing | 648 | 4/4 confirmed gone |
 | zoho:flintex.zohorecruit.com | 4 | fresh listing | 656 | 4/4 confirmed gone |
-| successfactors:careers.capgemini.com | 4 | fresh listing | (pending) | (pending) |
-| eightfold:careers.qualcomm.com | 4 | detail fetch | — | (pending) |
+| successfactors:careers.capgemini.com | 4 | fresh listing | 6,689 | 4/4 confirmed gone |
+| eightfold:careers.qualcomm.com | 4 | detail fetch (no detail = dead) | — | 4/4 confirmed dead |
 
-*(The successfactors and eightfold rows were still running live-network checks at the time this
-section was drafted — see the PR thread for the completed numbers; this doc will be updated
-before merge rather than left showing a stale partial table.)*
-
-Every check completed so far — 16 of 16 — confirms the eviction was correct: these are genuinely
-closed postings, not false evictions. This stands in useful contrast to the eightfold
-scope-exclusion finding elsewhere in this session's work, where the failure mode runs the
-*opposite* direction (postings that are excluded from eviction scope entirely and therefore
-never removed even after they close) — this check shows the ordinary eviction path, when it
-does fire, is firing correctly on the boards sampled here.
+All 24 checks completed and confirm the eviction was correct: every sampled id is genuinely
+closed, not a false eviction. This stands in useful contrast to the eightfold scope-exclusion
+finding elsewhere in this session's work, where the failure mode runs the *opposite* direction
+(postings that are excluded from eviction scope entirely and therefore never removed even after
+they close) — this check shows the ordinary eviction path, when it does fire, is firing
+correctly on the boards sampled here.
 
 ## What this does and doesn't establish
 
-This is a sample, not an exhaustive check — 20 ids across 5 boards out of 2,572 net-evicted ids
+This is a sample, not an exhaustive check — 24 ids across 6 boards out of 2,572 net-evicted ids
 across 17 ATSes. It's a reasonable spot-check given every single result agreed, but it is not
 proof that all 2,572 are correct; a board-specific bug elsewhere in the window would not
 necessarily show up in this particular sample. The `pwc/nonpublic_postings` finding (§2) is the
