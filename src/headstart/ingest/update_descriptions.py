@@ -44,6 +44,7 @@ import argparse
 import gzip
 import json
 from pathlib import Path
+from typing import NamedTuple
 
 from headstart import log
 from headstart.ingest import (
@@ -118,12 +119,25 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     return out
 
 
-def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int, list[str]]:
+class Reconciled(NamedTuple):
+    """What one ATS's reconcile pass did. Named because it outgrew a positional tuple."""
+
+    filled: int
+    learned: int
+    settled: int
+    #: No fresh text, nothing stored, and the detail was never fetched — so nothing was learned
+    #: and nothing recorded. These Jobs come back unchanged every run: the backlog that does not
+    #: shrink on its own, invisible until it was counted.
+    unfetched: int
+    rederive_ids: list[str]
+
+
+def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
-    Returns ``(filled, learned, settled, rederive_ids)`` — corpus rows repaired from the store,
-    descriptions newly stored or changed, postings recorded as authoritatively having none, and
-    the ids behind those last two.
+    Returns a :class:`Reconciled` — corpus rows repaired from the store, descriptions newly
+    stored or changed, postings recorded as authoritatively having none, postings left with no
+    description and no record of why, and the ids behind the second and third.
 
     ``rederive_ids`` is the ADR-0062 marking. A Job whose description settles *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
@@ -133,7 +147,7 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int, list[str]]
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = settled = 0
+    filled = settled = unfetched = 0
 
     # The rewrite streams through a temp file rather than buffering the corpus a second time —
     # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
@@ -165,12 +179,18 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> tuple[int, int, int, list[str]]
                     # re-fetched on every run for the rest of its life.
                     learned.append({"id": job_id, "description": None})
                     settled += 1
+                elif stored is _MISSING:
+                    # Neither fetched nor stored: this run learned nothing about it and left no
+                    # record, so the next run starts here again.
+                    unfetched += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
-    return filled, len(learned) - settled, settled, [r["id"] for r in learned]
+    return Reconciled(
+        filled, len(learned) - settled, settled, unfetched, [r["id"] for r in learned]
+    )
 
 
 def _embedded_ids(meta_path: Path) -> set[str]:
@@ -306,24 +326,31 @@ def main() -> int:
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 
-    queued = 0
+    queued = unfetched = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
-        filled, learned, settled, rederive = reconcile(path, store / ats)
-        rederive = [i for i in rederive if i in embedded]
+        done = reconcile(path, store / ats)
+        rederive = [i for i in done.rederive_ids if i in embedded]
         # Appended per ATS rather than accumulated and written once: the queue is what stops these
         # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must
         # not lose the ids of the ATSes already reconciled.
         append_id_list(Path(args.pending_rederive), rederive)
         queued += len(rederive)
+        unfetched += done.unfetched
         _log.info(
-            f"{ats}: filled {filled:,} from the store, learned {learned:,}, "
-            f"settled {settled:,} as having none, queued {len(rederive):,} to re-derive"
+            f"{ats}: filled {done.filled:,} from the store, learned {done.learned:,}, "
+            f"settled {done.settled:,} as having none, queued {len(rederive):,} to re-derive"
+            + (f", {done.unfetched:,} still unfetched" if done.unfetched else "")
         )
     _log.info(
         f"skip-list: {write_held_details(store, Path(args.held_details)):,} Jobs held"
     )
     _log.info(f"re-derive queue: {queued:,} newly settled -> {args.pending_rederive}")
+    if unfetched:
+        _log.info(
+            f"{unfetched:,} Job(s) still carry no description and no record of why — "
+            "their detail was never fetched, so they return unchanged next run (ADR-0050)"
+        )
     return 0
 
 

@@ -37,16 +37,32 @@ def main() -> int:
     stats = filter_jobs(args.src, args.dst)
     _log.info(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")
     kept = total = 0
+    empty = []
     for ats, (k, t) in sorted(stats.items()):
         kept += k
         total += t
         if t:
             _log.info(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
+        else:
+            # An ATS that scraped nothing used to be skipped here, so a wholly broken scraper
+            # left no trace in this table at all — it read as "not in this run's slice", which
+            # looks the same and is the far more common case. Name it instead.
+            empty.append(ats)
+    if empty:
+        _log.warning(
+            f"{len(empty)} ATS(es) contributed zero rows: {', '.join(empty)} — either they "
+            "were not in this run's slice, or every board failed"
+        )
     if total:
         _log.info(
             f"{'TOTAL':<16}{kept:>9}{total:>9}{100 * kept / total:>7.1f}%"
             f"  (dropped {total - kept} non-tech) -> {args.dst}"
         )
+    else:
+        # A zero-row run used to be near-silent: the table printed its header and stopped, which
+        # is a hard shape to notice in a green log. Everything downstream reads this corpus, so
+        # say it plainly. Not an abort — this stage does not own that call.
+        _log.error(f"no rows at all reached the tech filter -> {args.dst} is empty")
     return 0
 
 
