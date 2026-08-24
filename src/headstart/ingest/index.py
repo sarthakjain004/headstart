@@ -82,6 +82,7 @@ from headstart.ingest.index_plan import (
     COLLAPSE_RATIO,
     apply_sync,
     boards_by_canon,
+    grace_period_counts,
     in_predicate,
     live_keep_set,
     plan_prune,
@@ -108,6 +109,9 @@ _UNCONFIRMED = UNCONFIRMED_PATH
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
+_TOP_UNCONFIRMED_BOARDS = (
+    10  # Boards named per run; enough to show concentration, not enough to bury the log
+)
 _MIN_KEEP_BOARDS = (
     1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
 )
@@ -457,9 +461,8 @@ def sync(args: argparse.Namespace) -> int:
     # first run after this ships withholds every absence and deletes nothing — a deliberate cold
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
-    plan = plan_sync(
-        index_ids, fresh, boards, live, stamps, read_id_list(Path(args.unconfirmed))
-    )
+    was_unconfirmed = read_id_list(Path(args.unconfirmed))
+    plan = plan_sync(index_ids, fresh, boards, live, stamps, was_unconfirmed)
     # `add` counts every row written, and an upgrade is a delete-then-re-add of a Job that never
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
     # 19 runs that read as +4,376 while the table actually fell by 388 rows. Spell out the split
@@ -494,11 +497,25 @@ def sync(args: argparse.Namespace) -> int:
     # miss — reintroducing the exact false eviction ADR-0083 exists to prevent. Erring toward an
     # extra look is the safe direction; erring toward a stale streak is not.
     write_id_list(Path(args.unconfirmed), plan.unconfirmed)
-    if plan.unconfirmed:
+    if plan.unconfirmed or was_unconfirmed:
+        reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)
         _log.info(
-            f"grace period: {len(plan.unconfirmed)} id(s) absent from their Board's last "
-            "scrape are held for one more look before eviction (ADR-0083)"
+            f"grace period: {len(plan.unconfirmed)} id(s) unconfirmed, awaiting a second look "
+            f"before eviction; of the {len(was_unconfirmed)} carried in, {reappeared} reappeared "
+            f"in this scrape and {still_waiting} are unconfirmed again (their Board sat out this "
+            "run's slice, or the collapse guard capped its evictions first) (ADR-0083)"
         )
+        # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
+        # is ordinary churn; one concentrated on a handful is a scrape that keeps coming back
+        # short, and naming them is the difference between "570 unconfirmed" and a diagnosis.
+        by_board: dict[str, int] = {}
+        for job_id in plan.unconfirmed:
+            board = resolve_board(job_id, live)
+            by_board[board] = by_board.get(board, 0) + 1
+        for board, count in sorted(by_board.items(), key=lambda kv: -kv[1])[
+            :_TOP_UNCONFIRMED_BOARDS
+        ]:
+            _log.info(f"  {count} unconfirmed on {board}")
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)

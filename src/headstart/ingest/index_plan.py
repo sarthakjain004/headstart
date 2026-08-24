@@ -1,4 +1,5 @@
-"""Pure planners for the search index: what to add, evict, and prune (ADR-0014, ADR-0023).
+"""Pure planners for the search index — what to add, evict, and prune (ADR-0014, ADR-0023) —
+and the pure derivations that report on a finished plan.
 
 Everything here computes row sets without touching LanceDB, so the scoping invariants stay
 unit-testable on CI's base-deps-only install. :mod:`headstart.ingest.index` is the CLI that opens
@@ -33,6 +34,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -71,6 +73,48 @@ class SyncPlan:
     delete: frozenset[str]
     held: tuple[tuple[str, int], ...] = ()
     unconfirmed: frozenset[str] = frozenset()
+
+
+def grace_period_counts(
+    was_unconfirmed: AbstractSet[str], fresh: AbstractSet[str], plan: SyncPlan
+) -> tuple[int, int]:
+    """``(reappeared, still_waiting)`` for the ids the last run left unconfirmed (ADR-0083).
+
+    Public and separate from :func:`sync` so a test can pin the derivation against real
+    ``plan_sync`` output. Inlined in ``sync``, the only way to test it was to restate the same
+    expressions in the test, which passes just as happily when they are wrong.
+
+    ``reappeared`` is measured against ``fresh`` — "is this id in the scrape we just took?" —
+    rather than inferred as the remainder after subtracting the other buckets. Subtraction
+    over-counts, and ADR-0083 names exactly why: "An id that reappeared, was pruned, or sat on a
+    board that left the ledger is simply not written again." Only the first of those three is a
+    reappearance; the other two are rows on their way out via ``plan_prune``'s off-Board sweep,
+    and folding them in would report churn that never happened.
+
+    ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
+    neither came back nor were evicted. **This is the accretion signal**, and it has two distinct
+    causes that this single number deliberately does not separate: the id's Board was not in this
+    run's slice at all (only ~20,000 of ~66,000 live Boards are, so this dominates a healthy set
+    and is entirely benign — the streak simply did not advance), or its Board *was* scraped, the
+    id was absent again, and the ADR-0046 collapse guard capped its Board's evictions before
+    reaching it. The second is the one worth watching: a number that only ever grows is a queue
+    nothing looks at, the shape ADR-0055 had to unwind for the guard's own ``held``. Read it
+    against the ``collapse guard:`` line in the same log, which names the capped Boards — do not
+    read this number alone as "waiting for their Board's next turn".
+
+    Deliberately does *not* return an evicted count. With the grace period on, ``plan.delete`` is
+    a subset of ``was_unconfirmed`` by construction (``eligible = absent & previously``), so such
+    a number would be exactly the ``evict`` figure the plan line already prints — an intersection
+    implying a distinction that cannot exist.
+    """
+    reappeared = was_unconfirmed & fresh
+    # Subtract `fresh`: the two buckets must be disjoint or the line can print more than it
+    # carried in. `fresh` is not filtered by `boards`, and ADR-0053 drops an Unauthoritative
+    # Board *from* `boards` — so a carried-in id on a scope-excluded Board that genuinely came
+    # back is both in `fresh` and re-added by the carry-forward loop, which asks only whether its
+    # Board went unscraped. Counting it in each bucket inflates the accretion signal with an id
+    # that demonstrably returned.
+    return len(reappeared), len(was_unconfirmed & plan.unconfirmed - reappeared)
 
 
 def plan_sync(
