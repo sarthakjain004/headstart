@@ -38,6 +38,21 @@ def test_greenhouse_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def test_greenhouse_location_strips_trailing_whitespace():
+    # Real bug, location-field audit 2026-08-24: `location.name` ships un-trimmed padding on a
+    # real minority of tenants ("Hybrid in Boston, MA   ", three trailing spaces — 22/178 sampled
+    # jobs, 12.4%), and nothing downstream stripped it.
+    raw = {"jobs": [{"id": 1, "title": "T", "location": {"name": "Washington D.C.  "}}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Washington D.C."
+
+
+def test_greenhouse_location_missing_name_stays_none():
+    raw = {"jobs": [{"id": 1, "title": "T", "location": {}}]}
+    jobs = get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].location is None
+
+
 @pytest.mark.parametrize(
     ("envelope", "should_warn"),
     [
@@ -291,6 +306,28 @@ def test_keka_parse():
     assert j.url == "https://jupiter.keka.com/careers/jobdetails/132016"
     assert j.experience == "3-5"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_keka_location_strips_a_dirty_city_field():
+    # Real bug, location-field audit 2026-08-24: `city` carries a trailing space on some
+    # tenants' data while the sibling `name` field for the same location is clean
+    # ({'name': 'Ahmedabad Center', 'city': 'Ahmedabad Center '}) — `city` wins the `or` chain,
+    # so the padding reached the served field with nothing downstream to strip it.
+    raw = [
+        {
+            "id": 1,
+            "title": "T",
+            "jobLocations": [{"name": "Ahmedabad Center", "city": "Ahmedabad Center "}],
+        }
+    ]
+    jobs = get_scraper("keka", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Ahmedabad Center"
+
+
+def test_keka_location_empty_list_stays_none():
+    raw = [{"id": 1, "title": "T", "jobLocations": []}]
+    jobs = get_scraper("keka", "x", "X").parse(raw, SCRAPED_AT)
+    assert jobs[0].location is None
 
 
 def test_keka_salary_no_scientific_notation_for_large_amounts():
@@ -1882,6 +1919,47 @@ def test_darwinbox_salary_range_without_timeframe_unaffected():
     assert jobs[0].salary == "INR 250000 - 400000"
 
 
+def test_darwinbox_single_location_strips_an_embedded_carriage_return():
+    # Real bug found in a location-field audit, 2026-08-24: the raw `locations` string ships a
+    # literal \r right before its comma on some tenants ("Maharashtra\r, India" — 31/67 sampled
+    # jobs on one board, 47.45% across the full live population). The multi-location branch
+    # already strips each `tool_tip_locations` part; the single-location branch took the raw
+    # string with zero cleaning.
+    raw = [
+        {
+            "id": "abc125",
+            "title": "Test Role",
+            "locations": "Jhagadia, Gujarat\r, India",
+            "tool_tip_locations": [],
+        }
+    ]
+    jobs = get_scraper("darwinbox", "aartiindustries", "Aarti").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Jhagadia, Gujarat, India"
+
+
+def test_darwinbox_single_location_drops_empty_comma_segments():
+    # Same fix, a second real shape found in the same full-population verification: some raw
+    # strings carry a leading or doubled comma ("` , Makati, ...`", "`Serrano Ave,, San Juan...`")
+    # from an empty office/building field upstream — the comma-split-and-filter approach that
+    # fixes the \r also drops these for free, since an empty segment is just as falsy as one that
+    # was only whitespace.
+    raw = [
+        {"id": "l1", "title": "T", "locations": " , Makati, Metro Manila, Philippines"},
+        {"id": "l2", "title": "T", "locations": "Serrano Ave,, San Juan, Metro Manila"},
+    ]
+    jobs = get_scraper("darwinbox", "synergymarinegroup", "Synergy").parse(
+        raw, SCRAPED_AT
+    )
+    assert jobs[0].location == "Makati, Metro Manila, Philippines"
+    assert jobs[1].location == "Serrano Ave, San Juan, Metro Manila"
+
+
+def test_darwinbox_single_location_none_stays_none():
+    raw = [{"id": "abc126", "title": "Test Role", "locations": None}]
+    jobs = get_scraper("darwinbox", "someco", "SomeCo").parse(raw, SCRAPED_AT)
+    assert jobs[0].location is None
+
+
 def test_successfactors_parse():
     jobs = get_scraper("successfactors", "jobs.sap.com", "SAP").parse(
         _load("successfactors_pages.json"), SCRAPED_AT
@@ -2002,6 +2080,115 @@ def test_successfactors_page_fields_csb_meta_microdata():
         "<span>25 Jun 2026 </span>"
     )
     assert _csb_posted_at(label_page) == "2026-06-25"
+
+
+def test_successfactors_location_from_slug_recovers_the_prefix():
+    # Real gap found in a location-field audit, 2026-08-24: some CSB tenants' job pages carry
+    # no location markup anywhere — not JSON-LD, not itemprop, not a joblayouttoken label — yet
+    # the URL SuccessFactors itself generated still has it: careers.gallo.com's real live page
+    # for this exact title.
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = "https://careers.gallo.com/job/Charlotte-Account-Manager-Customer-Development-NC-28277/1407690100/"
+    assert (
+        _location_from_slug("Account Manager - Customer Development", url)
+        == "Charlotte"
+    )
+
+
+def test_successfactors_location_from_slug_ignores_a_trailing_req_id():
+    # The dangerous direction: a title-only slug leaves a bare requisition number after it
+    # ("Foshan-City-Sr-Technician-528513" for a title of just "Sr Technician"). Appending it as
+    # part of the location would fabricate "Gaoming District Foshan City 528513" — a real live
+    # example (careers.gallo.com sibling tenant). Only the prefix is ever trusted.
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = (
+        "https://x/job/Gaoming-District%2C-Foshan-City-Sr-Technician-528513/1368205300/"
+    )
+    assert _location_from_slug("Sr Technician", url) == "Gaoming District Foshan City"
+
+
+def test_successfactors_location_from_slug_none_when_slug_is_the_title_verbatim():
+    # careers.ijm.com: real live tenant whose job URLs are the bare title with no location
+    # component at all. Must return None, not a guess built from stray title punctuation.
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = "https://careers.ijm.com/job/ENGINEER,-PLANNING/945286110/"
+    assert _location_from_slug("ENGINEER, PLANNING", url) is None
+
+
+def test_successfactors_location_from_slug_title_with_an_encoded_slash_fails_safe():
+    # A title containing a literal "/" (percent-encoded %2F in the real URL) decodes BEFORE the
+    # path is split on "/", so it fragments the slug into an extra path segment and the id/slug
+    # segments no longer line up as expected. Found in code review, round 1 — confirmed here to
+    # degrade to a safe None rather than a wrong location: the token match then fails against a
+    # misaligned segment, which is the same fail-safe path a punctuation mismatch takes.
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = "https://x/job/Charlotte-IT%2FOT-Engineer-NC-28277/1234567/"
+    assert _location_from_slug("IT/OT Engineer", url) is None
+
+
+def test_successfactors_location_from_slug_repeated_place_name_in_title():
+    # tuyendung.vietcombank.com.vn: the location text ("Bình Dương") appears a SECOND time
+    # embedded inside the title's own bracketed code. Exact contiguous-match on the title's full
+    # token sequence still isolates the true prefix correctly rather than getting confused by
+    # the repeat.
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    title = "[II.2026_Nam Bình Dương] CV khách hàng (kinh nghiệm)"
+    url = (
+        "https://tuyendung.vietcombank.com.vn/job/"
+        "B%C3%ACnh-D%C6%B0%C6%A1ng-II_2026_Nam-B%C3%ACnh-D%C6%B0%C6%A1ng-"
+        "CV-kh%C3%A1ch-h%C3%A0ng-(kinh-nghi%E1%BB%87m)/55551544/"
+    )
+    assert _location_from_slug(title, url) == "Bình Dương"
+
+
+def test_successfactors_page_fields_uses_slug_only_as_the_last_resort():
+    # Integration: the new tier must never fire when JSON-LD or CSB markup already answered —
+    # gated behind `not fields.get("location")` in _page_fields, checked here rather than only
+    # read off the source, since a gating bug would silently overwrite a page's real answer with
+    # a slug guess on every tenant that has proper markup.
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = """<html><head><script type="application/ld+json">
+    {"@context": "http://schema.org", "@type": "JobPosting", "title": "Engineer",
+    "jobLocation": {"address": {"addressLocality": "Berlin"}}}
+    </script></head><body></body></html>"""
+    url = "https://x/job/Munich-Engineer/1/"  # slug disagrees with the real JSON-LD answer
+    fields = _page_fields(page, url)
+    assert fields["location"] == "Berlin"
+
+
+def test_successfactors_page_fields_falls_through_to_slug_when_page_has_no_markup():
+    from headstart.scrapers.successfactors import _page_fields
+
+    # og:title-only page, no JSON-LD, no CSB microdata/labels — the Southco shape (measured live,
+    # 2026-08-24: location appears nowhere in the page body, only in the URL the platform built).
+    page = (
+        "<html><head><title>Manager I - Engineering Program Job Details | Southco</title>"
+        '<meta property="og:title" content="Manager I - Engineering Program" /></head>'
+        "<body></body></html>"
+    )
+    url = "https://x/job/Concordville-Manager-I-Engineering-Program-PA-19331-0116/1384635700/"
+    fields = _page_fields(page, url)
+    assert fields["title"] == "Manager I - Engineering Program"
+    assert fields["location"] == "Concordville"
+
+
+def test_successfactors_page_fields_no_url_skips_the_slug_tier():
+    # Every existing caller of _page_fields (three above) has no URL and must keep working
+    # unchanged — the parameter is optional precisely so they don't need touching.
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = (
+        "<html><head><title>Manager I - Engineering Program Job Details | Southco</title>"
+        "</head><body></body></html>"
+    )
+    fields = _page_fields(page)
+    assert fields["location"] is None
 
 
 def test_successfactors_location_from_careersite_property():
