@@ -44,6 +44,12 @@ spare egress eats rate-limit walls that surface here as errors and deferrals, so
 egress artefact rather than a board problem. Cross-check with `fanout_retries.py` before treating
 an error spike as a scraper defect.
 
+**A second line beside `failures:` answers the shape question, not the volume one.** The
+gone-streak ledger only advances on a 404/410 read; everything else is a *failure to observe*.
+`N error(s) did not read as gone; top classes: ...` names what fell into that second bucket — a
+big number there is often ordinary (timeouts, 429s correctly not counted as strikes), but a
+404-ish class recurring run after run means the matcher is missing a genuine gone-response.
+
 Run: python scripts/runlog/fanout_errors.py 32272854468
      python scripts/runlog/fanout_errors.py 32261793515 32272854468   # compare
 """
