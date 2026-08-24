@@ -57,6 +57,12 @@ TECH_ZERO_TOTAL = re.compile(
     r"no rows at all reached the tech filter -> (\S+) is empty"
 )
 
+# Note the boundary: this covers JOB-LEVEL digest lines (one per stage, in the join job's
+# log). Per-Board scraper warnings (trakstar's card cap, darwinbox's browser escalation,
+# zoho's/freshteam's widget ceilings, workday's per-page failure classes) are NOT parsed by
+# any runlog tool — they live in the per-shard scrape log, keyed by Board, and reading them
+# means grepping that shard's text directly rather than a structured report.
+
 num = lambda s: int(s.replace(",", ""))
 
 
