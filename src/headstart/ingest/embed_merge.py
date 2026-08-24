@@ -180,6 +180,13 @@ def main() -> int:
         help="file of Job ids whose stale row to drop before merging — the embed planner's "
         "upgrade list (ADR-0050); missing or empty is a no-op",
     )
+    ap.add_argument(
+        "--expect-shards",
+        type=int,
+        default=0,
+        help="how many shard fragments the embed planner fanned out; a shortfall is warned "
+        "about rather than merged silently. 0 (default) disables the check",
+    )
     args = ap.parse_args()
 
     store = Path(args.store)
@@ -227,6 +234,27 @@ def main() -> int:
     _log.info(
         f"prior store: {prior_rows} vectors; {len(frags)} fragment(s) under {frag_root}"
     )
+    # A fragment count with nothing to compare it against cannot answer the one question that
+    # matters here: did every shard's vectors arrive? The download is `continue-on-error` and the
+    # matrix is `fail-fast: false`, so 14 of 15 is an ordinary, green-looking outcome — and this
+    # file's own upgrade comment records the day that shape cost 10,144 vectors and 11,083 served
+    # rows. Those Docs are not lost forever (they carry no vector, so `plan_sync` cannot add them
+    # and `embed_plan` re-plans them next run), but they are missing from the served index until
+    # it comes round again, and nothing said so at the time.
+    if args.expect_shards and len(frags) < args.expect_shards:
+        _log.warning(
+            f"only {len(frags)} of {args.expect_shards} shard fragment(s) arrived — the missing "
+            "shard(s)' Docs are not in this merge and will not be indexed until a later run "
+            "re-plans them"
+        )
+    elif not frags:
+        # Distinct from the shortfall above: with no expectation passed we cannot call it a
+        # shortfall, but zero fragments is never a healthy merge and used to read as `merged 0
+        # new vectors` at info.
+        _log.warning(
+            f"no fragments under {frag_root} — nothing to merge; the embed stage produced "
+            "nothing, was skipped, or its artifacts did not download"
+        )
 
     appended = 0
     with meta_path.open("a", encoding="utf-8") as mf, vec_path.open("ab") as vf:

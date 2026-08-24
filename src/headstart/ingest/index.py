@@ -112,6 +112,7 @@ _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progr
 _TOP_UNCONFIRMED_BOARDS = (
     10  # Boards named per run; enough to show concentration, not enough to bury the log
 )
+_TOP_SHIELDED_BOARDS = 10  # Boards named when reporting what scope exclusion shields
 _MIN_KEEP_BOARDS = (
     1000  # a healthy ledger has ~40k live Boards; refuse to prune below this
 )
@@ -419,6 +420,31 @@ def sync(args: argparse.Namespace) -> int:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
         index_ids, stamps = [], {}
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
+    if excluded:
+        # How many rows the ADR-0053 exclusion is actually shielding — deliberately a second line
+        # here rather than folded into the warning above, because `index_ids` is only read from
+        # the table further down and the exclusion has to be decided before that.
+        #
+        # Why it is worth a line at all: the sibling ADR-0046 collapse guard reports a *row* count
+        # (`withheld N evictions on {board}`), and that is the only reason its ratchet was ever
+        # caught — someone could watch the number climb 267 -> 953 and ADR-0055 followed. This
+        # mechanism reports only a Board count, has no bound, and has no drain (`boards -=
+        # excluded` removes the Board outright, and `prune` cannot reach it while the Board is
+        # Live), so a Board that comes back short on every run shields its rows forever and
+        # nothing says so. An exclusion withholding 30 rows and one withholding 30,000 log
+        # identically today.
+        shielded: Counter[str] = Counter()
+        for job_id in index_ids:
+            board = resolve_board(job_id, live)
+            if board in excluded:
+                shielded[board] += 1
+        _log.warning(
+            f"scope exclusion is shielding {sum(shielded.values())} indexed row(s) from eviction "
+            f"across {len(excluded)} Board(s) — ADR-0053 has no drain, so a Board short on every "
+            "run never re-enters scope; watch this number across runs, not within one"
+        )
+        for board, count in shielded.most_common(_TOP_SHIELDED_BOARDS):
+            _log.warning(f"  {count} row(s) shielded on {board}")
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
     # existed keeps its frozen schema — and `apply_sync` requires rows to match it exactly. Add the

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import Counter
 from typing import Any
 
 from headstart import http, log, spare_egress
@@ -40,6 +41,16 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _log = log.get(__name__)
+
+
+def _failure_class(exc: Exception) -> str:
+    """A groupable label for one failed page — the status where the origin gave one, else the
+    exception type. Deliberately coarse: the message carries per-request detail (offsets, hosts)
+    that would never group, and what a short crawl needs is the *shape* of its failures, not 108
+    distinct strings."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return f"HTTP {status}" if status else type(exc).__name__
+
 
 _URL_PATTERN = re.compile(
     r"^https://(?P<company>[^.]+)\.(?P<instance>wd\d+)\.myworkdayjobs\.com/(?P<site>[^/?#]+)"
@@ -544,10 +555,18 @@ class WorkdayScraper(BaseScraper):
         offsets = range(_PAGE_LIMIT, total, _PAGE_LIMIT)
         if not offsets:
             return
+        # What the failed pages actually were. `missing` alone cannot tell throttling from a
+        # dead host from a mid-crawl 404, and that is the first question asked of every
+        # short crawl — answering it previously meant opening the shard log and reading
+        # `scrape_run`'s run-wide retry totals, which are shared across every Board in the shard
+        # and so cannot be attributed to this one.
+        classes: Counter[str] = Counter()
         if self.async_fanout_enabled():
-            missing, error = asyncio.run(self._paginate_async(applied, offsets, absorb))
+            missing, error = asyncio.run(
+                self._paginate_async(applied, offsets, absorb, classes)
+            )
         else:
-            missing, error = self._paginate_sync(applied, offsets, absorb)
+            missing, error = self._paginate_sync(applied, offsets, absorb, classes)
         if not missing:
             return
         # Page 1 is in the denominator because it is in hand: :meth:`_exhaust` fetched it before
@@ -556,7 +575,10 @@ class WorkdayScraper(BaseScraper):
         # nvidia's fifteen slices — as 100% lost the moment its single page 429s, which is the
         # whole of what #194 asked this not to do.
         page_count = len(offsets) + 1
-        shortfall = f"{missing} of {page_count} page(s) failed mid-crawl"
+        why = ", ".join(f"{cls} x{n}" for cls, n in classes.most_common(4))
+        shortfall = f"{missing} of {page_count} page(s) failed mid-crawl" + (
+            f" ({why})" if why else ""
+        )
         if missing / page_count > _MAX_LOST_PAGE_SHARE:
             _log.warning(
                 f"{self.board_key()}: {shortfall} — too little of {total} listed read to keep"
@@ -577,7 +599,11 @@ class WorkdayScraper(BaseScraper):
         self.mark_truncated(f"{shortfall} of {total} listed postings")
 
     async def _paginate_async(
-        self, applied: dict[str, list[str]], offsets: range, absorb
+        self,
+        applied: dict[str, list[str]],
+        offsets: range,
+        absorb,
+        classes: Counter[str],
     ) -> tuple[int, http.RequestsError | None]:
         """Fetch every offset in ``offsets`` concurrently over one shared ``AsyncSession``,
         bounded to at most ``_PAGE_STREAMS`` in flight — narrower once the origin has walled this
@@ -618,17 +644,23 @@ class WorkdayScraper(BaseScraper):
                         payload = await self._post_async(session, applied, offset)
                     except http.RequestsError as exc:
                         missing += 1
+                        classes[_failure_class(exc)] += 1
                         error = error or exc
                         return
                     if payload is None:
                         missing += 1
+                        classes["404 mid-crawl"] += 1
                     absorb((payload or {}).get("jobPostings") or [])
 
             await asyncio.gather(*(one(offset) for offset in offsets))
         return missing, error
 
     def _paginate_sync(
-        self, applied: dict[str, list[str]], offsets: range, absorb
+        self,
+        applied: dict[str, list[str]],
+        offsets: range,
+        absorb,
+        classes: Counter[str],
     ) -> tuple[int, http.RequestsError | None]:
         """The pre-concurrency fallback: walk ``offsets`` one at a time via the sync
         :meth:`_post`, exactly as :meth:`_paginate` did before it fanned out. Only reached
@@ -642,10 +674,12 @@ class WorkdayScraper(BaseScraper):
                 payload = self._post(applied, offset=offset)
             except http.RequestsError as exc:
                 missing += 1
+                classes[_failure_class(exc)] += 1
                 error = error or exc
                 continue
             if payload is None:
                 missing += 1
+                classes["404 mid-crawl"] += 1
             absorb((payload or {}).get("jobPostings") or [])
         return missing, error
 
