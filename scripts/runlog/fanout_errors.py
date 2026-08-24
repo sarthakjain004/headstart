@@ -73,6 +73,10 @@ FAILURES = re.compile(
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
+# `failures`'s own second line: how much of the run's error volume did NOT read as a gone-board
+# 404/410, with the top classes named. A 404-ish class sitting here run after run means the
+# matcher is missing a genuine gone-response — read the shape, not the volume.
+UNMATCHED = re.compile(r"(\d+) error\(s\) did not read as gone; top classes: (.+)")
 
 
 def scrape_errors(run: Run) -> None:
@@ -138,6 +142,14 @@ def quarantines(run: Run) -> None:
         return
     text = run.log(jobs[0])
     totals = FAILURES.search(text)
+    um = UNMATCHED.search(text)
+    if um:
+        n, classes_txt = um.groups()
+        print(
+            f"  {n} error(s) did not read as gone (not a gone-strike); top classes: "
+            f"{classes_txt}",
+            flush=True,
+        )
     if totals:
         gone, shards, ledger, cleared, quarantined, at = totals.groups()
         print(

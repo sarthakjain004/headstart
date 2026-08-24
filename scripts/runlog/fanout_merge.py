@@ -67,6 +67,9 @@ MERGE_UPGRADE_HOLD = re.compile(r"\[embed_merge\] upgrades: holding (\d+) id\(s\
 # A shortfall against the plan's own shard count. Before it existed, a missing shard showed
 # up only as a smaller-than-expected vector total — i.e. as a mystery.
 MERGE_SHORTFALL = re.compile(r"only (\d+) of (\d+) shard fragment\(s\) arrived")
+# Fires only when --expect-shards was never passed (an unknown expectation) — the healthy
+# nothing-was-planned case is a separate, differently-worded info line and must not be conflated.
+MERGE_NO_FRAGS = re.compile(r"no fragments under (\S+) — nothing to merge")
 
 # --- update_meta -----------------------------------------------------------------------------
 META_LINE = re.compile(
@@ -235,6 +238,13 @@ def embed_merge_report(text: str) -> None:
         print(
             f"  NB: only {arrived} of {expected} shard fragment(s) arrived — the missing "
             "shard(s)' Docs are absent from this merge until a later run re-plans them",
+            flush=True,
+        )
+    nf = MERGE_NO_FRAGS.search(text)
+    if nf:
+        print(
+            f"  NB: no fragments at all under {nf.group(1)} — unexpected unless the embed "
+            "stage produced nothing, was skipped, or its artifacts did not download",
             flush=True,
         )
 
