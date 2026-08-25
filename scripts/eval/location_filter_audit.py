@@ -94,6 +94,18 @@ _INDIANA = (
 # Deliberately excludes "us"/"usa": those name a country and ARE filterable, so counting them
 # here would inflate the unfilterable ceiling. Also excludes "-", which is unreachable — the
 # strip below removes it before the lookup, leaving "".
+# A whole string that names no place. English is not enough here: several ATSes localize the
+# marker they write into `location`, and a French or German one counted as a *valid place* is a
+# silent under-report of exactly the defect this section measures. Measured 2026-08-25 over 138
+# live recruitee Boards / 1,922 offers, where the marker appears instead of a place on 476 of
+# them: `Poste a distance` 269, `Remote job` 101, `Homeoffice` 80, `Werken op afstand` 15, plus
+# `Trabajo a distancia`, `Praca zdalna`, `Trabalho remoto`, `Lavoro da remoto` in smaller numbers.
+# Listing only the English one scored the other 375 as places.
+#
+# The list is not claimed exhaustive — independent samples kept turning up locales the previous
+# one missed, which is why the scrapers detect these structurally rather than by string (see
+# `recruitee._is_remote_sentinel`). Here a list is still the right shape: this is a *measurement*
+# of already-served rows, with no per-row structured fields to compare against.
 _PLACELESS = (
     "",
     "remote",
@@ -106,11 +118,24 @@ _PLACELESS = (
     "wfh",
     "n/a",
     "remote job",
+    "poste a distance",  # fr
+    "homeoffice",  # de
+    "home office",
+    "werken op afstand",  # nl
+    "trabajo a distancia",  # es
+    "trabalho remoto",  # pt
+    "lavoro da remoto",  # it
+    "praca zdalna",  # pl
 )
 
 
 def _fold(text: str) -> str:
-    """Lowercase with diacritics stripped. Used only to size what folding would buy."""
+    """Lowercase with diacritics stripped.
+
+    Used to size what folding would buy on the recall probe, and by :func:`is_placeless` so the
+    localized markers above need one spelling rather than two ("Poste à distance" folds onto the
+    listed "poste a distance").
+    """
     return "".join(
         c
         for c in unicodedata.normalize("NFKD", (text or "").lower())
@@ -195,7 +220,7 @@ def _lower(loc: str | None) -> str:
 
 def is_placeless(low: str) -> bool:
     """True when the whole string is a placeless token, not merely contains one."""
-    return low.strip(" .,-–—()[]") in _PLACELESS
+    return _fold(low).strip(" .,-–—()[]") in _PLACELESS
 
 
 def load_locations(db: Path, table: str) -> list[tuple[str | None, str]]:
