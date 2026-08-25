@@ -94,3 +94,4 @@ supersedes it and note the supersession in both.
 | [0083](0083-evict-only-on-a-second-consecutive-absence.md) | Evict only on a second consecutive absence | 2026-08-23 |
 | [0084](0084-facet-counts-are-filter-shaped-not-query-shaped.md) | Facet counts are filter-shaped, not query-shaped | 2026-08-25 |
 | [0085](0085-pull-hf-data-over-raw-ranged-http.md) | Pull HF data over raw, ranged HTTP — not snapshot_download | 2026-08-25 |
+| [0086](0086-country-tag-signals-in-the-india-gazetteer.md) | The India filter matches country tags, not just place names | 2026-08-25 |

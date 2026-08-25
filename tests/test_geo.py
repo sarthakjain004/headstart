@@ -5,7 +5,15 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.geo import CITIES, DROPDOWN, REGIONS, STATES, where
+from headstart.geo import (
+    CITIES,
+    DROPDOWN,
+    IND_FORMS,
+    REGIONS,
+    STATES,
+    SUBDIVISIONS,
+    where,
+)
 
 # Real-shaped location strings: (location, in_india, cities_it_belongs_to)
 _ROWS = [
@@ -23,6 +31,19 @@ _ROWS = [
     ("Hyderaba", True, {"hyderabad"}),  # observed typo
     ("Noida", True, {"noida", "delhi ncr"}),
     ("Kalyani Nagar, Pune", True, {"pune"}),  # must NOT hit thane's 'kalyan'
+    # country-tag rows carrying no city name at all (2026-08-25 audit: 432 such rows)
+    ("IND", True, set()),
+    ("IND-BLR-Divyasree Technopolis", True, set()),
+    ("IND BNGL FL2-3 TWR 3", True, set()),
+    ("Remote - IND", True, set()),
+    ("Remote (IND)", True, set()),
+    ("IN_India_WFH", True, set()),  # no word boundary around india: substring must stay
+    ("Vemagal, KA, IN", True, set()),  # workday subdivision tail
+    ("Jagiroad, AS, IN", True, set()),
+    ("Varanasi, UP, IN", True, set()),
+    # the country term is a substring, so the guard must keep a real India row that happens
+    # to carry a bad country tag
+    ("Nagpur, Maharashtra, British Indian Ocean Territory", True, {"nagpur"}),
     # traps — must NOT match india or any city
     ("Indianapolis, IN", False, set()),
     ("Fort Wayne, IN", False, set()),
@@ -34,6 +55,19 @@ _ROWS = [
     ("Governador Valadares, Brazil", False, set()),  # 'verna' trap
     ("Whitefield, Manchester", False, set()),
     ("Berlin, Germany", False, set()),
+    # 'india' as a substring of a US place name
+    ("Indian Head, MD", False, set()),
+    ("Indialantic, FL", False, set()),
+    ("Indianola, PA, United States", False, set()),
+    ("Indian Springs, NV", False, set()),
+    ("Diego Garcia, British Indian Ocean Territory", False, set()),
+    # IND is also Indianapolis's IATA code
+    ("IND U; CVG SD; United States, PA, Philadelphia - Remote; MKE W", False, set()),
+    (
+        "Grayslake, Ind",
+        False,
+        set(),
+    ),  # Illinois; why the IND form is '% - ind', not '% ind'
 ]
 
 
@@ -76,6 +110,20 @@ def test_alias_hygiene():
         assert a == a.lower() and "'" not in a and "%" not in a, a
     for trap in ("salt lake", "wai", "salem", "punjab", "verna", "whitefield", "supa"):
         assert trap not in aliases, f"vetoed trap alias reintroduced: {trap}"
+    # 2026-08-25 audit re-confirmed these against the live table: every one is a world
+    # substring trap, not a missing Indian city. salem=Jerusalem/Winston-Salem,
+    # kota=Dakota, agra=Agrate Brianza, erode=Wernigerode.
+    for trap in ("kota", "agra", "erode"):
+        assert trap not in aliases, f"vetoed trap alias reintroduced: {trap}"
+
+
+def test_country_tag_terms_are_sql_safe():
+    for term in IND_FORMS + SUBDIVISIONS:
+        assert term == term.lower() and "'" not in term, term
+    # Subdivision codes are two letters and only ever used inside a ', {code}, in' anchor;
+    # a longer or looser one would match free text.
+    for code in SUBDIVISIONS:
+        assert len(code) == 2 and code.isalpha(), code
 
 
 def test_dropdown_entries_resolve():

@@ -213,6 +213,83 @@ STATES: tuple[str, ...] = (
     "bihar",
 )
 
+# Country-level signals that carry no city name at all. Measured 2026-08-25 on the 317,421-row
+# served table: these two rules alone recover 432 India rows the city map could never reach,
+# because the string names a plant, a tower, or a town too small to gazetteer.
+#
+# ISO alpha-3 "IND". Matched only in positions where it is the country tag, never as a bare
+# substring: "ind" sits inside Indore, Indianapolis and a hundred ordinary words. Forms observed:
+# "IND", "IND-BLR-Divyasree Technopolis", "IND BNGL FL2-3 TWR 3", "IND - Remote", "Remote (IND)",
+# "Remote - IND".
+IND_FORMS: tuple[str, ...] = (
+    "ind-%",  # IND-BLR-..., IND-Remote
+    "ind %",  # IND BNGL ..., IND Karle Tech Park
+    "%(ind)%",  # Remote (IND)
+    "% - ind",  # Remote - IND   (NOT '% ind': that also takes "Grayslake, Ind", Illinois)
+)
+
+# **IND is also Indianapolis's IATA code**, and airport-code strings are how that bites:
+# "IND U; CVG SD; United States, PA, Philadelphia - Remote; MKE W; MSP" is a US row that
+# "ind %" would otherwise claim. Guarded on the one token that settles it.
+IND_EXCLUDE: tuple[str, ...] = ("united states",)
+
+# ISO-3166-2 subdivision codes, as workday writes them: "Vemagal, KA, IN". Anchored to the
+# ", {code}, in" tail so the two-letter codes can never match loose text.
+SUBDIVISIONS: tuple[str, ...] = (
+    "ap",
+    "ar",
+    "as",
+    "br",
+    "cg",
+    "ga",
+    "gj",
+    "hr",
+    "hp",
+    "jh",
+    "ka",
+    "kl",
+    "mp",
+    "mh",
+    "mn",
+    "ml",
+    "mz",
+    "nl",
+    "od",
+    "pb",
+    "rj",
+    "sk",
+    "tn",
+    "ts",
+    "tr",
+    "uk",
+    "up",
+    "wb",
+    "dl",
+    "ch",
+    "py",
+    "jk",
+    "la",
+    "an",
+    "dh",
+)
+
+# US places whose names contain "india" but are not India. The country term is a SUBSTRING
+# match, so without these it claims "Indian Head, MD" and Diego Garcia's "British Indian Ocean
+# Territory" - 17 rows on the 2026-08-25 table. Note the term stays a substring on purpose:
+# "IN_India_WFH" has no word boundary around india, so a \bindia\b test would LOSE a real row.
+INDIA_EXCLUDE: tuple[str, ...] = (
+    "indiana",
+    "indian head",
+    "indialantic",
+    "indianola",
+    "indian springs",
+    "indian ocean",
+    "indian trail",
+    "indian land",
+    "indian river",
+    "indian wells",
+)
+
 # Regions a job seeker treats as one market: virtual entries expanding to member cities.
 REGIONS: dict[str, tuple[str, ...]] = {
     "delhi ncr": ("delhi", "gurgaon", "noida", "faridabad", "ghaziabad"),
@@ -267,6 +344,28 @@ def _city_where(city: str) -> str | None:
     return clause
 
 
+def _country_where() -> str:
+    """The word "india" itself, minus the US places whose names contain it."""
+    guards = "".join(f" AND lower(location) NOT LIKE '%{b}%'" for b in INDIA_EXCLUDE)
+    return f"(lower(location) LIKE '%india%'{guards})"
+
+
+def _ind_where() -> str:
+    """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
+    forms = " OR ".join(f"lower(location) LIKE '{f}'" for f in IND_FORMS)
+    guards = "".join(f" AND lower(location) NOT LIKE '%{b}%'" for b in IND_EXCLUDE)
+    return f"((lower(location) = 'ind' OR {forms}){guards})"
+
+
+def _subdivision_where() -> str:
+    """Workday's "City, KA, IN" tail - the subdivision code plus the country, anchored to the end."""
+    return (
+        "("
+        + " OR ".join(f"lower(location) LIKE '%, {c}, in'" for c in SUBDIVISIONS)
+        + ")"
+    )
+
+
 def where(place: str) -> str | None:
     """The where-fragment for a canonical place, or None if the place is unknown.
 
@@ -276,9 +375,7 @@ def where(place: str) -> str | None:
     through this into SQL beyond the dict lookups here.
     """
     if place == "india":
-        parts = [
-            "(lower(location) LIKE '%india%' AND lower(location) NOT LIKE '%indiana%')"
-        ]
+        parts = [_country_where(), _ind_where(), _subdivision_where()]
         parts += [_city_where(c) for c in CITIES]  # keys exist: no Nones
         parts.append(f"({_like_any(STATES)})")
         return "(" + " OR ".join(p for p in parts if p) + ")"
