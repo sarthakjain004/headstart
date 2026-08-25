@@ -1693,6 +1693,79 @@ def test_recruitee_url_ignores_the_customers_vanity_domain():
     assert _offer_url("transperfect", {}) == ""
 
 
+def _recruitee_offer(**fields):
+    """One offer through the real parse path. See `_is_remote_sentinel` for why these matter."""
+    offer = {"id": 1, "title": "T", **fields}
+    return get_scraper("recruitee", "weekday", "Weekday").parse(
+        {"offers": [offer]}, SCRAPED_AT
+    )[0]
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "Remote job",
+        "Poste a distance",
+        "Homeoffice",
+        "Werken op afstand",
+        "Trabajo a distancia",
+        "Praca zdalna",
+        "Trabalho remoto",
+        "Lavoro da remoto",
+    ],
+)
+def test_recruitee_localized_remote_marker_does_not_swallow_the_city(marker):
+    """Every locale's marker loses to the structured city/country, not just the English one.
+
+    The list is illustrative, not exhaustive — independent live samples keep surfacing locales
+    the previous one missed, which is exactly why `_is_remote_sentinel` is structural.
+    """
+    j = _recruitee_offer(
+        location=marker, city="Bangalore", country="India", remote=True
+    )
+    assert j.location == "Bangalore, India"
+    assert j.remote is True  # remoteness survives the rewrite, via Recruitee's own flag
+
+
+def test_recruitee_city_spelled_differently_cannot_forge_remote():
+    """The detector's known false positive must cost a spelling, never the `remote` verdict.
+
+    "Bengaluru, India" does not contain `city="Bangalore"`, so the detector fires on a real
+    on-site location. The fallback swaps one spelling of the place for another — acceptable —
+    but `remote` must stay False, which is why `parse` does not let the detector decide it.
+    """
+    j = _recruitee_offer(location="Bengaluru, India", city="Bangalore", country="India")
+    assert j.location == "Bangalore, India"  # a place, either way
+    assert j.remote is False  # NOT forged by the detector
+
+
+def test_recruitee_remote_marker_with_no_city_is_left_alone():
+    """Nothing to fall back to, so the marker stays rather than becoming an unexplained blank."""
+    j = _recruitee_offer(location="Remote job", remote=True)
+    assert j.location == "Remote job"
+    assert j.remote is True
+
+
+def test_recruitee_real_location_is_passed_through_untouched():
+    j = _recruitee_offer(location="Berlin, Germany", city="Berlin")
+    assert j.location == "Berlin, Germany"
+    assert j.remote is False
+
+
+def test_recruitee_location_naming_its_own_city_is_never_a_marker():
+    """A place that merely decorates the city ("Remote - Bangalore") is still a place."""
+    j = _recruitee_offer(
+        location="Remote - Bangalore", city="Bangalore", country="India"
+    )
+    assert j.location == "Remote - Bangalore"
+
+
+def test_recruitee_location_falls_back_to_city_country_when_absent():
+    j = _recruitee_offer(city="Remote", country="Anywhere")
+    assert j.location == "Remote, Anywhere"
+    assert j.remote is True  # is_remote() still reads the fallback it built
+
+
 def test_recruitee_salary_formatting():
     from headstart.scrapers.recruitee import _salary
 
