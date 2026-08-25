@@ -748,6 +748,13 @@ def egress_ips() -> Counter[str]:
 #: move it, `disconnect`+`connect` does not move it (the same no-op ADR-0067 measured on Linux),
 #: `tunnel protocol set` does not move it, and `tunnel endpoint set` does not rotate but breaks
 #: the tunnel outright. So there is no unprivileged path to a fresh IP, and a restart it is.
+#:
+#: The restart itself was then confirmed to rotate on macOS — the claim that matters, and one
+#: #289 could only argue by analogy because rotation needs a passwordless sudoers entry that did
+#: not exist then. Three consecutive kickstarts moved the egress IP twice (104.28.220.169 -> .175
+#: -> .169). Read that as an existence proof and nothing more: it establishes the restart *can*
+#: rotate here, and n=3 says nothing about how often. How often is :func:`_observe_egress_ip`'s
+#: subject, and that docstring is the one place holding the current answer.
 _RESTART_COMMAND = {
     "linux": ["systemctl", "restart", "warp-svc"],
     # `kickstart -k` is stop+start in one call, and the only form that takes a service target in
