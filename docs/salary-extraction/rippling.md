@@ -1,5 +1,14 @@
 # rippling
 
+> **Correction (2026-08-25):** this doc's "confirmed-flat-miss" verdict on `payRangeDetails`
+> below was wrong at scale. A 105-job/60-board sample found only 1 multi-entry job with
+> identical ranges across entries; a full-population re-check (2,057 salaried jobs) found
+> **47 (2.29%)** understate their true maximum because a later entry carries a wider band —
+> e.g. `cat5-resources-llc` serves `25-27 USD HOUR` from entry `[0]` while the real span across
+> all four Level bands is `25-40`. Fixed in `rippling.py`'s `_pay_range()`: it now unions every
+> entry's min/max instead of reading entry `[0]` alone. See
+> `experiment/location-audit-2026-08-25/rippling.md` for the full measurement.
+
 ## Methods tried
 
 - **Live board count re-measured, not assumed**: the plan's 2,941 figure was stale. Current,

@@ -28,6 +28,17 @@ def _location(item: dict) -> str | None:
     return wls[0] if wls else None
 
 
+def _employment_type(detail: dict) -> str | None:
+    """``employmentType.label`` is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...),
+    94.2% populated; ``.id`` is tenant free text (347 distinct spellings measured live, 130
+    of them singletons — experiment/location-audit-2026-08-25/rippling.md). The two subfields
+    are inverted from what their names suggest. Falls back to ``.id`` when ``.label`` is null
+    (~5.83% of jobs, where genuinely non-enum values like "Seasonal" live) rather than losing
+    the field entirely."""
+    et = detail.get("employmentType") or {}
+    return et.get("label") or et.get("id")
+
+
 def _description(detail: dict) -> str | None:
     d = detail.get("description")
     if isinstance(d, dict):
@@ -38,13 +49,27 @@ def _description(detail: dict) -> str | None:
 
 
 def _pay_range(ranges: list | None) -> str | None:
-    """Format the first payRangeDetails entry, e.g. '150000-250000 USD YEAR'."""
-    r = (ranges or [{}])[0] or {}
-    lo, hi = r.get("rangeStart"), r.get("rangeEnd")
-    if not lo and not hi:
+    """Format the true min/max across every payRangeDetails entry, e.g. '150000-250000 USD YEAR'.
+
+    A job can carry more than one entry (e.g. per-level or per-region bands) — reading only
+    entry [0] understates the real span whenever a later entry carries a wider range (live
+    measurement: 47/2,057 salaried jobs, 2.29% — experiment/location-audit-2026-08-25/rippling.md).
+    Currency/frequency come from entry [0]; observed live to be constant across a job's own bands.
+    """
+    entries = [r for r in (ranges or []) if r]
+    if not entries:
         return None
+    los = [r["rangeStart"] for r in entries if r.get("rangeStart")]
+    his = [r["rangeEnd"] for r in entries if r.get("rangeEnd")]
+    if not los and not his:
+        return None
+    lo = min(los) if los else None
+    hi = max(his) if his else None
     span = f"{lo:g}-{hi:g}" if lo and hi else f"{(lo or hi):g}"
-    return " ".join(str(x) for x in (span, r.get("currency"), r.get("frequency")) if x)
+    r0 = entries[0]
+    return " ".join(
+        str(x) for x in (span, r0.get("currency"), r0.get("frequency")) if x
+    )
 
 
 class RipplingScraper(BaseScraper):
@@ -152,7 +177,7 @@ class RipplingScraper(BaseScraper):
                     posted_at=detail.get("createdOn"),
                     scraped_at=scraped_at,
                     description=html_to_text(_description(detail)),
-                    employment_type=(detail.get("employmentType") or {}).get("id"),
+                    employment_type=_employment_type(detail),
                     salary=_pay_range(detail.get("payRangeDetails")),
                 )
             )

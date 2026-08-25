@@ -1927,9 +1927,78 @@ def test_rippling_parse():
         j.url
         == "https://ats.rippling.com/acrn/jobs/26708222-0b57-42df-8f52-b6b927351d18"
     )
-    assert j.employment_type  # employmentType.id
+    assert j.employment_type  # employmentType.label
     assert j.posted_at  # createdOn from the detail fetch
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_rippling_employment_type_reads_label_not_id():
+    """employmentType.label is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...);
+    .id is tenant free text (347 distinct spellings measured live, 130 of them
+    singletons — experiment/location-audit-2026-08-25/rippling.md). Falls back to
+    .id when .label is null (~5.83% of jobs, where genuinely non-enum values like
+    "Seasonal" live) rather than losing the field entirely."""
+    raw = [
+        {
+            "uuid": "a1",
+            "name": "Engineer",
+            "url": "https://ats.rippling.com/acme/jobs/a1",
+            "_detail": {
+                "employmentType": {
+                    "label": "SALARIED_FT",
+                    "id": "Salaried, Full-Time (US)",
+                },
+            },
+        },
+        {
+            "uuid": "a2",
+            "name": "Seasonal Associate",
+            "url": "https://ats.rippling.com/acme/jobs/a2",
+            "_detail": {
+                "employmentType": {"label": None, "id": "Seasonal"},
+            },
+        },
+    ]
+    jobs = get_scraper("rippling", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].employment_type == "SALARIED_FT"
+    assert jobs[1].employment_type == "Seasonal"  # label null -> falls back to id
+
+
+def test_rippling_pay_range_unions_all_entries():
+    """payRangeDetails can carry more than one band (per-level/per-region); entry [0]
+    alone understates the true span when a later entry carries a wider range — e.g.
+    cat5-resources-llc serves '25-27 USD HOUR' from entry [0] while the real span
+    across all entries (Level 1-4) is 25-40 (live measurement,
+    experiment/location-audit-2026-08-25/rippling.md)."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {
+            "rangeStart": 25.0,
+            "rangeEnd": 27.0,
+            "currency": "USD",
+            "frequency": "HOUR",
+            "location": "Level 1",
+        },
+        {
+            "rangeStart": 30.0,
+            "rangeEnd": 35.0,
+            "currency": "USD",
+            "frequency": "HOUR",
+            "location": "Level 2",
+        },
+        {
+            "rangeStart": 35.0,
+            "rangeEnd": 40.0,
+            "currency": "USD",
+            "frequency": "HOUR",
+            "location": "Level 4",
+        },
+    ]
+    assert _pay_range(ranges) == "25-40 USD HOUR"
+    # entry [0] alone would report "25-27 USD HOUR" — confirm the fix reads the true
+    # min/max across the whole array, not just the first entry.
+    assert _pay_range(ranges[:1]) == "25-27 USD HOUR"
 
 
 def test_unknown_ats_raises():
