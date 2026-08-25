@@ -199,8 +199,20 @@ def _clean_egress(monkeypatch):
     returning: left at its real value, every test that walls twice would sit out a real 5 seconds
     to assert something about routing. The cooldown itself is policy, and it is tested where it
     lives, in test_spare_egress.py.
+
+    `rotate` is stubbed to False — "no fresh IP" — for a harder reason than speed: unstubbed it is
+    the *live* function, which shells out to `sudo -n` and restarts the machine's actual WARP
+    daemon. Measured: WARP's pid moved 96855 -> 97119 during one test. Where sudo needs a password
+    that call fails in milliseconds and every test passes by accident; where it does not, they
+    bounce the developer's tunnel and then fail, because a rotation that *succeeds* hands the
+    caller back an attempt and the canned outcome list runs out.
+
+    Autouse, so it holds for the whole file rather than only the tests that go through `_warp` —
+    several stub `proxy_url` themselves, and an opt-in guard would reopen this the first time one
+    of those walls. Tests that are *about* rotation override it locally.
     """
     monkeypatch.setattr(http.spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None, **_: False)
     http.spare_egress.reset()
     yield
     http.spare_egress.reset()
@@ -319,9 +331,8 @@ def test_proxied_requests_are_counted_at_both_levels(monkeypatch):
     like a failing one.
     """
     _warp(monkeypatch)
-    # no fresh IP, so the retry budget stays at its base 3 — this test is about what the counters
-    # record, not about the earned-attempt policy
-    monkeypatch.setattr(http.spare_egress, "rotate", lambda board=None, **_: False)
+    # no fresh IP (the file-wide default), so the retry budget stays at its base 3 — this test is
+    # about what the counters record, not about the earned-attempt policy
     _stub(monkeypatch, [403, 200, 405, 405, 405])
     http.fetch(
         "GET", "u", egress_group="eightfold", egress_on=_WALL
@@ -540,6 +551,11 @@ def test_the_earned_attempts_are_capped(monkeypatch):
 
     assert resp.status_code == 429
     assert len(calls) == http._ATTEMPTS + http._MAX_EARNED_ATTEMPTS == 5
+    # The marking guarantee has a *rotating* variant, and this is the only test that reaches it:
+    # under rotation the last attempt is the 5th, not the 3rd, and a wall there is exactly as
+    # informative about the origin as an early one. Everything else asserting this runs with the
+    # file-wide `rotate -> False`, so without this line the extended-budget path is unpinned.
+    assert http.spare_egress.walled_groups() == frozenset({"workday"})
 
 
 def test_no_fresh_ip_earns_nothing(monkeypatch):
