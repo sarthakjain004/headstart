@@ -165,9 +165,12 @@ def test_retry_delay_clamps_to_the_total_budget() -> None:
 
 
 def _fake_hub(
-    hub, monkeypatch, tmp_path, *, fail_first: int, headers: dict
+    hub, monkeypatch, tmp_path, *, fail_first: int, headers: dict, payload: bytes = b"x"
 ) -> list[int]:
-    """Point `fetch_state` at a Hub that 429s `fail_first` times, and record what it sleeps."""
+    """Point `fetch_state` at a Hub that 429s `fail_first` times, and record what it sleeps.
+
+    `payload` is what the stubbed download writes; the byte-reporting test sizes it, every
+    other caller only needs the file to exist."""
     calls = {"n": 0}
     slept: list[int] = []
     listing = ["data/state/board_priority.csv"]
@@ -184,7 +187,7 @@ def _fake_hub(
 
     def snapshot_download(*a, **k):
         (tmp_path / listing[0]).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / listing[0]).write_text("x", encoding="utf-8")
+        (tmp_path / listing[0]).write_bytes(payload)
 
     hub.repo_info = repo_info
     hub.snapshot_download = snapshot_download
@@ -292,3 +295,52 @@ def test_absent_locally_catches_a_partial_fetch(tmp_path: Path) -> None:
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x", encoding="utf-8")
     assert sf.absent_locally(wanted, tmp_path) == [min(wanted)]
+
+
+def test_fetch_reports_bytes_and_throughput_not_just_seconds(
+    hub, monkeypatch, tmp_path, caplog
+) -> None:
+    """Seconds alone cannot tell a slow Hub apart from a bigger fetch.
+
+    Measured over 58 runs, this fetch's throughput fell from ~21.5 to ~8.6 MB/s between
+    2026-08-23 and 2026-08-24 with nothing in the repo changing, and a review reached for the
+    obvious wrong culprit — LanceDB fragment count — because the line carried no bytes to divide
+    by. Report both, so the next occurrence is one grep.
+    """
+    _fake_hub(
+        hub,
+        monkeypatch,
+        tmp_path,
+        fail_first=0,
+        headers={},
+        payload=b"x" * 3_000_000,
+    )
+    with caplog.at_level("INFO"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+
+    line = next(r.message for r in caplog.records if r.message.startswith("fetched "))
+    assert "1 file(s)" in line
+    # pinned as its own field: a bare "3 MB" also matches the "3 MB/s" of the rate
+    assert ", 3 MB in " in line  # what landed, not what was listed
+    assert "MB/s" in line
+
+
+def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
+    hub, monkeypatch, tmp_path, caplog
+) -> None:
+    """A pattern the repo has no files for is a legitimate first run, not a failure — it must not
+    render a `0.0 MB/s` that reads as a stalled fetch."""
+
+    def repo_info(*a, **k):
+        return type("I", (), {"siblings": []})()
+
+    hub.repo_info = repo_info
+    hub.snapshot_download = lambda *a, **k: None
+    monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
+
+    with caplog.at_level("INFO"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+
+    line = next(r.message for r in caplog.records if r.message.startswith("fetched "))
+    assert "0 file(s), 0 MB" in line
+    assert "MB/s" not in line
