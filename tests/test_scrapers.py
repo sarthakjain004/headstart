@@ -2096,6 +2096,129 @@ def test_successfactors_location_from_slug_recovers_the_prefix():
     )
 
 
+@pytest.mark.parametrize(
+    ("title", "slug", "expected"),
+    [
+        # "(m/w/d)" -> "(mwd)": three title words glued into one slug token.
+        (
+            "Finanzierungsberater Baufinanzierungen (m/w/d)",
+            "Berlin-Finanzierungsberater-Baufinanzierungen-%28mwd%29-BE",
+            "Berlin",
+        ),
+        # "Projektcontroller/Finance" -> "ProjektcontrollerFinance".
+        (
+            "Projektcontroller/Finance Partner",
+            "Berlin-ProjektcontrollerFinance-Partner-BE-10117",
+            "Berlin",
+        ),
+        # "Werkstudent*in" -> "Werkstudentin".
+        (
+            "Werkstudent*in IT Compliance",
+            "Berlin-Werkstudentin-IT-Compliance-BE-10117",
+            "Berlin",
+        ),
+        # A two-word place survives the same path.
+        (
+            "Immobilienmakler (m/w/d)",
+            "Gera-Immobilienmakler-%28mwd%29-TH-07545",
+            "Gera",
+        ),
+    ],
+)
+def test_successfactors_location_from_slug_spans_the_encoders_glued_words(
+    title, slug, expected
+):
+    """SuccessFactors's slug encoder drops punctuation without a separator, gluing two title
+    words into one slug token. A token-sequence match can never span that, so these postings
+    yielded no location at all despite the slug plainly carrying one — 13 of 13 nulls on
+    jobs.dkb.de, measured 2026-08-25.
+    """
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    assert _location_from_slug(title, f"https://jobs.dkb.de/job/{slug}/1234567/") == (
+        expected
+    )
+
+
+def test_successfactors_location_from_slug_does_not_truncate_on_a_prefix_token():
+    """`str.find` takes the FIRST occurrence, so a title whose concatenation is a prefix of a
+    longer slug token would match there instead of at its real position and cut the location
+    short — "Sales Rep" against `Berlin-Salesrepublic-Sales-Rep` giving "Berlin" when the whole
+    prefix is "Berlin Salesrepublic". Found in review; anchoring the match's END to a token
+    boundary as well as its start is what refuses it.
+    """
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = "https://x/job/Berlin-Salesrepublic-Sales-Rep/1234567/"
+    assert _location_from_slug("Sales Rep", url) == "Berlin Salesrepublic"
+
+
+def test_successfactors_location_from_slug_needs_a_whole_token_boundary():
+    """Matching on concatenated words must not let a title start mid-token.
+
+    "Onsite" contains "site", so a substring match alone would split the token and report a
+    location of "Berlin On" — a fabricated place. The run has to begin where a slug token does.
+    """
+    from headstart.scrapers.successfactors import _location_from_slug
+
+    url = "https://x/job/Berlin-Onsite-Engineer-BE/1234567/"
+    assert _location_from_slug("site Engineer", url) is None
+
+
+def test_successfactors_location_falls_back_to_country_when_nothing_else_exists():
+    """Last tier, country grain: some tenants render no location markup and put none in the URL
+    either, leaving `streetAddress` as the only geography on the page (careers.theredsea.sa —
+    51 of 70 residual nulls in a 14-board sample). Coarse, but a real place that filters."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = (
+        '<html><span data-careersite-propertyid="title">Divemaster</span>'
+        '<meta itemprop="streetAddress" content="SA">2</html>'
+    )
+    url = "https://careers.theredsea.sa/job/Divemaster/857326923/"
+    assert _page_fields(page, url)["location"] == "SA"
+
+
+def test_successfactors_location_from_street_address_drops_a_leaked_url():
+    """A tenant's own data can leak a URL into `streetAddress` — careers.wataniaind.com serves
+    `content="SA, https://ma"` (its job titles carry the same fragment), 1 of 12 non-empty
+    values in a 22-tenant sample. Drop the bad segment, keep the real place."""
+    from headstart.scrapers.successfactors import _location_from_street_address
+
+    assert (
+        _location_from_street_address(
+            '<meta itemprop="streetAddress" content="SA, https://ma">'
+        )
+        == "SA"
+    )
+    # A place at whatever grain the tenant configured survives intact.
+    assert (
+        _location_from_street_address(
+            '<meta itemprop="streetAddress" content="Kuala Lumpur, MY, 50450">'
+        )
+        == "Kuala Lumpur, MY, 50450"
+    )
+    # Nothing left once the junk is gone is None, not an empty string.
+    assert _location_from_street_address(
+        '<meta itemprop="streetAddress" content="https://x">'
+    ) is (None)
+    assert _location_from_street_address("<html>no meta</html>") is None
+
+
+def test_successfactors_country_tier_never_outranks_a_real_place():
+    """The country meta is last for a reason — a finer tier must always win."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = (
+        '<html><span data-careersite-propertyid="title">Analyst</span>'
+        '<span data-careersite-propertyid="location">Guadalajara, Jalisco</span>'
+        '<meta itemprop="streetAddress" content="MX">2</html>'
+    )
+    assert _page_fields(page, "https://x/job/Analyst/1/")["location"] == (
+        "Guadalajara, Jalisco"
+    )
+
+
 def test_successfactors_location_from_slug_ignores_a_trailing_req_id():
     # The dangerous direction: a title-only slug leaves a bare requisition number after it
     # ("Foshan-City-Sr-Technician-528513" for a title of just "Sr Technician"). Appending it as
