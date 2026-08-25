@@ -306,6 +306,33 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   `data/jobs/*` is a silent no-op, not a stale-data warning — don't reach for it expecting fresh
   data; use `data/descriptions/` (the ADR-0050 store) or `data/state/` for anything durable.
 
+- **Pulling `data/lancedb/` (or any multi-GB slice): use `scripts/fetch/pull_lancedb.py`, not
+  `snapshot_download`.** Measured 2026-08-25 on a 1,888 MB / 4,222-file pull, `huggingface_hub`
+  failed four separate ways and cost most of a session: it died silently mid-stream under Xet
+  (twice, at the same 987 files, no traceback); it looped forever inside its own 10s **read**
+  timeout logging "Trying to resume" without ever raising, so a per-file retry above it never
+  fired; it restarted the single 1,023 MB file from byte zero under a fresh `.incomplete` name
+  on every CDN drop, so three partials of one blob accumulated and none resumed; and it finally
+  wedged alive with **zero sockets and zero locks held** while a plain `requests.get` of one of
+  the very files it was fetching returned 200 in 0.28s. Only the resolve endpoint was ever
+  healthy — so the tool uses raw HTTP and nothing else.
+
+  Two properties it has that matter more than speed. It is **cancellable**: Ctrl-C at any point
+  and re-run the same command, and it costs only the bytes not yet landed (small files land via
+  `.tmp`-then-rename so a kill never leaves a short file at the real path, which the next run's
+  `exists()` would count as landed and skip forever). And it **verifies size before renaming**,
+  because a wrong-sized `.lance` surfaces much later as a LanceDB decode error that says nothing
+  about the download.
+
+  **Big files are fetched as concurrent ranged chunks, and that is the whole performance story.**
+  Measured mid-transfer on the same link and the same file: one long-lived stream had decayed to
+  **0.16 MB/s** while four concurrent ranged GETs aggregated **2.17 MB/s** — ~13x. The last
+  337 MB then landed in ~90s against the ~46 min the single stream was projecting. Short flows
+  fast + one long flow slow is per-flow shaping and TCP congestion-window behaviour, not a
+  saturated last mile, so if a transfer here is slow the answer is *more flows* (`--workers`),
+  never a longer timeout — raising `HF_HUB_DOWNLOAD_TIMEOUT` to 300s made the hangs *longer*,
+  not rarer. `--check` reports what's missing without fetching.
+
 ### Adding or changing a scraper: run the filter harness first
 
 **Before any new ATS scraper's jobs ship — in the same PR that adds the scraper — run the
