@@ -694,3 +694,48 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
     assert non_tech == 1
     assert assigned == {"ats:b:tech": "software-engineering", "ats:b:ai": "ai-ml"}
     assert not any(k.startswith(roles.WATCH_PREFIX) for k in assigned.values())
+
+
+def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
+    tmp_path, monkeypatch, caplog
+):
+    """The counts are keyed on (metric, family, band, ats) but the log dropped `ats` back out.
+
+    Two ATSes' rows for the same family and band then rendered as the same label with different
+    numbers — "software-engineering/senior 7044, software-engineering/senior 6637" appeared in
+    every run of the 2026-08-25 review — which reads as a double-count in the one ledger this
+    repo has already been burned on double-counting. The ledger was always right (ADR-0075); only
+    the label was ambiguous.
+    """
+    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    x = [1.0, 0.0, 0.0, 0.0]
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "greenhouse:b:1",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+                "ats": "greenhouse",
+            },
+            {
+                "id": "workday:b:2",
+                "title": "Dev",
+                "employment_type": None,
+                "min_years": 3,
+                "vector": x,
+                "ats": "workday",
+            },
+        ],
+    )
+    with caplog.at_level("INFO"):
+        _run(tmp_path, monkeypatch)
+
+    line = next(r.message for r in caplog.records if " | top: " in r.message)
+    top = line.split(" | top: ")[1].split(" | new in ")[0]
+    labels = [entry.rsplit(" ", 1)[0] for entry in top.split(", ")]
+    assert len(labels) == len(set(labels)), f"top-5 labels are not unique: {top}"
+    assert "software-engineering/mid/greenhouse" in top
+    assert "software-engineering/mid/workday" in top

@@ -206,6 +206,21 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                 # The true cost also includes every failed attempt's own download time, which
                 # `began` is here to capture — reporting `took + spent` would omit exactly that
                 # and under-report a slow failure as a fast fetch.
+                #
+                # Seconds alone cannot tell a slower Hub apart from a bigger fetch, so report
+                # the bytes to divide by. Sized from what landed rather than from the listing,
+                # which costs no second Hub request — and `absent` being empty is what makes
+                # every `wanted` file safe to stat here. Rate omitted when nothing landed: a
+                # pattern the repo has no files for is a legitimate first run, not a stall.
+                # Why it earns the line: docs/pipeline/2026-08-25_eight-run-log-review.md §2.
+                #
+                # Deliberately `took`, the same denominator the printed seconds use, so the two
+                # numbers on the line agree and a reader can divide one by the other. It does
+                # include the `remote_files` listing call, which is one request — timing the
+                # download alone would be a truer rate but would print two figures that do not
+                # reconcile, and nothing here has measured that request to be worth it.
+                landed = sum((REPO_ROOT / f).stat().st_size for f in wanted)
+                rate = f" ({landed / took / 1e6:.1f} MB/s)" if landed else ""
                 retried = (
                     f" on attempt {attempt} of {_ATTEMPTS}"
                     f" (+{spent}s of it waiting, {time.monotonic() - began:.0f}s total)"
@@ -213,8 +228,8 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                     else ""
                 )
                 _log.info(
-                    f"fetched {len(wanted)} file(s) in {took:.0f}s{retried}: "
-                    f"{' '.join(patterns)}"
+                    f"fetched {len(wanted)} file(s), {landed / 1e6:.0f} MB "
+                    f"in {took:.0f}s{rate}{retried}: {' '.join(patterns)}"
                 )
                 return 0
             reason = (
