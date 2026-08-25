@@ -457,6 +457,21 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
         fields["location"] = _csb_location(page)
     if not fields.get("location") and url and fields.get("title"):
         fields["location"] = _location_from_slug(fields["title"], url)
+    if not fields.get("location"):
+        # Last tier, because every tier above yields a place at least as fine. Some tenants'
+        # job pages carry no location markup and no location in the URL either, and the only
+        # geography anywhere on them is this one meta (measured on careers.theredsea.sa, 51 of
+        # 70 residual nulls in a 14-board sample: the page has no JSON-LD, no
+        # `careersite-propertyid="location"` and no address itemprops, only a bare "SA").
+        #
+        # Worth being exact about what this buys, because it is less than it looks. Where the
+        # tenant configured a city the value is fully filterable ("Kuala Lumpur, MY, 50450",
+        # "Iasi, RO"). Where it is a bare two-letter tag it is NOT: `geo.where("india")` is an
+        # OR-chain of place *names*, so "IN" matches none of its 213 patterns (verified against
+        # the live clause) -- "Karnataka, IN" only ever matched on "karnataka". So the bare-tag
+        # rows gain a displayable country and stop being blank; they do not gain a place filter
+        # unless one that reads country tags is added later.
+        fields["location"] = _location_from_street_address(page)
     if not fields.get("posted_at"):
         fields["posted_at"] = _csb_posted_at(page)
     return fields
@@ -618,6 +633,26 @@ def _csb_location(page: str) -> str | None:
 _SLUG_WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
 
+def _location_from_street_address(page: str) -> str | None:
+    """The ``streetAddress`` microdata, as a location, with the tenant's own junk dropped.
+
+    Despite the name SuccessFactors puts a place here, at whatever grain the tenant configured —
+    ``Kuala Lumpur, MY, 50450`` and ``Iasi, RO`` and bare ``SG`` all observed on live pages. It
+    is the only geography left on tenants whose pages render no location markup and whose job
+    URLs carry no location either, which is why it earns a tier at all.
+
+    The one guard is measured, not defensive: a tenant's source data can leak a URL into the
+    field (``careers.wataniaind.com`` serves ``content="SA, https://ma"``, its own job titles
+    carrying the same fragment — 1 of 12 non-empty values in a 22-tenant sample). Segments
+    holding a scheme are dropped rather than the whole value, so that page still yields ``SA``.
+    """
+    raw = _meta_itemprop(page, "streetAddress")
+    if not raw:
+        return None
+    kept = [s.strip() for s in raw.split(",") if s.strip() and "://" not in s]
+    return ", ".join(kept) or None
+
+
 def _location_from_slug(title: str, url: str) -> str | None:
     """The posting's location recovered from its own URL slug, when the page carries no location
     markup at all — some CSB tenants' job pages genuinely never render one (measured 2026-08-24,
@@ -627,9 +662,9 @@ def _location_from_slug(title: str, url: str) -> str | None:
     ``/job/Charlotte-Account-Manager-Customer-Development-NC-28277/1407690100/`` for a posting
     titled "Account Manager - Customer Development".
 
-    Anchored on the title, which is already reliably extracted: tokenize both into words and
-    require the title's own token sequence to appear *exactly*, contiguously, in the slug's.
-    Whatever comes before that match is the location. Anything AFTER it is never used — that is
+    Anchored on the title, which is already reliably extracted: tokenize both into words, then
+    require the title's words, concatenated, to appear in the slug's words concatenated, starting
+    exactly where a slug token starts. Whatever comes before that match is the location. Anything AFTER it is never used — that is
     where a trailing requisition id lives (``.../Foshan-City-Sr-Technician-528513/...`` for a
     title of just "Sr Technician" leaves a bare ``528513``, not a place), and appending it would
     fabricate a location worse than reporting none. This costs precision on US-style postings
@@ -639,12 +674,13 @@ def _location_from_slug(title: str, url: str) -> str | None:
     like "Gaoming District, Foshan City" (comma in the source) comes back as "Gaoming District
     Foshan City" — recovering which gap was a comma would mean guessing, so this doesn't.
 
-    Returns None whenever the title cannot be found as an exact contiguous run (title-cased
-    differently than the slug encodes it, punctuation the encoder dropped mid-title, a title
-    containing a literal "/" — which decodes before the path is split on "/" and shifts every
-    segment after it, so the id/slug split below no longer lines up — or a tenant whose slug is
-    the title with no location component at all — confirmed on careers.ijm.com, whose job URLs
-    are the bare title verbatim) rather than guess from a partial match.
+    Returns None whenever the title cannot be found that way (title-cased differently than the
+    slug encodes it, a title containing a literal "/" — which decodes before the path is split
+    on "/" and shifts every segment after it, so the id/slug split below no longer lines up — or
+    a tenant whose slug is the title with no location component at all — confirmed on
+    careers.ijm.com, whose job URLs are the bare title verbatim) rather than guess from a partial
+    match. Punctuation the encoder dropped mid-title is NO LONGER a None case: that is exactly
+    what the concatenated match below exists to span.
     """
     from urllib.parse import unquote, urlparse
 
@@ -660,19 +696,48 @@ def _location_from_slug(title: str, url: str) -> str | None:
     title_words = _SLUG_WORD.findall(title)
     if not slug_words or not title_words:
         return None
+    # Matched on the *concatenated* lowercase words rather than the token sequence, because
+    # SuccessFactors's slug encoder drops punctuation without putting a separator back, gluing
+    # two title words into one slug token: "Werkstudent*in" -> "Werkstudentin",
+    # "Projektcontroller/Finance" -> "ProjektcontrollerFinance", "(m/w/d)" -> "(mwd)". A
+    # token-sequence comparison can never span that glue, so every such posting fell through to
+    # no location at all even though its slug plainly carries one (measured on jobs.dkb.de:
+    # 13 of 13 nulls were this, all recoverable as "Berlin", "Gera", "FrankfurtOder").
+    #
+    # Anchoring BOTH ends to token boundaries is what keeps this as strict as the sequence match
+    # it replaces — the title may only ever consume whole slug tokens. The start anchor is what
+    # stops a title matching mid-token and splitting a word off into the location. The end anchor
+    # matters for a subtler case found in review: `str.find` takes the *first* occurrence, so a
+    # title whose concatenation is a PREFIX of a longer token matches there instead of at its
+    # real position and truncates the location — title "Sales Rep" against
+    # `Berlin-Salesrepublic-Sales-Rep` yields "Berlin" where the whole prefix is "Berlin
+    # Salesrepublic". Rejecting that occurrence is not enough on its own, since the right match
+    # is further along, so the scan below walks occurrences until one lines up at both ends.
+    # Measured over 45 live Boards / 2,287 jobs the two anchorings are
+    # indistinguishable (same 1,882, same 405 gained, 0 changed, 0 lost, 0 truncations seen), so
+    # the end anchor costs nothing real and closes a class that is demonstrably reachable.
     slug_lower = [w.lower() for w in slug_words]
     title_lower = [w.lower() for w in title_words]
-    n = len(title_lower)
-    match_at = next(
-        (
-            i
-            for i in range(len(slug_lower) - n + 1)
-            if slug_lower[i : i + n] == title_lower
-        ),
-        None,
-    )
-    if match_at is None:
+    # character offsets at which slug tokens start and end, within the concatenated form
+    token_starts: dict[int, int] = {}
+    token_ends: set[int] = set()
+    offset = 0
+    for index, word in enumerate(slug_lower):
+        token_starts[offset] = index
+        offset += len(word)
+        token_ends.add(offset)
+    needle = "".join(title_lower)
+    haystack = "".join(slug_lower)
+    # Every occurrence is tried, not just the first: the first may be a longer token that merely
+    # starts with the title, and refusing there would throw away a correct match further along.
+    offset_of_match = haystack.find(needle)
+    while offset_of_match >= 0 and not (
+        offset_of_match in token_starts and offset_of_match + len(needle) in token_ends
+    ):
+        offset_of_match = haystack.find(needle, offset_of_match + 1)
+    if offset_of_match < 0:
         return None
+    match_at = token_starts[offset_of_match]
     prefix = slug_words[:match_at]
     if not prefix or all(w.isdigit() for w in prefix):
         return None

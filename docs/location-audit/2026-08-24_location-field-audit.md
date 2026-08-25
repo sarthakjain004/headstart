@@ -23,7 +23,7 @@ greenhouse, recruitee (added 2026-08-25) · **Method:** live-sampled every scrap
 | rippling | clean | no issues found |
 | sensehq | not sampled | zero live boards in the liveness ledger |
 | smartrecruiters | clean | no issues found |
-| successfactors | **fixed** | 35.2% null across the full live population (156,215 jobs, all 2,164 boards); some CSB tenants' job pages carry no location markup anywhere, though the URL SuccessFactors itself generated still has it |
+| successfactors | **fixed**, then **fixed again** (2026-08-25) | 35.2% null across the full live population (156,215 jobs, all 2,164 boards); some CSB tenants' job pages carry no location markup anywhere, though the URL SuccessFactors itself generated still has it. The 2026-08-24 slug tier left 3.0% still null (70 of 2,327 jobs, 14-board sample) for two reasons: its token-sequence match could not span the words the slug encoder glues together (`Werkstudent*in` -> `Werkstudentin`), and some tenants put no location on the page *or* in the URL. Matching the concatenated form and adding a last-resort `streetAddress` tier took the same sample to 0.0% — but read that split, not flat: 20 of the 70 came back at place grain and 51 as a bare country tag, which is displayable and no longer blank yet matches none of `geo.where()`'s 213 place-name patterns, so those rows are not filterable today |
 | teamtailor | clean | no issues found |
 | trakstar | clean | flagged "short" values are legitimate short place names ("Gurgaon") |
 | workable | clean | no issues found |
@@ -101,9 +101,17 @@ on inspection (100% correct where the loose heuristic said 0% on at least one bo
 e.g. `Charlotte-Account-Manager-Customer-Development-NC-28277` for a posting titled "Account
 Manager - Customer Development".
 
-**The algorithm** (`_location_from_slug`, gated as the last-resort tier in `_page_fields`, fires
-only when both prior tiers return nothing): tokenize both the known title and the URL slug into
-words. Require the title's own token sequence to appear *exactly*, contiguously, in the slug's.
+**The algorithm** (`_location_from_slug`, gated as a late tier in `_page_fields`, fires only when
+the prior tiers return nothing): tokenize both the known title and the URL slug into words.
+Require the title's words, concatenated, to appear in the slug's words concatenated, beginning
+exactly where a slug token begins.
+
+> **Superseded in part, 2026-08-25.** As first written this required the title's token *sequence*
+> to appear contiguously, which could not span the words SuccessFactors's encoder glues together
+> when it strips punctuation (`Werkstudent*in` → `Werkstudentin`, `(m/w/d)` → `(mwd)`) — 13 of 13
+> residual nulls on jobs.dkb.de. Matching the concatenated form fixes that; the boundary anchor
+> keeps it as strict. Measured old-vs-new over 45 live Boards: 1,324 identical, 387 gained,
+> **0 changed, 0 lost**.
 Whatever comes **before** that match is the location. Anything **after** it is never trusted —
 that is where a trailing requisition id lives
 (`.../Foshan-City-Sr-Technician-528513/...` for a title of just "Sr Technician" leaves a bare
@@ -146,8 +154,14 @@ isn't.
    **Completed: 2,142 boards processed (22 errored, independent of this change — same order of
    magnitude as the other three fixes' own error counts), 156,215 real jobs checked. Old-code
    nulls: 54,948 (35.2% of jobs checked). New code fills 31,070 of those (56.5% of nulls) — the
-   rest genuinely have no location signal anywhere, on the page or in the slug, and correctly stay
-   None. The gating invariant (the new tier can only fire when both prior tiers found nothing —
+   rest were believed to have no location signal anywhere, on the page or in the slug, and to
+   correctly stay None. **That belief was wrong, corrected 2026-08-25:** a re-measure of 14 live
+   Boards found 3.0% of jobs still null (70 of 2,327), and every one of them was recoverable —
+   13 from slugs the token-sequence match could not span, and 51 from a `streetAddress` meta no
+   tier read. The same 14 Boards now sit at 0.0%. The 23,878 figure here should be read as an
+   upper bound on what was unreachable, not as a floor.
+
+   The gating invariant (the new tier can only fire when both prior tiers found nothing —
    provable directly from the `if not fields.get("location")` guard, not just measured) held with
    zero violations across all 156,215 jobs. Zero regressions.**
 
