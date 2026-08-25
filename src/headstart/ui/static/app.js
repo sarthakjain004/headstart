@@ -119,14 +119,23 @@ function currentFilters(){
   if (el('company').value.trim()) f.company = el('company').value.trim();
   if (el('posted').value) f.posted_within = el('posted').value;
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
+  if (el('salmin') && el('salmin').value) f.salary_min = el('salmin').value;
+  if (el('salmax') && el('salmax').value) f.salary_max = el('salmax').value;
+  // Only meaningful alongside a bound: salaries are never FX-converted, so the currency
+  // scopes a bracket rather than filtering on its own (matches build_filter's own guard).
+  if (el('salcur') && (f.salary_min || f.salary_max)) f.salary_currency = el('salcur').value;
   return f;
 }
 const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
   ats:'ATS provider', etype:'Type', india:'India', location:'Location', company:'Company',
-  posted_within:'Posted ≤', seen_within:'First seen ≤' };
+  posted_within:'Posted ≤', seen_within:'First seen ≤',
+  salary_min:'Salary from', salary_max:'Salary to', salary_currency:'Currency' };
+// `salary_currency` is deliberately absent: it has a default (USD) rather than an empty
+// state, so clearAll() blanking it would leave the picker showing nothing. Clearing the two
+// bounds already switches the bracket off, which is what "clear" has to mean here.
 const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats',
   etype:'etype', india:'india', location:'location', company:'company',
-  posted_within:'posted', seen_within:'seen' };
+  posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
   const f = currentFilters(), box = el('active');
   box.innerHTML = Object.entries(f).map(([k,v]) =>
@@ -134,10 +143,19 @@ function drawActive(){
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }
+const BRACKET = ['salary_min', 'salary_max', 'salary_currency'];
 function dropFilter(key){
-  const c = el(CONTROL[key]); if (!c) return;
-  if (c.type === 'checkbox') c.checked = false; else c.value = '';
-  go();
+  // The currency picker has a default, not an empty state, so there is nothing to blank on it.
+  // Dropping any part of the bracket therefore means clearing the two bounds it scopes — which
+  // is also what switches the bracket off server-side.
+  const keys = BRACKET.includes(key) ? ['salary_min', 'salary_max'] : [key];
+  let cleared = false;
+  for (const k of keys){
+    const c = el(CONTROL[k]); if (!c) continue;
+    if (c.type === 'checkbox') c.checked = false; else c.value = '';
+    cleared = true;
+  }
+  if (cleared) go();
 }
 function clearAll(){
   Object.values(CONTROL).forEach(id => { const c = el(id); if (!c) return;
@@ -151,12 +169,6 @@ function clearAll(){
 const PAGE_SIZE = 20;
 const MAX_PAGE = 20;
 let page = 1;
-
-let lastRows = null;   // kept so re-sorting never costs another embedding/query
-
-// Sorting is a view over rows we already have. Re-running go() would refetch /search and
-// re-rank server-side to reorder twenty results client-side.
-function resort(){ if (lastRows) draw(lastRows); else go(); }
 
 // go(): a fresh search or browse from page 1 — Search button, Enter, a chip, or a filter
 // change. An empty query browses the newest jobs instead of ranking by similarity
@@ -172,9 +184,15 @@ async function fetchPage(){
   drawActive();
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
+  if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   el('pager').innerHTML = '';
   el('n').textContent = q ? 'searching…' : 'loading…';
+  // Fired together, not one after the other: the counts depend only on the filters, never on
+  // the query, so they neither wait for the ranking nor make the user wait for them.
+  const facetsPromise = fetch('/facets?'+p).then(r => r.json()).catch(() => null);
+  facetsPromise.then(applyFacets);
+  drawSortNote();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
@@ -182,25 +200,135 @@ async function fetchPage(){
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     el('n').textContent = ''; return; }
+  const facets = await facetsPromise;
   if(!rows.length){
     el('results').innerHTML = page === 1
-      ? '<div class="empty"><div class="big">Nothing matched</div>' +
-        'Try loosening a filter, or describe the role more broadly.</div>'
+      ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
       : '<div class="empty"><div class="big">No more jobs</div>' +
         'You\'ve reached the end of these results.</div>';
     el('n').textContent = page === 1 ? '0 results' : '';
-    drawPager(0);
+    drawPager(0, facets);
     return; }
-  lastRows = rows;
-  el('n').textContent = rows.length + ' result' + (rows.length===1?'':'s');
+  drawCount(rows.length, facets);
   draw(rows);
-  drawPager(rows.length);
+  drawPager(rows.length, facets);
+}
+
+// "Showing 1–20 of 40,807 matching your filters". The qualifier is not padding: a vector
+// search RANKS the filtered set rather than shrinking it, so the total counts rows matching
+// the filters, and the query decides only their order. Calling it "results for your query"
+// would promise a relevance the number never measured.
+function drawCount(shown, facets){
+  if (!facets || typeof facets.total !== 'number'){
+    el('n').textContent = shown + ' result' + (shown===1?'':'s'); return; }
+  const from = (page-1)*PAGE_SIZE + 1, to = (page-1)*PAGE_SIZE + shown;
+  el('n').textContent = `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ` +
+    `${facets.total.toLocaleString()} matching your filters`;
+}
+
+// The sort caveat, written on EVERY fetch rather than only alongside a count — the zero-row
+// path and a failed /facets both skip drawCount, and a note left over from the previous search
+// is worse than none.
+//
+// Deliberately no row count in it. The window the server ranks before re-sorting is its own
+// max_k * max_page, which this page cannot see — PAGE_SIZE * MAX_PAGE is a different number
+// (400 against 2,000) and printing it would state the caveat with the wrong figure. The fact is
+// what the user needs: this is newest among their best matches, not a global date sort.
+function drawSortNote(){
+  const sort = el('sort').value, q = el('q').value.trim();
+  el('sortnote').textContent = sort === 'rel' ? ''
+    : (q ? 'newest among your best matches — not a global date sort' : 'newest first');
+}
+
+// When a search returns nothing, name the one filter that costs the most rather than telling
+// the user to go and guess. `blocking` is the server's own answer: the active filter whose
+// removal recovers the most results (headstart.facets), so the advice is measured, not guessed.
+function whyNothing(facets){
+  const key = facets && facets.blocking;
+  if (!key) return 'Try loosening a filter, or describe the role more broadly.';
+  const label = LABELS[key] || key;
+  return `Your <b>${esc(label)}</b> filter is the one ruling everything out — ` +
+    `<button class="linkish" onclick="dropFilter('${esc(key)}')">remove it</button> ` +
+    'to see what comes back.';
+}
+
+// ── Facet counts (issue #275) ────────────────────────────────────────────────────────────
+// Every filter option carries the number of jobs it would actually return, so the user can
+// see what a filter costs BEFORE spending a click on it. Counts come from /facets with each
+// dimension's own constraint lifted, which is why the ATS strip answers "how many if I
+// switched to Greenhouse" rather than repeating the current total once per option.
+//
+// A zero option is disabled rather than hidden: hiding it would silently rewrite the control
+// under the user's cursor, and "Contract (0)" is itself the answer to "why no contract jobs".
+const FACET_CONTROL = { seen_within:'seen', posted_within:'posted', etype:'etype', ats:'ats' };
+
+// The base label, stashed the first time so repeated renders never append count onto count.
+function baseLabel(node){
+  if (node.dataset.baseLabel === undefined) node.dataset.baseLabel = node.textContent;
+  return node.dataset.baseLabel;
+}
+const withCount = (label, n) => `${label} (${n.toLocaleString()})`;
+
+function applyFacets(facets){
+  if (!facets || !facets.facets) return;
+  const f = facets.facets;
+  for (const [dimension, id] of Object.entries(FACET_CONTROL)){
+    const sel = el(id); if (!sel || !f[dimension]) continue;
+    const byValue = new Map(f[dimension].map(o => [String(o.value), o.count]));
+    for (const opt of sel.options){
+      const label = baseLabel(opt);
+      // The "Any" row is counted server-side with this dimension lifted (ADR-0084) and comes
+      // back keyed `null`. Using `facets.total` here instead would print the CONSTRAINED total,
+      // so an active 2-hour window would make "Any time" read smaller than the 24-hour option
+      // nested inside it.
+      const n = opt.value === '' ? byValue.get('null') : byValue.get(opt.value);
+      if (n === undefined) continue;
+      opt.textContent = withCount(label, n);
+      if (opt.value === ''){ opt.disabled = false; continue; }
+      // never disable what is currently selected — that would strand the user on an option
+      // they cannot see the name of, and its own count is legitimately the current total
+      opt.disabled = n === 0 && opt.value !== sel.value;
+    }
+  }
+  countSwitch('remote', f.remote);
+  countSwitch('hassalary', f.has_salary);
+  countYears(f.max_years);
+}
+
+// The two checkboxes are labels, not option lists — their single count goes on the text.
+function countSwitch(id, options){
+  const box = el(id); if (!box || !options || !options.length) return;
+  // The count goes in its own node rather than onto whichever text node happens to sit last
+  // inside the label — reaching for `lastChild` breaks silently the first time anything else
+  // is appended there, and a wrong count is worse than none.
+  const span = box.parentElement;
+  let tag = span.querySelector('.fcount');
+  if (!tag){ tag = document.createElement('span'); tag.className = 'fcount'; span.appendChild(tag); }
+  tag.textContent = ` (${options[0].count.toLocaleString()})`;
+}
+
+// `maxyears` is a free number input, so its counts cannot ride on options. They go under it
+// as a hint instead — the same information, in the only shape the control allows.
+function countYears(options){
+  const input = el('maxyears'); if (!input || !options) return;
+  let hint = el('yearscount');
+  if (!hint){
+    hint = document.createElement('span');
+    hint.id = 'yearscount'; hint.className = 'tip counts';
+    input.insertAdjacentElement('afterend', hint);
+  }
+  hint.textContent = options.map(o => `${o.label}: ${o.count.toLocaleString()}`).join(' · ');
 }
 
 // A short page (fewer than PAGE_SIZE rows) is how "no next page" is known — there is no
 // total-count query on the server (ADR-0074), so this is the only signal available.
-function drawPager(rowCount){
-  const hasPrev = page > 1, hasNext = rowCount === PAGE_SIZE && page < MAX_PAGE;
+function drawPager(rowCount, facets){
+  const total = facets && typeof facets.total === 'number' ? facets.total : null;
+  // A short page still means "no next page"; the total, new in issue #275, additionally rules
+  // out a next page whose rows exist but sit past what ADR-0074 lets pagination address.
+  const hasPrev = page > 1;
+  const hasNext = rowCount === PAGE_SIZE && page < MAX_PAGE &&
+    (total === null || page * PAGE_SIZE < total);
   el('pager').innerHTML =
     `<button class="ghost" ${hasPrev?'':'disabled'} onclick="goToPage(${page-1})">‹ Prev</button>` +
     `<span class="note">Page ${page}</span>` +
@@ -208,10 +336,9 @@ function drawPager(rowCount){
 }
 
 function draw(rows, target){
-  if (!target && el('sort').value === 'new'){   // the sort control belongs to the Search tab
-    const ts = r => { const t = Date.parse(r.posted_at || ''); return isNaN(t) ? -1 : t; };
-    rows = rows.slice().sort((a,b) => ts(b) - ts(a));   // unparseable dates sink to the bottom
-  }
+  // No client-side reorder any more. It only ever sorted the twenty rows already fetched,
+  // which reads as "sort my results" and is not: the server now orders the whole result set
+  // (issue #275), so by the time rows arrive they are already in the asked-for order.
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   el(target || 'results').innerHTML = rows.map((r,i) => {
     // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
@@ -287,8 +414,8 @@ function renderSets(){
 }
 
 // The view controls: refine what the active set SHOWS — never written into the set.
-// Ranges go to the server (a range must filter before ranking); sort is a client-side
-// reorder of the rows already fetched, like the Search tab's resort().
+// Ranges go to the server (a range must filter before ranking); sort here is a client-side
+// reorder of the rows already fetched — unlike the Search tab, whose sort is server-side.
 function matchesRange(){
   const v = id => (el(id) && el(id).value) || '';
   const r = {};

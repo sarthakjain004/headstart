@@ -153,6 +153,14 @@ _Avoid_: CV. And keep it apart from **Profile** — the Résumé is the transien
 **Résumé query**:
 The role sentence an LLM writes from a **Résumé** — stored as the **Profile**'s sentence, editable there, and shown in the search box before it runs. Subject to the same rule as any Query: it names a role and must not carry years, salary, or location, however loudly the **Résumé** states them.
 
+**Facet** (ADR-0084):
+One filter dimension of the Search rail — the recency windows, employment type, experience, remote, salary-known, **ATS** — together with the count of Jobs each of its options would actually return. A Facet's own constraint is *lifted* before its options are counted, so the ATS Facet answers "how many if I switched to Greenhouse" rather than repeating the current total once per option; every other filter stays applied. Counts are decided by the where-clause alone, never by the **Query**: a vector search ranks the filtered set rather than shrinking it, so the same numbers hold with or without a Query — which is why the UI says "matching your filters" and not "results for your query".
+_Avoid_: category, tag — a Facet is a control plus its measured cost, not a label on a Job. _Avoid_: reading a Facet count as a count of search *results* when a Query is set; it counts what the filters admit, and the Query only orders them.
+
+**Blocking filter** (ADR-0084):
+On a search that matched nothing, the one active filter whose removal recovers the most Jobs — reported so the empty state can name the culprit instead of telling the user to go and guess. Silent when nothing matches even with every filter dropped, because then no single filter is to blame and naming one would be false.
+_Avoid_: invalid filter, bad filter — a Blocking filter is perfectly valid and did exactly what it was asked; it is simply the expensive one.
+
 ### Trends
 
 **Trend filter** (ADR-0075):

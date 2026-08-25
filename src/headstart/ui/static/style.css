@@ -459,3 +459,31 @@ textarea:focus{ border-color:var(--violet); }
     transition-duration:.001ms !important; }
   .ring-fill{ stroke-dasharray:var(--p,50) 100; }
 }
+
+/* ── Facet counts and the salary bracket (issue #275) ─────────────────────────────────── */
+/* The bracket is one control in three parts, so it stays on one line until the rail is too
+   narrow to hold it; currency leads because it scopes the two numbers after it. */
+.bracket{ display:flex; gap:6px; flex-wrap:wrap; }
+/* `width:auto` overrides the rail's `.f select,.f input{ width:100% }` — inside a flex row a
+   100% basis makes each part demand the whole line and wrap every time. */
+.bracket select{ flex:0 0 5.5em; width:auto; }
+.bracket input{ flex:1 1 5em; min-width:0; width:auto; }
+
+/* A switch's count, in its own node so appending markup to the label can never displace it. */
+.sw .fcount{ color:var(--ink-3); }
+
+/* Per-option counts under a control that cannot carry them on its options (the years input). */
+.counts{ display:block; margin-top:6px; color:var(--ink-3); font-size:12px; }
+
+/* A zero-count option stays visible and greyed rather than disappearing — the fact that an
+   option yields nothing is itself the answer the user came for. */
+.rail select option:disabled{ color:var(--ink-3); }
+
+/* The sort caveat sits beside the result count, quieter than it. */
+.sortnote{ color:var(--ink-3); font-size:12px; }
+
+/* An inline "remove it" inside the empty state — a button, because it acts, but it should
+   read as part of the sentence rather than as another control competing with the rail. */
+.linkish{ background:none; border:0; padding:0; cursor:pointer; font:inherit;
+  color:var(--violet); text-decoration:underline; }
+.linkish:hover{ opacity:.8; }

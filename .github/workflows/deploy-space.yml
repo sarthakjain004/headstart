@@ -9,6 +9,7 @@ on:
     paths:
       [
         "deploy/hf-space/**",
+        "src/headstart/facets.py",
         "src/headstart/geo.py",
         "src/headstart/llm_router.py",
         "src/headstart/profile_extract.py",
@@ -45,6 +46,7 @@ jobs:
           pip install huggingface_hub
           # these live in src/headstart (single source of truth, unit-tested there); the
           # standalone Space app imports them as sibling modules
+          cp src/headstart/facets.py deploy/hf-space/facets.py
           cp src/headstart/geo.py deploy/hf-space/geo.py
           cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
           cp src/headstart/profile_extract.py deploy/hf-space/profile_extract.py

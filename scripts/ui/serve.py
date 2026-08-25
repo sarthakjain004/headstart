@@ -16,7 +16,7 @@ from pathlib import Path
 import lancedb
 from flask import Flask, jsonify, render_template, request
 
-from headstart import geo
+from headstart import facets, geo
 from headstart.search import PROD_TABLE, JobSearch, load_encoder
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -44,6 +44,10 @@ def index():
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
+        currencies=_searcher.currencies,
+        # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
+        seen_opts=facets.SEEN_OPTIONS,
+        posted_opts=facets.POSTED_OPTIONS,
         trends_on=False,
         alerts_on=False,
         sets_on=False,
@@ -56,6 +60,15 @@ def index():
 def search_jobs():
     try:
         return jsonify(_searcher.run(request.args))
+    except ValueError:
+        return jsonify({"error": "invalid filter"}), 400
+
+
+@app.route("/facets")
+def search_facets():
+    """Per-option result counts (issue #275) — the same shared path the Space serves."""
+    try:
+        return jsonify(_searcher.facets(request.args))
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 

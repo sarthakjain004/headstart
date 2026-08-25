@@ -483,3 +483,132 @@ def test_range_overflow_is_a_valueerror_not_a_500():
         _clause(posted_before="9999-12-31")
     with pytest.raises(ValueError):
         _clause(seen_before="9999-12-31")
+
+
+# ── the salary bracket and the sort control (issue #275) ─────────────────────────────────
+
+
+def _bracket(**kwargs):
+    base = {
+        "atses": ["darwinbox"],
+        "currencies": ["USD", "INR"],
+        "has_first_seen": True,
+        "has_min_salary_annual": True,
+    }
+    return build_filter(**{**base, **kwargs})
+
+
+def test_salary_bracket_is_an_overlap_test_not_containment():
+    # A 90k-140k posting answers "at least 100k", and a band wider than the user's still
+    # qualifies — so the job's TOP clears the floor and its BOTTOM sits under the ceiling.
+    where = _bracket(salary_currency="USD", salary_min=100_000, salary_max=200_000)
+    assert "COALESCE(max_salary_annual, min_salary_annual) >= 100000" in where
+    assert "min_salary_annual <= 200000" in where
+    assert "salary_currency = 'USD'" in where
+
+
+def test_salary_bracket_falls_back_to_the_single_figure_it_has():
+    # `max_salary_annual` is null on a single-figure posting; COALESCE keeps that row in
+    # play rather than dropping every job that quotes one number.
+    assert "COALESCE(max_salary_annual, min_salary_annual)" in _bracket(
+        salary_currency="USD", salary_min=100_000
+    )
+
+
+def test_currency_alone_does_not_filter():
+    """Picking a currency with both bounds empty must not silently cut the result set.
+
+    Only 28.5% of Jobs carry a salary at all (measured 2026-08-25), so treating the picker as
+    a filter in its own right would drop ~71% of results for a click the user reads as
+    "which currency should the bracket be in" — not "hide everything without a salary".
+    """
+    assert _bracket(salary_currency="USD") is None
+    assert "salary_currency" in _bracket(salary_currency="USD", salary_min=1)
+
+
+def test_currency_is_whitelisted_against_the_table_never_interpolated():
+    assert _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1) is None
+    assert _bracket(salary_currency="XXX", salary_min=1) is None
+
+
+def test_bracket_stays_dark_until_the_salary_columns_exist():
+    # Same dark-until-migrated rule the rest of the salary path follows: a table LanceDB has
+    # not synced onto the ADR-0082 columns would error on every query rather than just not
+    # offering the feature.
+    assert (
+        build_filter(
+            salary_currency="USD",
+            salary_min=1,
+            atses=[],
+            currencies=["USD"],
+            has_first_seen=True,
+            has_min_salary_annual=False,
+        )
+        is None
+    )
+
+
+def test_sort_is_whitelisted_to_a_column():
+    from headstart.search import SORT_COLUMNS
+
+    assert SORT_COLUMNS == {"posted": "posted_at", "seen": "first_seen"}
+    searcher, table = _searcher()
+    searcher.run({"q": "", "sort": "; DROP TABLE jobs; --"})
+    # unknown value == no sort at all, i.e. the ordinary browse ordering
+    assert table.last_order[0]["column_name"] == "first_seen"
+
+
+def test_sorting_by_posted_shape_guards_the_ordering():
+    """`posted_at` is a raw per-ATS string and a non-ISO form sorts ABOVE every ISO date.
+
+    Measured 2026-08-25 without this guard: a "newest posted" page led with '22-Jun-2026'
+    above '2028-07-01'. The same guard `posted_within` already applies to the window has to
+    apply to the ordering, or the top of the page is the one row nobody can parse.
+    """
+    searcher, table = _searcher()
+    searcher.run({"q": "", "sort": "posted"})
+    assert "posted_at LIKE '____-__-__%'" in table.last_where
+    assert table.last_order == [
+        {"column_name": "posted_at", "ascending": False, "nulls_first": False},
+        {"column_name": "id", "ascending": True},
+    ]
+
+
+def test_sorting_by_seen_goes_dark_without_the_column():
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["ats", "title"])
+    JobSearch(_Model(), table).run({"q": "", "sort": "seen"})
+    assert table.last_order == [{"column_name": "id", "ascending": True}]
+
+
+def test_sorting_a_ranked_search_keeps_the_query_and_reorders_the_window():
+    """The constraint this exists for: an `order_by` on the vector branch REPLACES similarity
+    ranking rather than tie-breaking it, so sorting a search server-side would discard the
+    query. Instead the whole addressable window (ADR-0074's `max_k * max_page`) is ranked,
+    then re-ordered here."""
+    rows = [
+        {**_ROW, "id": "a", "posted_at": "2026-01-01"},
+        {**_ROW, "id": "b", "posted_at": "2026-08-01"},
+        {**_ROW, "id": "c", "posted_at": "2026-04-01"},
+    ]
+    table = _Table(rows)
+    searcher = JobSearch(_Model(), table)
+    out = searcher.run({"q": "backend", "sort": "posted", "k": "3"})
+    assert [r["id"] for r in out] == ["b", "c", "a"]  # newest first
+    assert (
+        table.last_query is not None
+    )  # the query still ran — ranking was not discarded
+    assert table.last_order is None  # ...and no ORDER BY was pushed down to override it
+    assert table.last_k == searcher.max_k * searcher.max_page  # the whole window
+
+
+def test_sorting_a_ranked_search_still_paginates_without_repeating():
+    rows = [
+        {**_ROW, "id": c, "posted_at": f"2026-0{i + 1}-01"}
+        for i, c in enumerate("abcd")
+    ]
+    searcher = JobSearch(_Model(), _Table(rows))
+    first = searcher.run({"q": "backend", "sort": "posted", "k": "2", "page": "1"})
+    second = searcher.run({"q": "backend", "sort": "posted", "k": "2", "page": "2"})
+    assert [r["id"] for r in first] == ["d", "c"]
+    assert [r["id"] for r in second] == ["b", "a"]

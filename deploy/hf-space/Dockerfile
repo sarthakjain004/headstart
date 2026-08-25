@@ -30,7 +30,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # (ADR-0040); without role_watchlist.json `_watch_meta` returns {} and `watch_parents` is
 # empty, so the by-role drill stays hidden on every family (ADR-0051) — the same bug as #115,
 # one file later.
-COPY app.py geo.py llm_router.py profile_extract.py role_families.json role_watchlist.json search.py start.sh .
+COPY app.py facets.py geo.py llm_router.py profile_extract.py role_families.json role_watchlist.json search.py start.sh .
 COPY alerts ./alerts
 # Synced from src/headstart/ui/ by deploy-space.yml, like the modules above.
 COPY templates ./templates

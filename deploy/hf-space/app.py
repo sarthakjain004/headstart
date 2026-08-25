@@ -18,6 +18,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import facets  # facet counts — synced from src/headstart/facets.py (ADR-0084)
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
 import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
@@ -237,6 +238,23 @@ def search_jobs():
     """A thin adapter over the shared search path — parse/filter/rank live in JobSearch."""
     try:
         return jsonify(_searcher.run(request.args))
+    except ValueError:
+        return jsonify({"error": "invalid filter"}), 400
+
+
+@app.route("/facets")
+def search_facets():
+    """Per-option result counts for the current filters (issue #275).
+
+    Deliberately its own endpoint rather than a field on ``/search``. Counts are decided by the
+    where-clause alone — a vector search ranks the filtered set rather than shrinking it — so
+    this needs no query, no encoder call and no vector, and folding it into ``/search`` would
+    have coupled ~40 counts to every ranked request and changed that route's response from the
+    bare array its clients already read. The browser fires both at once, so the counts cost the
+    user nothing beyond the search they were already waiting for.
+    """
+    try:
+        return jsonify(_searcher.facets(request.args))
     except ValueError:
         return jsonify({"error": "invalid filter"}), 400
 
@@ -840,6 +858,12 @@ def index():
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
+        # the salary bracket's currency picker (issue #275) — only the currencies the served
+        # table actually carries, and the same list `build_filter` whitelists against
+        currencies=_searcher.currencies,
+        # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
+        seen_opts=facets.SEEN_OPTIONS,
+        posted_opts=facets.POSTED_OPTIONS,
         trends_on=bool(_TRENDS),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
