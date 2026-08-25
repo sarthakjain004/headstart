@@ -13,12 +13,24 @@ into the sibling arrays, so we index those once and join:
 
 Remote is a **native boolean** (``remote``), so this is a "both"-family scraper: we take the
 native flag OR ``is_remote(location)`` OR the occasional ``preferred_remote_job_locations`` string
-(present on ~4% of jobs) — best recall without over-claiming.
+(present on ~6-12% of jobs, sample-dependent) — best recall without over-claiming.
+
+``preferred_remote_job_locations`` is also the *location* for a remote job, not just a remote-flag
+signal: it is a pipe-separated list of fully-qualified "City, Country" places, 100% correlated with
+``remote == true``, and it names where the job is actually hiring — unlike ``branch_id``, which is
+the tenant's registered office and is routinely a different country for a remote posting (measured
+2026-08-25: 653/8,007 jobs, 190 tenants, served the branch's country while
+``preferred_remote_job_locations`` named a disjoint set — e.g. a Singapore branch job whose
+preferred list was India/Vietnam/Ukraine/Poland). So it *replaces* the branch join for ``location``
+whenever present, rather than being appended to it — appending would keep the wrong country
+alongside the right one, which is worse than either alone for the substring location filter
+(``geo.where``, ADR-0024).
+
+``job_type`` maps to ``employment_type`` via :data:`_JOB_TYPE_LABELS`, resolved 2026-08-25 against
+48 real job pages (schema.org ``JobPosting`` JSON-LD + the rendered "Work Type" line), 6 distinct
+tenants per code, unanimous.
 
 Not mapped, on purpose:
-  - ``employment_type``: ``job_type`` is a bare numeric enum (2 == ~92% of jobs; 1,3,4,5,7,8 seen)
-    whose labels aren't in the payload or reliably reachable — left unmapped rather than guessed
-    (same call as Keka's ``jobType``). The tech gate and search don't depend on it.
   - ``experience``: no native field; the post-hoc extractor (ADR-0018) reads it from the description.
   - ``salary``: ``ctc_details`` was null on every one of the 2,591 scanned jobs — no shape to parse.
 
@@ -42,6 +54,20 @@ _log = log.get(__name__)
 #: per the module docstring above.
 _WIDGET_CAP = 1000
 
+#: ``job_type``'s numeric enum -> its label, per the module docstring: resolved against 48 real
+#: job pages (schema.org ``JobPosting`` ``employmentType`` + the rendered "Work Type" line),
+#: unanimous across 6 tenants per code.
+_JOB_TYPE_LABELS: dict[int, str] = {
+    1: "Contract",
+    2: "Full Time",
+    3: "Internship",
+    4: "Part Time",
+    5: "Temporary",
+    6: "Seasonal",
+    7: "Volunteer",
+    8: "Fixed Term Contract",
+}
+
 
 def _branch_location(branch: dict) -> str | None:
     """A branch's display location: the pre-formatted ``location`` string, else built from the
@@ -50,6 +76,17 @@ def _branch_location(branch: dict) -> str | None:
         return branch["location"]
     parts = (branch.get("city"), branch.get("state"), branch.get("country_code"))
     return ", ".join(p for p in parts if p) or None
+
+
+def _preferred_location(value: Any) -> str | None:
+    """``preferred_remote_job_locations`` reformatted from its raw pipe-separated form into the
+    "; "-joined form the rest of the codebase uses for a multi-place string (workday's
+    ``_location_from``) — the location filter is a substring LIKE, so joining (rather than
+    picking one) lets a posting open to several countries match all of them."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    places = [p.strip() for p in value.split("|") if p.strip()]
+    return "; ".join(places) or None
 
 
 class FreshteamScraper(BaseScraper):
@@ -84,13 +121,19 @@ class FreshteamScraper(BaseScraper):
         for j in listed:
             if j.get("deleted"):
                 continue
-            location = branch_loc.get(j.get("branch_id"))
+            branch_location = branch_loc.get(j.get("branch_id"))
+            preferred = _preferred_location(j.get("preferred_remote_job_locations"))
+            # A remote job's real hiring geography is `preferred_remote_job_locations`, not the
+            # tenant's registered branch office (module docstring) — it replaces the branch join
+            # for `location` whenever present, rather than being appended to it, so a wrong
+            # branch country never rides along next to the right one.
+            location = preferred or branch_location
             # ``remote`` is an authoritative native boolean, so the flag is always definitive
             # (bool, never None); the location signals only upgrade a native-False to True.
             remote = (
                 bool(j.get("remote"))
-                or bool(is_remote(location))
-                or bool(is_remote(j.get("preferred_remote_job_locations")))
+                or bool(is_remote(branch_location))
+                or bool(is_remote(preferred))
             )
             jobs.append(
                 Job(
@@ -106,6 +149,7 @@ class FreshteamScraper(BaseScraper):
                     posted_at=j.get("created_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description")),
+                    employment_type=_JOB_TYPE_LABELS.get(j.get("job_type")),
                 )
             )
         return jobs
