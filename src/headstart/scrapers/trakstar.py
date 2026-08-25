@@ -16,24 +16,34 @@ spelling, not a typo here). Detail pages go through curl_cffi (TLS impersonation
 sit behind the same DataDome edge; a failed fetch leaves description None — the job is still
 kept.
 
-**Known gap, under active investigation (2026-08-22): the careers page above silently caps at
-25 rendered job cards.** Confirmed live on a real board (exotel: 25 rendered, 45 real, via its
-RSS feed) and measured at 5.4% of a 148-board live sample (``scripts/eval/trakstar_feed_compare.py
---n 150``, seed=7) hitting the cap — 154 real jobs recovered by the feed across that one run.
-Trakstar also serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``/
-``fetch_via_feed`` below) that carries every job with no such cap, embeds the full description
-inline (no per-job detail fetch needed), and — unlike the detail pages — is reachable through
-plain ``http.fetch`` with no DataDome/curl_cffi involved (confirmed: 0 errors across 148 sampled
-boards). It is NOT universal — the same run found the feed truly unreachable (404 or
-unparseable) on 6.1% of tenants (confirmed: sleekr 404s), distinct from a working feed that
-genuinely reports zero current openings (confirmed 200s with an empty channel:
-grassrootsvoter, knowingtechnologies — 2 more boards the run's own raw counts include, both
-correctly reclassified out of "unreachable" once ``fetch_via_feed`` learned to tell the two
-apart) — so it can't unconditionally replace the path above yet. ``fetch_via_feed``
-(below) exposes it as a second, independent entry
-point so ``scripts/eval/trakstar_feed_compare.py`` can call both paths on the same boards and
-compare their real output at scale before any cutover — it is deliberately not wired into
-``fetch_raw()``/``parse()`` yet, and a normal scrape run still uses only the path above.
+**Fixed (2026-08-25): the careers page above silently caps at 25 rendered job cards, and
+``fetch_raw()`` now falls back to the RSS feed when it does.** Measured at scale
+(``experiment/location-audit-2026-08-25/trakstar.md``, 906 feed-verified boards): the cap hides
+4,968 of 10,210 real jobs (48.7%), concentrated in 72 boards (7.9%) that sit at or over it.
+Trakstar also serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``
+below) that carries every job with no such cap and embeds the full description inline (no
+per-job detail fetch needed) — confirmed a strict superset of the HTML path on every one of
+those 906 boards.
+
+``fetch_raw()`` tells a Board genuinely at its full count apart from one the cap is actually
+hiding jobs on by reading the careers page's own "View N Openings" total (``_total_openings``),
+not just the card count: re-verified live 2026-08-25, ``interglobalhomes``/``2workonline1``/
+``dataentrydirect`` all render exactly 25 cards with that total also reading 25 — not capped, no
+RSS fetch — while ``sleekr``/``colcare``/``hazelhawkins``/``turnkeyconsulting``/
+``sajenaturalwellnessretail`` render 25 cards with a higher total and are. Only the latter case
+reaches for the feed (and, since the feed embeds its own description, skips this scraper's
+per-job JSON-LD detail pass entirely rather than fetching 25 DataDome-guarded pages it's about
+to discard) — so the 92%+ of boards that were never capped still cost exactly the one
+careers-page request they always did.
+
+The feed is NOT universal — unreachable (404, or a CSB-rendered ``/search/``) on 3.9% of tenants
+(confirmed live 2026-08-25: sleekr still 404s) — so a capped Board whose feed fails keeps its
+(known-short) HTML result rather than losing the Board outright, and is marked ``truncated``
+(ADR-0053): reaching the cap used to be treated as ambiguous evidence not worth marking, but the
+page's own total now makes it proof. ``fetch_via_feed`` below remains a separate, complete
+investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still uses it to compare
+both paths at scale) built on the same ``_fetch_feed``/``_feed_items`` primitives
+``fetch_raw()`` now also calls directly.
 """
 
 from __future__ import annotations
@@ -51,14 +61,24 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _log = log.get(__name__)
 
-#: The careers page renders at most this many job cards. Documented and measured in the
-#: module docstring above; a Board landing exactly on it is very likely truncated.
+#: The careers page renders at most this many job cards. Fallback-only cap heuristic, used when
+#: a page carries no "View N Openings" total to compare against (see ``_total_openings``) — a
+#: Board landing exactly on it with no total is very likely truncated.
 _CARD_CAP = 25
 
 _ITEM = "js-careers-page-job-list-item"
 _CODE = re.compile(r'data-href="/jobs/([^/"]+)/?"')
 _TITLE = re.compile(r'js-job-list-opening-name[^>]*\btitle="([^"]*)"')
 _LOC = re.compile(r'js-job-list-opening-loc[^>]*\btitle="([^"]*)"')
+# The careers page's own running total, e.g. `<a class="js-show-openings ..." href="#content">
+# View 634 Openings</a>` — confirmed present on 58/60 live-sampled boards 2026-08-25, absent
+# only on the 2/60 with zero postings (the button doesn't render at all when there's nothing to
+# view). Reading it is what tells a Board genuinely at its full count (25 cards, total 25 — not
+# capped) apart from one the render cap is actually hiding jobs on (25 cards, total 634).
+_TOTAL_OPENINGS = re.compile(
+    r"js-show-openings[^>]*>\s*View\s*(\d+)\s*(?:<[^>]*>\s*)*Openings?",
+    re.IGNORECASE | re.DOTALL,
+)
 # the card also renders the department in a bare rb-text-4 div and the employment type in
 # the opening-meta span next to it — both sit in the same block, just unread until now.
 _DEPT = re.compile(r'"rb-text-4">\s*([^<]+?)\s*</div>')
@@ -101,22 +121,33 @@ class TrakstarScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         html = self._get()  # the careers page HTML (job cards)
         codes = _codes_from(html)
-        if len(codes) >= _CARD_CAP:
-            # The known cap was visible only by running scripts/eval/trakstar_feed_compare.py by
-            # hand, so a run never said which Boards hit it and the cost could not be tracked.
-            #
-            # `>=`, not `==`: the day Trakstar raises the cap, `==` would silently stop warning on
-            # every truncated Board, which is the failure mode this line exists to prevent.
-            #
-            # Deliberately not mark_truncated: landing on the cap is strong evidence, not proof.
-            # (The docstring's 5.4% counts boards landing on exactly 25, via
-            # trakstar_feed_compare.py's own `html_job_count == 25`. That measures how often the
-            # cap is *reached*, not that reaching it always means truncation — exotel's 25-vs-45
-            # feed comparison is the evidence for that.) ADR-0053 exclusion has no drain, so a
-            # wrong call there is permanent.
+        if _is_capped(html, len(codes)):
+            # This Board's card list is short of its real total (the page's own "View N
+            # Openings" count says so, or — on the rare template without that button — the
+            # card count alone hit the render cap; see _is_capped). Try the RSS feed BEFORE the
+            # per-job detail pass below: the feed is a confirmed superset wherever it's
+            # reachable and embeds its own description inline, so if it answers here, the
+            # detail pass — DataDome-guarded, one request per card — would be pure waste
+            # fetching pages whose Jobs we're about to discard in favor of the feed's.
+            feed_xml = _fetch_feed(self.slug)
+            feed_items = _feed_items(feed_xml) if feed_xml is not None else None
+            if feed_items is not None:
+                _log.info(
+                    f"{self.board_key()}: {len(codes)} cards rendered, capped — RSS feed "
+                    f"supplied the full {len(feed_items)} jobs, no detail pass needed"
+                )
+                return {"feed_items": feed_items}
+            # The feed is unreachable for this tenant (404, or a CSB-rendered /search/ —
+            # measured on 3.9% of boards). The capped HTML list below is the best we have; mark
+            # it so a future eviction sweep doesn't read the jobs we can't see as delistings
+            # (ADR-0053) — the page's own total makes this proof, not just the cap heuristic's
+            # ambiguous "reached the cap" signal.
+            self.mark_truncated(
+                f"{len(codes)} cards rendered, capped, and the RSS feed fallback is unreachable"
+            )
             _log.warning(
-                f"{self.board_key()}: {len(codes)} cards, at or over the {_CARD_CAP}-card render cap, so "
-                "this Board is probably short; its RSS feed carries the full list"
+                f"{self.board_key()}: {len(codes)} cards, capped, and the RSS feed is "
+                "unreachable — keeping the capped HTML list"
             )
         # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
         # (bounded); failures -> None. The detail pages sit behind DataDome, so the async path
@@ -135,15 +166,18 @@ class TrakstarScraper(BaseScraper):
         return {"html": html, "postings": postings}
 
     def fetch_via_feed(self, scraped_at: str) -> list[Job] | None:
-        """Investigative alternate path, not yet wired into ``fetch_raw()``/``parse()`` — see
-        the module docstring's "Known gap" note. One request to the tenant's RSS feed
+        """Separate, complete investigative entry point — one request to the tenant's RSS feed
         (``/jobfeeds/{slug}``) returns every job with its full description already inline, no
-        per-job detail fetch and no careers-page render cap. Returns ``None`` only when the feed
-        itself is unreachable (404, network error, or a 200 body that doesn't parse as XML) so a
-        caller can fall back to ``fetch_raw()``/``parse()``. A working feed reporting zero
-        current openings is a real, different result — an empty list, not ``None`` — confirmed
-        live: `grassrootsvoter`/`knowingtechnologies` are genuine 200s with an empty
-        ``<channel>``, not 404s like `sleekr`."""
+        per-job detail fetch and no careers-page render cap. Not called by ``fetch_raw()``
+        (which reaches for ``_fetch_feed``/``_feed_items`` directly instead, since it needs the
+        raw items rather than built ``Job``s — see its own comment); kept for
+        ``scripts/eval/trakstar_feed_compare.py``, which calls both this and
+        ``fetch_raw()``/``parse()`` on the same boards to compare their real output at scale.
+        Returns ``None`` only when the feed itself is unreachable (404, network error, or a 200
+        body that doesn't parse as XML) so a caller can fall back to ``fetch_raw()``/``parse()``.
+        A working feed reporting zero current openings is a real, different result — an empty
+        list, not ``None`` — confirmed live: `grassrootsvoter`/`knowingtechnologies` are genuine
+        200s with an empty ``<channel>``, not 404s like `sleekr`."""
         xml_text = _fetch_feed(self.slug)
         if xml_text is None:
             return None
@@ -196,6 +230,13 @@ class TrakstarScraper(BaseScraper):
         return self._extract_posting(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
+        if isinstance(raw, dict) and "feed_items" in raw:
+            # fetch_raw() already swapped in the RSS feed's full list for a capped Board (see
+            # its own comment above) — these came from _feed_items(), already-complete job
+            # dicts with no HTML card to parse.
+            return _jobs_from_feed(
+                self.ats, self.slug, self.company, raw["feed_items"], scraped_at
+            )
         html = raw["html"] if isinstance(raw, dict) else raw
         postings = raw.get("postings", {}) if isinstance(raw, dict) else {}
         jobs: list[Job] = []
@@ -238,6 +279,31 @@ def _codes_from(html: str) -> list[str]:
     card-splitting logic — the same reuse ``_fetch_successfactors`` already gets from this
     module's ``_job_urls_from``-equivalent, ``successfactors.py``'s own module-level helper."""
     return [m.group(1) for block in html.split(_ITEM)[1:] if (m := _CODE.search(block))]
+
+
+def _total_openings(html: str) -> int | None:
+    """The careers page's own count of how many jobs the Board really has, from its "View N
+    Openings" button — independent of how many cards actually rendered. ``None`` when the
+    button isn't on the page; confirmed live that this only happens for a Board with zero
+    postings (it renders no button at all rather than "View 0 Openings")."""
+    m = _TOTAL_OPENINGS.search(html)
+    return int(m.group(1)) if m else None
+
+
+def _is_capped(html: str, n_codes: int) -> bool:
+    """Whether this Board's rendered card list (``n_codes`` long) is short of its real total.
+    Prefers the page's own "View N Openings" total — exact, and self-adjusting if Trakstar ever
+    changes the render cap, unlike a hardcoded count — falling back to the card-count heuristic
+    only when that button is missing from the page. Confirmed live 2026-08-25 that the total
+    tells apart a Board genuinely at 25 real postings (``interglobalhomes``, ``2workonline1``,
+    ``dataentrydirect``: 25 cards, total 25 — NOT capped) from one the cap is actually hiding
+    jobs on (``sleekr``, ``colcare``: 25 cards, total 77/64). ``>=``, not ``==``, in the
+    fallback branch for the same reason the original heuristic used it: a raised cap must not
+    silently stop being caught."""
+    total = _total_openings(html)
+    if total is not None:
+        return total > n_codes
+    return n_codes >= _CARD_CAP
 
 
 def _jsonld_posting(html: str) -> dict | None:
@@ -327,6 +393,22 @@ def _feed_posted_at(pub_date: str | None) -> str | None:
         return None
 
 
+def _feed_location(city: str, state: str, country: str) -> str | None:
+    """Join the feed's three raw location fields into one string. The HTML card's own
+    ``title=`` attribute gets its whitespace cleanup for free because ``parse()`` strips the
+    whole assembled string — the feed never assembles one, so this does the same cleanup on
+    the parts instead: each gets its own ``.strip()`` (confirmed live 2026-08-25: a bare part
+    routinely carries a stray leading/trailing space — ``'fort worth '``, ``' Jordan'`` — that
+    an unstripped join turns into a double space or a dangling comma), and a state that only
+    repeats the city (``'Hamburg, Hamburg, Deutschland'``, ``'Ho Chi Minh City, Ho Chi Minh
+    City, Vietnam'`` — confirmed on ~6% of records) is dropped rather than kept twice, matching
+    what the HTML card actually renders for the same job."""
+    parts = [p.strip() for p in (city, state, country)]
+    if parts[0] and parts[1] and parts[0].casefold() == parts[1].casefold():
+        parts[1] = ""
+    return ", ".join(p for p in parts if p) or None
+
+
 def _feed_items(xml_text: str) -> list[dict] | None:
     """Parse an RSS feed's ``<item>`` elements into plain dicts, one per posting. ``None`` only
     if the XML itself doesn't parse (shouldn't happen for a 200 response, but a caller must be
@@ -342,20 +424,16 @@ def _feed_items(xml_text: str) -> list[dict] | None:
         code_m = _FEED_CODE.search(item.findtext("link") or "")
         if not code_m:
             continue
-        location = ", ".join(
-            part
-            for part in (
-                item.findtext("job:locationCity", default="", namespaces=_FEED_NS),
-                item.findtext("job:locationState", default="", namespaces=_FEED_NS),
-                item.findtext("job:locationCountry", default="", namespaces=_FEED_NS),
-            )
-            if part
+        location = _feed_location(
+            item.findtext("job:locationCity", default="", namespaces=_FEED_NS),
+            item.findtext("job:locationState", default="", namespaces=_FEED_NS),
+            item.findtext("job:locationCountry", default="", namespaces=_FEED_NS),
         )
         items.append(
             {
                 "code": code_m.group(1),
                 "title": (item.findtext("title") or "").strip(),
-                "location": location or None,
+                "location": location,
                 "description": _feed_description(item.findtext("description") or ""),
                 "posted_at": _feed_posted_at(item.findtext("pubDate")),
                 "department": (

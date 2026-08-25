@@ -1671,6 +1671,166 @@ def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):
     assert jobs[0].id == "trakstar:acme:fk0abc1"
 
 
+def _trakstar_cards_page(n_cards, total=None):
+    """A minimal careers-page HTML with ``n_cards`` job cards and, when ``total`` is given, the
+    page's own "View N Openings" button (real markup shape, live-fetched 2026-08-25:
+    ``<a class="js-show-openings ..." href="#content">View 634 Openings</a>``)."""
+    button = (
+        f'<a class="js-show-openings btn" href="#content">View {total} Openings</a>'
+        if total is not None
+        else ""
+    )
+    cards = "".join(
+        f'<div class="js-careers-page-job-list-item" data-href="/jobs/code{i}/">'
+        f'<h3 class="js-job-list-opening-name" title="Job {i}">Job {i}</h3>'
+        f'<div class="js-job-list-opening-loc" title="Remote">Remote</div>'
+        f"</div>"
+        for i in range(n_cards)
+    )
+    return f"<html><body>{button}{cards}</body></html>"
+
+
+def test_trakstar_is_capped_true_when_total_exceeds_cards():
+    from headstart.scrapers.trakstar import _is_capped
+
+    html = _trakstar_cards_page(25, total=40)
+    assert _is_capped(html, 25) is True
+
+
+def test_trakstar_is_capped_false_when_total_matches_cards_at_the_render_cap():
+    # A Board can genuinely have exactly 25 real postings (confirmed live 2026-08-25:
+    # interglobalhomes, 2workonline1, dataentrydirect) -- the card count alone can't tell that
+    # apart from a truncated one, but the page's own total can, and must not trigger a wasted
+    # RSS fetch.
+    from headstart.scrapers.trakstar import _is_capped
+
+    html = _trakstar_cards_page(25, total=25)
+    assert _is_capped(html, 25) is False
+
+
+def test_trakstar_is_capped_falls_back_to_card_count_without_a_total():
+    from headstart.scrapers.trakstar import _is_capped
+
+    assert _is_capped(_trakstar_cards_page(25), 25) is True
+    assert _is_capped(_trakstar_cards_page(24), 24) is False
+
+
+def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
+    monkeypatch,
+):
+    """A capped Board (sleekr/colcare-shaped: 25 cards, a higher total) whose feed answers must
+    return the feed's jobs -- and must never fetch a single per-job detail page for the cards
+    it's about to discard (those pages sit behind DataDome; the feed already has the full
+    description inline)."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=40))
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: _TRAKSTAR_FEED)
+    detail_calls = []
+    monkeypatch.setattr(s, "_job_posting", lambda code: detail_calls.append(code))
+
+    raw = s.fetch_raw()
+
+    assert detail_calls == []  # the capped cards' detail pages were never fetched
+    assert raw == {"feed_items": trakstar_module._feed_items(_TRAKSTAR_FEED)}
+    jobs = s.parse(raw, SCRAPED_AT)
+    assert len(jobs) == 2
+    assert jobs[0].id == "trakstar:acme:fk0abc1"
+    assert s.truncated is None  # the feed answered in full -- this Board is not short
+
+
+def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
+    """The 92%+ of Boards under the render cap must cost exactly the one careers-page request
+    they always did -- no RSS fetch, since there's nothing the cards are missing."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(3, total=3))
+
+    def boom_feed(slug):
+        raise AssertionError("must not fetch the RSS feed when the Board isn't capped")
+
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", boom_feed)
+    monkeypatch.setattr(s, "_job_posting", lambda code: None)
+
+    raw = s.fetch_raw()
+
+    assert "feed_items" not in raw
+    assert len(raw["postings"]) == 3
+    assert s.truncated is None
+
+
+def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
+    """sleekr-shaped live case: capped (25 cards, real total higher) but the feed 404s. The
+    capped HTML list must still come back -- not an empty Board -- and the Board must be marked
+    truncated now that the page's own total makes the shortfall provable, not just suspected."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=77))
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(s, "_job_posting", lambda code: None)
+
+    raw = s.fetch_raw()
+
+    assert "feed_items" not in raw
+    assert len(raw["postings"]) == 25
+    jobs = s.parse(raw, SCRAPED_AT)
+    assert len(jobs) == 25
+    assert s.truncated is not None
+    assert "unreachable" in s.truncated
+
+
+def test_trakstar_feed_location_strips_each_part():
+    # real values, live-fetched 2026-08-25 (americandirectlogistic): a bare field routinely
+    # carries a stray space that an unstripped join turns into 'fort worth , tx , usa '
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("fort worth ", "tx ", "usa ") == "fort worth, tx, usa"
+
+
+def test_trakstar_feed_location_drops_whitespace_only_part():
+    # real values, live-fetched 2026-08-25 (ihjez): a blank part can be a lone space, not "",
+    # which the old `if part` truthy check let through as a dangling comma
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("Amman", " ", "Jordan") == "Amman, Jordan"
+
+
+def test_trakstar_feed_location_drops_state_that_repeats_city():
+    # real values, live-fetched 2026-08-25 (anduin): confirmed on ~6% of feed records
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("Hamburg", "Hamburg", "Deutschland") == "Hamburg, Deutschland"
+    assert (
+        _feed_location("Ho Chi Minh City", "Ho Chi Minh City", "Vietnam")
+        == "Ho Chi Minh City, Vietnam"
+    )
+
+
+def test_trakstar_feed_location_all_blank_is_none():
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("", "", "") is None
+
+
+def test_trakstar_feed_items_cleans_dirty_location_end_to_end():
+    from headstart.scrapers.trakstar import _feed_items
+
+    xml = """<rss><channel xmlns:job="https://recruiterbox.com/rss/job/">
+    <item><title>Ops</title><link>http://acme.hire.trakstar.com/jobs/fk0aaa1/</link>
+    <description></description>
+    <job:locationCity>Hamburg</job:locationCity><job:locationState>Hamburg</job:locationState>
+    <job:locationCountry> Deutschland </job:locationCountry></item>
+    </channel></rss>"""
+    items = _feed_items(xml)
+    assert items[0]["location"] == "Hamburg, Deutschland"
+
+
 def test_recruitee_url_ignores_the_customers_vanity_domain():
     """The API's `careers_url` is whatever domain the customer configured, and a third of
     those do not serve the board (transperfect.com/o/… 404s while the job is open). Build the
