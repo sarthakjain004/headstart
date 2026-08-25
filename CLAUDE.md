@@ -229,7 +229,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
   organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
-  (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `eval/`, `enrich/`,
+  (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `fetch/` (pull HF
+  data down — distinct from `scrape/`, which pulls from ATS hosts), `eval/`, `enrich/`,
   `filter/` (verification), `embed/` (local index tools), `bench/` (performance
   measurement), `ui/`. Whenever you add a script, put it
   in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
@@ -305,6 +306,21 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   produced it, with no durable source to refresh from. A `snapshot_download` against
   `data/jobs/*` is a silent no-op, not a stale-data warning — don't reach for it expecting fresh
   data; use `data/descriptions/` (the ADR-0050 store) or `data/state/` for anything durable.
+
+- **Pulling `data/lancedb/` (or any multi-GB slice): use `scripts/fetch/pull_lancedb.py`, not
+  `snapshot_download`** (ADR-0085). Measured 2026-08-25 on a 1,888 MB / 4,222-file pull,
+  `huggingface_hub` failed four separate ways and cost most of a session — silent Xet death, an
+  internal read-timeout loop that never raised, a 1 GB file that restarted from byte zero on
+  every drop instead of resuming, and finally a wedge with zero sockets open while a plain
+  `requests.get` of the same file returned 200 in 0.28s. ADR-0085 has the detail; three things
+  matter at the call site:
+
+  - It is **cancellable** — Ctrl-C and re-run costs only the bytes not yet landed.
+  - **When it is slow, add flows (`--workers`), never timeout.** One long-lived stream measured
+    0.16 MB/s against 2.17 MB/s aggregated across four concurrent ranged GETs; raising
+    `HF_HUB_DOWNLOAD_TIMEOUT` to 300s made the hangs *longer*, not rarer.
+  - `--check` reports what is missing without fetching, and `snapshot_download` is still right
+    for the small slices above (`data/state/*` is ~1 MB).
 
 ### Adding or changing a scraper: run the filter harness first
 
