@@ -51,3 +51,42 @@ def test_every_synced_file_is_copied_into_the_image():
         "them into the image — app.py reads these from beside itself, so they would be "
         "missing at runtime and the feature would silently do nothing"
     )
+
+
+# `from headstart…` — the package form, which does not exist inside the Space image.
+_PACKAGE_IMPORT = re.compile(r"^\s*(?:from|import)\s+headstart\b.*$", re.MULTILINE)
+
+
+def test_every_package_import_in_a_synced_module_has_a_flat_fallback():
+    """A module synced into the Space must import both ways, because the image has no package.
+
+    deploy-space.yml lays each module down *flat* beside `app.py`, so `from headstart import x`
+    raises `ModuleNotFoundError` there and nowhere else. That is invisible to the rest of this
+    suite, where `headstart` is genuinely importable — which is exactly how `JobSearch.facets`
+    shipped a package-only import that made `/facets` 500 in production only. The route answers
+    `except ValueError`, which does not catch it, and the browser's own `.catch` then degraded
+    the failure to silence: no counts, no total, no sign anything was wrong.
+
+    Every such import needs a `try: from headstart… / except ImportError: import …` pair. This
+    counts them rather than parsing the control flow: an unguarded import is one that has no
+    `except ImportError` anywhere near it.
+    """
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    offenders: list[str] = []
+    for name in sorted(_SYNCED_FILE.findall(workflow)):
+        if not name.endswith(".py"):
+            continue
+        source = REPO / "src" / "headstart" / name
+        if not source.exists():  # copied from somewhere else in the tree
+            continue
+        text = source.read_text(encoding="utf-8")
+        package_imports = len(_PACKAGE_IMPORT.findall(text))
+        fallbacks = text.count("except ImportError")
+        if package_imports > fallbacks:
+            offenders.append(
+                f"{name} ({package_imports} package imports, {fallbacks} fallbacks)"
+            )
+    assert not offenders, (
+        "these modules are synced flat into the Space image but import `headstart` without a "
+        f"flat fallback, so they raise ModuleNotFoundError there and only there: {offenders}"
+    )
