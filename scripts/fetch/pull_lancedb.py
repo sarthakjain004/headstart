@@ -4,21 +4,14 @@
 Safe to Ctrl-C at any point and re-run: every run recomputes what is missing from what is on
 disk, so it costs only the bytes not yet landed. Re-running after a clean finish is a no-op.
 
-Why this exists rather than ``snapshot_download``. Measured 2026-08-25 pulling ``data/lancedb``
-(4,222 files, 1,888 MB), ``huggingface_hub`` failed four distinct ways on this link:
+Why this exists rather than ``snapshot_download``, and why big files are fetched as concurrent
+ranged chunks: **ADR-0085**. The two operational facts worth having here:
 
-* under Xet it died silently mid-stream, twice, at the same 987 files — no traceback, process
-  simply gone (see the ``HF_HUB_DISABLE_XET`` memory; the flag is set below AND in
-  ``.claude/settings.json``, because it is read into a module constant at import time);
-* its ``HF_HUB_DOWNLOAD_TIMEOUT`` is a READ timeout defaulting to 10s, and on a chunk that
-  missed the window it logged "Trying to resume" and looped internally *without ever raising*,
-  so a per-file retry above it never fired;
-* it restarted the 1,023 MB file from byte zero on every CDN drop, under a fresh ``.incomplete``
-  name each time — three partials for one blob, none of them resuming;
-* it finally wedged alive with **zero sockets and zero locks held**, while a plain GET of one of
-  the very files it was fetching returned 200 in 0.28s.
-
-Only the resolve endpoint was ever healthy, so that is all this uses.
+* ``huggingface_hub`` failed four separate ways on this transfer and only the resolve endpoint
+  was ever healthy, so this uses raw HTTP and nothing else;
+* **when a transfer here is slow, add flows (``--workers``), never timeout.** Measured
+  mid-transfer: one long-lived stream at 0.16 MB/s against 2.17 MB/s aggregated across four
+  concurrent ranged GETs. Raising ``HF_HUB_DOWNLOAD_TIMEOUT`` to 300s made the hangs *longer*.
 
 Run:  python scripts/fetch/pull_lancedb.py
       python scripts/fetch/pull_lancedb.py --workers 4     # gentler, if 429s show up
@@ -143,7 +136,7 @@ def _recover_partial_concat(part: pathlib.Path, dest: pathlib.Path, chunk: int) 
     boundaries; ``--chunk-mb`` is therefore not safe to change mid-transfer (see main()).
     """
     total = part.stat().st_size
-    print(f"  adopting {total / 1e6:,.0f} MB from the sequential .part", flush=True)
+    print(f"  recovering {total / 1e6:,.0f} MB from an interrupted concat", flush=True)
     with open(part, "rb") as src:
         i = 0
         while True:
@@ -172,14 +165,14 @@ def fetch_big(
     """
     dest = root / path
     dest.parent.mkdir(parents=True, exist_ok=True)
-    legacy = dest.with_name(dest.name + ".part")
+    joined = dest.with_name(dest.name + ".part")
     url = hf_hub_url(REPO_ID, path, repo_type="dataset")
     auth = {"Authorization": f"Bearer {get_token()}"}
     print(
         f"big: {path}  ({size / 1e6:,.0f} MB, {chunk / 1e6:.0f} MB chunks)", flush=True
     )
-    if legacy.exists():
-        _recover_partial_concat(legacy, dest, chunk)
+    if joined.exists():
+        _recover_partial_concat(joined, dest, chunk)
 
     plan = _chunks(size, chunk)
 
@@ -195,7 +188,7 @@ def fetch_big(
                 f"or delete {dest.name}.c* to start the file over."
             )
 
-    def one(spec: tuple[int, int, int]) -> int:
+    def fetch_chunk(spec: tuple[int, int, int]) -> int:
         i, lo, hi = spec
         cf = _chunk_path(dest, i)
         want = hi - lo
@@ -238,7 +231,7 @@ def fetch_big(
     t0, fetched = time.time(), 0
     base = _on_disk(dest, plan)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for fut in as_completed([pool.submit(one, c) for c in todo]):
+        for fut in as_completed([pool.submit(fetch_chunk, c) for c in todo]):
             fetched += fut.result()
             got = _on_disk(dest, plan)
             print(
@@ -249,20 +242,20 @@ def fetch_big(
             )
 
     # Concatenate in order, deleting each chunk as it lands so peak disk stays near one copy.
-    out = dest.with_name(dest.name + ".part")
-    with open(out, "wb") as fh:
+    # same path _recover_partial_concat reads on the next run if this loop is interrupted
+    with open(joined, "wb") as fh:
         for i, _, _ in plan:
             cf = _chunk_path(dest, i)
             fh.write(cf.read_bytes())
             cf.unlink()
         fh.flush()
         os.fsync(fh.fileno())
-    landed = out.stat().st_size
+    landed = joined.stat().st_size
     if landed != size:
         # Never rename a wrong-sized file into place: LanceDB would fail on it much later with
         # a decode error that says nothing about the download.
         raise SystemExit(f"SIZE MISMATCH {path}: {landed:,} on disk != {size:,} remote")
-    out.rename(dest)
+    joined.rename(dest)
     print(f"  complete: {path}", flush=True)
 
 

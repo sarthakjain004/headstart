@@ -334,27 +334,27 @@ def _like_any(aliases: tuple[str, ...]) -> str:
     return " OR ".join(f"lower(location) LIKE '%{a}%'" for a in aliases)
 
 
+def _not_like_all(terms: tuple[str, ...]) -> str:
+    """The ``AND NOT LIKE`` chain that guards a clause against its known collisions."""
+    return "".join(f" AND lower(location) NOT LIKE '%{t}%'" for t in terms)
+
+
 def _city_where(city: str) -> str | None:
     aliases = CITIES.get(city)
     if not aliases:
         return None
-    clause = f"({_like_any(aliases)})"
-    for bad in EXCLUDE.get(city, ()):
-        clause = f"({clause} AND lower(location) NOT LIKE '%{bad}%')"
-    return clause
+    return f"(({_like_any(aliases)}){_not_like_all(EXCLUDE.get(city, ()))})"
 
 
 def _country_where() -> str:
     """The word "india" itself, minus the US places whose names contain it."""
-    guards = "".join(f" AND lower(location) NOT LIKE '%{b}%'" for b in INDIA_EXCLUDE)
-    return f"(lower(location) LIKE '%india%'{guards})"
+    return f"(lower(location) LIKE '%india%'{_not_like_all(INDIA_EXCLUDE)})"
 
 
 def _ind_where() -> str:
     """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
     forms = " OR ".join(f"lower(location) LIKE '{f}'" for f in IND_FORMS)
-    guards = "".join(f" AND lower(location) NOT LIKE '%{b}%'" for b in IND_EXCLUDE)
-    return f"((lower(location) = 'ind' OR {forms}){guards})"
+    return f"((lower(location) = 'ind' OR {forms}){_not_like_all(IND_EXCLUDE)})"
 
 
 def _subdivision_where() -> str:
@@ -369,10 +369,15 @@ def _subdivision_where() -> str:
 def where(place: str) -> str | None:
     """The where-fragment for a canonical place, or None if the place is unknown.
 
-    ``place`` is "india" (country-level: the word "india" minus the indiana/indianapolis
-    trap, plus every city alias and state name), a :data:`REGIONS` key, or a
-    :data:`CITIES` key. Aliases are trusted constants — callers must never pass free text
-    through this into SQL beyond the dict lookups here.
+    ``place`` is "india", a :data:`REGIONS` key, or a :data:`CITIES` key.
+
+    The country-level "india" clause is five things OR'd together (ADR-0024, extended by
+    ADR-0086): the substring "india" minus :data:`INDIA_EXCLUDE`; ISO alpha-3 "IND" in its
+    :data:`IND_FORMS` positions minus :data:`IND_EXCLUDE`; the ", {code}, in" subdivision tail;
+    every city alias; and every state name.
+
+    Aliases are trusted constants — callers must never pass free text through this into SQL
+    beyond the dict lookups here.
     """
     if place == "india":
         parts = [_country_where(), _ind_where(), _subdivision_where()]

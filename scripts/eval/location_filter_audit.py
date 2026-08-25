@@ -152,22 +152,53 @@ def _fold(text: str) -> str:
     )
 
 
+def _like(pattern: str):
+    """A SQL LIKE pattern as a Python predicate, so the model cannot drift from the clause.
+
+    ``%`` is the only wildcard these clauses use. Building the predicates FROM ``geo``'s own
+    constants rather than restating them is the whole point: an earlier version of this file
+    hardcoded its own copy of the term list, and when ``geo`` grew three clauses (ADR-0086) the
+    copy silently stopped describing the filter — caught only because
+    :func:`verify_model_against_sql` refuses to continue on a mismatch.
+    """
+    rx = re.compile("".join(".*" if c == "%" else re.escape(c) for c in pattern) + "$")
+    return lambda s: rx.match(s) is not None
+
+
 def india_clauses() -> list[tuple[str, object]]:
     """Exactly what ``geo.where("india")`` tests, as predicates over ``lower(location)``.
 
-    Modelled off the real clause rather than off ``CITIES`` alone, because three details of it
-    change the answer and reading only the city map gets each of them wrong:
+    Every term comes from ``geo`` itself. The structure still has to be restated here, and four
+    details of it change the answer:
 
-    * the country term is a plain substring with its own ``NOT LIKE '%indiana%'`` guard;
-    * a city can carry :data:`geo.EXCLUDE` NOT-LIKE guards ("surat" minus "surat thani"), so a
-      naive substring test claims rows the filter deliberately rejects;
-    * :data:`geo.REGIONS` is *not* part of it - its values are city keys, not alias substrings,
-      and ``where("india")`` already iterates every city, so folding regions in would double-count.
+    * the country term is a plain SUBSTRING carrying its own :data:`geo.INDIA_EXCLUDE` guards
+      (``indiana``, ``indian head``, …) — not a word-boundary test, which would lose
+      ``IN_India_WFH``;
+    * ISO alpha-3 ``IND`` matches only in :data:`geo.IND_FORMS` positions, guarded by
+      :data:`geo.IND_EXCLUDE` because ``IND`` is also Indianapolis's IATA code;
+    * a city can carry :data:`geo.EXCLUDE` NOT-LIKE guards ("surat" minus "surat thani");
+    * :data:`geo.REGIONS` is *not* part of it — its values are city keys, not alias substrings,
+      and ``where("india")`` already iterates every city.
 
     Order matters only for attribution (first match names the row), never for the verdict.
     """
+    ind_forms = [_like(f) for f in geo.IND_FORMS]
     out: list[tuple[str, object]] = [
-        ("india", lambda s: "india" in s and "indiana" not in s)
+        (
+            "india",
+            lambda s: "india" in s and not any(b in s for b in geo.INDIA_EXCLUDE),
+        ),
+        (
+            "IND",
+            lambda s: (
+                (s == "ind" or any(f(s) for f in ind_forms))
+                and not any(b in s for b in geo.IND_EXCLUDE)
+            ),
+        ),
+        (
+            "subdivision",
+            lambda s: any(s.endswith(f", {c}, in") for c in geo.SUBDIVISIONS),
+        ),
     ]
     for city, aliases in geo.CITIES.items():
         bad = geo.EXCLUDE.get(city, ())
@@ -283,45 +314,63 @@ def report_field_health(rows: list[tuple[str | None, str]]) -> None:
     print()
 
 
-def report_recall(unmatched: list[tuple[str, str]]) -> int:
-    """India rows the filter misses, probed with signals independent of the city gazetteer.
+def report_recall(unmatched: list[tuple[str | None, str]]) -> int:
+    """India rows the filter misses, probed with country-tag signals.
 
-    Reported as three buckets of decreasing confidence rather than one total, because the last
-    one genuinely cannot be resolved from the string alone and a single number would have to
-    guess. ``IND`` and ``City, ST, IN`` are unambiguous; a bare trailing ", IN" is India's
-    alpha-2 *and* Indiana's USPS code, so it is split against observed Indiana cities and both
-    halves are shown.
+    **These probes are no longer independent of the filter.** ADR-0086 moved the ``IND`` and
+    ``City, ST, IN`` signals *into* ``geo``, so the buckets built on them are now largely inside
+    the thing being audited and read near zero by construction — the same trap that made an
+    earlier version of this file print a meaningless 100.00%. They are kept because near-zero is
+    now the useful reading: it is a regression check on ADR-0086, not a recall measurement.
+
+    A probe hit that the filter rejects via :data:`geo.IND_EXCLUDE` or :data:`geo.INDIA_EXCLUDE`
+    is **not** a miss — it is a guard doing its job (the airport-code string, "Grayslake, Ind").
+    Counting those as misses would report the fix as a defect, so they get their own bucket.
     """
+    guards = tuple(geo.IND_EXCLUDE) + tuple(geo.INDIA_EXCLUDE)
     buckets: dict[str, Counter[str]] = defaultdict(Counter)
     for loc, _ in unmatched:
-        low = _lower(loc)
-        if _STATE_IN.search(low):
-            buckets["state code + IN (India, unambiguous)"][loc] += 1
-        elif _IND_A3.search(low):
-            buckets["IND alpha-3 (India, unambiguous)"][loc] += 1
-        elif _TRAILING_IN.search(low):
-            side = "Indiana" if any(u in low for u in _INDIANA) else "India"
-            buckets[f"trailing ', IN' -> reads as {side}"][loc] += 1
+        s_low = _lower(loc)
+        if _STATE_IN.search(s_low):
+            key = "subdivision tail (absorbed by ADR-0086)"
+        elif _IND_A3.search(s_low):
+            key = "IND alpha-3 (absorbed by ADR-0086)"
+        elif _TRAILING_IN.search(s_low):
+            side = "Indiana" if any(u in s_low for u in _INDIANA) else "India"
+            key = f"trailing ', IN' -> reads as {side}"
+        else:
+            continue
+        if any(g in s_low for g in guards) and "trailing" not in key:
+            key = "correctly rejected by a guard (NOT a miss)"
+        buckets[key][loc or ""] += 1
 
-    print("-- recall: India rows the filter MISSES --")
-    firm = 0
+    print("-- recall probes --", flush=True)
+    residual = 0
     for name in sorted(buckets, key=lambda k: -sum(buckets[k].values())):
         c = buckets[name]
         n = sum(c.values())
-        # Only the two unambiguous buckets count toward the firm total. The trailing ", IN"
-        # rows are excluded in BOTH directions: the docstring says they cannot be resolved from
-        # the string alone, so counting the India-reading half as firm would contradict it.
-        if "unambiguous" in name:
-            firm += n
+        if "absorbed" in name:
+            residual += n
         print(f"  {name:44} {n:>6,}  ({len(c):,} distinct)")
-        for s, k in c.most_common(5):
-            print(f"       {k:>4}  {s[:66]}")
+        for st, k in c.most_common(5):
+            print(f"       {k:>4}  {st[:66]}")
     ambiguous = sum(
-        sum(c.values()) for k, c in buckets.items() if "unambiguous" not in k
+        sum(c.values()) for k, c in buckets.items() if k.startswith("trailing")
     )
-    print(f"\n  {'-> India rows missed (unambiguous only)':44} {firm:>6,}")
-    print(f"  {'   plus, unresolvable from the string alone':44} {ambiguous:>6,}")
-    return firm
+    print(f"\n  {'-> candidates to READ, not a count to trust':44} {residual:>6,}")
+    print(f"  {'   unresolvable from the string alone':44} {ambiguous:>6,}")
+    print(
+        "     The probe (\\bind\\b) is LOOSER than the filter, which anchors IND to the country-tag\n"
+        "     positions — so this bucket mixes real residue ('IND, Remote', 'Client Site - IND -\n"
+        "     AMD') with rows the anchoring rightly rejects ('Grayslake, Ind' Illinois, 'King\n"
+        "     Street Ind Estate' UK). It is a list to read, never a total to quote.\n"
+        "     The ambiguous bucket is a trailing ', IN' — India's alpha-2 AND Indiana's USPS\n"
+        "     code, not decidable from the location string. Neither is a recall figure: with the\n"
+        "     probes now inside the filter, the only honest bound on unseen misses is the\n"
+        "     by-hand read of --unmatched.",
+        flush=True,
+    )
+    return residual
 
 
 # The collisions geo.py's own docstring names as knowingly accepted. Each is (canonical place,
@@ -448,17 +497,7 @@ def main() -> int:
         print(f"    {p:22} {n:>7,}")
     print()
 
-    firm = report_recall(unmatched)
-    ceiling = 100 * len(matched) / (len(matched) + firm)
-    print(f"\n  {'-> recall UPPER BOUND':44} {ceiling:>5.2f}%")
-    print(
-        "     A ceiling, not recall. The numerator counts every matched row, including the\n"
-        "     false positives reported below; and the denominator's miss term is only what\n"
-        "     these probes can SEE. An India row written as a bare tail town with no country\n"
-        "     marker is invisible to the filter and to the probe alike, so it can never enter\n"
-        "     the denominator. Bounding that residue is what --unmatched is for.",
-        flush=True,
-    )
+    report_recall(unmatched)
     examples = report_precision(rows, clauses)
     report_accepted_collisions(rows)
 

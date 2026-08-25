@@ -8,7 +8,9 @@ import pytest
 from headstart.geo import (
     CITIES,
     DROPDOWN,
+    IND_EXCLUDE,
     IND_FORMS,
+    INDIA_EXCLUDE,
     REGIONS,
     STATES,
     SUBDIVISIONS,
@@ -118,12 +120,31 @@ def test_alias_hygiene():
 
 
 def test_country_tag_terms_are_sql_safe():
-    for term in IND_FORMS + SUBDIVISIONS:
+    # Every one of these is interpolated straight into a where-clause, so a stray quote would
+    # be a broken query and an uppercase term would silently never match lower(location).
+    for term in IND_FORMS + SUBDIVISIONS + IND_EXCLUDE + INDIA_EXCLUDE:
         assert term == term.lower() and "'" not in term, term
+    # The exclude terms are wrapped in their own %...% by _not_like_all, so carrying one is a
+    # double-wrap that matches nothing.
+    for term in IND_EXCLUDE + INDIA_EXCLUDE:
+        assert "%" not in term, term
     # Subdivision codes are two letters and only ever used inside a ', {code}, in' anchor;
     # a longer or looser one would match free text.
     for code in SUBDIVISIONS:
         assert len(code) == 2 and code.isalpha(), code
+
+
+def test_ind_is_never_a_bare_substring():
+    """The whole IND rule rests on anchoring; a bare '%ind%' would claim half the world.
+
+    Asserted on the pattern rather than only through the table rows, because the table can only
+    catch the strings someone thought to add - and the failure mode here is silent and huge
+    (indore, indianapolis, 'King Street Ind Estate', every 'Industrial Area').
+    """
+    for form in IND_FORMS:
+        assert form != "%ind%", form
+        # every form must pin 'ind' against something: a start-of-string, or a real delimiter
+        assert form.startswith("ind") or form.lstrip("%")[0] in " (-", form
 
 
 def test_dropdown_entries_resolve():
