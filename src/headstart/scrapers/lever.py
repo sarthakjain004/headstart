@@ -7,6 +7,7 @@ and fall back to EU when the slug isn't found there.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from headstart import http
@@ -15,9 +16,9 @@ from headstart.scrapers.base import BaseScraper
 
 # ISO 3166-1 alpha-2 -> common English short name, used only to recognize when the
 # top-level `country` is already spelled out in the composed location string (so it isn't
-# appended a second time). Lever's own `country` codes span the full standard set (71 distinct
-# codes observed in a 200-board live sample, location-audit-2026-08-25/lever.md), so this is
-# the complete alpha-2 list rather than a curated subset.
+# appended a second time). Measured 2026-08-25 over 286 live Boards / 5,796 postings: 75
+# distinct codes in use, spanning far enough across the standard that a curated subset would
+# risk missing one — so this is the complete alpha-2 list rather than a curated subset.
 _COUNTRY_NAMES: dict[str, str] = {
     "AD": "Andorra",
     "AE": "United Arab Emirates",
@@ -271,6 +272,26 @@ _COUNTRY_NAMES: dict[str, str] = {
 }
 
 
+def _already_names_country(composed_lower: str, code: str, name: str | None) -> bool:
+    """Whether ``composed_lower`` already spells out this country — as a whole word, not a
+    substring landing inside an unrelated one.
+
+    A bare-substring check on a 2-letter code is unsound: ``"in"`` occurs inside ``"Beijing"``,
+    so a raw ``code.lower() in composed_lower`` reads a Chennai/Beijing posting as already
+    naming India and skips the append — the exact case this function exists to append *for*.
+    Found live, review round 1: ``_location({"allLocations": ["Chennai", "Beijing"]}, "IN")``
+    returned ``"Chennai, Beijing"`` with India never named. A full country name is safer as a
+    substring (multi-word names rarely land inside another word by accident) but is checked the
+    same way here for one rule rather than two.
+    """
+    boundary = r"(?<![a-z]){}(?![a-z])"
+    if re.search(boundary.format(re.escape(code.lower())), composed_lower):
+        return True
+    return bool(name) and bool(
+        re.search(boundary.format(re.escape(name.lower())), composed_lower)
+    )
+
+
 def _location(categories: dict, country: str | None) -> str | None:
     """Join every ``allLocations`` entry, then append the unread top-level ``country``.
 
@@ -279,8 +300,8 @@ def _location(categories: dict, country: str | None) -> str | None:
     every other entry, 7.96% of postings across 213 Boards, including 34 that hide an India
     location behind an unrelated kept location. ``country`` (ISO-2, 88.60% populated) is read
     nowhere despite being orthogonal to the string: 71.8% of the time its code doesn't appear
-    in the composed location at all. Appended only when neither the raw code nor its full name
-    is already present, so it can't duplicate what's already spelled out.
+    in the composed location at all. Appended only when neither the code nor its full name is
+    already present as a whole word, so it can't duplicate what's already spelled out.
     """
     parts = [p for p in (categories.get("allLocations") or []) if p]
     if not parts:
@@ -289,11 +310,7 @@ def _location(categories: dict, country: str | None) -> str | None:
     composed = ", ".join(parts)
     if country:
         name = _COUNTRY_NAMES.get(country.upper())
-        lower = composed.lower()
-        already_named = country.lower() in lower or (
-            name is not None and name.lower() in lower
-        )
-        if not already_named:
+        if not _already_names_country(composed.lower(), country, name):
             composed = f"{composed}, {country}" if composed else country
     return composed or None
 

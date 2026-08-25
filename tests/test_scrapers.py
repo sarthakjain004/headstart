@@ -190,6 +190,50 @@ def test_lever_location_country_full_name_already_present_is_not_duplicated():
     assert jobs[0].location == "Portugal, Canada, Singapore, Switzerland, Germany"
 
 
+def test_lever_location_country_code_is_not_matched_as_a_substring():
+    # Found in review round 1: a bare substring check on the 2-letter code reads "in" inside
+    # "Beijing" or "Cincinnati" as India already being named, and silently never appends it —
+    # defeating the fix's own point (recovering a hidden India signal behind another city).
+    raw = [
+        {
+            "id": "sub1",
+            "text": "Remote Role",
+            "categories": {
+                "location": "Chennai",
+                "allLocations": ["Chennai", "Beijing"],
+            },
+            "country": "IN",
+            "workplaceType": "remote",
+            "hostedUrl": "https://jobs.lever.co/acme/sub1",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Chennai, Beijing, IN"
+
+
+def test_lever_location_country_code_is_not_matched_inside_a_city_name():
+    # Same class, found live on real Boards in review round 2 (lever:zoox, lever:wealthfront):
+    # "us" sits inside "Austin", so "Austin, TX" + country "US" must still get the code
+    # appended rather than reading "us" as already present.
+    raw = [
+        {
+            "id": "sub2",
+            "text": "Remote Role",
+            "categories": {
+                "location": "Austin, TX",
+                "allLocations": ["Austin, TX"],
+            },
+            "country": "US",
+            "workplaceType": "onsite",
+            "hostedUrl": "https://jobs.lever.co/acme/sub2",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Austin, TX, US"
+
+
 def test_lever_location_falls_back_when_all_locations_missing():
     raw = [
         {
