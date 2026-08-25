@@ -102,7 +102,10 @@ def test_lever_parse():
     assert j.id == "lever:palantir:0bbfd4f4-41ff-4ec6-b73f-5200efd5d4d3"
     assert j.company == "Palantir"
     assert j.title == "Administrative Business Partner - Security"
-    assert j.location == "Palo Alto, CA"
+    # location-audit-2026-08-25/lever.md: the fixture's own `country` ("US") is absent from
+    # "Palo Alto, CA", so the fix appends it — this pins that the append actually fires here,
+    # not just in a synthetic case.
+    assert j.location == "Palo Alto, CA, US"
     assert j.remote is False
     assert j.department == "Administrative"
     assert j.url.startswith("https://jobs.lever.co/palantir/")
@@ -113,6 +116,94 @@ def test_lever_parse():
     assert "Core Responsibilities" in j.description
     assert "Salary" in j.description  # from `additional`
     assert j.salary == "80000-110000 USD per-year-salary"
+
+
+def test_lever_location_joins_all_locations_and_recovers_hidden_india():
+    # Real posting, captured live 2026-08-25: lever:spreetail:9fcfd96f-141e-4dfe-b670-
+    # eb872164abe0 ("Business Solutions Analyst"). categories.location alone is "Manila";
+    # allLocations also carries Bogota/India/Karachi. Before this fix, the India location was
+    # invisible to geo.where("india") — the served string never contained "India" at all.
+    raw = [
+        {
+            "id": "9fcfd96f-141e-4dfe-b670-eb872164abe0",
+            "text": "Business Solutions Analyst",
+            "categories": {
+                "location": "Manila",
+                "allLocations": ["Manila", "Bogota", "India", "Karachi"],
+                "commitment": "Contractor",
+                "team": "Transportation",
+            },
+            "country": "PH",
+            "workplaceType": "remote",
+            "hostedUrl": "https://jobs.lever.co/spreetail/9fcfd96f-141e-4dfe-b670-eb872164abe0",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "spreetail", "Spreetail").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Manila, Bogota, India, Karachi, PH"
+
+
+def test_lever_location_country_already_present_is_not_duplicated():
+    # Real posting, jobgether board (captured live 2026-08-25): a bare-country listing whose
+    # `location` and `allLocations` are both just the ISO-2 code itself — the composed string
+    # must not become "US, US".
+    raw = [
+        {
+            "id": "abc123",
+            "text": "Remote Role",
+            "categories": {"location": "US", "allLocations": ["US"]},
+            "country": "US",
+            "workplaceType": "remote",
+            "hostedUrl": "https://jobs.lever.co/jobgether/abc123",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "jobgether", "Jobgether").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "US"
+
+
+def test_lever_location_country_full_name_already_present_is_not_duplicated():
+    # Real posting (lever:fuellabs, captured live 2026-08-25): `location` is the country's full
+    # English name, not its code, so a bare substring check on "PT" would miss it and wrongly
+    # append ", PT". allLocations must still be joined in full.
+    raw = [
+        {
+            "id": "def456",
+            "text": "Remote Engineer",
+            "categories": {
+                "location": "Portugal",
+                "allLocations": [
+                    "Portugal",
+                    "Canada",
+                    "Singapore",
+                    "Switzerland",
+                    "Germany",
+                ],
+            },
+            "country": "PT",
+            "workplaceType": "remote",
+            "hostedUrl": "https://jobs.lever.co/fuellabs/def456",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "fuellabs", "Fuel Labs").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Portugal, Canada, Singapore, Switzerland, Germany"
+
+
+def test_lever_location_falls_back_when_all_locations_missing():
+    raw = [
+        {
+            "id": "ghi789",
+            "text": "Some Role",
+            "categories": {"location": "Berlin"},
+            "country": "DE",
+            "workplaceType": "onsite",
+            "hostedUrl": "https://jobs.lever.co/acme/ghi789",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Berlin, DE"
 
 
 def test_ashby_parse_skips_unlisted():
