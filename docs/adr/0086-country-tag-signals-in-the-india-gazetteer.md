@@ -26,8 +26,8 @@ Garcia's "British Indian Ocean Territory".
 
 ## Decision
 
-Add two country-level rules and one guard set. Measured on the live table: **+429 rows added,
-17 removed, net +412 (49,480 → 49,892)**, with every removed string verified non-India by hand.
+Add two country-level rules and one guard set. Measured on the live table: **+429 rows added, 17 removed, net +412 (49,480 → 49,892)** — of the added rows, +327 come
+from the `IND` rule and +102 from the subdivision tail, with no overlap between them, with every removed string verified non-India by hand.
 
 ### 1. ISO alpha-3 `IND`, matched only where it is the country tag
 
@@ -37,16 +37,24 @@ observed: `ind-%`, `ind %`, `%(ind)%`, `% - ind`, plus exact `= 'ind'`.
 
 **`IND` is also Indianapolis's IATA code**, and that is how the naive version bites: the row
 `IND U; CVG SD; United States, PA, Philadelphia - Remote; MKE W; MSP` is a list of US airports.
-`IND_EXCLUDE` guards on the one token that settles it.
+`IND_EXCLUDE` guards on the one token that settles it — "united states". That is deliberately
+narrow, and it is the known limit of this rule: an airport-list row that never names the country
+(`IND U; CVG SD; MKE W`) would still be claimed. No such row exists in the live table today, and
+widening the guard to airport codes would trade a rare miss for a permanent maintenance burden.
 
 The trailing form is `'% - ind'`, **not** `'% ind'`, because the looser one also claims
 "Grayslake, Ind" — Illinois. That single character of anchoring is the whole difference.
 
 ### 2. The subdivision tail `City, ST, IN`
 
-Workday writes `Vemagal, KA, IN`. The 35 ISO-3166-2 codes are two letters and would be
-catastrophic loose, so they are only ever matched inside the anchored `', {code}, in'` tail.
-Zero false positives across all 26 distinct strings this adds.
+Workday writes `Vemagal, KA, IN`. The 36 ISO 3166-2:IN codes **plus the four vehicle-registration variants** ATSes also use — the
+two schemes disagree on five states and the data uses both. Measured: `tg` (ISO, Telangana) has
+55 tails in the live table while `ts` (the vehicle code) has **0**, so a first pass that shipped
+only the vehicle codes would have missed a Telangana tail town entirely. Its net cost today was
+zero purely because those 55 rows also carry "Hyderabad" — luck, not design.
+
+Two letters would be catastrophic loose, so they are only ever matched inside the anchored
+`', {code}, in'` tail. Zero false positives across all 40 codes, `or` (Odisha) included.
 
 ### 3. `INDIA_EXCLUDE` for US places containing "india"
 

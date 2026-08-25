@@ -233,44 +233,56 @@ IND_FORMS: tuple[str, ...] = (
 # "ind %" would otherwise claim. Guarded on the one token that settles it.
 IND_EXCLUDE: tuple[str, ...] = ("united states",)
 
-# ISO-3166-2 subdivision codes, as workday writes them: "Vemagal, KA, IN". Anchored to the
-# ", {code}, in" tail so the two-letter codes can never match loose text.
+# Subdivision codes, as workday writes them: "Vemagal, KA, IN". The real ISO 3166-2:IN set,
+# PLUS the vehicle-registration abbreviations ATSes also use for the same states — the two
+# disagree on five states and the data uses both, so shipping one set alone loses rows.
+# Measured 2026-08-25: "tg" (ISO, Telangana) has 55 tails in the live table while "ts" (the
+# vehicle code) has 0 — an earlier pass shipped only the vehicle codes and would have missed a
+# Telangana tail town entirely. Anchored to the ", {code}, in" tail so two letters can never
+# match loose text.
 SUBDIVISIONS: tuple[str, ...] = (
+    # ISO 3166-2:IN
+    "an",
     "ap",
     "ar",
     "as",
     "br",
-    "cg",
+    "ch",
+    "ct",
+    "dh",
+    "dl",
     "ga",
     "gj",
-    "hr",
     "hp",
+    "hr",
     "jh",
+    "jk",
     "ka",
     "kl",
-    "mp",
+    "la",
+    "ld",
     "mh",
-    "mn",
     "ml",
+    "mn",
+    "mp",
     "mz",
     "nl",
-    "od",
+    "or",
     "pb",
+    "py",
     "rj",
     "sk",
+    "tg",
     "tn",
-    "ts",
     "tr",
-    "uk",
     "up",
+    "ut",
     "wb",
-    "dl",
-    "ch",
-    "py",
-    "jk",
-    "la",
-    "an",
-    "dh",
+    # vehicle-registration variants seen in ATS strings for the same states
+    "cg",
+    "od",
+    "ts",
+    "uk",
 )
 
 # US places whose names contain "india" but are not India. The country term is a SUBSTRING
