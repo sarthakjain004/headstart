@@ -6,6 +6,9 @@
   disqualifier reads the title, and a department vetoes only through a discipline that names the
   role — reading it from `title + department` let an org label drop real tech jobs, a class the
   self-consistency gate below is structurally unable to see)
+- **Amended by:** [ADR-0087](0087-a-hiring-department-is-not-a-tech-department.md) (a department
+  naming a hiring function does not act as the rule-4 recall booster — a technical word inside
+  one is incidental to what the role is)
 
 ## Context
 
