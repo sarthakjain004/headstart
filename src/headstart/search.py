@@ -105,6 +105,27 @@ ETYPE_CLAUSES = {
 }
 
 
+# The sort control's values, mapped to the column each orders by (issue #275). A whitelist
+# because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
+# ranking a vector search already applies and asking for it means adding no ordering at all.
+SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
+
+
+def _int_arg(args: Mapping[str, str]):
+    """Read an int out of a query string, or None when it isn't there.
+
+    None rather than a default, so a caller can tell "absent" from "zero" — see the clamp in
+    :meth:`JobSearch.run`, which is where that distinction earns its keep. Raises ValueError on
+    garbage, which the routes answer as 400.
+    """
+
+    def read(name: str) -> int | None:
+        raw = args.get(name)
+        return int(raw) if raw else None
+
+    return read
+
+
 def _like(term: str) -> str:
     """A user term made safe for a quoted LIKE pattern: quotes doubled, length-capped."""
     return term[:60].replace("'", "''").lower()
@@ -175,7 +196,11 @@ def build_filter(
     location: str | None = None,
     company: str | None = None,
     has_salary: bool = False,
+    salary_min: int | None = None,
+    salary_max: int | None = None,
+    salary_currency: str | None = None,
     posted_within: int | None = None,
+    posted_sortable: bool = False,
     seen_within: int | None = None,
     posted_after: str | None = None,
     posted_before: str | None = None,
@@ -183,6 +208,7 @@ def build_filter(
     seen_before: str | None = None,
     first_seen_after: str | None = None,
     atses: Collection[str],
+    currencies: Collection[str] = (),
     has_first_seen: bool,
     has_min_salary_annual: bool,
 ) -> str | None:
@@ -223,6 +249,42 @@ def build_filter(
         # hasn't migrated onto the new columns yet would error on every query otherwise —
         # the feature stays dark until then rather than 500ing.
         filters.append("min_salary_annual IS NOT NULL")
+
+    # The salary bracket (issue #275) is scoped to ONE currency, and that is not a UI nicety:
+    # salary is period-normalised but deliberately never FX-converted (ADR-0082), so comparing
+    # a bare number across currencies would rank 60,000 INR beside 60,000 USD as equals. The
+    # currency therefore comes first and is whitelisted against what the table actually holds,
+    # exactly like `ats` — never interpolated from free text. Without one the bracket does not
+    # apply at all, because an unscoped bracket is the wrong answer, not a looser one.
+    #
+    # The currency is a *modifier of the bracket*, not a filter of its own: picking one with
+    # both bounds empty must not quietly cut the result set to the 28.5% of Jobs that carry a
+    # salary at all (measured 2026-08-25), which is what filtering on it alone would do. So it
+    # only bites once the user has actually named a bound.
+    if (
+        salary_currency in currencies
+        and has_min_salary_annual
+        and (salary_min is not None or salary_max is not None)
+    ):
+        filters.append(f"salary_currency = '{salary_currency}'")
+        if salary_min is not None:
+            # The job's TOP of range clears the user's floor: a 90k-140k posting answers
+            # "at least 100k". `max_salary_annual` is null on single-figure postings, so
+            # COALESCE falls back to the one number there is rather than dropping the row.
+            filters.append(
+                f"COALESCE(max_salary_annual, min_salary_annual) >= {int(salary_min)}"
+            )
+        if salary_max is not None:
+            # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
+            # test rather than containment: a band wider than the user's still qualifies.
+            filters.append(f"min_salary_annual <= {int(salary_max)}")
+
+    if posted_sortable:
+        # Ordering by `posted_at` needs the same shape guard filtering by it does, and it has
+        # to be compiled HERE rather than bolted onto the where-clause in `run` — otherwise the
+        # facet counts, which never see the sort, would count rows the sorted list excludes and
+        # the header would overstate the result set by the 8.4% carrying no readable date.
+        filters.append("(posted_at LIKE '____-__-__%')")
     if posted_within is not None:
         # posted_at is a raw string; ISO-prefixed values (97%) compare correctly. The LIKE
         # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
@@ -320,34 +382,93 @@ class JobSearch:
         # idempotent migration (`index.py`'s `_salary_fields`) — a table that hasn't synced
         # since would error on `has_salary=true` rather than just not supporting it yet.
         self.has_min_salary_annual = "min_salary_annual" in table.schema.names
+        # The currency whitelist for the ADR-0082 salary bracket, learned the same way and for
+        # the same reason as `atses`: it lands in a where-clause, so it is matched against what
+        # the table holds rather than interpolated from the query string.
+        self.currencies = (
+            sorted(
+                {
+                    r["salary_currency"]
+                    for r in table.search()
+                    .select(["salary_currency"])
+                    .limit(1_000_000)
+                    .to_list()
+                    if r.get("salary_currency")
+                }
+            )
+            if self.has_min_salary_annual
+            else []
+        )
+
+    def filter_kwargs(self, args: Mapping[str, str]) -> dict[str, Any]:
+        """The :func:`build_filter` keywords one request asks for, parsed exactly once.
+
+        Split out of :meth:`run` so the ranked search and the facet counts (:mod:`headstart.
+        facets`) compile the *same* description of the user's filters. Two call sites parsing
+        the same query string independently is how a count comes to disagree with the list it
+        is counting — the one defect that would make the whole facet feature worse than no
+        counts at all, because a wrong number is trusted where a missing one is not.
+        """
+
+        _int = _int_arg(args)
+        return {
+            "remote": args.get("remote") == "true",
+            "max_years": _int("max_years"),
+            "ats": (args.get("ats") or "").strip() or None,
+            "etype": (args.get("etype") or "").strip() or None,
+            "india": (args.get("india") or "").strip().lower() or None,
+            "location": (args.get("location") or "").strip() or None,
+            "company": (args.get("company") or "").strip() or None,
+            "has_salary": args.get("has_salary") == "true",
+            "salary_min": _int("salary_min"),
+            "salary_max": _int("salary_max"),
+            "salary_currency": (args.get("salary_currency") or "").strip().upper()
+            or None,
+            "posted_within": _int("posted_within"),
+            # A sort by posting date can only place rows whose date is readable, so the
+            # window it sorts is part of the filter, not of the ordering — see build_filter.
+            "posted_sortable": SORT_COLUMNS.get((args.get("sort") or "").strip())
+            == "posted_at",
+            "seen_within": _int("seen_within"),
+            "posted_after": (args.get("posted_after") or "").strip() or None,
+            "posted_before": (args.get("posted_before") or "").strip() or None,
+            "seen_after": (args.get("seen_after") or "").strip() or None,
+            "seen_before": (args.get("seen_before") or "").strip() or None,
+            "first_seen_after": (args.get("first_seen_after") or "").strip() or None,
+            "atses": self.atses,
+            "currencies": self.currencies,
+            "has_first_seen": self.has_first_seen,
+            "has_min_salary_annual": self.has_min_salary_annual,
+        }
+
+    def facets(self, args: Mapping[str, str]) -> dict[str, Any]:
+        """Per-option result counts for these filters — see :mod:`headstart.facets`.
+
+        Here rather than in the route so the table and the runtime schema facts stay behind
+        this object; a caller reaching for ``_table`` to count would be the same class of leak
+        that ``filter_kwargs`` exists to prevent on the filter side. Imported inside the method
+        because :mod:`headstart.facets` imports back from this one — and both ways, because the
+        Space image has no ``headstart`` package at all: it lays every module down flat beside
+        ``app.py`` (deploy-space.yml). A package-only import here raised ``ModuleNotFoundError``,
+        which the route's ``except ValueError`` does not catch, so ``/facets`` 500'd and the
+        browser's own ``.catch`` degraded it to silence — no counts, no total, in production only.
+        """
+        try:  # in the repo, a package member; in the Space image, a flat sibling module
+            from headstart import facets
+        except ImportError:  # pragma: no cover - exercised only in the deployed Space
+            import facets  # type: ignore[no-redef]
+
+        return facets.counts(self._table, self.filter_kwargs(args))
 
     def run(self, args: Mapping[str, str]) -> list[dict]:
         query = (args.get("q") or "").strip()
-
-        def _int(name: str) -> int | None:
-            raw = args.get(name)
-            return int(raw) if raw else None
-
-        where = build_filter(
-            remote=args.get("remote") == "true",
-            max_years=_int("max_years"),
-            ats=(args.get("ats") or "").strip() or None,
-            etype=(args.get("etype") or "").strip() or None,
-            india=(args.get("india") or "").strip().lower() or None,
-            location=(args.get("location") or "").strip() or None,
-            company=(args.get("company") or "").strip() or None,
-            has_salary=args.get("has_salary") == "true",
-            posted_within=_int("posted_within"),
-            seen_within=_int("seen_within"),
-            posted_after=(args.get("posted_after") or "").strip() or None,
-            posted_before=(args.get("posted_before") or "").strip() or None,
-            seen_after=(args.get("seen_after") or "").strip() or None,
-            seen_before=(args.get("seen_before") or "").strip() or None,
-            first_seen_after=(args.get("first_seen_after") or "").strip() or None,
-            atses=self.atses,
-            has_first_seen=self.has_first_seen,
-            has_min_salary_annual=self.has_min_salary_annual,
-        )
+        _int = _int_arg(args)
+        where = build_filter(**self.filter_kwargs(args))
+        # Whitelisted to a column name, never taken from the query string — this reaches an
+        # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
+        sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
+        if sort == "first_seen" and not self.has_first_seen:
+            sort = None  # same dark-until-migrated rule as the filters above
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
         # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same
         # reasoning for `page`, new in ADR-0074: page=1 is the default, not a falsy no-op.
@@ -367,7 +488,7 @@ class JobSearch:
             )  # no vector: a plain, filtered scan (ADR-0074)
         if where:
             search = search.where(where, prefilter=True)
-        if not query:
+        if not query and not sort:
             # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
             # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`
             # pagination over a tied sort silently repeats and drops rows across pages
@@ -393,7 +514,39 @@ class JobSearch:
             )
             ordering.append({"column_name": "id", "ascending": True})
             search = search.order_by(ordering)
-        rows = search.limit(k).offset(offset).to_list()
+
+        if sort and query:
+            # Sorting a *ranked* result set, issue #275. The comment above is the constraint:
+            # an `order_by` on the vector branch does not tie-break similarity, it replaces
+            # it — so asking LanceDB to do this would silently discard the query. Instead take
+            # the window and re-order it here.
+            #
+            # The window is the whole result set as far as anyone can tell: `max_k * max_page`
+            # is exactly what ADR-0074's clamp lets pagination address, so a row outside it
+            # was already unreachable by any request. Measured 2026-08-25 on a 316,606-row
+            # table: 2.7 ms for one page against 9.2 ms for the full 2,000-row window, so
+            # keeping the query costs ~6.5 ms rather than a redesign.
+            #
+            # It is NOT a global sort, and the UI says so: a Job older than the 2,000th-best
+            # match cannot appear. That is the honest shape of "newest among your best
+            # matches" — the alternative, scanning by date, answers a question the user did
+            # not ask by throwing their query away.
+            window = search.limit(self.max_k * self.max_page).to_list()
+            window.sort(
+                key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True
+            )
+            rows = window[offset : offset + k]
+        else:
+            if sort:
+                # No query, so no ranking to protect: LanceDB can order the whole table. Same
+                # `id` tiebreak as above, for the same pagination reason.
+                search = search.order_by(
+                    [
+                        {"column_name": sort, "ascending": False, "nulls_first": False},
+                        {"column_name": "id", "ascending": True},
+                    ]
+                )
+            rows = search.limit(k).offset(offset).to_list()
 
         return [
             {

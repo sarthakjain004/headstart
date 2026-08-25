@@ -49,6 +49,19 @@
           requirement are kept.</span></div>
       <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
       <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
+      {% if currencies %}
+      <div class="f"><label for="salcur">Salary bracket (annual)</label>
+        <div class="bracket">
+          <select id="salcur" aria-label="Salary currency">
+            {% for c in currencies %}<option value="{{ c }}"{% if c == 'USD' %} selected{% endif %}>{{ c }}</option>{% endfor %}
+          </select>
+          <input id="salmin" type="number" min="0" step="1000" placeholder="Min" aria-label="Minimum salary">
+          <input id="salmax" type="number" min="0" step="1000" placeholder="Max" aria-label="Maximum salary">
+        </div>
+        <span class="tip">Compared within one currency — salaries are period-normalised but
+          never FX-converted, so a bracket only means something inside a single currency.
+          Only jobs whose salary is known can match.</span></div>
+      {% endif %}
     </div>
 
     <div class="set">
@@ -68,14 +81,12 @@
       <h2>Freshness</h2>
       <div class="f"><label for="posted">Posted by the employer</label>
         <select id="posted"><option value="">Any time</option>
-          <option value="1">Last 24 hours</option><option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+          {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
         </select></div>
       {% if has_first_seen %}
       <div class="f"><label for="seen">First seen by HeadStart</label>
         <select id="seen"><option value="">Any time</option>
-          <option value="2">Last 2 hours</option><option value="24">Last 24 hours</option>
-          <option value="168">Last 7 days</option>
+          {% for value, label in seen_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
         </select></div>
       {% endif %}
       <div class="f"><label for="ats">ATS provider</label>
@@ -91,10 +102,13 @@
     <div class="toolbar">
       <button class="ghost filters-btn" onclick="toggleRail()">Filters</button>
       <span class="n" id="n"></span>
+      <span class="note sortnote" id="sortnote" role="status"></span>
       <span class="spacer"></span>
       <label class="note" for="sort">Sort</label>
-      <select id="sort" onchange="resort()">
-        <option value="rel">Best match</option><option value="new">Newest first</option>
+      <select id="sort" onchange="go()">
+        <option value="rel">Best match</option>
+        {% if has_first_seen %}<option value="seen">Newest first seen</option>{% endif %}
+        <option value="posted">Newest posted</option>
       </select>
       {% if sets_on %}
       <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>

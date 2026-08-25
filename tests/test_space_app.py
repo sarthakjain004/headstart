@@ -142,17 +142,19 @@ def _space_app(state, env=None):
             ask=_no_router,
         ),
     }
-    # The Space imports the alerts package and the flat search/profile_extract modules, as
-    # deploy-space.yml lays them down — the real modules, not fakes, so the wiring under
+    # The Space imports the alerts package and the flat facets/search/profile_extract modules,
+    # as deploy-space.yml lays them down — the real modules, not fakes, so the wiring under
     # test is real (profile_extract is pure json/re, so its scrub runs for real too).
     import headstart.alerts.access as _access
     import headstart.alerts.identity as _identity
     import headstart.alerts.store as _store
+    import headstart.facets as _facets
     import headstart.profile_extract as _profile_extract
     import headstart.search as _search
 
     stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
     stubs["alerts.store"] = _store
+    stubs["facets"] = _facets
     stubs["profile_extract"] = _profile_extract
     stubs["search"] = _search
     # Every stubbed name is restored, including the two above — leaving a fake `alerts` in
