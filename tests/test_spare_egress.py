@@ -310,7 +310,14 @@ def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog
 
 
 def _rotating(monkeypatch, *, restart_ok=True, comes_back=True):
-    """Stub a rotation: sudo/systemctl outcome, whether SOCKS5 answers afterwards, and the trace."""
+    """Stub a rotation: sudo/systemctl outcome, whether SOCKS5 answers afterwards, and the trace.
+
+    Pins the platform to linux, because the restart command is chosen per-platform and these
+    tests assert on it — left to the host, the same test would expect `systemctl` in CI and
+    `launchctl` on a developer's Mac. Which command each platform gets is covered separately by
+    `test_restart_uses_the_platforms_own_service_manager`.
+    """
+    monkeypatch.setattr(spare_egress.sys, "platform", "linux")
     calls: list[list[str]] = []
 
     def _run(argv, **kw):
@@ -628,3 +635,45 @@ def test_observing_the_egress_ip_never_holds_the_rotation_gate_or_lock(monkeypat
     spare_egress.rotate()
 
     assert gate_was_open_during_trace == [True]
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [
+        ("linux", ["sudo", "-n", "systemctl", "restart", "warp-svc"]),
+        (
+            "darwin",
+            [
+                "sudo",
+                "-n",
+                "launchctl",
+                "kickstart",
+                "-k",
+                "system/com.cloudflare.1dot1dot1dot1.macos.warp.daemon",
+            ],
+        ),
+    ],
+)
+def test_restart_uses_the_platforms_own_service_manager(
+    monkeypatch, platform, expected
+):
+    """Rotation is a daemon restart on both, because no unprivileged lever moves the egress IP.
+
+    Measured on macOS 2026-08-25: `tunnel rotate-keys` reports Success without moving it,
+    `disconnect`+`connect` does not move it (the same no-op measured on Linux), and
+    `tunnel endpoint set` breaks the tunnel rather than rotating it.
+    """
+    calls = _stub(monkeypatch, lambda args: _Proc(0))
+    monkeypatch.setattr(spare_egress.sys, "platform", platform)
+
+    assert spare_egress._restart_daemon() is True
+    assert calls[-1] == expected
+
+
+def test_restart_declines_an_unknown_platform_rather_than_guessing(monkeypatch):
+    """No recipe means one bounded failed attempt, not a wrong command aimed at root."""
+    calls = _stub(monkeypatch, lambda args: _Proc(0))
+    monkeypatch.setattr(spare_egress.sys, "platform", "sunos5")
+
+    assert spare_egress._restart_daemon() is False
+    assert calls == []
