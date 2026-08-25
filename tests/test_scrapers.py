@@ -1777,6 +1777,69 @@ def test_recruitee_salary_formatting():
     assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
 
 
+def _teamtailor_pages(monkeypatch, scraper, pages):
+    """Serve `pages` (a list of item-id lists) from jobs.json, recording each URL requested."""
+    asked: list[str] = []
+
+    def _get(self, url=None):
+        asked.append(url or "")
+        index = 0
+        if url and "page=" in url:
+            index = int(url.rsplit("page=", 1)[1]) - 1
+        items = pages[index] if index < len(pages) else []
+        return json.dumps(
+            {"title": "Co", "items": [{"id": i, "title": f"J{i}"} for i in items]}
+        )
+
+    monkeypatch.setattr(type(scraper), "_get", _get)
+    return asked
+
+
+def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
+    """`jobs.json` serves at most 100 items and `?page=N` walks the rest.
+
+    Measured 2026-08-25 over 766 live Boards: 27 sat at exactly 100 and paging them out found
+    4,046 Jobs — 26.4% of that sample's corpus — never scraped. A Job never fetched cannot be
+    repaired downstream; it is simply absent, and `sync` sees a Board that shrank.
+    """
+    from headstart.scrapers import teamtailor as tt
+
+    s = get_scraper("teamtailor", "big", "Big")
+    full = list(range(tt._PAGE_SIZE))
+    asked = _teamtailor_pages(monkeypatch, s, [full, [900, 901]])
+
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == tt._PAGE_SIZE + 2
+    assert len({j.id for j in jobs}) == len(jobs)  # no page overlap
+    assert "page=2" in asked[1] and len(asked) == 2  # stopped on the short page
+
+
+def test_teamtailor_single_page_board_costs_one_request(monkeypatch):
+    """The common case must not pay for pagination — 748 of 766 Boards are one page."""
+    s = get_scraper("teamtailor", "small", "Small")
+    asked = _teamtailor_pages(monkeypatch, s, [[1, 2, 3]])
+
+    assert len(s.parse(s.fetch_raw(), SCRAPED_AT)) == 3
+    assert len(asked) == 1
+
+
+def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
+    """A feed that serves page 1 forever would otherwise loop to the bound.
+
+    Item count alone cannot tell "ran off the end" from "looping" — both keep returning a full
+    page — so the walk also stops when a page adds no new ids.
+    """
+    from headstart.scrapers import teamtailor as tt
+
+    s = get_scraper("teamtailor", "stuck", "Stuck")
+    full = list(range(tt._PAGE_SIZE))
+    asked = _teamtailor_pages(monkeypatch, s, [full, full, full])
+
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == tt._PAGE_SIZE  # the repeat contributed nothing
+    assert len(asked) == 2  # and it stopped rather than walking to _MAX_PAGES
+
+
 def test_teamtailor_parse():
     jobs = get_scraper("teamtailor", "1komma5", "1KOMMA5").parse(
         _load("teamtailor_1komma5.json"), SCRAPED_AT
