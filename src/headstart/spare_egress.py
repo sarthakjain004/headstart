@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import socket
 import subprocess
+import sys
 import threading
 import time
 from collections import Counter, defaultdict
@@ -544,11 +545,14 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
     ``board`` is the Board whose wall prompted this, recorded so the shard report can name what
     spent the IP supply rather than only how much of it went.
 
-    **Why ``systemctl restart warp-svc`` rather than ``warp-cli disconnect`` + ``connect``**: the
-    CLI pair is a no-op for rotation. A registration is sticky to its WARP edge node, so
-    disconnect/connect returns the *same* egress IP — measured in a sibling project on 2026-05-29
-    (``104.28.232.96`` before and after; a daemon restart moved it to ``104.28.200.91``).
-    ``resilience.md`` records the symptom ("rotation can be a no-op"); this is the working answer.
+    **Why a daemon restart rather than ``warp-cli disconnect`` + ``connect``**: the CLI pair is a
+    no-op for rotation. A registration is sticky to its WARP edge node, so disconnect/connect
+    returns the *same* egress IP — measured in a sibling project on 2026-05-29 (``104.28.232.96``
+    before and after; a daemon restart moved it to ``104.28.200.91``). ``resilience.md`` records
+    the symptom ("rotation can be a no-op"); this is the working answer.
+
+    Re-measured on macOS 2026-08-25, where the same holds and no other CLI lever helps either —
+    see :data:`_RESTART_COMMAND`, which carries the per-platform command and that measurement.
 
     **A throttled caller waits rather than returning.** Every caller here has just been refused
     *through* the spare egress, so the current IP is known-bad; returning it immediately spends an
@@ -597,7 +601,10 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
         if board:
             _log.warning(f"spare egress: {board} walled the current IP — rotating")
         _gate.clear()  # peers stop firing at a port the restart is about to take away
-        _log.warning("spare egress: rotating egress IP (systemctl restart warp-svc)")
+        _log.warning(
+            "spare egress: rotating egress IP "
+            f"({' '.join(_RESTART_COMMAND.get(sys.platform, ['unsupported']))})"
+        )
         try:
             if not _restart_daemon():
                 _rotations["failed"] += 1
@@ -732,11 +739,42 @@ def egress_ips() -> Counter[str]:
         return Counter(_egress_ips)
 
 
+#: How to restart the WARP daemon, per platform. Linux is the pipeline's own runner; macOS is
+#: local development, where the same rotation is wanted when a Board walls a sweep.
+#:
+#: Both need root, and that is not an oversight of either init system — the daemon is a system
+#: service in both. Measured 2026-08-25 on macOS 15: **every** unprivileged `warp-cli` lever
+#: leaves the egress IP exactly where it was — `tunnel rotate-keys` reports Success and does not
+#: move it, `disconnect`+`connect` does not move it (the same no-op ADR-0067 measured on Linux),
+#: `tunnel protocol set` does not move it, and `tunnel endpoint set` does not rotate but breaks
+#: the tunnel outright. So there is no unprivileged path to a fresh IP, and a restart it is.
+_RESTART_COMMAND = {
+    "linux": ["systemctl", "restart", "warp-svc"],
+    # `kickstart -k` is stop+start in one call, and the only form that takes a service target in
+    # the system domain. The label is the one in /Library/LaunchDaemons.
+    "darwin": [
+        "launchctl",
+        "kickstart",
+        "-k",
+        "system/com.cloudflare.1dot1dot1dot1.macos.warp.daemon",
+    ],
+}
+
+
 def _restart_daemon() -> bool:
-    """``sudo -n systemctl restart warp-svc``. False — logged, never raised — on any failure."""
+    """Restart the WARP daemon under ``sudo -n``. False — logged, never raised — on any failure.
+
+    Unsupported platforms return False rather than guessing at a command, which costs the caller
+    one bounded attempt and leaves the spare egress itself intact — the same contract every other
+    failure path here keeps.
+    """
+    command = _RESTART_COMMAND.get(sys.platform)
+    if command is None:
+        _log.info(f"spare egress: rotation unavailable (no recipe for {sys.platform})")
+        return False
     try:
         proc = subprocess.run(
-            ["sudo", "-n", "systemctl", "restart", "warp-svc"],
+            ["sudo", "-n", *command],
             check=False,  # failure is logged and returned as False, never raised
             capture_output=True,
             text=True,
