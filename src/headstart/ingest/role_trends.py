@@ -314,7 +314,11 @@ def main() -> int:
     fresh_total = sum(c for k, c in counts.items() if k[0] == "new")
     _log.info(
         f"appended {written} rows @ {ts} -> {args.ledger} | top: "
-        + ", ".join(f"{family}/{band} {c}" for (_, family, band, _ats), c in stock_top)
+        # `ats` is in the key (ADR-0075), so it belongs in the label: without it two ATSes' rows
+        # for one family and band render identically and read as a double-count.
+        + ", ".join(
+            f"{family}/{band}/{ats} {c}" for (_, family, band, ats), c in stock_top
+        )
         + f" | new in {NEW_WINDOW_DAYS}d: {fresh_total}"
     )
     _log.info(
