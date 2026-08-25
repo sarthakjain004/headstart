@@ -170,3 +170,74 @@ def test_filter_jobs_writes_tech_only_and_leaves_source(tmp_path):
     assert {j["id"] for j in out} == {"greenhouse:a:1", "greenhouse:a:3"}
     # source file untouched
     assert len((src / "greenhouse.jsonl").read_text().splitlines()) == 3
+
+
+def test_hiring_department_is_not_a_tech_department():
+    """A department naming a hiring function says who recruits, not what the role is (ADR-0087).
+
+    `\\bdata\\b` matching Prolific's "Human Data Recruitment" — the team that recruits humans to
+    produce training data — promoted 2,427 crowdwork listings into the tech index off one Board.
+    """
+    dept = "Human Data Recruitment"
+    assert is_tech("AI Trainer - Fluent Serbian Speaker", department=dept) is False
+    assert is_tech("Cardiologists (Freelance - Remote)", department=dept) is False
+    assert is_tech("Fluent Russian Speakers - UK", department=dept) is False
+    # the same vague title keeps its promotion under a genuinely technical department
+    assert (
+        is_tech("AI Trainer - Fluent Serbian Speaker", department="Data & Analytics")
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    "department",
+    ["Data Recruiting", "Platform Staffing", "Talent Acquisition Technology"],
+)
+def test_every_hiring_term_actually_reaches_the_veto(department):
+    """Each term must be exercised on the rule-4 path, not merely present in the pattern.
+
+    Review caught the first draft's cases resolving at rules 1-3 ("Backend Engineer" is a strong
+    signal, "Engineer" a generic one), so they never reached the veto and proved nothing. These
+    titles carry no signal of their own, so only the department can decide them.
+    """
+    assert is_tech("Intern", department=department) is False
+
+
+def test_sourcing_is_not_treated_as_a_hiring_department():
+    """Deliberate exclusion: in Department labels `sourcing` overwhelmingly means procurement.
+
+    All 10 live occurrences in a 418-Board survey were supply-chain, so vetoing on it would fire
+    on the wrong meaning of the word.
+    """
+    assert is_tech("Intern", department="Technology Sourcing") is True
+
+
+def test_hiring_department_only_withdraws_the_department_booster():
+    """Scoped to rule 4, not a disqualifier — a title that names the role still wins.
+
+    This is why 193 Jobs on that same Board keep passing: their titles say so outright.
+    """
+    assert (
+        is_tech("AI Engineer - Senior Developers", department="Human Data Recruitment")
+        is True
+    )
+    assert is_tech("Backend Engineer", department="Technical Recruiting") is True
+    assert is_tech("Engineer", department="Talent Acquisition") is True  # rule 3
+
+
+@pytest.mark.parametrize(
+    "department",
+    [
+        "Data",
+        "Data & Analytics",
+        "Information Technology",
+        "R&D",
+        "Technology",
+        "Security",
+        "Platform Products",
+        "Cloud Infrastructure & Operations",
+    ],
+)
+def test_real_tech_departments_still_promote_a_vague_title(department):
+    """The 51 departments rule 4 promoted from in the survey; the veto matched exactly one."""
+    assert is_tech("Intern", department=department) is True
