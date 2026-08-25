@@ -15,7 +15,8 @@ Precedence (first match wins):
      sales, civil, …) in the title, or in a
      department that names a discipline       -> not tech
   3. a generic role token alone              -> tech      (recall: keep the ambiguous ones)
-  4. a clearly-technical department          -> tech      (recall booster for vague titles)
+  4. a clearly-technical department, unless
+     that department names a hiring function  -> tech      (recall booster for vague titles)
   5. otherwise                               -> not tech
 """
 
@@ -121,6 +122,23 @@ _TECH_DEPT = re.compile(
     re.IGNORECASE,
 )
 
+# 4b. Departments naming a *hiring* function, which must not act as that recall booster: such a
+#     label says who does the recruiting, not what discipline the role is in, so a technical word
+#     landing inside one is incidental. "Human Data Recruitment" is a team that recruits humans to
+#     produce data, and `\bdata\b` matching it promoted 2,427 crowdwork listings into the tech
+#     index off a single Board. Reasoning, measurements and rejected alternatives: ADR-0087.
+#
+#     Scoped to rule 4, and not a disqualifier — a title naming a software role still passes on
+#     its own signal at rules 1-3.
+#
+#     `sourcing` is deliberately NOT here, though it is a hiring term of art: in Department labels
+#     it overwhelmingly means procurement, not candidates. All 10 live occurrences in a
+#     418-Board, 22,573-job survey were supply-chain ("Category Sourcing", "Sourcing & Quality",
+#     "Global Sourcing", "Product Sourcing"), so including it would veto on the wrong meaning.
+_HIRING_DEPT = re.compile(
+    r"\b(recruit\w*|staffing|talent acquisition)\b", re.IGNORECASE
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
@@ -145,7 +163,7 @@ def classify(title: str | None, department: str | None = None) -> Verdict:
         ):
             return Verdict(False, "generic-token-but-non-software")
         return Verdict(True, "generic-tech-token")
-    if dept and _TECH_DEPT.search(dept):
+    if dept and _TECH_DEPT.search(dept) and not _HIRING_DEPT.search(dept):
         return Verdict(True, "tech-department")
     return Verdict(False, "no-tech-signal")
 
