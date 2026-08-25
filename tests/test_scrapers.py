@@ -3365,10 +3365,10 @@ def test_zoho_detail_description_appends_salary_and_currency(record, expected):
     code-review-triggered re-probe on PR #238) — free-text per-tenant strings, so they ride
     along in the description for Tier-2 mining rather than a bespoke Tier-1 parser, matching
     smartrecruiters' customField compensation treatment."""
-    from headstart.scrapers.zoho import ZohoScraper
+    from headstart.scrapers.zoho import ZohoScraper, _description_text
 
     page = f"var jobs = JSON.parse('[{record}]')"
-    assert ZohoScraper._description_of(page) == expected
+    assert _description_text(ZohoScraper._detail_record_of(page) or {}) == expected
 
 
 def _zoho_listing(records):
@@ -3419,9 +3419,10 @@ def test_zoho_fetches_every_job_detail_not_just_empty_descriptions(monkeypatch):
 
 
 def test_zoho_parse_prefers_the_salary_enriched_detail_description(monkeypatch):
-    """The detail page is a strict superset of the listing's bare Job_Description — it carries
-    the same text PLUS Salary/Currency appended. Preferring the listing (the old precedence)
-    would silently discard the Salary text a detail fetch just paid bandwidth to collect."""
+    """The detail record is a strict superset of the listing's bare Job_Description — it carries
+    the same text PLUS Salary/Currency. Preferring the listing (the old precedence) would
+    silently discard the Salary a detail fetch just paid bandwidth to collect, both from the
+    description text and from the new `Job.salary` field."""
     records = [
         {"id": "1", "Job_Description": "Plain listing text.", "Is_Locked": False}
     ]
@@ -3431,13 +3432,21 @@ def test_zoho_parse_prefers_the_salary_enriched_detail_description(monkeypatch):
     monkeypatch.setattr(
         s,
         "fan_out",
-        lambda items, fn, workers=None: ["Plain listing text. Salary: 10-12 LPA"],
+        lambda items, fn, workers=None: [
+            {
+                "id": "1",
+                "Job_Description": "Plain listing text.",
+                "Salary": "10-12",
+                "Currency": "LPA",
+            }
+        ],
     )
 
     raw = s.fetch_raw()
     jobs = s.parse(raw, SCRAPED_AT)
 
-    assert jobs[0].description == "Plain listing text. Salary: 10-12 LPA"
+    assert jobs[0].description == "Plain listing text. Salary: 10-12 Currency: LPA"
+    assert jobs[0].salary == "10-12 LPA"
 
 
 def test_zoho_parse_falls_back_to_the_listing_if_the_detail_fetch_failed(monkeypatch):
