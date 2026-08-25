@@ -17,7 +17,7 @@ already).
 
 The blind spot is rows that carry a **country tag and no place a gazetteer could hold**: a plant,
 a tower, a campus code, or a town too small to enumerate. `IND-BLR-Divyasree Technopolis`,
-`IND BNGL FL2-3 TWR 3`, `Jagiroad, AS, IN`, `Vemagal, KA, IN`. 432 rows, and no amount of city
+`IND BNGL FL2-3 TWR 3`, `Jagiroad, AS, IN`, `Vemagal, KA, IN`. 429 rows, and no amount of city
 curation reaches them.
 
 The same audit found the country term itself is a **substring** — `LIKE '%india%'` — so it was
@@ -48,13 +48,16 @@ The trailing form is `'% - ind'`, **not** `'% ind'`, because the looser one also
 ### 2. The subdivision tail `City, ST, IN`
 
 Workday writes `Vemagal, KA, IN`. The 36 ISO 3166-2:IN codes **plus the four vehicle-registration variants** ATSes also use — the
-two schemes disagree on five states and the data uses both. Measured: `tg` (ISO, Telangana) has
+two schemes disagree on four states (CT/CG, OR/OD, TG/TS, UT/UK) and the data uses both. Measured: `tg` (ISO, Telangana) has
 55 tails in the live table while `ts` (the vehicle code) has **0**, so a first pass that shipped
 only the vehicle codes would have missed a Telangana tail town entirely. Its net cost today was
 zero purely because those 55 rows also carry "Hyderabad" — luck, not design.
 
 Two letters would be catastrophic loose, so they are only ever matched inside the anchored
-`', {code}, in'` tail. Zero false positives across all 40 codes, `or` (Odisha) included.
+`', {code}, in'` tail. Zero false positives across the 18 codes that actually carry tails in the live table (1,056
+rows, all India). The other 22 — `or`, `la`, `ch`, `ga`, `an`, `ld` among them — return zero
+rows, so their safety is untested surface rather than a clean bill; the anchoring is the reason
+to believe them, not the measurement.
 
 ### 3. `INDIA_EXCLUDE` for US places containing "india"
 

@@ -33,7 +33,7 @@ _ROWS = [
     ("Hyderaba", True, {"hyderabad"}),  # observed typo
     ("Noida", True, {"noida", "delhi ncr"}),
     ("Kalyani Nagar, Pune", True, {"pune"}),  # must NOT hit thane's 'kalyan'
-    # country-tag rows carrying no city name at all (2026-08-25 audit: 432 such rows)
+    # country-tag rows carrying no city name at all (2026-08-25 audit: 429 such rows)
     ("IND", True, set()),
     ("IND-BLR-Divyasree Technopolis", True, set()),
     ("IND BNGL FL2-3 TWR 3", True, set()),
@@ -142,9 +142,12 @@ def test_ind_is_never_a_bare_substring():
     (indore, indianapolis, 'King Street Ind Estate', every 'Industrial Area').
     """
     for form in IND_FORMS:
-        assert form != "%ind%", form
-        # every form must pin 'ind' against something: a start-of-string, or a real delimiter
-        assert form.startswith("ind") or form.lstrip("%")[0] in " (-", form
+        # 'ind' must be pinned on BOTH sides: against a string start or a real delimiter on the
+        # left, and against a delimiter or the string end on the right. '%ind%' pins neither and
+        # 'ind%' pins only the left, which would claim Indore and every "Industrial Area".
+        head, _, tail = form.partition("ind")
+        assert head in ("", "%(", "% - "), form
+        assert tail == "" or tail[0] in " -)", form
 
 
 def test_dropdown_entries_resolve():

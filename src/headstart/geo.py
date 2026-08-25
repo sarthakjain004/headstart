@@ -214,7 +214,7 @@ STATES: tuple[str, ...] = (
 )
 
 # Country-level signals that carry no city name at all. Measured 2026-08-25 on the 317,421-row
-# served table: these two rules alone recover 432 India rows the city map could never reach,
+# served table: these two rules alone recover 429 India rows the city map could never reach,
 # because the string names a plant, a tower, or a town too small to gazetteer.
 #
 # ISO alpha-3 "IND". Matched only in positions where it is the country tag, never as a bare
@@ -234,8 +234,11 @@ IND_FORMS: tuple[str, ...] = (
 IND_EXCLUDE: tuple[str, ...] = ("united states",)
 
 # Subdivision codes, as workday writes them: "Vemagal, KA, IN". The real ISO 3166-2:IN set,
-# PLUS the vehicle-registration abbreviations ATSes also use for the same states — the two
-# disagree on five states and the data uses both, so shipping one set alone loses rows.
+# PLUS the four vehicle-registration abbreviations ATSes also use for the same states
+# (CT/CG Chhattisgarh, OR/OD Odisha, TG/TS Telangana, UT/UK Uttarakhand) — the data uses both
+# schemes, so shipping one set alone loses rows. Dadra & Nagar Haveli's vehicle codes (DD/DN)
+# are deliberately absent: neither appears in the live table and both are two letters of very
+# common English.
 # Measured 2026-08-25: "tg" (ISO, Telangana) has 55 tails in the live table while "ts" (the
 # vehicle code) has 0 — an earlier pass shipped only the vehicle codes and would have missed a
 # Telangana tail town entirely. Anchored to the ", {code}, in" tail so two letters can never

@@ -9,12 +9,13 @@ different kinds of evidence, so this reports them separately rather than as one 
 any place filter however good the gazetteer is. That is a ceiling on recall owned by the
 *scrapers*, not by ``geo``, which is why it is broken out per ATS.
 
-**Recall** — India rows the filter does not match. This CANNOT be measured by widening the
-gazetteer's own terms: the filter is already "india-word OR every city OR every state", so any
-net built from those is a strict subset of it and reports 0 misses by construction. (An earlier
-pass of this script did exactly that and printed a meaningless 100.00%.) So recall is probed with
-signals *independent* of the city map - the ISO alpha-3 ``IND``, and workday's ``City, ST, IN``
-subdivision form - plus a by-hand read of the top unmatched strings.
+**Recall** — India rows the filter does not match, and the hardest of the three to measure
+honestly. It cannot be judged against the gazetteer's own terms: the filter is already
+"india-word OR every city OR every state", so any net built from those is a strict subset of it
+and reports 0 misses by construction. (An earlier pass did exactly that and printed a meaningless
+100.00%.) The country-tag probes here were once independent of it, but ADR-0086 moved them INTO
+the filter, so they now read near zero by construction too — kept as a regression check on that
+change, not as a recall figure. **The by-hand read of ``--unmatched`` is the only real bound.**
 
 **Precision** — non-India rows the filter claims. Every alias is a substring match, so this
 reports the two ways that bites: the country clause itself (``LIKE '%india%'`` matches *Indian*
@@ -47,45 +48,10 @@ from headstart import geo
 # around india yet is plainly an India row).
 _INDIA_WORD = re.compile(r"\bindia\b")
 
-# ISO-3166-2 subdivision codes for India's states/UTs, as workday writes them: "Vemagal, KA, IN".
-_SUBDIVISIONS = (
-    "ap",
-    "ar",
-    "as",
-    "br",
-    "cg",
-    "ga",
-    "gj",
-    "hr",
-    "hp",
-    "jh",
-    "ka",
-    "kl",
-    "mp",
-    "mh",
-    "mn",
-    "ml",
-    "mz",
-    "nl",
-    "od",
-    "pb",
-    "rj",
-    "sk",
-    "tn",
-    "ts",
-    "tr",
-    "uk",
-    "up",
-    "wb",
-    "dl",
-    "ch",
-    "py",
-    "jk",
-    "la",
-    "an",
-    "dh",
-)
-_STATE_IN = re.compile(r",\s*(" + "|".join(_SUBDIVISIONS) + r")\s*,\s*in\.?\s*$")
+# The subdivision tail comes straight from geo. A private copy lived here and had ALREADY
+# drifted - 35 entries against geo's 40, missing every ISO code added in the same PR - so
+# ', TG, IN' rows were invisible to this probe. Sourcing it removes the drift by construction.
+_STATE_IN = re.compile(r",\s*(" + "|".join(geo.SUBDIVISIONS) + r")\s*,\s*in\.?\s*$")
 _IND_A3 = re.compile(r"\bind\b")  # ISO alpha-3; no US collision, unlike bare "IN"
 _TRAILING_IN = re.compile(r",\s*in\.?\s*$")
 
@@ -314,7 +280,7 @@ def report_field_health(rows: list[tuple[str | None, str]]) -> None:
     print()
 
 
-def report_recall(unmatched: list[tuple[str | None, str]]) -> int:
+def report_recall(unmatched: list[tuple[str | None, str]]) -> None:
     """India rows the filter misses, probed with country-tag signals.
 
     **These probes are no longer independent of the filter.** ADR-0086 moved the ``IND`` and
@@ -370,7 +336,6 @@ def report_recall(unmatched: list[tuple[str | None, str]]) -> int:
         "     by-hand read of --unmatched.",
         flush=True,
     )
-    return residual
 
 
 # The collisions geo.py's own docstring names as knowingly accepted. Each is (canonical place,
@@ -409,7 +374,7 @@ def report_accepted_collisions(rows: list[tuple[str | None, str]]) -> None:
 
 
 def report_precision(
-    rows: list[tuple[str, str]], clauses: list[tuple[str, object]]
+    rows: list[tuple[str | None, str]], clauses: list[tuple[str, object]]
 ) -> dict[str, Counter[str]]:
     """Non-India rows the filter claims, in the two ways a substring design produces them."""
     bleed: Counter[str] = Counter()
@@ -471,15 +436,20 @@ def main() -> int:
     )
     report_field_health(rows)
 
-    matched = [(loc, ats) for loc, ats in rows if matches(_lower(loc), clauses)]
-    unmatched = [
-        (loc, ats)
-        for loc, ats in rows
-        if (loc or "").strip() and not matches(_lower(loc), clauses)
-    ]
+    # One classification pass. This ran three times over the 317k rows before; measured 8.92s
+    # -> 4.44s with identical output. Re-running the audit is the whole point of shipping it,
+    # so its runtime is a feature.
+    matched: list[tuple[str | None, str]] = []
+    unmatched: list[tuple[str | None, str]] = []
+    by_place: Counter[str] = Counter()
+    for loc, ats in rows:
+        place = matches(_lower(loc), clauses)
+        if place:
+            matched.append((loc, ats))
+            by_place[place] += 1
+        elif (loc or "").strip():
+            unmatched.append((loc, ats))
     folded_only = sum(1 for loc, _ in unmatched if matches(_fold(loc), clauses))
-
-    by_place = Counter(matches(_lower(loc), clauses) for loc, _ in matched)
     by_ats = Counter(ats for _, ats in matched)
     print(
         f"-- the filter matches {len(matched):,} rows ({100 * len(matched) / total:.1f}% of the table) --"

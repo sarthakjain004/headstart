@@ -155,13 +155,9 @@ def fetch_big(
 ) -> None:
     """Fetch one large file as CONCURRENT ranged chunks, then concatenate.
 
-    Measured on this link 2026-08-25, mid-transfer: a single long-lived stream had decayed to
-    **0.16 MB/s** while four concurrent ranged GETs of the same file aggregated **2.17 MB/s** -
-    ~13x, with each individual segment slower than the aggregate. That shape (short flows fast,
-    one long flow slow) is per-flow shaping and TCP congestion-window behaviour, not a saturated
-    last mile, so the fix is more flows rather than a better single one. The first 50 MB of the
-    sequential run came down at 6.36 MB/s and decayed monotonically from there, which is the
-    same story seen from the other side.
+    Short flows fast while one long flow starves is per-flow shaping and TCP congestion-window
+    behaviour, not a saturated last mile — so the lever is more flows, never a longer timeout.
+    Numbers and the full reasoning: ADR-0085 and this module's docstring.
     """
     dest = root / path
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -215,6 +211,11 @@ def fetch_big(
                         os.fsync(fh.fileno())
             except (requests.RequestException, OSError):
                 time.sleep(1.5 * (attempt + 1))
+        # The loop only tests completeness at the TOP of an iteration, so a chunk that lands on
+        # the final attempt would otherwise fall straight into the raise below and abort the
+        # whole pull with the file already complete on disk. Re-check before failing.
+        if (cf.stat().st_size if cf.exists() else 0) >= want:
+            return 1
         raise OSError(
             f"chunk {i} short after 8 attempts: {cf.stat().st_size:,} < {want:,}"
         )
