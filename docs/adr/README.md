@@ -93,3 +93,4 @@ supersedes it and note the supersession in both.
 | [0082](0082-salary-extraction-a-two-tier-cascade-no-estimate.md) | Salary extraction — a two-tier cascade, period-normalized, no estimate tier | 2026-08-21 |
 | [0083](0083-evict-only-on-a-second-consecutive-absence.md) | Evict only on a second consecutive absence | 2026-08-23 |
 | [0084](0084-facet-counts-are-filter-shaped-not-query-shaped.md) | Facet counts are filter-shaped, not query-shaped | 2026-08-25 |
+| [0085](0085-pull-hf-data-over-raw-ranged-http.md) | Pull HF data over raw, ranged HTTP — not snapshot_download | 2026-08-25 |

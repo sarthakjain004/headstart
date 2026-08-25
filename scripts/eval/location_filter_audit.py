@@ -125,7 +125,11 @@ _INDIANA = (
 
 # Whole-string placeless tokens. Substring would be wrong: "Remote - India" and "Remote, KA, IN"
 # both carry real geography. Only a string that is *nothing but* the token is unfilterable.
+# Deliberately excludes "us"/"usa": those name a country and ARE filterable, so counting them
+# here would inflate the unfilterable ceiling. Also excludes "-", which is unreachable — the
+# strip below removes it before the lookup, leaving "".
 _PLACELESS = (
+    "",
     "remote",
     "anywhere",
     "multiple locations",
@@ -135,10 +139,7 @@ _PLACELESS = (
     "work from home",
     "wfh",
     "n/a",
-    "-",
     "remote job",
-    "us",
-    "usa",
 )
 
 
@@ -190,34 +191,78 @@ def matches(text: str, clauses: list[tuple[str, object]]) -> str | None:
     return None
 
 
+def _lower(loc: str | None) -> str:
+    """The string as SQL sees it. NULL and "" both match nothing, so both fold to ""."""
+    return (loc or "").lower()
+
+
 def is_placeless(low: str) -> bool:
     """True when the whole string is a placeless token, not merely contains one."""
     return low.strip(" .,-–—()[]") in _PLACELESS
 
 
-def load_locations(db: Path, table: str) -> list[tuple[str, str]]:
-    """``(location, ats)`` for every row - projected, so no vector is ever read."""
+def load_locations(db: Path, table: str) -> list[tuple[str | None, str]]:
+    """``(location, ats)`` for every row - projected, so no vector is ever read.
+
+    ``location`` is kept as ``None`` rather than coerced to ``""``. They are different defects
+    and the distinction was asked for: a NULL is a row whose scraper never wrote the field at
+    all, an empty string is one that wrote a blank. Collapsing them makes "how many rows have
+    no location field" unanswerable.
+    """
     import lancedb
 
     t = lancedb.connect(db).open_table(table)
     rows = t.search().select(["location", "ats"]).limit(10_000_000).to_list()
-    return [(r.get("location") or "", r.get("ats") or "") for r in rows]
+    return [(r.get("location"), r.get("ats") or "") for r in rows]
 
 
-def report_field_health(rows: list[tuple[str, str]]) -> None:
-    """How many rows the filter can even see, before asking how well it sees them."""
+def verify_model_against_sql(
+    db: Path, table: str, rows: list[tuple[str | None, str]], clauses
+) -> None:
+    """Assert the Python model returns exactly what the production SQL clause returns.
+
+    Everything downstream is a claim about ``geo.where("india")``, so the model standing in for
+    it has to be measured equal to it, not argued equal to it — and this is the one line that
+    can do that, since LanceDB will execute the real clause. A divergence here (a diacritic the
+    Python ``in`` handles differently from SQL ``LIKE``, say) would invalidate every number
+    below, so it fails loudly rather than warning.
+    """
+    import lancedb
+
+    t = lancedb.connect(db).open_table(table)
+    n_sql = t.count_rows(filter=geo.where("india"))
+    n_py = sum(1 for loc, _ in rows if matches(_lower(loc), clauses))
+    verdict = "agree" if n_sql == n_py else f"DISAGREE by {abs(n_sql - n_py):,}"
+    print(f"model check: SQL {n_sql:,} vs python {n_py:,} -> {verdict}\n", flush=True)
+    if n_sql != n_py:
+        raise SystemExit(
+            "the audit's model does not reproduce geo.where('india'); fix it first"
+        )
+
+
+def report_field_health(rows: list[tuple[str | None, str]]) -> None:
+    """How many rows the filter can even see, before asking how well it sees them.
+
+    NULL and empty-string are counted apart on purpose: a NULL is a scraper that never wrote the
+    field, an empty string is one that wrote a blank. Both are unfilterable, but they are
+    different bugs to go and fix.
+    """
     total = len(rows)
-    blank = sum(1 for loc, _ in rows if not loc.strip())
-    placeless = sum(1 for loc, _ in rows if loc.strip() and is_placeless(loc.lower()))
-    print("-- can the filter even see the row? --")
+    null = sum(1 for loc, _ in rows if loc is None)
+    empty = sum(1 for loc, _ in rows if loc is not None and not loc.strip())
+    placeless = sum(
+        1 for loc, _ in rows if loc and loc.strip() and is_placeless(_lower(loc))
+    )
+    print("-- can the filter even see the row? --", flush=True)
     print(f"  {'rows':38} {total:>8,}")
     print(
-        f"  {'blank / missing location':38} {blank:>8,}  ({100 * blank / total:.1f}%)"
+        f"  {'no location field at all (NULL)':38} {null:>8,}  ({100 * null / total:.1f}%)"
     )
+    print(f"  {'field present but empty':38} {empty:>8,}  ({100 * empty / total:.1f}%)")
     print(
         f"  {'placeless string (Remote, N/A, ...)':38} {placeless:>8,}  ({100 * placeless / total:.1f}%)"
     )
-    bad = blank + placeless
+    bad = null + empty + placeless
     print(
         f"  {'-> unfilterable by ANY place filter':38} {bad:>8,}  ({100 * bad / total:.1f}%)"
     )
@@ -226,7 +271,7 @@ def report_field_health(rows: list[tuple[str, str]]) -> None:
     for loc, ats in rows:
         seen = per.setdefault(ats, [0, 0])
         seen[0] += 1
-        if not loc.strip() or is_placeless(loc.lower()):
+        if not (loc or "").strip() or is_placeless(_lower(loc)):
             seen[1] += 1
     print("\n  per-ATS, worst first - a scraper defect, not a gazetteer one:")
     for ats, (n, b) in sorted(per.items(), key=lambda kv: -kv[1][1] / max(kv[1][0], 1))[
@@ -238,7 +283,7 @@ def report_field_health(rows: list[tuple[str, str]]) -> None:
     print()
 
 
-def report_recall(unmatched: list[tuple[str, str]]) -> None:
+def report_recall(unmatched: list[tuple[str, str]]) -> int:
     """India rows the filter misses, probed with signals independent of the city gazetteer.
 
     Reported as three buckets of decreasing confidence rather than one total, because the last
@@ -249,7 +294,7 @@ def report_recall(unmatched: list[tuple[str, str]]) -> None:
     """
     buckets: dict[str, Counter[str]] = defaultdict(Counter)
     for loc, _ in unmatched:
-        low = loc.lower()
+        low = _lower(loc)
         if _STATE_IN.search(low):
             buckets["state code + IN (India, unambiguous)"][loc] += 1
         elif _IND_A3.search(low):
@@ -263,22 +308,66 @@ def report_recall(unmatched: list[tuple[str, str]]) -> None:
     for name in sorted(buckets, key=lambda k: -sum(buckets[k].values())):
         c = buckets[name]
         n = sum(c.values())
-        if "Indiana" not in name:
+        # Only the two unambiguous buckets count toward the firm total. The trailing ", IN"
+        # rows are excluded in BOTH directions: the docstring says they cannot be resolved from
+        # the string alone, so counting the India-reading half as firm would contradict it.
+        if "unambiguous" in name:
             firm += n
         print(f"  {name:44} {n:>6,}  ({len(c):,} distinct)")
         for s, k in c.most_common(5):
             print(f"       {k:>4}  {s[:66]}")
-    print(f"\n  {'-> India rows missed (excl. the Indiana half)':44} {firm:>6,}")
+    ambiguous = sum(
+        sum(c.values()) for k, c in buckets.items() if "unambiguous" not in k
+    )
+    print(f"\n  {'-> India rows missed (unambiguous only)':44} {firm:>6,}")
+    print(f"  {'   plus, unresolvable from the string alone':44} {ambiguous:>6,}")
     return firm
 
 
-def report_precision(rows, clauses, unmatched_n: int) -> None:
+# The collisions geo.py's own docstring names as knowingly accepted. Each is (canonical place,
+# the foreign string that collides). They are the highest-prior false positives in the whole
+# design and were previously asserted negligible without ever being counted.
+_ACCEPTED_COLLISIONS = (
+    ("hyderabad", "pakistan"),
+    ("kochi", "japan"),
+    ("thane", "thanet"),
+    ("madras", "oregon"),
+    ("madras", ", or"),
+)
+
+
+def report_accepted_collisions(rows: list[tuple[str | None, str]]) -> None:
+    """Count what geo.py's knowingly-accepted collisions actually cost today.
+
+    ``geo.py`` lists these as "accepted as negligible for a tech-jobs corpus". Negligible is a
+    quantity, so it should be a measured one - and it is cheap to measure, since each collision
+    has a naming signature (the other country or US state) that the India row will not carry.
+    """
+    print(
+        "\n-- geo.py's knowingly-accepted collisions, actually counted --", flush=True
+    )
+    total = 0
+    for place, marker in _ACCEPTED_COLLISIONS:
+        hits = [
+            loc
+            for loc, _ in rows
+            if loc and place in _lower(loc) and marker in _lower(loc)
+        ]
+        total += len(hits)
+        eg = ", ".join(sorted({h for h in hits})[:2]) or "-"
+        print(f"  {place + ' x ' + marker:26} {len(hits):>5,}  e.g. {eg[:58]}")
+    print(f"  {'-> total':26} {total:>5,}")
+
+
+def report_precision(
+    rows: list[tuple[str, str]], clauses: list[tuple[str, object]]
+) -> dict[str, Counter[str]]:
     """Non-India rows the filter claims, in the two ways a substring design produces them."""
     bleed: Counter[str] = Counter()
     alias_only: Counter[str] = Counter()
     examples: dict[str, Counter[str]] = defaultdict(Counter)
     for loc, _ in rows:
-        low = loc.lower()
+        low = _lower(loc)
         place = matches(low, clauses)
         if place == "india" and not _INDIA_WORD.search(low):
             bleed[loc] += 1
@@ -325,26 +414,30 @@ def main() -> int:
 
     clauses = india_clauses()
     rows = load_locations(Path(args.db), args.table)
+    verify_model_against_sql(Path(args.db), args.table, rows, clauses)
     total = len(rows)
-    print(f"rows: {total:,}   distinct locations: {len({r[0] for r in rows}):,}\n")
+    print(
+        f"rows: {total:,}   distinct locations: {len({r[0] for r in rows}):,}\n",
+        flush=True,
+    )
     report_field_health(rows)
 
-    matched = [(loc, ats) for loc, ats in rows if matches(loc.lower(), clauses)]
+    matched = [(loc, ats) for loc, ats in rows if matches(_lower(loc), clauses)]
     unmatched = [
         (loc, ats)
         for loc, ats in rows
-        if loc.strip() and not matches(loc.lower(), clauses)
+        if (loc or "").strip() and not matches(_lower(loc), clauses)
     ]
     folded_only = sum(1 for loc, _ in unmatched if matches(_fold(loc), clauses))
 
-    by_place = Counter(matches(loc.lower(), clauses) for loc, _ in matched)
+    by_place = Counter(matches(_lower(loc), clauses) for loc, _ in matched)
     by_ats = Counter(ats for _, ats in matched)
     print(
         f"-- the filter matches {len(matched):,} rows ({100 * len(matched) / total:.1f}% of the table) --"
     )
     print(
         f"  {'carrying no india word at all':44} "
-        f"{sum(1 for l, _ in matched if not _INDIA_WORD.search(l.lower())):>6,}"
+        f"{sum(1 for l, _ in matched if not _INDIA_WORD.search(_lower(l))):>6,}"
     )
     print(f"  {'recoverable by NFKD folding alone':44} {folded_only:>6,}")
     print("\n  per-ATS:")
@@ -356,11 +449,18 @@ def main() -> int:
     print()
 
     firm = report_recall(unmatched)
+    ceiling = 100 * len(matched) / (len(matched) + firm)
+    print(f"\n  {'-> recall UPPER BOUND':44} {ceiling:>5.2f}%")
     print(
-        f"  {'-> recall against observed India rows':44} "
-        f"{100 * len(matched) / (len(matched) + firm):>5.2f}%"
+        "     A ceiling, not recall. The numerator counts every matched row, including the\n"
+        "     false positives reported below; and the denominator's miss term is only what\n"
+        "     these probes can SEE. An India row written as a bare tail town with no country\n"
+        "     marker is invisible to the filter and to the probe alike, so it can never enter\n"
+        "     the denominator. Bounding that residue is what --unmatched is for.",
+        flush=True,
     )
-    examples = report_precision(rows, clauses, len(unmatched))
+    examples = report_precision(rows, clauses)
+    report_accepted_collisions(rows)
 
     if args.unmatched:
         c = Counter(loc for loc, _ in unmatched)

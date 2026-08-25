@@ -229,7 +229,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   (`harvest`, `board_cost`, `board_priority`, `corpus`) so the feed never imports from `ingest`.
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
   organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
-  (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `eval/`, `enrich/`,
+  (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `fetch/` (pull HF
+  data down — distinct from `scrape/`, which pulls from ATS hosts), `eval/`, `enrich/`,
   `filter/` (verification), `embed/` (local index tools), `bench/` (performance
   measurement), `ui/`. Whenever you add a script, put it
   in the folder that fits its stage — and if none fits, create a new clearly-named stage subfolder
@@ -307,7 +308,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   data; use `data/descriptions/` (the ADR-0050 store) or `data/state/` for anything durable.
 
 - **Pulling `data/lancedb/` (or any multi-GB slice): use `scripts/fetch/pull_lancedb.py`, not
-  `snapshot_download`.** Measured 2026-08-25 on a 1,888 MB / 4,222-file pull, `huggingface_hub`
+  `snapshot_download`** (ADR-0085). Measured 2026-08-25 on a 1,888 MB / 4,222-file pull, `huggingface_hub`
   failed four separate ways and cost most of a session: it died silently mid-stream under Xet
   (twice, at the same 987 files, no traceback); it looped forever inside its own 10s **read**
   timeout logging "Trying to resume" without ever raising, so a per-file retry above it never

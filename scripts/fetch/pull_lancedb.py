@@ -31,6 +31,7 @@ import argparse
 import os
 import pathlib
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -41,9 +42,19 @@ from huggingface_hub import HfApi, get_token, hf_hub_url
 
 REPO_ID = "imPoseidon/headstart-index"
 PREFIX = "data/lancedb/"
-BIG = (
-    100_000_000  # a file this size gets the ranged/resumable path, not a whole-body GET
-)
+BIG_FILE_BYTES = 100_000_000  # at or above this, use the ranged/resumable path
+
+# ADR-0002 hands out one HTTP session per thread rather than sharing one across a pool. Its
+# stated reason is curl_cffi-specific, but requests.Session is likewise not documented
+# thread-safe, and every fetch here runs under a ThreadPoolExecutor — so this follows the repo's
+# shape rather than relying on urllib3's pool happening to tolerate the sharing.
+_local = threading.local()
+
+
+def _session() -> requests.Session:
+    if not hasattr(_local, "s"):
+        _local.s = requests.Session()
+    return _local.s
 
 
 def remote_files() -> list[tuple[str, int]]:
@@ -51,7 +62,7 @@ def remote_files() -> list[tuple[str, int]]:
     return [(s.rfilename, s.size or 0) for s in sib if s.rfilename.startswith(PREFIX)]
 
 
-def fetch_small(sess, root: pathlib.Path, path: str, size: int) -> str | None:
+def fetch_small(root: pathlib.Path, path: str, size: int) -> str | None:
     """Whole-body GET, written .tmp then renamed.
 
     The rename is the point: a run killed mid-write leaves a .tmp, never a short file at the
@@ -65,7 +76,9 @@ def fetch_small(sess, root: pathlib.Path, path: str, size: int) -> str | None:
     auth = {"Authorization": f"Bearer {get_token()}"}
     for attempt in range(6):
         try:
-            r = sess.get(url, headers=auth, timeout=(15, 45), allow_redirects=True)
+            r = _session().get(
+                url, headers=auth, timeout=(15, 45), allow_redirects=True
+            )
             if r.status_code == 429:
                 raise requests.HTTPError("429", response=r)
             r.raise_for_status()
@@ -89,7 +102,6 @@ def fetch_small(sess, root: pathlib.Path, path: str, size: int) -> str | None:
             if resp is not None and resp.headers.get("Retry-After", "").isdigit():
                 wait = max(wait, int(resp.headers["Retry-After"]))
             time.sleep(wait)
-    return None
 
 
 def _chunks(size: int, chunk: int) -> list[tuple[int, int, int]]:
@@ -104,22 +116,31 @@ def _chunks(size: int, chunk: int) -> list[tuple[int, int, int]]:
     ]
 
 
+def _chunk_path(dest: pathlib.Path, i: int) -> pathlib.Path:
+    """Where chunk *i* of ``dest`` lives while it is being fetched."""
+    return dest.with_name(f"{dest.name}.c{i:04d}")
+
+
 def _on_disk(dest: pathlib.Path, plan: list[tuple[int, int, int]]) -> int:
     """Bytes of ``dest`` currently held across its chunk files."""
     return sum(
         f.stat().st_size
-        for f in (dest.with_name(f"{dest.name}.c{i:04d}") for i, _, _ in plan)
+        for f in (_chunk_path(dest, i) for i, _, _ in plan)
         if f.exists()
     )
 
 
-def _adopt_sequential_part(part: pathlib.Path, dest: pathlib.Path, chunk: int) -> None:
-    """Carve a whole-file .part left by a sequential run into per-chunk files.
+def _recover_partial_concat(part: pathlib.Path, dest: pathlib.Path, chunk: int) -> None:
+    """Carve a whole-file .part back into per-chunk files.
 
-    Without this, switching to the parallel path would throw away every byte already fetched.
-    The tail is kept as a *partial* chunk rather than discarded, so the changeover costs nothing
-    at all - the ranged fetch below simply resumes that chunk from where the sequential run
-    stopped.
+    This is the recovery path for a kill during CONCATENATION, which is the one window where
+    progress lives in two shapes at once: the concat loop appends each chunk to .part and
+    deletes it, so an interrupt leaves a .part holding chunks 0..k and chunk files for k+1..n.
+    Carving .part back into chunks 0..k restores one consistent shape and costs no refetch —
+    verified by simulating that interrupt on a 4-chunk file and rebuilding it byte-exact.
+
+    It relies on the chunk size being unchanged between runs, since the carve uses absolute
+    boundaries; ``--chunk-mb`` is therefore not safe to change mid-transfer (see main()).
     """
     total = part.stat().st_size
     print(f"  adopting {total / 1e6:,.0f} MB from the sequential .part", flush=True)
@@ -129,7 +150,7 @@ def _adopt_sequential_part(part: pathlib.Path, dest: pathlib.Path, chunk: int) -
             buf = src.read(chunk)
             if not buf:
                 break
-            cf = dest.with_name(f"{dest.name}.c{i:04d}")
+            cf = _chunk_path(dest, i)
             if not cf.exists() or cf.stat().st_size < len(buf):
                 cf.write_bytes(buf)
             i += 1
@@ -137,7 +158,7 @@ def _adopt_sequential_part(part: pathlib.Path, dest: pathlib.Path, chunk: int) -
 
 
 def fetch_big(
-    sess, root: pathlib.Path, path: str, size: int, workers: int, chunk: int
+    root: pathlib.Path, path: str, size: int, workers: int, chunk: int
 ) -> None:
     """Fetch one large file as CONCURRENT ranged chunks, then concatenate.
 
@@ -158,20 +179,35 @@ def fetch_big(
         f"big: {path}  ({size / 1e6:,.0f} MB, {chunk / 1e6:.0f} MB chunks)", flush=True
     )
     if legacy.exists():
-        _adopt_sequential_part(legacy, dest, chunk)
+        _recover_partial_concat(legacy, dest, chunk)
 
     plan = _chunks(size, chunk)
 
+    # Chunk boundaries are absolute, so a resume with a different --chunk-mb would carve the
+    # same bytes at different offsets and silently assemble a corrupt file. Refuse instead: any
+    # complete non-final chunk on disk must be exactly `chunk` bytes.
+    for i, lo, hi in plan[:-1]:
+        cf = _chunk_path(dest, i)
+        if cf.exists() and cf.stat().st_size not in (0, hi - lo):
+            raise SystemExit(
+                f"chunk {i} is {cf.stat().st_size:,} bytes but --chunk-mb implies {hi - lo:,}. "
+                f"A part-finished transfer cannot change chunk size; re-run without --chunk-mb, "
+                f"or delete {dest.name}.c* to start the file over."
+            )
+
     def one(spec: tuple[int, int, int]) -> int:
         i, lo, hi = spec
-        cf = dest.with_name(f"{dest.name}.c{i:04d}")
+        cf = _chunk_path(dest, i)
         want = hi - lo
         for attempt in range(8):
             have = cf.stat().st_size if cf.exists() else 0
+            # Return as soon as the chunk is whole. Falling through to the next iteration to
+            # discover that instead made every success return 0, so the progress line printed
+            # "0/11 chunks" for an entire transfer that completed.
             if have >= want:
-                return 0
+                return 1
             try:
-                r = sess.get(
+                r = _session().get(
                     url,
                     headers=dict(auth, Range=f"bytes={lo + have}-{hi - 1}"),
                     stream=True,
@@ -186,15 +222,14 @@ def fetch_big(
                         os.fsync(fh.fileno())
             except (requests.RequestException, OSError):
                 time.sleep(1.5 * (attempt + 1))
-        if cf.stat().st_size < want:
-            raise SystemExit(f"chunk {i} short: {cf.stat().st_size:,} < {want:,}")
-        return 1
+        raise OSError(
+            f"chunk {i} short after 8 attempts: {cf.stat().st_size:,} < {want:,}"
+        )
 
     todo = [
         c
         for c in plan
-        if not (d := dest.with_name(f"{dest.name}.c{c[0]:04d}")).exists()
-        or d.stat().st_size < c[2] - c[1]
+        if not (d := _chunk_path(dest, c[0])).exists() or d.stat().st_size < c[2] - c[1]
     ]
     print(f"  {len(plan) - len(todo)}/{len(plan)} chunks already complete", flush=True)
     # Bytes already on disk are excluded from the rate: counting adopted bytes against
@@ -217,7 +252,7 @@ def fetch_big(
     out = dest.with_name(dest.name + ".part")
     with open(out, "wb") as fh:
         for i, _, _ in plan:
-            cf = dest.with_name(f"{dest.name}.c{i:04d}")
+            cf = _chunk_path(dest, i)
             fh.write(cf.read_bytes())
             cf.unlink()
         fh.flush()
@@ -233,7 +268,6 @@ def fetch_big(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--root", default=".", help="repo root the data/ tree hangs off")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument(
         "--chunk-mb", type=int, default=32, help="ranged chunk size for big files"
@@ -243,7 +277,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    root = pathlib.Path(args.root)
+    root = pathlib.Path(".")  # the data/ tree hangs off the repo root; run from there
     remote = remote_files()
     missing = [(p, sz) for p, sz in remote if not (root / p).exists()]
     have_bytes = sum(sz for p, sz in remote if (root / p).exists())
@@ -261,13 +295,12 @@ def main() -> int:
         )
         return 0
 
-    sess = requests.Session()
-    small = [(p, sz) for p, sz in missing if sz < BIG]
-    big = [(p, sz) for p, sz in missing if sz >= BIG]
+    small = [(p, sz) for p, sz in missing if sz < BIG_FILE_BYTES]
+    big = [(p, sz) for p, sz in missing if sz >= BIG_FILE_BYTES]
 
     t0, done, failed = time.time(), 0, []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [pool.submit(fetch_small, sess, root, p, sz) for p, sz in small]
+        futures = [pool.submit(fetch_small, root, p, sz) for p, sz in small]
         for fut in as_completed(futures):
             err = fut.result()
             if err:
@@ -287,7 +320,7 @@ def main() -> int:
     )
 
     for path, size in big:
-        fetch_big(sess, root, path, size, args.workers, args.chunk_mb * 1_000_000)
+        fetch_big(root, path, size, args.workers, args.chunk_mb * 1_000_000)
 
     still = [p for p, _ in remote if not (root / p).exists()]
     if still:
