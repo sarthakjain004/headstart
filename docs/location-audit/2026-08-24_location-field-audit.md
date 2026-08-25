@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-24 · **Scope:** `Job.location` extraction across all 20 active scrapers
 (`join` excluded per ADR — non-tech noise) · **Fixes:** darwinbox, successfactors, keka,
-greenhouse · **Method:** live-sampled every scraper via the real registered `fetch_raw()` +
+greenhouse, recruitee (added 2026-08-25) · **Method:** live-sampled every scraper via the real registered `fetch_raw()` +
 `parse()` path, then live-verified every fix against its full live board population
 
 ## Summary — verdict per ATS
@@ -18,7 +18,7 @@ greenhouse · **Method:** live-sampled every scraper via the real registered `fe
 | lever | clean | flagged "short" value was `"UK"`, same false positive as ashby |
 | oracle | not sampled | zero live boards in the liveness ledger (curated single-company unlocks only, per CLAUDE.md) |
 | personio | clean | no issues found |
-| recruitee | clean | no issues found |
+| recruitee | **fixed** (2026-08-25) | missed on 2026-08-24: a *localized* remote marker (`Remote job`, `Poste à distance`, `Homeoffice`, `Werken op afstand`, `Trabajo a distancia`) sat in `location` and, being truthy, swallowed the structured city/country the same offer carried. 476 of 1,922 offers across 138 live Boards. Fixed by detecting the marker structurally — a `location` not naming the offer's own `city` — rather than by listing strings; live re-check on 89 Boards recovered 53 with 0 regressions |
 | ripplehire | clean | no issues found |
 | rippling | clean | no issues found |
 | sensehq | not sampled | zero live boards in the liveness ledger |
@@ -30,12 +30,26 @@ greenhouse · **Method:** live-sampled every scraper via the real registered `fe
 | workday | clean | already has sophisticated rollup-detection + detail-page repair (see below) — the reference bar the other fixes were measured against |
 | zoho | clean | 38.5% null on a 1,305-job sample, **100% correlated with `Remote_Job: True`** — fully-remote postings genuinely have no physical location upstream; the scraper is correctly passing that through |
 
-Fourteen of twenty were genuinely clean, four had real bugs fixed here, and two (oracle,
+Thirteen of twenty were genuinely clean, five had real bugs fixed here, and two (oracle,
 sensehq) have no live boards to sample — curated single-company unlocks per the CLAUDE.md
-ATS-expansion notes, not a scraped population. Three of the fourteen clean ones (ashby, lever,
+ATS-expansion notes, not a scraped population. Three of the thirteen clean ones (ashby, lever,
 trakstar) were flagged as suspicious by an automated heuristic and turned out to be correct
 short values on inspection — two 2-letter country codes and one genuinely short city name — a
 reminder that "looks short" is not itself evidence.
+
+### What the 2026-08-24 pass missed on recruitee
+
+Worth recording, because the miss has a cause that generalises. This audit sampled recruitee and
+found nothing, and the reason is that the defect is invisible to an English-language reading:
+`Poste à distance` and `Homeoffice` look exactly like ordinary place strings unless you compare
+them against the `city` the same offer carries. The automated metric had the same blind spot —
+`location_filter_audit.py`'s `_PLACELESS` tuple lists `remote job` but none of the localized
+markers, so it counted 269 French and 80 German markers as valid places and under-reported the
+recruitee population it was meant to size.
+
+The generalising lesson: for a European ATS, "is this string a place?" cannot be answered from a
+token list in one language. Compare against the record's own structured fields instead. The same
+question is open for every other ATS here that serves non-English boards.
 
 ## Method
 
