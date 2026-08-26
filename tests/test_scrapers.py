@@ -272,6 +272,137 @@ def test_lever_location_country_recognizes_usa_short_form():
     assert jobs[0].location == "Select USA Remote Locations"
 
 
+def test_ashby_location_keeps_every_place_the_record_names():
+    """The served location IS the filter substrate — `geo.where()` is a raw substring LIKE
+    (ADR-0024) — so a place absent from this string is unfilterable however well the record
+    knows it. Measured 2026-08-25 over 884 live Boards / 16,138 Jobs: 69.55% shipped no country
+    at all, 79.43% omitted some populated component of their own address, and 17.5% had a
+    `secondaryLocations[]` nothing ever opened.
+    """
+    from headstart.scrapers.ashby import _location
+
+    # a real kafene posting: served as "Panama City", losing its country AND a Guatemala
+    # secondary, so neither a Panama nor a Guatemala filter could find it
+    assert (
+        _location(
+            {
+                "location": "Panama City",
+                "address": {"postalAddress": {"addressCountry": "Panama"}},
+                "secondaryLocations": [
+                    {
+                        "location": "Guatemala City",
+                        "address": {
+                            "postalAddress": {
+                                "addressRegion": "Guatemala ",
+                                "addressCountry": "Guatemala",
+                                "addressLocality": "Guatemala City",
+                            }
+                        },
+                    }
+                ],
+            }
+        )
+        == "Panama City, Guatemala City"
+    )
+
+    # the India shape — the country must be appended, since "india" is not inside "Bengaluru"
+    assert (
+        _location(
+            {
+                "location": "Bengaluru",
+                "address": {"postalAddress": {"addressCountry": "India"}},
+            }
+        )
+        == "Bengaluru, India"
+    )
+    assert _location({}) is None
+
+
+def test_ashby_location_is_additive_and_never_repeats_a_place():
+    """Components are appended only when they aren't already named, as a whole word, in what
+    has been kept so far.
+
+    That whole-word test is the right one *because* the filter is a substring match: "Panama"
+    needs no separate entry beside "Panama City", but "India" does beside "Bengaluru". It also
+    keeps the employer's own wording, which is the better display text.
+    """
+    from headstart.scrapers.ashby import _location
+
+    assert (
+        _location(
+            {
+                "location": "SpotDraft HQ, Bengaluru",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Bengaluru",
+                        "addressCountry": "India",
+                    }
+                },
+            }
+        )
+        == "SpotDraft HQ, Bengaluru, India"
+    )
+    # already complete — nothing to add, and no duplication
+    assert (
+        _location(
+            {
+                "location": "Berlin, Germany",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Berlin",
+                        "addressCountry": "Germany",
+                    }
+                },
+            }
+        )
+        == "Berlin, Germany"
+    )
+    # a tenant shipping "Guatemala " with a trailing space must not leak it into the join
+    assert (
+        _location({"address": {"postalAddress": {"addressCountry": "Guatemala "}}})
+        == "Guatemala"
+    )
+    # a bare substring check would wrongly read "CA" as already present inside "Vacaville"
+    # (code review round 1) and drop the state — the whole-word test must still add it
+    assert (
+        _location(
+            {
+                "location": "Vacaville",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Vacaville",
+                        "addressRegion": "CA",
+                        "addressCountry": "United States",
+                    }
+                },
+            }
+        )
+        == "Vacaville, CA, United States"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workplace", "is_remote", "expected"),
+    [
+        ("Remote", True, True),
+        ("OnSite", False, False),
+        # the defect: ashby's own `isRemote` is `workplaceType != "OnSite"`, so Hybrid arrives
+        # as True. 4,183 of 16,138 live Jobs (25.9%) were served remote=True on this shape.
+        ("Hybrid", True, None),
+        (None, None, None),
+        # no workplaceType at all: fall back to the flag rather than invent an answer
+        (None, True, True),
+    ],
+)
+def test_ashby_hybrid_is_not_remote(workplace, is_remote, expected):
+    """`Job.remote` is tri-state and hybrid is what None is for — it is neither remote nor
+    on-site, and asserting either is a guess. `workday._remote_from` already answers it this
+    way; this brings ashby into line rather than inventing a convention."""
+    from headstart.scrapers.ashby import _remote
+
+    assert _remote({"workplaceType": workplace, "isRemote": is_remote}) is expected
+
+
 def test_ashby_parse_skips_unlisted():
     raw = _load("ashby_ramp.json")
     jobs = get_scraper("ashby", "ramp", "Ramp").parse(raw, SCRAPED_AT)
@@ -281,7 +412,16 @@ def test_ashby_parse_skips_unlisted():
     assert j.id == "ashby:ramp:34413f8d-26bf-4bbc-8ade-eb309a0e2245"
     assert j.title == "Security Engineer, Cloud"  # leading space stripped
     assert j.department == "Engineering"
-    assert j.remote is True
+    # `workplaceType: "Hybrid"` with `isRemote: true` — this assertion used to read `is True`,
+    # which encoded the defect: ashby's `isRemote` is exactly `workplaceType != "OnSite"`, so it
+    # calls Hybrid remote. Tri-state None is the honest answer and matches `workday._remote_from`.
+    assert j.remote is None
+    # a two-city posting: the headline names only the HQ, the record also carries a Miami
+    # secondary and the country, none of which used to reach the served row
+    assert j.location == (
+        "New York, NY (HQ), New York City, USA, Miami, FL, Florida, "
+        "Remote (US), United States, Remote (Canada)"
+    )
     assert j.employment_type == "FullTime"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
     # this fixture predates compensationTiers (only compensationTierSummary is present) — real,
@@ -649,7 +789,7 @@ def test_smartrecruiters_description_joins_requirement_sections():
             }
 
     scraper = get_scraper("smartrecruiters", "acme", "Acme")
-    text = scraper._extract_description(_Resp())
+    text = scraper._extract_detail(_Resp())["description"]
     assert "Build things" in text
     assert "5+ years of experience" in text  # qualifications must ride along
     assert "Perks" in text
@@ -699,13 +839,216 @@ def test_smartrecruiters_compensation_custom_field_absent_leaves_description_unc
                     "customField": [
                         {"fieldLabel": "Country/Region", "valueLabel": "New Zealand"},
                     ],
-                    "_description": "<p>Build things</p>",
+                    "_detail": {"description": "<p>Build things</p>"},
                 }
             ]
         },
         SCRAPED_AT,
     )
     assert jobs[0].description == "Build things"
+
+
+@pytest.mark.parametrize(
+    ("compensation", "expected"),
+    [
+        (
+            {"min": 70000, "max": 85000, "currency": "EUR", "period": "YEARLY"},
+            "70000-85000 EUR 1 YEAR",
+        ),
+        (
+            {"min": 3500, "max": 4000, "currency": "CNY", "period": "MONTHLY"},
+            "3500-4000 CNY 1 MONTH",
+        ),
+        (
+            {"min": 25, "max": 28, "currency": "NZD", "period": "WEEKLY"},
+            "25-28 NZD 1 WEEK",
+        ),
+        (
+            {"min": 160000, "max": 185000, "currency": "USD", "period": "YEARLY"},
+            "160000-185000 USD 1 YEAR",
+        ),
+        # junk values are real (direct API inspection, 2026-08-25) and must be checked with
+        # `is not None`, not truthiness — a truthy check on a real 0 would misread it as absent
+        # rather than format and correctly decline it downstream in salary.py's `_bounded`.
+        ({"min": 1, "max": 1, "currency": "GTQ"}, "1-1 GTQ"),
+        # min/max both absent (only currency/period stated) is genuinely no figure to report.
+        ({"currency": "USD", "period": "YEARLY"}, None),
+        ({}, None),
+        (None, None),
+        # max-only ("up to $X") is declined outright, not passed through as a bare single value —
+        # that path always reads as floor-only, which would silently misreport a stated ceiling as
+        # an unbounded floor. `{"max": 0, ...}` used to format as "0 GBP" (still correctly declined
+        # downstream by `_bounded`, since 0 is below every currency's floor) but a real nonzero
+        # ceiling like the live-verified `{"max": 12150, "currency": "MXN", "period": "MONTHLY"}`
+        # (2026-08-26, 1/19 populated compensation blocks across 60 boards/348 postings) clears
+        # `_bounded`'s USD-fallback plausibility bounds cleanly and would ship as a confident wrong
+        # number instead — so both decline the same way now.
+        ({"max": 0, "currency": "GBP"}, None),
+        ({"max": 12150, "currency": "MXN", "period": "MONTHLY"}, None),
+        # min-only ("$X+, no stated ceiling") is a genuine floor-only disclosure, not the same
+        # ambiguity as max-only — unaffected by the max-only decline above and still passed
+        # through as a bare single value, which correctly reads as floor-only.
+        ({"min": 65000, "currency": "USD", "period": "YEARLY"}, "65000 USD 1 YEAR"),
+    ],
+)
+def test_smartrecruiters_salary_from_native_compensation_block(compensation, expected):
+    """Real, direct API inspection (2026-08-25,
+    experiment/location-audit-2026-08-25/smartrecruiters.md): the posting-detail response carries
+    a native `compensation.{min,max,currency,period}` block on 10.48% of postings, previously
+    never read. The adverb period SmartRecruiters itself sends ("YEARLY", "MONTHLY", ...) is
+    mapped to the singular bare word ("1 YEAR", "1 MONTH", ...) salary.py's
+    `_field_range_currency_interval` recognizes — the raw adverb does not match its bare-word
+    regex and would silently default to the annual multiplier instead of annualizing."""
+    from headstart.scrapers.smartrecruiters import _salary
+
+    assert _salary(compensation) == expected
+
+
+def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_one_response():
+    """The compensation fix must cost zero extra requests: both fields come off the SAME
+    posting-detail response the scraper already fetches for the description alone."""
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobAd": {
+                    "sections": {"jobDescription": {"text": "<p>Build things</p>"}}
+                },
+                "compensation": {
+                    "min": 70000,
+                    "max": 85000,
+                    "currency": "EUR",
+                    "period": "YEARLY",
+                },
+            }
+
+    detail = SmartRecruitersScraper._extract_detail(_Resp())
+    assert detail == {
+        "description": "<p>Build things</p>",
+        "compensation": {
+            "min": 70000,
+            "max": 85000,
+            "currency": "EUR",
+            "period": "YEARLY",
+        },
+    }
+
+
+def test_smartrecruiters_extract_detail_missing_compensation_is_none():
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"jobAd": {"sections": {"jobDescription": {"text": "<p>Role</p>"}}}}
+
+    detail = SmartRecruitersScraper._extract_detail(_Resp())
+    assert detail["compensation"] is None
+
+
+def test_smartrecruiters_parse_maps_native_compensation_into_job_salary():
+    """End-to-end: a posting whose detail carries the native `compensation` block gets a
+    populated `Job.salary`, formatted so `headstart.salary.extract` parses it as Tier 1."""
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Senior Analytics Engineer",
+                    "location": {},
+                    "_detail": {
+                        "description": "<p>Build things</p>",
+                        "compensation": {
+                            "min": 70000,
+                            "max": 85000,
+                            "currency": "EUR",
+                            "period": "YEARLY",
+                        },
+                    },
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    j = jobs[0]
+    assert j.salary == "70000-85000 EUR 1 YEAR"
+
+    from headstart.salary import SalarySpan, extract
+
+    assert extract(j.salary, j.description, "smartrecruiters") == SalarySpan(
+        70000, 85000, "EUR", "field"
+    )
+
+
+def test_smartrecruiters_parse_no_compensation_leaves_salary_none():
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {},
+                    "_detail": {"description": "<p>Build things</p>"},
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].salary is None
+
+
+def test_smartrecruiters_location_collapses_blank_region_comma_segment():
+    """Cosmetic-only fix (experiment/location-audit-2026-08-25/smartrecruiters.md §3d):
+    `fullLocation` carries an empty comma segment on 10.54% of postings when `location.region`
+    is blank — the same defect class already fixed on darwinbox (identical comma-split, strip,
+    drop-empties, rejoin) and, differently, on keka (per-field strip only — keka's location
+    arrives as discrete city/state/country fields, not one joined string to split).
+    `fullLocation` itself is a 100.00%-populated ceiling and stays the primary source; only its
+    formatting is cleaned up."""
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {
+                        "city": "Singapore",
+                        "country": "sg",
+                        "fullLocation": "Singapore, , Singapore",
+                    },
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Singapore, Singapore"
+
+
+def test_smartrecruiters_location_with_region_is_unaffected():
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {
+                        "city": "Irving",
+                        "region": "TX",
+                        "country": "us",
+                        "fullLocation": "Irving, TX, United States",
+                    },
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Irving, TX, United States"
 
 
 def _sr_offline(monkeypatch, scraper, payload):
@@ -967,6 +1310,207 @@ def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
     ]
     # only the description-less job triggered a detail call
     assert sum("candidatejobdetail" in u for u in calls) == 1
+
+
+def test_ripplehire_fetch_raw_attaches_full_detail_record(monkeypatch):
+    """`fetch_raw` already fetches `jobVO` per job for the description — `parse` needs the rest
+    of that same record (department/posted_at/employment_type/salary), so `fetch_raw` must keep
+    it rather than reading only `jobDesc` back out of it and discarding the rest."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    class _Resp:
+        def __init__(self, url="", payload=None):
+            self.url = url
+            self._payload = payload
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._payload
+
+    def _fetch(method, url, **kwargs):
+        if url.endswith("/candidate/careers"):
+            return _Resp(url="https://x.ripplehire.com/candidate/?token=TOK123")
+        if "candidatejobsearch" in url:
+            return _Resp(
+                payload={
+                    "jobVoList": [{"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None}],
+                    "totalJobCount": 1,
+                }
+            )
+        return _Resp(
+            payload={
+                "jobVO": {
+                    "jobDesc": "<p>desc</p>",
+                    "bussinessUnit": "Technology",
+                    "jobPostingDate": "23-Jun-2020",
+                }
+            }
+        )
+
+    import headstart.scrapers.ripplehire as rh
+
+    monkeypatch.setattr(rh.http, "fetch", _fetch)
+    raw = get_scraper("ripplehire", "x", "X").fetch_raw()
+    assert raw[0]["_detail"]["bussinessUnit"] == "Technology"
+    assert raw[0]["_detail"]["jobPostingDate"] == "23-Jun-2020"
+
+
+def test_ripplehire_location_joins_city_and_country():
+    """`locations` is the city field (2,613 distinct values fleet-wide); `jobLocation` is a
+    34-value country picker. The old `jobLocation or locations` served the coarser value and
+    silently dropped the city on every job carrying both — 33.21% of the corpus, live-verified
+    2026-08-25 (experiment/location-audit-2026-08-25/ripplehire.md). The fix joins both, so a
+    `geo.where(city)` filter can still match."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            # both present, disjoint -> join, city first
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                "locations": "Mumbai",
+                "jobLocation": "India",
+            },
+            # jobLocation already a substring of the composed string -> no duplicate
+            {
+                "jobSeq": 2,
+                "jobTitle": "B",
+                "locations": "Mumbai, India",
+                "jobLocation": "India",
+            },
+            # locations absent -> jobLocation alone
+            {"jobSeq": 3, "jobTitle": "C", "locations": None, "jobLocation": "USA"},
+            # multi-city locations, untrimmed parts -> each stripped, country appended
+            {
+                "jobSeq": 4,
+                "jobTitle": "D",
+                "locations": "Chennai , Bengaluru ,Pune",
+                "jobLocation": "India",
+            },
+            # both absent -> None
+            {"jobSeq": 5, "jobTitle": "E", "locations": None, "jobLocation": None},
+        ],
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Mumbai, India"
+    assert jobs[1].location == "Mumbai, India"  # not "Mumbai, India, India"
+    assert jobs[2].location == "USA"
+    assert jobs[3].location == "Chennai, Bengaluru, Pune, India"
+    assert jobs[4].location is None
+
+
+def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail():
+    """The search list's `bussinessUnit`/`jobPostingDate`/`jobType`/`compensationRange` are
+    always empty (live-verified across all 18,659 jobs on all 55 boards, 2026-08-25) — the real
+    values live in the `jobVO` detail record `fetch_raw` already downloads for every job's
+    description. `parse` must read the four fields from there, not the always-empty list keys."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                # list-side fields: always empty in production, present here only to prove
+                # they are NOT what wins
+                "bussinessUnit": None,
+                "jobPostingDate": None,
+                "jobType": None,
+                "compensationRange": None,
+                "_detail": {
+                    "bussinessUnit": "Technology",
+                    "jobPostingDate": "23-Jun-2020",
+                    "jobType": "R",  # a requisition-type code, not an employment type
+                    "jobTypeCustom3": "Full time",
+                    "compensationRange": "Compensation range: $ 46,417.00 to 77,864.00 per year",
+                },
+            },
+            # no detail record at all (e.g. the per-job fetch failed) -> falls back, stays None
+            {"jobSeq": 2, "jobTitle": "B"},
+            # no detail record, but list-side keys present -> the safety net must actually
+            # recover them, not just fall through to None (department/posted_at/salary only;
+            # employment_type has no list-side fallback, see parse()'s own comment)
+            {
+                "jobSeq": 3,
+                "jobTitle": "C",
+                "bussinessUnit": "Finance",
+                "jobPostingDate": "01-Jan-2021",
+                "compensationRange": "10-15 LPA",
+            },
+        ],
+        SCRAPED_AT,
+    )
+    j = jobs[0]
+    assert j.department == "Technology"
+    assert j.posted_at == "23-Jun-2020"
+    assert j.employment_type == "Full time"  # jobTypeCustom3, not the coded jobType "R"
+    assert j.salary == "Compensation range: $ 46,417.00 to 77,864.00 per year"
+
+    j2 = jobs[1]
+    assert j2.department is None
+    assert j2.posted_at is None
+    assert j2.employment_type is None
+    assert j2.salary is None
+
+    j3 = jobs[2]
+    assert j3.department == "Finance"
+    assert j3.posted_at == "01-Jan-2021"
+    assert j3.salary == "10-15 LPA"
+
+
+def test_ripplehire_prefers_publish_details_iso_timestamp_for_posted_at():
+    """`publishDetails.CAREER_SITE` is a real ISO-8601 timestamp for the same posting
+    `jobPostingDate` gives as `"23-Jun-2020"` — prefer it when present (Job.posted_at's own
+    contract: "ISO-8601 if the source provides it"), falling back to the non-ISO date otherwise."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                "_detail": {
+                    "jobPostingDate": "23-Jun-2020",
+                    "publishDetails": {"CAREER_SITE": "2026-07-16T13:53:16Z"},
+                },
+            },
+        ],
+        SCRAPED_AT,
+    )
+    assert jobs[0].posted_at == "2026-07-16T13:53:16Z"
+
+
+def test_ripplehire_does_not_carry_month_valued_exp_fields_across_the_unit_trap():
+    """`jobMinExp`/`jobMaxExp` are YEARS on the search list but MONTHS on the `jobVO` detail
+    record for the SAME job — confirmed live 2026-08-25 across 160 paired records, exactly x12
+    (e.g. "4 - 6 Years" list-side pairs with jobMinExp=48/jobMaxExp=72 in the detail record).
+    `jobReqExp` is identical text on both surfaces and is the only experience field this scraper
+    reads; this pins that reading the (now-consulted) detail record for other fields does not
+    let the month-valued pair leak into `experience`."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                "jobReqExp": "4 - 6 Years",
+                "jobMinExp": 4,  # years, list-side
+                "jobMaxExp": 6,
+                "_detail": {
+                    "jobReqExp": "4 - 6 Years",
+                    "jobMinExp": 48,  # months, detail-side — same job, x12
+                    "jobMaxExp": 72,
+                },
+            },
+        ],
+        SCRAPED_AT,
+    )
+    assert jobs[0].experience == "4 - 6 Years"
 
 
 def _darwinbox_curl_wall(monkeypatch):
@@ -1279,6 +1823,135 @@ def test_workday_extract_detail_carries_the_location_fields():
     assert got["jobReqId"] == "JR00258"  # _posting_key's preferred source (option A2)
 
 
+def test_workday_extract_detail_carries_the_country_field():
+    """`jobPostingInfo.country.descriptor` is populated on 99.06% of detail records
+    (experiment/location-audit-2026-08-25/workday.md) and `_extract_detail` never copied it —
+    the fetch-side half of the country fix, same shape as the location-fields test above."""
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobPostingInfo": {
+                    "jobDescription": "<p>hi</p>",
+                    "location": "Ottawa, ON",
+                    "country": {"descriptor": "Canada", "id": "abc123"},
+                }
+            }
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    got = WorkdayScraper._extract_detail(_Response())
+    assert got["country"] == "Canada"
+
+
+def test_workday_appends_the_country_the_listing_never_named():
+    """The defect: 81.45% of served locations never name the country, even though
+    `jobPostingInfo.country.descriptor` sits in the same already-fetched detail response
+    `_location_from` already reads for the rollup repair (measured 2026-08-25,
+    experiment/location-audit-2026-08-25/workday.md). A real listing location is the common
+    case — `_location_from` used to return it before ever consulting the detail's country."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Ottawa, ON",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "Canada"},
+        },
+        {
+            "title": "B",
+            "locationsText": "Fairfield, IA",
+            "bulletFields": ["R2"],
+            "_detail": {"country": "United States of America"},
+        },
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Ottawa, ON; Canada"
+    assert jobs[1].location == "Fairfield, IA; United States of America"
+
+
+def test_workday_does_not_duplicate_a_country_already_named_in_the_location():
+    """Additive, not replacing: a location that already names the country (case-insensitive
+    substring) must not gain a duplicate — the served filter is a raw substring LIKE
+    (ADR-0024)."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Cork, Ireland",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "IRELAND"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Cork, Ireland"
+
+
+def test_workday_country_composes_with_the_rollup_repair():
+    """The country append is a final step over whatever `_location_from` already produced —
+    including the detail-repaired rollup case — not a special case of the plain-listing path."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "5 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {
+                "location": "London",
+                "additionalLocations": ["Dublin", "Warsaw", "Paris", "Berlin"],
+                "country": "United Kingdom",
+            },
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "London; Dublin; Warsaw; Paris; Berlin; United Kingdom"
+
+
+def test_workday_country_absent_leaves_location_unchanged():
+    """No detail country (0.94% of records, or a failed detail fetch) must not error or alter
+    the location — additive only, never a required field."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Austin, TX",
+            "bulletFields": ["R1"],
+            "_detail": {},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Austin, TX"
+
+
+def test_workday_country_does_not_taint_an_unrepaired_rollup():
+    """A rollup that survives (detail present but with no `location`/`additionalLocations` to
+    repair it) must not gain a country either — `parse()`'s remote-detection guard keys on
+    `_is_rollup` matching the exact "N Locations" string, and appending "; Canada" to it would
+    break that match, silently flipping `Job.remote` from an honest `None` to an incorrect
+    `False` (the "asserts on-site when we can't tell" failure the module's own docstring warns
+    against)."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "2 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "Canada"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "2 Locations"
+    assert jobs[0].remote is None
+
+
 def test_workday_keeps_the_rollup_when_the_detail_never_arrived():
     """A failed detail fetch leaves `_detail` empty and the Job is still kept (module
     docstring). Better a rollup string than None — it is what the listing said."""
@@ -1293,26 +1966,39 @@ def test_freshteam_parse():
     jobs = get_scraper("freshteam", "12min", "12min").parse(
         _load("freshteam_12min.json"), SCRAPED_AT
     )
-    assert len(jobs) == 3  # the deleted=true job is dropped
+    assert len(jobs) == 4  # the deleted=true job is dropped
 
-    marketing, backend, sre = jobs
+    marketing, backend, sre, platform = jobs
     assert marketing.id == "freshteam:12min:1000070208"  # numeric id, not unique_id
     assert marketing.company == "12min"
     assert (
         marketing.title == "Email Marketing & Lifecycle Automation Specialist (Remote)"
     )
-    assert marketing.location == "Belo Horizonte, Brazil"  # branch_id join
+    # preferred_remote_job_locations replaces the branch join (Brazil) for a remote job whose
+    # real hiring geography is elsewhere — the branch is the tenant's registered office, not
+    # where the work is.
+    assert marketing.location == "Remote, United States of America"
     assert marketing.remote is True  # native remote flag
     assert marketing.department == "Marketing"  # job_role_id join
     assert marketing.url.startswith("https://12min.freshteam.com/jobs/")
     assert marketing.posted_at == "2025-02-06T19:22:55.000Z"
     assert marketing.description and "</" not in marketing.description  # HTML stripped
-    assert marketing.employment_type is None  # job_type enum left unmapped
+    assert marketing.employment_type == "Contract"  # job_type 1
 
-    # native remote=false, physical branch -> not remote
+    # native remote=false, physical branch, no preferred_remote_job_locations -> untouched
     assert backend.location == "Bengaluru, India" and backend.remote is False
+    assert backend.employment_type == "Full Time"  # job_type 2
     # native remote=false but the branch location literally says "Remote" -> both-family recovers it
     assert sre.location == "Remote - India" and sre.remote is True
+    assert sre.employment_type is None  # job_type absent from the payload
+
+    # branch is Singapore, but preferred_remote_job_locations names India + Vietnam: the wrong
+    # branch country must NOT ride along next to the real ones (that's the false-positive/
+    # false-negative bug), and multiple places join with "; " like workday's multi-location strings.
+    assert platform.location == "India, India; Vietnam, Viet Nam"
+    assert "Singapore" not in platform.location
+    assert platform.remote is True
+    assert platform.employment_type == "Fixed Term Contract"  # job_type 8
 
 
 def test_freshteam_dead_tenant_is_empty():
@@ -1828,6 +2514,192 @@ def test_trakstar_fetch_via_feed_returns_jobs_when_available(monkeypatch):
     assert jobs[0].id == "trakstar:acme:fk0abc1"
 
 
+def _trakstar_cards_page(n_cards, total=None):
+    """A minimal careers-page HTML with ``n_cards`` job cards and, when ``total`` is given, the
+    page's own "View N Openings" button (real markup shape, live-fetched 2026-08-25:
+    ``<a class="js-show-openings ..." href="#content">View 634 Openings</a>``)."""
+    button = (
+        f'<a class="js-show-openings btn" href="#content">View {total} Openings</a>'
+        if total is not None
+        else ""
+    )
+    cards = "".join(
+        f'<div class="js-careers-page-job-list-item" data-href="/jobs/code{i}/">'
+        f'<h3 class="js-job-list-opening-name" title="Job {i}">Job {i}</h3>'
+        f'<div class="js-job-list-opening-loc" title="Remote">Remote</div>'
+        f"</div>"
+        for i in range(n_cards)
+    )
+    return f"<html><body>{button}{cards}</body></html>"
+
+
+def test_trakstar_is_capped_true_when_total_exceeds_cards():
+    from headstart.scrapers.trakstar import _is_capped
+
+    html = _trakstar_cards_page(25, total=40)
+    assert _is_capped(html, 25) is True
+
+
+def test_trakstar_is_capped_false_when_total_matches_cards_at_the_render_cap():
+    # A Board can genuinely have exactly 25 real postings (confirmed live 2026-08-25:
+    # interglobalhomes, 2workonline1, dataentrydirect) -- the card count alone can't tell that
+    # apart from a truncated one, but the page's own total can, and must not trigger a wasted
+    # RSS fetch.
+    from headstart.scrapers.trakstar import _is_capped
+
+    html = _trakstar_cards_page(25, total=25)
+    assert _is_capped(html, 25) is False
+
+
+def test_trakstar_is_capped_falls_back_to_card_count_without_a_total():
+    from headstart.scrapers.trakstar import _is_capped
+
+    assert _is_capped(_trakstar_cards_page(25), 25) is True
+    assert _is_capped(_trakstar_cards_page(24), 24) is False
+
+
+def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass(
+    monkeypatch,
+):
+    """A capped Board (sleekr/colcare-shaped: 25 cards, a higher total) whose feed answers must
+    return the feed's jobs -- and must never fetch a single per-job detail page for the cards
+    it's about to discard (those pages sit behind DataDome; the feed already has the full
+    description inline)."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=40))
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: _TRAKSTAR_FEED)
+    detail_calls = []
+    monkeypatch.setattr(s, "_job_posting", lambda code: detail_calls.append(code))
+
+    raw = s.fetch_raw()
+
+    assert detail_calls == []  # the capped cards' detail pages were never fetched
+    assert raw == {"feed_items": trakstar_module._feed_items(_TRAKSTAR_FEED)}
+    jobs = s.parse(raw, SCRAPED_AT)
+    assert len(jobs) == 2
+    assert jobs[0].id == "trakstar:acme:fk0abc1"
+    assert s.truncated is None  # the feed answered in full -- this Board is not short
+
+
+def test_trakstar_fetch_raw_skips_feed_when_not_capped(monkeypatch):
+    """The 92%+ of Boards under the render cap must cost exactly the one careers-page request
+    they always did -- no RSS fetch, since there's nothing the cards are missing."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(3, total=3))
+
+    def boom_feed(slug):
+        raise AssertionError("must not fetch the RSS feed when the Board isn't capped")
+
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", boom_feed)
+    monkeypatch.setattr(s, "_job_posting", lambda code: None)
+
+    raw = s.fetch_raw()
+
+    assert "feed_items" not in raw
+    assert len(raw["postings"]) == 3
+    assert s.truncated is None
+
+
+def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
+    """sleekr-shaped live case: capped (25 cards, real total higher) but the feed 404s. The
+    capped HTML list must still come back -- not an empty Board -- and the Board must be marked
+    truncated now that the page's own total makes the shortfall provable, not just suspected."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(s, "_get", lambda url=None: _trakstar_cards_page(25, total=77))
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(s, "_job_posting", lambda code: None)
+
+    raw = s.fetch_raw()
+
+    assert "feed_items" not in raw
+    assert len(raw["postings"]) == 25
+    jobs = s.parse(raw, SCRAPED_AT)
+    assert len(jobs) == 25
+    assert s.truncated is not None
+    assert "unreachable" in s.truncated
+
+
+def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alone(
+    monkeypatch,
+):
+    """A Board with no "View N Openings" total on the page (_is_capped falls back to the bare
+    card-count heuristic) that also lands on the cap and has an unreachable feed must NOT be
+    marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
+    deliberately declined to mark_truncated for; only the page's own total turns that into
+    proof, and this Board never had one."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        s, "_get", lambda url=None: _trakstar_cards_page(25)
+    )  # no total button
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(s, "_job_posting", lambda code: None)
+
+    raw = s.fetch_raw()
+
+    assert "feed_items" not in raw
+    assert len(raw["postings"]) == 25
+    assert s.truncated is None
+
+
+def test_trakstar_feed_location_strips_each_part():
+    # real values, live-fetched 2026-08-25 (americandirectlogistic): a bare field routinely
+    # carries a stray space that an unstripped join turns into 'fort worth , tx , usa '
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("fort worth ", "tx ", "usa ") == "fort worth, tx, usa"
+
+
+def test_trakstar_feed_location_drops_whitespace_only_part():
+    # real values, live-fetched 2026-08-25 (ihjez): a blank part can be a lone space, not "",
+    # which the old `if part` truthy check let through as a dangling comma
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("Amman", " ", "Jordan") == "Amman, Jordan"
+
+
+def test_trakstar_feed_location_drops_state_that_repeats_city():
+    # real values, live-fetched 2026-08-25 (anduin), re-confirmed live 2026-08-26 -- see
+    # docs/location-audit/2026-08-26_trakstar-cap-verification.md for how common this is
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("Hamburg", "Hamburg", "Deutschland") == "Hamburg, Deutschland"
+    assert (
+        _feed_location("Ho Chi Minh City", "Ho Chi Minh City", "Vietnam")
+        == "Ho Chi Minh City, Vietnam"
+    )
+
+
+def test_trakstar_feed_location_all_blank_is_none():
+    from headstart.scrapers.trakstar import _feed_location
+
+    assert _feed_location("", "", "") is None
+
+
+def test_trakstar_feed_items_cleans_dirty_location_end_to_end():
+    from headstart.scrapers.trakstar import _feed_items
+
+    xml = """<rss><channel xmlns:job="https://recruiterbox.com/rss/job/">
+    <item><title>Ops</title><link>http://acme.hire.trakstar.com/jobs/fk0aaa1/</link>
+    <description></description>
+    <job:locationCity>Hamburg</job:locationCity><job:locationState>Hamburg</job:locationState>
+    <job:locationCountry> Deutschland </job:locationCountry></item>
+    </channel></rss>"""
+    items = _feed_items(xml)
+    assert items[0]["location"] == "Hamburg, Deutschland"
+
+
 def test_recruitee_url_ignores_the_customers_vanity_domain():
     """The API's `careers_url` is whatever domain the customer configured, and a third of
     those do not serve the board (transperfect.com/o/… 404s while the job is open). Build the
@@ -1932,6 +2804,95 @@ def test_recruitee_salary_formatting():
         {"min": 50000, "max": 70000, "currency": "EUR", "period": "year"}
     ) == ("50000-70000 EUR year")
     assert _salary({"min": 80000, "currency": "USD"}) == "80000 USD"  # one-sided range
+
+
+def _teamtailor_pages(monkeypatch, scraper, pages):
+    """Serve `pages` (a list of item-id lists) from jobs.json, recording each URL requested."""
+    asked: list[str] = []
+
+    def _get(self, url=None):
+        asked.append(url or "")
+        index = 0
+        if url and "page=" in url:
+            index = int(url.rsplit("page=", 1)[1]) - 1
+        items = pages[index] if index < len(pages) else []
+        return json.dumps(
+            {"title": "Co", "items": [{"id": i, "title": f"J{i}"} for i in items]}
+        )
+
+    monkeypatch.setattr(type(scraper), "_get", _get)
+    return asked
+
+
+def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
+    """`jobs.json` serves at most 100 items and `?page=N` walks the rest.
+
+    Measured 2026-08-25 over 766 live Boards: 27 sat at exactly 100 and paging them out found
+    4,046 Jobs — 26.4% of that sample's corpus — never scraped. A Job never fetched cannot be
+    repaired downstream; it is simply absent, and `sync` sees a Board that shrank.
+    """
+    from headstart.scrapers import teamtailor as tt
+
+    s = get_scraper("teamtailor", "big", "Big")
+    full = list(range(tt._PAGE_SIZE))
+    asked = _teamtailor_pages(monkeypatch, s, [full, [900, 901]])
+
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == tt._PAGE_SIZE + 2
+    assert len({j.id for j in jobs}) == len(jobs)  # no page overlap
+    assert "page=2" in asked[1] and len(asked) == 2  # stopped on the short page
+
+
+def test_teamtailor_single_page_board_costs_one_request(monkeypatch):
+    """The common case must not pay for pagination — 748 of 766 Boards are one page."""
+    s = get_scraper("teamtailor", "small", "Small")
+    asked = _teamtailor_pages(monkeypatch, s, [[1, 2, 3]])
+
+    assert len(s.parse(s.fetch_raw(), SCRAPED_AT)) == 3
+    assert len(asked) == 1
+
+
+def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
+    """A feed that serves page 1 forever would otherwise loop forever — there is no page-count
+    ceiling to fall back on, so this is the walk's only protection.
+
+    Item count alone cannot tell "ran off the end" from "looping" — both keep returning a full
+    page — so the walk also stops when a page adds no new ids, and marks the Board truncated
+    (ADR-0053): unlike a genuinely short last page, this isn't proof the Board is exhausted.
+    """
+    from headstart.scrapers import teamtailor as tt
+
+    s = get_scraper("teamtailor", "stuck", "Stuck")
+    full = list(range(tt._PAGE_SIZE))
+    asked = _teamtailor_pages(monkeypatch, s, [full, full, full])
+
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == tt._PAGE_SIZE  # the repeat contributed nothing
+    assert len(asked) == 2  # it stopped rather than walking forever
+    assert s.truncated and "no new ids" in s.truncated
+
+
+def test_teamtailor_walks_past_the_old_page_cap_when_the_board_is_genuinely_that_big(
+    monkeypatch,
+):
+    """Pagination has no page-count ceiling — a Board with hundreds of full, all-fresh pages
+    must be walked in full, not cut off, since a Job never fetched can't be repaired downstream.
+    """
+    from headstart.scrapers import teamtailor as tt
+
+    s = get_scraper("teamtailor", "huge", "Huge")
+    n_pages = 210  # past the old 200-page bound this scraper used to stop at
+    pages = [
+        list(range(page * tt._PAGE_SIZE, (page + 1) * tt._PAGE_SIZE))
+        for page in range(n_pages)
+    ]
+    pages.append([])  # the genuine last, short page
+    asked = _teamtailor_pages(monkeypatch, s, pages)
+
+    raw = s.fetch_raw()
+    assert len(raw["items"]) == tt._PAGE_SIZE * n_pages
+    assert len(asked) == n_pages + 1
+    assert s.truncated is None  # a real short last page — nothing was left unread
 
 
 def test_teamtailor_parse():
@@ -2050,6 +3011,126 @@ def test_personio_url_is_the_xml_feed_on_a_normalised_slug():
     )
 
 
+def test_personio_additional_offices_are_joined_into_location():
+    """`<additionalOffices>` is a sibling of `<office>` inside the same `<position>` that nothing
+    previously read: 13.28% of positions in a live 147-Board sample (2026-08-25, a separate draw
+    from the scraper docstring's 149-Board/24.89% figure — sample variance, same real defect)
+    carry it. Both are read and joined so the extra offices become filterable instead of silently
+    dropped."""
+    from headstart.scrapers.personio import _location
+
+    pos = ET.fromstring(
+        "<position><office>Zürich</office>"
+        "<additionalOffices><office>Berlin</office><office>Hamburg</office></additionalOffices>"
+        "</position>"
+    )
+    assert _location(pos) == "Zürich, Berlin, Hamburg"
+
+
+def test_personio_placeless_office_marker_recovers_the_dropped_city():
+    """Real, live 2026-08-25: `interlead.jobs.personio.de` serves one position with
+    `<office>Home Office</office>` and `<additionalOffices><office>Bremen</office></additionalOffices>`
+    — today `location` is just "Home Office" and the real city is silently dropped. Joining
+    (rather than enumerating "Home Office"/"Mobil"/"Hybrid"/... as marker strings, which is always
+    one locale behind) recovers it without needing to classify `<office>` at all."""
+    from headstart.scrapers.personio import _location
+
+    pos = ET.fromstring(
+        "<position><office>Home Office</office>"
+        "<additionalOffices><office>Bremen</office></additionalOffices></position>"
+    )
+    assert _location(pos) == "Home Office, Bremen"
+
+
+def test_personio_additional_offices_deduplicated_case_insensitively():
+    """A duplicate spelling of the primary office must not repeat itself in the served string."""
+    from headstart.scrapers.personio import _location
+
+    pos = ET.fromstring(
+        "<position><office>Berlin</office>"
+        "<additionalOffices><office>berlin</office><office>Munich</office></additionalOffices>"
+        "</position>"
+    )
+    assert _location(pos) == "Berlin, Munich"
+
+
+def test_personio_no_additional_offices_leaves_location_as_the_bare_office():
+    """No sibling element -> unchanged behaviour (the pre-fix case, still exercised)."""
+    from headstart.scrapers.personio import _location
+
+    assert (
+        _location(ET.fromstring("<position><office>Munich</office></position>"))
+        == "Munich"
+    )
+    assert _location(ET.fromstring("<position></position>")) is None
+
+
+def test_personio_parse_reflects_the_joined_location():
+    pos_xml = (
+        "<position><id>1</id><office>Home Office</office>"
+        "<additionalOffices><office>Bremen</office></additionalOffices>"
+        "<name>Engineer</name></position>"
+    )
+    raw = ET.fromstring(f"<workzag-jobs>{pos_xml}</workzag-jobs>")
+    jobs = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )
+    assert jobs[0].location == "Home Office, Bremen"
+
+
+def test_personio_experience_prefers_the_native_years_range_over_seniority():
+    """Real, live 2026-08-25: personio's own `<seniority>` is a coarse 4-value enum populated on
+    99%+ of positions, so `seniority or yearsOfExperience` wins the `or` chain almost every time
+    and discards a real numeric range. `yearsOfExperience` must win whenever it actually parses."""
+    from headstart.scrapers.personio import _experience
+
+    pos = ET.fromstring(
+        "<position><seniority>experienced</seniority>"
+        "<yearsOfExperience>1-2</yearsOfExperience></position>"
+    )
+    assert _experience(pos) == "1-2"
+
+
+def test_personio_experience_falls_back_to_seniority_when_the_range_cannot_parse():
+    """personio's own open-ended spellings ("lt-1", "gt-15") do not match `from_field`'s regex
+    (it requires a leading digit). A naive swap would lose these ~1,000 positions to `None`; the
+    fallback must keep serving the seniority-based floor instead."""
+    from headstart.scrapers.personio import _experience
+
+    pos = ET.fromstring(
+        "<position><seniority>entry-level</seniority>"
+        "<yearsOfExperience>lt-1</yearsOfExperience></position>"
+    )
+    assert _experience(pos) == "entry-level"
+
+
+def test_personio_experience_falls_back_when_years_field_is_absent():
+    from headstart.scrapers.personio import _experience
+
+    assert _experience(
+        ET.fromstring("<position><seniority>student</seniority></position>")
+    ) == ("student")
+    assert _experience(ET.fromstring("<position></position>")) is None
+
+
+def test_personio_parse_reflects_the_years_range_preference():
+    pos_xml = (
+        "<position><id>1</id><office>Berlin</office><name>Engineer</name>"
+        "<seniority>experienced</seniority><yearsOfExperience>1-2</yearsOfExperience></position>"
+    )
+    raw = ET.fromstring(f"<workzag-jobs>{pos_xml}</workzag-jobs>")
+    jobs = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )
+    # Through the real cascade: "experienced" alone floors at 5; the native "1-2" range must win.
+    from headstart.experience import extract
+
+    span = extract(jobs[0].experience, jobs[0].description, jobs[0].title)
+    assert span.min_years == 1
+    assert span.max_years == 2
+    assert span.source == "field"
+
+
 def test_join_parse():
     jobs = get_scraper("join", "indie-solutions", "indie").parse(
         _load("join_indie-solutions.json"), SCRAPED_AT
@@ -2084,9 +3165,180 @@ def test_rippling_parse():
         j.url
         == "https://ats.rippling.com/acrn/jobs/26708222-0b57-42df-8f52-b6b927351d18"
     )
-    assert j.employment_type  # employmentType.id
+    assert j.employment_type  # employmentType.label
     assert j.posted_at  # createdOn from the detail fetch
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_rippling_employment_type_reads_label_not_id():
+    """employmentType.label is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...);
+    .id is tenant free text (347 distinct spellings measured live, 130 of them
+    singletons — docs/salary-extraction/rippling.md). Falls back to .id when .label
+    is null (where genuinely non-enum values like "Seasonal" live) rather than
+    losing the field entirely."""
+    raw = [
+        {
+            "uuid": "a1",
+            "name": "Engineer",
+            "url": "https://ats.rippling.com/acme/jobs/a1",
+            "_detail": {
+                "employmentType": {
+                    "label": "SALARIED_FT",
+                    "id": "Salaried, Full-Time (US)",
+                },
+            },
+        },
+        {
+            "uuid": "a2",
+            "name": "Seasonal Associate",
+            "url": "https://ats.rippling.com/acme/jobs/a2",
+            "_detail": {
+                "employmentType": {"label": None, "id": "Seasonal"},
+            },
+        },
+    ]
+    jobs = get_scraper("rippling", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].employment_type == "SALARIED_FT"
+    assert jobs[1].employment_type == "Seasonal"  # label null -> falls back to id
+
+
+def test_rippling_pay_range_unions_all_entries():
+    """payRangeDetails can carry more than one band (per-level/per-region); entry [0]
+    alone understates the true span when a later entry carries a wider range — e.g.
+    cat5-resources-llc serves '25-27 USD HOUR' from entry [0] while the real span
+    across all entries (Level 1-4) is 25-40 (live measurement,
+    docs/salary-extraction/rippling.md)."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {
+            "rangeStart": 25.0,
+            "rangeEnd": 27.0,
+            "currency": "USD",
+            "frequency": "HOUR",
+            "location": "Level 1",
+        },
+        {
+            "rangeStart": 30.0,
+            "rangeEnd": 35.0,
+            "currency": "USD",
+            "frequency": "HOUR",
+            "location": "Level 2",
+        },
+        {
+            "rangeStart": 35.0,
+            "rangeEnd": 40.0,
+            "currency": "USD",
+            "frequency": "HOUR",
+            "location": "Level 4",
+        },
+    ]
+    assert _pay_range(ranges) == "25-40 USD HOUR"
+    # entry [0] alone would report "25-27 USD HOUR" — confirm the fix reads the true
+    # min/max across the whole array, not just the first entry.
+    assert _pay_range(ranges[:1]) == "25-27 USD HOUR"
+
+
+def test_rippling_pay_range_does_not_blend_mismatched_currency():
+    """Found in review, live: a real job (journaltech) carries three USD/YEAR entries
+    alongside one CAD/YEAR entry. Pooling raw numbers across all entries regardless of unit
+    mislabeled the CAD figure as USD — '155000-200000 USD YEAR' instead of the true USD-only
+    span. Entries outside the majority (currency, frequency) must be excluded, not blended."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 180000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 180000,
+            "rangeEnd": 200000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 190000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 155000,
+            "rangeEnd": 190000,
+            "currency": "CAD",
+            "frequency": "YEAR",
+        },
+    ]
+    assert _pay_range(ranges) == "160000-200000 USD YEAR"
+
+
+def test_rippling_pay_range_keeps_a_zero_floor():
+    """rangeStart/rangeEnd must be checked with `is not None`, not truthiness — the same class
+    of bug ashby's `_salary` docstring documents (a real Ramp job with minValue=0)."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {"rangeStart": 0, "rangeEnd": 50000, "currency": "USD", "frequency": "HOUR"}
+    ]
+    assert _pay_range(ranges) == "0-50000 USD HOUR"
+
+
+def test_rippling_pay_range_majority_unit_wins_regardless_of_position():
+    """The (currency, frequency) group anchored is whichever the MOST entries share, not
+    positionally entry [0]'s unit — so a minority-currency entry the API happens to list first
+    can't narrow the reported range to just that outlier. Same journaltech-shaped mix as
+    test_rippling_pay_range_does_not_blend_mismatched_currency, but with the lone CAD entry
+    moved to position 0: entry-[0]-anchored code would report "155000-190000 CAD YEAR"."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {
+            "rangeStart": 155000,
+            "rangeEnd": 190000,
+            "currency": "CAD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 180000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 180000,
+            "rangeEnd": 200000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 190000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+    ]
+    assert _pay_range(ranges) == "160000-200000 USD YEAR"
+
+
+def test_rippling_employment_type_empty_label_does_not_fall_back():
+    """`.label` is checked with `is not None`, not truthiness — the same class of bug
+    `_pay_range` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed
+    live, but not ruled out by the API) must be kept, not silently replaced by `.id`."""
+    raw = [
+        {
+            "uuid": "a3",
+            "name": "Contractor",
+            "url": "https://ats.rippling.com/acme/jobs/a3",
+            "_detail": {
+                "employmentType": {"label": "", "id": "Contractor (1099)"},
+            },
+        },
+    ]
+    jobs = get_scraper("rippling", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].employment_type == ""
 
 
 def test_unknown_ats_raises():
@@ -2596,6 +3848,137 @@ def test_eightfold_api_field_helpers():
     assert _remote_from("hybrid") is None  # neither -> defer to the location signal
     assert _first_location(["Bangalore, India", "Pune, India"]) == "Bangalore, India"
     assert _first_location([]) is None and _first_location(None) is None
+
+
+def test_eightfold_remote_from_covers_the_live_vocabulary():
+    """Live vocabulary measured 2026-08-25 across 44,215 jobs/62 boards is exactly these four
+    values — remote_local/remote_global previously matched nothing in `_REMOTE_OPTION`, so 999
+    jobs (2.26%) the API explicitly flags remote were served `remote=False`."""
+    from headstart.scrapers.eightfold import _remote_from
+
+    assert _remote_from("onsite") is False
+    assert _remote_from("hybrid") is None  # tri-state: neither remote nor onsite
+    assert _remote_from("remote_local") is True
+    assert _remote_from("remote_global") is True
+
+
+def test_eightfold_first_location_skips_a_blank_leading_entry():
+    """ascendion.eightfold.ai ships `locations[0] == ""` with real cities after it — the fix
+    takes the first *non-empty* entry rather than always index 0."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert _first_location(["", "bangalore", "hyderabad", "pune"]) == "bangalore"
+
+
+def test_eightfold_first_location_repairs_a_site_code():
+    """`US-CA-Fremont (1003)` is an internal site code, not a place name — repaired from the
+    index-matched `standardizedLocations` entry (measured live on lamresearch)."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["US-CA-Fremont (1003)"], ["Fremont, CA, US"])
+        == "Fremont, CA, US"
+    )
+
+
+def test_eightfold_first_location_repairs_an_empty_comma_segment():
+    """astrazeneca.eightfold.ai's `"Riyadh, , Saudi Arabia"` shape — same defect class
+    darwinbox was fixed for on 2026-08-24 (keka's fix that day was the neighboring
+    dirty-whitespace shape, not an empty segment)."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["Riyadh, , Saudi Arabia"], ["Riyadh, Riyadh Province, SA"])
+        == "Riyadh, Riyadh Province, SA"
+    )
+
+
+def test_eightfold_first_location_is_a_repair_tier_not_a_wholesale_swap():
+    """A clean `locations[0]` is left exactly as it is, even when `standardizedLocations` differs
+    — this is the central distinction from a blanket swap, which the audit measured costs India
+    matches on some boards and collapses 3.91% of jobs to a bare country code."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["Bengaluru, Karnataka, India"], ["Bengaluru, KA, IN"])
+        == "Bengaluru, Karnataka, India"
+    )
+
+
+def test_eightfold_first_location_repair_rejects_a_bare_country_code():
+    """`'SG-Singapore (3301)'` -> `'SG'` measured live on lamresearch: the repair would collapse
+    a city-state's only place name to its bare country code — a real information loss, so the
+    dirty original is kept instead."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert _first_location(["SG-Singapore (3301)"], ["SG"]) == "SG-Singapore (3301)"
+
+
+def test_eightfold_first_location_repair_rejects_a_still_site_code_shaped_value():
+    """lamresearch's `standardizedLocations` sometimes just lowercases the same site code instead
+    of translating it (`'KR-Yongin-02 (3821)'` -> `'kr-yongin-02 (3821)'`) — not a real repair."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["KR-Yongin-02 (3821)"], ["kr-yongin-02 (3821)"])
+        == "KR-Yongin-02 (3821)"
+    )
+
+
+def test_eightfold_first_location_repair_rejects_a_country_mismatch():
+    """Measured live: every `'MY-LMM KM [3620] (3832)'` posting on lamresearch carries
+    `standardizedLocations: ['Lancaster, VIC, AU']` — a bad tenant-side site mapping that would
+    swap Malaysia for Australia. The site code's own 2-letter prefix disagreeing with the
+    repair's country is the tell."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["MY-LMM KM [3620] (3832)"], ["Lancaster, VIC, AU"])
+        == "MY-LMM KM [3620] (3832)"
+    )
+
+
+def test_eightfold_first_location_repair_uses_the_index_matched_standardized_entry():
+    """`locations`/`standardizedLocations` are parallel arrays (measured live: same length on
+    10,694/10,694 jobs where both are present) — a dirty entry at index 1 must repair from
+    `standardizedLocations[1]`, not `[0]`."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["", "US-CA-Fremont (1003)"], ["", "Fremont, CA, US"])
+        == "Fremont, CA, US"
+    )
+
+
+def test_eightfold_api_records_wires_the_remote_and_location_fixes(monkeypatch):
+    """Integration: the fixes reach `_api_records`'s built fields, not just the pure helpers."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    monkeypatch.setattr(
+        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
+    )
+    positions = [
+        {
+            "id": "1",
+            "name": "Remote Engineer",
+            "workLocationOption": "remote_local",
+            "locations": ["Bangalore, Karnataka, India"],
+        },
+        {
+            "id": "2",
+            "name": "Onsite Engineer",
+            "workLocationOption": "onsite",
+            "locations": ["US-CA-Fremont (1003)"],
+            "standardizedLocations": ["Fremont, CA, US"],
+        },
+    ]
+    records = scraper._api_records("acme.com", positions)
+    by_id = {r["id"]: r["fields"] for r in records}
+    assert (
+        by_id["1"]["remote"] is True
+    )  # remote_local now resolves, was False before the fix
+    assert by_id["2"]["location"] == "Fremont, CA, US"  # site code repaired
 
 
 def test_eightfold_jobposting_fallback():
@@ -3522,10 +4905,10 @@ def test_zoho_detail_description_appends_salary_and_currency(record, expected):
     code-review-triggered re-probe on PR #238) — free-text per-tenant strings, so they ride
     along in the description for Tier-2 mining rather than a bespoke Tier-1 parser, matching
     smartrecruiters' customField compensation treatment."""
-    from headstart.scrapers.zoho import ZohoScraper
+    from headstart.scrapers.zoho import ZohoScraper, _description_text
 
     page = f"var jobs = JSON.parse('[{record}]')"
-    assert ZohoScraper._description_of(page) == expected
+    assert _description_text(ZohoScraper._detail_record_of(page) or {}) == expected
 
 
 def _zoho_listing(records):
@@ -3576,9 +4959,10 @@ def test_zoho_fetches_every_job_detail_not_just_empty_descriptions(monkeypatch):
 
 
 def test_zoho_parse_prefers_the_salary_enriched_detail_description(monkeypatch):
-    """The detail page is a strict superset of the listing's bare Job_Description — it carries
-    the same text PLUS Salary/Currency appended. Preferring the listing (the old precedence)
-    would silently discard the Salary text a detail fetch just paid bandwidth to collect."""
+    """The detail record is a strict superset of the listing's bare Job_Description — it carries
+    the same text PLUS Salary/Currency. Preferring the listing (the old precedence) would
+    silently discard the Salary a detail fetch just paid bandwidth to collect, both from the
+    description text and from the new `Job.salary` field."""
     records = [
         {"id": "1", "Job_Description": "Plain listing text.", "Is_Locked": False}
     ]
@@ -3588,13 +4972,21 @@ def test_zoho_parse_prefers_the_salary_enriched_detail_description(monkeypatch):
     monkeypatch.setattr(
         s,
         "fan_out",
-        lambda items, fn, workers=None: ["Plain listing text. Salary: 10-12 LPA"],
+        lambda items, fn, workers=None: [
+            {
+                "id": "1",
+                "Job_Description": "Plain listing text.",
+                "Salary": "10-12",
+                "Currency": "LPA",
+            }
+        ],
     )
 
     raw = s.fetch_raw()
     jobs = s.parse(raw, SCRAPED_AT)
 
-    assert jobs[0].description == "Plain listing text. Salary: 10-12 LPA"
+    assert jobs[0].description == "Plain listing text. Salary: 10-12 Currency: LPA"
+    assert jobs[0].salary == "10-12 LPA"
 
 
 def test_zoho_parse_falls_back_to_the_listing_if_the_detail_fetch_failed(monkeypatch):

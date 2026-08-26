@@ -12,6 +12,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from headstart.experience import from_field
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -19,6 +20,77 @@ from headstart.scrapers.base import BaseScraper
 def _text(pos: ET.Element, tag: str) -> str | None:
     e = pos.find(tag)
     return e.text.strip() if e is not None and e.text and e.text.strip() else None
+
+
+def _location(pos: ET.Element) -> str | None:
+    """`<office>` plus every `<additionalOffices>/office` entry, joined into one filterable string.
+
+    `<additionalOffices>` is a sibling of `<office>` inside the same `<position>` that nothing
+    previously read: 274 of 1,101 positions (24.89%) in a live 149-Board sample (2026-08-25,
+    matching the 18.31%/771-Board audit this fix is based on — sample variance, same real
+    defect) carry it, dropping every string it holds. On a real subset `<office>` alone is a
+    localized placeless marker ("Home Office", "Mobil", "Hybrid", "standortunabhängig", ...)
+    while the position's actual city sits only in the dropped element — e.g. live 2026-08-25,
+    `interlead.jobs.personio.de` serves a position with `office="Home Office"` and
+    `additionalOffices=["Bremen"]`; today's `location` is just "Home Office" and Bremen is
+    unfindable by any place filter.
+
+    This is the same shape recruitee's `_is_remote_sentinel` fixed for `location`/`city`, but
+    recruitee could safely REPLACE its marker because `city` is one authoritative field.
+    Personio's `additionalOffices` is a LIST of the position's OTHER real offices, so `<office>`
+    disagreeing with it is not proof of a marker — a position genuinely posted across several
+    cities (`office="Leipzig"`, `additionalOffices=["Dubai", "Hybrid"]`, live sample) disagrees
+    too. Measured directly on the same sample: comparing `<office>` against `<additionalOffices>`
+    fires on 267/274 (97.4%) of positions that carry the sibling element, which does not
+    discriminate a marker from an ordinary additional office — so classifying and
+    discarding/reordering on it would misclassify genuine multi-office postings on nearly every
+    occurrence. Joining instead (deduplicated, primary office first) recovers every dropped place
+    with zero data lost (measured: 0 positions where the old string vanished from the new one), at
+    the cost of a marker word occasionally riding alongside the real place it used to hide.
+    """
+    office = _text(pos, "office")
+    add_block = pos.find("additionalOffices")
+    additional = (
+        [
+            o.text.strip()
+            for o in add_block.findall("office")
+            if o is not None and o.text and o.text.strip()
+        ]
+        if add_block is not None
+        else []
+    )
+    seen: set[str] = set()
+    parts: list[str] = []
+    for candidate in ([office] if office else []) + additional:
+        key = candidate.lower()
+        if key not in seen:
+            seen.add(key)
+            parts.append(candidate)
+    return ", ".join(parts) if parts else None
+
+
+def _experience(pos: ET.Element) -> str | None:
+    """Prefer the native `<yearsOfExperience>` range over the coarse `<seniority>` word, falling
+    back to `<seniority>` only when the range doesn't parse as a Tier-1 field.
+
+    `<seniority>` is a four-value enum (`experienced`/`entry-level`/`student`/`executive`)
+    populated on ~100% of positions, so `seniority or yearsOfExperience` wins the `or` chain
+    almost unconditionally and discards `<yearsOfExperience>`'s real numeric range
+    ("2-5"/"1-2"/"5-7"/...) on essentially every position that has one. Measured through the
+    real `headstart.experience.extract()` cascade over a live 149-Board / 1,101-position sample
+    (2026-08-25): preferring the range changes 54.95% of answers, corrects a `min_years` that was
+    too high on 36.33% of positions (e.g. "experienced" -> floor 5 when the field says "1-2"), and
+    a real `max_years` bound appears on 54.04% that never had one. 0 positions lose their answer.
+
+    A naive swap (`yearsOfExperience or seniority`) loses positions where `from_field` cannot
+    parse personio's own open-ended spellings ("lt-1", "gt-15" — no leading digit) — those would
+    fall through to `None` where seniority at least gave a floor. Testing parseability here keeps
+    the fallback, so nothing already served is lost.
+    """
+    yoe = _text(pos, "yearsOfExperience")
+    if yoe is not None and from_field(yoe) is not None:
+        return yoe
+    return _text(pos, "seniority")
 
 
 def _salary(pos: ET.Element) -> str | None:
@@ -139,15 +211,17 @@ class PersonioScraper(BaseScraper):
                     ats=self.ats,
                     company=_text(pos, "subcompany") or self.company,
                     title=_text(pos, "name") or "",
-                    location=office,
+                    location=_location(pos),
+                    # Deliberately from the bare `<office>`, not the joined location: a marker
+                    # like "Home Office" carries no "remote" substring today, and joining in
+                    # `additionalOffices` (real places) must not change that verdict either way.
                     remote=is_remote(office),
                     department=_text(pos, "department"),
                     url=f"https://{self.slug}/job/{jid}",
                     posted_at=_text(pos, "createdAt"),
                     scraped_at=scraped_at,
                     description=_description(pos),
-                    experience=_text(pos, "seniority")
-                    or _text(pos, "yearsOfExperience"),
+                    experience=_experience(pos),
                     employment_type=" / ".join(x for x in (etype, sched) if x) or None,
                     salary=_salary(pos),
                 )

@@ -142,6 +142,11 @@ One round, against real current `api.smartrecruiters.com` hosts, after every fix
 
 ## Coverage
 
+**Corrected 2026-08-25 (this PR) — see "Post-merge correction" below.** The "0 (0.0%) — no
+compensation field" line is now known wrong: a native `compensation` block exists on the detail
+response and is read starting with this fix. Kept as the honest historical record of this pass's
+own original (incomplete) finding, not rewritten in place.
+
 | metric | value |
 |---|---|
 | boards sampled (of 5,659 live) | 3,000 |
@@ -236,6 +241,75 @@ Applied:
   genuinely pre-existing in already-merged code. The `_span_from_match`-refactor precedent from
   greenhouse's own fix-up round (fixing a doc inaccuracy rather than letting it stand) applies
   here too.
+
+## Post-merge correction (2026-08-25): the "no compensation field" premise was wrong
+
+**This pass's own "jobs with a structured `salary` field | 0 (0.0%) — no compensation field in
+the raw payload" line (Coverage table above) was never actually true.** A separate location-field
+audit (`experiment/location-audit-2026-08-25/smartrecruiters.md`) found the posting-**detail**
+response (the same one this pass's own `_extract_description` already parses for the description)
+carries a native `compensation.{min,max,currency,period}` block on 10.48% of a 2,500-detail
+sample — this pass's own methods section never checked the detail payload for it, only reasoned
+from the listing. Fixed in a follow-up PR: `smartrecruiters.py` gained a `_salary()` helper
+(the same "MIN-MAX CODE INTERVAL" shape lever/recruitee/teamtailor/ashby/personio/rippling
+already produce) and `smartrecruiters` was registered in `salary._FIELD_PARSERS`.
+
+**Live re-verified from a fresh session** (350 boards, seed 20260825, ≤25 postings/board to
+bound cost; 347/350 boards had a nonempty listing, 0 listing errors; 2,816 postings, 2,812
+detail fetches ok, 4 errors — 0.14%, real-world noise, not systematic):
+
+| metric | value |
+|---|---|
+| native `compensation` populated | 257 / 2,812 (9.14%) |
+| BEFORE (Tier 2 only — today's shipped behavior) | 314 / 2,812 (11.17%) |
+| AFTER (Tier 1 native + Tier 2 — this fix) | 466 / 2,812 (16.57%) |
+| gained (found only after the fix) | 152 |
+| lost (found only before the fix) | 0 |
+
+**These AFTER/gained figures predate the max-only decline fixed below (see "Follow-up
+(2026-08-26, code review)") and were not re-measured against it — the true AFTER count is
+somewhat lower than 466/16.57%, by however many of the 152 gained postings were max-only.**
+
+The relative jump is smaller here (~1.48x) than the original 1,500-posting comparison's 7.40%→
+16.33% (~2.2x) — this sample's Tier-2-only baseline happened to be higher (11.17% vs. 7.40%,
+board-mix variance), but the AFTER number lands within half a point of that comparison's
+projection (16.57% vs. 16.33%), and the zero-regression (0 lost) result held across both.
+Zero extra request cost confirmed: every detail fetch above is the scraper's own `_job_detail()`,
+one GET per posting id — the identical request the shipped code already makes for `description`
+alone.
+
+**A real, pre-existing, out-of-scope gap this measurement surfaced**: `salary.py`'s
+`_CURRENCY_CODES` table (`USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED`) does not include CNY,
+NZD, GTQ, or TZS — all four observed on smartrecruiters' native `compensation.currency` in the
+original audit. A figure in one of those currencies still parses (the span and period are read
+correctly), but `currency` comes back `None` and `_bounded`'s USD-shaped fallback bounds decide
+plausibility instead of a currency-specific one — the same fallback every other ATS's Tier 1
+parser already relies on for an unrecognized code, not something this fix introduced. Left
+unfixed here (a shared-table change is broader than one ATS's scraper fix); flagged for the
+separate salary-corpus-audit follow-up. Not exhaustive: a smaller code-review sample (60 boards,
+348 postings, 2026-08-26) turned up HUF, RON, and MXN as further currencies missing from the same
+table — the gap is broader than the four currencies this pass happened to sample.
+
+## Follow-up (2026-08-26, code review): max-only compensation must decline, not misreport as floor
+
+The `_salary()` helper above formatted a `max`-only block (`min` absent) as a bare single value,
+which `_field_range_currency_interval`'s single-value path always reads as a **floor** with no
+ceiling. Live-verified real (not just the `max: 0` junk case already documented): 60 live boards,
+348 postings, 19 populated `compensation` blocks — 1 of them max-only, `{"max": 12150, "currency":
+"MXN", "period": "MONTHLY"}`, which annualizes to 145,800 and clears `_bounded`'s USD-fallback
+plausibility bounds cleanly, so it would have shipped as a confident, wrong "$145,800+/year, no
+ceiling" instead of the true "up to ~$12,150 MXN/month, no stated floor". Unlike the `max: 0` junk
+case (still correctly caught downstream since 0 is below every currency's floor), this one is not
+caught anywhere — a silent corruption, not a safe decline. Fixed: `_salary()` now declines
+(`None`) outright whenever `min` is absent, regardless of `max`. `min`-only (a genuine "$X+, no
+stated ceiling") is unaffected — that direction was already correct.
+
+This mirrors ashby's own `_salary()` docstring, which checked the identical mirror shape directly
+against live data, found 0/820 real occurrences, and left it on the same single-value path
+deliberately. SmartRecruiters' rate is small (1/19 in this sample) but nonzero, so the same
+latitude does not apply here. The 152-gained / 16.57%-after figures above predate this refinement
+and were not re-measured against it — the corrected count is somewhat lower, by however many of
+those 152 were max-only.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
