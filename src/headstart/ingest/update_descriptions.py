@@ -20,12 +20,13 @@ coverage rather than as not measured.
 
 **The store holds text, and membership means exactly that: we have this Job's description.** It
 briefly recorded a second kind of entry — a ``null`` meaning "the detail answered and this posting
-genuinely has none" — gated on ``Job.detail_fetched``. That was removed: measured 2026-08-26, the
-category barely exists (0 of 713 live Jobs sampled across 12 ATSes carried no description, and the
-store had accumulated **7** such entries in its lifetime, 0.002% of 328,930), while the flag it
-needed was set by one scraper of the nine with a detail pass — so an empty description in the
-corpus is, in practice, always a fetch that failed. ``read_store`` skips any legacy ``null`` so
-"held" means one thing everywhere; ``--compact`` drops them on its next pass.
+genuinely has none" — gated on ``Job.detail_fetched``. That was removed (ADR-0089): measured
+2026-08-26 over 3,443 live Jobs on 63 boards across 13 ATSes, all 323 empty descriptions traced to
+a *failed fetch* and none to a posting that has none, while the store had accumulated **7** such
+entries in its lifetime (0.002% of 328,930) — and the flag they needed was set by one scraper of
+the nine with a detail pass. So an empty description in the corpus is, in practice, always a fetch
+that failed. ``read_store`` skips any legacy ``null`` so "held" means one thing everywhere;
+``--compact`` drops them on its next pass.
 
 **Writes are append-only** (ADR-0050). Each run writes one small ``{seq}.jsonl.gz`` fragment per
 ATS holding only what changed; the ``base.jsonl.gz`` is rewritten only by ``--compact``. Readers
@@ -93,6 +94,20 @@ def _sequence(path: Path) -> int:
     return int(path.name.split(".", 1)[0])
 
 
+def _text_in(record: dict) -> str | None:
+    """The description a store record holds, or ``None`` when it holds no text.
+
+    The one place the "held" rule is written down. :func:`read_store` and :func:`_ats_held_ids`
+    both apply it and must never disagree: the first decides what the corpus is repaired from,
+    the second what the scrape is told not to fetch, and an id on the skip-list the store cannot
+    supply is a description lost for good. A legacy ``null`` — ADR-0089's removed "the detail
+    answered and this posting genuinely has none" — reads as no text here, and so does a later
+    entry blanking an earlier one.
+    """
+    description = record.get("description")
+    return description if isinstance(description, str) and description else None
+
+
 def read_store(ats_dir: Path) -> dict[str, str]:
     """``{Job id: description}`` for one ATS. Membership means we hold this Job's text.
 
@@ -109,9 +124,9 @@ def read_store(ats_dir: Path) -> dict[str, str]:
                 line = line.strip()
                 if line:
                     record = json.loads(line)
-                    description = record.get("description")
-                    if isinstance(description, str) and description:
-                        held[record["id"]] = description
+                    text = _text_in(record)
+                    if text is not None:
+                        held[record["id"]] = text
                     else:  # a legacy null, or a later entry blanking an earlier one
                         held.pop(record["id"], None)
     return held
@@ -144,8 +159,8 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
     Returns a :class:`Reconciled` — corpus rows repaired from the store, descriptions newly
-    stored or changed, postings recorded as authoritatively having none, postings left with no
-    description and no stored answer either way, and the ids behind the second and third.
+    stored or changed, postings left with no description and none stored, and the ids behind
+    the second.
 
     ``rederive_ids`` is the ADR-0062 marking. A Job whose description arrives *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
@@ -185,10 +200,11 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
                     # No text this run and none stored, so the next run starts here again.
                     #
                     # Deliberately NOT called "the detail never ran", and no longer split by
-                    # whether it did: measured 2026-08-26, a Job that genuinely carries no
-                    # description is vanishingly rare (0 of 713 sampled live across 12 ATSes),
-                    # so in practice every Job here is a fetch that failed. The count is exact —
-                    # these Jobs really are unrecorded and really do return every run.
+                    # whether it did: measured 2026-08-26 (ADR-0089), all 323 empty descriptions
+                    # found across 3,443 live Jobs traced to a failed fetch and none to a posting
+                    # that genuinely has none, so in practice every Job here is a fetch that
+                    # failed. The count is exact — these Jobs really are unrecorded and really do
+                    # return every run.
                     unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
@@ -217,9 +233,10 @@ def _ats_held_ids(ats_dir: Path) -> set[str]:
     Reading through :func:`read_store` instead would materialise every description (~1 GB of text)
     to look at the keys. Both callers below want only the keys, in different shapes.
 
-    Applies :func:`read_store`'s own rule rather than counting every line: an entry with no text
-    (a legacy ``null``) does not mean we hold anything, and a skip-list that said otherwise would
-    tell the scrape not to fetch a description the store cannot supply.
+    Applies :func:`_text_in` — the same rule :func:`read_store` applies, from the same fragments
+    in the same order — rather than counting every line: an entry with no text (a legacy ``null``)
+    does not mean we hold anything, and a skip-list that said otherwise would tell the scrape not
+    to fetch a description the store cannot supply.
     """
     ids: set[str] = set()
     for path in _fragments(ats_dir):
@@ -228,8 +245,7 @@ def _ats_held_ids(ats_dir: Path) -> set[str]:
                 line = line.strip()
                 if line:
                     record = json.loads(line)
-                    description = record.get("description")
-                    if isinstance(description, str) and description:
+                    if _text_in(record) is not None:
                         ids.add(record["id"])
                     else:
                         ids.discard(record["id"])
@@ -274,10 +290,14 @@ def compact(ats_dir: Path) -> int:
 
     Runs in ``cleanup-index``, not in the pipeline: it is the only step that rewrites the big file,
     which is exactly the cost append-only writes exist to avoid paying every run.
+
+    Returning early on an *empty store* rather than on an empty ``held`` is what makes "compact
+    drops the legacy nulls" true unconditionally: an ATS whose every entry is text-less has files
+    to purge and nothing to keep, and the old guard walked away from exactly that case.
     """
-    held = read_store(ats_dir)
-    if not held:
+    if not _fragments(ats_dir):
         return 0
+    held = read_store(ats_dir)
     tmp = ats_dir / (_BASE + ".tmp")
     with gzip.open(tmp, "wt", encoding="utf-8") as fh:
         for job_id, description in held.items():

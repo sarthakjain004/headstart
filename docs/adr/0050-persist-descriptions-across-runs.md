@@ -1,6 +1,8 @@
 # ADR-0050: Persist descriptions across runs, and key the detail skip-list on holding them
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0048, ADR-0021
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0048, ADR-0021 · **Amended by:**
+[ADR-0089](0089-the-description-store-holds-text-not-verdicts.md) — the `null` entry and
+`Job.detail_fetched` are removed; the store is two-state
 
 ## Context
 
@@ -45,6 +47,12 @@ what CONTEXT.md always claimed. `data/state/embedded_ids.txt.gz` becomes
 `data/state/held_details.txt.gz`, and `update_descriptions` publishes it instead of `embed_merge`.
 This is the change that makes the degraded population reachable at all — they hold no description,
 so they leave the list and are fetched again.
+
+> **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
+> Everything from here to the end of this subsection describes a design that no longer exists.
+> The `null` entry and `Job.detail_fetched` are gone and the store is two-state; in particular the
+> obligation below — *a scraper that starts consulting `have_details` must also set
+> `detail_fetched`* — is void, and there is no longer a flag to set.
 
 **The store records two kinds of entry**, because "empty" has two causes that are otherwise
 identical in the corpus:

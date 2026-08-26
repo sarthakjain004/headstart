@@ -55,9 +55,9 @@ from pathlib import Path
 # stage previously carried its own `Path(__file__).resolve().parents[2]`.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The detail skip-list (ADR-0048, re-keyed by ADR-0050): Job ids whose detail the description
-# store has settled — we hold the text, or we know the posting has none — so the scrape stage can
-# skip their per-job detail fetch. It was keyed on *being embedded*, which is a different set: a
+# The detail skip-list (ADR-0048, re-keyed by ADR-0050, narrowed by ADR-0089): Job ids whose
+# description text the store holds, so the scrape stage can skip their per-job detail fetch. It
+# was keyed on *being embedded*, which is a different set: a
 # Job embedded without a description was skipped forever and could never be repaired.
 # Lives here rather than in either stage because three modules across two packages move this one
 # file — `update_descriptions` writes it, `scrape_plan` ships it to the shards, `scrape_run` reads

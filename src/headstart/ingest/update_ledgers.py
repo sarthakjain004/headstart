@@ -236,7 +236,7 @@ def gap(args: argparse.Namespace) -> int:
     held = held_ids(args.descriptions)
     if not held:
         # The join fetches the description store on a warn-only fallback, so an empty one here
-        # means the download failed, not that nothing is settled. Writing the ledger now would
+        # means the download failed, not that we hold nothing. Writing the ledger now would
         # mark *every* embedded Board as gap-ful and hand the next run's scrape a slice built
         # from a missing file — worse than no boost at all.
         _log.warning(
@@ -287,7 +287,7 @@ def gap(args: argparse.Namespace) -> int:
     board_description_gap.save(args.ledger, dict(counts), today=today)
     jobs = sum(counts.values())
     _log.info(
-        f"gap: {rows:,} stored rows | {len(held):,} settled | {jobs:,} unsettled across "
+        f"gap: {rows:,} stored rows | {len(held):,} held | {jobs:,} unsettled across "
         f"{len(counts):,} boards ({unreachable:,} on a disabled ATS, {expired:,} gone from a "
         f"Board this run scraped in full — both unreachable) -> {args.ledger}"
     )

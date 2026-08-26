@@ -18,7 +18,7 @@ Start here — docs are grouped by area.
 - [discovery/common-crawl-mining.md](discovery/common-crawl-mining.md) — the Common Crawl mining run for India-tier ATS tenants.
 
 ## Pipeline — how the run actually works
-- [pipeline/walkthrough.md](pipeline/walkthrough.md) — plain-language explainer of the run, written for someone learning it: the job/stage map, facts vs derivations and `DERIVATIONS_VERSION`, the description store, and the `detail_fetched` gap. Question-driven and grows; undated, unlike the dated one-off analyses beside it in that folder.
+- [pipeline/walkthrough.md](pipeline/walkthrough.md) — plain-language explainer of the run, written for someone learning it: the job/stage map, facts vs derivations and `DERIVATIONS_VERSION`, and the description store. Question-driven and grows; undated, unlike the dated one-off analyses beside it in that folder.
 
 ## Operations & notes
 - [telegram-alerts.md](telegram-alerts.md) — job alerts as Telegram DMs: bot setup, the master's approval flow, commands.

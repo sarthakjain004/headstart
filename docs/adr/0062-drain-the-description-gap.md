@@ -7,7 +7,9 @@
 [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md),
 [ADR-0050](0050-persist-descriptions-across-runs.md),
 [ADR-0059](0059-two-board-keyspaces.md) · **Amends:**
-[ADR-0061](0061-refreshable-metadata.md)
+[ADR-0061](0061-refreshable-metadata.md) · **Amended by:**
+[ADR-0089](0089-the-description-store-holds-text-not-verdicts.md) — only text is queued; a
+description-less posting can no longer be settled, so it stays in the gap ledger
 
 ## Context
 
@@ -72,6 +74,12 @@ case — writing it would mark every Board gap-ful and hand the next run a slice
 file.
 
 ### 2. A settled description marks its row for re-derivation
+
+> **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
+> There is only one entry kind now — text — so "both entry kinds are queued" below reads as
+> "every id whose text arrived". A Job that genuinely has no description can no longer be settled
+> at all, so it stays in the gap ledger indefinitely; ADR-0089 accepts that on the measurement
+> that the population is ~empty, and names the ledger as where it would show if it is not.
 
 Closing the gap repairs the *text* and leaves every number behind it stale: `embed_plan` skips ids
 it has embedded, and `update_meta`'s sweep only fires on a `DERIVATIONS_VERSION` bump. Nothing else

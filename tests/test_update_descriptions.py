@@ -1,9 +1,9 @@
 """Tests for the description store (headstart.ingest.update_descriptions, ADR-0050).
 
 The store exists so a description survives a run whose fetch failed. Every test here is a
-statement about one of the three states a Job can be in — we hold its text, we know it has none,
-or we have never settled it — because those three are what the skip-list and the repair both
-key on.
+statement about one of the two states a Job can be in — we hold its text, or we do not — because
+that one bit is what the skip-list and the repair both key on (ADR-0089 removed a third,
+"we know it has none").
 """
 
 from __future__ import annotations
@@ -93,8 +93,8 @@ def test_a_re_fetched_description_supersedes_the_stored_one(tmp_path):
 
 def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
     """The same Job as the test below, from the reporting side. It is learned nothing about and
-    recorded nowhere, so it used to leave no trace in the log at all — the run reported filled,
-    learned and settled, and this Job was in none of them."""
+    recorded nowhere, so it used to leave no trace in the log at all — the run reported what it
+    filled and what it learned, and this Job was in neither."""
     jobs = tmp_path / "tech" / "eightfold.jsonl"
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None)])
@@ -105,7 +105,8 @@ def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
 def test_a_legacy_null_entry_reads_as_unheld(tmp_path):
     """The store briefly recorded `null` for "the detail answered and this posting genuinely has
     none". That state was removed — measured 2026-08-26, 7 such entries existed across 328,930,
-    and 0 of 713 live Jobs sampled carried no description — but the entries are still on disk.
+    and every empty description found across 3,443 live Jobs traced to a failed fetch instead
+    (ADR-0089) — but the entries are still on disk.
 
     They must read as *unheld*, not as held-with-no-text: the skip-list is what tells the scrape
     not to bother, and an id on it that the store cannot supply is a description lost for good.
@@ -121,6 +122,47 @@ def test_a_legacy_null_entry_reads_as_unheld(tmp_path):
     jobs = tmp_path / "tech" / "eightfold.jsonl"
     _corpus(jobs, [_job("eightfold:acme:1", None)])
     assert ud.reconcile(jobs, store).unrecorded == 1, "it is outstanding, not answered"
+
+
+def test_a_text_less_entry_blanks_an_earlier_one_the_same_way_in_both_readers(tmp_path):
+    """The two readers must never disagree about who is held, in either fragment order.
+
+    `read_store` removes with `dict.pop` and `_ats_held_ids` with `set.discard`, over the same
+    fragments in the same order, so the pair is only safe while both are last-write-wins. If they
+    diverged, the skip-list would name an id the store cannot supply — a detail never fetched
+    again and a description lost for good."""
+    store = tmp_path / "store" / "eightfold"
+    store.mkdir(parents=True)
+
+    def fragment(seq: int, description) -> None:
+        with gzip.open(store / f"{seq:04d}.jsonl.gz", "wt", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps({"id": "eightfold:acme:1", "description": description})
+                + "\n"
+            )
+
+    fragment(1, "We are hiring.")
+    fragment(2, None)  # a later entry blanks it
+    assert ud.read_store(store) == {}
+    assert ud._ats_held_ids(store) == set()
+
+    fragment(3, "We are hiring again.")  # and a later one restores it
+    assert ud.read_store(store) == {"eightfold:acme:1": "We are hiring again."}
+    assert ud._ats_held_ids(store) == {"eightfold:acme:1"}
+
+
+def test_compaction_purges_an_all_null_store(tmp_path):
+    """The store's legacy nulls disappear with no migration step *only* if compact rewrites a
+    directory that holds nothing else. Guarding on `held` instead walked away from that case and
+    left the entries on disk for good."""
+    store = tmp_path / "store" / "eightfold"
+    store.mkdir(parents=True)
+    with gzip.open(store / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "eightfold:acme:1", "description": None}) + "\n")
+
+    assert ud.compact(store) == 0
+    assert sorted(p.name for p in store.glob("*.jsonl.gz")) == ["base.jsonl.gz"]
+    assert ud.read_store(store) == {}
 
 
 def test_the_skip_list_holds_exactly_the_ids_we_have_text_for(tmp_path):

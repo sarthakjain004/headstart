@@ -1,10 +1,11 @@
 # ADR-0089: The description store holds text, not verdicts — drop `detail_fetched`
 
-**Status:** accepted · **Date:** 2026-08-26 · **Relates to:**
+**Status:** accepted · **Date:** 2026-08-26 · **Amends:**
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the store this narrows, and the three-state
-design it introduced), [ADR-0048](0048-skip-details-we-already-hold.md) (the skip-list the removed
-state fed), [ADR-0062](0062-drain-the-description-gap.md) (the queue that still fires on
-arriving text), [ADR-0088](0088-a-lost-detail-is-not-a-truncation.md) (the same week's finding that
+design it introduced), [ADR-0062](0062-drain-the-description-gap.md) (only text is queued for
+re-derivation now) · **Relates to:**
+[ADR-0048](0048-skip-details-we-already-hold.md) (the skip-list the removed
+state fed), [ADR-0088](0088-a-lost-detail-is-not-a-truncation.md) (the same week's finding that
 a lost detail is a fetch failure, not an absence)
 
 ## Context
@@ -22,12 +23,53 @@ The second row existed so a genuinely description-less posting would stop being 
 run forever. It was gated on `Job.detail_fetched`, which the scraper set: `True` only when a
 per-Job detail fetch *completed*.
 
-Two facts, both measured 2026-08-26, say that row does not earn its complexity.
+Two findings, both measured 2026-08-26, say that row does not earn its complexity.
 
-**The category is empty in practice.** Across **713 live Jobs** sampled from **28 boards on 12
-ATSes** (rippling, smartrecruiters, ripplehire, ashby, lever, recruitee, teamtailor, workable,
-successfactors ×4 tenants), **zero** carried an empty description. The store agrees: of **328,930**
-entries accumulated over its lifetime, **7** are `null` — 0.002%, all eightfold.
+**Nobody has found a Job in the middle row.** Two live samples, taken independently, and the store
+itself:
+
+| sample | boards | Jobs | empty `description` | traced to the middle row |
+| --- | --- | --- | --- | --- |
+| first pass — rippling, smartrecruiters, ripplehire, ashby, lever, recruitee, teamtailor, workable, successfactors (4 tenants) | 28 | 713 | 0 | 0 |
+| second pass — zoho, workday, trakstar, eightfold | 35 | 2,730 | 323 | 0 |
+| the store itself, lifetime | — | 328,930 entries | — | 7 `null`, all eightfold (0.002%) |
+
+The first pass is the weaker of the two and should not be read alone: **five of its nine ATSes
+(ashby, lever, recruitee, teamtailor, workable) have no detail pass at all**, so they cannot
+exhibit "the detail answered with none" by construction, and it omitted every ATS known to produce
+empties. The second pass was taken to cover exactly that gap — the four detail-pass ATSes the
+first missed — and it found empties in quantity. Every one traces to a *failed fetch*:
+
+- **kraftheinz.eightfold.ai, 198 of 797.** Instrumented at `_description`, all 198 returned
+  `None` (non-200), not `""`. On the one scraper that sets the flag, `detail_fetched` would have
+  been `False` for all 198 and the removed state would not have fired for a single one. The job
+  pages themselves carry a full JSON-LD `description`, so settling them would have been a lie.
+- **techrecruitment.zohorecruit.com, 123 of 131.** 4 of 4 sampled job pages serve Zoho's
+  2,182-byte "sorry" error page under **HTTP 200** — the exact failure-as-success this ADR's
+  rejected alternative names for zoho.
+- **kone/careers (workday), 1 of 923.** Its listing row is `{"bulletFields": ["R0663872"]}` — no
+  `externalPath`, so no detail was ever attempted.
+
+A fourth line of evidence, same date, arrived independently:
+[`docs/personio/2026-08-26_descriptions-are-language-scoped.md`](../personio/2026-08-26_descriptions-are-language-scoped.md)
+found **191 empty positions of 2,029** on personio and traced every one to a description that
+exists — 187 recoverable from another language feed, the remaining 4 present in the job page's
+JSON-LD. Its own conclusion is this ADR's: *"Settling these Jobs as 'has none' would have recorded
+a falsehood — the descriptions exist."*
+
+So the honest claim is not "the category is empty" but: **3,443 live Jobs across 63 boards and 13
+ATSes produced 323 empty descriptions and not one of them was a posting that genuinely has none.**
+Every empty was a fetch that failed — which is the same thing the store's own 7-in-328,930 says,
+from the other direction. Both live passes ran the real scrapers via
+`registry.get_scraper(ats, slug, slug).fetch()` over boards drawn at random from
+`data/validate/liveness/{ats}.csv`; the second's per-board results and the `_description`
+instrumentation are reproducible the same way.
+
+**What this does not establish.** Absence of evidence at this sample size is not proof the
+population is zero — a posting with genuinely no description may exist and simply not have been
+drawn. The claim being relied on is narrower and is enough: the *removed state never fired on it*.
+Every empty found, on the one scraper that implemented the flag, would have had
+`detail_fetched == False`.
 
 **Only one scraper ever set the flag.** Nine declare `has_detail_pass`; `detail_fetched` is set by
 eightfold alone. That is not the accident it looks like: `needs_detail` — the skip-list's only
@@ -65,7 +107,8 @@ the only scraper that skips. Seven detail fetches per run, when their boards are
 
 **A genuinely description-less posting is now chased forever** — it stays in the ADR-0062 gap
 ledger, so `scrape_plan` keeps reserving exploration budget for its Board. At the measured rate
-(0 of 713) that is noise. If it ever stops being noise, the gap ledger is where it will show:
+(none in 3,443 live Jobs) that is noise. If it ever stops being noise, the gap ledger is where it
+will show:
 a Board whose unsettled count never falls despite being scraped.
 
 **The `unrecorded` counter now means one thing** — we do not have this description — rather than

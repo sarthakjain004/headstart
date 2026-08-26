@@ -76,7 +76,7 @@ Three ways:
    `update_meta` re-runs the cascade for exactly those rows *at an unchanged version*.
 3. **The row's own inputs moved** — the fact a value was derived from changed.
 
-One subtlety: even during a full sweep, rows whose description the store has **never settled** are
+One subtlety: even during a full sweep, rows whose description the store does **not hold** are
 deliberately left alone. Recomputing without the text a value originally came from could only
 downgrade it. That is roughly 127,501 rows.
 
@@ -122,29 +122,28 @@ Note that "restoring" is **not** a network fetch. The store is a local directory
 restore is a local dict lookup. The expensive thing is what the store *avoids* — going back to the
 ATS for a detail page, which is ~54s median per board on freshteam.
 
-### The three states
+### The two states
 
-The store has to answer two different questions, so a job is in one of three states:
+The store maps `id -> text`, and membership means exactly one thing:
 
 | state in the store | meaning | next run |
 | --- | --- | --- |
 | **text entry** | we hold this description | skipped, not re-fetched |
-| **`null` entry** | the detail pass *answered*, and this posting genuinely has none | skipped — authoritative absence |
-| **absent entirely** | never settled | fetched again |
+| **absent entirely** | we do not hold it | fetched again |
 
-Without that middle state, a genuinely description-less posting and a failed fetch look identical
-— both are an empty string — so you would re-fetch the empty ones forever.
+It briefly had a third — see [the section below](#the-store-used-to-hold-verdicts-too--and-why-that-was-removed-adr-0089), which is worth reading, because the reasoning that put it there is more
+persuasive than the measurement that took it away.
 
 This maps onto the log line the stage prints:
 
 ```text
-personio: filled 4 from the store, learned 1, settled 0 as having none,
-          queued 0 to re-derive, 339 still unrecorded
+personio: filled 4 from the store, learned 1, queued 0 to re-derive,
+          339 still unrecorded
 ```
 
-`filled` = restored into the corpus · `learned` = new or changed text saved · `settled` = recorded
-as authoritatively having none · `queued to re-derive` = ids handed to `update_meta` ·
-`still unrecorded` = no text, nothing stored, no answer either way.
+`filled` = restored into the corpus · `learned` = new or changed text saved ·
+`queued to re-derive` = ids handed to `update_meta` · `still unrecorded` = no text this run and
+none stored, so the next run starts here again.
 
 ### Why the storage looks odd
 
@@ -192,9 +191,11 @@ would stop being re-fetched every run. It was gated on a `Job.detail_fetched` fl
 It was removed, and the reasoning is worth keeping because it is a good example of a design that
 looks right and measures wrong.
 
-**The category it handled is empty in practice.** Sampled live on 2026-08-26: **0 of 713 Jobs**
-across 28 boards and 12 ATSes carried an empty description. And of **328,930** entries the store
-had accumulated, only **7** were `null` — 0.002%, all eightfold.
+**Nobody has found a Job in that state.** Sampled live on 2026-08-26 across **3,443 Jobs on 63
+boards and 13 ATSes**: 323 came back with an empty description, and every one traced to a *fetch
+that failed*, not to a posting that has none — eightfold details returning non-200, Zoho job pages
+serving an error body under HTTP 200, a Workday listing row with no `externalPath`. And of
+**328,930** entries the store had accumulated, only **7** were `null` — 0.002%, all eightfold.
 
 **The flag was inert almost everywhere.** Nine scrapers declare `has_detail_pass`, but only
 eightfold ever set `detail_fetched` — and, not coincidentally, `needs_detail` (the skip-list's only
@@ -225,7 +226,8 @@ foreclose it.
 2. **`src/headstart/ingest/update_meta.py`** — read the module docstring. ~45 lines, and it
    explains the facts-vs-derivations split in the codebase's own words.
 3. **`src/headstart/ingest/update_descriptions.py`** — the module docstring covers the store's two
-   directions and the three-state design; `reconcile()` is where the logic lives.
+   directions and why membership means text and nothing else; `reconcile()` is where the logic
+   lives, and `_text_in()` is the one place the "held" rule is written down.
 4. **`src/headstart/experience.py`** and **`src/headstart/salary.py`** — the extraction cascades
    themselves, once you want to see what actually does the extracting.
 5. **`.github/workflows/pipeline.yml`** — the authoritative stage order, with a comment on most
