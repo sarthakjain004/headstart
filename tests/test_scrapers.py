@@ -2567,10 +2567,12 @@ def test_teamtailor_single_page_board_costs_one_request(monkeypatch):
 
 
 def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
-    """A feed that serves page 1 forever would otherwise loop to the bound.
+    """A feed that serves page 1 forever would otherwise loop forever — there is no page-count
+    ceiling to fall back on, so this is the walk's only protection.
 
     Item count alone cannot tell "ran off the end" from "looping" — both keep returning a full
-    page — so the walk also stops when a page adds no new ids.
+    page — so the walk also stops when a page adds no new ids, and marks the Board truncated
+    (ADR-0053): unlike a genuinely short last page, this isn't proof the Board is exhausted.
     """
     from headstart.scrapers import teamtailor as tt
 
@@ -2580,29 +2582,31 @@ def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
 
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
     assert len(jobs) == tt._PAGE_SIZE  # the repeat contributed nothing
-    assert len(asked) == 2  # and it stopped rather than walking to _MAX_PAGES
+    assert len(asked) == 2  # it stopped rather than walking forever
+    assert s.truncated and "no new ids" in s.truncated
 
 
-def test_teamtailor_marks_its_page_cap(monkeypatch):
-    """`_MAX_PAGES` straight full, all-new pages is the one case that reaches the `for...else`.
-
-    Unlike a feed re-serving page 1 (caught by the `not fresh` break), this is a board that is
-    still handing over fresh ids when the walk gives up — the rest is unread, not absent, and
-    `mark_truncated` is what stops `index sync` reading that as a delisting (ADR-0053).
+def test_teamtailor_walks_past_the_old_page_cap_when_the_board_is_genuinely_that_big(
+    monkeypatch,
+):
+    """Pagination has no page-count ceiling — a Board with hundreds of full, all-fresh pages
+    must be walked in full, not cut off, since a Job never fetched can't be repaired downstream.
     """
     from headstart.scrapers import teamtailor as tt
 
     s = get_scraper("teamtailor", "huge", "Huge")
+    n_pages = 210  # past the old 200-page bound this scraper used to stop at
     pages = [
         list(range(page * tt._PAGE_SIZE, (page + 1) * tt._PAGE_SIZE))
-        for page in range(tt._MAX_PAGES)
+        for page in range(n_pages)
     ]
+    pages.append([])  # the genuine last, short page
     asked = _teamtailor_pages(monkeypatch, s, pages)
 
     raw = s.fetch_raw()
-    assert len(raw["items"]) == tt._PAGE_SIZE * tt._MAX_PAGES
-    assert len(asked) == tt._MAX_PAGES
-    assert s.truncated and f"{tt._MAX_PAGES}-page cap" in s.truncated
+    assert len(raw["items"]) == tt._PAGE_SIZE * n_pages
+    assert len(asked) == n_pages + 1
+    assert s.truncated is None  # a real short last page — nothing was left unread
 
 
 def test_teamtailor_parse():
