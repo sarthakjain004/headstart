@@ -282,7 +282,30 @@ correctly), but `currency` comes back `None` and `_bounded`'s USD-shaped fallbac
 plausibility instead of a currency-specific one — the same fallback every other ATS's Tier 1
 parser already relies on for an unrecognized code, not something this fix introduced. Left
 unfixed here (a shared-table change is broader than one ATS's scraper fix); flagged for the
-separate salary-corpus-audit follow-up.
+separate salary-corpus-audit follow-up. Not exhaustive: a smaller code-review sample (60 boards,
+348 postings, 2026-08-26) turned up HUF, RON, and MXN as further currencies missing from the same
+table — the gap is broader than the four currencies this pass happened to sample.
+
+## Follow-up (2026-08-26, code review): max-only compensation must decline, not misreport as floor
+
+The `_salary()` helper above formatted a `max`-only block (`min` absent) as a bare single value,
+which `_field_range_currency_interval`'s single-value path always reads as a **floor** with no
+ceiling. Live-verified real (not just the `max: 0` junk case already documented): 60 live boards,
+348 postings, 19 populated `compensation` blocks — 1 of them max-only, `{"max": 12150, "currency":
+"MXN", "period": "MONTHLY"}`, which annualizes to 145,800 and clears `_bounded`'s USD-fallback
+plausibility bounds cleanly, so it would have shipped as a confident, wrong "$145,800+/year, no
+ceiling" instead of the true "up to ~$12,150 MXN/month, no stated floor". Unlike the `max: 0` junk
+case (still correctly caught downstream since 0 is below every currency's floor), this one is not
+caught anywhere — a silent corruption, not a safe decline. Fixed: `_salary()` now declines
+(`None`) outright whenever `min` is absent, regardless of `max`. `min`-only (a genuine "$X+, no
+stated ceiling") is unaffected — that direction was already correct.
+
+This mirrors ashby's own `_salary()` docstring, which checked the identical mirror shape directly
+against live data, found 0/820 real occurrences, and left it on the same single-value path
+deliberately. SmartRecruiters' rate is small (1/19 in this sample) but nonzero, so the same
+latitude does not apply here. The 152-gained / 16.57%-after figures above predate this refinement
+and were not re-measured against it — the corrected count is somewhat lower, by however many of
+those 152 were max-only.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 

@@ -20,6 +20,13 @@ fill it in. That same detail response also carries a native `compensation.{min,m
 period}` block (10.48% of postings, previously unread — see `_salary()`), so one fetch now
 feeds both `description` and `salary`. A failed detail fetch leaves both None — the job is
 still kept.
+
+Reading this field does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: `salary` is a
+re-observed FACT_FIELD (`update_meta.py`), so once a Board is rescraped its now-populated raw
+`Job.salary` differs from the stored one, `refresh_row`'s `salary_inputs_moved` fires, and the
+cascade re-runs on every already-indexed row for that Board — no version sweep required. A
+bump is for when unchanged input starts parsing differently; here the input itself changed
+from `None` to a real string.
 """
 
 from __future__ import annotations
@@ -94,17 +101,26 @@ def _salary(compensation: dict | None) -> str | None:
     "GTQ"}`` — a truthy check on a 0 floor would misread a stated "$0-$85,000" as a bare ceiling
     figure (the same trap ashby's own ``_salary()`` docstring records from the Ramp
     ``minValue=0`` code-review catch). Passed through honestly instead, both reach ``_bounded``
-    and are correctly declined there (0 sits below every currency's plausible floor)."""
+    and are correctly declined there (0 sits below every currency's plausible floor).
+
+    A ``max``-only block (``min`` absent) is declined outright rather than passed through as a
+    bare single value. ``_field_range_currency_interval``'s single-value path always reads a lone
+    figure as a floor with no ceiling (see ashby.py's own ``_salary()`` docstring: it checked its
+    mirror shape directly against live data, found 0/820 real occurrences, and left it on that
+    path deliberately since it never happens in practice there). SmartRecruiters' native block
+    does send max-only in practice — live-verified 2026-08-26, 1/19 populated ``compensation``
+    blocks across 60 boards/348 postings, e.g. ``{"max": 12150, "currency": "MXN", "period":
+    "MONTHLY"}`` — and reading that through the single-value path would silently misreport a
+    stated ceiling ("up to 12,150 MXN/month") as an unbounded floor ("145,800/year, no ceiling",
+    annualized). Unlike the ``max: 0`` junk case above, this one is not caught by ``_bounded``
+    either — 145,800 clears the USD-fallback plausibility bounds cleanly, so it would ship as a
+    confident, wrong number rather than a safe decline."""
     if not compensation:
         return None
     lo, hi = compensation.get("min"), compensation.get("max")
-    if lo is None and hi is None:
+    if lo is None:
         return None
-    span = (
-        f"{lo}-{hi}"
-        if lo is not None and hi is not None
-        else str(lo if lo is not None else hi)
-    )
+    span = f"{lo}-{hi}" if hi is not None else str(lo)
     period = _STRUCTURED_PERIOD.get((compensation.get("period") or "").upper())
     return " ".join(str(x) for x in (span, compensation.get("currency"), period) if x)
 
