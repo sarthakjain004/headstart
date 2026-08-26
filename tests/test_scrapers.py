@@ -2474,7 +2474,8 @@ def test_eightfold_first_location_repairs_a_site_code():
 
 def test_eightfold_first_location_repairs_an_empty_comma_segment():
     """astrazeneca.eightfold.ai's `"Riyadh, , Saudi Arabia"` shape — same defect class
-    darwinbox/keka were fixed for on 2026-08-24."""
+    darwinbox was fixed for on 2026-08-24 (keka's fix that day was the neighboring
+    dirty-whitespace shape, not an empty segment)."""
     from headstart.scrapers.eightfold import _first_location
 
     assert (
