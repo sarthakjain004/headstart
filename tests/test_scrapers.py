@@ -1276,26 +1276,39 @@ def test_freshteam_parse():
     jobs = get_scraper("freshteam", "12min", "12min").parse(
         _load("freshteam_12min.json"), SCRAPED_AT
     )
-    assert len(jobs) == 3  # the deleted=true job is dropped
+    assert len(jobs) == 4  # the deleted=true job is dropped
 
-    marketing, backend, sre = jobs
+    marketing, backend, sre, platform = jobs
     assert marketing.id == "freshteam:12min:1000070208"  # numeric id, not unique_id
     assert marketing.company == "12min"
     assert (
         marketing.title == "Email Marketing & Lifecycle Automation Specialist (Remote)"
     )
-    assert marketing.location == "Belo Horizonte, Brazil"  # branch_id join
+    # preferred_remote_job_locations replaces the branch join (Brazil) for a remote job whose
+    # real hiring geography is elsewhere — the branch is the tenant's registered office, not
+    # where the work is.
+    assert marketing.location == "Remote, United States of America"
     assert marketing.remote is True  # native remote flag
     assert marketing.department == "Marketing"  # job_role_id join
     assert marketing.url.startswith("https://12min.freshteam.com/jobs/")
     assert marketing.posted_at == "2025-02-06T19:22:55.000Z"
     assert marketing.description and "</" not in marketing.description  # HTML stripped
-    assert marketing.employment_type is None  # job_type enum left unmapped
+    assert marketing.employment_type == "Contract"  # job_type 1
 
-    # native remote=false, physical branch -> not remote
+    # native remote=false, physical branch, no preferred_remote_job_locations -> untouched
     assert backend.location == "Bengaluru, India" and backend.remote is False
+    assert backend.employment_type == "Full Time"  # job_type 2
     # native remote=false but the branch location literally says "Remote" -> both-family recovers it
     assert sre.location == "Remote - India" and sre.remote is True
+    assert sre.employment_type is None  # job_type absent from the payload
+
+    # branch is Singapore, but preferred_remote_job_locations names India + Vietnam: the wrong
+    # branch country must NOT ride along next to the real ones (that's the false-positive/
+    # false-negative bug), and multiple places join with "; " like workday's multi-location strings.
+    assert platform.location == "India, India; Vietnam, Viet Nam"
+    assert "Singapore" not in platform.location
+    assert platform.remote is True
+    assert platform.employment_type == "Fixed Term Contract"  # job_type 8
 
 
 def test_freshteam_dead_tenant_is_empty():

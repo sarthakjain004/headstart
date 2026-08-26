@@ -21,6 +21,7 @@
       "id": 1000070300,
       "title": "Backend Engineer",
       "description": "<p>Build APIs. 3+ years experience required.</p>",
+      "job_type": 2,
       "deleted": false,
       "created_at": "2026-01-05T10:00:00.000Z",
       "url": "https://12min.freshteam.com/jobs/AB12-cd/backend-engineer",
@@ -42,6 +43,20 @@
       "job_role_id": 1000140000
     },
     {
+      "id": 1000070303,
+      "title": "Platform Engineer (Remote)",
+      "description": "<p>Ship the platform.</p>",
+      "job_type": 8,
+      "deleted": false,
+      "created_at": "2026-01-07T10:00:00.000Z",
+      "url": "https://12min.freshteam.com/jobs/GH56-ij/platform-engineer-remote",
+      "unique_id": "GH56-ij",
+      "remote": true,
+      "branch_id": 1000021000,
+      "preferred_remote_job_locations": "India, India | Vietnam, Viet Nam",
+      "job_role_id": 1000140000
+    },
+    {
       "id": 1000070302,
       "title": "Closed Role",
       "description": "<p>gone</p>",
@@ -57,7 +72,8 @@
   "branches": [
     {"id": 1000017320, "city": "Belo Horizonte", "state": null, "country_code": "BR", "currency": "USD", "location": "Belo Horizonte, Brazil"},
     {"id": 1000019999, "city": "Bengaluru", "state": "Karnataka", "country_code": "IN", "currency": "INR", "location": "Bengaluru, India"},
-    {"id": 1000018888, "city": "Remote", "state": null, "country_code": "IN", "currency": "INR", "location": "Remote - India"}
+    {"id": 1000018888, "city": "Remote", "state": null, "country_code": "IN", "currency": "INR", "location": "Remote - India"},
+    {"id": 1000021000, "city": "Singapore", "state": null, "country_code": "SG", "currency": "SGD", "location": "Singapore, Singapore"}
   ],
   "job_roles": [
     {"id": 1000133618, "name": "Marketing", "deleted": false},
