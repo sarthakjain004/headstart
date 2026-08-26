@@ -436,6 +436,24 @@ future reader investigating a large zoho board's missing postings finds the expl
 immediately, and finds that the option to build past it was already weighed and declined, not
 overlooked.
 
+## Post-merge correction (PR #304, 2026-08-26): `Job.salary` no longer stays at 0% by design
+
+The Coverage table above and its accompanying note ("`Job.salary` stays at 0% deliberately... matching
+smartrecruiters' `customField` precedent exactly") described a deliberate design choice made during
+this pass: `Salary`/`Currency` were spliced into `description` for Tier-2 mining only, never parsed
+into the structured `Job.salary` field. A separate location/field-health audit
+(`experiment/location-audit-2026-08-25/zoho.md`) revisited that choice and found no reason for zoho
+specifically to withhold a field every other detail-pass ATS with a comparable structured field
+populates. PR #304 adds `_salary_field()`, which builds `Job.salary` directly from the detail
+record's `Salary` (+ `Currency` when present) — e.g. `"250,000 - 300,000 USD"` — feeding
+`salary.extract`'s Tier-1 field parser for the first time. This is additive, not a replacement: the
+description-splice (`_description_text`, née part of `_description_of`) stays exactly as documented
+above, as a fallback for Tier-2 mining on any tenant's phrasing the field parser doesn't handle. The
+0.0% `Job.salary` row in the Coverage table is therefore stale as of this correction; no fresh
+coverage re-measurement was taken as part of it, consistent with this doc's own point-in-time-snapshot
+convention (see the PR #242 correction above) — a future pass should re-run `salary_sample.py` against
+zoho if an updated Tier-1 percentage is needed.
+
 ## Known gaps, left honestly unresolved rather than guessed at
 
 - **Non-English postings** (confirmed: Italian, Dutch, French) — out of scope per this repo's
