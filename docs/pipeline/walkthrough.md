@@ -191,16 +191,23 @@ would stop being re-fetched every run. It was gated on a `Job.detail_fetched` fl
 It was removed, and the reasoning is worth keeping because it is a good example of a design that
 looks right and measures wrong.
 
-**Nobody has found a Job in that state.** Sampled live on 2026-08-26 across **3,443 Jobs on 63
-boards and 13 ATSes**: 323 came back with an empty description, and every one traced to a *fetch
-that failed*, not to a posting that has none — eightfold details returning non-200, Zoho job pages
+**The state is real, but it is tiny — and the flag feeding it is untrustworthy.** Sampled live on
+2026-08-26 across **13,061 Jobs on 95 boards and six detail-pass ATSes**: 399 came back with an
+empty description, and only **9** of those were a posting that genuinely has none (1 of them a tech
+role). The rest were failures or unclassified — eightfold details returning non-200, Zoho job pages
 serving an error body under HTTP 200, a Workday listing row with no `externalPath`. And of
 **328,930** entries the store had accumulated, only **7** were `null` — 0.002%, all eightfold.
 
-**The flag was inert almost everywhere.** Nine scrapers declare `has_detail_pass`, but only
-eightfold ever set `detail_fetched` — and, not coincidentally, `needs_detail` (the skip-list's only
-consumer) is also called by eightfold alone. So for the other eight the flag changed nothing: they
-re-fetch every detail every run whether a Job is settled or not.
+That is the whole argument. What the state buys is ~7 skipped fetches per run. What it costs is
+that on most of the ATSes probed an empty answer is not reliably distinguishable from a failure, so
+a wrong settle records "has no description" *permanently* for a Job that has one. ADR-0089 has the
+per-ATS table and the trace of all 399; read it there rather than trusting this retelling.
+
+**The flag was inert almost everywhere.** Nine scrapers declare `has_detail_pass` — eight
+scrapable, since `join` is disabled — but only eightfold ever set `detail_fetched`, and, not
+coincidentally, `needs_detail` (the skip-list's only consumer) is also called by eightfold alone.
+So for the other seven the flag changed nothing: they re-fetch every detail every run whether a
+Job is settled or not.
 
 **So what are the ~1,974 "still unrecorded" Jobs each run?** Not postings that lack a description
 — **fetch failures**. Northrop Grumman's 3,536 missing details, successfactors' unreadable pages,
@@ -211,7 +218,7 @@ Today the store is two-state: `id -> text`, and membership means we hold the wor
 reads as unheld, and `compact` drops those 7 on its next pass.
 
 **One thing this leaves open**, and it is the more interesting question: the skip-list publishes
-~414,648 ids every run and only eightfold reads it. Making the other eight scrapers consult
+~414,648 ids every run and only eightfold reads it. Making the other seven scrapers consult
 `have_details` would save a lot of fetching — but Workday's detail carries `startDate` (the only
 `posted_at` source) and `jobReqId` (which `_posting_key` needs, measured: skipping it renames 10/10
 postings on `roche`), so it is a real design problem, not a switch. ADR-0089 deliberately does not
@@ -227,7 +234,7 @@ foreclose it.
    explains the facts-vs-derivations split in the codebase's own words.
 3. **`src/headstart/ingest/update_descriptions.py`** — the module docstring covers the store's two
    directions and why membership means text and nothing else; `reconcile()` is where the logic
-   lives, and `_text_in()` is the one place the "held" rule is written down.
+   lives, and `_entries()` is the one place the "held" rule is written down.
 4. **`src/headstart/experience.py`** and **`src/headstart/salary.py`** — the extraction cascades
    themselves, once you want to see what actually does the extracting.
 5. **`.github/workflows/pipeline.yml`** — the authoritative stage order, with a comment on most

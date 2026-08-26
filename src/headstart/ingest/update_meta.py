@@ -202,16 +202,16 @@ def derivation_delta(
 def refresh_row(
     meta: dict,
     facts: dict | None,
-    descriptions: dict[str, str | None],
+    descriptions: dict[str, str],
     sweep: bool,
     rederive: bool = False,
 ) -> tuple[dict, bool, bool]:
     """One row's refresh. Returns ``(row, facts_changed, derivations_changed)``.
 
     ``rederive`` marks a single row for the cascade at an unchanged version — the ADR-0062 case,
-    where this run's scrape settled a description the row was never derived from. It is kept
+    where this run's scrape supplied a description the row was never derived from. It is kept
     separate from ``sweep`` because the two mean different things: ``sweep`` is "the extractor
-    changed, redo everything the store settles", ``rederive`` is "this row's third cascade input
+    changed, redo everything the store holds", ``rederive`` is "this row's third cascade input
     just arrived".
 
     Pure, so the whole policy is unit-testable without a store on disk.
@@ -355,7 +355,7 @@ def refresh(
         f"derivations v{stored_version} stored, v{DERIVATIONS_VERSION} in code — "
         f"{'SWEEPING' if sweep else 'no sweep'}; corpus facts for {len(facts)} Jobs; "
         f"{len(pending)} queued to re-derive"
-        + (f"; {len(descriptions)} settled descriptions" if descriptions else "")
+        + (f"; {len(descriptions)} held descriptions" if descriptions else "")
     )
 
     detail_pass = registry.detail_pass_atses()

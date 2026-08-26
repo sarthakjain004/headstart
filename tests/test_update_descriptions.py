@@ -105,8 +105,9 @@ def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
 def test_a_legacy_null_entry_reads_as_unheld(tmp_path):
     """The store briefly recorded `null` for "the detail answered and this posting genuinely has
     none". That state was removed — measured 2026-08-26, 7 such entries existed across 328,930,
-    and every empty description found across 3,443 live Jobs traced to a failed fetch instead
-    (ADR-0089) — but the entries are still on disk.
+    and of 399 empty descriptions across 13,061 live Jobs only 9 were a posting that genuinely
+    has none, on a signal most detail-pass ATSes cannot produce reliably (ADR-0089) — but the
+    entries are still on disk.
 
     They must read as *unheld*, not as held-with-no-text: the skip-list is what tells the scrape
     not to bother, and an id on it that the store cannot supply is a description lost for good.

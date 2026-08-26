@@ -30,8 +30,8 @@ category was empty, on a 713-Job sample. Re-measuring wider refuted that: the ca
 finding it changes the argument for removal rather than weakening it.
 
 The wider pass ran the real scrapers — `registry.get_scraper(ats, slug, slug).fetch()` over boards
-drawn at random from `data/validate/liveness/{ats}.csv` — across the six **detail-pass** ATSes that
-can exhibit the state at all:
+drawn at random from `data/validate/liveness/{ats}.csv` — across six of the eight scrapable
+**detail-pass** ATSes (rippling and smartrecruiters were not probed):
 
 | ATS | boards | Jobs | empty `description` |
 | --- | --- | --- | --- |
@@ -63,7 +63,8 @@ Each of the 399 was then traced to a cause:
 - **68 are unclassified.** `elcompanies.eightfold.ai` 65 — unstable: a second pass over the same
   board returned 6 empties with the detail returning text for all 1,395 Jobs, and the board 405s
   and falls to the spare egress mid-crawl. `trakstar` 2 — the job page is a JS shell carrying no
-  description marker at all.
+  description marker at all. The remaining **1** is an eightfold empty that was never attributed
+  to a board; it is carried here rather than dropped so the three causes sum to 399.
 
 A third line of evidence arrived independently the same day:
 [`docs/personio/2026-08-26_descriptions-are-language-scoped.md`](../personio/2026-08-26_descriptions-are-language-scoped.md)
@@ -74,20 +75,29 @@ a falsehood — the descriptions exist."*
 
 **So the state fires, and what it buys is ~7 skipped detail fetches per run.** That is the store's
 own lifetime `null` count, and the 1-tech-in-9 rate above says it is the right order. Against that,
-the same measurement prices the cost of keeping it: on **three of the four** detail-pass ATSes
-probed, an empty answer is not reliably distinguishable from a failure. Zoho serves failed details
-as HTTP 200 error bodies. Eightfold's kraftheinz returned 198 non-200s in one pass. Elcompanies
-flipped between 65 and 6 empties depending on which egress it was riding. A flag that means "the
+the same measurement prices the cost of keeping it: on **four of the six** detail-pass ATSes
+probed, an empty answer is not reliably distinguishable from a failure. **Zoho** serves failed
+details as HTTP 200 error bodies — re-verified independently on 2026-08-26, 5 of 5 sampled failing
+ids on `techrecruitment.zohorecruit.com` returned the same 2,182-byte "sorry" page under 200, while
+6 of 6 sampled succeeding ids returned a real ~1.7 MB record. **Eightfold** flips: kraftheinz
+returned 198 non-200s in one pass, and elcompanies moved between 65 and 6 empties depending on
+which egress it was riding. **Trakstar**'s job page is a JS shell carrying no description marker at
+all. **Successfactors**' detail is an HTML *parse*, so an unparseable page and an empty one look
+identical (which is why setting the flag there was reverted — see below). Only workday and
+ripplehire read a field whose absence is unambiguous. A flag that means "the
 detail answered" is only as trustworthy as the scraper's ability to tell answering from failing —
 and where it is wrong it writes a *permanent* falsehood, suppressing the very signal that a
 description is missing. That asymmetry, not an empty category, is what decides this: seven fetches
 a run is less than one silently mis-settled Job.
 
 **What this does not establish.** 95 boards is a sample, not a census: the rate is bounded within
-an order of magnitude, not pinned. Two things could move it and neither is measured here — a
-detail-pass ATS not probed at all, and the 68 unclassified. What the sample *does* pin is the
-shape: the middle row is rare, overwhelmingly non-tech, and every large block of empties turned
-out to be a failure rather than an answer.
+an order of magnitude, not pinned. Three things could move it and none is measured here — the two
+detail-pass ATSes not probed at all, the 68 unclassified, and the board draw itself, which was
+random and unseeded, so the per-ATS counts above are **not** reproducible run-for-run and no
+committed artifact backs them. What is independently checkable is the mechanism, and that is what
+the argument rests on: the two JSON-LD pages and the zoho re-probe cited above were all re-verified
+from scratch. What the sample *does* pin is the shape: the middle row is rare, overwhelmingly
+non-tech, and every large block of empties turned out to be a failure rather than an answer.
 
 **Only one scraper ever set the flag.** Nine scraper classes declare `has_detail_pass` — eight
 scrapable, since `join` is in `DISABLED_ATS` — and `detail_fetched` is set by eightfold alone. That
@@ -159,7 +169,8 @@ Zoho, ripplehire and trakstar have the same ambiguity — their `None` conflates
 an unparseable body. Worse, the whole exercise buys nothing while `needs_detail` has one caller.
 
 **Keep the flag and make every scraper consult `have_details`.** That would give the skip-list real
-teeth — the ~414,648 ids it publishes each run would start saving fetches on eight more ATSes. It
+teeth — the ~414,648 ids it publishes each run would start saving fetches on the seven other
+scrapable detail-pass ATSes. It
 is a genuinely attractive change and it is *not* what this ADR forecloses: it can be made later,
 and would then need its own decision about detail-derived fields (workday's `startDate` is the only
 `posted_at` source, and `_posting_key` reads `jobReqId`, so skipping a detail renames postings —

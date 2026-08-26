@@ -20,12 +20,15 @@ coverage rather than as not measured.
 
 **The store holds text, and membership means exactly that: we have this Job's description.** It
 briefly recorded a second kind of entry — a ``null`` meaning "the detail answered and this posting
-genuinely has none" — gated on ``Job.detail_fetched``. That was removed (ADR-0089): measured
-2026-08-26 over 3,443 live Jobs on 63 boards across 13 ATSes, all 323 empty descriptions traced to
-a *failed fetch* and none to a posting that has none, while the store had accumulated **7** such
-entries in its lifetime (0.002% of 328,930) — and the flag they needed was set by one scraper of
-the nine with a detail pass. So an empty description in the corpus is, in practice, always a fetch
-that failed. ``read_store`` skips any legacy ``null`` so "held" means one thing everywhere;
+genuinely has none" — gated on ``Job.detail_fetched``. That was removed (ADR-0089). The state is
+real but tiny: measured 2026-08-26 over 13,061 live Jobs on 95 boards across six detail-pass
+ATSes, 399 descriptions came back empty and only **9** were a posting that genuinely has none —
+1 of them a tech role, which is why the store accumulated **7** such entries in its lifetime
+(0.002% of 328,930) and not 700. The rest were failed fetches or unclassified. What removed the
+state is that the flag feeding it cannot be trusted: on most detail-pass ATSes an empty answer is
+not reliably distinguishable from a failed fetch (zoho serves its error page under HTTP 200), and
+a wrong settle records a *permanent* falsehood — suppressing the very signal that a description is
+missing. ``read_store`` skips any legacy ``null`` so "held" means one thing everywhere;
 ``--compact`` drops them on its next pass.
 
 **Writes are append-only** (ADR-0050). Each run writes one small ``{seq}.jsonl.gz`` fragment per
@@ -114,9 +117,10 @@ def _entries(ats_dir: Path) -> Iterator[tuple[str, str | None]]:
                 line = line.strip()
                 if line:
                     record = json.loads(line)
-                    description = record.get("description")
-                    held = isinstance(description, str) and description.strip()
-                    yield record["id"], description if held else None
+                    text = record.get("description")
+                    if not isinstance(text, str) or not text.strip():
+                        text = None
+                    yield record["id"], text
 
 
 def read_store(ats_dir: Path) -> dict[str, str]:
@@ -205,11 +209,12 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
                     # No text this run and none stored, so the next run starts here again.
                     #
                     # Deliberately NOT called "the detail never ran", and no longer split by
-                    # whether it did: measured 2026-08-26 (ADR-0089), all 323 empty descriptions
-                    # found across 3,443 live Jobs traced to a failed fetch and none to a posting
-                    # that genuinely has none, so in practice every Job here is a fetch that
-                    # failed. The count is exact — these Jobs really are unrecorded and really do
-                    # return every run.
+                    # whether it did: measured 2026-08-26 (ADR-0089), only 9 of 399 empty
+                    # descriptions across 13,061 live Jobs were a posting that genuinely has none,
+                    # and the signal that would separate those from a failed fetch is unreliable
+                    # on most detail-pass ATSes — so splitting on it would mis-settle more Jobs
+                    # than it spared. The count is exact — these Jobs really are unrecorded and
+                    # really do return every run.
                     unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
