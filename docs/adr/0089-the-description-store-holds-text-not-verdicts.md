@@ -25,11 +25,11 @@ per-Job detail fetch *completed*.
 
 Two findings, both measured 2026-08-26, say that row does not earn its complexity.
 
-**The middle row is real, but it is ~7 tech Jobs wide.** An earlier draft of this ADR claimed the
-category was empty, on a 713-Job sample. Re-measuring wider refuted that: the category exists — 4
-verified Jobs in the pass below — and finding it changes the argument for removal rather than
-weakening it. Its width in *tech* Jobs is pinned only by the store's own lifetime `null` count of
-**7**; the sample found no tech Job in the category at all.
+**The middle row is real, and it is 4 Jobs wide in a 13,061-Job sample — none of them tech.** An
+earlier draft of this ADR claimed the category was empty, on a 713-Job sample. Re-measuring wider
+refuted that: the category exists, and finding it changes the argument for removal rather than
+weakening it. Its width in *tech* Jobs — the only Jobs that reach the store — is pinned solely by
+the store's own lifetime `null` count of **7**, since the sample found no tech member at all.
 
 The wider pass ran the real scrapers — `registry.get_scraper(ats, slug, slug).fetch()` over boards
 drawn at random from `data/validate/liveness/{ats}.csv` — across six of the eight scrapable
@@ -59,9 +59,8 @@ Each of the 399 was then traced to a cause:
   JSON-LD-verified. Re-probed: the scraper still returns exactly 5 empties of 219 Jobs, but **5 of
   5 of those Jobs carry a full description in their public JSON-LD** (HTTP 200, ~205 KB pages).
   The descriptions exist, so these are not the posting's own absence and they move to the bullet
-  below. That also removes the
-  only tech role in the group: the 5 are German-titled engineering posts and
-  `tech_filter.is_tech()` — the ADR-0017 gate that decides what reaches `data/jobs/tech/` and
+  below. That also removes the only tech role in the group: the 5 are German-titled engineering
+  posts and `tech_filter.is_tech()` — the ADR-0017 gate that decides what reaches `data/jobs/tech/` and
   therefore the store — scores exactly 1 of them tech, the `Senior DevOps Engineer`. So **0 of the
   4 verified middle-row Jobs are tech**, and this sample corroborates nothing about the store's
   lifetime `null` count; that count stands on its own observation.
@@ -78,8 +77,8 @@ Each of the 399 was then traced to a cause:
   been `False` and the state would *not* have fired; the job pages carry a full JSON-LD
   description, so settling them would have been a lie the flag happened to avoid.
   `techrecruitment.zohorecruit.com`, 123 of 131: 4 of 4 job pages sampled in this pass serve Zoho's
-  2,182-byte "sorry" error page under **HTTP 200** (re-probed wider below). `kone/careers` (workday), 1 of 923: its listing row is
-  `{"bulletFields": ["R0663872"]}` — no `externalPath`, so no detail was ever attempted.
+  2,182-byte "sorry" error page under **HTTP 200** (re-probed wider below). `kone/careers`
+  (workday), 1 of 923: its listing row is `{"bulletFields": ["R0663872"]}` — no `externalPath`, so no detail was ever attempted.
 - **68 are unclassified.** `elcompanies.eightfold.ai` 65 — unstable: a second pass over the same
   board returned 6 empties with the detail returning text for all 1,395 Jobs, and the board 405s
   and falls to the spare egress mid-crawl. `trakstar` 2 — the job page is a JS shell carrying no
@@ -94,10 +93,9 @@ JSON-LD. Its own conclusion is this ADR's: *"Settling these Jobs as 'has none' w
 a falsehood — the descriptions exist."*
 
 **So the state fires, and what it buys is ~7 skipped detail fetches per run.** That is the store's
-own lifetime `null` count — an observation, not an estimate from the sample, which found 0 tech
-Jobs in the category. Against that,
-the same measurement prices the cost of keeping it — and the price was measured on the one scraper
-where the state was actually live.
+own lifetime `null` count — an observation, not an estimate from the sample, which found no tech
+Job in the category at all. Against that, the same measurement prices the cost of keeping it, and
+the price was measured on the one scraper where the state was actually live.
 
 **Eightfold's flag is wrong on live data, 5 of 5.** The telekom-growthhub Jobs above are not a
 near-miss; they are the removed state firing incorrectly. Instrumented at `_description` on
