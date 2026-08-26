@@ -51,6 +51,13 @@ career sites. That is the whole customer roster, free, in one round trip.
    that the Board is live. Zwayam: 145 candidates → 105 live.
 4. **Drop the vendor's own infrastructure** from the roster (`www.zwayam.com`, `zwayam.com`).
 
+**Do not snowball CT from tenant apex domains.** The instinct once you hold a roster is to feed
+each tenant's own domain back into CT and widen. Measured on Zwayam: seeding CertSpotter with
+`axismaxlife.com`, `eaplworld.com`, `culko.in` and kin returned **0 new Boards from 228
+candidates** — a tenant's apex cert is the *tenant's* footprint (`elink.*` mailers, `devapi.*`,
+internal UAT hosts), not the vendor's roster. The vendor's name is what sits on the shared cert, so
+**one query keyed on the vendor is the whole angle**; widening it only adds noise.
+
 Prefer the **live handshake** over CT-log search. On Zwayam, Certspotter was useful for historical
 depth, but **crt.sh is actively misleading**: `?O=INFO EDGE (INDIA) LIMITED` returns HTTP 200 with
 776 rows that collapse to 3 distinct values, because it puts the *organisation* name in
