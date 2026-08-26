@@ -7,11 +7,330 @@ and fall back to EU when the slug isn't found there.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from headstart import http
 from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
+
+# ISO 3166-1 alpha-2 -> common English short name, used only to recognize when the
+# top-level `country` is already spelled out in the composed location string (so it isn't
+# appended a second time). Measured 2026-08-25 over 286 live Boards / 5,796 postings: 75
+# distinct codes in use, spanning far enough across the standard that a curated subset would
+# risk missing one — so this is the complete alpha-2 list rather than a curated subset.
+_COUNTRY_NAMES: dict[str, str] = {
+    "AD": "Andorra",
+    "AE": "United Arab Emirates",
+    "AF": "Afghanistan",
+    "AG": "Antigua and Barbuda",
+    "AI": "Anguilla",
+    "AL": "Albania",
+    "AM": "Armenia",
+    "AO": "Angola",
+    "AQ": "Antarctica",
+    "AR": "Argentina",
+    "AS": "American Samoa",
+    "AT": "Austria",
+    "AU": "Australia",
+    "AW": "Aruba",
+    "AX": "Åland Islands",
+    "AZ": "Azerbaijan",
+    "BA": "Bosnia and Herzegovina",
+    "BB": "Barbados",
+    "BD": "Bangladesh",
+    "BE": "Belgium",
+    "BF": "Burkina Faso",
+    "BG": "Bulgaria",
+    "BH": "Bahrain",
+    "BI": "Burundi",
+    "BJ": "Benin",
+    "BL": "Saint Barthélemy",
+    "BM": "Bermuda",
+    "BN": "Brunei",
+    "BO": "Bolivia",
+    "BQ": "Bonaire, Sint Eustatius and Saba",
+    "BR": "Brazil",
+    "BS": "Bahamas",
+    "BT": "Bhutan",
+    "BV": "Bouvet Island",
+    "BW": "Botswana",
+    "BY": "Belarus",
+    "BZ": "Belize",
+    "CA": "Canada",
+    "CC": "Cocos Islands",
+    "CD": "Democratic Republic of the Congo",
+    "CF": "Central African Republic",
+    "CG": "Republic of the Congo",
+    "CH": "Switzerland",
+    "CI": "Ivory Coast",
+    "CK": "Cook Islands",
+    "CL": "Chile",
+    "CM": "Cameroon",
+    "CN": "China",
+    "CO": "Colombia",
+    "CR": "Costa Rica",
+    "CU": "Cuba",
+    "CV": "Cape Verde",
+    "CW": "Curaçao",
+    "CX": "Christmas Island",
+    "CY": "Cyprus",
+    "CZ": "Czech Republic",
+    "DE": "Germany",
+    "DJ": "Djibouti",
+    "DK": "Denmark",
+    "DM": "Dominica",
+    "DO": "Dominican Republic",
+    "DZ": "Algeria",
+    "EC": "Ecuador",
+    "EE": "Estonia",
+    "EG": "Egypt",
+    "EH": "Western Sahara",
+    "ER": "Eritrea",
+    "ES": "Spain",
+    "ET": "Ethiopia",
+    "FI": "Finland",
+    "FJ": "Fiji",
+    "FK": "Falkland Islands",
+    "FM": "Micronesia",
+    "FO": "Faroe Islands",
+    "FR": "France",
+    "GA": "Gabon",
+    "GB": "United Kingdom",
+    "GD": "Grenada",
+    "GE": "Georgia",
+    "GF": "French Guiana",
+    "GG": "Guernsey",
+    "GH": "Ghana",
+    "GI": "Gibraltar",
+    "GL": "Greenland",
+    "GM": "Gambia",
+    "GN": "Guinea",
+    "GP": "Guadeloupe",
+    "GQ": "Equatorial Guinea",
+    "GR": "Greece",
+    "GS": "South Georgia",
+    "GT": "Guatemala",
+    "GU": "Guam",
+    "GW": "Guinea-Bissau",
+    "GY": "Guyana",
+    "HK": "Hong Kong",
+    "HM": "Heard Island",
+    "HN": "Honduras",
+    "HR": "Croatia",
+    "HT": "Haiti",
+    "HU": "Hungary",
+    "ID": "Indonesia",
+    "IE": "Ireland",
+    "IL": "Israel",
+    "IM": "Isle of Man",
+    "IN": "India",
+    "IO": "British Indian Ocean Territory",
+    "IQ": "Iraq",
+    "IR": "Iran",
+    "IS": "Iceland",
+    "IT": "Italy",
+    "JE": "Jersey",
+    "JM": "Jamaica",
+    "JO": "Jordan",
+    "JP": "Japan",
+    "KE": "Kenya",
+    "KG": "Kyrgyzstan",
+    "KH": "Cambodia",
+    "KI": "Kiribati",
+    "KM": "Comoros",
+    "KN": "Saint Kitts and Nevis",
+    "KP": "North Korea",
+    "KR": "South Korea",
+    "KW": "Kuwait",
+    "KY": "Cayman Islands",
+    "KZ": "Kazakhstan",
+    "LA": "Laos",
+    "LB": "Lebanon",
+    "LC": "Saint Lucia",
+    "LI": "Liechtenstein",
+    "LK": "Sri Lanka",
+    "LR": "Liberia",
+    "LS": "Lesotho",
+    "LT": "Lithuania",
+    "LU": "Luxembourg",
+    "LV": "Latvia",
+    "LY": "Libya",
+    "MA": "Morocco",
+    "MC": "Monaco",
+    "MD": "Moldova",
+    "ME": "Montenegro",
+    "MF": "Saint Martin",
+    "MG": "Madagascar",
+    "MH": "Marshall Islands",
+    "MK": "North Macedonia",
+    "ML": "Mali",
+    "MM": "Myanmar",
+    "MN": "Mongolia",
+    "MO": "Macau",
+    "MP": "Northern Mariana Islands",
+    "MQ": "Martinique",
+    "MR": "Mauritania",
+    "MS": "Montserrat",
+    "MT": "Malta",
+    "MU": "Mauritius",
+    "MV": "Maldives",
+    "MW": "Malawi",
+    "MX": "Mexico",
+    "MY": "Malaysia",
+    "MZ": "Mozambique",
+    "NA": "Namibia",
+    "NC": "New Caledonia",
+    "NE": "Niger",
+    "NF": "Norfolk Island",
+    "NG": "Nigeria",
+    "NI": "Nicaragua",
+    "NL": "Netherlands",
+    "NO": "Norway",
+    "NP": "Nepal",
+    "NR": "Nauru",
+    "NU": "Niue",
+    "NZ": "New Zealand",
+    "OM": "Oman",
+    "PA": "Panama",
+    "PE": "Peru",
+    "PF": "French Polynesia",
+    "PG": "Papua New Guinea",
+    "PH": "Philippines",
+    "PK": "Pakistan",
+    "PL": "Poland",
+    "PM": "Saint Pierre and Miquelon",
+    "PN": "Pitcairn",
+    "PR": "Puerto Rico",
+    "PS": "Palestine",
+    "PT": "Portugal",
+    "PW": "Palau",
+    "PY": "Paraguay",
+    "QA": "Qatar",
+    "RE": "Réunion",
+    "RO": "Romania",
+    "RS": "Serbia",
+    "RU": "Russia",
+    "RW": "Rwanda",
+    "SA": "Saudi Arabia",
+    "SB": "Solomon Islands",
+    "SC": "Seychelles",
+    "SD": "Sudan",
+    "SE": "Sweden",
+    "SG": "Singapore",
+    "SH": "Saint Helena",
+    "SI": "Slovenia",
+    "SJ": "Svalbard and Jan Mayen",
+    "SK": "Slovakia",
+    "SL": "Sierra Leone",
+    "SM": "San Marino",
+    "SN": "Senegal",
+    "SO": "Somalia",
+    "SR": "Suriname",
+    "SS": "South Sudan",
+    "ST": "Sao Tome and Principe",
+    "SV": "El Salvador",
+    "SX": "Sint Maarten",
+    "SY": "Syria",
+    "SZ": "Eswatini",
+    "TC": "Turks and Caicos Islands",
+    "TD": "Chad",
+    "TF": "French Southern Territories",
+    "TG": "Togo",
+    "TH": "Thailand",
+    "TJ": "Tajikistan",
+    "TK": "Tokelau",
+    "TL": "Timor-Leste",
+    "TM": "Turkmenistan",
+    "TN": "Tunisia",
+    "TO": "Tonga",
+    "TR": "Turkey",
+    "TT": "Trinidad and Tobago",
+    "TV": "Tuvalu",
+    "TW": "Taiwan",
+    "TZ": "Tanzania",
+    "UA": "Ukraine",
+    "UG": "Uganda",
+    "UM": "United States Minor Outlying Islands",
+    "US": "United States",
+    "UY": "Uruguay",
+    "UZ": "Uzbekistan",
+    "VA": "Vatican City",
+    "VC": "Saint Vincent and the Grenadines",
+    "VE": "Venezuela",
+    "VG": "British Virgin Islands",
+    "VI": "United States Virgin Islands",
+    "VN": "Vietnam",
+    "VU": "Vanuatu",
+    "WF": "Wallis and Futuna",
+    "WS": "Samoa",
+    "YE": "Yemen",
+    "YT": "Mayotte",
+    "ZA": "South Africa",
+    "ZM": "Zambia",
+    "ZW": "Zimbabwe",
+}
+
+
+def _already_names_country(composed_lower: str, code: str, name: str | None) -> bool:
+    """Whether ``composed_lower`` already spells out this country — as a whole word, not a
+    substring landing inside an unrelated one.
+
+    A bare-substring check on a 2-letter code is unsound: ``"in"`` occurs inside ``"Beijing"``,
+    so a raw ``code.lower() in composed_lower`` reads a Chennai/Beijing posting as already
+    naming India and skips the append — the exact case this function exists to append *for*.
+    Found live, review round 1: ``_location({"allLocations": ["Chennai", "Beijing"]}, "IN")``
+    returned ``"Chennai, Beijing"`` with India never named. A full country name is safer as a
+    substring (multi-word names rarely land inside another word by accident) but is checked the
+    same way here for one rule rather than two.
+
+    Known residual gap, found review round 2, not fixed: several ISO alpha-2 codes double as
+    US state postal abbreviations this whole-word check can't distinguish from (CA/California,
+    CO/Colorado, DE/Delaware, GA/Georgia, IN/Indiana, LA/Louisiana, MA/Massachusetts,
+    MD/Maryland, PA/Pennsylvania, SC/South Carolina, SD/South Dakota, VA/Virginia, among
+    others) — a posting whose ``country`` is e.g. "CO" (Colombia) with an unrelated
+    "Denver, CO" entry elsewhere in ``allLocations`` would read the state tag as the country
+    already being named and skip the append. Live-probed 2026-08-26 across 143 boards / 2,535
+    postings for exactly this shape (country code present only inside a longer non-standalone
+    entry): 0 hits. Left undocumented-but-live rather than restructured, given zero confirmed
+    occurrences — a per-entry-exact-match rewrite would close it but is more invasive than this
+    round's evidence justifies.
+    """
+    boundary = r"(?<![a-z]){}(?![a-z])"
+    if re.search(boundary.format(re.escape(code.lower())), composed_lower):
+        return True
+    if name and re.search(boundary.format(re.escape(name.lower())), composed_lower):
+        return True
+    # "USA" is a common colloquial short form Lever locations use in place of the full
+    # "United States" name; without this, e.g. "Select USA Remote Locations" (real freedompay
+    # shape, live 2026-08-26) reads as not-yet-naming the US and gets a redundant ", US"
+    # appended, defeating the no-duplicate-append purpose this function exists for.
+    return code.upper() == "US" and bool(
+        re.search(boundary.format("usa"), composed_lower)
+    )
+
+
+def _location(categories: dict, country: str | None) -> str | None:
+    """Join every ``allLocations`` entry, then append the unread top-level ``country``.
+
+    location-audit-2026-08-25/lever.md: ``categories.location`` is only ``allLocations[0]``
+    (0 mismatches confirmed across 36,565 live records) — reading it alone silently drops
+    every other entry, 7.96% of postings across 213 Boards, including 34 that hide an India
+    location behind an unrelated kept location. ``country`` (ISO-2, 88.60% populated) is read
+    nowhere despite being orthogonal to the string: 71.8% of the time its code doesn't appear
+    in the composed location at all. Appended only when neither the code nor its full name is
+    already present as a whole word, so it can't duplicate what's already spelled out.
+    """
+    parts = [p for p in (categories.get("allLocations") or []) if p]
+    if not parts:
+        loc = categories.get("location")
+        parts = [loc] if loc else []
+    composed = ", ".join(parts)
+    if country:
+        name = _COUNTRY_NAMES.get(country.upper())
+        if not _already_names_country(composed.lower(), country, name):
+            composed = f"{composed}, {country}" if composed else country
+    return composed or None
 
 
 def _salary(rng: dict | None) -> str | None:
@@ -68,7 +387,7 @@ class LeverScraper(BaseScraper):
         jobs: list[Job] = []
         for j in raw:
             categories = j.get("categories") or {}
-            location = categories.get("location")
+            location = _location(categories, j.get("country"))
             workplace = (j.get("workplaceType") or "").lower()
             remote = workplace == "remote" or bool(is_remote(location))
             jobs.append(
