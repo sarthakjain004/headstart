@@ -1,5 +1,30 @@
 # Getting past the "Vercel Security Checkpoint" (Personio)
 
+> **Correction, 2026-08-26 — this document names the wrong host, and the fix it points at is the
+> wrong lever.** See
+> [`2026-08-26_the-429-is-a-dead-tenant-tombstone.md`](2026-08-26_the-429-is-a-dead-tenant-tombstone.md).
+>
+> What survives: the identification of the challenge itself (Vercel Firewall "Challenge" action,
+> not BotID) is correct and was reproduced exactly — 429, `x-vercel-mitigated: challenge`, no
+> `Retry-After`.
+>
+> What does not: **the tenant boards are not behind it.** `{tenant}.jobs.personio.{de|com}` is
+> served by personio's own Express/CloudFront stack — 44 of 44 randomly-drawn live boards answered
+> 200 with a real `<workzag-jobs>` feed at 16 concurrent workers, and 592 of 600 in a wider sample.
+> The Vercel challenge fronts **`www.personio.com`, the marketing site**, which the scrape reaches
+> only by following a **307 from a tenant that has left personio**. The wall is a tombstone
+> redirect, not a board protection.
+>
+> So §"the one cheap, evidence-backed thing worth actually trying" — running the personio pass
+> from a non-datacenter egress — is aimed at the wrong variable, and was falsified directly:
+> rotating through three verified-distinct egress addresses got 429 from every one, while the same
+> IP in the same second got 200 or 429 depending only on the `User-Agent`. And there is nothing
+> worth solving: a solved challenge yields 1.7 MB of marketing HTML that holds no job data.
+>
+> This document's own evidence pointed here already — "a fresh, unthrottled curl from a home
+> network got a clean 200 on the first try against a **live** tenant" — but read it as the wall
+> being intermittent rather than as the live tenant never having been walled.
+
 Personio's `{tenant}.jobs.personio.{de|com}` boards sit behind a **Vercel Firewall Challenge**
 (what its own docs call the **Attack Mode / WAF "Challenge" action**) — *not* Vercel BotID.
 That distinction is the single most important fact here, because the two are built

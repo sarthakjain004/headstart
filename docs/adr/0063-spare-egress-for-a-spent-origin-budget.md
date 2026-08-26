@@ -281,27 +281,74 @@ the sum of the layers. A shard that still ends up without WARP scrapes over its 
 which is the degradation this ADR promised all along; it just never priced the install itself.
 
 
-## Amendment, 2026-08-26: Personio opts in on 429 — provisional, evidence weaker than Workday's
+## Amendment, 2026-08-26: Personio's 429 opt-in is REVERTED — the premise was false
 
-**Personio is now opted in on 429 too** (`egress_fallback_on = frozenset({429})`), the same
-provisional shape as Workday's amendment above, added here because that amendment is the
-documented record of every ATS's 429 opt-in and Personio's had drifted to living only in a code
-comment and commit message.
+Personio was opted in on 429 earlier the same day (#312), provisionally, on an aggregate failure
+count rather than a per-origin measurement, with the exit criterion *"watch the shard report's
+recovered rate in later runs and revert this if it doesn't hold up."* The first two runs to carry
+it were `32936269675` and `32942748996`. **It is reverted.** The premise was not merely unproven,
+it was wrong: personio's 429 is not an origin budget and is not keyed on the client IP at all.
 
-**Evidence.** Grepping all 105 scrape-shard logs across the 7 most recent completed pipeline runs
-for terminal `HTTP Error 429` board failures found Personio the dominant source among ATSes not
-already opted in: 85, against Workday's own 9 (already opted in) and every other ATS's `HTTPError`s
-landing on entirely different status codes (e.g. Freshteam's near-all 502).
+**What the 429 actually is.** A tenant that has left personio does not 404. `https://{host}/xml`
+answers **307 -> `https://personio.com`**, and personio's marketing site is behind Vercel bot
+mitigation, which answers **429** with `x-vercel-mitigated: challenge`. The scrape followed that
+redirect and read the challenge as the Board's own rate limit.
 
-**Weaker than Workday's bar, and said plainly rather than dressed up.** Workday's amendment above
-shipped with a measured per-shard-load-vs-failure-rate table across three named instances
-(wd1/wd3/wd5) — a real dose-response curve. Personio has no equivalent: an aggregate failure count
-is not proof of per-origin metering, only of a dominant symptom. A live attempt to reproduce a 429
-from Personio with 20 sequential requests from one machine did not succeed, consistent with the
-wall being a property of a whole shard's concurrent load rather than something a single serial
-client can trigger cheaply — but that is a plausible reading, not the same kind of proof Workday's
-table gave.
+Measured live 2026-08-26, three independent ways, each on its own sample:
 
-**Exit criterion**, identical to Workday's: watch the shard report's recovered rate on Personio
-across subsequent runs. A high routed count with low recovery means the spare egress isn't helping
-here either, and this opt-in comes back out.
+- **Every** Board that failed terminally with `HTTP Error 429` across both runs — 22 of 22, the
+  union of the two runs' failure lists — redirects to the marketing site. Against a base rate of
+  **8 of 600** randomly sampled live Boards (1.33%), with **0 of 600** redirecting anywhere else
+  and **0** that redirect and still serve a feed. One of the 8, `brugg-rohrsysteme-gmbh`, is itself
+  a terminal-429 Board. The association is total, in both directions.
+- **A different egress IP does not clear it.** The real scraper, driven against those Boards with
+  this opt-in live, rotated the spare egress through **three verified-distinct addresses**
+  (`104.28.220.169`, `104.28.220.175`, `104.28.252.174` — the module's own trace confirming
+  `moved`) across 16 rotations, and was answered 429 by every one.
+- **It is keyed on the header, not the client.** Same IP, same second, same TLS fingerprint: a
+  Chrome `User-Agent` gets 200, and `headstart/0.1 (job-board reader)` gets 429 + `challenge`. A
+  live tenant's own feed is unaffected by either (200 both ways), which is the control.
+
+**What the shard report said, and why it could not have caught this.** The reported rescue rate was
+95.0% and 95.9% — healthy by the stated criterion — while the outcome the opt-in was adopted to fix
+did not move at all: terminal 429 Board failures were 14 and 14, against a pre-fix baseline of
+**12.1/run (n=8 runs, sd 2.7, range 8-16)**, i.e. inside noise and marginally *worse* by rate. The
+tightest control, run `32932727429`, differs from the post-fix runs by exactly this one commit and
+had 16.
+
+The criterion could not fail, because the two numbers count different things. `note_settled` is
+called for **every** request the spare egress carries once a group is walled, and buckets any 200
+as `rescued` — but by then the group is walled for the whole shard, so the overwhelming majority of
+those requests are *healthy Boards that were never refused*. The rate therefore measures "what
+fraction of this ATS's Boards on this shard are healthy", which was ~95% before the opt-in too. The
+residual is the tell: **unrescued requests were exactly 14 in both runs, exactly the terminal Board
+count.** A rescue rate is pinned high by traffic that never needed rescuing; only a per-Board
+outcome can answer whether the fallback bought anything. *Any* future opt-in judged by this metric
+inherits the same blind spot — Workday's amendment above included.
+
+**And it cost something.** `ProxyError` on personio (`curl: (97) Failed to receive SOCKS response,
+proxy closed connection`) was 0 across all 8 pre-fix runs and 3 and 1 across the two post-fix ones —
+all 4 ProxyErrors in those runs are personio. Total personio terminal Board failures went
+12.1/run -> 17 and 15. A wall that no IP can clear turns rotation into a tight loop (`deltia-ai`
+rotated 4 times in 20s), and a Board riding the tunnel when it restarts dies with it. `fetch`'s
+transport-error path does not rotate or re-dial — it retries the same cached SOCKS port — so once
+the spare egress is not carrying traffic, the remaining attempts are spent on a route that cannot
+answer. That gap is latent for workday and eightfold (0 ProxyErrors from either across the same 10
+runs) and is not addressed here; removing personio's rotation removes every instance of it observed.
+
+**The fix is upstream of all of it.** `PersonioScraper.fetch_raw` no longer follows a redirect off
+the Board host, and reports one in the shape `board_failures.is_gone` recognises — the way lever
+reports a slug that is on no Lever board. That matters beyond the message: a 429 deliberately never
+ages a Board (ADR-0058), so read as a rate limit these departed tenants stayed in the slice failing
+every run indefinitely — which is why 4 of them (`pitch`, `zellerfeld`, `hishab`, `egym`) failed in
+10 of 10 runs. Read as gone, the existing quarantine retires them after five agreeing runs, no
+request ever reaches the marketing site, personio is never marked walled, and the shard's healthy
+personio Boards keep their direct route and their full fan-out width.
+
+**What survives for the ADR as a whole.** Nothing here weakens the Eightfold case, which was
+measured per origin before it was built. It does sharpen the bar the Workday amendment set: an
+opt-in needs a measurement that the wall moves with the client IP, and *`egress_fallback_on` must
+not be reached for by an ATS whose 429 has not been traced to its actual origin* — the status code
+is where the investigation starts, not where it ends. Both ATSes now to have failed that test
+(freshteam in #311, whose 429s turned out to be 502s from a down origin; personio here) failed it
+the same way: an aggregate count of a symptom was read as evidence of a mechanism.
