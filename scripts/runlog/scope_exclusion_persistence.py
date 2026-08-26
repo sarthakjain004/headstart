@@ -106,20 +106,20 @@ def main() -> None:
     # only by case, which is the point.
     spelling: dict[str, str] = {}
 
-    def keep(board: str) -> str:
-        spelling[_key(board)] = board
-        return _key(board)
-
     for run in runs:
         text = ""
         for _shard, _job, log in run.stage(STAGE):
             text += log
-        excluded = {keep(b): why for b, why in SCOPE_EXCLUDED.findall(text)}
+        excluded: dict[str, str] = {}
+        for board, why in SCOPE_EXCLUDED.findall(text):
+            excluded[_key(board)] = why
+            spelling[_key(board)] = board
         reasons_known = bool(excluded)
         if not excluded:
             for chunk in SCOPE_EXCLUDED_BATCH.findall(text):
                 for board in chunk.split():
-                    excluded[keep(board)] = _NO_REASON
+                    excluded[_key(board)] = _NO_REASON
+                    spelling[_key(board)] = board
         rows_line = SCOPE_ROWS.search(text)
         rows = {_key(b): int(count) for count, b in SCOPE_ROW_BOARD.findall(text)}
         record = {
@@ -129,13 +129,15 @@ def main() -> None:
             # A run whose merge job never reached `index sync` reports nothing; distinguish that
             # from a genuinely clean run, or the window silently shrinks.
             #
-            # Keyed on the `corpus:` line, not on `"[index]"`: the latter is also printed by
-            # `index prune` (`index.py:632`) and by a sync that died before the exclusion block,
-            # either of which would mark a run usable while contributing zero exclusions — the
-            # silent-zero this is meant to catch. `corpus:` is emitted once in the whole package
-            # (`index.py:409`), inside `sync`, on the line *after* the per-Board
-            # `scope-excluded Board` lines, so its presence proves sync reached and cleared that
-            # block. Its wording is unchanged across both log formats.
+            # Keyed on the `corpus:` line, not on `"[index]"`. `[index]` is not a line at all —
+            # it is the module tag `log._Formatter` stamps on *every* record the module emits
+            # (`headstart/log.py:50-53`), so it is already true of the stage's first line and of
+            # `index prune`'s output. A run whose sync died immediately, or that only got as far
+            # as prune, would still be counted usable while contributing zero exclusions — the
+            # silent zero this flag exists to catch. `corpus:` is emitted once in the whole
+            # package (`index.py:409`), inside `sync`, after the per-Board `scope-excluded Board`
+            # lines, so its presence proves sync reached and cleared that block. Its wording is
+            # unchanged across both log formats.
             "reached_sync": "corpus:" in text,
             "has_row_line": bool(rows_line),
             "reasons_known": reasons_known,

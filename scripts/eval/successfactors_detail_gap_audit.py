@@ -17,8 +17,8 @@ and compares every failing job page against it. A job page that is the tenant's 
 requisition" shell is not unreadable — it is **closed**, and keeping it out of scope is the leak.
 
 **The comparison is a length window, not byte equality, and that is not a shortcut.** Measured on
-`careers.hcltech.com` 2026-08-26, the shell is *not* byte-stable, so a hash or `==` would score
-every closed page `unreadable` and invert this tool's conclusion:
+`careers.hcltech.com` and `careers.wipro.com` 2026-08-26, the shell is *not* byte-stable, so a
+hash or `==` would score every closed page `unreadable` and invert this tool's conclusion:
 
 - two fabricated requisitions differ in exactly one line — the page echoes its own id back
   (`jobID : '999999\\x2Den_US'`), so no two ids ever produce the same bytes;
@@ -75,9 +75,15 @@ from headstart.scrapers.successfactors import (
 _ABSENT_REQ = "/job/Headstart-Control-Does-Not-Exist/999999-en_US/"
 
 # How far a page's length may sit from the control's and still count as the same shell. See the
-# module docstring: measured drift on the one tenant this has been characterised on is ~514
-# chars, and the nearest real posting is ~13,500 above the shell, so anything in this band
-# discriminates. Not tuned per tenant — a tenant that needs more than this scores `unreadable`.
+# module docstring. Measured 2026-08-26 on both tenants that have been characterised, and the
+# drift is the *same* ~514 chars on each because it is the same first-response tracking block:
+#
+#   careers.hcltech.com  shell ~111,009   two fabricated ids 514 apart   real postings 121k-127k
+#   careers.wipro.com    shell  ~96,119   two fabricated ids 514 apart   real postings 126k-133k
+#
+# So one constant covers both with ~2x margin, against a 10k-30k gap to the nearest real posting.
+# Not tuned per tenant — a tenant that needs more than this scores `unreadable`, which is today's
+# behaviour and safe.
 _SHELL_SLACK = 1024
 
 # Per-Board ids listed in the `--json` capture. Whatever is dropped is counted, never silent.
@@ -92,7 +98,7 @@ def _fetch(url: str) -> tuple[int, str]:
         return -1, type(exc).__name__
 
 
-def _titled(page: str, url: str) -> bool:
+def _has_title(page: str, url: str) -> bool:
     """Exactly the predicate production uses to decide a detail page was a loss.
 
     Deliberately delegates to `_titled_fields` rather than re-deriving it: an audit whose
@@ -103,18 +109,28 @@ def _titled(page: str, url: str) -> bool:
     return _titled_fields(page, url) is not None
 
 
+def _skip(board: str, why: str) -> dict:
+    """Record that this Board could not be scored, and let the sweep carry on.
+
+    `boards` is `nargs="+"`, so exiting here would take every Board after this one with it —
+    the failure mode CLAUDE.md's streaming rule and this file's own `_fetch` comment ("one
+    page's failure must not sink the sweep") both forbid. The skip is loud and lands in the
+    `--json` capture, so it can never be mistaken for a Board that scored zero.
+    """
+    print(f"{board}: SKIPPED — {why}", flush=True)
+    return {"board": board, "skipped": why}
+
+
 def audit(board: str, sample: int, workers: int) -> dict:
     ats, slug = board.split(":", 1)
     if ats != "successfactors":
-        sys.exit(f"only successfactors is wired here; got {ats}")
+        return _skip(board, f"only successfactors is wired here; got {ats}")
     scraper = SuccessFactorsScraper(slug, slug)
 
     kind, text, cut = scraper._fetch_sitemap()
     listed = _job_urls_from(text, slug) if kind == "urlset" else []
     if not listed:
-        sys.exit(
-            f"{board}: sitemap surface listed nothing (kind={kind}) — not wired for this"
-        )
+        return _skip(board, f"sitemap surface listed nothing (kind={kind})")
     print(
         f"{board}: listing surface=sitemap-{kind} listed={len(listed)} truncated={cut}",
         flush=True,
@@ -122,7 +138,7 @@ def audit(board: str, sample: int, workers: int) -> dict:
 
     ctl_code, ctl_body = _fetch(f"https://{slug}{_ABSENT_REQ}")
     ctl_len = len(ctl_body)
-    ctl_titled = _titled(ctl_body, "") if ctl_code == 200 else False
+    ctl_titled = _has_title(ctl_body, "") if ctl_code == 200 else False
     print(
         f"{board}: control (nonexistent requisition) -> HTTP {ctl_code}, {ctl_len} chars, "
         f"titled={ctl_titled if ctl_code == 200 else 'n/a'}",
@@ -136,13 +152,14 @@ def audit(board: str, sample: int, workers: int) -> dict:
     # posting for an id that cannot exist, so the control does not define "not found" here at
     # all. Refuse both rather than emit a confident wrong number.
     if ctl_code != 200:
-        sys.exit(
-            f"{board}: control fetch returned {ctl_code} ({ctl_body}) — cannot score"
+        return _skip(
+            board, f"control fetch returned {ctl_code} ({ctl_body}) — cannot score"
         )
     if ctl_titled:
-        sys.exit(
-            f"{board}: control page parsed as a real posting — this tenant does not serve a "
-            "not-found shell, so a title-less page cannot be scored against it"
+        return _skip(
+            board,
+            "control page parsed as a real posting — this tenant does not serve a not-found "
+            "shell, so a title-less page cannot be scored against it",
         )
 
     pages = listed if sample <= 0 else random.sample(listed, min(sample, len(listed)))
@@ -158,7 +175,7 @@ def audit(board: str, sample: int, workers: int) -> dict:
             if code != 200:
                 verdicts["unreadable"] += 1
                 unreadable.append((jid, f"HTTP {code}" if code > 0 else body))
-            elif _titled(body, url):
+            elif _has_title(body, url):
                 verdicts["open"] += 1
             elif abs(len(body) - ctl_len) <= _SHELL_SLACK:
                 # Same shell the tenant serves for a requisition that does not exist. The slack

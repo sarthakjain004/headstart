@@ -40,6 +40,12 @@ Only the first has **no bound and no drain**. The collapse guard drains 25% per 
 the grace period is a two-scrape delay, not a hold. Nothing in this document infers which mechanism
 fired from an outcome — each claim is read off that mechanism's own line.
 
+**One shorthand, defined here because it is *not* in the glossary.** "**Shielded rows**" is this
+document's abbreviation for the quantity the first line reports — *eviction-candidate rows kept out
+of scope by ADR-0053 on a given Board*, i.e. `index_ids - fresh` restricted to that Board. It is a
+convenience for prose and tables, never a fourth mechanism, and it never means `held` (ADR-0046) or
+**Unconfirmed** (ADR-0083). Where precision matters the full phrase is used.
+
 **Eviction semantics are post-ADR-0083.** Every run read here has `ee97ebc` as an ancestor
 (verified with `git merge-base --is-ancestor`), so a single absence only marks a Job **Unconfirmed**;
 eviction needs a second consecutive *scrape of that Board*. Where this document says a row cannot be
@@ -136,10 +142,13 @@ the data: hcltech is `16/16` with a rising trail, qualcomm is `12/16` with a tra
 ways. But per §1 a `-` is ambiguous — qualcomm may have re-entered the eviction scope and drained
 on those four runs, or may simply not have been in their slices, and this harness cannot tell.
 The part that needs no slice information is the shape of the values *inside* qualcomm's own
-excluded runs: `59 → 45 → 29`, and `32 → 20`. Those falls are real, but they too have two causes —
-rows were evicted, or the next scrape simply returned them and they stopped being
-eviction-candidates — and this harness separates neither. Either way they are movement, and
-hcltech's `179 … 248` (one dip in sixteen) has none.
+excluded runs — and it is sharper than it first looks. `sync` does `boards -= excluded`
+(`index.py:396`) before `plan_sync` ever sees the Board, so **an excluded Board evicts nothing that
+run**. The falls `59 → 45 → 29` therefore sit between three *consecutive excluded* runs and cannot
+be evictions at all: the only way that count drops is that the next scrape returned those ids and
+they stopped being eviction-candidates. That is direct evidence the shortfall is intermittent,
+independent of any slice question. (The later `32 → 20` spans two `-` runs, so it alone admits
+either cause.) hcltech's `179 … 248` shows no such recovery in sixteen runs.
 
 So the honest form of the claim is about **variance, not drainage**: the SuccessFactors detail-gap
 class ratchets monotonically because its shortfall reproduces on every single scrape, while the
@@ -238,9 +247,12 @@ exactly **7** are closed postings — and those 7 are what keeps 95 rows out of 
 
 Note what that implies for Wipro specifically. Only 7 listed ids failed to build, so at most 7 of the
 95 shielded rows can be explained by a page we could not read; the other ~88 are indexed ids that are
-**not in the live listing at all** — fully delisted postings the served table cannot shed. The one
-path by which a shielded row could still be open is the tech filter newly dropping a Job whose
-description changed, which is neither measured here nor plausible at that scale.
+**not in the live listing at all** — fully delisted postings the served table cannot shed. **Two**
+paths could still leave a shielded row open, because `fresh = corpus_ids & row_of.keys()`
+(`index.py:406`) misses a Job for either reason: the tech filter newly dropped it (needs its
+description to have changed), or it is in the corpus but carries **no vector yet** — non-English,
+or awaiting an embed, which `index.py:446`'s own comment calls out. Neither is measured here, and
+neither is plausible at this scale on a Board whose listing came back whole.
 
 ### The chain, stated once
 
@@ -262,8 +274,9 @@ these are served rows, not an estimate: **813–1,391 per run**, of which the de
 **283–491 and rising**. On the two Boards verified live, essentially all of it is dead: an indexed
 row absent from `fresh` on a Board whose listing came back whole either failed to parse (**74 of 74**
 non-parsing pages, over 4,833 sampled across the two Boards, are closed) or is not in the live
-listing at all. The residue that could still be open is a row the tech filter newly dropped, which
-needs the description to have changed — not measured here, and not plausible at this scale.
+listing at all. The residue that could still be open is a row the tech filter newly dropped, or one
+still awaiting a vector (the two `fresh` misses noted above) — neither measured here, and neither
+plausible at this scale.
 
 **Sample sizes, stated plainly.** Wipro: **4,433 of 4,433** listed pages — exhaustive. HCL: **400 of
 10,523** random, seed-pinned. Detail-fetch outcome distribution: **60/60 HTTP 200** on a separate
@@ -281,7 +294,7 @@ one GET. The core finding replicates; only the identity claim needed correcting.
 
 **How old.** Continuous exclusion, dated from the run logs:
 
-| Board | excluded since | consecutive runs | shielded now |
+| Board | excluded since | runs excluded (of those read) | shielded now |
 |---|---|---|---|
 | `successfactors:jobs.crh.com` | ≤ 2026-08-14 | all 12 daily samples + all 16 recent | outside top-10 |
 | `successfactors:careers.hcltech.com` | 2026-08-23 | every run since | 248 |
@@ -308,27 +321,32 @@ Two layers, and the first is the one that makes the accretion disappear at sourc
 Boards from the scrape, parking them, or demoting them in liveness is not on this list** — they are
 live employers with thousands of open jobs, and the problem is bookkeeping, not the Board.
 
-**PR #315 is already applying a stronger version of this on Workday**, and the two should be
-decided together. It declines `mark_truncated` on `ngc.eightfold.ai`'s detail gap on exactly this
-mechanism's account — "NGC's *listing* was complete (185/185 pages), so the Board is authoritative
-and only enrichment is missing … ADR-0053's no-drain exclusion would freeze 3,691 rows against
-eviction on every run forever" — which is the same diagnosis this document reaches from the
-measurement side, and the same qualcomm precedent. No contradiction. But the two rules are not the
-same rule, and picking one is part of the decision below:
+**PR #315 (ADR-0088) decides the adjacent question on Workday**, and the two are consistent — but
+for a reason worth stating precisely, because an earlier draft of this section got it wrong.
 
-- **#315's rule** — *a complete listing means never `mark_truncated` on a detail gap*, whatever
-  the pages turned out to be. Simple, needs no control fetch, and if adopted generally it
-  **subsumes Option A**.
-- **Option A's rule** — a complete listing plus a *proven-closed* page means no
-  `mark_truncated`; a genuinely unreadable page still excludes the Board.
+That PR declines to `mark_truncated` on `workday:ngc/Northrop_Grumman_External_Site`'s detail gap
+(**not** `eightfold:ngc.eightfold.ai`, a different Board that appears in §2's table with a
+*listing* reason). Its cost argument is the one this document measures — "ADR-0053's exclusion has
+no bound and no drain … Marking NGC would freeze 3,691 rows against eviction on every run,
+forever" — and it cites these numbers directly.
 
-A keeps a signal #315's rule discards: a Board whose detail pass is being blocked (an anti-bot
-interstitial served with 200, the eightfold CAPTCHA wall #266's own investigation found) still
-looks like a complete listing, and under #315's rule its unread rows would be evicted rather than
-shielded. On the two tenants measured here that population is empty (**74 of 74** non-parsing
-pages closed, zero unreadable), which is evidence for #315's rule being safe *on these Boards* —
-not evidence that it is safe everywhere. If #315's rule is adopted repo-wide, say so explicitly
-and retire Option A rather than shipping both.
+**It does not, however, adopt "a detail gap must never truncate", and this document must not claim
+it does.** ADR-0088 says so itself: *"#316's own Option A keeps `mark_truncated` for a page that is
+**genuinely** unreadable; it removes only the closed ones from the count. So #316 does not conclude
+'a detail gap must never truncate', and this ADR must not lean on it as though it did."* The line
+it draws is `base.py`'s load-bearing-detail contract — *"one where `parse` drops the Job without
+it"*:
+
+- **Workday's `parse` keeps** a Job whose detail failed, so the Board's list is still its complete
+  set of openings and a detail gap is missing *enrichment*. No standing to truncate.
+- **SuccessFactors' `parse` drops** it — every field comes from the job page — so a detail gap
+  really does shorten the returned list. Standing to truncate, which is why #266 added it and why
+  the fix here is Option A's classifier rather than removing the truncation.
+
+So the two changes are orthogonal, not competing, and Option A is not subsumed. What remains true
+is the shared warning: **the price of a wrong `mark_truncated` is unbounded**, because the Board
+never comes back. That is the argument both documents make, and it is the argument for fixing the
+mechanism (Option C or D) rather than only its current callers.
 
 ### Option A — teach the scraper that a not-found page means *gone*, not *unread* (root cause)
 
