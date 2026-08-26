@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ask a live Board whether the rows ADR-0053 shields from eviction are actually closed.
+"""Ask a live SuccessFactors Board whether its detail-pass gap is closed postings or unread ones.
 
 `index sync` reports how many eviction-candidate rows the ADR-0053 scope exclusion withholds on
 each **Unauthoritative Board**, but it cannot say whether those rows are *stale* (the posting
@@ -13,8 +13,24 @@ boards that dominate the permanently-excluded set, the truncation reason is
 only the per-job detail pass came up short. Those detail pages answer **HTTP 200 with a page that
 carries no job at all** — so the scraper reads them as unreadable and marks the Board truncated.
 This script fetches one **control** page per Board, a requisition id that provably does not exist,
-and compares every failing job page against it. A job page that is byte-for-byte the tenant's
-"no such requisition" shell is not unreadable — it is **closed**, and shielding it is the leak.
+and compares every failing job page against it. A job page that is the tenant's "no such
+requisition" shell is not unreadable — it is **closed**, and keeping it out of scope is the leak.
+
+**The comparison is a length window, not byte equality, and that is not a shortcut.** Measured on
+`careers.hcltech.com` 2026-08-26, the shell is *not* byte-stable, so a hash or `==` would score
+every closed page `unreadable` and invert this tool's conclusion:
+
+- two fabricated requisitions differ in exactly one line — the page echoes its own id back
+  (`jobID : '999999\\x2Den_US'`), so no two ids ever produce the same bytes;
+- the first response on a fresh connection carries an extra ~514-char `ctid` tracking `<script>`
+  that later responses on the same session omit — 12 fetches of one URL over 12 fresh sessions
+  gave **12 distinct bodies** (111,523/111,524 chars), while 12 over one shared session gave 11
+  identical after the first.
+
+So the shell varies by ~514 chars against a ~111,000-char page — three orders of magnitude below
+the ~13,500-char gap to a real posting (a titled HCL page runs ~122,000-127,000). `_SHELL_SLACK`
+is set above the measured drift and far below that gap. A tenant whose shell varies by more than
+the slack simply scores `unreadable`, which is today's behaviour — the failure is safe.
 
 Two shapes of failure are therefore reported separately, and conflating them would invert the
 conclusion:
@@ -28,8 +44,8 @@ Sampling is bounded by ``--sample`` because the big Boards here list 4k-10k post
 sweep is thousands of requests at one origin; pass ``--sample 0`` for the whole Board when the
 exact set matters more than the origin's patience. Results stream per Board.
 
-Run: python scripts/eval/shielded_row_liveness.py successfactors:careers.hcltech.com --sample 200
-     python scripts/eval/shielded_row_liveness.py successfactors:careers.wipro.com --sample 0
+Run: python scripts/eval/successfactors_detail_gap_audit.py successfactors:careers.hcltech.com --sample 200
+     python scripts/eval/successfactors_detail_gap_audit.py successfactors:careers.wipro.com --sample 0
 """
 
 from __future__ import annotations
@@ -50,13 +66,22 @@ from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.successfactors import (
     SuccessFactorsScraper,
     _job_urls_from,
-    _page_fields,
+    _titled_fields,
 )
 
 # A requisition id no tenant will ever have issued. The tenant's response to it *is* the
 # definition of "this posting does not exist here", which is what every failing page is scored
 # against — rather than a guess about what a not-found page ought to look like.
 _ABSENT_REQ = "/job/Headstart-Control-Does-Not-Exist/999999-en_US/"
+
+# How far a page's length may sit from the control's and still count as the same shell. See the
+# module docstring: measured drift on the one tenant this has been characterised on is ~514
+# chars, and the nearest real posting is ~13,500 above the shell, so anything in this band
+# discriminates. Not tuned per tenant — a tenant that needs more than this scores `unreadable`.
+_SHELL_SLACK = 1024
+
+# Per-Board ids listed in the `--json` capture. Whatever is dropped is counted, never silent.
+_MAX_LISTED = 500
 
 
 def _fetch(url: str) -> tuple[int, str]:
@@ -68,7 +93,14 @@ def _fetch(url: str) -> tuple[int, str]:
 
 
 def _titled(page: str, url: str) -> bool:
-    return bool((_page_fields(page, url).get("title") or "").strip())
+    """Exactly the predicate production uses to decide a detail page was a loss.
+
+    Deliberately delegates to `_titled_fields` rather than re-deriving it: an audit whose
+    classifier has drifted from the scraper's measures its own copy, not the pipeline. An earlier
+    pass here re-implemented it with an extra `.strip()`, which would have scored a
+    whitespace-only title as a loss where the scrape keeps it.
+    """
+    return _titled_fields(page, url) is not None
 
 
 def audit(board: str, sample: int, workers: int) -> dict:
@@ -90,11 +122,28 @@ def audit(board: str, sample: int, workers: int) -> dict:
 
     ctl_code, ctl_body = _fetch(f"https://{slug}{_ABSENT_REQ}")
     ctl_len = len(ctl_body)
+    ctl_titled = _titled(ctl_body, "") if ctl_code == 200 else False
     print(
-        f"{board}: control (nonexistent requisition) -> HTTP {ctl_code}, {ctl_len} bytes, "
-        f"titled={_titled(ctl_body, '') if ctl_code == 200 else 'n/a'}",
+        f"{board}: control (nonexistent requisition) -> HTTP {ctl_code}, {ctl_len} chars, "
+        f"titled={ctl_titled if ctl_code == 200 else 'n/a'}",
         flush=True,
     )
+    # Every verdict below is scored against this one response, so a bad control does not degrade
+    # the result — it inverts it, silently. A non-200 leaves `ctl_len` holding the length of an
+    # *exception name*, which no real page is within `_SHELL_SLACK` of, so every closed posting
+    # would come back `unreadable` and the report would read as "ADR-0053 is withholding
+    # correctly" — the opposite of the truth. A *titled* control means this tenant serves a real
+    # posting for an id that cannot exist, so the control does not define "not found" here at
+    # all. Refuse both rather than emit a confident wrong number.
+    if ctl_code != 200:
+        sys.exit(
+            f"{board}: control fetch returned {ctl_code} ({ctl_body}) — cannot score"
+        )
+    if ctl_titled:
+        sys.exit(
+            f"{board}: control page parsed as a real posting — this tenant does not serve a "
+            "not-found shell, so a title-less page cannot be scored against it"
+        )
 
     pages = listed if sample <= 0 else random.sample(listed, min(sample, len(listed)))
     verdicts: Counter[str] = Counter()
@@ -111,9 +160,10 @@ def audit(board: str, sample: int, workers: int) -> dict:
                 unreadable.append((jid, f"HTTP {code}" if code > 0 else body))
             elif _titled(body, url):
                 verdicts["open"] += 1
-            elif abs(len(body) - ctl_len) <= 1024:
-                # Same shell the tenant serves for a requisition that does not exist. The
-                # tolerance absorbs per-response nonces/timestamps, not a different page shape.
+            elif abs(len(body) - ctl_len) <= _SHELL_SLACK:
+                # Same shell the tenant serves for a requisition that does not exist. The slack
+                # absorbs the echoed job id and the first-response tracking block (docstring),
+                # not a different page shape.
                 verdicts["gone"] += 1
                 gone_ids.append(jid)
             else:
@@ -141,8 +191,13 @@ def audit(board: str, sample: int, workers: int) -> dict:
         "control_bytes": ctl_len,
         "sampled": n,
         "verdicts": dict(verdicts),
-        "gone_ids": gone_ids[:500],
-        "unreadable": unreadable[:200],
+        # Capped so one 10k-Board sweep does not write a multi-megabyte capture, but the cap is
+        # recorded: a truncated sample that looks complete is worse than no sample, because the
+        # whole point of this file is that someone can re-check the verdicts by hand.
+        "gone_ids": gone_ids[:_MAX_LISTED],
+        "gone_ids_truncated": max(0, len(gone_ids) - _MAX_LISTED),
+        "unreadable": unreadable[:_MAX_LISTED],
+        "unreadable_truncated": max(0, len(unreadable) - _MAX_LISTED),
     }
 
 

@@ -1,8 +1,9 @@
 # ADR-0053's scope exclusion: what it actually shields, and why it never lets go
 
 **Date:** 2026-08-26 · **Harness:** `scripts/runlog/scope_exclusion_persistence.py` (cross-run
-persistence), `scripts/eval/shielded_row_liveness.py` (live Board verification) ·
-**Captures:** `experiment/adr0053-scope-exclusion/artifacts/` ·
+persistence), `scripts/eval/successfactors_detail_gap_audit.py` (live Board verification) ·
+**Captures:** `experiment/adr0053-scope-exclusion/artifacts/` (untracked — `experiment/` is
+gitignored; see §6) ·
 **Follow-up to:** `docs/eightfold/no-client-side-fix-for-replica-instability.md` §"105 confirmed-dead
 rows", which recorded the same ratchet on Eightfold and named a bounded exclusion as the priority.
 
@@ -19,8 +20,10 @@ And the dominant cause is not a truncated scrape at all. On the 23 SuccessFactor
 up 82% of that permanent set, the **listing came back whole** and only the per-job detail pass came
 up short — and a live check of 4,833 pages (all 4,433 on Wipro, 400 sampled on HCL) found **74
 non-parsing pages and every one of them is the tenant's own *this requisition does not exist*
-page**, with zero genuinely unreadable. **These Boards are held out of the eviction scope forever
-because closed postings are being misread as unread ones.**
+page**, with zero genuinely unreadable. **These Boards are excluded from the eviction scope
+forever because closed postings are being misread as unread ones.** (*Excluded*, not *held* —
+`held` is ADR-0046's collapse-guard cap, a different mechanism with a different unit and a drain.
+The table below keeps the three apart.)
 
 ## Vocabulary — three mechanisms, three log lines, never interchangeable
 
@@ -50,18 +53,37 @@ runs and reports, per Board, how many of the runs in the window excluded it and 
 count was each time. Two log lines feed it:
 
 - `scope-excluded Board: {board} — {why}` — **every** excluded Board with its `mark_truncated`
-  reason. Shipped with ADR-0053 itself (#130), but as a *batched* `_log_ids` line until PR #280
-  reshaped it into one line per Board. The harness parses both shapes: reading only the newer one
-  makes every pre-#280 run report **zero exclusions**, which is indistinguishable from a clean run.
-  (Run `31851372193` really had 11 excluded Boards and first read as 0 — the trap named in
-  CLAUDE.md, hit and fixed.)
+  reason. Shipped with ADR-0053 itself (#130), but as a *batched* `_log_ids` line until
+  `8825031` (#160, 2026-08-18) reshaped it into one `_log_reasons` line per Board. The harness
+  parses both shapes: reading only the newer one makes every pre-#160 run report **zero
+  exclusions**, which is indistinguishable from a clean run. (Run `31851372193`, 2026-08-14, really
+  had 11 excluded Boards and first read as 0 — the trap named in CLAUDE.md, hit and fixed.)
+  Note this is *not* #280, which left this line untouched and added the row-count line below;
+  an earlier draft of this document credited the reshape to #280 and was wrong.
 - `{n} eviction-candidate row(s) kept out of scope on {board}` — the row cost, but only for the
   **top 10** Boards (`index._TOP_OUT_OF_SCOPE_BOARDS`), and only in runs built after PR #280
   (`960d991`, 2026-08-24). A Board outside the top 10 is shown as `·`: excluded, count unknown.
 
-Why persistence and not the total: only ~20,000 of ~66,000 live Boards are in any run's slice, so the
-run total tracks *which Boards happened to be scraped*, not the mechanism's effect. A Board's streak
-does not.
+Why persistence and not the total: only ~20,000 of ~66,000 live Boards are in any run's slice
+(`load_active_companies(min_jobs=0)` = 66,401, the set `scrape_plan` draws from), so the run total
+tracks *which Boards happened to be scraped*, not the mechanism's effect. A Board's streak is much
+less sensitive to that.
+
+**But the streak's denominator is runs, and CLAUDE.md's unit is scrapes of that Board.** The
+harness cannot supply the stricter unit: `index sync` logs the scraped-Board *count* (the `corpus:`
+line) and never the scraped-Board *list*, so a Board that simply was not in a run's slice and a
+Board that was scraped, came back authoritative and re-entered the eviction scope are both just
+"not excluded this run". Every number below is stated with that limit in mind, and it cuts two
+ways:
+
+- **`N/N` is safe in the direction it is used here.** A Board can only be excluded in a run that
+  scraped it, so "excluded on all 16 runs" does mean 16 scrapes, all of which excluded it. What it
+  is *not* is a complete census: a Board excluded on every scrape it got but absent from some run's
+  slice scores below 16. **The 28 is a lower bound on the persistent set, not its size.**
+- **A gap is not a drain.** `k/16` for `k < 16` cannot be read as "it drained on the other
+  16 − k runs" without separately confirming, from the *scrape* stage's logs, that the Board was
+  in those runs' slices. §2 flags the one place this document leans on that and says what it would
+  take to settle it.
 
 ## 2. The trend — the total is flat, the persistent Boards ratchet
 
@@ -90,7 +112,8 @@ and rises in 12 of the 15 steps. Because only the top 10 Boards get a row line, 
 this document is a **lower bound**, not a total — `named` runs 598–1,206 against run totals of
 813–1,391.
 
-Underneath it, the Boards excluded on **all 16 runs** move only one way:
+Underneath it, the Boards excluded on **all 16 runs** (28 of them — a lower bound on the
+persistent set, per §1) move only one way:
 
 | Board | run 1 → run 16 | change | truncation reason |
 |---|---|---|---|
@@ -106,10 +129,26 @@ after watching `withheld` climb 267 → 953 and finding three Boards withholding
 every run. The same shape is here, on the mechanism ADR-0055 did not touch.
 
 Contrast the Boards whose truncation is **transient**: `eightfold:careers.qualcomm.com` runs
-`35 38 31 32 31 24 59 45 29 32 - - 20 - - 48`, where `-` is a run that did **not** exclude it. On
-those runs it re-entered the eviction scope and drained. **Eightfold self-drains because its
-truncation is intermittent; the SuccessFactors detail-gap class never does, because its shortfall
-reproduces on every single scrape.**
+`35 38 31 32 31 24 59 45 29 32 - - 20 - - 48`, where `-` is a run that did **not** exclude it.
+
+**What that contrast does and does not establish.** The two classes are certainly different in
+the data: hcltech is `16/16` with a rising trail, qualcomm is `12/16` with a trail that moves both
+ways. But per §1 a `-` is ambiguous — qualcomm may have re-entered the eviction scope and drained
+on those four runs, or may simply not have been in their slices, and this harness cannot tell.
+The part that needs no slice information is the shape of the values *inside* qualcomm's own
+excluded runs: `59 → 45 → 29`, and `32 → 20`. Those falls are real, but they too have two causes —
+rows were evicted, or the next scrape simply returned them and they stopped being
+eviction-candidates — and this harness separates neither. Either way they are movement, and
+hcltech's `179 … 248` (one dip in sixteen) has none.
+
+So the honest form of the claim is about **variance, not drainage**: the SuccessFactors detail-gap
+class ratchets monotonically because its shortfall reproduces on every single scrape, while the
+eightfold class oscillates because its shortfall does not. That is the distinction Option D keys
+on, and it is measured. What is *not* established is the stronger sentence an earlier draft
+carried — that eightfold "re-entered the eviction scope and drained" on its `-` runs. Settling
+that needs the `scrape` stage's logs for runs 11, 12, 14 and 15 checked for a
+`careers.qualcomm.com` board line — ~15 shard logs per run, which is why it was not done for this
+pass, and nothing below depends on it.
 
 Across a longer, daily-sampled window (12 runs, 2026-08-14 → 2026-08-25) the excluded-**Board** count
 goes `11 9 17 16 17 34 59 66 51 65 80 75`. That growth is real but **confounded, and must not be read
@@ -150,25 +189,42 @@ careers.hcltech.com : kind=urlset bytes=1,936,314 listed=10,523
 ```
 
 The detail pages that "fail" all return **HTTP 200**. Sampling 60 of them found zero non-200s and
-zero timeouts — 17 of 60 simply carried no job. Those bodies are a **constant 111,009 bytes** on
-HCL, and re-fetching one 12 times returned the same empty shell 12/12: not flaky, not rate-limited,
-not an anti-bot interstitial.
+zero timeouts — 17 of 60 simply carried no job. Re-fetching one URL 12 times over a single session
+returned the same empty shell on 11 of the 12: not flaky, not rate-limited, not an anti-bot
+interstitial.
 
 The control settles what the shell means. Requesting a requisition that **cannot exist**:
 
 ```
-nonexistent-req   https://careers.hcltech.com/job/Totally-Fake-Role/999999-en_US/  200  111,009 bytes
-untitled-real     https://careers.hcltech.com/job/Snowflake-Technical-Lead/…/      200  111,009 bytes
-titled-real       https://careers.hcltech.com/job/SME-JAMF/…/                      200  124,506 bytes
+nonexistent-req   https://careers.hcltech.com/job/Totally-Fake-Role/999999-en_US/  200  ~111,009 chars
+untitled-real     https://careers.hcltech.com/job/Snowflake-Technical-Lead/…/      200  ~111,009 chars
+titled-real       https://careers.hcltech.com/job/SME-JAMF/…/                      200   124,506 chars
 ```
 
-**The "unreadable" job page is byte-for-byte the tenant's own "this requisition does not exist"
-page.** Wipro behaves identically (96,632-byte shell for a fabricated requisition). Both tenants keep
-serving the URL from a sitemap they regenerate without dropping the closed entries — every HCL sitemap
-entry carries the same `<lastmod>2026-08-22</lastmod>`, so the sitemap cannot be used to tell them
-apart either.
+**The "unreadable" job page is the tenant's own "this requisition does not exist" page**, to
+within a few hundred characters. Wipro behaves identically (96,632-char shell for a fabricated
+requisition). Both tenants keep serving the URL from a sitemap they regenerate without dropping the
+closed entries — every HCL sitemap entry carries the same `<lastmod>2026-08-22</lastmod>`, so the
+sitemap cannot be used to tell them apart either.
 
-`scripts/eval/shielded_row_liveness.py` scores every failing page against that control:
+**It is not byte-identical, and a fix must not assume it is.** An earlier draft of this document
+said "byte-for-byte", which review falsified. Re-measured on HCL 2026-08-26, diffing whole bodies:
+
+- Two *fabricated* requisitions differ in exactly **one line**: the page echoes its own id back
+  (`jobID : '999999\x2Den_US'` vs `'888888\x2Den_US'`). No two ids can ever produce equal bytes.
+- A real-but-closed posting differs from a fabricated one by that same `jobID` line **plus** a
+  ~514-char `ctid` tracking `<script>` block, which the tenant emits on the *first* response of a
+  connection and omits thereafter. Hence the 11/12 above rather than 12/12: fetching one URL over
+  **12 fresh sessions** gave **12 distinct bodies** (111,523 / 111,524 chars); over one shared
+  session, 11 identical after the first (111,010, with the first at 111,524).
+
+So the shell drifts by ~514 chars on a ~111,000-char page, against a ~13,500-char gap to the
+nearest real posting (titled HCL pages run 122,000–127,000). A length window discriminates cleanly;
+a hash or `==` would score **every** closed page `unreadable` and invert the conclusion. That is
+what `_SHELL_SLACK = 1024` in the audit script is, and why Option A below is written as "score
+against the control", never "compare bytes".
+
+`scripts/eval/successfactors_detail_gap_audit.py` scores every failing page against that control:
 
 ```
 successfactors:careers.hcltech.com: n=400   open=333   gone=67  unreadable=0  in  41s   (random sample)
@@ -211,8 +267,17 @@ needs the description to have changed — not measured here, and not plausible a
 
 **Sample sizes, stated plainly.** Wipro: **4,433 of 4,433** listed pages — exhaustive. HCL: **400 of
 10,523** random, seed-pinned. Detail-fetch outcome distribution: **60/60 HTTP 200** on a separate
-probe of each Board, and **12/12** identical responses on one repeated URL, so this is not
-rate-limiting and not flake.
+probe of each Board, and **11 of 12** identical responses on one URL repeated over a shared
+session, so this is not rate-limiting and not flake. (The twelfth is the first response of the
+session, which carries the tracking block described in §3 — over *fresh* sessions all 12 differ,
+which is why the classifier is a length window and not an equality test.)
+
+**Independently reproduced during review, 2026-08-26.** A separate 150-page random sample of the
+HCL sitemap returned **150/150 HTTP 200** with **32 generic shells (21.3%)**, against this
+document's 16.8% and the pipeline's own 16.6% — consistent within sampling error at n=150. The
+fabricated requisition `/job/Totally-Fake-Role/999999-en_US/` returned HTTP 200 with
+`<title> Job Details | HCLTech</title>`, and the current sitemap held 10,522 `<loc>` entries from
+one GET. The core finding replicates; only the identity claim needed correcting.
 
 **How old.** Continuous exclusion, dated from the run logs:
 
@@ -243,6 +308,28 @@ Two layers, and the first is the one that makes the accretion disappear at sourc
 Boards from the scrape, parking them, or demoting them in liveness is not on this list** — they are
 live employers with thousands of open jobs, and the problem is bookkeeping, not the Board.
 
+**PR #315 is already applying a stronger version of this on Workday**, and the two should be
+decided together. It declines `mark_truncated` on `ngc.eightfold.ai`'s detail gap on exactly this
+mechanism's account — "NGC's *listing* was complete (185/185 pages), so the Board is authoritative
+and only enrichment is missing … ADR-0053's no-drain exclusion would freeze 3,691 rows against
+eviction on every run forever" — which is the same diagnosis this document reaches from the
+measurement side, and the same qualcomm precedent. No contradiction. But the two rules are not the
+same rule, and picking one is part of the decision below:
+
+- **#315's rule** — *a complete listing means never `mark_truncated` on a detail gap*, whatever
+  the pages turned out to be. Simple, needs no control fetch, and if adopted generally it
+  **subsumes Option A**.
+- **Option A's rule** — a complete listing plus a *proven-closed* page means no
+  `mark_truncated`; a genuinely unreadable page still excludes the Board.
+
+A keeps a signal #315's rule discards: a Board whose detail pass is being blocked (an anti-bot
+interstitial served with 200, the eightfold CAPTCHA wall #266's own investigation found) still
+looks like a complete listing, and under #315's rule its unread rows would be evicted rather than
+shielded. On the two tenants measured here that population is empty (**74 of 74** non-parsing
+pages closed, zero unreadable), which is evidence for #315's rule being safe *on these Boards* —
+not evidence that it is safe everywhere. If #315's rule is adopted repo-wide, say so explicitly
+and retire Option A rather than shipping both.
+
 ### Option A — teach the scraper that a not-found page means *gone*, not *unread* (root cause)
 
 When a SuccessFactors detail pass loses pages, fetch **one** control URL for that Board — a
@@ -251,7 +338,10 @@ control is a **closed** posting: drop it from the returned list as today, but do
 `report_detail_gaps`, so `mark_truncated` never fires and the Board stays authoritative. Only pages
 that are genuinely unreadable keep the Board out of scope.
 
-- **Fixes:** 23 of 28 permanently-excluded Boards, at source, with no change to eviction semantics.
+- **Fixes:** up to 23 of the 28 permanently-excluded Boards, at source, with no change to eviction
+  semantics. "Up to", because two of the 23 tenants were verified live; the other 21 share the
+  truncation reason and the ATS, not a checked not-found shell, and a tenant whose shell the
+  control cannot match keeps today's behaviour.
   The closed rows then leave through the ordinary ADR-0083 path — still two consecutive scrapes, so a
   misclassification costs a delay, not a deletion.
 - **Cost:** one extra request per SuccessFactors Board *that has any loss* (2,164 active Boards, a
@@ -285,10 +375,15 @@ the rest, exactly as ADR-0055 did to the collapse guard's hold.
 - **Concession:** ADR-0053's signal is *stronger* than the collapse guard's — the scraper proved its
   list was short — so overriding it is a bigger admission than ADR-0055 made. A Board genuinely
   unread would shed live rows.
-- **Calibration warning:** ADR-0055's cap is a share of **Board size**. 25% of a 10,525-row Board is
-  2,600 rows per run, which would empty the shielded set in one run and then keep going. The cap here
-  has to be on the *missing* set, or much smaller, and it has to be fitted to data rather than
-  inherited.
+- **Calibration warning:** ADR-0055's cap is `max(1, int(COLLAPSE_RATIO * len(ids)))` where `ids`
+  is the Board's **indexed rows** (`index_plan.py:223,236`) — not its listing size, and the drain
+  is taken from `eligible ⊆ absent`, so it can never evict more than the missing set. An earlier
+  draft read the ratio against HCL's 10,525 *sitemap listings* and warned it would "keep going"
+  past the shielded set; both halves were wrong. The real warning is milder and still real: a
+  quarter of a large Board's indexed rows is far more than its ~248 shielded rows, so inheriting
+  ADR-0055's 25% would clear the whole shielded set on the first run — the cap would not be
+  binding, which is the opposite of a bound. A cap for this mechanism has to be fitted to the
+  *missing* set, and fitted to data rather than inherited.
 
 ### Option D — drain only Boards excluded on K consecutive **scrapes of that Board**
 
@@ -331,8 +426,13 @@ trail is the failure, and the same command shows it falling once a fix lands.
 **The root cause does have a seam**, and any fix should be tested at it before it ships:
 
 - `successfactors._titled_fields` / `_page_fields` — pure functions over a page string. A saved
-  not-found shell (`experiment/adr0053-scope-exclusion/artifacts/2026-08-26_hcltech-untitled-jobpage.html`)
-  and a titled page are enough to pin Option A's classifier without a network call.
+  not-found shell and a titled page are enough to pin Option A's classifier without a network
+  call. **The capture referenced in this document's header is untracked** — `experiment/` is
+  gitignored (`.gitignore:34`), which is where CLAUDE.md puts R&D captures and where
+  `run_logs.py` already caches — so whoever implements A must commit the two pages as real
+  fixtures under `tests/` in that PR rather than reaching for the paths named here. Anything
+  cheap to re-fetch (`curl https://careers.hcltech.com/job/Totally-Fake-Role/999999-en_US/`)
+  should be re-fetched rather than trusted from a stale capture.
 - `index_plan.plan_sync` — already pure and already unit-tested on CI's base-deps install
   (`test_a_persistently_truncated_board_drains_instead_of_ratcheting` is the ADR-0055 analogue). Any
   drain or bound from Options C/D belongs there and is testable there.
