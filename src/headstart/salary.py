@@ -287,7 +287,11 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
     salary-extraction plan already grants, not organic text, for both. | rippling:
     "62000-70000 USD YEAR" / "25-25 USD HOUR" (assembled by rippling.py's own `_pay_range()` from
     the structured `payRangeDetails[0]` entry; no fix needed here — the raw format already matched
-    this parser's shape end-to-end, confirmed by testing before registering, not assumed). All
+    this parser's shape end-to-end, confirmed by testing before registering, not assumed) |
+    smartrecruiters: "70000-85000 EUR 1 YEAR" (assembled by smartrecruiters.py's own `_salary()`
+    from the native posting-detail `compensation.{min,max,currency,period}` block — the adverb
+    period ("YEARLY") is mapped to the singular bare word this parser's structured-interval
+    matching recognizes, same latitude as ashby/personio above). All
     converge on RANGE + CODE + optional period. Named for the shape, not each ATS that happens to
     produce it (renamed from `_field_lever_recruitee_teamtailor` when ashby joined — see
     CLAUDE.md's "re-check the name whenever what it does changes").
@@ -375,6 +379,7 @@ _FIELD_PARSERS = {
     "ashby": _field_range_currency_interval,
     "personio": _field_range_currency_interval,
     "rippling": _field_range_currency_interval,
+    "smartrecruiters": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
 }
