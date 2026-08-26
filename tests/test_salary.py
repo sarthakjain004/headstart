@@ -231,6 +231,30 @@ def test_field_range_currency_interval_rippling_structured_tier():
     )
 
 
+def test_field_range_currency_interval_smartrecruiters_structured_tier():
+    # Real, direct API inspection (2026-08-25,
+    # experiment/location-audit-2026-08-25/smartrecruiters.md): the posting-detail response's
+    # native `compensation.{min,max,currency,period}` block, unread until this pass, is populated
+    # on 10.48% of postings and description-mining independently misses 81.7% of those (134/164
+    # in a 1,500-posting comparison). smartrecruiters.py's own `_salary()` assembles this exact
+    # RANGE + CODE + interval shape, mapping the ATS's adverb period ("YEARLY"/"MONTHLY"/"HOURLY"/
+    # "WEEKLY"/"DAILY") to the singular bare word this parser recognizes (see
+    # test_smartrecruiters_salary_from_native_compensation_block in test_scrapers.py for the raw
+    # object extraction itself).
+    assert from_field("70000-85000 EUR 1 YEAR", "smartrecruiters") == SalarySpan(
+        70000, 85000, "EUR", "field"
+    )
+    assert from_field("15-17.5 GBP 1 HOUR", "smartrecruiters") == SalarySpan(
+        15 * 2080, round(17.5) * 2080, "GBP", "field"
+    )
+    assert from_field("3500-4000 EUR 1 MONTH", "smartrecruiters") == SalarySpan(
+        3500 * 12, 4000 * 12, "EUR", "field"
+    )
+    assert from_field("1200-1500 USD 1 WEEK", "smartrecruiters") == SalarySpan(
+        1200 * 52, 1500 * 52, "USD", "field"
+    )
+
+
 def test_field_range_currency_interval_bare_week():
     # Real, ashby pass (PR #240): a contractor-style weekly rate ("1 WEEK" interval), 50 real
     # occurrences measured across 10 distinct values before adding — "796 USD 1 WEEK",

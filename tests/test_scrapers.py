@@ -632,7 +632,7 @@ def test_smartrecruiters_description_joins_requirement_sections():
             }
 
     scraper = get_scraper("smartrecruiters", "acme", "Acme")
-    text = scraper._extract_description(_Resp())
+    text = scraper._extract_detail(_Resp())["description"]
     assert "Build things" in text
     assert "5+ years of experience" in text  # qualifications must ride along
     assert "Perks" in text
@@ -682,13 +682,216 @@ def test_smartrecruiters_compensation_custom_field_absent_leaves_description_unc
                     "customField": [
                         {"fieldLabel": "Country/Region", "valueLabel": "New Zealand"},
                     ],
-                    "_description": "<p>Build things</p>",
+                    "_detail": {"description": "<p>Build things</p>"},
                 }
             ]
         },
         SCRAPED_AT,
     )
     assert jobs[0].description == "Build things"
+
+
+@pytest.mark.parametrize(
+    ("compensation", "expected"),
+    [
+        (
+            {"min": 70000, "max": 85000, "currency": "EUR", "period": "YEARLY"},
+            "70000-85000 EUR 1 YEAR",
+        ),
+        (
+            {"min": 3500, "max": 4000, "currency": "CNY", "period": "MONTHLY"},
+            "3500-4000 CNY 1 MONTH",
+        ),
+        (
+            {"min": 25, "max": 28, "currency": "NZD", "period": "WEEKLY"},
+            "25-28 NZD 1 WEEK",
+        ),
+        (
+            {"min": 160000, "max": 185000, "currency": "USD", "period": "YEARLY"},
+            "160000-185000 USD 1 YEAR",
+        ),
+        # junk values are real (direct API inspection, 2026-08-25) and must be checked with
+        # `is not None`, not truthiness — a truthy check on a real 0 would misread it as absent
+        # rather than format and correctly decline it downstream in salary.py's `_bounded`.
+        ({"min": 1, "max": 1, "currency": "GTQ"}, "1-1 GTQ"),
+        # min/max both absent (only currency/period stated) is genuinely no figure to report.
+        ({"currency": "USD", "period": "YEARLY"}, None),
+        ({}, None),
+        (None, None),
+        # max-only ("up to $X") is declined outright, not passed through as a bare single value —
+        # that path always reads as floor-only, which would silently misreport a stated ceiling as
+        # an unbounded floor. `{"max": 0, ...}` used to format as "0 GBP" (still correctly declined
+        # downstream by `_bounded`, since 0 is below every currency's floor) but a real nonzero
+        # ceiling like the live-verified `{"max": 12150, "currency": "MXN", "period": "MONTHLY"}`
+        # (2026-08-26, 1/19 populated compensation blocks across 60 boards/348 postings) clears
+        # `_bounded`'s USD-fallback plausibility bounds cleanly and would ship as a confident wrong
+        # number instead — so both decline the same way now.
+        ({"max": 0, "currency": "GBP"}, None),
+        ({"max": 12150, "currency": "MXN", "period": "MONTHLY"}, None),
+        # min-only ("$X+, no stated ceiling") is a genuine floor-only disclosure, not the same
+        # ambiguity as max-only — unaffected by the max-only decline above and still passed
+        # through as a bare single value, which correctly reads as floor-only.
+        ({"min": 65000, "currency": "USD", "period": "YEARLY"}, "65000 USD 1 YEAR"),
+    ],
+)
+def test_smartrecruiters_salary_from_native_compensation_block(compensation, expected):
+    """Real, direct API inspection (2026-08-25,
+    experiment/location-audit-2026-08-25/smartrecruiters.md): the posting-detail response carries
+    a native `compensation.{min,max,currency,period}` block on 10.48% of postings, previously
+    never read. The adverb period SmartRecruiters itself sends ("YEARLY", "MONTHLY", ...) is
+    mapped to the singular bare word ("1 YEAR", "1 MONTH", ...) salary.py's
+    `_field_range_currency_interval` recognizes — the raw adverb does not match its bare-word
+    regex and would silently default to the annual multiplier instead of annualizing."""
+    from headstart.scrapers.smartrecruiters import _salary
+
+    assert _salary(compensation) == expected
+
+
+def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_one_response():
+    """The compensation fix must cost zero extra requests: both fields come off the SAME
+    posting-detail response the scraper already fetches for the description alone."""
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobAd": {
+                    "sections": {"jobDescription": {"text": "<p>Build things</p>"}}
+                },
+                "compensation": {
+                    "min": 70000,
+                    "max": 85000,
+                    "currency": "EUR",
+                    "period": "YEARLY",
+                },
+            }
+
+    detail = SmartRecruitersScraper._extract_detail(_Resp())
+    assert detail == {
+        "description": "<p>Build things</p>",
+        "compensation": {
+            "min": 70000,
+            "max": 85000,
+            "currency": "EUR",
+            "period": "YEARLY",
+        },
+    }
+
+
+def test_smartrecruiters_extract_detail_missing_compensation_is_none():
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"jobAd": {"sections": {"jobDescription": {"text": "<p>Role</p>"}}}}
+
+    detail = SmartRecruitersScraper._extract_detail(_Resp())
+    assert detail["compensation"] is None
+
+
+def test_smartrecruiters_parse_maps_native_compensation_into_job_salary():
+    """End-to-end: a posting whose detail carries the native `compensation` block gets a
+    populated `Job.salary`, formatted so `headstart.salary.extract` parses it as Tier 1."""
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Senior Analytics Engineer",
+                    "location": {},
+                    "_detail": {
+                        "description": "<p>Build things</p>",
+                        "compensation": {
+                            "min": 70000,
+                            "max": 85000,
+                            "currency": "EUR",
+                            "period": "YEARLY",
+                        },
+                    },
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    j = jobs[0]
+    assert j.salary == "70000-85000 EUR 1 YEAR"
+
+    from headstart.salary import SalarySpan, extract
+
+    assert extract(j.salary, j.description, "smartrecruiters") == SalarySpan(
+        70000, 85000, "EUR", "field"
+    )
+
+
+def test_smartrecruiters_parse_no_compensation_leaves_salary_none():
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {},
+                    "_detail": {"description": "<p>Build things</p>"},
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].salary is None
+
+
+def test_smartrecruiters_location_collapses_blank_region_comma_segment():
+    """Cosmetic-only fix (experiment/location-audit-2026-08-25/smartrecruiters.md §3d):
+    `fullLocation` carries an empty comma segment on 10.54% of postings when `location.region`
+    is blank — the same defect class already fixed on darwinbox (identical comma-split, strip,
+    drop-empties, rejoin) and, differently, on keka (per-field strip only — keka's location
+    arrives as discrete city/state/country fields, not one joined string to split).
+    `fullLocation` itself is a 100.00%-populated ceiling and stays the primary source; only its
+    formatting is cleaned up."""
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {
+                        "city": "Singapore",
+                        "country": "sg",
+                        "fullLocation": "Singapore, , Singapore",
+                    },
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Singapore, Singapore"
+
+
+def test_smartrecruiters_location_with_region_is_unaffected():
+    jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
+        {
+            "content": [
+                {
+                    "id": "1",
+                    "name": "Some Role",
+                    "location": {
+                        "city": "Irving",
+                        "region": "TX",
+                        "country": "us",
+                        "fullLocation": "Irving, TX, United States",
+                    },
+                }
+            ]
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Irving, TX, United States"
 
 
 def _sr_offline(monkeypatch, scraper, payload):
