@@ -227,6 +227,13 @@ class WorkdayScraper(BaseScraper):
     #: Expect it to fire on nearly every shard — Workday 429s are pervasive, where Eightfold's
     #: wall touched 18-30 Boards a run. Watch the shard report's recovered rate; if it is low, the
     #: spare egress is saturated too and this should come back out.
+    #:
+    #: **That exit criterion is blind, and nothing has replaced it yet** (ADR-0063's 2026-08-26
+    #: amendment, found while reverting personio's). `note_settled` buckets every request the
+    #: spare egress carries once the group is walled, so the rate is pinned high by healthy Boards
+    #: that were never refused — it cannot fall, whether or not the fallback is working. This
+    #: opt-in **stands**: it rests on the per-(source IP x instance host) table above, not on that
+    #: rate. But do not read a high recovered rate as confirmation; only a per-Board outcome is.
     egress_fallback_on = frozenset({429})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 

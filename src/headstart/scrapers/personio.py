@@ -12,9 +12,40 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from headstart import http
 from headstart.experience import from_field
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
+
+#: Every redirect status personio's edge could answer with. A tenant that is still on the ATS
+#: serves its own feed directly: of 600 live Boards sampled 2026-08-26, 8 redirected and every
+#: one went to the marketing site — none to another host, and none that redirected and still
+#: served a feed. So an **off-host** redirect means the Board is not where the ledger says it is.
+_REDIRECTS = frozenset({301, 302, 303, 307, 308})
+
+
+def _redirect_host(location: str | None) -> str:
+    """The host a `Location` points at, normalised for comparison — `""` when it names none.
+
+    Lowercased and port-stripped because a host comparison that is neither reads a Board's own
+    host as a *different* one, and this comparison is what decides whether a Board ages toward
+    ADR-0058 quarantine: `Zellerfeld.jobs.personio.com:443` and `zellerfeld.jobs.personio.com`
+    are one host, and calling them two would retire a live Board. The trailing root dot goes for
+    the same reason. Every `Location` personio was observed to send is already the bare lowercase
+    `https://personio.com` (19 of 19 redirects across 600 sampled Boards, 2026-08-26), so this
+    normalisation is about which way the check fails if that ever changes, not about traffic
+    today.
+
+    A **relative** target (`/xml/`) names no host and is this same host by definition, so it
+    yields `""`. A **protocol-relative** one (`//personio.com/`) does name a host, and is
+    resolved rather than mistaken for the relative case.
+    """
+    text = (location or "").strip()
+    if text.startswith("//"):
+        text = f"https:{text}"
+    elif "://" not in text:
+        return ""
+    return host_of(text).lower().partition(":")[0].rstrip(".")
 
 
 def _text(pos: ET.Element, tag: str) -> str | None:
@@ -165,14 +196,6 @@ def _description(pos: ET.Element) -> str | None:
 class PersonioScraper(BaseScraper):
     ats = "personio"
 
-    #: Provisional experiment, same shape as workday's own (`base.py`'s `egress_fallback_on`
-    #: docstring). Measured 2026-08-26 across 7 real pipeline runs: personio was the only ATS
-    #: besides workday (already opted in) with terminal 429 board failures, and by far the
-    #: largest — 85 of them, more than every other ATS's 429 count combined. Not yet proven
-    #: per-origin the way workday's ten-run table is; watch the shard report's recovered rate in
-    #: later runs and revert this if it doesn't hold up.
-    egress_fallback_on = frozenset({429})
-
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
         # Host only — the ledger's url is not always the board. Discovery stored the raw capture
@@ -201,8 +224,69 @@ class PersonioScraper(BaseScraper):
         return f"https://{self.slug}/xml"
 
     def fetch_raw(self) -> Any:
+        """The tenant's XML feed — following no redirect, and reading the target as the signal.
+
+        A redirect is never followed. Where it *points* then decides the verdict: an **off-host**
+        target says the Board is not where the ledger has it and is reported as gone, while a
+        same-host or relative one is a path normalisation and merely fails the fetch, because
+        reading that as gone would retire a live Board (see :func:`_redirect_host`).
+
+        A tenant that has left personio need not 404 — most do (184 of 200 sampled dead ledger
+        rows), but a departed subdomain that is still routed does not: `https://{host}/xml`
+        answers **307 -> https://personio.com**, and the marketing site there is behind Vercel
+        bot mitigation which answers **429** to our User-Agent, so the fetch never sees the 404
+        it would have earned. Following that redirect is what produced every terminal
+        `HTTP Error 429` this ATS has ever reported: measured live 2026-08-26, all 22 Boards that
+        failed that way across runs 32936269675 and 32942748996 redirect to the marketing site,
+        against 8 of 600 randomly sampled live Boards (1.33%) and 0 of 600 that redirect anywhere
+        else or redirect and still serve a feed.
+
+        The 429 is keyed on the request, not the client — same IP and same second, holding the
+        TLS fingerprint at `curl_cffi impersonate="chrome"`, a Chrome User-Agent gets 200 and ours
+        gets `x-vercel-mitigated: challenge`. Both halves are load-bearing: under the fingerprint
+        this scraper actually sends, a Chrome User-Agent alone is still refused. That is why
+        ADR-0063's spare egress could not rescue these Boards and is no longer asked to: driven
+        against them the real scraper rotated through three verified-distinct WARP addresses and
+        was refused by every one.
+
+        Reported in the shape :func:`~headstart.ingest.board_failures.is_gone` recognises, the way
+        lever reports a slug that is on no Lever board. That matters beyond the message: a 429
+        deliberately never ages a Board (ADR-0058), so read as a rate limit these departed tenants
+        stayed in the slice failing every run forever; read as gone, the existing quarantine
+        retires them after five agreeing runs.
+        """
+        response = http.fetch(
+            "GET",
+            self.url(),
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json, text/html"},
+            timeout=30,
+            allow_redirects=False,
+            **self._egress(),
+        )
+        if response.status_code in _REDIRECTS:
+            target = _redirect_host(response.headers.get("location"))
+            # Only an **off-host** target says the Board is gone. A same-host or relative
+            # Location is a path normalisation, and reading one as gone would age a live Board
+            # toward ADR-0058 quarantine on evidence the origin never gave — the one direction
+            # this check must not fail in. None was seen (0 of 600 live and 0 of 200 dead Boards
+            # sampled 2026-08-26 redirect anywhere but the marketing site), so it fails the fetch
+            # loudly and leaves the verdict to a run that gets an answer.
+            #
+            # This branch's message is built only from values we control, never from `Location`:
+            # it is matched by `board_failures._GONE`, so echoing origin-controlled text here
+            # would let the origin flip the verdict to the direction that quarantines.
+            if not target or target == self.slug.lower():
+                raise http.RequestsError(
+                    f"personio answered {response.status_code} for {self.url()} with a "
+                    f"{'relative' if not target else 'same-host'} Location — not off the board "
+                    f"host, so not read as gone"
+                )
+            raise http.RequestsError(
+                f"HTTP Error 404: no personio board for {self.slug} — /xml redirects to {target}"
+            )
+        response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.
-        return ET.fromstring(self._get().encode("utf-8"))
+        return ET.fromstring(response.text.encode("utf-8"))
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         tenant = self._tenant
