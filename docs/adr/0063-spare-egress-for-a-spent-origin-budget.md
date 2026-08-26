@@ -279,3 +279,29 @@ scoped to the Cloudflare source list so no unrelated mirror is on the critical p
 resolves), and the step's `timeout-minutes` is the backstop, budgeted in `pipeline.yml` against
 the sum of the layers. A shard that still ends up without WARP scrapes over its direct route —
 which is the degradation this ADR promised all along; it just never priced the install itself.
+
+
+## Amendment, 2026-08-26: Personio opts in on 429 — provisional, evidence weaker than Workday's
+
+**Personio is now opted in on 429 too** (`egress_fallback_on = frozenset({429})`), the same
+provisional shape as Workday's amendment above, added here because that amendment is the
+documented record of every ATS's 429 opt-in and Personio's had drifted to living only in a code
+comment and commit message.
+
+**Evidence.** Grepping all 105 scrape-shard logs across the 7 most recent completed pipeline runs
+for terminal `HTTP Error 429` board failures found Personio the dominant source among ATSes not
+already opted in: 85, against Workday's own 9 (already opted in) and every other ATS's `HTTPError`s
+landing on entirely different status codes (e.g. Freshteam's near-all 502).
+
+**Weaker than Workday's bar, and said plainly rather than dressed up.** Workday's amendment above
+shipped with a measured per-shard-load-vs-failure-rate table across three named instances
+(wd1/wd3/wd5) — a real dose-response curve. Personio has no equivalent: an aggregate failure count
+is not proof of per-origin metering, only of a dominant symptom. A live attempt to reproduce a 429
+from Personio with 20 sequential requests from one machine did not succeed, consistent with the
+wall being a property of a whole shard's concurrent load rather than something a single serial
+client can trigger cheaply — but that is a plausible reading, not the same kind of proof Workday's
+table gave.
+
+**Exit criterion**, identical to Workday's: watch the shard report's recovered rate on Personio
+across subsequent runs. A high routed count with low recovery means the spare egress isn't helping
+here either, and this opt-in comes back out.

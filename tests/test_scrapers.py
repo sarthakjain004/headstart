@@ -5095,6 +5095,36 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
     assert GreenhouseScraper("acme")._egress() == {}
 
 
+def test_personio_opts_into_the_spare_egress_on_429(monkeypatch):
+    """Provisional experiment, same shape as workday's own (base.py's `egress_fallback_on`):
+    measured 2026-08-26 across 7 real pipeline runs, personio was the only ATS besides workday
+    (already opted in) with terminal 429 board failures — 85 of them, dominating every other
+    ATS's 429 count combined. Not yet proven per-origin like workday's ten-run table; watch the
+    shard report's recovered rate in later runs and revert if it doesn't hold up."""
+    from headstart.scrapers.personio import PersonioScraper
+
+    assert PersonioScraper.egress_fallback_on == frozenset({429})
+
+    seen: list[dict] = []
+
+    class _Resp:
+        status_code = 200
+        headers: ClassVar[dict] = {}
+        text = "<position-list></position-list>"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append(kw), _Resp())[1]
+    )
+    scraper = PersonioScraper("acme.jobs.personio.de", "Acme")
+    scraper._get()
+    assert seen[-1]["egress_group"] == "personio"
+    assert seen[-1]["egress_on"] == frozenset({429})
+
+
 def test_workday_a_surviving_rollup_leaves_remote_unknown():
     """The half of the repair that a detail fetch failure would otherwise skip.
 
