@@ -38,8 +38,9 @@ reproducible.
 ATS holding only what changed; the ``base.jsonl.gz`` is rewritten only by ``--compact``. Readers
 take base-then-fragments in order, last write winning, which is also the update path an
 organic-edit detector would need later (ADR-0021). Rewriting the whole store every run would mint
-~174 MB of fresh blobs per run — the mistake ``data/lancedb`` was moved away from when it filled
-the 100 GB quota in ~45 runs.
+a fresh copy of every ``base.jsonl.gz`` — ~362 MB measured 2026-08-26, against the ~174 MB ADR-0050
+sized it at when the store was new — the mistake ``data/lancedb`` was moved away from when it
+filled the 100 GB quota in ~45 runs.
 
 The skip-list falls out of the store rather than out of the embedding store: a Job is skipped when
 we *hold its detail*, which is what CONTEXT.md's **Detail pass** entry has always claimed. That

@@ -92,9 +92,9 @@ def test_a_re_fetched_description_supersedes_the_stored_one(tmp_path):
 
 
 def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
-    """The same Job as the test below, from the reporting side. It is learned nothing about and
-    recorded nowhere, so it used to leave no trace in the log at all — the run reported what it
-    filled and what it learned, and this Job was in neither."""
+    """A Job with no fresh text and nothing stored, from the reporting side. Nothing is learned
+    about it and nothing recorded, so it used to leave no trace in the log at all — the run
+    reported what it filled and what it learned, and this Job was in neither."""
     jobs = tmp_path / "tech" / "eightfold.jsonl"
     store = tmp_path / "store" / "eightfold"
     _corpus(jobs, [_job("eightfold:acme:1", None)])

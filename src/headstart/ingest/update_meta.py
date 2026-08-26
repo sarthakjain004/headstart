@@ -20,7 +20,8 @@ change in the code has to reach every row. :data:`doc_prep.DERIVATIONS_VERSION` 
 the watermark in ``data/state/derivations.json``; when the code is newer, every row whose
 description the ADR-0050 store *holds* is re-derived through the full cascade. Rows whose text the
 store does not hold are left alone — recomputing without the text a value came from could only
-downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
+downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, so they carry no
+``has_description``).
 
 **The re-derivation queue** (ADR-0062) is the other half of that: when a run finally supplies one of
 those descriptions, the row is still carrying numbers derived without it, and no version has moved.
@@ -397,7 +398,7 @@ def refresh(
                 #
                 # Read from `meta`, the row as it was BEFORE this refresh — never from `row`. The
                 # cascade above may have just set `experience_source = "regex"` from a description
-                # that settled *this run*, which the vector was never built from. Reading that back
+                # that arrived *this run*, which the vector was never built from. Reading that back
                 # as proof would mark a genuinely title-only vector `has_description: True` and hide
                 # it from the upgrade path forever — the exact failure ADR-0061 froze this field
                 # against.
@@ -463,7 +464,7 @@ def main() -> int:
         "--pending-rederive",
         type=Path,
         default=PENDING_REDERIVE_PATH,
-        help="ids whose description settled since they were embedded (ADR-0062); "
+        help="ids whose description arrived after they were embedded (ADR-0062); "
         "re-derived at an unchanged version, then cleared",
     )
     args = parser.parse_args()

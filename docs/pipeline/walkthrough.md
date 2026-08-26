@@ -197,10 +197,10 @@ looks right and measures wrong.
 **The state is real, but it is tiny — and the flag feeding it is wrong on live data.** The
 reproducible measurement is the store's own: of **417,773** entries it had accumulated, only **8**
 were `null`, all eightfold. A wider live sample across six detail-pass ATSes did turn up a handful
-of postings that genuinely have no description — three still verifiable on live JSON-LD, none of
-them a tech role — but that board draw was random and unseeded, so ADR-0089 deliberately does not
-quote its counts and neither does this file. Where empties came in *large* blocks they were bad
-fetches: Zoho job pages serving an error body under HTTP 200 is the clearest case.
+of postings that genuinely have no description — three still verifiable on their live pages, none
+of them a tech role — but that board draw was random and unseeded, so ADR-0089 deliberately does
+not quote its per-ATS counts and neither does this file. Where empties came in *large* blocks they
+were bad fetches: Zoho job pages serving an error body under HTTP 200 is the clearest case.
 
 The decisive measurement is on eightfold itself, the only scraper that ever set the flag. On
 `telekom-growthhub`, its `position_details` API answers **HTTP 200 with no description** for 5 of 5
@@ -232,7 +232,8 @@ Today the store is two-state: `id -> text`, and membership means we hold the wor
 reads as unheld, and `compact` drops those 8 on its next pass.
 
 **One thing this leaves open**, and it is the more interesting question: the skip-list publishes
-an id for every description the store holds — 417,773 of them — and only eightfold reads it. Making
+an id for every description the store holds — 417,765 on 2026-08-26 — and only eightfold reads
+it. Making
 the other seven scrapers consult `have_details` would save a lot of fetching — but Workday's detail
 carries `startDate` (the only `posted_at` source) and `jobReqId` (which `_posting_key` needs,
 measured: skipping it renames 10/10 postings on `roche`), so it is a real design problem, not a

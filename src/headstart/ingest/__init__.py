@@ -110,7 +110,7 @@ def append_id_list(path: Path, ids: list[str]) -> None:
     """Append ids to a newline-delimited id file, creating it and its parents.
 
     Append rather than rewrite because the queue accumulates across runs until its consumer
-    clears it: a run that settles descriptions must not discard what an earlier run settled and
+    clears it: a run that learns descriptions must not discard what an earlier run learned and
     `update_meta` has not repaired yet.
     """
     if not ids:

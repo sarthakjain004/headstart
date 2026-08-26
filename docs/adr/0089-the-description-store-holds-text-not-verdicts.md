@@ -224,8 +224,9 @@ each scraper could be made to report, eightfold is the proof that the honesty re
 caller.
 
 **Keep the flag and make every scraper consult `have_details`.** That would give the skip-list real
-teeth — the 417,773 descriptions the store holds (2026-08-26, growing 500–800 a run) would start
-saving fetches on the seven other scrapable detail-pass ATSes. It is a genuinely attractive change
+teeth — the 417,773 ids it publishes each run (2026-08-26, growing 500–800 a run; keeping the
+flag keeps the legacy nulls on the list too) would start saving fetches on the seven other
+scrapable detail-pass ATSes. It is a genuinely attractive change
 and it is *not* what this ADR forecloses: it can be made later, and would then need its own
 decision about detail-derived fields (workday's `startDate` is the only
 `posted_at` source, and `_posting_key` reads `jobReqId`, so skipping a detail renames postings —
