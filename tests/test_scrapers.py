@@ -1785,6 +1785,31 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable(monkeypatch):
     assert "unreachable" in s.truncated
 
 
+def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alone(
+    monkeypatch,
+):
+    """A Board with no "View N Openings" total on the page (_is_capped falls back to the bare
+    card-count heuristic) that also lands on the cap and has an unreachable feed must NOT be
+    marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
+    deliberately declined to mark_truncated for; only the page's own total turns that into
+    proof, and this Board never had one."""
+    import headstart.scrapers.trakstar as trakstar_module
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    s = get_scraper("trakstar", "acme", "Acme")
+    monkeypatch.setattr(
+        s, "_get", lambda url=None: _trakstar_cards_page(25)
+    )  # no total button
+    monkeypatch.setattr(trakstar_module, "_fetch_feed", lambda slug: None)
+    monkeypatch.setattr(s, "_job_posting", lambda code: None)
+
+    raw = s.fetch_raw()
+
+    assert "feed_items" not in raw
+    assert len(raw["postings"]) == 25
+    assert s.truncated is None
+
+
 def test_trakstar_feed_location_strips_each_part():
     # real values, live-fetched 2026-08-25 (americandirectlogistic): a bare field routinely
     # carries a stray space that an unstripped join turns into 'fort worth , tx , usa '

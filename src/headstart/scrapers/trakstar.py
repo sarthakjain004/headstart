@@ -18,7 +18,7 @@ kept.
 
 **Fixed (2026-08-25): the careers page above silently caps at 25 rendered job cards, and
 ``fetch_raw()`` now falls back to the RSS feed when it does.** Measured at scale
-(``experiment/location-audit-2026-08-25/trakstar.md``, 906 feed-verified boards): the cap hides
+(``docs/location-audit/2026-08-25_ats-field-audit.md``, 906 feed-verified boards): the cap hides
 4,968 of 10,210 real jobs (48.7%), concentrated in 72 boards (7.9%) that sit at or over it.
 Trakstar also serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``
 below) that carries every job with no such cap and embeds the full description inline (no
@@ -38,12 +38,14 @@ careers-page request they always did.
 
 The feed is NOT universal — unreachable (404, or a CSB-rendered ``/search/``) on 3.9% of tenants
 (confirmed live 2026-08-25: sleekr still 404s) — so a capped Board whose feed fails keeps its
-(known-short) HTML result rather than losing the Board outright, and is marked ``truncated``
-(ADR-0053): reaching the cap used to be treated as ambiguous evidence not worth marking, but the
-page's own total now makes it proof. ``fetch_via_feed`` below remains a separate, complete
-investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still uses it to compare
-both paths at scale) built on the same ``_fetch_feed``/``_feed_items`` primitives
-``fetch_raw()`` now also calls directly.
+(known-short) HTML result rather than losing the Board outright. It is marked ``truncated``
+(ADR-0053) only when the page's own total proved the shortfall — reaching the cap used to be
+treated as ambiguous evidence not worth marking, and stays that way on the rare template with no
+total to compare against: the bare card-count fallback (``_is_capped``) is the same ambiguous
+signal as before, so it still doesn't mark_truncated on its own. ``fetch_via_feed`` below remains
+a separate, complete investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still
+uses it to compare both paths at scale) built on the same ``_fetch_feed``/``_feed_items``
+primitives ``fetch_raw()`` now also calls directly.
 """
 
 from __future__ import annotations
@@ -138,13 +140,17 @@ class TrakstarScraper(BaseScraper):
                 )
                 return {"feed_items": feed_items}
             # The feed is unreachable for this tenant (404, or a CSB-rendered /search/ —
-            # measured on 3.9% of boards). The capped HTML list below is the best we have; mark
-            # it so a future eviction sweep doesn't read the jobs we can't see as delistings
-            # (ADR-0053) — the page's own total makes this proof, not just the cap heuristic's
-            # ambiguous "reached the cap" signal.
-            self.mark_truncated(
-                f"{len(codes)} cards rendered, capped, and the RSS feed fallback is unreachable"
-            )
+            # measured on 3.9% of boards). The capped HTML list below is the best we have.
+            # Only mark_truncated (ADR-0053) when the page's own total proves the shortfall —
+            # when _is_capped instead fell back to the bare card-count heuristic (no "View N
+            # Openings" total on the page), that's the exact same ambiguous "landed on the cap"
+            # signal the pre-fix code deliberately declined to mark_truncated for, and a wrong
+            # call here is permanent (ADR-0053 exclusion has no drain).
+            if _total_openings(html) is not None:
+                self.mark_truncated(
+                    f"{len(codes)} cards rendered, capped, and the RSS feed fallback is "
+                    "unreachable"
+                )
             _log.warning(
                 f"{self.board_key()}: {len(codes)} cards, capped, and the RSS feed is "
                 "unreachable — keeping the capped HTML list"
