@@ -97,3 +97,4 @@ supersedes it and note the supersession in both.
 | [0086](0086-country-tag-signals-in-the-india-gazetteer.md) | The India filter matches country tags, not just place names | 2026-08-25 |
 | [0087](0087-a-hiring-department-is-not-a-tech-department.md) | A hiring department is not a tech department | 2026-08-25 |
 | [0088](0088-a-lost-detail-is-not-a-truncation.md) | A lost detail is not a truncation — classify it, don't scope-exclude on it | 2026-08-26 |
+| [0089](0089-the-description-store-holds-text-not-verdicts.md) | The description store holds text, not verdicts — drop `detail_fetched` | 2026-08-26 |

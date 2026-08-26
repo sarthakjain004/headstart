@@ -55,9 +55,9 @@ from pathlib import Path
 # stage previously carried its own `Path(__file__).resolve().parents[2]`.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The detail skip-list (ADR-0048, re-keyed by ADR-0050): Job ids whose detail the description
-# store has settled — we hold the text, or we know the posting has none — so the scrape stage can
-# skip their per-job detail fetch. It was keyed on *being embedded*, which is a different set: a
+# The detail skip-list (ADR-0048, re-keyed by ADR-0050, narrowed by ADR-0089): Job ids whose
+# description text the store holds, so the scrape stage can skip their per-job detail fetch. It
+# was keyed on *being embedded*, which is a different set: a
 # Job embedded without a description was skipped forever and could never be repaired.
 # Lives here rather than in either stage because three modules across two packages move this one
 # file — `update_descriptions` writes it, `scrape_plan` ships it to the shards, `scrape_run` reads
@@ -70,13 +70,12 @@ HELD_DETAILS_PATH = REPO_ROOT / "data" / "state" / "held_details.txt.gz"
 # replacement lands, `index` re-adds the rows) and each previously declared the path itself.
 PENDING_UPGRADES_PATH = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 
-# The ADR-0062 re-derivation queue: Job ids whose description the store settled *this run*, whose
+# The ADR-0062 re-derivation queue: Job ids whose description the store learned *this run*, whose
 # stored metadata therefore still carries numbers derived without that text. `update_descriptions`
 # appends, `update_meta` re-derives them and clears the file. It lives under data/state rather than
 # riding the corpus artifact alone so a lost artifact or a failed merge retries next run instead of
 # stranding those rows until the next DERIVATIONS_VERSION bump — the marking is the only signal
-# that they need repair, and nothing regenerates it (once settled, a description is never "newly
-# settled" again).
+# that they need repair, and nothing regenerates it (a description is only ever newly stored once).
 PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 
 # The ADR-0083 eviction grace period: Job ids that were absent from their Board's most recent
@@ -111,7 +110,7 @@ def append_id_list(path: Path, ids: list[str]) -> None:
     """Append ids to a newline-delimited id file, creating it and its parents.
 
     Append rather than rewrite because the queue accumulates across runs until its consumer
-    clears it: a run that settles descriptions must not discard what an earlier run settled and
+    clears it: a run that learns descriptions must not discard what an earlier run learned and
     `update_meta` has not repaired yet.
     """
     if not ids:

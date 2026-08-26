@@ -1,6 +1,8 @@
 # ADR-0050: Persist descriptions across runs, and key the detail skip-list on holding them
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0048, ADR-0021
+**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0048, ADR-0021 · **Amended by:**
+[ADR-0089](0089-the-description-store-holds-text-not-verdicts.md) — the `null` entry and
+`Job.detail_fetched` are removed; the store is two-state
 
 ## Context
 
@@ -45,6 +47,14 @@ what CONTEXT.md always claimed. `data/state/embedded_ids.txt.gz` becomes
 `data/state/held_details.txt.gz`, and `update_descriptions` publishes it instead of `embed_merge`.
 This is the change that makes the degraded population reachable at all — they hold no description,
 so they leave the list and are fetched again.
+
+> **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
+> The next three paragraphs — through "Zoho would be the worst of them at 53.8%
+> description-less" — describe a design that no longer exists. The `null` entry and
+> `Job.detail_fetched` are gone and the store is two-state; in particular the obligation below —
+> *a scraper that starts consulting `have_details` must also set `detail_fetched`* — is void,
+> and there is no longer a flag to set. The rest of this ADR stands, except the "Authoritative
+> absence speeds convergence" paragraph further down, which carries its own note.
 
 **The store records two kinds of entry**, because "empty" has two causes that are otherwise
 identical in the corpus:
@@ -123,6 +133,13 @@ runs and repairs the ~16,771 without a separate exercise, but during that window
 with re-fetches for one origin budget, so the change makes title-only vectors *more* likely before
 it makes them impossible. Authoritative absence speeds convergence: a posting with genuinely no
 description leaves the retry set after one successful fetch.
+
+> **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
+> The last sentence no longer holds: with the `null` entry gone, a posting that genuinely has no
+> description never leaves the retry set. Exactly one such posting has ever been confirmed — one
+> of the 8 `null` entries the store accumulated, the other five checkable ones being postings that
+> *do* have a description. That is the cost ADR-0089 accepts, and the price of not paying it was
+> five falsehoods in production data.
 
 **A pre-ADR-0050 `meta.jsonl` row carries no flag**, and is read as degraded only on an ATS with a
 detail pass (`BaseScraper.has_detail_pass`). Reading absence as degraded everywhere would re-embed
