@@ -115,6 +115,137 @@ def test_lever_parse():
     assert j.salary == "80000-110000 USD per-year-salary"
 
 
+def test_ashby_location_keeps_every_place_the_record_names():
+    """The served location IS the filter substrate — `geo.where()` is a raw substring LIKE
+    (ADR-0024) — so a place absent from this string is unfilterable however well the record
+    knows it. Measured 2026-08-25 over 884 live Boards / 16,138 Jobs: 69.55% shipped no country
+    at all, 79.43% omitted some populated component of their own address, and 17.5% had a
+    `secondaryLocations[]` nothing ever opened.
+    """
+    from headstart.scrapers.ashby import _location
+
+    # a real kafene posting: served as "Panama City", losing its country AND a Guatemala
+    # secondary, so neither a Panama nor a Guatemala filter could find it
+    assert (
+        _location(
+            {
+                "location": "Panama City",
+                "address": {"postalAddress": {"addressCountry": "Panama"}},
+                "secondaryLocations": [
+                    {
+                        "location": "Guatemala City",
+                        "address": {
+                            "postalAddress": {
+                                "addressRegion": "Guatemala ",
+                                "addressCountry": "Guatemala",
+                                "addressLocality": "Guatemala City",
+                            }
+                        },
+                    }
+                ],
+            }
+        )
+        == "Panama City, Guatemala City"
+    )
+
+    # the India shape — the country must be appended, since "india" is not inside "Bengaluru"
+    assert (
+        _location(
+            {
+                "location": "Bengaluru",
+                "address": {"postalAddress": {"addressCountry": "India"}},
+            }
+        )
+        == "Bengaluru, India"
+    )
+    assert _location({}) is None
+
+
+def test_ashby_location_is_additive_and_never_repeats_a_place():
+    """Components are appended only when they aren't already named, as a whole word, in what
+    has been kept so far.
+
+    That whole-word test is the right one *because* the filter is a substring match: "Panama"
+    needs no separate entry beside "Panama City", but "India" does beside "Bengaluru". It also
+    keeps the employer's own wording, which is the better display text.
+    """
+    from headstart.scrapers.ashby import _location
+
+    assert (
+        _location(
+            {
+                "location": "SpotDraft HQ, Bengaluru",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Bengaluru",
+                        "addressCountry": "India",
+                    }
+                },
+            }
+        )
+        == "SpotDraft HQ, Bengaluru, India"
+    )
+    # already complete — nothing to add, and no duplication
+    assert (
+        _location(
+            {
+                "location": "Berlin, Germany",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Berlin",
+                        "addressCountry": "Germany",
+                    }
+                },
+            }
+        )
+        == "Berlin, Germany"
+    )
+    # a tenant shipping "Guatemala " with a trailing space must not leak it into the join
+    assert (
+        _location({"address": {"postalAddress": {"addressCountry": "Guatemala "}}})
+        == "Guatemala"
+    )
+    # a bare substring check would wrongly read "CA" as already present inside "Vacaville"
+    # (code review round 1) and drop the state — the whole-word test must still add it
+    assert (
+        _location(
+            {
+                "location": "Vacaville",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Vacaville",
+                        "addressRegion": "CA",
+                        "addressCountry": "United States",
+                    }
+                },
+            }
+        )
+        == "Vacaville, CA, United States"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workplace", "is_remote", "expected"),
+    [
+        ("Remote", True, True),
+        ("OnSite", False, False),
+        # the defect: ashby's own `isRemote` is `workplaceType != "OnSite"`, so Hybrid arrives
+        # as True. 4,183 of 16,138 live Jobs (25.9%) were served remote=True on this shape.
+        ("Hybrid", True, None),
+        (None, None, None),
+        # no workplaceType at all: fall back to the flag rather than invent an answer
+        (None, True, True),
+    ],
+)
+def test_ashby_hybrid_is_not_remote(workplace, is_remote, expected):
+    """`Job.remote` is tri-state and hybrid is what None is for — it is neither remote nor
+    on-site, and asserting either is a guess. `workday._remote_from` already answers it this
+    way; this brings ashby into line rather than inventing a convention."""
+    from headstart.scrapers.ashby import _remote
+
+    assert _remote({"workplaceType": workplace, "isRemote": is_remote}) is expected
+
+
 def test_ashby_parse_skips_unlisted():
     raw = _load("ashby_ramp.json")
     jobs = get_scraper("ashby", "ramp", "Ramp").parse(raw, SCRAPED_AT)
@@ -124,7 +255,16 @@ def test_ashby_parse_skips_unlisted():
     assert j.id == "ashby:ramp:34413f8d-26bf-4bbc-8ade-eb309a0e2245"
     assert j.title == "Security Engineer, Cloud"  # leading space stripped
     assert j.department == "Engineering"
-    assert j.remote is True
+    # `workplaceType: "Hybrid"` with `isRemote: true` — this assertion used to read `is True`,
+    # which encoded the defect: ashby's `isRemote` is exactly `workplaceType != "OnSite"`, so it
+    # calls Hybrid remote. Tri-state None is the honest answer and matches `workday._remote_from`.
+    assert j.remote is None
+    # a two-city posting: the headline names only the HQ, the record also carries a Miami
+    # secondary and the country, none of which used to reach the served row
+    assert j.location == (
+        "New York, NY (HQ), New York City, USA, Miami, FL, Florida, "
+        "Remote (US), United States, Remote (Canada)"
+    )
     assert j.employment_type == "FullTime"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
     # this fixture predates compensationTiers (only compensationTierSummary is present) — real,
