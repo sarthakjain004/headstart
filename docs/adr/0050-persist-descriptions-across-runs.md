@@ -49,10 +49,12 @@ This is the change that makes the degraded population reachable at all — they 
 so they leave the list and are fetched again.
 
 > **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
-> Everything from here to the end of this subsection describes a design that no longer exists.
-> The `null` entry and `Job.detail_fetched` are gone and the store is two-state; in particular the
-> obligation below — *a scraper that starts consulting `have_details` must also set
-> `detail_fetched`* — is void, and there is no longer a flag to set.
+> The next three paragraphs — through "Zoho would be the worst of them at 53.8%
+> description-less" — describe a design that no longer exists. The `null` entry and
+> `Job.detail_fetched` are gone and the store is two-state; in particular the obligation below —
+> *a scraper that starts consulting `have_details` must also set `detail_fetched`* — is void,
+> and there is no longer a flag to set. Everything from `meta.jsonl` gains `has_description`
+> onward is current and untouched.
 
 **The store records two kinds of entry**, because "empty" has two causes that are otherwise
 identical in the corpus:
@@ -131,6 +133,11 @@ runs and repairs the ~16,771 without a separate exercise, but during that window
 with re-fetches for one origin budget, so the change makes title-only vectors *more* likely before
 it makes them impossible. Authoritative absence speeds convergence: a posting with genuinely no
 description leaves the retry set after one successful fetch.
+
+> **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
+> The last sentence no longer holds: with the `null` entry gone, a posting that genuinely has no
+> description never leaves the retry set. Measured at roughly one tech posting in 6,249, that is
+> the cost ADR-0089 accepts.
 
 **A pre-ADR-0050 `meta.jsonl` row carries no flag**, and is read as degraded only on an ATS with a
 detail pass (`BaseScraper.has_detail_pass`). Reading absence as degraded everywhere would re-embed

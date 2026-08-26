@@ -25,63 +25,83 @@ per-Job detail fetch *completed*.
 
 Two findings, both measured 2026-08-26, say that row does not earn its complexity.
 
-**Nobody has found a Job in the middle row.** Two live samples, taken independently, and the store
-itself:
+**The middle row is real, but it is ~7 tech Jobs wide.** An earlier draft of this ADR claimed the
+category was empty, on a 713-Job sample. Re-measuring wider refuted that: the category exists, and
+finding it changes the argument for removal rather than weakening it.
 
-| sample | boards | Jobs | empty `description` | traced to the middle row |
-| --- | --- | --- | --- | --- |
-| first pass — rippling, smartrecruiters, ripplehire, ashby, lever, recruitee, teamtailor, workable, successfactors (4 tenants) | 28 | 713 | 0 | 0 |
-| second pass — zoho, workday, trakstar, eightfold | 35 | 2,730 | 323 | 0 |
-| the store itself, lifetime | — | 328,930 entries | — | 7 `null`, all eightfold (0.002%) |
+The wider pass ran the real scrapers — `registry.get_scraper(ats, slug, slug).fetch()` over boards
+drawn at random from `data/validate/liveness/{ats}.csv` — across the six **detail-pass** ATSes that
+can exhibit the state at all:
 
-The first pass is the weaker of the two and should not be read alone: **five of its nine ATSes
-(ashby, lever, recruitee, teamtailor, workable) have no detail pass at all**, so they cannot
-exhibit "the detail answered with none" by construction, and it omitted every ATS known to produce
-empties. The second pass was taken to cover exactly that gap — the four detail-pass ATSes the
-first missed — and it found empties in quantity. Every one traces to a *failed fetch*:
+| ATS | boards | Jobs | empty `description` |
+| --- | --- | --- | --- |
+| eightfold | 16 | 6,249 | 272 |
+| workday | 19 | 2,419 | 1 |
+| ripplehire | 14 | 2,335 | 0 |
+| successfactors | 10 | 1,030 | 1 |
+| zoho | 18 | 942 | 123 |
+| trakstar | 18 | 86 | 2 |
+| **total** | **95** | **13,061** | **399** |
 
-- **kraftheinz.eightfold.ai, 198 of 797.** Instrumented at `_description`, all 198 returned
-  `None` (non-200), not `""`. On the one scraper that sets the flag, `detail_fetched` would have
-  been `False` for all 198 and the removed state would not have fired for a single one. The job
-  pages themselves carry a full JSON-LD `description`, so settling them would have been a lie.
-- **techrecruitment.zohorecruit.com, 123 of 131.** 4 of 4 sampled job pages serve Zoho's
-  2,182-byte "sorry" error page under **HTTP 200** — the exact failure-as-success this ADR's
-  rejected alternative names for zoho.
-- **kone/careers (workday), 1 of 923.** Its listing row is `{"bulletFields": ["R0663872"]}` — no
-  `externalPath`, so no detail was ever attempted.
+Each of the 399 was then traced to a cause:
 
-A fourth line of evidence, same date, arrived independently:
+- **9 are the middle row** — the detail answered, and the posting's *own public page* carries an
+  empty description. Verified on the page's JSON-LD (`"description": ""` on
+  `cbts.eightfold.ai/careers/job/1443152815632` and `trinet.eightfold.ai/careers/job/44020930`) and
+  on SuccessFactors' `itemprop="description"` span, which on Hyundai Motor Europe's
+  `1340431355` contains literally `<div></div>`. Boards: cbts 2, trinet 1, telekom-growthhub 5,
+  jobs.hyundai-europe.com 1. **Only 1 of the 9 is a tech role**, and only tech Jobs reach
+  `data/jobs/tech/` and therefore the store — which is exactly why the store accumulated **7**
+  `null` entries in its lifetime and not 700.
+- **322 are failed fetches.** `kraftheinz.eightfold.ai`, 198 of 797: instrumented at
+  `_description`, every one returned `None` (non-200), not `""` — so `detail_fetched` would have
+  been `False` and the removed state would not have fired on any of them, and the job pages
+  themselves carry a full JSON-LD description, so settling them would have been a lie.
+  `techrecruitment.zohorecruit.com`, 123 of 131: 4 of 4 sampled job pages serve Zoho's 2,182-byte
+  "sorry" error page under **HTTP 200**. `kone/careers` (workday), 1 of 923: its listing row is
+  `{"bulletFields": ["R0663872"]}` — no `externalPath`, so no detail was ever attempted.
+- **68 are unclassified.** `elcompanies.eightfold.ai` 65 — unstable: a second pass over the same
+  board returned 6 empties with the detail returning text for all 1,395 Jobs, and the board 405s
+  and falls to the spare egress mid-crawl. `trakstar` 2 — the job page is a JS shell carrying no
+  description marker at all.
+
+A third line of evidence arrived independently the same day:
 [`docs/personio/2026-08-26_descriptions-are-language-scoped.md`](../personio/2026-08-26_descriptions-are-language-scoped.md)
 found **191 empty positions of 2,029** on personio and traced every one to a description that
-exists — 187 recoverable from another language feed, the remaining 4 present in the job page's
+*exists* — 187 recoverable from another language feed, the last 4 present in the job page's
 JSON-LD. Its own conclusion is this ADR's: *"Settling these Jobs as 'has none' would have recorded
 a falsehood — the descriptions exist."*
 
-So the honest claim is not "the category is empty" but: **3,443 live Jobs across 63 boards and 13
-ATSes produced 323 empty descriptions and not one of them was a posting that genuinely has none.**
-Every empty was a fetch that failed — which is the same thing the store's own 7-in-328,930 says,
-from the other direction. Both live passes ran the real scrapers via
-`registry.get_scraper(ats, slug, slug).fetch()` over boards drawn at random from
-`data/validate/liveness/{ats}.csv`; the second's per-board results and the `_description`
-instrumentation are reproducible the same way.
+**So the state fires, and what it buys is ~7 skipped detail fetches per run.** That is the store's
+own lifetime `null` count, and the 1-tech-in-9 rate above says it is the right order. Against that,
+the same measurement prices the cost of keeping it: on **three of the four** detail-pass ATSes
+probed, an empty answer is not reliably distinguishable from a failure. Zoho serves failed details
+as HTTP 200 error bodies. Eightfold's kraftheinz returned 198 non-200s in one pass. Elcompanies
+flipped between 65 and 6 empties depending on which egress it was riding. A flag that means "the
+detail answered" is only as trustworthy as the scraper's ability to tell answering from failing —
+and where it is wrong it writes a *permanent* falsehood, suppressing the very signal that a
+description is missing. That asymmetry, not an empty category, is what decides this: seven fetches
+a run is less than one silently mis-settled Job.
 
-**What this does not establish.** Absence of evidence at this sample size is not proof the
-population is zero — a posting with genuinely no description may exist and simply not have been
-drawn. The claim being relied on is narrower and is enough: the *removed state never fired on it*.
-Every empty found, on the one scraper that implemented the flag, would have had
-`detail_fetched == False`.
+**What this does not establish.** 95 boards is a sample, not a census: the rate is bounded within
+an order of magnitude, not pinned. Two things could move it and neither is measured here — a
+detail-pass ATS not probed at all, and the 68 unclassified. What the sample *does* pin is the
+shape: the middle row is rare, overwhelmingly non-tech, and every large block of empties turned
+out to be a failure rather than an answer.
 
-**Only one scraper ever set the flag.** Nine declare `has_detail_pass`; `detail_fetched` is set by
-eightfold alone. That is not the accident it looks like: `needs_detail` — the skip-list's only
-consumer — is also called by eightfold alone (`eightfold.py:281`). So for the other eight the flag
-was doubly inert, and the "re-fetched forever" cost it was meant to prevent never existed for them:
-they re-fetch every detail every run regardless, settled or not.
+**Only one scraper ever set the flag.** Nine scraper classes declare `has_detail_pass` — eight
+scrapable, since `join` is in `DISABLED_ATS` — and `detail_fetched` is set by eightfold alone. That
+is not the accident it looks like: `needs_detail`, the skip-list's only consumer, is also called by
+eightfold alone (`eightfold.py:281`). So for the other seven the flag was doubly inert, and the
+"re-fetched forever" cost it was meant to prevent never existed for them: they re-fetch every
+detail every run regardless, settled or not.
 
 Together these resolve what the per-run counters were really reporting. `update_descriptions` logs
-~1,974 Jobs per run with no description and no stored answer. Those are not postings that lack a
-description — they are **fetch failures**: NGC's 3,536 missing details (ADR-0088), successfactors'
-unreadable pages, zoho's. Every one is correctly *not* settled. The flag exists to separate a
-population from an empty set.
+~1,974 Jobs per run with no description and no stored answer. The overwhelming majority are not
+postings that lack a description — they are **fetch failures**: NGC's 3,536 missing details
+(ADR-0088), successfactors' unreadable pages, zoho's. Every one is correctly *not* settled. The
+flag existed to separate a real population from a much larger one it is easily confused with, and
+it separated them on a signal three of four ATSes cannot produce reliably.
 
 ## Decision
 
@@ -90,39 +110,47 @@ population from an empty set.
 - `Job.detail_fetched` is removed from the model and from eightfold's three sites.
 - `reconcile` collapses to two outcomes: fill from the store, or count the Job unrecorded. The
   `settled` counter and `Reconciled.settled` go with it.
-- `read_store` and `_ats_held_ids` **skip an entry with no text**, so a legacy `null` reads as
-  unheld everywhere. This is what keeps the removal coherent: the skip-list is what tells the
+- `read_store` and `_ats_held_ids` walk one shared `_entries()` generator that **yields no text
+  for an entry that has none**, so a legacy `null` reads as unheld everywhere and the two readers
+  cannot drift apart. This is what keeps the removal coherent: the skip-list is what tells the
   scrape not to bother, and an id on it the store cannot supply is a description lost for good.
 - `settled_ids` is renamed `held_ids` (and `_ats_settled_ids` to `_ats_held_ids`). "Settled" was
   the verdict vocabulary; "held" is what `base.have_details` and `reconcile`'s own local already
   called it.
 
 No migration step: `compact` rewrites each base file from `read_store`, so the 7 legacy entries
-disappear on its next pass.
+disappear on its next pass. It runs daily in `cleanup-index`, and that step is `continue-on-error`
+— so the purge is best-effort, and the entries are harmless until it lands because every reader
+already treats them as unheld.
 
 ## Consequences
 
-**Eightfold re-fetches those 7 Jobs.** They are the only Jobs the removed state was skipping, on
-the only scraper that skips. Seven detail fetches per run, when their boards are in slice.
+**Eightfold re-fetches those 7 Jobs, and every genuinely empty posting it finds after.** They are
+the only Jobs the removed state was skipping, on the only scraper that skips — measured above at
+roughly 1 tech posting in 6,249, so single digits per full sweep, and only when their boards are in
+slice. This is the price of the removal, and it is paid every run rather than once.
 
 **A genuinely description-less posting is now chased forever** — it stays in the ADR-0062 gap
-ledger, so `scrape_plan` keeps reserving exploration budget for its Board. At the measured rate
-(none in 3,443 live Jobs) that is noise. If it ever stops being noise, the gap ledger is where it
-will show:
-a Board whose unsettled count never falls despite being scraped.
+ledger, so `scrape_plan` keeps reserving exploration budget for its Board. The bound is the quota,
+not the ordering: `GAP_FRAC` is 0.05 of the exploration tail, so the gap picks can never grow past
+that however many never-fillable ids accumulate. The ordering is *not* a second bound — `_gap_picks`
+sorts by *most* unsettled first within the detail-pass class, so a Board accreting these rises
+rather than sinks. If the population ever stops being noise, that is where it shows: a Board whose
+unsettled count never falls despite being scraped.
 
 **The `unrecorded` counter now means one thing** — we do not have this description — rather than
-"we do not have it and could not tell you why". Its magnitude is unchanged, because the settle
-branch was firing ~0 times.
+"we do not have it and could not tell you why". Its magnitude moves by single digits, since that is
+how often the settle branch was firing.
 
 **A scraper that starts consulting `have_details` no longer inherits a hidden obligation.** The old
 model required it to also set `detail_fetched` or silently re-fetch description-less postings
-forever; the note in `models.py` said so, and the eight scrapers it applied to never did it. There
-is nothing left to forget.
+forever; the note in `models.py` said so, and the seven scrapers it applied to never did it. There
+is nothing left to forget — and nothing left to get wrong on an ATS whose empty answer is really a
+failure.
 
 ## Alternatives considered
 
-**Set the flag on the eight scrapers that never did.** Attempted first, and abandoned on the
+**Set the flag on the seven scrapable scrapers that never did.** Attempted first, and abandoned on the
 evidence. Three (workday, smartrecruiters, rippling) read JSON APIs where an absent field is
 unambiguous and the change was a clean one-liner. Successfactors was reverted: its detail is an
 HTML *parse*, so a page whose title parses while its description does not is a plausible parser

@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -94,18 +95,28 @@ def _sequence(path: Path) -> int:
     return int(path.name.split(".", 1)[0])
 
 
-def _text_in(record: dict) -> str | None:
-    """The description a store record holds, or ``None`` when it holds no text.
+def _entries(ats_dir: Path) -> Iterator[tuple[str, str | None]]:
+    """One ATS's store entries in read order, as ``(Job id, held text or None)``.
 
-    The one place the "held" rule is written down. :func:`read_store` and :func:`_ats_held_ids`
-    both apply it and must never disagree: the first decides what the corpus is repaired from,
-    the second what the scrape is told not to fetch, and an id on the skip-list the store cannot
-    supply is a description lost for good. A legacy ``null`` — ADR-0089's removed "the detail
-    answered and this posting genuinely has none" — reads as no text here, and so does a later
-    entry blanking an earlier one.
+    The one place the "held" rule is written down, and the one walk that applies it.
+    :func:`read_store` and :func:`_ats_held_ids` must never disagree — the first decides what the
+    corpus is repaired from, the second what the scrape is told not to fetch, and an id on the
+    skip-list the store cannot supply is a description lost for good — so they consume this rather
+    than each carrying their own copy of the rule.
+
+    ``None`` covers both text-less cases: a legacy ``null`` (ADR-0089's removed "the detail
+    answered and this posting genuinely has none") and a later entry blanking an earlier one.
+    Whitespace-only counts as text-less, matching what :func:`reconcile` is willing to store.
     """
-    description = record.get("description")
-    return description if isinstance(description, str) and description else None
+    for path in _fragments(ats_dir):
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    record = json.loads(line)
+                    description = record.get("description")
+                    held = isinstance(description, str) and description.strip()
+                    yield record["id"], description if held else None
 
 
 def read_store(ats_dir: Path) -> dict[str, str]:
@@ -118,17 +129,11 @@ def read_store(ats_dir: Path) -> dict[str, str]:
     entries disappear on its next pass with no migration step.
     """
     held: dict[str, str] = {}
-    for path in _fragments(ats_dir):
-        with gzip.open(path, "rt", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line:
-                    record = json.loads(line)
-                    text = _text_in(record)
-                    if text is not None:
-                        held[record["id"]] = text
-                    else:  # a legacy null, or a later entry blanking an earlier one
-                        held.pop(record["id"], None)
+    for job_id, text in _entries(ats_dir):
+        if text is not None:
+            held[job_id] = text
+        else:
+            held.pop(job_id, None)
     return held
 
 
@@ -233,22 +238,17 @@ def _ats_held_ids(ats_dir: Path) -> set[str]:
     Reading through :func:`read_store` instead would materialise every description (~1 GB of text)
     to look at the keys. Both callers below want only the keys, in different shapes.
 
-    Applies :func:`_text_in` — the same rule :func:`read_store` applies, from the same fragments
-    in the same order — rather than counting every line: an entry with no text (a legacy ``null``)
+    Walks :func:`_entries` — the same rule :func:`read_store` applies, over the same fragments in
+    the same order — rather than counting every line: an entry with no text (a legacy ``null``)
     does not mean we hold anything, and a skip-list that said otherwise would tell the scrape not
     to fetch a description the store cannot supply.
     """
     ids: set[str] = set()
-    for path in _fragments(ats_dir):
-        with gzip.open(path, "rt", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if line:
-                    record = json.loads(line)
-                    if _text_in(record) is not None:
-                        ids.add(record["id"])
-                    else:
-                        ids.discard(record["id"])
+    for job_id, text in _entries(ats_dir):
+        if text is not None:
+            ids.add(job_id)
+        else:
+            ids.discard(job_id)
     return ids
 
 

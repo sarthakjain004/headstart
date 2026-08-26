@@ -144,16 +144,14 @@ def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
     return facts
 
 
-def held_descriptions(
-    store_dir: Path, keep: set[str] | None = None
-) -> dict[str, str | None]:
-    """Every settled description across the ADR-0050 store, keyed by Job id.
+def held_descriptions(store_dir: Path, keep: set[str] | None = None) -> dict[str, str]:
+    """Every description the ADR-0050 store holds, keyed by Job id.
 
     ``keep`` narrows the result to those ids. A version sweep needs all of them, but the ADR-0062
-    re-derivation only needs this run's newly-settled handful — and holding the whole store is
+    re-derivation only needs this run's newly-stored handful — and holding the whole store is
     ~1 GB of text on a runner that is already the pipeline's memory ceiling.
     """
-    held: dict[str, str | None] = {}
+    held: dict[str, str] = {}
     if store_dir.is_dir():
         for ats_dir in sorted(p for p in store_dir.iterdir() if p.is_dir()):
             rows = read_store(ats_dir)

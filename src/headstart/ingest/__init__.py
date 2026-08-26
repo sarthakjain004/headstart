@@ -70,13 +70,12 @@ HELD_DETAILS_PATH = REPO_ROOT / "data" / "state" / "held_details.txt.gz"
 # replacement lands, `index` re-adds the rows) and each previously declared the path itself.
 PENDING_UPGRADES_PATH = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 
-# The ADR-0062 re-derivation queue: Job ids whose description the store settled *this run*, whose
+# The ADR-0062 re-derivation queue: Job ids whose description the store learned *this run*, whose
 # stored metadata therefore still carries numbers derived without that text. `update_descriptions`
 # appends, `update_meta` re-derives them and clears the file. It lives under data/state rather than
 # riding the corpus artifact alone so a lost artifact or a failed merge retries next run instead of
 # stranding those rows until the next DERIVATIONS_VERSION bump — the marking is the only signal
-# that they need repair, and nothing regenerates it (once settled, a description is never "newly
-# settled" again).
+# that they need repair, and nothing regenerates it (a description is only ever newly stored once).
 PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 
 # The ADR-0083 eviction grace period: Job ids that were absent from their Board's most recent
