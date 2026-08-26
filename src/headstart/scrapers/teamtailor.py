@@ -22,17 +22,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
-
-_log = log.get(__name__)
 
 #: Items per page the feed serves. A full page means there is probably another.
 _PAGE_SIZE = 100
 
 #: Loop bound. 200 pages is 20,000 Jobs — an order of magnitude past the largest Board measured
-#: (779), so it can only be reached by a feed that has stopped honouring `page`.
+#: (779), so it can only be reached by a feed serving _MAX_PAGES straight full, all-new pages.
 _MAX_PAGES = 200
 
 
@@ -92,9 +89,12 @@ class TeamtailorScraper(BaseScraper):
             if len(items) < _PAGE_SIZE or not fresh:
                 break
         else:
-            _log.warning(
-                f"{self.board_key()}: stopped at the {_MAX_PAGES}-page bound with "
-                f"{len(merged)} Jobs — the feed may be ignoring `page`"
+            # Reached only by _MAX_PAGES straight full, all-new pages — a feed that just
+            # re-serves page 1 is already caught by the `not fresh` break above. Whatever sits
+            # past the cap is unread, not absent, and must say so or `index sync` evicts it
+            # as a delisting (ADR-0053).
+            self.mark_truncated(
+                f"hit the {_MAX_PAGES}-page cap at {len(merged)} Jobs — the rest unread"
             )
         feed["items"] = merged
         return feed
