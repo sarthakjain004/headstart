@@ -175,6 +175,55 @@ disappear on its next pass. It runs daily in `cleanup-index`, and that step is `
 — so the purge is best-effort, and the entries are harmless until it lands because every reader
 already treats them as unheld.
 
+## The store already holds a falsehood — reproducible in one command
+
+Everything above is sampling. This is not: **one of the store's 7 `null` entries is provably
+wrong**, and it is a tech Job.
+
+`eightfold:telekom-growthhub.eightfold.ai:563465371804571` is recorded as *authoritatively has no
+description*. It is a **Senior DevOps Engineer (m/w/d)** posting, and its own public page carries a
+**5,677-character** JSON-LD description right now:
+
+```bash
+# the stored verdict
+python -c "
+import gzip, json, sys; sys.path.insert(0, 'src')
+from pathlib import Path
+from headstart.ingest.update_descriptions import _fragments
+held = {}
+for f in _fragments(Path('data/descriptions/eightfold')):
+    for line in gzip.open(f, 'rt', encoding='utf-8'):
+        if line.strip():
+            r = json.loads(line); held[r['id']] = r.get('description')
+print([k for k, v in held.items() if v is None])"
+
+# what the posting actually serves
+curl -s https://telekom-growthhub.eightfold.ai/careers/job/563465371804571 \
+  | grep -o '\"description\":\"[^\"]\{0,80\}' | head -1
+```
+
+The mechanism is exact about how this happened. `_description_of` returns
+`data.get("jobDescription") or ""` — so an API 200 whose payload omits `jobDescription` yields
+`""`, not `None`. `detail_fetched` was `desc is not None`, so `"" is not None` is **`True`**: the
+detail "answered", the store settled the Job, and it joined the skip-list. Eightfold then stopped
+fetching it — permanently, because nothing re-opens a settled Job.
+
+The same board has **5** such postings today (219 Jobs, 5 empty, verified 2026-08-26), and their
+titles are *Senior Softwareentwickler*, *Senior DevOps Engineer*, *Senior Datenbank-Entwickler*,
+*IT-Projektleiter*, *Technical Consultant System Integration* — all of which pass the tech gate and
+so all of which reach the store. Each carries a real 4,613-5,677-character description on its
+public page. Only one has been settled so far because only one has been scraped since the flag
+shipped; the rest were queued to follow.
+
+The other 6 `null` entries could not be checked either way — their pages no longer serve a
+`JobPosting` JSON-LD, which is consistent with delisting. So the demonstrated error rate is **1 of
+7 confirmed wrong, 6 unverifiable, 0 confirmed correct.**
+
+This is what decides the ADR. The argument is not that the middle row is empty (it is not), nor
+that the flag *might* be untrustworthy — it is that the flag has **already written a permanent
+falsehood into production data, on a tech Job whose description exists**, and that the store's
+entire lifetime output is 7 records of which this is one.
+
 ## Consequences
 
 **Eightfold re-fetches those 7 Jobs, and every genuinely empty posting it finds after.** They are
