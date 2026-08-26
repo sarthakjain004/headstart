@@ -3338,8 +3338,30 @@ def _personio_stub(
     monkeypatch, scraper, feeds: dict[str | None, str]
 ) -> list[str | None]:
     """Serve `feeds` keyed by the `?language=` code (None = the bare feed) and record the order
-    the scraper asked in, so a test can assert on the request cost as well as the result."""
+    the scraper asked in, so a test can assert on the request cost as well as the result.
+
+    The two halves go out by different routes on purpose, and the stub mirrors that: since #313
+    the **bare** feed is a direct `http.fetch` that refuses redirects (so an off-host Location can
+    be read as gone), while the language variants still ride `_get`. Stubbing only `_get` would
+    leave the bare fetch live."""
     asked: list[str | None] = []
+
+    class _Feed:
+        status_code = 200
+        headers: ClassVar[dict] = {}
+
+        def __init__(self, text: str):
+            self.text = text
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    def _fetch(method, url, **kw):
+        asked.append(None)
+        if None not in feeds:
+            raise AssertionError("unexpected bare-feed fetch")
+        return _Feed(feeds[None])
 
     def _get(url=None):
         lang = url.split("?language=")[1] if url and "?language=" in url else None
@@ -3348,6 +3370,7 @@ def _personio_stub(
             raise AssertionError(f"unexpected language fetch: {lang}")
         return feeds[lang]
 
+    monkeypatch.setattr(http, "fetch", _fetch)
     monkeypatch.setattr(scraper, "_get", _get)
     return asked
 
@@ -3461,13 +3484,24 @@ def test_personio_language_sweep_survives_a_failing_variant(monkeypatch):
     and the positions the bare feed did carry are still worth returning."""
     s = get_scraper("personio", "acme.jobs.personio.de", "Acme")
 
+    # The bare feed is a direct `http.fetch` since #313; stubbing only `_get` would leave it live.
+    class _Feed:
+        status_code = 200
+        headers: ClassVar[dict] = {}
+        text = _personio_feed(_personio_position("1", None))
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
     def _get(url=None):
         if url and "?language=en" in url:
             raise RuntimeError("boom")
         if url and "?language=" in url:
             return _personio_feed(_personio_position("1", "Spanish text"))
-        return _personio_feed(_personio_position("1", None))
+        raise AssertionError("the bare feed must not go through _get")
 
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: _Feed())
     monkeypatch.setattr(s, "_get", _get)
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
     assert jobs[0].description == "Spanish text"

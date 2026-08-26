@@ -47,6 +47,7 @@ def _redirect_host(location: str | None) -> str:
         return ""
     return host_of(text).lower().partition(":")[0].rstrip(".")
 
+
 _log = log.get(__name__)
 
 
