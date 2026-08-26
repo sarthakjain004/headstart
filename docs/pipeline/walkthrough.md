@@ -202,9 +202,11 @@ The decisive measurement is on eightfold itself, the only scraper that ever set 
 `telekom-growthhub`, its `position_details` API answers **HTTP 200 with no description** for 5 of 5
 postings whose public pages carry full text. That maps to `""`, which is exactly what set
 `detail_fetched = True` — so all five would have been recorded as "genuinely has none",
-permanently, and one of them passes the tech gate and would have reached the store. A completed
-fetch is not an authoritative answer. ADR-0089 has the per-ATS table and the trace of all 399; read
-it there rather than trusting this retelling.
+permanently, and one of them passes the tech gate and would have reached the store. That one
+already *is* in the store, recorded as having no description while its page serves 5,677
+characters: a falsehood the flag wrote into production data. A completed fetch is not an
+authoritative answer. ADR-0089 has the per-ATS table and the repro; read it there rather than
+trusting this retelling.
 
 **The flag was inert almost everywhere.** Nine scrapers declare `has_detail_pass` — eight
 scrapable, since `join` is disabled — but only eightfold ever set `detail_fetched`, and, not
