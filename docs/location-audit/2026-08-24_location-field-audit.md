@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-24 · **Scope:** `Job.location` extraction across all 20 active scrapers
 (`join` excluded per ADR — non-tech noise) · **Fixes:** darwinbox, successfactors, keka,
-greenhouse, recruitee (added 2026-08-25) · **Method:** live-sampled every scraper via the real registered `fetch_raw()` +
+greenhouse, recruitee, ripplehire (added 2026-08-25) · **Method:** live-sampled every scraper via the real registered `fetch_raw()` +
 `parse()` path, then live-verified every fix against its full live board population
 
 ## Summary — verdict per ATS
@@ -19,7 +19,7 @@ greenhouse, recruitee (added 2026-08-25) · **Method:** live-sampled every scrap
 | oracle | not sampled | zero live boards in the liveness ledger (curated single-company unlocks only, per CLAUDE.md) |
 | personio | clean | no issues found |
 | recruitee | **fixed** (2026-08-25) | missed on 2026-08-24: a *localized* remote marker (`Remote job`, `Poste à distance`, `Homeoffice`, `Werken op afstand`, `Trabajo a distancia`) sat in `location` and, being truthy, swallowed the structured city/country the same offer carried. 476 of 1,922 offers across 138 live Boards. Fixed by detecting the marker structurally — a `location` not naming the offer's own `city` — rather than by listing strings; live re-check on 89 Boards recovered 53 with 0 regressions |
-| ripplehire | clean | no issues found |
+| ripplehire | **fixed** (2026-08-25) | missed on 2026-08-24, same shape as recruitee below: `jobLocation or locations` served the coarser of the two fields and silently dropped the city on the 34.76% of jobs carrying both — 33.21% of the corpus served the wrong grain, 24.99% matched no city filter at all. Fixed by joining both instead of picking one; live re-check across all 55 boards / 18,690 jobs |
 | rippling | clean | no issues found |
 | sensehq | not sampled | zero live boards in the liveness ledger |
 | smartrecruiters | clean | no issues found |
@@ -30,9 +30,9 @@ greenhouse, recruitee (added 2026-08-25) · **Method:** live-sampled every scrap
 | workday | clean | already has sophisticated rollup-detection + detail-page repair (see below) — the reference bar the other fixes were measured against |
 | zoho | clean | 38.5% null on a 1,305-job sample, **100% correlated with `Remote_Job: True`** — fully-remote postings genuinely have no physical location upstream; the scraper is correctly passing that through |
 
-Thirteen of twenty were genuinely clean, five had real bugs fixed here, and two (oracle,
+Twelve of twenty were genuinely clean, six had real bugs fixed here, and two (oracle,
 sensehq) have no live boards to sample — curated single-company unlocks per the CLAUDE.md
-ATS-expansion notes, not a scraped population. Three of the thirteen clean ones (ashby, lever,
+ATS-expansion notes, not a scraped population. Three of the twelve clean ones (ashby, lever,
 trakstar) were flagged as suspicious by an automated heuristic and turned out to be correct
 short values on inspection — two 2-letter country codes and one genuinely short city name — a
 reminder that "looks short" is not itself evidence.

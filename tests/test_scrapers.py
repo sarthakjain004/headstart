@@ -931,6 +931,16 @@ def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail
             },
             # no detail record at all (e.g. the per-job fetch failed) -> falls back, stays None
             {"jobSeq": 2, "jobTitle": "B"},
+            # no detail record, but list-side keys present -> the safety net must actually
+            # recover them, not just fall through to None (department/posted_at/salary only;
+            # employment_type has no list-side fallback, see parse()'s own comment)
+            {
+                "jobSeq": 3,
+                "jobTitle": "C",
+                "bussinessUnit": "Finance",
+                "jobPostingDate": "01-Jan-2021",
+                "compensationRange": "10-15 LPA",
+            },
         ],
         SCRAPED_AT,
     )
@@ -945,6 +955,11 @@ def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail
     assert j2.posted_at is None
     assert j2.employment_type is None
     assert j2.salary is None
+
+    j3 = jobs[2]
+    assert j3.department == "Finance"
+    assert j3.posted_at == "01-Jan-2021"
+    assert j3.salary == "10-15 LPA"
 
 
 def test_ripplehire_prefers_publish_details_iso_timestamp_for_posted_at():
