@@ -424,17 +424,19 @@ class WorkdayScraper(BaseScraper):
         """The useful jobPostingInfo fields from a posting-detail response (None on non-200):
         the raw-HTML description, plus startDate/timeType — the list payload only carries a
         relative posted date ("30+ Days Ago") and no employment type — plus the real
-        location(s) and remoteType, which the list payload rolls up or omits (see
+        location(s), country and remoteType, which the list payload rolls up or omits (see
         :func:`_location_from`)."""
         if response.status_code != 200:
             return None
         info = response.json().get("jobPostingInfo") or {}
+        country = info.get("country")
         return {
             "description": info.get("jobDescription"),
             "startDate": info.get("startDate"),
             "timeType": info.get("timeType"),
             "location": info.get("location"),
             "additionalLocations": info.get("additionalLocations"),
+            "country": country.get("descriptor") if isinstance(country, dict) else None,
             "remoteType": info.get("remoteType"),
             "jobReqId": info.get("jobReqId"),
         }
@@ -813,7 +815,9 @@ def _is_rollup(text: Any) -> bool:
 
 
 def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
-    """The posting's real location(s), preferring the listing and repairing it from the detail.
+    """The posting's real location(s), preferring the listing and repairing it from the detail,
+    then appending the country (see :func:`_with_country`) to whichever branch produced a real
+    place — an unrepaired rollup stays exactly that string, so callers can still recognize it.
 
     ``locationsText`` is a *rollup* on multi-location postings ("5 Locations") and null outright
     on some tenants — measured 2026-08-18 across 800 listing rows on 40 boards: 9.5% rolled up
@@ -830,21 +834,52 @@ def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
     """
     listing = listed.strip() if isinstance(listed, str) and listed.strip() else None
     if listing and not _is_rollup(listing):
-        return listing
-    primary = detail.get("location")
-    if not isinstance(primary, str) or not primary.strip():
-        # No detail (a failed fetch keeps the Job anyway) — the rollup is still what the
-        # listing said, and saying "5 Locations" beats saying nothing.
-        return listing
-    # `isinstance(..., list)` on the container, not only its items: `or []` over a bare string
-    # iterates it character by character and would join "Dublin" as "D; u; b; l; i; n".
-    extra = detail.get("additionalLocations")
-    places = [
-        p.strip()
-        for p in (extra if isinstance(extra, list) else [])
-        if isinstance(p, str) and p.strip()
-    ]
-    return "; ".join([primary.strip(), *places])
+        location = listing
+    else:
+        primary = detail.get("location")
+        if not isinstance(primary, str) or not primary.strip():
+            # No detail (a failed fetch keeps the Job anyway) — the rollup is still what the
+            # listing said, and saying "5 Locations" beats saying nothing.
+            location = listing
+        else:
+            # `isinstance(..., list)` on the container, not only its items: `or []` over a bare
+            # string iterates it character by character and would join "Dublin" as
+            # "D; u; b; l; i; n".
+            extra = detail.get("additionalLocations")
+            places = [
+                p.strip()
+                for p in (extra if isinstance(extra, list) else [])
+                if isinstance(p, str) and p.strip()
+            ]
+            location = "; ".join([primary.strip(), *places])
+    if _is_rollup(location):
+        # Still an unrepaired rollup ("2 Locations") — leave it exactly that shape. parse()'s
+        # remote-detection guard keys on `_is_rollup` matching this literal string; appending a
+        # country here would silently defeat it and flip an honest "don't know" into "on-site".
+        return location
+    return _with_country(location, detail.get("country"))
+
+
+def _with_country(location: str | None, country: Any) -> str | None:
+    """Append ``jobPostingInfo.country.descriptor`` to ``location`` when it isn't already named
+    there, case-insensitively.
+
+    Populated on 99.06% of detail records and was never copied in
+    (experiment/location-audit-2026-08-25/workday.md, 700 boards / 5,460 listings live-sampled
+    2026-08-25): 81.45% of served locations named no country at all, and 26.37% ended in a bare
+    US-state code a country filter can't match. The detail response is already fetched for the
+    description, so this costs no extra request. The free-text "Location contains" box is a raw
+    substring ``LIKE`` (ADR-0024); ``geo.where()`` layers ``NOT LIKE`` exclusion guards on top of
+    the same substring match. Neither cares whether a term appears once or twice, so this guard is
+    for a clean served string, not filter correctness — a country already named in ``location``
+    should not be repeated.
+    """
+    if not location or not isinstance(country, str) or not country.strip():
+        return location
+    country = country.strip()
+    if country.lower() in location.lower():
+        return location
+    return f"{location}; {country}"
 
 
 def _remote_from(remote_type: Any) -> bool | None:

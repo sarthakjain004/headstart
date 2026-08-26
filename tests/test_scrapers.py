@@ -1666,6 +1666,135 @@ def test_workday_extract_detail_carries_the_location_fields():
     assert got["jobReqId"] == "JR00258"  # _posting_key's preferred source (option A2)
 
 
+def test_workday_extract_detail_carries_the_country_field():
+    """`jobPostingInfo.country.descriptor` is populated on 99.06% of detail records
+    (experiment/location-audit-2026-08-25/workday.md) and `_extract_detail` never copied it —
+    the fetch-side half of the country fix, same shape as the location-fields test above."""
+
+    class _Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "jobPostingInfo": {
+                    "jobDescription": "<p>hi</p>",
+                    "location": "Ottawa, ON",
+                    "country": {"descriptor": "Canada", "id": "abc123"},
+                }
+            }
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    got = WorkdayScraper._extract_detail(_Response())
+    assert got["country"] == "Canada"
+
+
+def test_workday_appends_the_country_the_listing_never_named():
+    """The defect: 81.45% of served locations never name the country, even though
+    `jobPostingInfo.country.descriptor` sits in the same already-fetched detail response
+    `_location_from` already reads for the rollup repair (measured 2026-08-25,
+    experiment/location-audit-2026-08-25/workday.md). A real listing location is the common
+    case — `_location_from` used to return it before ever consulting the detail's country."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Ottawa, ON",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "Canada"},
+        },
+        {
+            "title": "B",
+            "locationsText": "Fairfield, IA",
+            "bulletFields": ["R2"],
+            "_detail": {"country": "United States of America"},
+        },
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Ottawa, ON; Canada"
+    assert jobs[1].location == "Fairfield, IA; United States of America"
+
+
+def test_workday_does_not_duplicate_a_country_already_named_in_the_location():
+    """Additive, not replacing: a location that already names the country (case-insensitive
+    substring) must not gain a duplicate — the served filter is a raw substring LIKE
+    (ADR-0024)."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Cork, Ireland",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "IRELAND"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Cork, Ireland"
+
+
+def test_workday_country_composes_with_the_rollup_repair():
+    """The country append is a final step over whatever `_location_from` already produced —
+    including the detail-repaired rollup case — not a special case of the plain-listing path."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "5 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {
+                "location": "London",
+                "additionalLocations": ["Dublin", "Warsaw", "Paris", "Berlin"],
+                "country": "United Kingdom",
+            },
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "London; Dublin; Warsaw; Paris; Berlin; United Kingdom"
+
+
+def test_workday_country_absent_leaves_location_unchanged():
+    """No detail country (0.94% of records, or a failed detail fetch) must not error or alter
+    the location — additive only, never a required field."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "Austin, TX",
+            "bulletFields": ["R1"],
+            "_detail": {},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Austin, TX"
+
+
+def test_workday_country_does_not_taint_an_unrepaired_rollup():
+    """A rollup that survives (detail present but with no `location`/`additionalLocations` to
+    repair it) must not gain a country either — `parse()`'s remote-detection guard keys on
+    `_is_rollup` matching the exact "N Locations" string, and appending "; Canada" to it would
+    break that match, silently flipping `Job.remote` from an honest `None` to an incorrect
+    `False` (the "asserts on-site when we can't tell" failure the module's own docstring warns
+    against)."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "2 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "Canada"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "2 Locations"
+    assert jobs[0].remote is None
+
+
 def test_workday_keeps_the_rollup_when_the_detail_never_arrived():
     """A failed detail fetch leaves `_detail` empty and the Job is still kept (module
     docstring). Better a rollup string than None — it is what the listing said."""
