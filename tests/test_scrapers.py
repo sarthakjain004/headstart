@@ -1962,6 +1962,95 @@ def test_workday_keeps_the_rollup_when_the_detail_never_arrived():
     assert jobs[0].location == "3 Locations"
 
 
+def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, caplog):
+    """A detail pass that loses most of a Board must say *what* it lost them to.
+
+    Measured on `workday:ngc/Northrop_Grumman_External_Site`, runs 32942748996 and
+    32936269675 (2026-08-26): 3,536/3,691 and 3,569/3,678 details missing, reported as one
+    INFO count each. The two runs took 134s and 1,658s for the same ratio — a gap only the
+    failure classes explain, since a retried 5xx costs a backoff ladder and a non-transient
+    status costs one round trip. `_paginate` has reported exactly this for the listing pass
+    since ADR-0076; the detail pass mapped every outcome onto an untyped None.
+    """
+    import asyncio
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    outcomes = iter([429, 503, 503, 404, 200])
+
+    async def fake_fetch_async(session, method, url, **kw):
+        status = next(outcomes)
+
+        class _R:
+            status_code = status
+
+            @staticmethod
+            def json():
+                return {"jobPostingInfo": {"jobDescription": "<p>d</p>"}}
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    classes: Counter[str] = Counter()
+    for path in ("/job/a", "/job/b", "/job/c", "/job/d", "/job/e"):
+        asyncio.run(scraper._job_detail_async(None, path, classes))
+    # the settled statuses are kept apart, not collapsed into one count
+    assert classes == Counter({"HTTP 503": 2, "HTTP 429": 1, "HTTP 404": 1})
+
+    # and a Board that loses most of its details says so at WARNING, naming the classes —
+    # a 96%-empty detail pass previously produced no warning at all
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    scraper._report_detail_losses(4, 5, classes)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "workday:acme/careers" in message
+    assert "4/5" in message
+    assert "HTTP 503 x2" in message
+
+
+def test_workday_detail_gap_records_a_raised_request(monkeypatch):
+    """A request that never settled is its own class, not another non-200.
+
+    The distinction is the whole point: a spent retry ladder, a timeout and a DNS failure
+    each call for a different response, and `_job_detail_async` returned the same None for
+    all three plus every 4xx/5xx."""
+    import asyncio
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    async def fake_fetch_async(session, method, url, **kw):
+        raise http.RequestsError("timed out")
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    classes: Counter[str] = Counter()
+    assert asyncio.run(scraper._job_detail_async(None, "/job/a", classes)) is None
+    assert asyncio.run(scraper._job_detail_async(None, None, classes)) is None
+    # curl_cffi's `RequestsError` is an alias of `RequestException`, which is the name
+    # `_failure_class` reports for a request the origin never gave a status to
+    assert classes == Counter({"RequestException": 1, "no externalPath": 1})
+
+
+def test_workday_complete_detail_pass_warns_about_nothing(monkeypatch, caplog):
+    """The counterpart guard: a Board whose details all arrived must stay silent, so the
+    new WARNING keeps meaning something."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
+        0, 5, Counter()
+    )
+    assert caplog.records == []
+
+
 def test_freshteam_parse():
     jobs = get_scraper("freshteam", "12min", "12min").parse(
         _load("freshteam_12min.json"), SCRAPED_AT
