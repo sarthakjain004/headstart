@@ -4,7 +4,7 @@ Find software-engineering openings straight from companies' ATS (Applicant Track
 System) career boards — earlier and more completely than relying on LinkedIn.
 
 HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
-them through **21 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
+them through **22 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
 two ways: a static dashboard over a curated feed, and an **AI semantic-search layer** (local
 embeddings + vector search with structured filters) running live on a free-tier Hugging Face
 Space over a **285,065-row** index of the tech corpus.
@@ -165,10 +165,10 @@ No always-on server: scheduled GitHub Actions, a static Pages site, and a free-t
 
 ## ATS coverage
 
-21 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
+22 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
 `freshteam`, `greenhouse`, `join`, `keka`, `lever`, `oracle`, `personio`, `recruitee`,
 `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
-`trakstar`, `workable`, `workday`, `zoho`. `join` is in `registry.DISABLED_ATS` — German-SMB
+`trakstar`, `workable`, `workday`, `zoho`, `zwayam`. `join` is in `registry.DISABLED_ATS` — German-SMB
 boards running ~1 tech job in ~10k, pure noise for a tech-only index — so it is skipped rather
 than scraped. Its scraper class and tests stay intact; re-enable by removing it from that set.
 
@@ -176,9 +176,10 @@ Each scraper reads a Board and normalizes its raw postings into `Job` records; a
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
 liveness pipeline has probed **176,733 boards**: 100,254 live, 47,494 dead, 28,985 unknown. Of the
-21 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
-nothing indexed yet, and `join`'s remaining 1,093 rows are a residue of the era before it was
-disabled: no slice will scrape them again, so they leave by eviction rather than refresh.
+22 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
+nothing indexed yet, `zwayam` was added 2026-08-27 and has not run in the pipeline yet, and
+`join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
+scrape them again, so they leave by eviction rather than refresh.
 
 ## AI semantic search
 
@@ -312,7 +313,7 @@ registered; bot walls (403/429) stay advisory.
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
-  (Job + normalization), `scrapers/` (21 per-ATS + `base`/`registry`), `http.py` (the pooled
+  (Job + normalization), `scrapers/` (22 per-ATS + `base`/`registry`), `http.py` (the pooled
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
   feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
   `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`

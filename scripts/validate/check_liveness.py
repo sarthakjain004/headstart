@@ -63,6 +63,12 @@ from headstart.models import (  # one host rule, shared with the scrapers
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
+from headstart.scrapers.zwayam import (  # the request shape, single source of truth
+    _BOUNDARY,
+    _IGNORED_COMPANY_ID,
+    _filter_at,
+    _multipart,
+)
 
 try:  # bot-wall fallback (see _cloudscraper_fetch below) — optional, not a base dependency
     import cloudscraper
@@ -1207,6 +1213,49 @@ def p_join(t, u):
     )
 
 
+def p_zwayam(t, u):
+    """One POST to the shared API, which selects the Board by hostname (`t`).
+
+    Read the BODY, never the status: a hostname that is no longer a registered Board answers
+    HTTP 200 with `"data": null`, identical in every other respect to a live one. The request
+    shape is imported from the scraper so the two can never drift — a probe that asked
+    differently would classify Boards the scrape then handles differently.
+    """
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+        "Origin": f"https://{t}",
+        "Referer": f"https://{t}/",
+    }
+    body = _multipart(
+        {"filterCri": _filter_at(0), "domain": t, "companyId": _IGNORED_COMPANY_ID}
+    )
+    try:
+        r = _fetch(
+            "POST", "https://public.zwayam.com/jobs/search", data=body, headers=headers
+        )
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code != 200:
+        # Akamai fronts this host and answers 403 to a refused IP, which says nothing about the
+        # Board. Never DEAD on a status alone here.
+        return UNKNOWN, None
+    try:
+        data = (r.json() or {}).get("data")
+    except ValueError:
+        return UNKNOWN, None
+    if not data:
+        return DEAD, None
+    return LIVE, data.get("totalCount", 0)
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -1227,6 +1276,7 @@ PROBES = {
     "freshteam": p_freshteam,
     "eightfold": p_eightfold,
     "successfactors": p_successfactors,
+    "zwayam": p_zwayam,
 }
 
 

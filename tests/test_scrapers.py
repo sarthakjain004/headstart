@@ -6259,3 +6259,86 @@ def test_zwayam_missing_base_href_falls_back_to_root():
     raw["prefix"] = "/"
     job = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[0]
     assert job.url.startswith("https://careers.tavant.com/jobview/")
+
+
+def test_zwayam_reports_a_short_read_as_truncated():
+    """A Board whose pages stop before totalCount must NOT look complete to `harvest`, or
+    `index sync` reads the unread postings as delisted (ADR-0053)."""
+
+    scraper = get_scraper("zwayam", "careers.short.example")
+    page = {
+        "data": {
+            "totalCount": 50,
+            "hasMoreData": False,  # server says "no more" while 40 postings are unread
+            "data": [
+                {"_source": {"id": i, "jobTitle": f"Dev {i}", "jobUrl": f"d-{i}"}}
+                for i in range(10)
+            ],
+        }
+    }
+    scraper._page = lambda start: page
+    scraper._path_prefix = lambda: "/x/"
+    raw = scraper.fetch_raw()
+    assert len(raw["rows"]) == 10
+    assert scraper.truncated == "read 10 of 50 postings"
+
+
+def test_zwayam_truncation_keeps_the_first_reason():
+    """`mark_truncated` is the base-class seam; the page cap must win over the shortfall."""
+    from headstart.scrapers import zwayam as mod
+
+    scraper = get_scraper("zwayam", "careers.runaway.example")
+    monkey_cap = 3
+    original = mod._MAX_PAGES
+    mod._MAX_PAGES = monkey_cap
+    try:
+        page = {
+            "data": {
+                "totalCount": 10_000,
+                "hasMoreData": True,
+                "data": [
+                    {"_source": {"id": i, "jobTitle": "Dev", "jobUrl": "d"}}
+                    for i in range(10)
+                ],
+            }
+        }
+        scraper._page = lambda start: page
+        scraper._path_prefix = lambda: "/x/"
+        scraper.fetch_raw()
+    finally:
+        mod._MAX_PAGES = original
+    assert scraper.truncated.startswith(f"stopped at the {monkey_cap}-page cap")
+
+
+def test_zwayam_multipart_encodes_every_field():
+    from headstart.scrapers.zwayam import _BOUNDARY, _multipart
+
+    body = _multipart({"a": "1", "b": "two"}).decode()
+    assert body.count(f"--{_BOUNDARY}\r\n") == 2
+    assert body.endswith(f"--{_BOUNDARY}--\r\n")
+    assert 'name="a"\r\n\r\n1\r\n' in body
+    assert 'name="b"\r\n\r\ntwo\r\n' in body
+
+
+def test_zwayam_absolute_base_href_does_not_corrupt_the_link(monkeypatch):
+    """An absolute <base href> is legal HTML; pasting it onto the Board host would build
+    https://host/https://cdn.../jobview/… — unresolvable."""
+    from headstart.scrapers import zwayam as mod
+
+    class _Html:
+        status_code = 200
+        text = (
+            '<html><base href="https://cdn.example.com/x/"><app-root></app-root></html>'
+        )
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(mod.http, "fetch", lambda *a, **k: _Html())
+    assert get_scraper("zwayam", "careers.abs.example")._path_prefix() == "/"
+
+
+def test_zwayam_row_without_a_joburl_is_skipped_not_linked_to_the_board_root():
+    """Unobserved (0 of 182 rows), but a Board-root link would be a URL no shape can match."""
+    raw = {"prefix": "/x/", "rows": [{"id": 1, "jobTitle": "Dev", "jobUrl": ""}]}
+    assert get_scraper("zwayam", "careers.nolink.example").parse(raw, SCRAPED_AT) == []

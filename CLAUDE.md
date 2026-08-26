@@ -66,7 +66,16 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
 - **PyjamaHR** — S, easiest. Open REST no auth: `GET api.pyjamahr.com/api/career/jobs/?company_uuid={UUID}` (+ `/jobs/{id}/?company_uuid=` for description). Native workplace_type + experience + salary.
 - **Eightfold** — M, best discoverability (`{slug}.eightfold.ai` sweep → `/careers/sitemap.xml` → JSON-LD; the `/api/apply/v2/jobs` XHR is 403-hardened). Qualcomm/NVIDIA/Micron/Vodafone GCCs, ~75-89% tech.
 - **TurboHire** — M, token flow: `/api/token/noauth` (needs Referer) → `POST /api/careerpagev2/filteredjobs?orgId={GUID}`. 72 hosts; unlocks Cleartrip/Flipkart, Ola.
-- **Zwayam / Naukri Talent Cloud** — M. Two-call flow to `public.zwayam.com` (config→base64 companyId→ES `/jobs/search`); native experience years, description needs a detail pass. **The mined `.zwayam.com` hosts are DEAD** — real boards are on custom domains (`careers.persistent.com`, `careers.coforge.com`, `jobs.itcinfotech.com`); discovery is the cost.
+- **Zwayam / Naukri Talent Cloud** ✅ DONE (2026-08-27, #320) — `scrapers/zwayam.py`, wired through
+  liveness (757 live / 224 hiring boards in `data/validate/liveness/zwayam.csv`). Slug = the board
+  hostname. Three things the original research got wrong, each re-verified before building:
+  `companyId` is **ignored** (so it is one call per page, not two per board), a browser
+  `User-Agent` is **required** (without one the body is empty, not a 403), and `.openings.co` hosts
+  are **live** — 643 of the 757 boards are there. Only `{slug}.zwayam.com` is genuinely dead.
+  Discovery is the real cost and has its own playbook:
+  `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
+  endpoint carry it) plus the generalisable
+  `docs/discovery/shared-cert-tenant-rosters.md`.
 - **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
 - Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal. **iCIMS** = opportunistic-only (alive but HTML/JSP-only, non-enumerable, India tenants are GCC boards not IT majors).
@@ -75,7 +84,9 @@ Single-company unlocks (web research; a manual slug, not worth a scraper each):
 - **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).
 - **Skillate** (`{slug}.skillate.com`) — Zetwerk, Ola, Pristyn Care (3).
 - **SenseHQ** (`{slug}.sensehq.com/careers`) — Zetwerk, Capillary (2).
-- **Param.ai** (`{slug}.app.param.ai/jobs/`) — Practo.
+- **Param.ai** (`{slug}.app.param.ai/jobs/`) — ~~Practo~~. Practo is on **Zwayam**
+  (`careers.practo.com`, 29 jobs, verified 2026-08-27 by two independent channels), so this
+  entry has no company left behind it until another one is found.
 - **Kula** (`careers.kula.ai/{slug}`) — Rocketlane.
 - **Oracle Cloud HCM** (`{tenant}.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/...`) — Icertis.
 - **CareerSiteManager** (`{slug}.careersitemanager.com`) — Ecom Express.

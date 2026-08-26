@@ -56,18 +56,22 @@ _MAX_PAGES = 1_200
 #: The careers SPA declares its own path prefix here; the job deep link has to carry it.
 _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
 
-_FILTER = json.dumps(
-    {
-        "paginationStartNo": 0,
-        "selectedCall": "sort",
-        "sortCriteria": {"name": "modifiedDate", "isAscending": False},
-        "anyOfTheseWords": "",
-    }
-)
-
 
 def _filter_at(start: int) -> str:
-    return _FILTER.replace('"paginationStartNo": 0', f'"paginationStartNo": {start}')
+    """The ``filterCri`` field for the page beginning at ``start``.
+
+    Built fresh each call rather than string-substituted into a rendered template: the earlier
+    form did ``json.dumps(...).replace('"paginationStartNo": 0', ...)``, which silently stops
+    matching if the separator spacing ever changes and would then request page 0 forever.
+    """
+    return json.dumps(
+        {
+            "paginationStartNo": start,
+            "selectedCall": "sort",
+            "sortCriteria": {"name": "modifiedDate", "isAscending": False},
+            "anyOfTheseWords": "",
+        }
+    )
 
 
 #: Fixed boundary. The body is three short constant-shaped text fields with no user content that
@@ -110,23 +114,22 @@ def _location(source: dict) -> str | None:
 
 
 def _experience(source: dict) -> str | None:
-    """The tenant's own phrasing where it exists, else the numeric pair.
+    """The structured numeric pair where it says something, else the tenant's free text.
 
-    ``experienceUIField`` is a human string the tenant typed ("11.5-13.5 years", "Upto 4 years")
-    and is the better input to ``experience.extract``'s Tier-1 field parse. It is often null, in
-    which case the numeric pair stands in — but only when it says something: ``minYearOfExperience``
-    and ``maxYearOfExperience`` are both 0 on a Board that never filled them in, and "0-0 years"
-    is a fact about the form, not the job.
+    The pair is preferred over ``experienceUIField`` because it is the one
+    ``experience.extract`` can always read. Measured 2026-08-27: ``extract("Upto 4 years")``
+    returns **None**, while the same job's ``minYearOfExperience``/``maxYearOfExperience`` of
+    (0, 4) render as "0-4 years" and parse to 0-4. Preferring the prose there silently loses a
+    stated range, so the free text is the fallback rather than the preference — it still carries
+    the Boards that filled in the phrasing and left the numbers blank.
+
+    "Both zero" is not a range: it is what an untouched form submits, so "0-0 years" would be a
+    fact about the form rather than about the job.
     """
-    stated = (source.get("experienceUIField") or "").strip()
-    if stated:
-        return stated
     lo, hi = source.get("minYearOfExperience"), source.get("maxYearOfExperience")
-    if not isinstance(lo, int | float) or not isinstance(hi, int | float):
-        return None
-    if not lo and not hi:
-        return None
-    return f"{lo:g}-{hi:g} years"
+    if isinstance(lo, int | float) and isinstance(hi, int | float) and (lo or hi):
+        return f"{lo:g}-{hi:g} years"
+    return (source.get("experienceUIField") or "").strip() or None
 
 
 def _salary(source: dict) -> str | None:
@@ -249,6 +252,12 @@ class ZwayamScraper(BaseScraper):
         if not match:
             return "/"
         prefix = match.group(1).strip() or "/"
+        if "://" in prefix or prefix.startswith("//"):
+            # An absolute <base href> is legal HTML. Concatenating it onto the Board host would
+            # build `https://host/https://cdn.../jobview/…`, so fall back rather than emit a link
+            # that cannot resolve.
+            _log.info(f"{self.board_key()}: absolute base href {prefix!r}, using /")
+            return "/"
         if not prefix.startswith("/"):
             prefix = "/" + prefix
         return prefix if prefix.endswith("/") else prefix + "/"
@@ -284,12 +293,14 @@ class ZwayamScraper(BaseScraper):
             ):
                 break
             if page == _MAX_PAGES - 1:
-                self.truncated = (
+                self.mark_truncated(
                     f"stopped at the {_MAX_PAGES}-page cap with {len(rows)} of {total}"
                 )
-                _log.warning(f"{self.board_key()}: {self.truncated}")
-        if total is not None and rows and len(rows) < total and not self.truncated:
-            self.truncated = f"read {len(rows)} of {total} postings"
+        if total is not None and rows and len(rows) < total:
+            # `mark_truncated` keeps the FIRST reason, so the page cap above still wins where it
+            # fired — this is the shortfall that reaches `harvest` when it did not.
+            self.mark_truncated(f"read {len(rows)} of {total} postings")
+        if self.truncated:
             _log.warning(f"{self.board_key()}: {self.truncated}")
         return {"rows": rows, "prefix": self._path_prefix() if rows else "/"}
 
@@ -304,6 +315,14 @@ class ZwayamScraper(BaseScraper):
                 continue
             location = _location(source)
             job_url = (source.get("jobUrl") or "").strip()
+            if not job_url:
+                # Unobserved: 0 of 182 rows across four Boards. The alternative — falling back to
+                # the Board root — would emit a link that no per-Job URL shape can match, so the
+                # row is dropped and logged instead of shipping an unverifiable link.
+                _log.warning(
+                    f"{self.board_key()}: job {native_id} has no jobUrl, skipped"
+                )
+                continue
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{native_id}",
@@ -315,11 +334,7 @@ class ZwayamScraper(BaseScraper):
                     # across four Boards), so this is the post-hoc location heuristic alone.
                     remote=is_remote(location),
                     department=(source.get("departmentName") or "").strip() or None,
-                    url=(
-                        f"https://{self.slug}{prefix}jobview/{job_url}"
-                        if job_url
-                        else f"https://{self.slug}{prefix}"
-                    ),
+                    url=f"https://{self.slug}{prefix}jobview/{job_url}",
                     posted_at=_posted_at(source),
                     scraped_at=scraped_at,
                     description=_description(source),
