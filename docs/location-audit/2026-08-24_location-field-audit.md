@@ -19,7 +19,7 @@ greenhouse, recruitee, ripplehire (added 2026-08-25) · **Method:** live-sampled
 | oracle | not sampled | zero live boards in the liveness ledger (curated single-company unlocks only, per CLAUDE.md) |
 | personio | clean | no issues found |
 | recruitee | **fixed** (2026-08-25) | missed on 2026-08-24: a *localized* remote marker (`Remote job`, `Poste à distance`, `Homeoffice`, `Werken op afstand`, `Trabajo a distancia`) sat in `location` and, being truthy, swallowed the structured city/country the same offer carried. 476 of 1,922 offers across 138 live Boards. Fixed by detecting the marker structurally — a `location` not naming the offer's own `city` — rather than by listing strings; live re-check on 89 Boards recovered 53 with 0 regressions |
-| ripplehire | **fixed** (2026-08-25) | missed on 2026-08-24, same shape as recruitee below: `jobLocation or locations` served the coarser of the two fields and silently dropped the city on the 34.76% of jobs carrying both — 33.21% of the corpus served the wrong grain, 24.99% matched no city filter at all. Fixed by joining both instead of picking one; live re-check across all 55 boards / 18,690 jobs |
+| ripplehire | **fixed** (2026-08-25) | missed on 2026-08-24, same shape as recruitee below: `jobLocation or locations` served the coarser of the two fields and silently dropped the city on the 34.76% of jobs carrying both — 33.21% of the corpus served the wrong grain, 24.99% matched no city filter at all. Fixed by joining both instead of picking one; live re-check across all 55 boards / 18,659 jobs |
 | rippling | clean | no issues found |
 | sensehq | not sampled | zero live boards in the liveness ledger |
 | smartrecruiters | clean | no issues found |
