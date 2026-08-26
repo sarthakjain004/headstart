@@ -952,6 +952,207 @@ def test_ripplehire_fetch_raw_fills_jobdesc_from_detail(monkeypatch):
     assert sum("candidatejobdetail" in u for u in calls) == 1
 
 
+def test_ripplehire_fetch_raw_attaches_full_detail_record(monkeypatch):
+    """`fetch_raw` already fetches `jobVO` per job for the description — `parse` needs the rest
+    of that same record (department/posted_at/employment_type/salary), so `fetch_raw` must keep
+    it rather than reading only `jobDesc` back out of it and discarding the rest."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+
+    class _Resp:
+        def __init__(self, url="", payload=None):
+            self.url = url
+            self._payload = payload
+            self.status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._payload
+
+    def _fetch(method, url, **kwargs):
+        if url.endswith("/candidate/careers"):
+            return _Resp(url="https://x.ripplehire.com/candidate/?token=TOK123")
+        if "candidatejobsearch" in url:
+            return _Resp(
+                payload={
+                    "jobVoList": [{"jobSeq": 1, "jobTitle": "SRE", "jobDesc": None}],
+                    "totalJobCount": 1,
+                }
+            )
+        return _Resp(
+            payload={
+                "jobVO": {
+                    "jobDesc": "<p>desc</p>",
+                    "bussinessUnit": "Technology",
+                    "jobPostingDate": "23-Jun-2020",
+                }
+            }
+        )
+
+    import headstart.scrapers.ripplehire as rh
+
+    monkeypatch.setattr(rh.http, "fetch", _fetch)
+    raw = get_scraper("ripplehire", "x", "X").fetch_raw()
+    assert raw[0]["_detail"]["bussinessUnit"] == "Technology"
+    assert raw[0]["_detail"]["jobPostingDate"] == "23-Jun-2020"
+
+
+def test_ripplehire_location_joins_city_and_country():
+    """`locations` is the city field (2,613 distinct values fleet-wide); `jobLocation` is a
+    34-value country picker. The old `jobLocation or locations` served the coarser value and
+    silently dropped the city on every job carrying both — 33.21% of the corpus, live-verified
+    2026-08-25 (experiment/location-audit-2026-08-25/ripplehire.md). The fix joins both, so a
+    `geo.where(city)` filter can still match."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            # both present, disjoint -> join, city first
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                "locations": "Mumbai",
+                "jobLocation": "India",
+            },
+            # jobLocation already a substring of the composed string -> no duplicate
+            {
+                "jobSeq": 2,
+                "jobTitle": "B",
+                "locations": "Mumbai, India",
+                "jobLocation": "India",
+            },
+            # locations absent -> jobLocation alone
+            {"jobSeq": 3, "jobTitle": "C", "locations": None, "jobLocation": "USA"},
+            # multi-city locations, untrimmed parts -> each stripped, country appended
+            {
+                "jobSeq": 4,
+                "jobTitle": "D",
+                "locations": "Chennai , Bengaluru ,Pune",
+                "jobLocation": "India",
+            },
+            # both absent -> None
+            {"jobSeq": 5, "jobTitle": "E", "locations": None, "jobLocation": None},
+        ],
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Mumbai, India"
+    assert jobs[1].location == "Mumbai, India"  # not "Mumbai, India, India"
+    assert jobs[2].location == "USA"
+    assert jobs[3].location == "Chennai, Bengaluru, Pune, India"
+    assert jobs[4].location is None
+
+
+def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail():
+    """The search list's `bussinessUnit`/`jobPostingDate`/`jobType`/`compensationRange` are
+    always empty (live-verified across all 18,659 jobs on all 55 boards, 2026-08-25) — the real
+    values live in the `jobVO` detail record `fetch_raw` already downloads for every job's
+    description. `parse` must read the four fields from there, not the always-empty list keys."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                # list-side fields: always empty in production, present here only to prove
+                # they are NOT what wins
+                "bussinessUnit": None,
+                "jobPostingDate": None,
+                "jobType": None,
+                "compensationRange": None,
+                "_detail": {
+                    "bussinessUnit": "Technology",
+                    "jobPostingDate": "23-Jun-2020",
+                    "jobType": "R",  # a requisition-type code, not an employment type
+                    "jobTypeCustom3": "Full time",
+                    "compensationRange": "Compensation range: $ 46,417.00 to 77,864.00 per year",
+                },
+            },
+            # no detail record at all (e.g. the per-job fetch failed) -> falls back, stays None
+            {"jobSeq": 2, "jobTitle": "B"},
+            # no detail record, but list-side keys present -> the safety net must actually
+            # recover them, not just fall through to None (department/posted_at/salary only;
+            # employment_type has no list-side fallback, see parse()'s own comment)
+            {
+                "jobSeq": 3,
+                "jobTitle": "C",
+                "bussinessUnit": "Finance",
+                "jobPostingDate": "01-Jan-2021",
+                "compensationRange": "10-15 LPA",
+            },
+        ],
+        SCRAPED_AT,
+    )
+    j = jobs[0]
+    assert j.department == "Technology"
+    assert j.posted_at == "23-Jun-2020"
+    assert j.employment_type == "Full time"  # jobTypeCustom3, not the coded jobType "R"
+    assert j.salary == "Compensation range: $ 46,417.00 to 77,864.00 per year"
+
+    j2 = jobs[1]
+    assert j2.department is None
+    assert j2.posted_at is None
+    assert j2.employment_type is None
+    assert j2.salary is None
+
+    j3 = jobs[2]
+    assert j3.department == "Finance"
+    assert j3.posted_at == "01-Jan-2021"
+    assert j3.salary == "10-15 LPA"
+
+
+def test_ripplehire_prefers_publish_details_iso_timestamp_for_posted_at():
+    """`publishDetails.CAREER_SITE` is a real ISO-8601 timestamp for the same posting
+    `jobPostingDate` gives as `"23-Jun-2020"` — prefer it when present (Job.posted_at's own
+    contract: "ISO-8601 if the source provides it"), falling back to the non-ISO date otherwise."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                "_detail": {
+                    "jobPostingDate": "23-Jun-2020",
+                    "publishDetails": {"CAREER_SITE": "2026-07-16T13:53:16Z"},
+                },
+            },
+        ],
+        SCRAPED_AT,
+    )
+    assert jobs[0].posted_at == "2026-07-16T13:53:16Z"
+
+
+def test_ripplehire_does_not_carry_month_valued_exp_fields_across_the_unit_trap():
+    """`jobMinExp`/`jobMaxExp` are YEARS on the search list but MONTHS on the `jobVO` detail
+    record for the SAME job — confirmed live 2026-08-25 across 160 paired records, exactly x12
+    (e.g. "4 - 6 Years" list-side pairs with jobMinExp=48/jobMaxExp=72 in the detail record).
+    `jobReqExp` is identical text on both surfaces and is the only experience field this scraper
+    reads; this pins that reading the (now-consulted) detail record for other fields does not
+    let the month-valued pair leak into `experience`."""
+    from headstart.scrapers import ripplehire as rh
+
+    jobs = rh.RippleHireScraper("acme").parse(
+        [
+            {
+                "jobSeq": 1,
+                "jobTitle": "A",
+                "jobReqExp": "4 - 6 Years",
+                "jobMinExp": 4,  # years, list-side
+                "jobMaxExp": 6,
+                "_detail": {
+                    "jobReqExp": "4 - 6 Years",
+                    "jobMinExp": 48,  # months, detail-side — same job, x12
+                    "jobMaxExp": 72,
+                },
+            },
+        ],
+        SCRAPED_AT,
+    )
+    assert jobs[0].experience == "4 - 6 Years"
+
+
 def _darwinbox_curl_wall(monkeypatch):
     """Stub `http.fetch` so `.in` answers Cloudflare's 403 and `.com` the wrong-TLD 500.
 

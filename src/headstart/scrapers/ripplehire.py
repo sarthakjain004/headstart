@@ -33,6 +33,31 @@ _DETAIL_WORKERS = 8
 _MAX_PAGES = 200  # our own ceiling — the natural exit is the tenant's own job count
 
 
+def _location(j: dict) -> str | None:
+    """Compose the city (``locations``) with the country (``jobLocation``), deduped.
+
+    ``locations`` is the city field — 2,613 distinct values fleet-wide (Mumbai, Bangalore,
+    Chennai). ``jobLocation`` is a coarse country picker — 34 distinct values (India, IND, USA).
+    The old code read ``jobLocation or locations``, so on the 34.76% of jobs carrying both, the
+    country won and the city — the only thing a ``geo.where(city)`` filter can match — was
+    silently dropped (experiment/location-audit-2026-08-25/ripplehire.md, live-verified
+    2026-08-25 across all 55 boards / 18,659 jobs: 33.21% served the wrong grain, 24.99% matched
+    no city filter at all despite naming a real gazetteer city).
+
+    Joining recovers both: split ``locations`` on its commas (itself sometimes multi-city, e.g.
+    "Mumbai, Chennai, Bengaluru"), strip each part (150 jobs carry an untrimmed value, e.g.
+    "Kolkata "), then append ``jobLocation`` only when it is not already a substring of the
+    composed string — most India-tagged jobs already carry "India" somewhere in ``locations``
+    or as ``jobLocation`` itself, and appending it unconditionally would duplicate it onto the
+    end (measured: 300 jobs, 1.61%, need this de-dupe).
+    """
+    parts = [p.strip() for p in (j.get("locations") or "").split(",") if p.strip()]
+    country = (j.get("jobLocation") or "").strip()
+    if country and country.lower() not in ", ".join(parts).lower():
+        parts.append(country)
+    return ", ".join(parts) or None
+
+
 class RippleHireScraper(BaseScraper):
     ats = "ripplehire"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
@@ -95,23 +120,23 @@ class RippleHireScraper(BaseScraper):
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(jobs)} jobs — the rest unread"
             )
-        # detail pass: the list never carries jobDesc — fill it from the per-job detail JSON
+        # detail pass: the list never carries jobDesc — fill it from the per-job detail JSON,
+        # which also carries department/posted_at/employment_type/salary that `parse` needs
+        # (see `_job_detail`)
         need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
         # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
         if self.async_fanout_enabled():
-            descriptions = self.fan_out_async(
+            details = self.fan_out_async(
                 need,
-                lambda session, j: self._job_description_async(
-                    session, token, j["jobSeq"]
-                ),
+                lambda session, j: self._job_detail_async(session, token, j["jobSeq"]),
             )
         else:
-            descriptions = self.fan_out(
-                need, lambda j: self._job_description(token, j["jobSeq"])
-            )
+            details = self.fan_out(need, lambda j: self._job_detail(token, j["jobSeq"]))
+        descriptions = [(d or {}).get("jobDesc") or None for d in details]
         self.report_detail_gaps(descriptions, "descriptions")
-        for j, desc in zip(need, descriptions):
+        for j, d, desc in zip(need, details, descriptions):
             j["jobDesc"] = desc
+            j["_detail"] = d or {}
         return jobs
 
     def _detail_url(self, token: str, job_seq: Any) -> str:
@@ -120,8 +145,16 @@ class RippleHireScraper(BaseScraper):
             f"?token={token}&jobSeq={job_seq}&source=CAREERSITE&lang=en"
         )
 
-    def _job_description(self, token: str, job_seq: Any) -> str | None:
-        """GET one job's detail JSON and return jobVO.jobDesc (None on failure). Sync path."""
+    def _job_detail(self, token: str, job_seq: Any) -> dict | None:
+        """GET one job's detail JSON and return the whole ``jobVO`` (None on failure). Sync path.
+
+        The search list always carries ``jobDesc: null``, so this was fetched for the
+        description alone and everything else in ``jobVO`` was discarded — but that same record
+        also carries ``bussinessUnit``/``jobPostingDate``/``jobTypeCustom3``/``compensationRange``,
+        which are always empty on the list (experiment/location-audit-2026-08-25/ripplehire.md,
+        live-verified across all 18,659 jobs on all 55 boards). Returning the full dict lets
+        ``parse`` read those too, at zero extra requests.
+        """
         try:
             data = http.fetch(
                 "GET",
@@ -130,13 +163,13 @@ class RippleHireScraper(BaseScraper):
                 timeout=30,
             ).json()
         except (http.RequestsError, json.JSONDecodeError):
-            return None  # a missing description must not drop the job
-        return (data.get("jobVO") or {}).get("jobDesc") or None
+            return None  # a missing detail record must not drop the job
+        return data.get("jobVO") or None
 
-    async def _job_description_async(
+    async def _job_detail_async(
         self, session: Any, token: str, job_seq: Any
-    ) -> str | None:
-        """Same as :meth:`_job_description` over the shared multiplexed ``AsyncSession``."""
+    ) -> dict | None:
+        """Same as :meth:`_job_detail` over the shared multiplexed ``AsyncSession``."""
         try:
             response = await http.fetch_async(
                 session,
@@ -147,14 +180,20 @@ class RippleHireScraper(BaseScraper):
             )
             data = response.json()
         except (http.RequestsError, json.JSONDecodeError):
-            return None  # a missing description must not drop the job
-        return (data.get("jobVO") or {}).get("jobDesc") or None
+            return None  # a missing detail record must not drop the job
+        return data.get("jobVO") or None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for j in raw:
-            # tenants populate either jobLocation or locations (a comma-joined string)
-            location = j.get("jobLocation") or j.get("locations") or None
+            location = _location(j)
+            # `department`/`posted_at`/`employment_type`/`salary` are always empty on the search
+            # list (live-verified 2026-08-25) — read them from the `jobVO` detail record
+            # `fetch_raw` already attaches as `_detail`, falling back to the list keys as a safety
+            # net if that per-job fetch failed. `jobType` ("R"/"H") is a requisition-type code,
+            # not an employment type, so — unlike the other three — it is deliberately NOT used
+            # as a fallback for `employment_type`; `jobTypeCustom3` ("Full time", "FTE") is.
+            detail = j.get("_detail") or {}
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{j['jobSeq']}",
@@ -163,14 +202,35 @@ class RippleHireScraper(BaseScraper):
                     title=(j.get("jobTitle") or "").strip(),
                     location=location,
                     remote=is_remote(location),
-                    department=j.get("bussinessUnit"),
+                    department=detail.get("bussinessUnit")
+                    or j.get("bussinessUnit")
+                    or None,
                     url=f"https://{self.slug}.ripplehire.com/candidate/careers",
-                    posted_at=j.get("jobPostingDate") or j.get("careerSiteDate"),
+                    # `publishDetails.CAREER_SITE` is a real ISO-8601 timestamp for the same
+                    # posting `jobPostingDate` gives non-ISO ("23-Jun-2020") — prefer it per
+                    # Job.posted_at's own contract ("ISO-8601 if the source provides it").
+                    posted_at=(
+                        (detail.get("publishDetails") or {}).get("CAREER_SITE")
+                        or detail.get("jobPostingDate")
+                        or detail.get("careerSiteDate")
+                        or j.get("jobPostingDate")
+                        or j.get("careerSiteDate")
+                    ),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("jobDesc")),
+                    # `jobReqExp` reads identically on both surfaces ("5 - 8 Years") — unlike
+                    # `jobMinExp`/`jobMaxExp`, which are YEARS on the list and MONTHS on `jobVO`
+                    # for the same job (confirmed live 2026-08-25, x12 on all 160 paired records
+                    # sampled). Neither of those is read here or anywhere else in this module, so
+                    # that unit mismatch can't leak into `experience`.
                     experience=j.get("jobReqExp"),
-                    employment_type=j.get("jobType"),
-                    salary=j.get("compensationRange") or j.get("compensationInfo"),
+                    employment_type=detail.get("jobTypeCustom3") or None,
+                    salary=(
+                        detail.get("compensationRange")
+                        or detail.get("compensationInfo")
+                        or j.get("compensationRange")
+                        or j.get("compensationInfo")
+                    ),
                 )
             )
         return jobs
