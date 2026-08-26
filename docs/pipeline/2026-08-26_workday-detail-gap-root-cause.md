@@ -109,16 +109,26 @@ posting with no `externalPath` were all the same output.
 pass now does the same thing with the same helper:
 
 - `_job_detail` / `_job_detail_async` take an optional `classes` Counter and record the settled
-  status (`HTTP 429`), the exception class for a request that never settled, or `no externalPath`.
+  status (`HTTP 429`), the exception class for a request that never settled, `no externalPath`,
+  or `unparseable` for a 200 whose body isn't the JSON the API promises.
 - `_report_detail_losses` logs one line naming the classes, at **WARNING** past
   `_MAX_LOST_DETAIL_SHARE` (half) and INFO below it. A 96%-empty detail pass previously produced
-  no warning at all.
+  no warning at all. It **replaces** `report_detail_gaps`'s count-only line rather than adding to
+  it — the two carried the same two numbers, and a second near-synonym line double-counted every
+  Board for anything grepping them.
+- The classes shown always total the loss count: anything that escaped labelling is reported as
+  `unclassified xN`, so `(HTTP 404 x10)` on a 3,536-loss Board can never read as the explanation.
+
+The line is worded to `_paginate`'s shape — `N of M thing(s) failed mid-crawl (…) — tail` — so one
+regex reads both passes and the noun says which. The tail is narrow on purpose: it asserts only
+that *this* pass does not mark the Board truncated. It does not claim the listing was whole
+(`_paginate` can `mark_truncated` and return, so a Board can lose pages *and* details in one run),
+nor that the loss is harmless — see §6 on `_posting_key`.
 
 Verified against live boards:
 
 ```
-INFO    workday:iheartmedia/ihm_technology_site: 42/42 details missing
-WARNING workday:iheartmedia/ihm_technology_site: 42/42 details lost (HTTP 404 x42)
+WARNING workday:iheartmedia/ihm_technology_site: 42 of 42 detail(s) failed mid-crawl (HTTP 404 x42) — not a truncation (the listing pass reports its own)
 ```
 
 One run of the pipeline with this in place settles what the remaining 7,444 `other` outcomes
@@ -127,8 +137,9 @@ actually are, which is the precondition for aiming any throttling or egress chan
 ## 5. Should the detail pass be load-bearing (`mark_truncated`)? — No
 
 `report_detail_gaps` returns its count so a scraper whose detail pass is load-bearing can
-`mark_truncated` on it (ADR-0053), and Workday ignores the return value. It should keep ignoring
-it, for two reasons.
+`mark_truncated` on it (ADR-0053) — where load-bearing means, in `base.py`'s own words, "one
+where `parse` drops the Job without it". Workday's `parse` keeps the Job, so it is not, and it
+should stay that way, for two reasons. (Recorded as **ADR-0088**.)
 
 **It would be a category error.** ADR-0053's Unauthoritative Board means *this Board's scraped
 list cannot be read as its complete set of openings*. NGC's **listing** was complete — 185/185
@@ -146,7 +157,32 @@ listing that drives eviction is complete. Unlike the ADR-0046 collapse guard it 
 Board count and never a row count, so the accretion would be invisible.
 
 The honest description of NGC's state is "complete Board, degraded Jobs", and the description
-store (ADR-0050) plus the gap ledger (ADR-0062) is already the mechanism for exactly that.
+store (ADR-0050) plus the gap ledger (ADR-0062) is the mechanism for that — **for the description
+only**. Be exact about the limit: the store persists the description across runs, so that field
+survives a lost detail. The other detail-only fields do not. `startDate` (the sole `posted_at`
+source), `timeType`, `remoteType`, the real locations and `jobReqId` are re-derived from each
+run's detail and go null when it is missing (ADR-0021). So "degraded Jobs" is fully recovered for
+descriptions and merely *tolerated* for the rest — which is the intended cost, but it is not the
+same claim, and §6's Lever A depends on the difference.
+
+**One consequence is not tolerable and is not enrichment.** `_posting_key` prefers the detail's
+`jobReqId`, so on a tenant whose fallback tiers disagree with it a lost detail *renames* the Job —
+measured on `roche`, 10/10 postings renamed when the detail is absent, because `_looks_like_req_id`
+rejects `202608-121268`. A renamed Job reads as one delisting plus one new posting, which is
+eviction-shaped churn. NGC itself measured 10/10 **stable**, so the argument above holds there;
+but the fix belongs in `_posting_key`'s detail-dependence (§6, Lever A's precondition), not in
+marking the Board truncated — that would trade a narrow id defect for the permanent, undrainable
+exclusion PR #316 measures below.
+
+**This is not hypothetical, and another change is measuring it right now.** PR #316 tracked
+ADR-0053's exclusion across 16 runs and found this exact misclassification already live on a
+different ATS: SuccessFactors calls `mark_truncated` on a *detail*-pass shortfall while its
+listing came back whole. The result is 23 Boards permanently excluded — 82% of the permanent set,
+5,643 shielded rows (44.3%), accreting monotonically (`careers.wipro.com` +30%,
+`careers.hcltech.com` +39%). On Wipro, **9 unreadable detail pages in 4,273** exclude the whole
+Board from eviction on every run, and a 60-page sample of those "failures" returned 60/60 HTTP
+200. The two changes agree rather than conflict: #316 measures the cost of treating a detail gap
+as a truncation, and this one declines to add a 24th Board to that set.
 
 ## 6. Recovery levers — a decision is needed, not a silent pick
 
@@ -210,6 +246,7 @@ building on it now would repeat the freshteam mistake.
 
 1. Land the failure classification (this change) — it is safe, surgical, and it is the only thing
    that turns the remaining question into a one-run measurement.
-2. Read the next run's `details lost (...)` lines for NGC and decide Lever B on that evidence.
+2. Read the next run's `detail(s) failed mid-crawl (...)` lines for NGC and decide Lever B on
+   that evidence.
 3. Decide Lever A explicitly, after fixing `_posting_key`'s detail-dependence.
 4. Do **not** `mark_truncated` on the detail gap (§5).

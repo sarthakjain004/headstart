@@ -72,7 +72,6 @@ def run_arm(scraper: WorkdayScraper, paths: list[str], width: int) -> None:
     done = 0
 
     async def one(session, path: str):
-        nonlocal done
         try:
             response = await http.fetch_async(
                 session,

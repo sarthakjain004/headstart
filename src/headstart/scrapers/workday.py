@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 from headstart import http, log, spare_egress
@@ -116,13 +117,19 @@ _PAGE_STREAMS = _DETAIL_STREAMS
 # truncated would tell `index sync` to preserve rows for a query we barely read.
 _MAX_LOST_PAGE_SHARE = 0.5
 # Above what share of a Board's details may go missing before the gap is a WARNING rather than
-# the usual INFO count. Deliberately the same half as `_MAX_LOST_PAGE_SHARE`, and for the same
-# reason: below it the Board still shipped most of what it has, above it the enrichment pass has
-# effectively not run. It only changes the log level — unlike the pagination share it never fails
-# the crawl and never marks the Board truncated, because a lost *detail* costs a Job its
-# description and posted date, while a lost listing *page* costs the Board Jobs it will then be
-# read as having delisted (ADR-0053). The two are not the same kind of loss and must not share a
-# response.
+# the usual INFO count. The same half as `_MAX_LOST_PAGE_SHARE` by analogy, *not* by derivation:
+# ADR-0076 justifies its half by a consequence this constant does not share — past it, too little
+# of the listing was read to keep the Board's rows — whereas nothing here turns on the number
+# except which level the line prints at. Borrowed because "most of it" is the same intuition and a
+# second unrelated number would be worse, not because the ADR's argument transfers. Read it as a
+# reporting threshold with a round value, and re-set it from the `failed mid-crawl` lines once a
+# run's worth exists rather than defending 0.5 on principle.
+#
+# Note this deliberately diverges from `_paginate` in the one place the two must differ: that
+# pass warns on *both* sides of its share and raises past it, because a lost listing *page* costs
+# the Board Jobs it will then be read as having delisted (ADR-0053). A lost *detail* costs a Job
+# its description and posted date and nothing else — the Board stays authoritative — so below the
+# share this stays INFO and past it it still only escalates a log line.
 _MAX_LOST_DETAIL_SHARE = 0.5
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
@@ -423,9 +430,7 @@ class WorkdayScraper(BaseScraper):
                 lambda item: self._job_detail(item.get("externalPath"), classes),
                 workers=_DETAIL_WORKERS,
             )
-        self._report_detail_losses(
-            self.report_detail_gaps(details, "details"), len(postings), classes
-        )
+        self._report_detail_losses(details, classes)
         for item, detail in zip(postings, details):
             item["_detail"] = detail or {}
         return postings
@@ -481,7 +486,7 @@ class WorkdayScraper(BaseScraper):
             return None  # a missing detail must not drop the job
         if response.status_code != 200:
             self._note_detail(classes, f"HTTP {response.status_code}")
-        return self._extract_detail(response)
+        return self._parsed_detail(response, classes)
 
     async def _job_detail_async(
         self,
@@ -507,7 +512,7 @@ class WorkdayScraper(BaseScraper):
             return None
         if response.status_code != 200:
             self._note_detail(classes, f"HTTP {response.status_code}")
-        return self._extract_detail(response)
+        return self._parsed_detail(response, classes)
 
     @staticmethod
     def _note_detail(classes: Counter[str] | None, label: str) -> None:
@@ -522,25 +527,71 @@ class WorkdayScraper(BaseScraper):
         if classes is not None:
             classes[label] += 1
 
+    def _parsed_detail(
+        self, response: Any, classes: Counter[str] | None
+    ) -> dict[str, Any] | None:
+        """:meth:`_extract_detail` with the one loss it can raise counted rather than escaping.
+
+        A 200 whose body is not the JSON the API promises makes ``response.json()`` raise, and
+        both fan-outs turn a raising item into ``None`` — so before this the posting counted as
+        lost while naming no class, which is precisely the untyped ``None`` this change exists to
+        remove. ``scripts/bench/probe_workday_detail.py`` already bucketed it as ``unparseable``;
+        the scraper now agrees with its own probe.
+        """
+        try:
+            return self._extract_detail(response)
+        except ValueError:
+            self._note_detail(classes, "unparseable")
+            return None
+
     def _report_detail_losses(
-        self, missing: int, attempted: int, classes: Counter[str]
+        self, details: Sequence[Any], classes: Counter[str]
     ) -> None:
         """Log what a detail pass's gaps actually were, once per Board, or nothing if it had none.
 
-        The count alone is :meth:`~BaseScraper.report_detail_gaps`'s line and is kept; this adds
-        the classes beside it, exactly as :meth:`_paginate` reports them for the listing pass.
-        Escalates past :data:`_MAX_LOST_DETAIL_SHARE`, because a Board whose detail pass has
-        effectively not run should not have to be noticed by reading INFO.
+        Deliberately worded to :meth:`_paginate`'s shape — ``N of M thing(s) failed mid-crawl
+        (class xN, …) — tail`` — so one regex reads the listing and detail passes alike and the
+        noun says which pass it was. This replaces :meth:`~BaseScraper.report_detail_gaps`'s
+        count-only line rather than adding to it: the two carried the same two numbers, and a
+        second near-synonym line ("missing" beside "lost") both read as a different fact and
+        double-counted every Board for anything grepping them.
+
+        The tail is the standing answer to the question the line provokes — "do rows get evicted
+        over this?" — and is deliberately narrow. It says only that *this* pass does not mark the
+        Board truncated, which is unconditionally true, and points at the pass that would. It
+        does **not** claim the listing was whole: `_paginate` can `mark_truncated` and return, so
+        a Board can lose pages *and* details in the same run, and the two are reported apart. Nor
+        does it claim the loss is harmless — :func:`_posting_key` prefers the detail's
+        ``jobReqId``, so on a tenant whose fallback tiers disagree with it a lost detail *renames*
+        the Job (measured on `roche`: 10/10 renamed when the detail is absent, because
+        :func:`_looks_like_req_id` rejects `202608-121268`). That is eviction-shaped churn, not
+        enrichment, and it is a defect in `_posting_key`'s detail-dependence rather than a reason
+        to widen this line's claim.
+
+        Escalates past :data:`_MAX_LOST_DETAIL_SHARE` because a Board whose detail pass has
+        effectively not run should not have to be noticed in INFO.
         """
+        missing = sum(1 for detail in details if detail is None)
         if not missing:
             return
-        why = ", ".join(f"{cls} x{n}" for cls, n in classes.most_common(4))
+        # Every label is recorded on a path that also yields None, so the tally can only fall
+        # *short* of `missing` — and it does whenever a loss escaped labelling. Naming the
+        # remainder keeps the parenthesis a complete account of `missing` rather than a sample
+        # of it, so "(HTTP 404 x10)" on a 3,536-loss Board can never read as the explanation.
+        tally = Counter(classes)
+        unclassified = missing - sum(tally.values())
+        if unclassified > 0:
+            tally["unclassified"] = unclassified
+        why = ", ".join(f"{cls} x{n}" for cls, n in tally.most_common(4))
         report = (
-            _log.warning if missing / attempted > _MAX_LOST_DETAIL_SHARE else _log.info
+            _log.warning
+            if missing / len(details) > _MAX_LOST_DETAIL_SHARE
+            else _log.info
         )
         report(
-            f"{self.board_key()}: {missing}/{attempted} details lost"
+            f"{self.board_key()}: {missing} of {len(details)} detail(s) failed mid-crawl"
             + (f" ({why})" if why else "")
+            + " — not a truncation (the listing pass reports its own)"
         )
 
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:

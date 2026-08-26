@@ -2003,13 +2003,17 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
     # and a Board that loses most of its details says so at WARNING, naming the classes —
     # a 96%-empty detail pass previously produced no warning at all
     caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
-    scraper._report_detail_losses(4, 5, classes)
+    scraper._report_detail_losses([None, None, None, None, {"d": 1}], classes)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     message = warnings[0].getMessage()
     assert "workday:acme/careers" in message
-    assert "4/5" in message
+    assert "4 of 5 detail(s) failed mid-crawl" in message
     assert "HTTP 503 x2" in message
+    # the tail states the ADR-0053 consequence that *doesn't* follow. Deliberately narrow: it
+    # does not assert the listing was whole (a Board can lose pages *and* details in one run),
+    # only that this pass is not what marks a Board truncated — see `_report_detail_losses`
+    assert "not a truncation (the listing pass reports its own)" in message
 
 
 def test_workday_detail_gap_records_a_raised_request(monkeypatch):
@@ -2046,9 +2050,100 @@ def test_workday_complete_detail_pass_warns_about_nothing(monkeypatch, caplog):
 
     caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
     WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
-        0, 5, Counter()
+        [{"d": 1}] * 5, Counter()
     )
     assert caplog.records == []
+
+
+def test_workday_detail_gap_under_the_share_stays_info(caplog):
+    """Below `_MAX_LOST_DETAIL_SHARE` the same gap reports at INFO, not WARNING.
+
+    The escalation is the point of the threshold, so both sides of it need pinning — with
+    only the WARNING side covered, deleting the ternary and always warning stayed green."""
+    from collections import Counter
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+    WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")._report_detail_losses(
+        [None] + [{"d": 1}] * 9, Counter({"HTTP 404": 1})
+    )
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
+    assert "1 of 10 detail(s) failed mid-crawl (HTTP 404 x1)" in caplog.text
+
+
+def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplog):
+    """The parenthesis must total `missing`, never a fraction of it presented as the reason.
+
+    A 200 whose body isn't JSON makes `response.json()` raise; both fan-outs turn a raising
+    item into None, so the posting counted as lost while naming no class. Measured on the
+    unfixed code: 5 details lost, `classes` empty, and the line printed no `(...)` at all —
+    a 3,536-loss Board could read `(HTTP 404 x10)` as though 404s explained it."""
+    import asyncio
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    async def fake_fetch_async(session, method, url, **kw):
+        class _R:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                raise ValueError("not json")
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    classes: Counter[str] = Counter()
+    assert asyncio.run(scraper._job_detail_async(None, "/job/a", classes)) is None
+    assert classes == Counter({"unparseable": 1})
+
+    # and whatever still escapes labelling is named rather than silently dropped, so the
+    # classes shown always sum to the loss count
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    scraper._report_detail_losses([None] * 4, Counter({"HTTP 404": 1}))
+    assert (
+        "4 of 4 detail(s) failed mid-crawl (unclassified x3, HTTP 404 x1)"
+        in caplog.text
+    )
+
+
+def test_workday_detail_classes_reach_the_report_through_fetch_raw(monkeypatch, caplog):
+    """The wiring, not just the pieces: a real `fetch_raw` must carry `classes` to the line.
+
+    Every other test here calls `_job_detail_async` and `_report_detail_losses` directly, so
+    dropping the `classes` argument from the `fan_out_async` lambda left them all passing."""
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    monkeypatch.setattr(scraper, "_resolve_instance", lambda: None)
+    monkeypatch.setattr(
+        scraper,
+        "_post",
+        lambda applied, offset=0, raise_gone=False: {
+            "total": 2,
+            "jobPostings": [{"externalPath": "/job/a"}, {"externalPath": "/job/b"}],
+        },
+    )
+
+    async def fake_fetch_async(session, method, url, **kw):
+        class _R:
+            status_code = 404
+
+            @staticmethod
+            def json():
+                return {}
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    scraper.fetch_raw()
+    assert "2 of 2 detail(s) failed mid-crawl (HTTP 404 x2)" in caplog.text
 
 
 def test_freshteam_parse():
