@@ -1,0 +1,104 @@
+{
+ "rows": [
+  {
+   "id": 949097,
+   "jobTitle": "Data Production Support Engineer",
+   "jobUrl": "data-production-support-engineer-bengaluru-karnataka-india-2026060116535464",
+   "location": "Bengaluru, Karnataka, India",
+   "jobLocationRecord": [
+    {
+     "jobId": 949097,
+     "country": "India",
+     "companyId": 15738,
+     "city": "Bengaluru",
+     "formattedLocation": "Bengaluru, Karnataka, India",
+     "location": "Bengaluru, Karnataka, India",
+     "id": 1613778,
+     "state": "Karnataka"
+    }
+   ],
+   "departmentName": "Full Time Employee",
+   "DepartmentName": "Full Time Employee",
+   "experienceUIField": "5-8 years",
+   "minYearOfExperience": 5,
+   "maxYearOfExperience": 8,
+   "createdDate": 1780298785000,
+   "showSal": false,
+   "minJobSalary": "",
+   "maxJobSalary": "",
+   "currencyType": "INR",
+   "jobType": "J",
+   "workMode": null,
+   "mediumDescriptionWithoutHtml": "Production support Experience with Microsoft Fabric Data Engineering (Wokspaces, Datapipeline, Notebooks etc & Power BI Support OR In the absence of Microsoft Fabric experience, strong experience with the following technologies like Spark, Pyspark, Lakehouse Strong experience with advanced SQL and stored procedures Experience or familiarity with Azure security, access control, and data governance concepts is a plus. Work in a Controlled environment which is white room and willingnesss to work in shifts including Night shifts on 24/7 schedule",
+   "shortDescriptionWithoutHtml": "Production support Experience with Microsoft Fabric Data Engineering (Wokspaces, Datapipeline, Notebooks etc & Power BI Support OR In the absence of M...",
+   "shortDescription": "Data Production Support Engineer"
+  },
+  {
+   "id": 1138431,
+   "jobTitle": "Python + NodeJS",
+   "jobUrl": "move-golang-python-nodejs-ata-bengaluru-karnataka-india-2026070810581463",
+   "location": "Bengaluru, Karnataka, India",
+   "jobLocationRecord": [
+    {
+     "jobId": 1138431,
+     "country": "India",
+     "companyId": 15738,
+     "city": "Bengaluru",
+     "formattedLocation": "Bengaluru, Karnataka, India",
+     "location": "Bengaluru, Karnataka, India",
+     "id": 1753780,
+     "state": "Karnataka"
+    }
+   ],
+   "departmentName": "Full Time Employee",
+   "DepartmentName": "Full Time Employee",
+   "experienceUIField": "7-11 years",
+   "minYearOfExperience": 7,
+   "maxYearOfExperience": 11,
+   "createdDate": 1783445031000,
+   "showSal": false,
+   "minJobSalary": "100000",
+   "maxJobSalary": "200000",
+   "currencyType": "INR",
+   "jobType": "J",
+   "workMode": null,
+   "mediumDescriptionWithoutHtml": "Job Description: Technical Lead Engineer We are looking for a highly skilled Technical Lead Engineer with deep expertise in AWS cloud-native architecture and event-driven data platform engineering. This role leads the design and delivery of a complex AWS modernization program, migrating a legacy event pipeline to a modern architecture built on Amazon DynamoDB Streams, Amazon MSK (Kafka), and Amazon EKS. The Technical Lead will own end-to-end technical delivery \u2014 from architecture and pipeline design through integration testing, CI/CD setup, and documentation handoff.",
+   "shortDescriptionWithoutHtml": "Job Description: Technical Lead Engineer We are looking for a highly skilled Technical Lead Engineer with deep expertise in AWS cloud-native architect...",
+   "shortDescription": "Python + NodeJS"
+  },
+  {
+   "id": 1144755,
+   "jobTitle": "Data Operations Engineer",
+   "jobUrl": "data-operations-engineer-bengaluru-karnataka-india-2026072113001777",
+   "location": "Bengaluru, Karnataka, India",
+   "jobLocationRecord": [
+    {
+     "jobId": 1144755,
+     "country": "India",
+     "companyId": 15738,
+     "city": "Bengaluru",
+     "formattedLocation": "Bengaluru, Karnataka, India",
+     "location": "Bengaluru, Karnataka, India",
+     "id": 1765360,
+     "state": "Karnataka"
+    }
+   ],
+   "departmentName": "Full Time Employee",
+   "DepartmentName": "Full Time Employee",
+   "experienceUIField": null,
+   "minYearOfExperience": 0,
+   "maxYearOfExperience": 0,
+   "createdDate": 1784299647000,
+   "showSal": false,
+   "minJobSalary": "",
+   "maxJobSalary": "",
+   "currencyType": null,
+   "jobType": "J",
+   "workMode": null,
+   "mediumDescriptionWithoutHtml": "Manage and monitor ETL/ELT pipelines, analytics reporting jobs, ML workflows across Azure services, ensuring SLA compliance and the timely resolution of Incidents, failures and performance bottlenecks. \u00b7 Proactively monitor platform health, performance, and SLAs using Databricks monitoring, logging and alerting, to minimize downtime and data issues. \u00b7 Perform root cause analysis and implement long term fixes that prevent recurring issues and improve overall operational reliability. \u00b7 Partner with data engineers, ML engineers, and BI engineers to troubleshoot issues, implement improvements, automate operations, and drive continuous enhancement of data/ML platform reliability. \u00b7 Contribute to platform automation, CI/CD for data/ML pipelines. \u00b7 Provide support for tools that are owned by Enterprise Data Management. \u00b7 Develop and maintain code enhancements, automation scripts that support both data engineering and operational needs. \u00b7 Provide after-hours support for critical systems and applications. \u00b7 Develop and maintain documentation, runbooks, and operational standards. \u00b7 Strong experience in SQL, Python and PySpark \u00b7 Extensive hands-on experience with Azure Databricks with Unity Catalog, ADF, ADLS \u00b7 Excellent problem-solving skills and attention to detail. \u00b7 Strong communication and collaboration abilities across technical and non-technical teams.",
+   "shortDescriptionWithoutHtml": "Manage and monitor ETL/ELT pipelines, analytics reporting jobs, ML workflows across Azure services, ensuring SLA compliance and the timely resolution ...",
+   "shortDescription": "Data Operations Engineer"
+  }
+ ],
+ "prefix": "/tavant/"
+}

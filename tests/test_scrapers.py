@@ -6172,3 +6172,90 @@ def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
 
     assert seen == [0, 200]  # it did NOT stop after page 1
     assert len(jobs) == 205
+
+
+def test_zwayam_parse():
+    raw = _load("zwayam_tavant.json")
+    jobs = get_scraper("zwayam", "careers.tavant.com", "Tavant").parse(raw, SCRAPED_AT)
+    assert len(jobs) == 3
+    j = jobs[0]
+    assert j.ats == "zwayam"
+    assert j.company == "Tavant"
+    assert j.id == f"zwayam:careers.tavant.com:{raw['rows'][0]['id']}"
+    assert j.scraped_at == SCRAPED_AT
+    # Structured record wins over the shouted flat `location` field.
+    assert j.location == "Bengaluru, Karnataka, India"
+    assert j.remote is False
+    # The deep link carries the SPA's own `<base href>` prefix, not a guessed one.
+    assert j.url.startswith("https://careers.tavant.com/tavant/jobview/")
+    assert j.description and "</" not in j.description
+    assert j.posted_at and j.posted_at.startswith("20")
+
+
+def test_zwayam_experience_prefers_the_tenants_own_phrasing():
+    jobs = get_scraper("zwayam", "careers.tavant.com").parse(
+        _load("zwayam_tavant.json"), SCRAPED_AT
+    )
+    assert jobs[0].experience == "5-8 years"  # experienceUIField, verbatim
+
+
+def test_zwayam_zero_to_zero_years_is_an_unfilled_form_not_a_range():
+    """min=max=0 is what an untouched form submits, so it must not become "0-0 years"."""
+    jobs = get_scraper("zwayam", "careers.tavant.com").parse(
+        _load("zwayam_tavant.json"), SCRAPED_AT
+    )
+    assert jobs[2].experience is None
+
+
+def test_zwayam_salary_honours_the_tenants_show_toggle():
+    """Amounts ride along in the payload even when the employer chose not to publish them."""
+    raw = _load("zwayam_tavant.json")
+    hidden = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert raw["rows"][1]["minJobSalary"] == "100000"  # present in the payload...
+    assert hidden.salary is None  # ...and deliberately not published
+
+    raw["rows"][1]["showSal"] = True
+    shown = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert shown.salary == "100000-200000 INR"
+
+
+def test_zwayam_slug_is_the_board_host():
+    """The API keys on the hostname, so a ledger row carrying a full URL must normalise to it."""
+    from headstart.scrapers.zwayam import ZwayamScraper
+
+    assert ZwayamScraper.slug_from(
+        "careers.persistent.com", "https://careers.persistent.com/"
+    ) == ("careers.persistent.com")
+    assert ZwayamScraper.slug_from(
+        "impetus", "https://impetus.openings.co/impetus/"
+    ) == ("impetus.openings.co")
+
+
+class _ZwayamNullBody:
+    """The 200-with-`data: null` a non-Board hostname answers with."""
+
+    status_code = 200
+    text = ""
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"code": 200, "data": None}
+
+
+def test_zwayam_unregistered_host_yields_no_jobs(monkeypatch):
+    """A hostname that is not a Board answers 200 with data: null — not an error, and not jobs."""
+    from headstart.scrapers import zwayam as mod
+
+    monkeypatch.setattr(mod.http, "fetch", lambda *a, **k: _ZwayamNullBody())
+    scraper = get_scraper("zwayam", "careers.not-a-board.example")
+    assert scraper.parse(scraper.fetch_raw(), SCRAPED_AT) == []
+
+
+def test_zwayam_missing_base_href_falls_back_to_root():
+    """A Board serving no <base> tag still gets a usable link rather than losing its Jobs."""
+    raw = _load("zwayam_tavant.json")
+    raw["prefix"] = "/"
+    job = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[0]
+    assert job.url.startswith("https://careers.tavant.com/jobview/")

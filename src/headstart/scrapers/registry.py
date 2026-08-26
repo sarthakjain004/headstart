@@ -26,6 +26,7 @@ from headstart.scrapers.trakstar import TrakstarScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
 from headstart.scrapers.zoho import ZohoScraper
+from headstart.scrapers.zwayam import ZwayamScraper
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.ats: cls
@@ -51,6 +52,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         FreshteamScraper,
         EightfoldScraper,
         SuccessFactorsScraper,
+        ZwayamScraper,
     )
 }
 
