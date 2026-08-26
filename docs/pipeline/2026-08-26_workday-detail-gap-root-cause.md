@@ -174,15 +174,25 @@ but the fix belongs in `_posting_key`'s detail-dependence (§6, Lever A's precon
 marking the Board truncated — that would trade a narrow id defect for the permanent, undrainable
 exclusion PR #316 measures below.
 
-**This is not hypothetical, and another change is measuring it right now.** PR #316 tracked
-ADR-0053's exclusion across 16 runs and found this exact misclassification already live on a
-different ATS: SuccessFactors calls `mark_truncated` on a *detail*-pass shortfall while its
-listing came back whole. The result is 23 Boards permanently excluded — 82% of the permanent set,
-5,643 shielded rows (44.3%), accreting monotonically (`careers.wipro.com` +30%,
-`careers.hcltech.com` +39%). On Wipro, **9 unreadable detail pages in 4,273** exclude the whole
-Board from eviction on every run, and a 60-page sample of those "failures" returned 60/60 HTTP
-200. The two changes agree rather than conflict: #316 measures the cost of treating a detail gap
-as a truncation, and this one declines to add a 24th Board to that set.
+**This is not hypothetical, and another change is measuring the price right now.** PR #316 (open,
+no behaviour change yet) tracked ADR-0053's exclusion across 16 runs and found a permanent
+exclusion set already accreting on a different ATS: 23 SuccessFactors Boards — 82% of the
+permanent set, 5,643 shielded rows (44.3%), growing monotonically (`careers.wipro.com` +30%,
+`careers.hcltech.com` +39%). On Wipro, **9 "unreadable" detail pages in 4,273** exclude the whole
+Board from eviction on every run, and a 60-page sample of those failures returned 60/60 HTTP 200.
+
+Read that finding precisely: #316's root cause is a **classifier** defect, not the
+truncate-on-detail-gap policy itself. `successfactors._titled_fields` returns `None` both for *we
+could not read this page* and for *the tenant says this posting is closed*, and truncating on the
+union counts closed postings as unread. #316's Option A **keeps** `mark_truncated` for a genuinely
+unreadable page. So #316 does not conclude "a detail gap must never truncate", and this analysis
+does not claim it does.
+
+The two agree for a reason each states on its own ground. #316 fixes a Board *mistakenly* judged
+short. Workday's is not short at all — the listing is complete, and its detail pass is not
+load-bearing under `base.py`'s definition ("one where `parse` drops the Job without it"):
+SuccessFactors' `parse` drops such a Job and so has standing to truncate, Workday's keeps it.
+That contract carries the decision; #316 only prices being wrong. Recorded as ADR-0088.
 
 ## 6. Recovery levers — a decision is needed, not a silent pick
 

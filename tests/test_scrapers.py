@@ -2010,9 +2010,7 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
     assert "workday:acme/careers" in message
     assert "4 of 5 detail(s) failed mid-crawl" in message
     assert "HTTP 503 x2" in message
-    # the tail states the ADR-0053 consequence that *doesn't* follow. Deliberately narrow: it
-    # does not assert the listing was whole (a Board can lose pages *and* details in one run),
-    # only that this pass is not what marks a Board truncated — see `_report_detail_losses`
+    # the tail states the ADR-0053 consequence that *doesn't* follow (ADR-0088)
     assert "not a truncation (the listing pass reports its own)" in message
 
 

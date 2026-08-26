@@ -48,16 +48,29 @@ fields and ADR-0050's description store exist to carry.
 short on every run never re-enters eviction scope, and its closed postings are served
 indefinitely. Marking NGC would freeze 3,691 rows against eviction on every run, forever.
 
-This is not a hypothetical. PR #316, measuring that exclusion across 16 runs, found the failure
-mode already live on a *different* ATS via exactly this misclassification: SuccessFactors calls
-`mark_truncated` on a detail-pass shortfall while its listing came back whole, and the result is
-23 Boards permanently excluded — 82% of the permanent set, 5,643 shielded rows (44.3%), accreting
-monotonically (`careers.wipro.com` +30%, `careers.hcltech.com` +39%). On Wipro, **9 unreadable
-detail pages in 4,273 exclude the entire Board from eviction on every run**, and a 60-page sample
-of those "failures" returned 60/60 HTTP 200.
+This is not a hypothetical, and the cost of getting it wrong has been measured. PR #316 (**open at
+the time of writing, and shipping no behaviour change yet** — cited here as measurement, not as
+settled policy) tracked that exclusion across 16 runs and found a permanent-exclusion set already
+accreting on a *different* ATS: 23 SuccessFactors Boards, 82% of the permanent set, 5,643 shielded
+rows (44.3%), growing monotonically (`careers.wipro.com` +30%, `careers.hcltech.com` +39%). On
+Wipro, **9 "unreadable" detail pages in 4,273 exclude the entire Board from eviction on every
+run**, and a 60-page sample of those failures returned 60/60 HTTP 200.
 
-So the two changes agree: #316 measures the cost of treating a detail gap as a truncation, and
-this ADR declines to add a 24th Board to that set.
+**Be precise about what that does and does not establish**, because it is a narrower finding than
+it first looks. #316's root cause is a *classifier* defect, not the truncate-on-detail-gap policy
+as such: `successfactors._titled_fields` returns `None` for two different conditions — *we could
+not read this page* and *the tenant says this posting is closed* — and truncating on the union
+treats closed postings as unread ones. #316's own Option A keeps `mark_truncated` for a page that
+is **genuinely** unreadable; it removes only the closed ones from the count. So #316 does *not*
+conclude "a detail gap must never truncate", and this ADR must not lean on it as though it did.
+
+The two changes are consistent, and they are consistent for a reason that is stated separately in
+each. #316 fixes a Board that is *mistakenly* judged short. This ADR concerns a Board that is not
+short at all: Workday's listing is complete, and its detail pass is not load-bearing under
+`base.py`'s own definition — "one where `parse` drops the Job without it". SuccessFactors' `parse`
+does drop such a Job and so has standing to truncate; Workday's `parse` keeps it. That contract,
+not #316, is what carries the decision here. #316 supplies only the price of being wrong, and this
+ADR declines to add a 24th Board to the bill.
 
 ### Scope of the claim
 

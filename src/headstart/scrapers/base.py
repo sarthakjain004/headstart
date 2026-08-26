@@ -322,7 +322,12 @@ class BaseScraper(ABC):
 
         Returns how many were missing, so a scraper whose detail pass is *load-bearing* — one
         where `parse` drops the Job without it — can mark the Board truncated on the same count
-        (ADR-0053). Most callers only enrich a field and rightly ignore it."""
+        (ADR-0053). Most callers only enrich a field and rightly ignore it.
+
+        A scraper that needs more than a count may **replace** this line rather than add to it —
+        workday reports its own gaps classified by cause (ADR-0088) and so does not call this at
+        all. Adding a second line beside this one instead is the thing to avoid: the two carry
+        the same numbers, so anything grepping them double-counts the Board."""
         missing = sum(1 for r in results if r is None)
         if missing:
             log.get(f"headstart.scrapers.{self.ats}").info(

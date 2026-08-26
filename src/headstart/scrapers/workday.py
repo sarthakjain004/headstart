@@ -116,20 +116,11 @@ _PAGE_STREAMS = _DETAIL_STREAMS
 # loses most of its pages has kept too little to read as those postings — and marking *that*
 # truncated would tell `index sync` to preserve rows for a query we barely read.
 _MAX_LOST_PAGE_SHARE = 0.5
-# Above what share of a Board's details may go missing before the gap is a WARNING rather than
-# the usual INFO count. The same half as `_MAX_LOST_PAGE_SHARE` by analogy, *not* by derivation:
-# ADR-0076 justifies its half by a consequence this constant does not share — past it, too little
-# of the listing was read to keep the Board's rows — whereas nothing here turns on the number
-# except which level the line prints at. Borrowed because "most of it" is the same intuition and a
-# second unrelated number would be worse, not because the ADR's argument transfers. Read it as a
-# reporting threshold with a round value, and re-set it from the `failed mid-crawl` lines once a
-# run's worth exists rather than defending 0.5 on principle.
-#
-# Note this deliberately diverges from `_paginate` in the one place the two must differ: that
-# pass warns on *both* sides of its share and raises past it, because a lost listing *page* costs
-# the Board Jobs it will then be read as having delisted (ADR-0053). A lost *detail* costs a Job
-# its description and posted date and nothing else — the Board stays authoritative — so below the
-# share this stays INFO and past it it still only escalates a log line.
+# Above what share of a Board's details may go missing before the gap is a WARNING rather than an
+# INFO count. The same half as `_MAX_LOST_PAGE_SHARE` by analogy, *not* by derivation, and unlike
+# it this only picks a log level — it never fails the crawl and never marks the Board truncated.
+# ADR-0088 has the reasoning for both halves of that; re-set the number from real
+# `failed mid-crawl` lines rather than defending 0.5 on principle.
 _MAX_LOST_DETAIL_SHARE = 0.5
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
@@ -530,13 +521,18 @@ class WorkdayScraper(BaseScraper):
     def _parsed_detail(
         self, response: Any, classes: Counter[str] | None
     ) -> dict[str, Any] | None:
-        """:meth:`_extract_detail` with the one loss it can raise counted rather than escaping.
+        """:meth:`_extract_detail` with its likeliest raised loss counted rather than escaping.
 
         A 200 whose body is not the JSON the API promises makes ``response.json()`` raise, and
         both fan-outs turn a raising item into ``None`` — so before this the posting counted as
         lost while naming no class, which is precisely the untyped ``None`` this change exists to
         remove. ``scripts/bench/probe_workday_detail.py`` already bucketed it as ``unparseable``;
         the scraper now agrees with its own probe.
+
+        ``ValueError`` deliberately, not bare ``except``: it covers what a malformed body raises
+        (``JSONDecodeError`` and ``UnicodeDecodeError`` both subclass it) without swallowing a
+        real defect. A body that parses but isn't an object raises ``AttributeError`` instead and
+        is left alone — rarer, and it lands in the ``unclassified`` bucket rather than vanishing.
         """
         try:
             return self._extract_detail(response)
@@ -556,33 +552,31 @@ class WorkdayScraper(BaseScraper):
         second near-synonym line ("missing" beside "lost") both read as a different fact and
         double-counted every Board for anything grepping them.
 
-        The tail is the standing answer to the question the line provokes — "do rows get evicted
-        over this?" — and is deliberately narrow. It says only that *this* pass does not mark the
-        Board truncated, which is unconditionally true, and points at the pass that would. It
-        does **not** claim the listing was whole: `_paginate` can `mark_truncated` and return, so
-        a Board can lose pages *and* details in the same run, and the two are reported apart. Nor
-        does it claim the loss is harmless — :func:`_posting_key` prefers the detail's
-        ``jobReqId``, so on a tenant whose fallback tiers disagree with it a lost detail *renames*
-        the Job (measured on `roche`: 10/10 renamed when the detail is absent, because
-        :func:`_looks_like_req_id` rejects `202608-121268`). That is eviction-shaped churn, not
-        enrichment, and it is a defect in `_posting_key`'s detail-dependence rather than a reason
-        to widen this line's claim.
-
-        Escalates past :data:`_MAX_LOST_DETAIL_SHARE` because a Board whose detail pass has
-        effectively not run should not have to be noticed in INFO.
+        The tail is the standing answer to "do rows get evicted over this?", and is deliberately
+        narrow: it says only that *this* pass does not mark the Board truncated — unconditionally
+        true — and points at the pass that would. It claims neither that the listing was whole
+        (`_paginate` can `mark_truncated` and return, so one Board can lose pages *and* details in
+        a run) nor that the loss is harmless (:func:`_posting_key` prefers the detail's
+        ``jobReqId``, so losing it *renames* Jobs on some tenants). ADR-0088 has both arguments and
+        why neither widens this line's claim.
         """
         missing = sum(1 for detail in details if detail is None)
         if not missing:
             return
         # Every label is recorded on a path that also yields None, so the tally can only fall
         # *short* of `missing` — and it does whenever a loss escaped labelling. Naming the
-        # remainder keeps the parenthesis a complete account of `missing` rather than a sample
-        # of it, so "(HTTP 404 x10)" on a 3,536-loss Board can never read as the explanation.
+        # remainder stops "(HTTP 404 x10)" on a 3,536-loss Board reading as the explanation.
         tally = Counter(classes)
         unclassified = missing - sum(tally.values())
         if unclassified > 0:
             tally["unclassified"] = unclassified
-        why = ", ".join(f"{cls} x{n}" for cls, n in tally.most_common(4))
+        # Only the four largest are shown (as `_paginate` does — the shape is what's wanted, not
+        # a long tail), so the trailing "…" marks the times that is a sample rather than the
+        # whole tally. Without it a truncated list reads as a complete account of `missing`.
+        shown = tally.most_common(4)
+        why = ", ".join(f"{cls} x{n}" for cls, n in shown)
+        if len(tally) > len(shown):
+            why += ", …"
         report = (
             _log.warning
             if missing / len(details) > _MAX_LOST_DETAIL_SHARE
