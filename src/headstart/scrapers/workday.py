@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 from headstart import http, log, spare_egress
@@ -115,6 +116,12 @@ _PAGE_STREAMS = _DETAIL_STREAMS
 # loses most of its pages has kept too little to read as those postings — and marking *that*
 # truncated would tell `index sync` to preserve rows for a query we barely read.
 _MAX_LOST_PAGE_SHARE = 0.5
+# Above what share of a Board's details may go missing before the gap is a WARNING rather than an
+# INFO count. The same half as `_MAX_LOST_PAGE_SHARE` by analogy, *not* by derivation, and unlike
+# it this only picks a log level — it never fails the crawl and never marks the Board truncated.
+# ADR-0088 has the reasoning for both halves of that; re-set the number from real
+# `failed mid-crawl` lines rather than defending 0.5 on principle.
+_MAX_LOST_DETAIL_SHARE = 0.5
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
@@ -401,20 +408,27 @@ class WorkdayScraper(BaseScraper):
         self._exhaust(_FIXED_FACETS_BY_SLUG.get(self.slug, {}), absorb, depth=0)
         # Second pass: fill each posting's detail fields concurrently (bounded); a failed
         # fetch leaves ``_detail`` empty so the job is still kept.
+        # What the lost details were lost to. The count on its own cannot tell a throttled
+        # Board from a tenant whose detail URLs 404 from a spare egress that went away
+        # mid-pass — and those want opposite responses. Counted single-threaded on the async
+        # path (one event loop per Board); on the `HEADSTART_ASYNC_FANOUT=0` fallback these
+        # increments race across `fan_out`'s worker threads, so treat that path's breakdown as
+        # a shape rather than an exact tally.
+        classes: Counter[str] = Counter()
         if self.async_fanout_enabled():
             details = self.fan_out_async(
                 postings,
                 lambda session, item: self._job_detail_async(
-                    session, item.get("externalPath")
+                    session, item.get("externalPath"), classes
                 ),
             )
         else:
             details = self.fan_out(
                 postings,
-                lambda item: self._job_detail(item.get("externalPath")),
+                lambda item: self._job_detail(item.get("externalPath"), classes),
                 workers=_DETAIL_WORKERS,
             )
-        self.report_detail_gaps(details, "details")
+        self._report_detail_losses(details, classes)
         for item, detail in zip(postings, details):
             item["_detail"] = detail or {}
         return postings
@@ -448,9 +462,14 @@ class WorkdayScraper(BaseScraper):
             "jobReqId": info.get("jobReqId"),
         }
 
-    def _job_detail(self, external_path: str | None) -> dict[str, Any] | None:
-        """GET one posting's detail fields (None on failure). Sync path."""
+    def _job_detail(
+        self, external_path: str | None, classes: Counter[str] | None = None
+    ) -> dict[str, Any] | None:
+        """GET one posting's detail fields (None on failure). Sync path.
+
+        ``classes`` records *what* a lost detail was lost to — see :meth:`_note_detail`."""
         if not external_path:
+            self._note_detail(classes, "no externalPath")
             return None
         try:
             response = http.fetch(
@@ -460,15 +479,22 @@ class WorkdayScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 **self._egress(),
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._note_detail(classes, _failure_class(exc))
             return None  # a missing detail must not drop the job
-        return self._extract_detail(response)
+        if response.status_code != 200:
+            self._note_detail(classes, f"HTTP {response.status_code}")
+        return self._parsed_detail(response, classes)
 
     async def _job_detail_async(
-        self, session: Any, external_path: str | None
+        self,
+        session: Any,
+        external_path: str | None,
+        classes: Counter[str] | None = None,
     ) -> dict[str, Any] | None:
         """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
         if not external_path:
+            self._note_detail(classes, "no externalPath")
             return None
         try:
             response = await http.fetch_async(
@@ -479,9 +505,95 @@ class WorkdayScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 **self._egress(),
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._note_detail(classes, _failure_class(exc))
             return None
-        return self._extract_detail(response)
+        if response.status_code != 200:
+            self._note_detail(classes, f"HTTP {response.status_code}")
+        return self._parsed_detail(response, classes)
+
+    @staticmethod
+    def _note_detail(classes: Counter[str] | None, label: str) -> None:
+        """Record one lost detail under ``label``, or do nothing when nobody is counting.
+
+        A detail can go missing four ways that call for four different responses — a settled
+        4xx, a settled 5xx, a request that outlived its retry ladder, and a posting the listing
+        gave no ``externalPath`` for — and until this existed all four returned the same
+        untyped None. Optional because `scripts/enrich/salary_sample.py` and the tests call the
+        detail fetchers directly for one posting, where there is no pass to summarise.
+        """
+        if classes is not None:
+            classes[label] += 1
+
+    def _parsed_detail(
+        self, response: Any, classes: Counter[str] | None
+    ) -> dict[str, Any] | None:
+        """:meth:`_extract_detail` with its likeliest raised loss counted rather than escaping.
+
+        A 200 whose body is not the JSON the API promises makes ``response.json()`` raise, and
+        both fan-outs turn a raising item into ``None`` — so before this the posting counted as
+        lost while naming no class, which is precisely the untyped ``None`` this change exists to
+        remove. ``scripts/bench/probe_workday_detail.py`` already bucketed it as ``unparseable``;
+        the scraper now agrees with its own probe.
+
+        ``ValueError`` deliberately, not bare ``except``: it covers what a malformed body raises
+        (``JSONDecodeError`` and ``UnicodeDecodeError`` both subclass it) without swallowing a
+        real defect. A body that parses but isn't an object raises ``AttributeError`` instead and
+        is left alone — rarer, and it lands in the ``unclassified`` bucket rather than vanishing.
+        """
+        try:
+            return self._extract_detail(response)
+        except ValueError:
+            self._note_detail(classes, "unparseable")
+            return None
+
+    def _report_detail_losses(
+        self, details: Sequence[Any], classes: Counter[str]
+    ) -> None:
+        """Log what a detail pass's gaps actually were, once per Board, or nothing if it had none.
+
+        Deliberately worded to :meth:`_paginate`'s shape — ``N of M thing(s) failed mid-crawl
+        (class xN, …) — tail`` — so one regex reads the listing and detail passes alike and the
+        noun says which pass it was. This replaces :meth:`~BaseScraper.report_detail_gaps`'s
+        count-only line rather than adding to it: the two carried the same two numbers, and a
+        second near-synonym line ("missing" beside "lost") both read as a different fact and
+        double-counted every Board for anything grepping them.
+
+        The tail is the standing answer to "do rows get evicted over this?", and is deliberately
+        narrow: it says only that *this* pass does not mark the Board truncated — unconditionally
+        true — and points at the pass that would. It claims neither that the listing was whole
+        (`_paginate` can `mark_truncated` and return, so one Board can lose pages *and* details in
+        a run) nor that the loss is harmless (:func:`_posting_key` prefers the detail's
+        ``jobReqId``, so losing it *renames* Jobs on some tenants). ADR-0088 has both arguments and
+        why neither widens this line's claim.
+        """
+        missing = sum(1 for detail in details if detail is None)
+        if not missing:
+            return
+        # Every label is recorded on a path that also yields None, so the tally can only fall
+        # *short* of `missing` — and it does whenever a loss escaped labelling. Naming the
+        # remainder stops "(HTTP 404 x10)" on a 3,536-loss Board reading as the explanation.
+        tally = Counter(classes)
+        unclassified = missing - sum(tally.values())
+        if unclassified > 0:
+            tally["unclassified"] = unclassified
+        # Only the four largest are shown (as `_paginate` does — the shape is what's wanted, not
+        # a long tail), so the trailing "…" marks the times that is a sample rather than the
+        # whole tally. Without it a truncated list reads as a complete account of `missing`.
+        shown = tally.most_common(4)
+        why = ", ".join(f"{cls} x{n}" for cls, n in shown)
+        if len(tally) > len(shown):
+            why += ", …"
+        report = (
+            _log.warning
+            if missing / len(details) > _MAX_LOST_DETAIL_SHARE
+            else _log.info
+        )
+        report(
+            f"{self.board_key()}: {missing} of {len(details)} detail(s) failed mid-crawl"
+            + (f" ({why})" if why else "")
+            + " — not a truncation (the listing pass reports its own)"
+        )
 
     def _exhaust(self, applied: dict[str, list[str]], absorb, depth: int) -> None:
         """Exhaust one filter combination: paginate normally, or subdivide when the
