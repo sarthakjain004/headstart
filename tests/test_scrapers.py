@@ -2001,6 +2001,53 @@ def test_rippling_pay_range_unions_all_entries():
     assert _pay_range(ranges[:1]) == "25-27 USD HOUR"
 
 
+def test_rippling_pay_range_does_not_blend_mismatched_currency():
+    """Found in review, live: a real job (journaltech) carries three USD/YEAR entries
+    alongside one CAD/YEAR entry. Pooling raw numbers across all entries regardless of unit
+    mislabeled the CAD figure as USD — '155000-200000 USD YEAR' instead of the true USD-only
+    span. Entries outside entry [0]'s (currency, frequency) must be excluded, not blended."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 180000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 180000,
+            "rangeEnd": 200000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 190000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 155000,
+            "rangeEnd": 190000,
+            "currency": "CAD",
+            "frequency": "YEAR",
+        },
+    ]
+    assert _pay_range(ranges) == "160000-200000 USD YEAR"
+
+
+def test_rippling_pay_range_keeps_a_zero_floor():
+    """rangeStart/rangeEnd must be checked with `is not None`, not truthiness — the same class
+    of bug ashby's `_salary` docstring documents (a real Ramp job with minValue=0)."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {"rangeStart": 0, "rangeEnd": 50000, "currency": "USD", "frequency": "HOUR"}
+    ]
+    assert _pay_range(ranges) == "0-50000 USD HOUR"
+
+
 def test_unknown_ats_raises():
     with pytest.raises(ValueError):
         get_scraper("nonexistent", "foo")

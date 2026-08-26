@@ -49,27 +49,44 @@ def _description(detail: dict) -> str | None:
 
 
 def _pay_range(ranges: list | None) -> str | None:
-    """Format the true min/max across every payRangeDetails entry, e.g. '150000-250000 USD YEAR'.
+    """Format the true min/max across every payRangeDetails entry sharing entry [0]'s unit,
+    e.g. '150000-250000 USD YEAR'.
 
     A job can carry more than one entry (e.g. per-level or per-region bands) — reading only
-    entry [0] understates the real span whenever a later entry carries a wider range (live
-    measurement: 47/2,057 salaried jobs, 2.29% — experiment/location-audit-2026-08-25/rippling.md).
-    Currency/frequency come from entry [0]; observed live to be constant across a job's own bands.
+    entry [0] understates the real span whenever a later entry carries a wider range in the
+    SAME unit (live measurement: 47/2,057 salaried jobs, 2.29% —
+    experiment/location-audit-2026-08-25/rippling.md).
+
+    Grouped by (currency, frequency) before taking min/max, rather than pooled across all
+    entries regardless of unit — found in review, live: a real job (journaltech) carries three
+    USD/YEAR entries (160000-200000) alongside one CAD/YEAR entry (155000-190000); pooling
+    blindly produced "155000-200000 USD YEAR", mislabeling a CAD figure as USD. Measured over
+    8,670 detail records: 151 jobs have more than one entry, and 23 of those (15.2%) mix
+    currency — rare, but real, and this scraper has no basis for converting across currencies,
+    so entries outside entry [0]'s unit are excluded from the span rather than blended into it.
+
+    ``rangeStart``/``rangeEnd`` are checked with ``is not None``, not truthiness — the same
+    class of bug ashby's ``_salary`` docstring documents fixing (a real job with
+    ``minValue=0`` would otherwise have its floor silently dropped).
     """
     entries = [r for r in (ranges or []) if r]
     if not entries:
         return None
-    los = [r["rangeStart"] for r in entries if r.get("rangeStart")]
-    his = [r["rangeEnd"] for r in entries if r.get("rangeEnd")]
+    unit = (entries[0].get("currency"), entries[0].get("frequency"))
+    same_unit = [r for r in entries if (r.get("currency"), r.get("frequency")) == unit]
+    los = [r["rangeStart"] for r in same_unit if r.get("rangeStart") is not None]
+    his = [r["rangeEnd"] for r in same_unit if r.get("rangeEnd") is not None]
     if not los and not his:
         return None
     lo = min(los) if los else None
     hi = max(his) if his else None
-    span = f"{lo:g}-{hi:g}" if lo and hi else f"{(lo or hi):g}"
-    r0 = entries[0]
-    return " ".join(
-        str(x) for x in (span, r0.get("currency"), r0.get("frequency")) if x
+    span = (
+        f"{lo:g}-{hi:g}"
+        if lo is not None and hi is not None
+        else f"{(lo if lo is not None else hi):g}"
     )
+    currency, frequency = unit
+    return " ".join(str(x) for x in (span, currency, frequency) if x)
 
 
 class RipplingScraper(BaseScraper):
