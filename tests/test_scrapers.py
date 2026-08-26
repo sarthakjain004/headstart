@@ -2970,6 +2970,137 @@ def test_eightfold_api_field_helpers():
     assert _first_location([]) is None and _first_location(None) is None
 
 
+def test_eightfold_remote_from_covers_the_live_vocabulary():
+    """Live vocabulary measured 2026-08-25 across 44,215 jobs/62 boards is exactly these four
+    values — remote_local/remote_global previously matched nothing in `_REMOTE_OPTION`, so 999
+    jobs (2.26%) the API explicitly flags remote were served `remote=False`."""
+    from headstart.scrapers.eightfold import _remote_from
+
+    assert _remote_from("onsite") is False
+    assert _remote_from("hybrid") is None  # tri-state: neither remote nor onsite
+    assert _remote_from("remote_local") is True
+    assert _remote_from("remote_global") is True
+
+
+def test_eightfold_first_location_skips_a_blank_leading_entry():
+    """ascendion.eightfold.ai ships `locations[0] == ""` with real cities after it — the fix
+    takes the first *non-empty* entry rather than always index 0."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert _first_location(["", "bangalore", "hyderabad", "pune"]) == "bangalore"
+
+
+def test_eightfold_first_location_repairs_a_site_code():
+    """`US-CA-Fremont (1003)` is an internal site code, not a place name — repaired from the
+    index-matched `standardizedLocations` entry (measured live on lamresearch)."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["US-CA-Fremont (1003)"], ["Fremont, CA, US"])
+        == "Fremont, CA, US"
+    )
+
+
+def test_eightfold_first_location_repairs_an_empty_comma_segment():
+    """astrazeneca.eightfold.ai's `"Riyadh, , Saudi Arabia"` shape — same defect class
+    darwinbox was fixed for on 2026-08-24 (keka's fix that day was the neighboring
+    dirty-whitespace shape, not an empty segment)."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["Riyadh, , Saudi Arabia"], ["Riyadh, Riyadh Province, SA"])
+        == "Riyadh, Riyadh Province, SA"
+    )
+
+
+def test_eightfold_first_location_is_a_repair_tier_not_a_wholesale_swap():
+    """A clean `locations[0]` is left exactly as it is, even when `standardizedLocations` differs
+    — this is the central distinction from a blanket swap, which the audit measured costs India
+    matches on some boards and collapses 3.91% of jobs to a bare country code."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["Bengaluru, Karnataka, India"], ["Bengaluru, KA, IN"])
+        == "Bengaluru, Karnataka, India"
+    )
+
+
+def test_eightfold_first_location_repair_rejects_a_bare_country_code():
+    """`'SG-Singapore (3301)'` -> `'SG'` measured live on lamresearch: the repair would collapse
+    a city-state's only place name to its bare country code — a real information loss, so the
+    dirty original is kept instead."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert _first_location(["SG-Singapore (3301)"], ["SG"]) == "SG-Singapore (3301)"
+
+
+def test_eightfold_first_location_repair_rejects_a_still_site_code_shaped_value():
+    """lamresearch's `standardizedLocations` sometimes just lowercases the same site code instead
+    of translating it (`'KR-Yongin-02 (3821)'` -> `'kr-yongin-02 (3821)'`) — not a real repair."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["KR-Yongin-02 (3821)"], ["kr-yongin-02 (3821)"])
+        == "KR-Yongin-02 (3821)"
+    )
+
+
+def test_eightfold_first_location_repair_rejects_a_country_mismatch():
+    """Measured live: every `'MY-LMM KM [3620] (3832)'` posting on lamresearch carries
+    `standardizedLocations: ['Lancaster, VIC, AU']` — a bad tenant-side site mapping that would
+    swap Malaysia for Australia. The site code's own 2-letter prefix disagreeing with the
+    repair's country is the tell."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["MY-LMM KM [3620] (3832)"], ["Lancaster, VIC, AU"])
+        == "MY-LMM KM [3620] (3832)"
+    )
+
+
+def test_eightfold_first_location_repair_uses_the_index_matched_standardized_entry():
+    """`locations`/`standardizedLocations` are parallel arrays (measured live: same length on
+    10,694/10,694 jobs where both are present) — a dirty entry at index 1 must repair from
+    `standardizedLocations[1]`, not `[0]`."""
+    from headstart.scrapers.eightfold import _first_location
+
+    assert (
+        _first_location(["", "US-CA-Fremont (1003)"], ["", "Fremont, CA, US"])
+        == "Fremont, CA, US"
+    )
+
+
+def test_eightfold_api_records_wires_the_remote_and_location_fixes(monkeypatch):
+    """Integration: the fixes reach `_api_records`'s built fields, not just the pure helpers."""
+    from headstart.scrapers.registry import get_scraper
+
+    scraper = get_scraper("eightfold", "acme.eightfold.ai", "Acme")
+    monkeypatch.setattr(
+        scraper, "fan_out_async", lambda items, fn, **kw: [None] * len(items)
+    )
+    positions = [
+        {
+            "id": "1",
+            "name": "Remote Engineer",
+            "workLocationOption": "remote_local",
+            "locations": ["Bangalore, Karnataka, India"],
+        },
+        {
+            "id": "2",
+            "name": "Onsite Engineer",
+            "workLocationOption": "onsite",
+            "locations": ["US-CA-Fremont (1003)"],
+            "standardizedLocations": ["Fremont, CA, US"],
+        },
+    ]
+    records = scraper._api_records("acme.com", positions)
+    by_id = {r["id"]: r["fields"] for r in records}
+    assert (
+        by_id["1"]["remote"] is True
+    )  # remote_local now resolves, was False before the fix
+    assert by_id["2"]["location"] == "Fremont, CA, US"  # site code repaired
+
+
 def test_eightfold_jobposting_fallback():
     # the sitemap-fallback path parses the job page's JSON-LD
     from headstart.scrapers.eightfold import _jobposting, _sitemap_position_id

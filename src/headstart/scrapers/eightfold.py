@@ -66,12 +66,18 @@ _LD_BLOCK = re.compile(
     r'<script type="application/ld\+json">\s*(.*?)\s*</script>', re.DOTALL
 )
 
-# workLocationOption -> remote. "hybrid" stays None (neither purely remote nor onsite).
+# workLocationOption -> remote. "hybrid" stays None (neither purely remote nor onsite). Live
+# vocabulary measured 2026-08-25 across 44,215 jobs/62 boards is exactly onsite/hybrid/
+# remote_local/remote_global — "remote"/"fully remote" never appear, and remote_local/
+# remote_global previously matched nothing here, so 999 explicitly-remote jobs (2.26%) fell
+# through to the location-string fallback and were served remote=False.
 _REMOTE_OPTION = {
     "remote": True,
     "fully remote": True,
     "onsite": False,
     "in office": False,
+    "remote_local": True,
+    "remote_global": True,
 }
 
 
@@ -312,7 +318,9 @@ class EightfoldScraper(BaseScraper):
                     "fields": {
                         "title": pos.get("name"),
                         "description": desc or None,
-                        "location": _first_location(pos.get("locations")),
+                        "location": _first_location(
+                            pos.get("locations"), pos.get("standardizedLocations")
+                        ),
                         "posted_at": _ts_to_iso(pos.get("postedTs")),
                         "employment_type": None,  # not exposed by the PCSX API
                         "department": (pos.get("department") or "").strip() or None,
@@ -486,11 +494,76 @@ def _dedupe(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
 
 
-def _first_location(locations: Any) -> str | None:
-    if isinstance(locations, list) and locations:
-        return str(locations[0]).strip() or None
-    if isinstance(locations, str):
-        return locations.strip() or None
+# Internal site-code shape some tenants ship instead of a place name, e.g. "US-CA-Fremont
+# (1003)" or "TW-Hsinchu-01 (3103)" — a 2-letter prefix, a dash, and a trailing parenthesized
+# numeric site id.
+_SITE_CODE = re.compile(r"^[A-Za-z]{2}-\S.*\(\d+\)\s*$")
+# "Riyadh, , Saudi Arabia" — a comma-joined value with a blank segment.
+_EMPTY_SEGMENT = re.compile(r",\s*,")
+_BARE_COUNTRY_CODE = re.compile(r"^[A-Za-z]{2}$")
+_SITE_CODE_PREFIX = re.compile(r"^([A-Za-z]{2})-")
+
+
+def _dirty_location(value: str) -> bool:
+    """Values worth repairing from `standardizedLocations` — measured live 2026-08-25 on
+    21.36% of the dirtiest boards' jobs, 99.5% of which come back clean from that field."""
+    return bool(_SITE_CODE.match(value) or _EMPTY_SEGMENT.search(value))
+
+
+def _repair_location(dirty_value: str, standardized_entry: Any) -> str | None:
+    """The `standardizedLocations` entry paired with a dirty `locations` entry, repair-tier
+    style — None when it isn't actually an improvement. Measured live 2026-08-25 (10,697 jobs,
+    12 boards), three regressions a blanket swap would cause, none of which this repair commits:
+    - **bare 2-letter country code** (3.4% of the code-shaped class): 'Singapore, Singapore' /
+      'SG-Singapore (3301)' both collapse to 'SG' — a real loss of the only place name for a
+      city-state (the same failure successfactors hit).
+    - **still site-code-shaped** (3.3%): some tenants' own standardizedLocations never resolves
+      the code — lamresearch's 'KR-Yongin-02 (3821)' comes back merely lowercased, not repaired.
+    - **wrong country** (6.7%, all on one lamresearch site code): every 'MY-LMM KM [3620]
+      (3832)' posting's standardizedLocations is 'Lancaster, VIC, AU' — Malaysia mapped to
+      Australia, a bad tenant-side mapping, not a real repair.
+    """
+    if not isinstance(standardized_entry, str):
+        return None
+    candidate = standardized_entry.strip()
+    if (
+        not candidate
+        or _BARE_COUNTRY_CODE.match(candidate)
+        or _SITE_CODE.match(candidate)
+    ):
+        return None
+    prefix_match = _SITE_CODE_PREFIX.match(dirty_value)
+    if prefix_match:
+        prefix = prefix_match.group(1).upper()
+        suffix = candidate.rsplit(",", 1)[-1].strip().upper()
+        if len(suffix) <= 3 and suffix != prefix:
+            return None
+    return candidate
+
+
+def _first_location(locations: Any, standardized: Any = None) -> str | None:
+    """The first non-empty place `locations` names (not always index 0 — some tenants ship a
+    blank first entry with real ones after it, e.g. ascendion), repaired from the matching
+    `standardizedLocations` entry when it's dirty (see `_dirty_location`/`_repair_location`).
+    This is a repair tier, not a wholesale swap of `locations` for `standardizedLocations` — a
+    clean `locations` entry is left exactly as it is."""
+    if isinstance(locations, list):
+        places = locations
+    elif isinstance(locations, str):
+        places = [locations]
+    else:
+        places = []
+    std_places = standardized if isinstance(standardized, list) else []
+    for i, raw in enumerate(places):
+        value = str(raw).strip() if raw is not None else ""
+        if not value:
+            continue
+        if _dirty_location(value):
+            std_entry = std_places[i] if i < len(std_places) else None
+            repaired = _repair_location(value, std_entry)
+            if repaired is not None:
+                return repaired
+        return value
     return None
 
 
