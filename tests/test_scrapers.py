@@ -5095,6 +5095,36 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
     assert GreenhouseScraper("acme")._egress() == {}
 
 
+def test_freshteam_opts_into_the_spare_egress_on_429(monkeypatch):
+    """Diagnosed live 2026-08-26: freshteam had no `egress_fallback_on`, so every 429/Timeout it
+    hit retried on the same egress IP for all 3 attempts and never rotated — confirmed against a
+    real scrape-shard log (run 32892392338) where every `walled`/`rotating` spare-egress line
+    named `workday` or `eightfold`, never `freshteam`, despite 24 freshteam failures in that one
+    shard. Mirrors workday's own fix (`egress_fallback_on = frozenset({429})`)."""
+    from headstart.scrapers.freshteam import FreshteamScraper
+
+    assert FreshteamScraper.egress_fallback_on == frozenset({429})
+
+    seen: list[dict] = []
+
+    class _Resp:
+        status_code = 200
+        headers: ClassVar[dict] = {}
+        text = "{}"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append(kw), _Resp())[1]
+    )
+    scraper = FreshteamScraper("acme", "Acme")
+    scraper._get()
+    assert seen[-1]["egress_group"] == "freshteam"
+    assert seen[-1]["egress_on"] == frozenset({429})
+
+
 def test_workday_a_surviving_rollup_leaves_remote_unknown():
     """The half of the repair that a detail fetch failure would otherwise skip.
 

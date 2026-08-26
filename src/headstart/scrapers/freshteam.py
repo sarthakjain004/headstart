@@ -92,6 +92,14 @@ def _preferred_location(value: Any) -> str | None:
 class FreshteamScraper(BaseScraper):
     ats = "freshteam"
 
+    #: Diagnosed live 2026-08-26: across a run's scrape shards, every freshteam 429/Timeout
+    #: retried on the same egress IP for all 3 attempts and never rotated (no `egress_fallback_on`
+    #: meant `_get()` never carried `egress_group`/`egress_on` at all) — confirmed against a real
+    #: shard log where every `walled`/`rotating` spare-egress line named `workday` or `eightfold`,
+    #: never `freshteam`, despite 24 freshteam failures in that one shard. Mirrors workday's own
+    #: fix for the same status.
+    egress_fallback_on = frozenset({429})
+
     def url(self) -> str:
         return f"https://{self.slug}.freshteam.com/hire/widgets/jobs.json"
 
