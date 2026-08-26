@@ -27,8 +27,8 @@ every closed page `unreadable` and invert this tool's conclusion:
   gave **12 distinct bodies** (111,523/111,524 chars), while 12 over one shared session gave 11
   identical after the first.
 
-So the shell varies by ~514 chars against a ~111,000-char page — three orders of magnitude below
-the ~13,500-char gap to a real posting (a titled HCL page runs ~122,000-127,000). `_SHELL_SLACK`
+So the shell varies by ~514 chars against a ~111,000-char page — roughly 26x smaller than
+the ~13,500-char gap to a real posting (titled HCL pages measured 121,344-127,018). `_SHELL_SLACK`
 is set above the measured drift and far below that gap. A tenant whose shell varies by more than
 the slack simply scores `unreadable`, which is today's behaviour — the failure is safe.
 

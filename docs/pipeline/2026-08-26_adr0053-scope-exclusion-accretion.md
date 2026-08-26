@@ -219,7 +219,7 @@ said "byte-for-byte", which review falsified. Re-measured on HCL 2026-08-26, dif
   session, 11 identical after the first (111,010, with the first at 111,524).
 
 So the shell drifts by ~514 chars on a ~111,000-char page, against a ~13,500-char gap to the
-nearest real posting (titled HCL pages run 122,000–127,000). A length window discriminates cleanly;
+nearest real posting (titled HCL pages measured 121,344–127,018 across a 150-page sample). A length window discriminates cleanly;
 a hash or `==` would score **every** closed page `unreadable` and invert the conclusion. That is
 what `_SHELL_SLACK = 1024` in the audit script is, and why Option A below is written as "score
 against the control", never "compare bytes".
@@ -391,10 +391,14 @@ Keep the exclusion absolute for a transient truncation and start draining only o
 unauthoritative K scrapes in a row — the unit ADR-0083 already established, and the
 "consecutive-misses ledger" ADR-0055 considered and deferred.
 
-- **Fixes:** exactly the failure mode measured here, and *only* it. Eightfold, which already
-  self-drains on its intermittent runs, is untouched; hcltech, wipro, te.com, crh and the Workday
-  caps are reached.
+- **Fixes:** exactly the failure mode measured here, and *only* it. A Board whose exclusion breaks
+  never reaches K, so the oscillating eightfold class is untouched; hcltech, wipro, te.com, crh and
+  the Workday caps ratchet on every scrape and are reached.
 - **Cost:** new per-Board streak state, and another threshold to fit. Slower to act than C.
+- **Note the unit.** K must count *scrapes of that Board*, as the heading says — not runs. That is
+  the unit ADR-0083 already keeps per-Job state in, and it is precisely the unit §1's harness
+  **cannot** see from the merge log, so the streak has to be recorded at scrape time rather than
+  reconstructed from logs afterwards.
 
 ### Recommendation
 
@@ -402,10 +406,13 @@ unauthoritative K scrapes in a row — the unit ADR-0083 already established, an
 
 A is the only option that makes the leak *not exist* rather than bounding it, it is confined to one
 scraper, and 82% of the permanent set is inside it. D is the right containment because it is the one
-that distinguishes the two populations the data actually shows — intermittent truncation that already
-drains, and permanent truncation that never does — instead of taxing both. C taxes both and inherits
-a threshold that does not transfer. B is a real improvement to the signal's shape and worth doing,
-but it is a refactor of the reporting path that does not, on its own, move the largest number in this
+that keys on the distinction the data actually shows — a Board whose shielded count *oscillates*
+(a shortfall that does not reproduce) against one that *ratchets monotonically* (a shortfall that
+reproduces on every scrape) — instead of taxing both. Note D needs only that distinction, which is
+measured; it does not need the stronger "the oscillating class already self-drains", which §2
+retracts as unresolvable from these logs. C taxes both, and its inherited 25% would not bind at all
+on the Boards that matter here. B is a real improvement to the signal's shape and worth doing, but
+it is a refactor of the reporting path that does not, on its own, move the largest number in this
 document.
 
 If only one thing ships, it is A.
