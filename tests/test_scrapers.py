@@ -213,7 +213,7 @@ def test_lever_location_country_code_is_not_matched_as_a_substring():
 
 
 def test_lever_location_country_code_is_not_matched_inside_a_city_name():
-    # Same class, found live on real Boards in review round 2 (lever:zoox, lever:wealthfront):
+    # Same class, found live on real Boards in review round 1 (lever:zoox, lever:wealthfront):
     # "us" sits inside "Austin", so "Austin, TX" + country "US" must still get the code
     # appended rather than reading "us" as already present.
     raw = [
@@ -248,6 +248,28 @@ def test_lever_location_falls_back_when_all_locations_missing():
     ]
     jobs = get_scraper("lever", "acme", "Acme").parse(raw, SCRAPED_AT)
     assert jobs[0].location == "Berlin, DE"
+
+
+def test_lever_location_country_recognizes_usa_short_form():
+    # Real posting, lever:freedompay (captured live 2026-08-26, review round 2): the location
+    # is the colloquial "USA" short form, not the full "United States" name the code maps to —
+    # a bare name check misses it and appends a redundant ", US".
+    raw = [
+        {
+            "id": "usa1",
+            "text": "Remote Role",
+            "categories": {
+                "location": "Select USA Remote Locations",
+                "allLocations": ["Select USA Remote Locations"],
+            },
+            "country": "US",
+            "workplaceType": "remote",
+            "hostedUrl": "https://jobs.lever.co/freedompay/usa1",
+            "createdAt": 1787247868191,
+        }
+    ]
+    jobs = get_scraper("lever", "freedompay", "FreedomPay").parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "Select USA Remote Locations"
 
 
 def test_ashby_parse_skips_unlisted():

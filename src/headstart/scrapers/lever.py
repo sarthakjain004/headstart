@@ -283,12 +283,30 @@ def _already_names_country(composed_lower: str, code: str, name: str | None) -> 
     returned ``"Chennai, Beijing"`` with India never named. A full country name is safer as a
     substring (multi-word names rarely land inside another word by accident) but is checked the
     same way here for one rule rather than two.
+
+    Known residual gap, found review round 2, not fixed: several ISO alpha-2 codes double as
+    US state postal abbreviations this whole-word check can't distinguish from (CA/California,
+    CO/Colorado, DE/Delaware, GA/Georgia, IN/Indiana, LA/Louisiana, MA/Massachusetts,
+    MD/Maryland, PA/Pennsylvania, SC/South Carolina, SD/South Dakota, VA/Virginia, among
+    others) — a posting whose ``country`` is e.g. "CO" (Colombia) with an unrelated
+    "Denver, CO" entry elsewhere in ``allLocations`` would read the state tag as the country
+    already being named and skip the append. Live-probed 2026-08-26 across 143 boards / 2,535
+    postings for exactly this shape (country code present only inside a longer non-standalone
+    entry): 0 hits. Left undocumented-but-live rather than restructured, given zero confirmed
+    occurrences — a per-entry-exact-match rewrite would close it but is more invasive than this
+    round's evidence justifies.
     """
     boundary = r"(?<![a-z]){}(?![a-z])"
     if re.search(boundary.format(re.escape(code.lower())), composed_lower):
         return True
-    return bool(name) and bool(
-        re.search(boundary.format(re.escape(name.lower())), composed_lower)
+    if name and re.search(boundary.format(re.escape(name.lower())), composed_lower):
+        return True
+    # "USA" is a common colloquial short form Lever locations use in place of the full
+    # "United States" name; without this, e.g. "Select USA Remote Locations" (real freedompay
+    # shape, live 2026-08-26) reads as not-yet-naming the US and gets a redundant ", US"
+    # appended, defeating the no-duplicate-append purpose this function exists for.
+    return code.upper() == "US" and bool(
+        re.search(boundary.format("usa"), composed_lower)
     )
 
 
