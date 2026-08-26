@@ -816,7 +816,8 @@ def _is_rollup(text: Any) -> bool:
 
 def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
     """The posting's real location(s), preferring the listing and repairing it from the detail,
-    then appending the country (see :func:`_with_country`) whichever branch produced it.
+    then appending the country (see :func:`_with_country`) to whichever branch produced a real
+    place — an unrepaired rollup stays exactly that string, so callers can still recognize it.
 
     ``locationsText`` is a *rollup* on multi-location postings ("5 Locations") and null outright
     on some tenants — measured 2026-08-18 across 800 listing rows on 40 boards: 9.5% rolled up
@@ -851,6 +852,11 @@ def _location_from(listed: Any, detail: dict[str, Any]) -> str | None:
                 if isinstance(p, str) and p.strip()
             ]
             location = "; ".join([primary.strip(), *places])
+    if _is_rollup(location):
+        # Still an unrepaired rollup ("2 Locations") — leave it exactly that shape. parse()'s
+        # remote-detection guard keys on `_is_rollup` matching this literal string; appending a
+        # country here would silently defeat it and flip an honest "don't know" into "on-site".
+        return location
     return _with_country(location, detail.get("country"))
 
 
@@ -862,9 +868,11 @@ def _with_country(location: str | None, country: Any) -> str | None:
     (experiment/location-audit-2026-08-25/workday.md, 700 boards / 5,460 listings live-sampled
     2026-08-25): 81.45% of served locations named no country at all, and 26.37% ended in a bare
     US-state code a country filter can't match. The detail response is already fetched for the
-    description, so this costs no extra request. Additive only: ``geo.where()`` and the served
-    filter are a raw substring ``LIKE`` (ADR-0024), so a country already present in ``location``
-    must not be duplicated.
+    description, so this costs no extra request. The free-text "Location contains" box is a raw
+    substring ``LIKE`` (ADR-0024); ``geo.where()`` layers ``NOT LIKE`` exclusion guards on top of
+    the same substring match. Neither cares whether a term appears once or twice, so this guard is
+    for a clean served string, not filter correctness — a country already named in ``location``
+    should not be repeated.
     """
     if not location or not isinstance(country, str) or not country.strip():
         return location

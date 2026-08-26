@@ -1229,6 +1229,28 @@ def test_workday_country_absent_leaves_location_unchanged():
     assert jobs[0].location == "Austin, TX"
 
 
+def test_workday_country_does_not_taint_an_unrepaired_rollup():
+    """A rollup that survives (detail present but with no `location`/`additionalLocations` to
+    repair it) must not gain a country either — `parse()`'s remote-detection guard keys on
+    `_is_rollup` matching the exact "N Locations" string, and appending "; Canada" to it would
+    break that match, silently flipping `Job.remote` from an honest `None` to an incorrect
+    `False` (the "asserts on-site when we can't tell" failure the module's own docstring warns
+    against)."""
+    raw = [
+        {
+            "title": "A",
+            "locationsText": "2 Locations",
+            "bulletFields": ["R1"],
+            "_detail": {"country": "Canada"},
+        }
+    ]
+    jobs = get_scraper(
+        "workday", "https://acme.wd1.myworkdayjobs.com/careers", "Acme"
+    ).parse(raw, SCRAPED_AT)
+    assert jobs[0].location == "2 Locations"
+    assert jobs[0].remote is None
+
+
 def test_workday_keeps_the_rollup_when_the_detail_never_arrived():
     """A failed detail fetch leaves `_detail` empty and the Job is still kept (module
     docstring). Better a rollup string than None — it is what the listing said."""
