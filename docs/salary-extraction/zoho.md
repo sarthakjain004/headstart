@@ -217,6 +217,7 @@ organic "Salary:"-labeled text that was already part of some descriptions before
 Patterns found) but is appended to `description` for Tier-2 mining rather than parsed as a
 structured Tier-1 field, matching smartrecruiters' `customField` precedent exactly — so its
 contribution shows up in the Tier-2 numbers above, not as a separate Tier-1 percentage.
+**Reversed 2026-08-26 (PR #304) — see "Post-merge correction" below.**
 
 **The append/pure-prose breakdown above needed its own correction, caught by the Spec-axis
 re-review.** The first version of this table (2,824 appended / 1,219 extracted from that subset)
@@ -442,17 +443,31 @@ The Coverage table above and its accompanying note ("`Job.salary` stays at 0% de
 smartrecruiters' `customField` precedent exactly") described a deliberate design choice made during
 this pass: `Salary`/`Currency` were spliced into `description` for Tier-2 mining only, never parsed
 into the structured `Job.salary` field. A separate location/field-health audit
-(`experiment/location-audit-2026-08-25/zoho.md`) revisited that choice and found no reason for zoho
-specifically to withhold a field every other detail-pass ATS with a comparable structured field
-populates. PR #304 adds `_salary_field()`, which builds `Job.salary` directly from the detail
-record's `Salary` (+ `Currency` when present) — e.g. `"250,000 - 300,000 USD"` — feeding
-`salary.extract`'s Tier-1 field parser for the first time. This is additive, not a replacement: the
-description-splice (`_description_text`, née part of `_description_of`) stays exactly as documented
-above, as a fallback for Tier-2 mining on any tenant's phrasing the field parser doesn't handle. The
-0.0% `Job.salary` row in the Coverage table is therefore stale as of this correction; no fresh
-coverage re-measurement was taken as part of it, consistent with this doc's own point-in-time-snapshot
-convention (see the PR #242 correction above) — a future pass should re-run `salary_sample.py` against
-zoho if an updated Tier-1 percentage is needed.
+(`experiment/location-audit-2026-08-25/zoho.md`) revisited that choice; PR #304 adds `_salary_field()`,
+which builds `Job.salary` directly from the detail record's `Salary` (+ `Currency` when present) —
+e.g. `"250,000 - 300,000 USD"`. **This is not the same as getting a calibrated parser**: zoho has no
+`_FIELD_PARSERS` entry in `salary.py`, so `from_field` dispatches it to `_field_generic` — the
+deliberately conservative fallback ("under-extracts rather than mis-extracts") every uncalibrated ATS
+gets, not a zoho-specific parser like keka's or darwinbox's own lakhs-aware ones. Traced against this
+doc's own "Patterns found" examples: `"$35.00 per hour"` correctly annualizes; `"5-10 Lakhs"` and
+`"DOE"` correctly decline (no ISO code, no digits) and still fall through to the unchanged Tier-2
+splice, which is why this is additive rather than a replacement — `_description_text` (née part of
+`_description_of`) keeps appending `Salary`/`Currency` to the description exactly as documented above,
+so any phrasing `_field_generic` misses still has a shot at Tier 2. Note this doc's earlier claim that
+withholding `Job.salary` matched "every other detail-pass ATS" was itself inaccurate: workday,
+greenhouse, and smartrecruiters — also detail-pass ATSes — never set `Job.salary` at all; only
+zoho and ripplehire were the ones populating the field with no dedicated `_field_*` parser behind it,
+and PR #304 doesn't change that gap, just adds zoho to the generic path.
+
+The 0.0% `Job.salary` row in the Coverage table is stale as of this correction; no fresh
+`salary_sample.py` re-measurement was run for it, since this correction changes one function's raw
+input rather than any extraction logic. In its place, `_merge_detail`'s "zero value conflicts, zero
+fields lost" claim (measured at merge time for `Date_Opened`/`Work_Experience`/`State`/`Industry`
+only) was spot-checked live against real boards rather than assumed to extend further: 35 live
+zoho tenants (`data/validate/liveness/zoho.csv`), listing vs. detail page, found zero conflicts across
+`City`/`State`/`Country`/`Industry`/`Remote_Job`/`Job_Type` — consistent with the merge being safe
+across the wider field set `_merge_detail` actually overlays, not just the four originally measured. A
+future pass should still re-run `salary_sample.py` against zoho for an updated Tier-1 percentage.
 
 ## Known gaps, left honestly unresolved rather than guessed at
 
