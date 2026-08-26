@@ -12,7 +12,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart import http
+from headstart import http, log
 from headstart.experience import from_field
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
@@ -46,6 +46,9 @@ def _redirect_host(location: str | None) -> str:
     elif "://" not in text:
         return ""
     return host_of(text).lower().partition(":")[0].rstrip(".")
+
+
+_log = log.get(__name__)
 
 
 def _text(pos: ET.Element, tag: str) -> str | None:
@@ -179,6 +182,19 @@ def _salary(pos: ET.Element) -> str | None:
     return " ".join(x for x in (span, code, period) if x)
 
 
+#: Language codes to re-ask a Board for, in measured-yield order, when the bare feed left a
+#: position description-less. Personio serves each description only in the language *requested*,
+#: and the bare feed serves the tenant's configured default — so a posting written in any other
+#: language arrives as a self-closing `<jobDescriptions />`. See :meth:`PersonioScraper.fetch_raw`.
+#:
+#: The list is exactly the codes measured to recover something, ordered by how much: over the 58
+#: Boards holding all 191 bare-empty positions in a live 296-Board sweep (2026-08-26), `en`
+#: carried 153, `es` 17, `nl` 13 and `fr` 6. `de`, `it`, `pt`, `pl`, `sv` and `da` were swept
+#: alongside them and recovered **zero** — a tenant whose postings are German is already served
+#: German by the bare feed — so they are deliberately absent rather than added for symmetry.
+_DESCRIPTION_LANGUAGES = ("en", "es", "nl", "fr")
+
+
 def _description(pos: ET.Element) -> str | None:
     """Concatenate the <jobDescription> sections (name + CDATA HTML value) into clean text."""
     block = pos.find("jobDescriptions")
@@ -219,8 +235,11 @@ class PersonioScraper(BaseScraper):
         return f"{self.ats}:{self._tenant}"
 
     def url(self) -> str:
-        # no ?language= — that returns the listing but empties descriptions for non-English
-        # tenants; the bare feed gives each posting in the company's own language.
+        # The board URL carries no ?language=, and must not: that parameter is a *filter*, not a
+        # translation preference, so pinning one here empties every posting that lacks that
+        # translation. The bare feed serves the tenant's own default, which is the most any single
+        # request can carry; `fetch_raw` re-asks per language to *fill* what this leaves empty,
+        # never to replace what it returned, and carries the measurement that decided it.
         return f"https://{self.slug}/xml"
 
     def fetch_raw(self) -> Any:
@@ -254,6 +273,38 @@ class PersonioScraper(BaseScraper):
         deliberately never ages a Board (ADR-0058), so read as a rate limit these departed tenants
         stayed in the slice failing every run forever; read as gone, the existing quarantine
         retires them after five agreeing runs.
+
+
+        Personio's `/xml` returns each description **only in the language asked for**, and the
+        bare feed asks for the tenant's configured default. A posting authored in a different
+        language therefore comes back as a present-but-childless `<jobDescriptions />` — the text
+        exists, it is simply not the translation served. Nothing was being mis-parsed: measured
+        live 2026-08-26 over 296 Boards / 2,029 positions, all 191 empty positions had a
+        `<jobDescriptions>` element with zero `<jobDescription>` children and no unread sibling
+        carrying the text. It cost 9.41% of positions and **22.41% of tech ones** in that sample —
+        the same defect the `update_descriptions` stage reports from production as 27.2% of tech
+        Jobs unrecorded. The rates are not the same measure on the same population, so read them
+        as agreeing in kind, not in value; a later holdout put the tech rate at 14.15%.
+
+        Re-asking per language recovers 187 of those 191 (97.9%). The remaining 4 (none of them
+        tech) are empty in every variant and carry their description only on the HTML job page's
+        JSON-LD — a per-Job fetch this deliberately does not make, since it would add a detail
+        pass for 2.1% of the gap and no measured tech benefit.
+
+        **Filling only, never replacing**, is the whole safety property. A blanket switch to
+        `?language=en` is strictly worse than doing nothing: over a 249-Board sample it recovered
+        133 descriptions and destroyed **1,159** (101 tech), because most tenants are German and
+        asking for English empties them. So a variant may only supply a block the bare feed left
+        childless. The sweep stops as soon as nothing is missing, so a Board with a complete bare
+        feed — 238 of the 296 sampled — still costs exactly one request, and no Board costs more
+        than four extra.
+
+        Merging by position id is safe because `?language=` scopes only the *descriptions*, never
+        the position list: across 140 Boards / 938 positions (2026-08-26, seed 31337) no variant
+        ever added or dropped a position relative to the bare feed. A variant that did would still
+        be harmless — an unknown id is ignored and an absent one simply stays unfilled — but the
+        Board's own position list always comes from the bare feed, so this can never truncate one
+        (ADR-0053) or cause an eviction.
         """
         response = http.fetch(
             "GET",
@@ -286,7 +337,41 @@ class PersonioScraper(BaseScraper):
             )
         response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.
-        return ET.fromstring(response.text.encode("utf-8"))
+        root = ET.fromstring(response.text.encode("utf-8"))
+        unfilled: dict[str, ET.Element] = {}
+        for pos in root.findall("position"):
+            jid = _text(pos, "id")
+            if jid and _description(pos) is None:
+                unfilled[jid] = pos
+
+        for lang in _DESCRIPTION_LANGUAGES:
+            if not unfilled:
+                break
+            try:
+                alt = ET.fromstring(
+                    self._get(f"{self.url()}?language={lang}").encode("utf-8")
+                )
+            except Exception as exc:  # noqa: BLE001 - a variant is a bonus, not the Board
+                # The bare feed's positions are already in hand and every description it did
+                # carry is still correct. Losing them to a flake on a secondary request would
+                # trade a partial gap for a total one.
+                _log.warning(f"{self.slug}: ?language={lang} failed ({exc})")
+                continue
+            for pos in alt.findall("position"):
+                jid = _text(pos, "id")
+                target = unfilled.get(jid) if jid else None
+                filled = pos.find("jobDescriptions")
+                # `target is None` is what makes this fill-only: a position the bare feed already
+                # described is not in the dict, so no variant can reach it. The dict is also how
+                # a duplicate id in one variant lands harmlessly — the second copy finds nothing.
+                if target is None or filled is None or _description(pos) is None:
+                    continue
+                stale = target.find("jobDescriptions")
+                if stale is not None:
+                    target.remove(stale)
+                target.append(filled)
+                del unfilled[jid]
+        return root
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         tenant = self._tenant

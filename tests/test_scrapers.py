@@ -3313,6 +3313,200 @@ def test_personio_parse_reflects_the_years_range_preference():
     assert span.source == "field"
 
 
+def _personio_feed(*positions: str) -> str:
+    return "<workzag-jobs>" + "".join(positions) + "</workzag-jobs>"
+
+
+def _personio_position(jid: str, description: str | None) -> str:
+    """One <position>; `description` None renders the empty <jobDescriptions /> personio serves
+    for a posting that has no translation in the requested language."""
+    block = (
+        "<jobDescriptions />"
+        if description is None
+        else (
+            "<jobDescriptions><jobDescription>"
+            f"<value>{description}</value></jobDescription></jobDescriptions>"
+        )
+    )
+    return (
+        f"<position><id>{jid}</id><office>Berlin</office>"
+        f"<name>Engineer {jid}</name>{block}</position>"
+    )
+
+
+def _personio_stub(
+    monkeypatch, scraper, feeds: dict[str | None, str]
+) -> list[str | None]:
+    """Serve `feeds` keyed by the `?language=` code (None = the bare feed) and record the order
+    the scraper asked in, so a test can assert on the request cost as well as the result.
+
+    The two halves go out by different routes on purpose, and the stub mirrors that: since #313
+    the **bare** feed is a direct `http.fetch` that refuses redirects (so an off-host Location can
+    be read as gone), while the language variants still ride `_get`. Stubbing only `_get` would
+    leave the bare fetch live."""
+    asked: list[str | None] = []
+
+    class _Feed:
+        status_code = 200
+        headers: ClassVar[dict] = {}
+
+        def __init__(self, text: str):
+            self.text = text
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    def _fetch(method, url, **kw):
+        asked.append(None)
+        if None not in feeds:
+            raise AssertionError("unexpected bare-feed fetch")
+        return _Feed(feeds[None])
+
+    def _get(url=None):
+        lang = url.split("?language=")[1] if url and "?language=" in url else None
+        asked.append(lang)
+        if lang not in feeds:
+            raise AssertionError(f"unexpected language fetch: {lang}")
+        return feeds[lang]
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    monkeypatch.setattr(scraper, "_get", _get)
+    return asked
+
+
+def _personio_crossed_feeds() -> dict[str | None, str]:
+    """The two-feed scenario both halves of the safety property need: each feed describes exactly
+    the position the other leaves empty. Position 1 is the gridx case (empty bare, English on
+    `?language=en`), position 2 the interlead one (German bare, emptied by `?language=en`). One
+    fixture, so "fills the gap" and "does not overwrite" are asserted against the same input.
+    """
+    return {
+        None: _personio_feed(
+            _personio_position("1", None), _personio_position("2", "German text")
+        ),
+        "en": _personio_feed(
+            _personio_position("1", "English text"), _personio_position("2", None)
+        ),
+    }
+
+
+def test_personio_fetch_raw_fills_an_empty_description_from_a_language_feed(
+    monkeypatch,
+):
+    """Live-measured 2026-08-26 over 296 real Boards / 2,029 positions: personio's `/xml` serves
+    each description only in the *requested* language, and the bare feed serves the tenant's
+    default one. A posting authored in another language comes back as a self-closing
+    `<jobDescriptions />` — real text, simply not in the language asked for. 9.41% of all
+    positions and 22.41% of tech ones were empty this way, and every one of the 191 had a present
+    `<jobDescriptions>` with zero children, so nothing was being mis-parsed.
+    """
+    s = get_scraper("personio", "gridx.jobs.personio.com", "gridX")
+    asked = _personio_stub(monkeypatch, s, _personio_crossed_feeds())
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    by_id = {j.id.rsplit(":", 1)[1]: j for j in jobs}
+    assert by_id["1"].description == "English text"  # recovered from ?language=en
+    assert asked == [None, "en"]
+
+
+def test_personio_language_feed_never_overwrites_a_description_the_bare_feed_had(
+    monkeypatch,
+):
+    """The guard the measurement demands. Over the same 249-Board sample, switching wholesale to
+    `?language=en` RECOVERED 133 descriptions but LOST 1,159 (101 tech) — the tenant default is
+    German far more often than not, and asking for English empties those. So the language feeds
+    may only *fill* what the bare feed left empty, never replace what it carried.
+    """
+    s = get_scraper("personio", "acme.jobs.personio.de", "Acme")
+    _personio_stub(monkeypatch, s, _personio_crossed_feeds())
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    by_id = {j.id.rsplit(":", 1)[1]: j for j in jobs}
+    assert by_id["2"].description == "German text"  # NOT emptied by the en feed
+
+
+def test_personio_complete_bare_feed_costs_no_extra_request(monkeypatch):
+    """Cost guard: ~80% of live Boards have no empty position at all (58 of 296 held one), and those
+    must keep paying exactly one request."""
+    s = get_scraper("personio", "acme.jobs.personio.de", "Acme")
+    asked = _personio_stub(
+        monkeypatch, s, {None: _personio_feed(_personio_position("1", "text"))}
+    )
+    s.fetch_raw()
+    assert asked == [None]
+
+
+def test_personio_language_sweep_stops_as_soon_as_every_position_is_filled(monkeypatch):
+    """Early exit, so a board whose gap the first fallback closes does not pay for the rest."""
+    s = get_scraper("personio", "acme.jobs.personio.de", "Acme")
+    asked = _personio_stub(
+        monkeypatch,
+        s,
+        {
+            None: _personio_feed(_personio_position("1", None)),
+            "en": _personio_feed(_personio_position("1", "English text")),
+        },
+    )
+    s.fetch_raw()
+    assert asked == [None, "en"]
+
+
+def test_personio_language_sweep_is_bounded_when_no_variant_closes_the_gap(monkeypatch):
+    """The worst case, and it must stay bounded. 4 of the 191 empty positions in the 296-Board
+    sweep are empty in *every* language variant — their text is only on the HTML job page's
+    JSON-LD — so those Boards pay the whole list and recover nothing. The seed-31337 sample turned
+    up the same shape live (2026-08-26): `albaberlin.jobs.personio.com`, 1 of 7 positions empty in
+    the bare feed and in all of en/es/nl/fr, 5 requests total. The cost ceiling is the length of
+    `_DESCRIPTION_LANGUAGES`; a position that is never filled must not make the scraper ask again,
+    or retry, or give up on the descriptions the bare feed did carry.
+    """
+    from headstart.scrapers.personio import _DESCRIPTION_LANGUAGES
+
+    s = get_scraper("personio", "albaberlin.jobs.personio.com", "Alba")
+    stubborn = _personio_feed(
+        _personio_position("1", None), _personio_position("2", "German text")
+    )
+    asked = _personio_stub(
+        monkeypatch, s, dict.fromkeys([None, *_DESCRIPTION_LANGUAGES], stubborn)
+    )
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert asked == [None, *_DESCRIPTION_LANGUAGES]  # every code tried, exactly once
+    assert (
+        len(_DESCRIPTION_LANGUAGES) <= 4
+    )  # ceiling: at most four extra requests, ever
+    by_id = {j.id.rsplit(":", 1)[1]: j for j in jobs}
+    assert by_id["1"].description is None  # unrecoverable, and reported as such
+    assert by_id["2"].description == "German text"  # the rest of the Board is untouched
+
+
+def test_personio_language_sweep_survives_a_failing_variant(monkeypatch):
+    """A language variant that errors must not lose the bare feed. Live, `?language=` with an
+    unknown code answers 200 with every description emptied, so a failure here is the network's,
+    and the positions the bare feed did carry are still worth returning."""
+    s = get_scraper("personio", "acme.jobs.personio.de", "Acme")
+
+    # The bare feed is a direct `http.fetch` since #313; stubbing only `_get` would leave it live.
+    class _Feed:
+        status_code = 200
+        headers: ClassVar[dict] = {}
+        text = _personio_feed(_personio_position("1", None))
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    def _get(url=None):
+        if url and "?language=en" in url:
+            raise RuntimeError("boom")
+        if url and "?language=" in url:
+            return _personio_feed(_personio_position("1", "Spanish text"))
+        raise AssertionError("the bare feed must not go through _get")
+
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: _Feed())
+    monkeypatch.setattr(s, "_get", _get)
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert jobs[0].description == "Spanish text"
+
+
 def test_join_parse():
     jobs = get_scraper("join", "indie-solutions", "indie").parse(
         _load("join_indie-solutions.json"), SCRAPED_AT
