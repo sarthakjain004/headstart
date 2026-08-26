@@ -118,7 +118,8 @@ The second direction is the clever part. Nothing downstream had to change — `e
 corpus is simply **correct again** by the time they see it.
 
 Note that "restoring" is **not** a network fetch. The store is a local directory of gzipped files
-(`data/descriptions/{ats}/*.jsonl.gz`, 406 MB on HF as of 2026-08-26), pulled once at the start of
+(`data/descriptions/{ats}/*.jsonl.gz`, ~406 MB on HF as of 2026-08-26 and growing every run),
+pulled once at the start of
 the join job. A restore is a local dict lookup. The expensive thing is what the store *avoids* —
 going back to the ATS for one detail page *per job*, on the nine ATSes that have a detail pass at
 all. That is what the skip-list it publishes (417,773 ids) exists to spare, though today only
@@ -154,8 +155,8 @@ only what changed; the big `base.jsonl.gz` is rewritten only by `--compact`. Rea
 base-then-fragments in order, last write winning.
 
 That is not over-engineering. Rewriting the whole store every run would mint a fresh copy of every
-`base.jsonl.gz` — 362 MB today — *per run*, and HF keeps every blob forever — the exact mistake that filled the 100 GB quota in ~45
-runs on `data/lancedb`.
+`base.jsonl.gz` — ~362 MB of that total — *per run*, and HF keeps every blob forever — the
+exact mistake that filled the 100 GB quota in ~45 runs on `data/lancedb`.
 
 ---
 
@@ -193,14 +194,13 @@ would stop being re-fetched every run. It was gated on a `Job.detail_fetched` fl
 It was removed, and the reasoning is worth keeping because it is a good example of a design that
 looks right and measures wrong.
 
-**The state is real, but it is tiny — and the flag feeding it is wrong on live data.** Sampled live
-on 2026-08-26 across **13,061 Jobs on 95 boards and six detail-pass ATSes**: 399 came back with an
-empty description, and only **4** of those were a posting that genuinely has none — none of them a
-tech role. The large blocks were bad fetches, Zoho job pages serving an error body under HTTP 200
-being the clearest. (That board draw was random and unseeded, so read it as an order-of-magnitude
-shape, not a rate — ADR-0089 declines to restate it for exactly that reason.) The reproducible
-number is the store's own: of **417,773** entries it had accumulated, only **8** were `null`, all
-eightfold.
+**The state is real, but it is tiny — and the flag feeding it is wrong on live data.** The
+reproducible measurement is the store's own: of **417,773** entries it had accumulated, only **8**
+were `null`, all eightfold. A wider live sample across six detail-pass ATSes did turn up a handful
+of postings that genuinely have no description — three still verifiable on live JSON-LD, none of
+them a tech role — but that board draw was random and unseeded, so ADR-0089 deliberately does not
+quote its counts and neither does this file. Where empties came in *large* blocks they were bad
+fetches: Zoho job pages serving an error body under HTTP 200 is the clearest case.
 
 The decisive measurement is on eightfold itself, the only scraper that ever set the flag. On
 `telekom-growthhub`, its `position_details` API answers **HTTP 200 with no description** for 5 of 5
@@ -211,8 +211,9 @@ already *is* in the store, recorded as having no description while its page serv
 characters: a falsehood the flag wrote into production data. And it is not alone — every one of
 the 8 `null` entries was checked against its live page, and **5 of the 6 that could be checked are
 wrong**. Exactly one is right, and it is the only *tech* posting ever confirmed to be in the
-category the state existed to record. A completed fetch is not an authoritative answer. ADR-0089 has the per-entry
-table and the repro; read it there rather than trusting this retelling.
+category the state existed to record. A completed fetch is not an authoritative answer.
+ADR-0089 has the per-entry table and the repro; read it there rather than trusting this
+retelling.
 
 **The flag was inert almost everywhere.** Nine scrapers declare `has_detail_pass` — eight
 scrapable, since `join` is disabled — but only eightfold ever set `detail_fetched`, and, not
@@ -223,19 +224,19 @@ Job is settled or not.
 **So what are the 1,974–2,165 "still unrecorded" Jobs each run?** Not postings that lack a
 description — **fetch failures**. Measured over five consecutive runs on 2026-08-26, the counter is
 successfactors 844–872, zoho 390–409, workday 111–615, smartrecruiters 119–132, and personio
-anywhere from 1 to 343 — and eightfold, the scraper this whole section is about, 0 or 1. Every one of them is correctly
-*not* settled, which is why removing the settle branch does not change the count: those same five
-runs each logged `settled 0 as having none`.
+anywhere from 1 to 343 — and eightfold, the scraper this whole section is about, 0 or 1. Every
+one of them is correctly *not* settled, which is why removing the settle branch does not change
+the count: those same five runs each logged `settled 0 as having none`.
 
 Today the store is two-state: `id -> text`, and membership means we hold the words. A legacy `null`
 reads as unheld, and `compact` drops those 8 on its next pass.
 
 **One thing this leaves open**, and it is the more interesting question: the skip-list publishes
-417,773 ids every run and only eightfold reads it. Making the other seven scrapers consult
-`have_details` would save a lot of fetching — but Workday's detail carries `startDate` (the only
-`posted_at` source) and `jobReqId` (which `_posting_key` needs, measured: skipping it renames 10/10
-postings on `roche`), so it is a real design problem, not a switch. ADR-0089 deliberately does not
-foreclose it.
+an id for every description the store holds — 417,773 of them — and only eightfold reads it. Making
+the other seven scrapers consult `have_details` would save a lot of fetching — but Workday's detail
+carries `startDate` (the only `posted_at` source) and `jobReqId` (which `_posting_key` needs,
+measured: skipping it renames 10/10 postings on `roche`), so it is a real design problem, not a
+switch. ADR-0089 deliberately does not foreclose it.
 
 ## Files to read, in order
 

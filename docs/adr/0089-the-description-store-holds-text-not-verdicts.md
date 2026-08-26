@@ -29,7 +29,8 @@ per-Job detail fetch *completed*.
 
 `eightfold:telekom-growthhub.eightfold.ai:563465371804571` is recorded as *authoritatively has no
 description*. It is a **Senior DevOps Engineer (m/w/d)** posting, and its own public page carries a
-**5,677-character** JSON-LD description right now (verified 2026-08-26).
+**5,677-character** JSON-LD description right now (verified 2026-08-26 — the page serves two
+`JobPosting` blocks and this is the larger, which is why the repro below takes the max).
 
 The mechanism is exact. `_description_of` returns `data.get("jobDescription") or ""` — so an API
 200 whose payload omits `jobDescription` yields `""`, not `None`. `detail_fetched` was
@@ -81,8 +82,8 @@ posting's public page fetched, its JSON-LD `JobPosting` read.
 
 **Five of the six checkable entries are wrong.** The sixth is right, and it is the only *tech*
 posting ever confirmed to be in the category this state existed to record — the wider sample below
-found three more, none of them tech. The flag is not occasionally unlucky: over its whole lifetime
-it wrote five falsehoods to buy that one true record.
+turned up three more that are still verifiable, none of them tech. The flag is not occasionally
+unlucky: over its whole lifetime it wrote five falsehoods to buy that one true record.
 
 It is not confined to postings already in the store. A full census of `telekom-growthhub` on
 2026-08-26 — all 219 Jobs, every detail fetched, no request errors — found **5** whose
@@ -174,7 +175,7 @@ those five runs the settle branch fired **0** times.
   the verdict vocabulary; "held" is what `base.have_details` and `reconcile`'s own local already
   called it.
 
-No migration step: `compact` rewrites each base file from `read_store`, so the 7 legacy entries
+No migration step: `compact` rewrites each base file from `read_store`, so the 8 legacy entries
 disappear on its next pass. It runs daily in `cleanup-index`, and that step is `continue-on-error`
 — so the purge is best-effort, and the entries are harmless until it lands because every reader
 already treats them as unheld.
@@ -186,10 +187,11 @@ the only Jobs the removed state was skipping, on the only scraper that skips: ei
 per full sweep, and only when their boards are in slice. That is the whole measured price, and it
 is paid every run rather than once.
 
-Seven of the eight were never members of the population anyway — five are confirmed wrong, two
-unverifiable. **One is a confirmed member**, `infineon…:563808971860633`, whose page really does
-serve an empty description. So what the state bought over its whole lifetime was one true record
-against five false ones, and it is that ratio, not the count, the removal is priced against.
+Five of the eight are confirmed wrong and two unverifiable; **one is a confirmed member**,
+`infineon…:563808971860633`, whose page really does serve an empty description. So the population
+those eight entries stood in for is somewhere between one and three Jobs, and what the state
+bought over its whole lifetime was one true record against five false ones. It is that ratio, not
+the count, the removal is priced against.
 
 **A genuinely description-less posting is now chased forever** — it stays in the ADR-0062 gap
 ledger, so `scrape_plan` keeps reserving exploration budget for its Board. The bound is the quota,
@@ -222,10 +224,10 @@ each scraper could be made to report, eightfold is the proof that the honesty re
 caller.
 
 **Keep the flag and make every scraper consult `have_details`.** That would give the skip-list real
-teeth — the 417,773 ids it publishes each run (2026-08-26, growing 500–800 a run) would start
-saving fetches on the seven other scrapable detail-pass ATSes. It
-is a genuinely attractive change and it is *not* what this ADR forecloses: it can be made later,
-and would then need its own decision about detail-derived fields (workday's `startDate` is the only
+teeth — the 417,773 descriptions the store holds (2026-08-26, growing 500–800 a run) would start
+saving fetches on the seven other scrapable detail-pass ATSes. It is a genuinely attractive change
+and it is *not* what this ADR forecloses: it can be made later, and would then need its own
+decision about detail-derived fields (workday's `startDate` is the only
 `posted_at` source, and `_posting_key` reads `jobReqId`, so skipping a detail renames postings —
 measured 10/10 on `roche`). Bundling it here would have hidden a large behavioural change inside a
 cleanup.

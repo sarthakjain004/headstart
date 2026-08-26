@@ -577,8 +577,8 @@ def _remote_from(option: Any) -> bool | None:
 
 
 def _description_of(response: Any) -> str | None:
-    """The posting's description: ``""`` whenever the request completed, ``None`` when the body
-    could not be read at all.
+    """The posting's description; ``""`` when the payload carries no ``jobDescription``, and
+    ``None`` only when the body could not be read at all.
 
     The distinction is no longer load-bearing (ADR-0089) — ``_api_records`` maps both to ``None``
     via ``desc or None`` — and it must not become so again. It looks like *this posting has no

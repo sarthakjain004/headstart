@@ -129,8 +129,8 @@ def _entries(ats_dir: Path) -> Iterator[tuple[str, str | None]]:
 def read_store(ats_dir: Path) -> dict[str, str]:
     """``{Job id: description}`` for one ATS. Membership means we hold this Job's text.
 
-    A legacy ``null`` entry — the removed "authoritatively has none" state, 7 of them, all
-    eightfold — is skipped rather than returned, so a Job it names is treated as unheld and
+    A legacy ``null`` entry — the removed "authoritatively has none" state, all eightfold
+    (ADR-0089) — is skipped rather than returned, so a Job it names is treated as unheld and
     fetched again like any other. Skipping on read (rather than migrating the files) is what
     makes the removal self-healing: ``compact`` rewrites the base from this function, so the
     entries disappear on its next pass with no migration step.
