@@ -28,10 +28,6 @@ from headstart.scrapers.base import BaseScraper
 #: Items per page the feed serves. A full page means there is probably another.
 _PAGE_SIZE = 100
 
-#: Loop bound. 200 pages is 20,000 Jobs — an order of magnitude past the largest Board measured
-#: (779), so it can only be reached by a feed serving _MAX_PAGES straight full, all-new pages.
-_MAX_PAGES = 200
-
 
 def _salary(jobposting: dict) -> str | None:
     """Format the schema.org baseSalary MonetaryAmount, e.g. '40000-60000 EUR YEAR'."""
@@ -67,17 +63,20 @@ class TeamtailorScraper(BaseScraper):
         return f"https://{self.slug}.teamtailor.com/jobs.json"
 
     def fetch_raw(self) -> Any:
-        """The whole Board, not its first page.
+        """Walk every page of the Board — no page-count ceiling.
 
-        Stops on the first short page, and also when a page adds no new ids — a feed that
-        ignores `page` would otherwise serve page 1 forever, and "ran off the end" and "looped"
-        are indistinguishable from the item count alone. The id check is what makes the walk
-        safe to bound loosely rather than trusting the server's paging.
+        Stops on the first short page: proof the Board is exhausted. A full page that adds no
+        new ids means the feed is re-serving already-seen content instead of advancing — the one
+        case page count alone can't tell apart from "still more real pages ahead" — so that is
+        the sole early-exit signal short of a natural end, and it marks the Board truncated
+        (ADR-0053): whatever sits past that point is unread, not absent, and `index sync` must
+        not read it as a delisting.
         """
         merged: list[dict] = []
         seen: set[Any] = set()
         feed: dict = {}
-        for page in range(1, _MAX_PAGES + 1):
+        page = 1
+        while True:
             suffix = "" if page == 1 else f"?page={page}"
             document = json.loads(self._get(f"{self.url()}{suffix}"))
             if page == 1:
@@ -86,16 +85,15 @@ class TeamtailorScraper(BaseScraper):
             fresh = [i for i in items if i.get("id") not in seen]
             seen.update(i.get("id") for i in fresh)
             merged.extend(fresh)
-            if len(items) < _PAGE_SIZE or not fresh:
+            if len(items) < _PAGE_SIZE:
                 break
-        else:
-            # Reached only by _MAX_PAGES straight full, all-new pages — a feed that just
-            # re-serves page 1 is already caught by the `not fresh` break above. Whatever sits
-            # past the cap is unread, not absent, and must say so or `index sync` evicts it
-            # as a delisting (ADR-0053).
-            self.mark_truncated(
-                f"hit the {_MAX_PAGES}-page cap at {len(merged)} Jobs — the rest unread"
-            )
+            if not fresh:
+                self.mark_truncated(
+                    f"page {page} repeated no new ids after {len(merged)} Jobs — "
+                    "the feed may be ignoring `page`"
+                )
+                break
+            page += 1
         feed["items"] = merged
         return feed
 
