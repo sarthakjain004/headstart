@@ -165,6 +165,14 @@ def _description(pos: ET.Element) -> str | None:
 class PersonioScraper(BaseScraper):
     ats = "personio"
 
+    #: Provisional experiment, same shape as workday's own (`base.py`'s `egress_fallback_on`
+    #: docstring). Measured 2026-08-26 across 7 real pipeline runs: personio was the only ATS
+    #: besides workday (already opted in) with terminal 429 board failures, and by far the
+    #: largest — 85 of them, more than every other ATS's 429 count combined. Not yet proven
+    #: per-origin the way workday's ten-run table is; watch the shard report's recovered rate in
+    #: later runs and revert this if it doesn't hold up.
+    egress_fallback_on = frozenset({429})
+
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
         # Host only — the ledger's url is not always the board. Discovery stored the raw capture
