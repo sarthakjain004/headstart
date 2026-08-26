@@ -580,12 +580,12 @@ def _description_of(response: Any) -> str | None:
     """The posting's description, ``""`` when the detail answered but carries none, ``None`` when
     it could not be read at all.
 
-    The distinction is no longer load-bearing (ADR-0089) — the caller maps both to ``None`` — and
-    it must not become so again. It looks like *this posting has no description* versus *we failed
-    to find out*, but it is not: this board's API answers 200 with no ``jobDescription`` for
-    postings whose pages carry full text (measured 5 of 5 on `telekom-growthhub`), so the empty
-    string means only that the request completed. That is what made the removed
-    ``detail_fetched`` flag write a permanent falsehood into the description store.
+    The distinction is no longer load-bearing (ADR-0089) — ``_api_records`` maps both to ``None``
+    via ``desc or None`` — and it must not become so again. It looks like *this posting has no
+    description* versus *we failed to find out*, but it is not: ``position_details`` answers 200
+    with no ``jobDescription`` for postings whose pages carry full text (measured 5 of 5 on
+    ``telekom-growthhub``), so the empty string means only that the request completed. That is
+    what made the removed ``detail_fetched`` flag write a permanent falsehood into the store.
     """
     try:
         data = response.json().get("data") or {}
