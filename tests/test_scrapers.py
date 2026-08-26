@@ -162,9 +162,10 @@ def test_ashby_location_keeps_every_place_the_record_names():
 
 
 def test_ashby_location_is_additive_and_never_repeats_a_place():
-    """Components are appended only when the string does not already contain them.
+    """Components are appended only when they aren't already named, as a whole word, in what
+    has been kept so far.
 
-    That containment test is the right one *because* the filter is a substring match: "Panama"
+    That whole-word test is the right one *because* the filter is a substring match: "Panama"
     needs no separate entry beside "Panama City", but "India" does beside "Bengaluru". It also
     keeps the employer's own wording, which is the better display text.
     """
