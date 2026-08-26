@@ -204,6 +204,23 @@ def test_ashby_location_is_additive_and_never_repeats_a_place():
         _location({"address": {"postalAddress": {"addressCountry": "Guatemala "}}})
         == "Guatemala"
     )
+    # a bare substring check would wrongly read "CA" as already present inside "Vacaville"
+    # (code review round 1) and drop the state — the whole-word test must still add it
+    assert (
+        _location(
+            {
+                "location": "Vacaville",
+                "address": {
+                    "postalAddress": {
+                        "addressLocality": "Vacaville",
+                        "addressRegion": "CA",
+                        "addressCountry": "United States",
+                    }
+                },
+            }
+        )
+        == "Vacaville, CA, United States"
+    )
 
 
 @pytest.mark.parametrize(

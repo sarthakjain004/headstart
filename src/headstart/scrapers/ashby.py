@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from headstart.models import Job, html_to_text
@@ -103,6 +104,22 @@ def _place_names(entry: dict) -> list[str]:
     return names
 
 
+def _already_kept(name_lower: str, kept: list[str]) -> bool:
+    """Whether ``name_lower`` is already named, as a whole word/phrase, somewhere in ``kept``.
+
+    A raw substring check is unsound: ``"ca"`` (the ``addressRegion`` code for California) is a
+    literal substring of ``"Vacaville"``, so ``"ca" in "vacaville"`` reads the code as already
+    present and silently drops it — found live, code review round 1:
+    ``_location({"location": "Vacaville", "address": {"postalAddress": {"addressRegion": "CA",
+    ...}}})`` composed ``"Vacaville, United States"`` with the state dropped. Same fix as
+    lever's ``_already_names_country`` (PR #299): require non-letter boundaries around the
+    match, not just containment anywhere.
+    """
+    boundary = r"(?<![a-z]){}(?![a-z])"
+    pattern = boundary.format(re.escape(name_lower))
+    return any(re.search(pattern, k.lower()) for k in kept)
+
+
 def _location(job: dict) -> str | None:
     """Every place the posting names, not just its headline string.
 
@@ -118,16 +135,17 @@ def _location(job: dict) -> str | None:
     multi-country posting is served as a single-country row and cannot be found by its second
     country at all.
 
-    Additive rather than replacing: a component is appended only when the string does not
-    already contain it, so the employer's own wording survives and a substring filter that
-    worked before still works. That containment test is the right one precisely because the
-    filter is a substring match — "Panama" needs no separate entry beside "Panama City", but
-    "India" does beside "Bengaluru".
+    Additive rather than replacing: a component is appended only when it is not already named,
+    as a whole word, in a string kept so far — so the employer's own wording survives and a
+    substring filter that worked before still works. That whole-word test is the right one
+    precisely because the filter is a substring match — "Panama" needs no separate entry beside
+    "Panama City", but "India" does beside "Bengaluru", and "CA" does beside "Vacaville" (a bare
+    substring check would wrongly treat "ca" as already present inside "vacaville").
     """
     names: list[str] = []
     for entry in (job, *(job.get("secondaryLocations") or [])):
         for name in _place_names(entry):
-            if not any(name.lower() in kept.lower() for kept in names):
+            if not _already_kept(name.lower(), names):
                 names.append(name)
     return ", ".join(names) or None
 
