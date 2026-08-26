@@ -18,11 +18,11 @@ ones. Cheap, and it runs every time.
 **Derivations** — ``min_years`` / ``max_years`` / ``experience_source`` are ``f(code, facts)``, so a
 change in the code has to reach every row. :data:`doc_prep.DERIVATIONS_VERSION` is compared against
 the watermark in ``data/state/derivations.json``; when the code is newer, every row whose
-description the ADR-0050 store *settles* is re-derived through the full cascade. Rows the store has
-never settled are left alone — recomputing without the text a value came from could only downgrade
+description the ADR-0050 store *holds* is re-derived through the full cascade. Rows whose text the
+store does not hold are left alone — recomputing without the text a value came from could only downgrade
 it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
 
-**The re-derivation queue** (ADR-0062) is the other half of that: when a run finally settles one of
+**The re-derivation queue** (ADR-0062) is the other half of that: when a run finally supplies one of
 those descriptions, the row is still carrying numbers derived without it, and no version has moved.
 ``update_descriptions`` appends the ids to ``data/state/pending_rederive.txt``; this module runs the
 cascade for exactly those rows and clears the file. Without it, closing the description gap would

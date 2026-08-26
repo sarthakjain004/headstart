@@ -208,7 +208,7 @@ Per **Board**, how many of its already-embedded **Jobs** the **Description store
 _Avoid_: reading it as a backlog the slice can fully drain — 166 of its Boards are dead, excluded or parked and can never be picked, and `join`'s rows leave by eviction, not repair. _Avoid_: treating a Board's presence in the slice as evidence the quota picked it; with ~12k gap Boards against a ~14k random tail, coincidence dominates the ~700 reserved slots.
 
 **Re-derivation queue**:
-`data/state/pending_rederive.txt` — **Job** ids whose description settled _this run_, so their stored metadata still carries numbers derived without that text (ADR-0062). `update_descriptions` appends, `update_meta` re-runs the extraction cascade for exactly those rows and empties the file. Only ids the embedding store already holds are queued: a Job first embedded this run had its metadata written from this very description.
+`data/state/pending_rederive.txt` — **Job** ids whose description arrived _this run_, so their stored metadata still carries numbers derived without that text (ADR-0062). `update_descriptions` appends, `update_meta` re-runs the extraction cascade for exactly those rows and empties the file. Only ids the embedding store already holds are queued: a Job first embedded this run had its metadata written from this very description.
 _Avoid_: deleting the file to clear it — the merge uploads `data/state` without `--delete`, so an unlink never reaches the dataset and the queue would be re-fetched and re-appended forever. Truncate instead.
 
 **Fan-out speedup ledger (measured ratio)**:
