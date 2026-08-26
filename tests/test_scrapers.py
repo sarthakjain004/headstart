@@ -5095,7 +5095,7 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
     assert GreenhouseScraper("acme")._egress() == {}
 
 
-def test_personio_stays_on_its_direct_route_on_429(monkeypatch):
+def test_personio_stays_on_its_direct_route_on_429():
     """#312's spare-egress opt-in is reverted: personio's 429 is not an origin budget.
 
     Measured live 2026-08-26 (ADR-0063's own amendment): every one of the 22 Boards that failed
@@ -5151,6 +5151,42 @@ def test_personio_a_tenant_that_redirects_off_the_board_host_reads_as_gone(monke
         "a departed tenant must age the Board's ADR-0058 gone-streak"
     )
     assert "zellerfeld.jobs.personio.com" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "location", ["https://zellerfeld.jobs.personio.com/xml/", "/xml/", ""]
+)
+def test_personio_a_same_host_redirect_does_not_read_as_gone(monkeypatch, location):
+    """Only an **off-host** target may age a Board. The gone verdict is keyed on the redirect's
+    destination, not on the bare fact of a 3xx.
+
+    No live Board redirects on-host today — 0 of 600 live and 0 of 200 dead Boards sampled
+    2026-08-26 go anywhere but the marketing site — so this is about which way the check fails
+    when personio changes. A same-host normalisation, or a 3xx with no `Location` at all, is not
+    the origin saying the Board is gone; reading it as gone would retire a *live* Board after
+    five agreeing runs (ADR-0058) on evidence that was never given. It fails the fetch instead,
+    which costs one run and self-corrects.
+    """
+    from headstart.ingest.board_failures import is_gone
+    from headstart.scrapers.personio import PersonioScraper
+
+    class _Redirect:
+        status_code = 301
+        headers: ClassVar[dict] = {"location": location}
+        text = ""
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: _Redirect())
+    scraper = PersonioScraper("zellerfeld.jobs.personio.com", "Zellerfeld")
+    with pytest.raises(http.RequestsError) as excinfo:
+        scraper.fetch_raw()
+
+    assert not is_gone(f"RequestsError: {excinfo.value}"), (
+        "a same-host redirect must not age the Board toward quarantine"
+    )
 
 
 def test_personio_a_live_board_still_parses_its_feed(monkeypatch):

@@ -18,7 +18,10 @@
 > So §"the one cheap, evidence-backed thing worth actually trying" — running the personio pass
 > from a non-datacenter egress — is aimed at the wrong variable, and was falsified directly:
 > rotating through three verified-distinct egress addresses got 429 from every one, while the same
-> IP in the same second got 200 or 429 depending only on the `User-Agent`. And there is nothing
+> IP in the same second got 200 or 429 depending on the request signature rather than the client —
+> with the TLS fingerprint held at `impersonate="chrome"`, the `User-Agent` alone flips it. (Do
+> not read that as "send a Chrome `User-Agent`": under this scraper's own TLS that is still 429.
+> Both halves have to be browser-shaped.) And there is nothing
 > worth solving: a solved challenge yields 1.7 MB of marketing HTML that holds no job data.
 >
 > This document's own evidence pointed here already — "a fresh, unthrottled curl from a home

@@ -18,8 +18,9 @@ from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 #: Every redirect status personio's edge could answer with. A tenant that is still on the ATS
-#: never redirects its own feed (0 of 600 live Boards sampled 2026-08-26), so any of these
-#: means the Board is not where the ledger says it is.
+#: serves its own feed directly: of 600 live Boards sampled 2026-08-26, 8 redirected and every
+#: one went to the marketing site — none to another host, and none that redirected and still
+#: served a feed. So an **off-host** redirect means the Board is not where the ledger says it is.
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 
 
@@ -201,19 +202,23 @@ class PersonioScraper(BaseScraper):
     def fetch_raw(self) -> Any:
         """The tenant's XML feed — refusing to follow a redirect off the Board host.
 
-        A tenant that has left personio does not 404. `https://{host}/xml` answers **307 ->
-        https://personio.com**, and the marketing site there is behind Vercel bot mitigation which
-        answers **429** to our User-Agent. Following that redirect is what produced every terminal
+        A tenant that has left personio need not 404 — most do (184 of 200 sampled dead ledger
+        rows), but a departed subdomain that is still routed does not: `https://{host}/xml`
+        answers **307 -> https://personio.com**, and the marketing site there is behind Vercel
+        bot mitigation which answers **429** to our User-Agent, so the fetch never sees the 404
+        it would have earned. Following that redirect is what produced every terminal
         `HTTP Error 429` this ATS has ever reported: measured live 2026-08-26, all 22 Boards that
         failed that way across runs 32936269675 and 32942748996 redirect to the marketing site,
         against 8 of 600 randomly sampled live Boards (1.33%) and 0 of 600 that redirect anywhere
         else or redirect and still serve a feed.
 
-        The 429 is keyed on the header, not the client — same IP and same second, a Chrome
-        User-Agent gets 200 and ours gets `x-vercel-mitigated: challenge`. That is why ADR-0063's
-        spare egress could not rescue these Boards and is no longer asked to: driven against them
-        the real scraper rotated through three verified-distinct WARP addresses and was refused by
-        every one.
+        The 429 is keyed on the request, not the client — same IP and same second, holding the
+        TLS fingerprint at `curl_cffi impersonate="chrome"`, a Chrome User-Agent gets 200 and ours
+        gets `x-vercel-mitigated: challenge`. Both halves are load-bearing: under the fingerprint
+        this scraper actually sends, a Chrome User-Agent alone is still refused. That is why
+        ADR-0063's spare egress could not rescue these Boards and is no longer asked to: driven
+        against them the real scraper rotated through three verified-distinct WARP addresses and
+        was refused by every one.
 
         Reported in the shape :func:`~headstart.ingest.board_failures.is_gone` recognises, the way
         lever reports a slug that is on no Lever board. That matters beyond the message: a 429
@@ -230,9 +235,22 @@ class PersonioScraper(BaseScraper):
             **self._egress(),
         )
         if response.status_code in _REDIRECTS:
+            location = response.headers.get("location") or ""
+            target = host_of(location)  # "" for a relative Location, which is same-host
+            # Only an **off-host** target says the Board is gone. A relative or same-host
+            # Location is a path normalisation, and reading one as gone would age a live Board
+            # toward ADR-0058 quarantine on evidence the origin never gave — the one direction
+            # this check must not fail in. None was seen (0 of 600 live and 0 of 200 dead Boards
+            # sampled 2026-08-26 redirect anywhere but the marketing site), so it fails the fetch
+            # loudly and leaves the verdict to a run that gets an answer.
+            if not target or target == self.slug:
+                raise http.RequestsError(
+                    f"personio redirected {self.url()} to {location or '(no location)'}, "
+                    f"which is not off the board host — not treating it as gone"
+                )
             raise http.RequestsError(
                 f"HTTP Error 404: no personio board for {self.slug} — /xml redirects to "
-                f"{response.headers.get('location') or '(no location)'}"
+                f"{location}"
             )
         response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.

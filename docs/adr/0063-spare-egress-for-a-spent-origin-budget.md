@@ -199,8 +199,16 @@ ladder is spent and the Board would otherwise be lost.
   429s.
 
 **Exit criterion.** Watch the shard report's `recovered` rate. A high routed count with a low
-recovery rate means the spare egress is saturated too, and this comes back out. The measured root
-cause — a concurrency bound that is per *Board* while the budget is per *host*
+recovery rate means the spare egress is saturated too, and this comes back out.
+
+> **This exit criterion is blind — see the 2026-08-26 Personio amendment below before applying
+> it.** `note_settled` buckets *every* request the spare egress carries once the group is walled,
+> so the rate is pinned high by healthy Boards that were never refused. It cannot answer whether
+> the fallback bought anything; only a per-Board outcome can. Workday's opt-in is **unchanged** —
+> its per-origin evidence is the table above, not this metric — but nothing has yet re-tested it
+> against a measurement that could fail.
+
+The measured root cause — a concurrency bound that is per *Board* while the budget is per *host*
 (`harvest._default_workers`: peak ≈ `workers × detail_streams`, ~400 in flight, ~150 to one
 instance) — is untouched by this amendment and remains the real fix.
 
@@ -289,10 +297,12 @@ recovered rate in later runs and revert this if it doesn't hold up."* The first 
 it were `32936269675` and `32942748996`. **It is reverted.** The premise was not merely unproven,
 it was wrong: personio's 429 is not an origin budget and is not keyed on the client IP at all.
 
-**What the 429 actually is.** A tenant that has left personio does not 404. `https://{host}/xml`
-answers **307 -> `https://personio.com`**, and personio's marketing site is behind Vercel bot
-mitigation, which answers **429** with `x-vercel-mitigated: challenge`. The scrape followed that
-redirect and read the challenge as the Board's own rate limit.
+**What the 429 actually is.** A tenant that has left personio need not 404 — most do (184 of 200
+sampled dead ledger rows), but a departed subdomain that is still routed does not:
+`https://{host}/xml` answers **307 -> `https://personio.com`**, and personio's marketing site is
+behind Vercel bot mitigation, which answers **429** with `x-vercel-mitigated: challenge`. The
+scrape followed that redirect and read the challenge as the Board's own rate limit — so these
+Boards never got to report the 404 that would have retired them.
 
 Measured live 2026-08-26, three independent ways, each on its own sample:
 
@@ -305,9 +315,15 @@ Measured live 2026-08-26, three independent ways, each on its own sample:
   this opt-in live, rotated the spare egress through **three verified-distinct addresses**
   (`104.28.220.169`, `104.28.220.175`, `104.28.252.174` — the module's own trace confirming
   `moved`) across 16 rotations, and was answered 429 by every one.
-- **It is keyed on the header, not the client.** Same IP, same second, same TLS fingerprint: a
-  Chrome `User-Agent` gets 200, and `headstart/0.1 (job-board reader)` gets 429 + `challenge`. A
-  live tenant's own feed is unaffected by either (200 both ways), which is the control.
+- **It is keyed on the request, not the client.** Same IP, same second, TLS fingerprint held at
+  `curl_cffi impersonate="chrome"`: a Chrome `User-Agent` gets 200, and `headstart/0.1 (job-board
+  reader)` gets 429 + `challenge`. A live tenant's own feed is unaffected by either (200 both
+  ways), which is the control. **The held fingerprint is part of the claim, not scenery** —
+  re-measured 2026-08-26 in four arms from one IP, ~10s apart: under this scraper's *own* TLS a
+  Chrome `User-Agent` is still refused (429), and under Chrome's TLS our own `User-Agent` is
+  still refused (429). Only the browser-shaped request as a whole gets through. Read the short
+  way — "just send a Chrome `User-Agent`" — this is false, and it is not a lever anyway: what
+  clears the challenge is 1.7 MB of marketing HTML.
 
 **What the shard report said, and why it could not have caught this.** The reported rescue rate was
 95.0% and 95.9% — healthy by the stated criterion — while the outcome the opt-in was adopted to fix
@@ -336,9 +352,13 @@ the spare egress is not carrying traffic, the remaining attempts are spent on a 
 answer. That gap is latent for workday and eightfold (0 ProxyErrors from either across the same 10
 runs) and is not addressed here; removing personio's rotation removes every instance of it observed.
 
-**The fix is upstream of all of it.** `PersonioScraper.fetch_raw` no longer follows a redirect off
-the Board host, and reports one in the shape `board_failures.is_gone` recognises — the way lever
-reports a slug that is on no Lever board. That matters beyond the message: a 429 deliberately never
+**The fix is upstream of all of it.** `PersonioScraper.fetch_raw` no longer follows a redirect at
+all, and reads the **target** as the signal: an off-host one is reported in the shape
+`board_failures.is_gone` recognises — the way lever reports a slug that is on no Lever board —
+while a same-host or relative `Location` fails the fetch *without* aging the Board, since a path
+normalisation is not the origin saying the Board is gone. Nothing observed redirects on-host (0 of
+600 live and 0 of 200 dead Boards sampled), so that branch is about which way the check fails when
+personio changes, not about traffic today. That matters beyond the message: a 429 deliberately never
 ages a Board (ADR-0058), so read as a rate limit these departed tenants stayed in the slice failing
 every run indefinitely — which is why 4 of them (`pitch`, `zellerfeld`, `hishab`, `egym`) failed in
 10 of 10 runs. Read as gone, the existing quarantine retires them after five agreeing runs, no
@@ -349,6 +369,6 @@ personio Boards keep their direct route and their full fan-out width.
 measured per origin before it was built. It does sharpen the bar the Workday amendment set: an
 opt-in needs a measurement that the wall moves with the client IP, and *`egress_fallback_on` must
 not be reached for by an ATS whose 429 has not been traced to its actual origin* — the status code
-is where the investigation starts, not where it ends. Both ATSes now to have failed that test
+is where the investigation starts, not where it ends. Both ATSes that have now failed that test
 (freshteam in #311, whose 429s turned out to be 502s from a down origin; personio here) failed it
 the same way: an aggregate count of a symptom was read as evidence of a mechanism.

@@ -10,7 +10,9 @@ wall to the wrong host. See §6.
 
 ## The mechanism
 
-A tenant that has **left personio** does not 404. `https://{host}/xml` answers:
+A tenant that has **left personio** need not 404 — most do (184 of 200 sampled dead ledger rows
+return a plain 404), but a departed subdomain that is still routed answers a redirect instead, and
+that is the case the scrape never survived. `https://{host}/xml` answers:
 
 ```
 HTTP/2 307
@@ -90,6 +92,11 @@ Same IP, same second, same TLS fingerprint (`curl_cffi impersonate="chrome"`), o
 
 An IP-keyed budget cannot produce that split. The live tenant is unaffected by either UA, which is
 the control: the challenge lives on the marketing site only.
+
+The held fingerprint is part of the claim. Re-measured in a 4-arm matrix (see "Reproducing"), the
+`User-Agent` is **necessary but not sufficient**: under this scraper's own TLS a Chrome UA is
+still refused. "Keyed on the header, not the client" is exact about the part that matters — the
+client IP is not an input — but the request signature the wall reads is wider than one header.
 
 Artifact: `…_ua-fingerprint-ab_direct.txt`.
 
@@ -229,9 +236,25 @@ same blind spot, Workday's own amendment included.
 
 ## Reproducing
 
+> **The scripts and artifacts named here are local-only.** `experiment/` is gitignored
+> (`.gitignore:34`), so nothing under it ships with the repo and no later reader can open the
+> `Artifact:` files cited above. Every number in this document is a live measurement against
+> unauthenticated public endpoints, so re-measure rather than trust the citation — the commands
+> below are the recipe, not a pointer to stored output.
+
 ```bash
 python experiment/personio-429-metering/repro.py       # exit 0 = fixed; drives the real scraper
 python experiment/personio-429-metering/survey.py 600  # dead-tenant base rate in the ledger
 python experiment/personio-429-metering/fingerprint.py # the User-Agent A/B of §3
 python experiment/personio-429-metering/funnel.py live 16   # live Boards at shard concurrency
 ```
+
+**Independently re-measured 2026-08-26** (review of this PR, separate samples, residential IP):
+400 random `live` ledger rows — 396 served a 200 feed, 4 answered 307 and **all 4 to
+`https://personio.com`**, none anywhere else. 200 random `dead` rows — 184 a plain 404, 15 a 307
+to `https://personio.com`, 1 a live feed. The §3 A/B reproduces exactly, including the
+1,720,839-byte marketing page, **but only with the TLS fingerprint held**: in a 4-arm × 2-rep
+matrix from one IP, `impersonate="chrome"` + Chrome UA is the only arm that gets 200 — default TLS
+with a Chrome UA is 429, and Chrome TLS with our UA is 429. So the wall reads the whole request
+signature, not the `User-Agent` alone; §3's "keyed on the header" is right that it is **not** the
+client IP, which is the load-bearing part.
