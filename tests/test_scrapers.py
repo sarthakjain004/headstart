@@ -3435,6 +3435,32 @@ def test_personio_language_sweep_stops_as_soon_as_every_position_is_filled(monke
     assert asked == [None, "en"]
 
 
+def test_personio_language_sweep_is_bounded_when_no_variant_closes_the_gap(monkeypatch):
+    """The worst case, and it must stay bounded. 4 of the 191 empty positions in the live sweep
+    are empty in *every* language variant — their text is only on the HTML job page's JSON-LD —
+    so those Boards pay the whole list and recover nothing. Live example (2026-08-26):
+    `albaberlin.jobs.personio.com`, 1 of 7 positions empty in the bare feed and in all four
+    variants, 5 requests total. The cost ceiling is the length of `_DESCRIPTION_LANGUAGES`; a
+    position that is never filled must not make the scraper ask again, or retry, or give up on
+    the descriptions the bare feed did carry.
+    """
+    from headstart.scrapers.personio import _DESCRIPTION_LANGUAGES
+
+    s = get_scraper("personio", "albaberlin.jobs.personio.com", "Alba")
+    stubborn = _personio_feed(
+        _personio_position("1", None), _personio_position("2", "German text")
+    )
+    asked = _personio_stub(
+        monkeypatch, s, dict.fromkeys([None, *_DESCRIPTION_LANGUAGES], stubborn)
+    )
+    jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
+    assert asked == [None, *_DESCRIPTION_LANGUAGES]  # every code tried, exactly once
+    assert len(asked) - 1 == 4  # and no more than four extra requests, ever
+    by_id = {j.id.rsplit(":", 1)[1]: j for j in jobs}
+    assert by_id["1"].description is None  # unrecoverable, and reported as such
+    assert by_id["2"].description == "German text"  # the rest of the Board is untouched
+
+
 def test_personio_language_sweep_survives_a_failing_variant(monkeypatch):
     """A language variant that errors must not lose the bare feed. Live, `?language=` with an
     unknown code answers 200 with every description emptied, so a failure here is the network's,

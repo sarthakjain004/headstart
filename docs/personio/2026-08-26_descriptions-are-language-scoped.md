@@ -33,7 +33,7 @@ Platform"):
 </position>
 ```
 
-The same position on `?language=en` carries 25,458 characters across 3 `<jobDescription>` sections.
+The same position on `?language=en` carries 25,418 characters across 3 `<jobDescription>` sections.
 
 ## What the measurement ruled out
 
@@ -78,6 +78,14 @@ description-less, re-asks the same board per language and fills the gaps
 existing `url()` comment already claimed this and the measurement confirmed it exactly. So a
 language variant may only supply a block the bare feed left childless.
 
+**`?language=` scopes the descriptions, not the position list.** Merging a variant back by
+position id would be unsafe if the parameter also filtered *which* positions came back — a short
+variant read as the Board's list would look like a truncation and could drive an eviction. It does
+not: over **140 Boards / 938 positions** (seed 31337, a third independent sample) no variant ever
+added or dropped a position relative to the bare feed. The design does not rely on that holding —
+the Board's position list is always the bare feed's, an unknown id in a variant is ignored, and an
+absent one simply stays unfilled — but it is why the merge is a pure description fill.
+
 ### Why those four language codes
 
 Swept over all 58 boards holding the 191 empty positions, with `en, de, es, fr, nl, it, pt, pl,
@@ -111,8 +119,15 @@ language list was chosen on — 344 boards, 2,442 positions, 311 tech:
 | empty **tech** descriptions | 44 (14.15% of tech) | **0 (0.00%)** |
 | requests per board | 1.00 | 1.26 |
 
-Every tech empty in the holdout was recovered. Cost is bounded and mostly zero: 288 of 344 boards
-pay no extra request at all, 40 pay one, and no board pays more than four.
+Every tech empty in the holdout was recovered. Cost is bounded and mostly zero: 288 of 344 Boards
+pay no extra request at all, 40 pay one, and no Board pays more than four.
+
+Re-measured independently at code-review time on a fourth sample (seed 31337, 140 Boards / 938
+positions, 138 fetched): empty descriptions **78 → 1**, **1.21 requests per Board**, 116 of 138
+Boards paying nothing extra, and a worst case of exactly four extra —
+`albaberlin.jobs.personio.com`, whose one empty position is empty in all four variants too. The
+same run re-measured the counterfactual: a blanket `?language=en` would have recovered 66
+descriptions and destroyed **238**.
 
 ## Consequence: the English gate moves, net favourably
 
@@ -148,13 +163,28 @@ non-English postings that were only passing because they had no body text to det
 
 ## Reproducing
 
-Harnesses live in `experiment/personio-description-coverage/`:
+Harnesses live in `experiment/personio-description-coverage/`, which — like every `experiment/`
+capture in this repo — is **gitignored** (`.gitignore:34`), so they are not fetched with a clone:
 
 | script | what it answers |
 |---|---|
 | `probe_feeds.py N SEED` | are empty positions a parse bug or an absent block? |
+| `probe_variants.py HOST` | is an empty block recoverable from a feed variant at all, rather than a per-job fetch? |
 | `probe_language_merge.py N SEED --langs ...` | per language: what does it recover, what does it destroy? |
 | `probe_residue.py HOSTS_FILE` | wide language sweep + JSON-LD job-page fallback |
 | `probe_multilang.py HOST ID` | does the feed accept more than one language per request? (no) |
 | `verify_fix_live.py N SEED` | holdout: coverage and request cost through the real scraper |
 | `probe_english_gate.py N SEED` | how the recovered text moves `is_english` |
+
+The two cases worth keeping to hand, both re-verified 2026-08-26, are enough to re-derive the
+whole finding without any harness:
+
+```bash
+# recovery: bare feed empty, ?language=en full
+curl -s https://gridx.jobs.personio.com/xml           # position 2747735 -> <jobDescriptions />
+curl -s 'https://gridx.jobs.personio.com/xml?language=en'   # same position -> 25,418 chars
+
+# destruction: bare feed full, ?language=en empty (why this is fill-only)
+curl -s https://interlead.jobs.personio.de/xml               # 7 of 7 positions described
+curl -s 'https://interlead.jobs.personio.de/xml?language=en' # 1 of 7
+```

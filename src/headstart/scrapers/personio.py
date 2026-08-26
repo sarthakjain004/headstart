@@ -181,13 +181,13 @@ def _salary(pos: ET.Element) -> str | None:
     return " ".join(x for x in (span, code, period) if x)
 
 
-#: Language codes to re-ask a board for, in measured-yield order, when the bare feed left a
+#: Language codes to re-ask a Board for, in measured-yield order, when the bare feed left a
 #: position description-less. Personio serves each description only in the language *requested*,
 #: and the bare feed serves the tenant's configured default — so a posting written in any other
 #: language arrives as a self-closing `<jobDescriptions />`. See :meth:`PersonioScraper.fetch_raw`.
 #:
 #: The list is exactly the codes measured to recover something, ordered by how much: over the 58
-#: boards holding all 191 bare-empty positions in a live 296-board sweep (2026-08-26), `en`
+#: Boards holding all 191 bare-empty positions in a live 296-Board sweep (2026-08-26), `en`
 #: carried 153, `es` 17, `nl` 13 and `fr` 6. `de`, `it`, `pt`, `pl`, `sv` and `da` were swept
 #: alongside them and recovered **zero** — a tenant whose postings are German is already served
 #: German by the bare feed — so they are deliberately absent rather than added for symmetry.
@@ -279,7 +279,7 @@ class PersonioScraper(BaseScraper):
         bare feed asks for the tenant's configured default. A posting authored in a different
         language therefore comes back as a present-but-childless `<jobDescriptions />` — the text
         exists, it is simply not the translation served. Nothing was being mis-parsed: measured
-        live 2026-08-26 over 296 boards / 2,029 positions, all 191 empty positions had a
+        live 2026-08-26 over 296 Boards / 2,029 positions, all 191 empty positions had a
         `<jobDescriptions>` element with zero `<jobDescription>` children and no unread sibling
         carrying the text. It cost 9.41% of positions and **22.41% of tech ones**, matching the
         27.2% the `update_descriptions` stage reported personio leaving unrecorded every run.
@@ -290,12 +290,19 @@ class PersonioScraper(BaseScraper):
         pass for 2.1% of the gap and no measured tech benefit.
 
         **Filling only, never replacing**, is the whole safety property. A blanket switch to
-        `?language=en` is strictly worse than doing nothing: over a 249-board sample it recovered
+        `?language=en` is strictly worse than doing nothing: over a 249-Board sample it recovered
         133 descriptions and destroyed **1,159** (101 tech), because most tenants are German and
         asking for English empties them. So a variant may only supply a block the bare feed left
-        childless. The sweep stops as soon as nothing is missing, so a board with a complete bare
-        feed — 238 of the 296 sampled — still costs exactly one request, and no board costs more
+        childless. The sweep stops as soon as nothing is missing, so a Board with a complete bare
+        feed — 238 of the 296 sampled — still costs exactly one request, and no Board costs more
         than four extra.
+
+        Merging by position id is safe because `?language=` scopes only the *descriptions*, never
+        the position list: across 140 Boards / 938 positions (2026-08-26, seed 31337) no variant
+        ever added or dropped a position relative to the bare feed. A variant that did would still
+        be harmless — an unknown id is ignored and an absent one simply stays unfilled — but the
+        Board's own position list always comes from the bare feed, so this can never truncate one
+        (ADR-0053) or cause an eviction.
         """
         response = http.fetch(
             "GET",
@@ -329,36 +336,39 @@ class PersonioScraper(BaseScraper):
         response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.
         root = ET.fromstring(response.text.encode("utf-8"))
-        missing: dict[str, ET.Element] = {}
+        description_less: dict[str, ET.Element] = {}
         for pos in root.findall("position"):
             jid = _text(pos, "id")
             if jid and _description(pos) is None:
-                missing[jid] = pos
+                description_less[jid] = pos
 
         for lang in _DESCRIPTION_LANGUAGES:
-            if not missing:
+            if not description_less:
                 break
             try:
                 alt = ET.fromstring(
                     self._get(f"{self.url()}?language={lang}").encode("utf-8")
                 )
-            except Exception as exc:  # noqa: BLE001
-                # A variant is a bonus, not the board: the bare feed's positions are already in
-                # hand and every description it did carry is still correct. Losing them to a
-                # flake on a secondary request would trade a partial gap for a total one.
+            except Exception as exc:  # noqa: BLE001 - a variant is a bonus, not the Board
+                # The bare feed's positions are already in hand and every description it did
+                # carry is still correct. Losing them to a flake on a secondary request would
+                # trade a partial gap for a total one.
                 _log.warning(f"{self.slug}: ?language={lang} failed ({exc})")
                 continue
             for pos in alt.findall("position"):
                 jid = _text(pos, "id")
-                target = missing.get(jid) if jid else None
+                target = description_less.get(jid) if jid else None
                 filled = pos.find("jobDescriptions")
+                # `target is None` is what makes this fill-only: a position the bare feed already
+                # described is not in the dict, so no variant can reach it. The dict is also how
+                # a duplicate id in one variant lands harmlessly — the second copy finds nothing.
                 if target is None or filled is None or _description(pos) is None:
                     continue
                 stale = target.find("jobDescriptions")
                 if stale is not None:
                     target.remove(stale)
                 target.append(filled)
-                del missing[jid]
+                del description_less[jid]
         return root
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
