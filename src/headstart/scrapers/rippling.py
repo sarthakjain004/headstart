@@ -10,6 +10,7 @@ fetched in a bounded thread pool. A failed detail fetch leaves description None 
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from headstart import http
@@ -29,14 +30,17 @@ def _location(item: dict) -> str | None:
 
 
 def _employment_type(detail: dict) -> str | None:
-    """``employmentType.label`` is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...),
-    94.2% populated; ``.id`` is tenant free text (347 distinct spellings measured live, 130
-    of them singletons — experiment/location-audit-2026-08-25/rippling.md). The two subfields
-    are inverted from what their names suggest. Falls back to ``.id`` when ``.label`` is null
-    (~5.83% of jobs, where genuinely non-enum values like "Seasonal" live) rather than losing
-    the field entirely."""
+    """``employmentType.label`` is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...); ``.id``
+    is tenant free text (347 distinct spellings measured live, 130 of them singletons). The two
+    subfields are inverted from what their names suggest. Falls back to ``.id`` only when
+    ``.label`` is ``None`` — checked with ``is not None``, not truthiness, so a genuinely
+    empty-string label (were one ever seen) can't silently pick up ``.id`` instead, the same
+    class of bug ``_pay_range`` below fixes for ``rangeStart``/``rangeEnd``. See
+    docs/salary-extraction/rippling.md for the live measurement.
+    """
     et = detail.get("employmentType") or {}
-    return et.get("label") or et.get("id")
+    label = et.get("label")
+    return label if label is not None else et.get("id")
 
 
 def _description(detail: dict) -> str | None:
@@ -49,21 +53,25 @@ def _description(detail: dict) -> str | None:
 
 
 def _pay_range(ranges: list | None) -> str | None:
-    """Format the true min/max across every payRangeDetails entry sharing entry [0]'s unit,
-    e.g. '150000-250000 USD YEAR'.
+    """Format the true min/max across every payRangeDetails entry sharing the MAJORITY
+    (currency, frequency) unit, e.g. '150000-250000 USD YEAR'.
 
     A job can carry more than one entry (e.g. per-level or per-region bands) — reading only
     entry [0] understates the real span whenever a later entry carries a wider range in the
-    SAME unit (live measurement: 47/2,057 salaried jobs, 2.29% —
-    experiment/location-audit-2026-08-25/rippling.md).
+    SAME unit. See docs/salary-extraction/rippling.md for the live measurement.
 
-    Grouped by (currency, frequency) before taking min/max, rather than pooled across all
-    entries regardless of unit — found in review, live: a real job (journaltech) carries three
-    USD/YEAR entries (160000-200000) alongside one CAD/YEAR entry (155000-190000); pooling
-    blindly produced "155000-200000 USD YEAR", mislabeling a CAD figure as USD. Measured over
-    8,670 detail records: 151 jobs have more than one entry, and 23 of those (15.2%) mix
-    currency — rare, but real, and this scraper has no basis for converting across currencies,
-    so entries outside entry [0]'s unit are excluded from the span rather than blended into it.
+    Grouped by the (currency, frequency) unit shared by the MOST entries, rather than pooled
+    across all entries regardless of unit — found in review, live: a real job (journaltech)
+    carries three USD/YEAR entries (160000-200000) alongside one CAD/YEAR entry
+    (155000-190000); pooling blindly produced "155000-200000 USD YEAR", mislabeling a CAD
+    figure as USD. This scraper has no basis for converting across currencies, so entries
+    outside the majority unit are excluded from the span rather than blended into it.
+
+    Anchored on the majority group rather than positionally on entry [0] — entry [0]'s unit
+    is not known to be guaranteed non-minority by the API, so anchoring there would let a
+    minority-currency entry the API happens to list first narrow the reported range to just
+    that outlier. Ties fall back to entry [0]'s unit, preserving prior behavior when there is
+    no real majority to prefer.
 
     ``rangeStart``/``rangeEnd`` are checked with ``is not None``, not truthiness — the same
     class of bug ashby's ``_salary`` docstring documents fixing (a real job with
@@ -72,7 +80,11 @@ def _pay_range(ranges: list | None) -> str | None:
     entries = [r for r in (ranges or []) if r]
     if not entries:
         return None
-    unit = (entries[0].get("currency"), entries[0].get("frequency"))
+    units = [(r.get("currency"), r.get("frequency")) for r in entries]
+    counts = Counter(units)
+    best = max(counts.values())
+    tied = [u for u, c in counts.items() if c == best]
+    unit = units[0] if units[0] in tied else tied[0]
     same_unit = [r for r in entries if (r.get("currency"), r.get("frequency")) == unit]
     los = [r["rangeStart"] for r in same_unit if r.get("rangeStart") is not None]
     his = [r["rangeEnd"] for r in same_unit if r.get("rangeEnd") is not None]

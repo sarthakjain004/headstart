@@ -1935,9 +1935,9 @@ def test_rippling_parse():
 def test_rippling_employment_type_reads_label_not_id():
     """employmentType.label is a clean 6-value enum (SALARIED_FT, HOURLY_FT, ...);
     .id is tenant free text (347 distinct spellings measured live, 130 of them
-    singletons — experiment/location-audit-2026-08-25/rippling.md). Falls back to
-    .id when .label is null (~5.83% of jobs, where genuinely non-enum values like
-    "Seasonal" live) rather than losing the field entirely."""
+    singletons — docs/salary-extraction/rippling.md). Falls back to .id when .label
+    is null (where genuinely non-enum values like "Seasonal" live) rather than
+    losing the field entirely."""
     raw = [
         {
             "uuid": "a1",
@@ -1969,7 +1969,7 @@ def test_rippling_pay_range_unions_all_entries():
     alone understates the true span when a later entry carries a wider range — e.g.
     cat5-resources-llc serves '25-27 USD HOUR' from entry [0] while the real span
     across all entries (Level 1-4) is 25-40 (live measurement,
-    experiment/location-audit-2026-08-25/rippling.md)."""
+    docs/salary-extraction/rippling.md)."""
     from headstart.scrapers.rippling import _pay_range
 
     ranges = [
@@ -2005,7 +2005,7 @@ def test_rippling_pay_range_does_not_blend_mismatched_currency():
     """Found in review, live: a real job (journaltech) carries three USD/YEAR entries
     alongside one CAD/YEAR entry. Pooling raw numbers across all entries regardless of unit
     mislabeled the CAD figure as USD — '155000-200000 USD YEAR' instead of the true USD-only
-    span. Entries outside entry [0]'s (currency, frequency) must be excluded, not blended."""
+    span. Entries outside the majority (currency, frequency) must be excluded, not blended."""
     from headstart.scrapers.rippling import _pay_range
 
     ranges = [
@@ -2046,6 +2046,61 @@ def test_rippling_pay_range_keeps_a_zero_floor():
         {"rangeStart": 0, "rangeEnd": 50000, "currency": "USD", "frequency": "HOUR"}
     ]
     assert _pay_range(ranges) == "0-50000 USD HOUR"
+
+
+def test_rippling_pay_range_majority_unit_wins_regardless_of_position():
+    """The (currency, frequency) group anchored is whichever the MOST entries share, not
+    positionally entry [0]'s unit — so a minority-currency entry the API happens to list first
+    can't narrow the reported range to just that outlier. Same journaltech-shaped mix as
+    test_rippling_pay_range_does_not_blend_mismatched_currency, but with the lone CAD entry
+    moved to position 0: entry-[0]-anchored code would report "155000-190000 CAD YEAR"."""
+    from headstart.scrapers.rippling import _pay_range
+
+    ranges = [
+        {
+            "rangeStart": 155000,
+            "rangeEnd": 190000,
+            "currency": "CAD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 180000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 180000,
+            "rangeEnd": 200000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+        {
+            "rangeStart": 160000,
+            "rangeEnd": 190000,
+            "currency": "USD",
+            "frequency": "YEAR",
+        },
+    ]
+    assert _pay_range(ranges) == "160000-200000 USD YEAR"
+
+
+def test_rippling_employment_type_empty_label_does_not_fall_back():
+    """`.label` is checked with `is not None`, not truthiness — the same class of bug
+    `_pay_range` fixes for rangeStart/rangeEnd. A present-but-empty label (never observed
+    live, but not ruled out by the API) must be kept, not silently replaced by `.id`."""
+    raw = [
+        {
+            "uuid": "a3",
+            "name": "Contractor",
+            "url": "https://ats.rippling.com/acme/jobs/a3",
+            "_detail": {
+                "employmentType": {"label": "", "id": "Contractor (1099)"},
+            },
+        },
+    ]
+    jobs = get_scraper("rippling", "acme", "Acme").parse(raw, SCRAPED_AT)
+    assert jobs[0].employment_type == ""
 
 
 def test_unknown_ats_raises():

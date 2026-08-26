@@ -5,9 +5,35 @@
 > identical ranges across entries; a full-population re-check (2,057 salaried jobs) found
 > **47 (2.29%)** understate their true maximum because a later entry carries a wider band —
 > e.g. `cat5-resources-llc` serves `25-27 USD HOUR` from entry `[0]` while the real span across
-> all four Level bands is `25-40`. Fixed in `rippling.py`'s `_pay_range()`: it now unions every
-> entry's min/max instead of reading entry `[0]` alone. See
-> `experiment/location-audit-2026-08-25/rippling.md` for the full measurement.
+> all four Level bands is `25-40`. Fixed in `rippling.py`'s `_pay_range()`: it originally unioned
+> every entry's min/max regardless of unit — a bug found in code review (below) — instead of
+> reading entry `[0]` alone. The population figures above (94.2%/347/130/2,057/47/2.29%) were
+> measured in the originating session against a local `experiment/location-audit-2026-08-25/`
+> capture; that path is gitignored (`experiment/` — see `.gitignore`) and was never committed, so
+> it isn't reachable from a fresh clone and this doc is now the only durable record of the claim.
+>
+> **Correction (2026-08-26, code review round 2):** the first fix above pooled raw
+> `rangeStart`/`rangeEnd` across every entry regardless of `currency`/`frequency`, blending
+> mismatched units into one fabricated, mislabeled range. Live-reproduced against a real
+> `journaltech` job
+> (`api.rippling.com/platform/api/ats/v1/board/journaltech/jobs/486e049c-ec9d-4486-a993-dfa4a6b40818`,
+> refetched and confirmed live 2026-08-26): `payRangeDetails` carries three entries at
+> `currency: USD, frequency: YEAR, rangeStart: 160000, rangeEnd: 200000` (LA / Logan / Remote-US)
+> and one at `currency: CAD, frequency: YEAR, rangeStart: 155000, rangeEnd: 190000` (Victoria,
+> Canada) — the buggy code emitted `"155000-200000 USD YEAR"`, mislabeling the CAD figure as USD.
+> Also fixed in the same pass: `rangeStart`/`rangeEnd` of `0` were dropped by a truthy check
+> instead of `is not None`.
+>
+> `_pay_range()` now groups entries by `(currency, frequency)` and takes min/max within
+> whichever unit the **most** entries share (ties fall back to entry `[0]`'s unit), rather than
+> anchoring positionally on entry `[0]` — entry `[0]`'s unit is not known to be guaranteed
+> non-minority by the API, so a positional anchor could let a minority-currency entry sorted
+> first narrow the reported range to just that outlier. This session ran a live spot-check (not
+> a full-population resweep) of ~40 boards / ~120 multi-detail jobs across two batches
+> (`data/validate/liveness/rippling.csv`, sampled both randomly and by job count) and found no
+> further multi-currency example beyond `journaltech` — consistent with the originating session's
+> claimed rarity (23/151 multi-entry jobs, per the uncommitted capture above) but not itself a
+> re-verification of that exact count.
 
 ## Methods tried
 
