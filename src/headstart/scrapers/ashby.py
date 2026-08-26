@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from headstart.models import Job, html_to_text
@@ -56,6 +57,99 @@ def _salary(compensation: dict | None) -> str | None:
     return None
 
 
+def _remote(job: dict) -> bool | None:
+    """Whether the posting is remote — from ``workplaceType``, not ``isRemote``.
+
+    ``isRemote`` is exactly ``workplaceType != "OnSite"``, so it reports **Hybrid as remote**.
+    Measured 2026-08-25 over 16,138 live Jobs: OnSite/false 4,902, Remote/true 4,753,
+    **Hybrid/true 4,183** — a quarter of ashby's Jobs served ``remote=True`` when ashby itself
+    says Hybrid, which a user filtering for remote work sees as a wrong result.
+
+    ``Job.remote`` is tri-state on purpose and hybrid is the case ``None`` exists for: it is
+    neither remote nor on-site, and claiming either is a guess. That is already how
+    ``workday._remote_from`` answers it (``if "hybrid" in norm: return None``); this brings
+    ashby into line rather than inventing a convention.
+    """
+    workplace = job.get("workplaceType")
+    if isinstance(workplace, str) and workplace.strip():
+        norm = workplace.strip().lower()
+        if norm == "remote":
+            return True
+        if norm == "onsite":
+            return False
+        return None  # Hybrid, and anything else ashby adds later
+    flag = job.get("isRemote")
+    return flag if isinstance(flag, bool) else None
+
+
+def _place_names(entry: dict) -> list[str]:
+    """Every distinct place name one location entry carries, headline string first.
+
+    Ashby gives each entry a human ``location`` *and* a structured
+    ``address.postalAddress``; both are worth having, because the human one is the employer's
+    own wording ("SpotDraft HQ, Bengaluru") and the structured one is the part a place filter
+    can actually match.
+    """
+    names = []
+    headline = (entry.get("location") or "").strip()
+    if headline:
+        names.append(headline)
+    postal = (entry.get("address") or {}).get("postalAddress") or {}
+    for key in ("addressLocality", "addressRegion", "addressCountry"):
+        value = (
+            postal.get(key) or ""
+        ).strip()  # some tenants ship "Guatemala " with the space
+        if value:
+            names.append(value)
+    return names
+
+
+def _already_kept(name_lower: str, kept: list[str]) -> bool:
+    """Whether ``name_lower`` is already named, as a whole word/phrase, somewhere in ``kept``.
+
+    A raw substring check is unsound: ``"ca"`` (the ``addressRegion`` code for California) is a
+    literal substring of ``"Vacaville"``, so ``"ca" in "vacaville"`` reads the code as already
+    present and silently drops it — found live, code review round 1:
+    ``_location({"location": "Vacaville", "address": {"postalAddress": {"addressRegion": "CA",
+    ...}}})`` composed ``"Vacaville, United States"`` with the state dropped. Same fix as
+    lever's ``_already_names_country`` (PR #299): require non-letter boundaries around the
+    match, not just containment anywhere.
+    """
+    boundary = r"(?<![a-z]){}(?![a-z])"
+    pattern = boundary.format(re.escape(name_lower))
+    return any(re.search(pattern, k.lower()) for k in kept)
+
+
+def _location(job: dict) -> str | None:
+    """Every place the posting names, not just its headline string.
+
+    The served location *is* the filter substrate — ``geo.where()`` is a raw
+    ``lower(location) LIKE '%term%'`` (ADR-0024) — so a place absent from this string is
+    unfilterable, however well the record knows it. Measured 2026-08-25 over 884 live Boards /
+    16,138 Jobs: **79.43% ship a location omitting a populated component of their own
+    ``address.postalAddress``, and 69.55% carry no country at all** — every one of the 1,057
+    ``"San Francisco"`` rows has ``addressCountry: "United States"`` that never reached the
+    served row. 15.83% omit the *city*, which is the worse direction (``"Israel"`` where the
+    record says Tel Aviv). Separately 17.50% carry a ``secondaryLocations[]`` nothing ever
+    opened — 1,295 of those name a *different country* than the primary, so a genuinely
+    multi-country posting is served as a single-country row and cannot be found by its second
+    country at all.
+
+    Additive rather than replacing: a component is appended only when it is not already named,
+    as a whole word, in a string kept so far — so the employer's own wording survives and a
+    substring filter that worked before still works. That whole-word test is the right one
+    precisely because the filter is a substring match — "Panama" needs no separate entry beside
+    "Panama City", but "India" does beside "Bengaluru", and "CA" does beside "Vacaville" (a bare
+    substring check would wrongly treat "ca" as already present inside "vacaville").
+    """
+    names: list[str] = []
+    for entry in (job, *(job.get("secondaryLocations") or [])):
+        for name in _place_names(entry):
+            if not _already_kept(name.lower(), names):
+                names.append(name)
+    return ", ".join(names) or None
+
+
 class AshbyScraper(BaseScraper):
     ats = "ashby"
 
@@ -74,8 +168,8 @@ class AshbyScraper(BaseScraper):
                     ats=self.ats,
                     company=self.company,
                     title=(j.get("title") or "").strip(),
-                    location=j.get("location"),
-                    remote=j.get("isRemote"),
+                    location=_location(j),
+                    remote=_remote(j),
                     department=j.get("department"),
                     url=j.get("jobUrl", ""),
                     posted_at=j.get("publishedAt"),
