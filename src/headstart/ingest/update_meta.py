@@ -19,8 +19,8 @@ ones. Cheap, and it runs every time.
 change in the code has to reach every row. :data:`doc_prep.DERIVATIONS_VERSION` is compared against
 the watermark in ``data/state/derivations.json``; when the code is newer, every row whose
 description the ADR-0050 store *holds* is re-derived through the full cascade. Rows whose text the
-store does not hold are left alone — recomputing without the text a value came from could only downgrade
-it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
+store does not hold are left alone — recomputing without the text a value came from could only
+downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
 
 **The re-derivation queue** (ADR-0062) is the other half of that: when a run finally supplies one of
 those descriptions, the row is still carrying numbers derived without it, and no version has moved.

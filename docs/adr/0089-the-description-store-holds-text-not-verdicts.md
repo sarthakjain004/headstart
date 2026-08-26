@@ -43,7 +43,7 @@ fetch the first command prints an empty list and reads as a false negative):
 ```bash
 python -m headstart.ingest.state_fetch 'data/descriptions/*'
 
-# the stored verdict, and the store's size for context
+# every null the store holds, and this ATS's own entry count
 python -c "
 import gzip, json, sys; sys.path.insert(0, 'src')
 from pathlib import Path
@@ -53,25 +53,45 @@ for f in _fragments(Path('data/descriptions/eightfold')):
     for line in gzip.open(f, 'rt', encoding='utf-8'):
         if line.strip():
             r = json.loads(line); held[r['id']] = r.get('description')
-print(len(held), 'entries;', [k for k, v in held.items() if v is None])"
+print(len(held), 'eightfold entries;', [k for k, v in held.items() if v is None])"
 
 # what the posting actually serves
 curl -s https://telekom-growthhub.eightfold.ai/careers/job/563465371804571 \
   | python3 -c "import json,re,sys; b=[json.loads(m) for m in re.findall(r'application/ld\+json\">(.*?)</script>', sys.stdin.read(), re.S)]; print(max(len(x.get('description') or '') for x in b if x.get('@type')=='JobPosting'))"
 ```
 
-The store holds **7** `null` entries in total, all eightfold, out of 328,930. This is one of them.
-The other 6 could not be checked either way — their pages no longer serve a `JobPosting` JSON-LD,
-which is consistent with delisting. So the demonstrated error rate is **1 of 7 confirmed wrong, 6
-unverifiable, 0 confirmed correct**, on a state whose entire lifetime output is those 7 records.
+### Every entry the state ever wrote, checked
 
-It is not an isolated posting. A full census of that board on 2026-08-26 — all 219 Jobs, every
-detail fetched, no request errors — found **5** whose `position_details` answers **HTTP 200 with no
-`jobDescription`** while their public pages carry 4,281–5,677 characters of German text (measured
-on all five). All five would have been settled "has none" permanently. **Exactly one of the five
-passes the tech gate** (`tech_filter.is_tech(title, department)` — the ADR-0017 gate that decides
-what reaches `data/jobs/tech/` and therefore the store), which is why one is in the store and the
-other four never could be: `reconcile` only ever sees the tech corpus. That one is the Job above.
+The state's entire lifetime output is **8** `null` entries, all eightfold, out of **417,773**
+entries across the whole store (measured 2026-08-26 — and the same 417,773 the current pipeline's
+`skip-list: … Jobs held` line reports, because the skip-list is the store's key set; after this
+change it publishes 8 fewer). Eight is small enough to check exhaustively, so it was: each
+posting's public page fetched, its JSON-LD `JobPosting` read.
+
+| store entry | its page serves | verdict |
+| --- | --- | --- |
+| `telekom-growthhub…:563465371804571` — Senior DevOps Engineer (m/w/d) | 5,677 chars | **wrong** |
+| `infineon…:563808971791761` — Senior Engineer Verification | 2,790 chars | **wrong** |
+| `infineon…:563808971860630` — Senior Engineer Reliability Product Testing | 2,865 chars | **wrong** |
+| `infineon…:563808971852819` — Senior Engineer Test Engineering (f/m/div) | 2,896 chars | **wrong** |
+| `infineon…:563808971806890` — Devops Architect | 2,923 chars | **wrong** |
+| `infineon…:563808971860633` — Staff Engineer Engineering & Project | `description: ""` | **correct** |
+| `twilio…:1099552052378` | no `JobPosting` JSON-LD | unverifiable |
+| `infineon…:563808971794175` | no `JobPosting` JSON-LD | unverifiable |
+
+**Five of the six checkable entries are wrong.** The sixth is right, and it is the only *tech*
+posting ever confirmed to be in the category this state existed to record — the wider sample below
+found three more, none of them tech. The flag is not occasionally unlucky: over its whole lifetime
+it wrote five falsehoods to buy that one true record.
+
+It is not confined to postings already in the store. A full census of `telekom-growthhub` on
+2026-08-26 — all 219 Jobs, every detail fetched, no request errors — found **5** whose
+`position_details` answers **HTTP 200 with no `jobDescription`** while their public pages carry
+4,281–5,677 characters of German text (measured on all five). All five would have been settled
+"has none" permanently. **Exactly one of the five passes the tech gate**
+(`tech_filter.is_tech(title, department)` — the ADR-0017 gate that decides what reaches
+`data/jobs/tech/` and therefore the store), which is why one is in the store and the other four
+never could be: `reconcile` only ever sees the tech corpus. That one is the first row above.
 
 ### Why no scraper can be trusted with the flag
 
@@ -90,43 +110,28 @@ The same shape appears elsewhere, which is why extending the flag was abandoned 
   was attempted and reverted (see below).
 
 Where it is wrong the flag writes a *permanent* falsehood, suppressing the very signal that a
-description is missing. That asymmetry is what decides this: seven skipped fetches a run is less
-than one silently mis-settled Job — and we have one.
+description is missing. That asymmetry is what decides this: eight skipped fetches a run is less
+than one silently mis-settled Job — and the census above finds five.
 
 ### How rare the middle row actually is
 
-Rare, but not empty. An earlier draft of this ADR claimed the category did not exist, on a 713-Job
-sample; re-measuring wider refuted that. The wider pass ran the real scrapers over boards drawn at
-random from `data/validate/liveness/{ats}.csv`, across six of the eight scrapable **detail-pass**
-ATSes (rippling and smartrecruiters were not probed):
+Rare, but not empty — and the store's own census above is now the proof of both halves, since one
+of its eight entries is a genuine case and five are not. An earlier draft of this ADR claimed the
+category did not exist at all, on a 713-Job sample; re-measuring wider refuted that. Three of the
+wider pass's cases were verified on live JSON-LD and still serve an empty description today:
+`cbts.eightfold.ai/careers/job/1443152815632`, a *Senior Project Manager*;
+`trinet.eightfold.ai/careers/job/44020930`, a *Sales Development Representative*; and, on
+SuccessFactors' `itemprop="description"` span, Hyundai Motor Europe's `1340431355`, which contains
+literally `<div></div>`. None of the three is a tech role.
 
-| ATS | boards | Jobs | empty `description` |
-| --- | --- | --- | --- |
-| eightfold | 16 | 6,249 | 272 |
-| workday | 19 | 2,419 | 1 |
-| ripplehire | 14 | 2,335 | 0 |
-| successfactors | 10 | 1,030 | 1 |
-| zoho | 18 | 942 | 123 |
-| trakstar | 18 | 86 | 2 |
-| **total** | **95** | **13,061** | **399** |
-
-Of the 399, **4** were the middle row — the detail answered and the posting's own public page
-carries an empty description — verified on live JSON-LD (`cbts.eightfold.ai/careers/job/1443152815632`,
-a *Senior Project Manager*, and `trinet.eightfold.ai/careers/job/44020930`, a *Sales Development
-Representative*, both serving `"description": ""`) and on SuccessFactors' `itemprop="description"`
-span, which on Hyundai Motor Europe's `1340431355` contains literally `<div></div>`. **None of the
-4 is a tech role**, so the sample corroborates nothing about the store's lifetime `null` count;
-that count stands on its own observation. Every *large* block of empties in the sample traced to a
-failure rather than an answer — telekom-growthhub's 5 above, `kraftheinz.eightfold.ai`'s 198 of 797
-(instrumented at `_description`: every one non-200), zoho's 123 of 131 "sorry" pages. The rest
-could not be classified.
-
-**What this does not establish.** 95 boards is a sample, not a census: the board draw was random
-and unseeded, so the per-ATS counts are **not** reproducible run-for-run and no committed artifact
-backs them. Read the table as an order-of-magnitude shape, not a rate — the two JSON-LD pages and
-the zoho re-probe cited above were re-verified from scratch, and the falsehood in the store is a
-census of one board plus a store-wide count, which is why the decision rests on those and not on
-this table.
+**That wider pass's per-ATS counts are deliberately not reproduced here.** Its board draw was
+random and unseeded, no committed artifact backs it, and it is not reproducible run-for-run — so
+every restatement of it was a rate nobody could re-derive. That is not hypothetical: a claim this
+sample refuted survived in five other files after the ADR itself had dropped it, and the numbers
+above are quoted here instead precisely because anyone can re-run them. What the wider pass
+established qualitatively stands and is evidenced elsewhere in this document: every *large* block
+of empty descriptions traced to a failure rather than an answer, zoho's "sorry" pages under HTTP
+200 being the clearest case.
 
 A third line of evidence arrived independently the same day:
 [`docs/personio/2026-08-26_descriptions-are-language-scoped.md`](../personio/2026-08-26_descriptions-are-language-scoped.md)
@@ -144,9 +149,15 @@ forever" cost it was meant to prevent never existed for them: they re-fetch ever
 regardless, settled or not.
 
 That also resolves what the per-run counters were really reporting. `update_descriptions` logs
-~1,974 Jobs per run with no description and no stored answer. The overwhelming majority are not
-postings that lack a description — they are **fetch failures**: NGC's 3,536 missing details
-(ADR-0088), successfactors' unreadable pages, zoho's. Every one is correctly *not* settled.
+**1,974–2,165** Jobs per run with no description and no stored answer (five consecutive runs,
+2026-08-26). They are not postings that lack a description — they are **fetch failures**, and the
+per-ATS split names them: successfactors 844–872 every run, zoho 390–409, workday 111–615,
+smartrecruiters 119–132, and personio anywhere from 1 to 343 (it swings run to run as its Boards
+enter and leave the slice). Eightfold, the one scraper that ever set the flag,
+contributes **0 or 1**. Workday's large detail losses (ADR-0088) mostly never reach this counter at
+all — they are repaired from the store instead, 2,810–7,862 `filled` per run — which is the store
+doing precisely the job it was built for. Every one of these is correctly *not* settled, and across
+those five runs the settle branch fired **0** times.
 
 ## Decision
 
@@ -170,11 +181,15 @@ already treats them as unheld.
 
 ## Consequences
 
-**Eightfold re-fetches those 7 Jobs, and every genuinely empty posting it finds after.** They are
-the only Jobs the removed state was skipping, on the only scraper that skips. The 95-board sample
-found no tech Job genuinely lacking a description at all, so the store's own lifetime count of 7 is
-the only measurement of the population — single digits per full sweep, and only when their boards
-are in slice. This is the price of the removal, and it is paid every run rather than once.
+**Eightfold re-fetches those 8 Jobs, and every genuinely empty posting it finds after.** They are
+the only Jobs the removed state was skipping, on the only scraper that skips: eight detail fetches
+per full sweep, and only when their boards are in slice. That is the whole measured price, and it
+is paid every run rather than once.
+
+Seven of the eight were never members of the population anyway — five are confirmed wrong, two
+unverifiable. **One is a confirmed member**, `infineon…:563808971860633`, whose page really does
+serve an empty description. So what the state bought over its whole lifetime was one true record
+against five false ones, and it is that ratio, not the count, the removal is priced against.
 
 **A genuinely description-less posting is now chased forever** — it stays in the ADR-0062 gap
 ledger, so `scrape_plan` keeps reserving exploration budget for its Board. The bound is the quota,
@@ -185,8 +200,8 @@ rather than sinks. If the population ever stops being noise, that is where it sh
 unsettled count never falls despite being scraped.
 
 **The `unrecorded` counter now means one thing** — we do not have this description — rather than
-"we do not have it and could not tell you why". Its magnitude moves by single digits, since that is
-how often the settle branch was firing.
+"we do not have it and could not tell you why". Its magnitude does not move at all on today's data:
+the settle branch logged `settled 0 as having none` in each of the five runs measured above.
 
 **A scraper that starts consulting `have_details` no longer inherits a hidden obligation.** The old
 model required it to also set `detail_fetched` or silently re-fetch description-less postings
@@ -207,8 +222,8 @@ each scraper could be made to report, eightfold is the proof that the honesty re
 caller.
 
 **Keep the flag and make every scraper consult `have_details`.** That would give the skip-list real
-teeth — the ~414,648 ids it publishes each run would start saving fetches on the seven other
-scrapable detail-pass ATSes. It
+teeth — the 417,773 ids it publishes each run (2026-08-26, growing 500–800 a run) would start
+saving fetches on the seven other scrapable detail-pass ATSes. It
 is a genuinely attractive change and it is *not* what this ADR forecloses: it can be made later,
 and would then need its own decision about detail-derived fields (workday's `startDate` is the only
 `posted_at` source, and `_posting_key` reads `jobReqId`, so skipping a detail renames postings —

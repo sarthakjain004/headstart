@@ -20,20 +20,19 @@ coverage rather than as not measured.
 
 **The store holds text, and membership means exactly that: we have this Job's description.** It
 briefly recorded a second kind of entry — a ``null`` meaning "the detail answered and this posting
-genuinely has none" — gated on ``Job.detail_fetched``. That was removed (ADR-0089). The state is
-real but tiny: measured 2026-08-26 over 13,061 live Jobs on 95 boards across six detail-pass
-ATSes, 399 descriptions came back empty and only **4** were a posting that genuinely has none —
-none of them a tech role. The store's own lifetime count of **7** such entries (0.002% of 328,930)
-is the only measure of the population.
+genuinely has none" — gated on ``Job.detail_fetched``. That was removed (ADR-0089) because the
+flag feeding it is wrong on live data. Instrumented on `telekom-growthhub.eightfold.ai`,
+eightfold's ``position_details`` answers HTTP 200 with no ``jobDescription`` for 5 of 5 postings
+whose public pages carry full text — so ``_description_of`` returns ``""``, ``detail_fetched``
+would have been ``True``, and all five would have been settled "has none" permanently.
 
-What removed the state is that the flag feeding it is wrong on live data. Instrumented on
-`telekom-growthhub.eightfold.ai`, eightfold's ``position_details`` answers HTTP 200 with no
-``jobDescription`` for 5 of 5 postings whose public pages carry full text — so
-``_description_of`` returns ``""``, ``detail_fetched`` would have been ``True``, and all five
-would have been settled "has none" permanently. One of them passes the tech gate. A completed
-fetch is not an authoritative answer, and a wrong settle is a *permanent* falsehood that suppresses
-the very signal that a description is missing. ``read_store`` skips any legacy ``null`` so "held"
-means one thing everywhere; ``--compact`` drops them on its next pass.
+The state's whole lifetime output was 8 ``null`` entries, all eightfold; checking every one of
+their public pages found **5 wrong, 1 right, 2 unverifiable**. A completed fetch is not an
+authoritative answer, and a wrong settle is a *permanent* falsehood that suppresses the very
+signal that a description is missing. ``read_store`` skips any legacy ``null`` so "held" means one
+thing everywhere; ``--compact`` drops them on its next pass. ADR-0089 carries the per-entry table
+and the repro; do not restate its wider sample here — that draw was unseeded and is not
+reproducible.
 
 **Writes are append-only** (ADR-0050). Each run writes one small ``{seq}.jsonl.gz`` fragment per
 ATS holding only what changed; the ``base.jsonl.gz`` is rewritten only by ``--compact``. Readers
@@ -213,13 +212,13 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
                     # No text this run and none stored, so the next run starts here again.
                     #
                     # Deliberately NOT called "the detail never ran", and no longer split by
-                    # whether it did: measured 2026-08-26 (ADR-0089), only 4 of 399 empty
-                    # descriptions across 13,061 live Jobs were a posting that genuinely has none,
-                    # and the signal that would separate those from a bad fetch is wrong on live
-                    # data — eightfold answers 200 with no description for postings that have one,
-                    # 5 of 5 on one board — so splitting on it mis-settles more Jobs than it
-                    # spares. The count is exact — these Jobs really are unrecorded and really do
-                    # return every run.
+                    # whether it did: the signal that would separate a posting genuinely without a
+                    # description from a bad fetch is wrong on live data — eightfold answers 200
+                    # with no description for postings that have one, 5 of 5 on one board, and
+                    # 5 of the 6 checkable entries the split ever wrote were falsehoods (ADR-0089)
+                    # — so splitting on it mis-settles more Jobs than it spares. The count is
+                    # exact — these Jobs really are unrecorded and really do return every run —
+                    # but the cause behind it is not one this branch can distinguish.
                     unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 

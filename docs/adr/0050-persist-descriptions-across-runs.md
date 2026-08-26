@@ -136,9 +136,10 @@ description leaves the retry set after one successful fetch.
 
 > **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
 > The last sentence no longer holds: with the `null` entry gone, a posting that genuinely has no
-> description never leaves the retry set. ADR-0089's 95-board sample found no such tech posting at
-> all, so the store's own lifetime count of 7 `null` entries is the only measure of the population.
-> That is the cost ADR-0089 accepts.
+> description never leaves the retry set. Exactly one such posting has ever been confirmed — one
+> of the 8 `null` entries the store accumulated, the other five checkable ones being postings that
+> *do* have a description. That is the cost ADR-0089 accepts, and the price of not paying it was
+> five falsehoods in production data.
 
 **A pre-ADR-0050 `meta.jsonl` row carries no flag**, and is read as degraded only on an ATS with a
 detail pass (`BaseScraper.has_detail_pass`). Reading absence as degraded everywhere would re-embed

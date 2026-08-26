@@ -104,11 +104,10 @@ def test_a_failed_fetch_is_counted_as_unrecorded(tmp_path):
 
 def test_a_legacy_null_entry_reads_as_unheld(tmp_path):
     """The store briefly recorded `null` for "the detail answered and this posting genuinely has
-    none". That state was removed — measured 2026-08-26, 7 such entries existed across 328,930,
-    and of 399 empty descriptions across 13,061 live Jobs only 4 were a posting that genuinely
-    has none, on a signal that is wrong on live data: eightfold answers 200 with no description
-    for postings that have one, 5 of 5 on one board (ADR-0089) — but the entries are still on
-    disk.
+    none". That state was removed (ADR-0089) because the signal feeding it is wrong on live data:
+    eightfold answers 200 with no description for postings that have one, and of the 8 `null`
+    entries the state wrote over its lifetime, 5 of the 6 checkable ones name a posting whose page
+    serves a real description. The entries are still on disk.
 
     They must read as *unheld*, not as held-with-no-text: the skip-list is what tells the scrape
     not to bother, and an id on it that the store cannot supply is a description lost for good.
