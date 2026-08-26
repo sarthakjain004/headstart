@@ -81,8 +81,10 @@ language variant may only supply a block the bare feed left childless.
 **`?language=` scopes the descriptions, not the position list.** Merging a variant back by
 position id would be unsafe if the parameter also filtered *which* positions came back — a short
 variant read as the Board's list would look like a truncation and could drive an eviction. It does
-not: over **140 Boards / 938 positions** (seed 31337, a third independent sample) no variant ever
-added or dropped a position relative to the bare feed. The design does not rely on that holding —
+not: over **138 Boards / 938 positions** (seed 31337 — 140 sampled, 138 fetched; see the holdout
+below) no variant ever added or dropped a position relative to the bare feed. An independent
+re-check at review time agreed: 148 variant-vs-bare comparisons over 37 further Boards, zero
+mismatches. The design does not rely on that holding —
 the Board's position list is always the bare feed's, an unknown id in a variant is ignored, and an
 absent one simply stays unfilled — but it is why the merge is a pure description fill.
 
@@ -122,8 +124,9 @@ language list was chosen on — 344 boards, 2,442 positions, 311 tech:
 Every tech empty in the holdout was recovered. Cost is bounded and mostly zero: 288 of 344 Boards
 pay no extra request at all, 40 pay one, and no Board pays more than four.
 
-Re-measured independently at code-review time on a fourth sample (seed 31337, 140 Boards / 938
-positions, 138 fetched): empty descriptions **78 → 1**, **1.21 requests per Board**, 116 of 138
+Re-measured independently at code-review time on a third sample (seed 31337, 140 Boards drawn and
+138 fetched — the other 2 are departed tenants whose feed 307s to `personio.com`, the #313 case —
+for 938 positions): empty descriptions **78 → 1**, **1.21 requests per Board**, 116 of 138
 Boards paying nothing extra, and a worst case of exactly four extra —
 `albaberlin.jobs.personio.com`, whose one empty position is empty in all four variants too. The
 same run re-measured the counterfactual: a blanket `?language=en` would have recovered 66

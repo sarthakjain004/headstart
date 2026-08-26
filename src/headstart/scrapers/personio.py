@@ -235,11 +235,10 @@ class PersonioScraper(BaseScraper):
 
     def url(self) -> str:
         # The board URL carries no ?language=, and must not: that parameter is a *filter*, not a
-        # translation preference — it empties the description of every posting without a
-        # translation in the code asked for (measured: a blanket `?language=en` destroys 1,159
-        # descriptions to recover 133). The bare feed serves the tenant's own default language,
-        # which is the most any single request can carry. `fetch_raw` re-asks per language to
-        # *fill* what this one leaves empty, never to replace what it returned.
+        # translation preference, so pinning one here empties every posting that lacks that
+        # translation. The bare feed serves the tenant's own default, which is the most any single
+        # request can carry; `fetch_raw` re-asks per language to *fill* what this leaves empty,
+        # never to replace what it returned, and carries the measurement that decided it.
         return f"https://{self.slug}/xml"
 
     def fetch_raw(self) -> Any:
@@ -281,8 +280,10 @@ class PersonioScraper(BaseScraper):
         exists, it is simply not the translation served. Nothing was being mis-parsed: measured
         live 2026-08-26 over 296 Boards / 2,029 positions, all 191 empty positions had a
         `<jobDescriptions>` element with zero `<jobDescription>` children and no unread sibling
-        carrying the text. It cost 9.41% of positions and **22.41% of tech ones**, matching the
-        27.2% the `update_descriptions` stage reported personio leaving unrecorded every run.
+        carrying the text. It cost 9.41% of positions and **22.41% of tech ones** in that sample —
+        the same defect the `update_descriptions` stage reports from production as 27.2% of tech
+        Jobs unrecorded. The rates are not the same measure on the same population, so read them
+        as agreeing in kind, not in value; a later holdout put the tech rate at 14.15%.
 
         Re-asking per language recovers 187 of those 191 (97.9%). The remaining 4 (none of them
         tech) are empty in every variant and carry their description only on the HTML job page's
@@ -336,14 +337,14 @@ class PersonioScraper(BaseScraper):
         response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.
         root = ET.fromstring(response.text.encode("utf-8"))
-        description_less: dict[str, ET.Element] = {}
+        unfilled: dict[str, ET.Element] = {}
         for pos in root.findall("position"):
             jid = _text(pos, "id")
             if jid and _description(pos) is None:
-                description_less[jid] = pos
+                unfilled[jid] = pos
 
         for lang in _DESCRIPTION_LANGUAGES:
-            if not description_less:
+            if not unfilled:
                 break
             try:
                 alt = ET.fromstring(
@@ -357,7 +358,7 @@ class PersonioScraper(BaseScraper):
                 continue
             for pos in alt.findall("position"):
                 jid = _text(pos, "id")
-                target = description_less.get(jid) if jid else None
+                target = unfilled.get(jid) if jid else None
                 filled = pos.find("jobDescriptions")
                 # `target is None` is what makes this fill-only: a position the bare feed already
                 # described is not in the dict, so no variant can reach it. The dict is also how
@@ -368,7 +369,7 @@ class PersonioScraper(BaseScraper):
                 if stale is not None:
                     target.remove(stale)
                 target.append(filled)
-                del description_less[jid]
+                del unfilled[jid]
         return root
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
