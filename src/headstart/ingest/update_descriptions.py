@@ -18,12 +18,14 @@ simply correct again. It also repairs ``scripts/enrich/experience_coverage.py``,
 left reading ``description: null`` for every already-embedded Eightfold Job and reporting it as no
 coverage rather than as not measured.
 
-**The store answers two questions, so it records two kinds of entry.** A text entry means we hold
-this Job's description. A ``null`` entry means the detail pass *answered* and this posting has no
-description — authoritative absence, recorded so the Job is not re-fetched every run forever. A Job
-absent from the store entirely is one we have never settled, and it keeps being fetched. That
-distinction rides in on ``Job.detail_fetched``; without it, a failed fetch and a genuinely
-description-less posting are the same empty string in the corpus.
+**The store holds text, and membership means exactly that: we have this Job's description.** It
+briefly recorded a second kind of entry — a ``null`` meaning "the detail answered and this posting
+genuinely has none" — gated on ``Job.detail_fetched``. That was removed: measured 2026-08-26, the
+category barely exists (0 of 713 live Jobs sampled across 12 ATSes carried no description, and the
+store had accumulated **7** such entries in its lifetime, 0.002% of 328,930), while the flag it
+needed was set by one scraper of the nine with a detail pass — so an empty description in the
+corpus is, in practice, always a fetch that failed. ``read_store`` skips any legacy ``null`` so
+"held" means one thing everywhere; ``--compact`` drops them on its next pass.
 
 **Writes are append-only** (ADR-0050). Each run writes one small ``{seq}.jsonl.gz`` fragment per
 ATS holding only what changed; the ``base.jsonl.gz`` is rewritten only by ``--compact``. Readers
@@ -60,7 +62,6 @@ _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _STORE = REPO_ROOT / "data" / "descriptions"
 _PRIOR_META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _BASE = "base.jsonl.gz"
-_MISSING = object()  # distinguishes "no entry" from an entry whose value is None
 
 
 def _fragments(ats_dir: Path) -> list[Path]:
@@ -92,19 +93,27 @@ def _sequence(path: Path) -> int:
     return int(path.name.split(".", 1)[0])
 
 
-def read_store(ats_dir: Path) -> dict[str, str | None]:
-    """``{Job id: description}`` for one ATS, where ``None`` means *authoritatively has none*.
+def read_store(ats_dir: Path) -> dict[str, str]:
+    """``{Job id: description}`` for one ATS. Membership means we hold this Job's text.
 
-    Membership answers "do we hold this Job's detail?"; the value answers "what is it?".
+    A legacy ``null`` entry — the removed "authoritatively has none" state, 7 of them, all
+    eightfold — is skipped rather than returned, so a Job it names is treated as unheld and
+    fetched again like any other. Skipping on read (rather than migrating the files) is what
+    makes the removal self-healing: ``compact`` rewrites the base from this function, so the
+    entries disappear on its next pass with no migration step.
     """
-    held: dict[str, str | None] = {}
+    held: dict[str, str] = {}
     for path in _fragments(ats_dir):
         with gzip.open(path, "rt", encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line:
                     record = json.loads(line)
-                    held[record["id"]] = record.get("description")
+                    description = record.get("description")
+                    if isinstance(description, str) and description:
+                        held[record["id"]] = description
+                    else:  # a legacy null, or a later entry blanking an earlier one
+                        held.pop(record["id"], None)
     return held
 
 
@@ -124,10 +133,9 @@ class Reconciled(NamedTuple):
 
     filled: int
     learned: int
-    settled: int
-    #: No fresh text, nothing stored, and no authoritative "has none" recorded. These Jobs come
-    #: back unchanged every run: the backlog that does not shrink on its own, invisible until it
-    #: was counted. Says nothing about *why* — see the comment at the branch that counts it.
+    #: No fresh text and nothing stored. These Jobs come back unchanged every run: the backlog
+    #: that does not shrink on its own, invisible until it was counted. Says nothing about *why*
+    #: — see the comment at the branch that counts it.
     unrecorded: int
     rederive_ids: list[str]
 
@@ -139,15 +147,14 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
     stored or changed, postings recorded as authoritatively having none, postings left with no
     description and no stored answer either way, and the ids behind the second and third.
 
-    ``rederive_ids`` is the ADR-0062 marking. A Job whose description settles *now* still carries
+    ``rederive_ids`` is the ADR-0062 marking. A Job whose description arrives *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
     skips ids it has embedded, and ``update_meta``'s version sweep only fires on a
-    ``DERIVATIONS_VERSION`` bump. Both entry kinds belong in it — a text entry gives the cascade
-    something new to read, and an authoritative ``null`` is equally a settled answer.
+    ``DERIVATIONS_VERSION`` bump.
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = settled = unrecorded = 0
+    filled = unrecorded = 0
 
     # The rewrite streams through a temp file rather than buffering the corpus a second time —
     # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
@@ -165,38 +172,30 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
             if fresh:
                 # Fresh text always wins: a re-fetch is more current than the store, and this is
                 # the only path by which an edited posting reaches it.
-                if held.get(job_id, _MISSING) != fresh:
+                if held.get(job_id) != fresh:
                     learned.append({"id": job_id, "description": fresh})
             else:
-                stored = held.get(job_id, _MISSING)
-                if isinstance(stored, str) and stored:
+                stored = held.get(job_id)
+                if stored:
                     job["description"] = (
                         stored  # a failed fetch must not erase good text
                     )
                     filled += 1
-                elif stored is _MISSING and job.get("detail_fetched"):
-                    # The detail answered and there is no description. Record that, or this Job is
-                    # re-fetched on every run for the rest of its life.
-                    learned.append({"id": job_id, "description": None})
-                    settled += 1
-                elif stored is _MISSING:
-                    # No text, nothing stored, and `detail_fetched` falsy — so this run learned
-                    # nothing about it and recorded nothing, and the next run starts here again.
+                else:
+                    # No text this run and none stored, so the next run starts here again.
                     #
-                    # Deliberately NOT called "the detail never ran": `detail_fetched` is set by
-                    # eightfold alone, while nine scrapers declare `has_detail_pass`, so on the
-                    # other eight a detail that *did* run and found nothing lands here too. The
-                    # count is exact — these Jobs really are unrecorded and really do return every
-                    # run — but the cause behind it is not one this field can distinguish.
+                    # Deliberately NOT called "the detail never ran", and no longer split by
+                    # whether it did: measured 2026-08-26, a Job that genuinely carries no
+                    # description is vanishingly rare (0 of 713 sampled live across 12 ATSes),
+                    # so in practice every Job here is a fetch that failed. The count is exact —
+                    # these Jobs really are unrecorded and really do return every run.
                     unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
     if learned:
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
-    return Reconciled(
-        filled, len(learned) - settled, settled, unrecorded, [r["id"] for r in learned]
-    )
+    return Reconciled(filled, len(learned), unrecorded, [r["id"] for r in learned])
 
 
 def _embedded_ids(meta_path: Path) -> set[str]:
@@ -212,11 +211,15 @@ def _embedded_ids(meta_path: Path) -> set[str]:
     return ids
 
 
-def _ats_settled_ids(ats_dir: Path) -> set[str]:
-    """One ATS's settled ids, values skipped.
+def _ats_held_ids(ats_dir: Path) -> set[str]:
+    """One ATS's held ids — the Jobs whose description text the store carries.
 
     Reading through :func:`read_store` instead would materialise every description (~1 GB of text)
     to look at the keys. Both callers below want only the keys, in different shapes.
+
+    Applies :func:`read_store`'s own rule rather than counting every line: an entry with no text
+    (a legacy ``null``) does not mean we hold anything, and a skip-list that said otherwise would
+    tell the scrape not to fetch a description the store cannot supply.
     """
     ids: set[str] = set()
     for path in _fragments(ats_dir):
@@ -224,12 +227,17 @@ def _ats_settled_ids(ats_dir: Path) -> set[str]:
             for line in fh:
                 line = line.strip()
                 if line:
-                    ids.add(json.loads(line)["id"])
+                    record = json.loads(line)
+                    description = record.get("description")
+                    if isinstance(description, str) and description:
+                        ids.add(record["id"])
+                    else:
+                        ids.discard(record["id"])
     return ids
 
 
-def settled_ids(store_root: Path) -> set[str]:
-    """Every Job id the store settles, across every ATS — the ADR-0062 gap ledger's input.
+def held_ids(store_root: Path) -> set[str]:
+    """Every Job id the store holds text for, across every ATS — the ADR-0062 gap ledger's input.
 
     Same membership question :func:`write_held_details` publishes for the scrape, answered in
     memory for callers that need the set rather than the file.
@@ -238,24 +246,23 @@ def settled_ids(store_root: Path) -> set[str]:
     if not store_root.is_dir():
         return ids
     for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
-        ids |= _ats_settled_ids(ats_dir)
+        ids |= _ats_held_ids(ats_dir)
     return ids
 
 
 def write_held_details(store_root: Path, out_path: Path) -> int:
-    """Publish every id the store has settled — the scrape's detail skip-list (ADR-0050).
+    """Publish every id the store holds text for — the scrape's detail skip-list (ADR-0050).
 
-    Both entry kinds belong here: we hold the text, or we know there is none. Either way the
-    detail pass has nothing left to learn, so the fetch is pure cost.
+    The detail pass has nothing left to learn for these Jobs, so the fetch is pure cost.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     with gzip.open(out_path, "wt", encoding="utf-8") as dst:
-        # Streamed per ATS rather than through `settled_ids`: duplicates across fragments are
+        # Streamed per ATS rather than through `held_ids`: duplicates across fragments are
         # collapsed per ATS, which is all the dedupe this needs, and holding one ATS's keys at a
         # time keeps the whole store's id set off the heap.
         for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
-            seen = _ats_settled_ids(ats_dir)
+            seen = _ats_held_ids(ats_dir)
             for job_id in seen:
                 dst.write(job_id + "\n")
             written += len(seen)
@@ -298,7 +305,7 @@ def main() -> int:
     ap.add_argument(
         "--pending-rederive",
         default=str(PENDING_REDERIVE_PATH),
-        help="queue of ids whose description settled this run, for update_meta (ADR-0062)",
+        help="queue of ids whose description arrived this run, for update_meta (ADR-0062)",
     )
     ap.add_argument(
         "--prior-meta",
@@ -345,18 +352,18 @@ def main() -> int:
         unrecorded += done.unrecorded
         _log.info(
             f"{ats}: filled {done.filled:,} from the store, learned {done.learned:,}, "
-            f"settled {done.settled:,} as having none, queued {len(rederive):,} to re-derive"
+            f"queued {len(rederive):,} to re-derive"
             + (f", {done.unrecorded:,} still unrecorded" if done.unrecorded else "")
         )
     _log.info(
         f"skip-list: {write_held_details(store, Path(args.held_details)):,} Jobs held"
     )
-    _log.info(f"re-derive queue: {queued:,} newly settled -> {args.pending_rederive}")
+    _log.info(f"re-derive queue: {queued:,} newly stored -> {args.pending_rederive}")
     if unrecorded:
         _log.info(
-            f"{unrecorded:,} Job(s) carry no description and no stored answer either way — "
-            "nothing was learned or recorded for them this run, so they stay outside Tier-2 "
-            "extraction until some later run's detail fetch settles them (ADR-0050)"
+            f"{unrecorded:,} Job(s) carry no description and none is stored — nothing was "
+            "learned for them this run, so they stay outside Tier-2 extraction until some later "
+            "run's detail fetch supplies the text (ADR-0050)"
         )
     return 0
 

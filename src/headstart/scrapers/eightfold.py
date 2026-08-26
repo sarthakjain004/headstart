@@ -311,10 +311,6 @@ class EightfoldScraper(BaseScraper):
                     "url": f"https://{self.slug}{path}"
                     if path.startswith("/")
                     else path,
-                    # `desc` is None when the detail was skipped or failed, "" when it answered
-                    # with no description — which the store records as authoritative absence so
-                    # the Job stops being re-fetched every run (ADR-0050).
-                    "detail_fetched": desc is not None,
                     "fields": {
                         "title": pos.get("name"),
                         "description": desc or None,
@@ -370,13 +366,10 @@ class EightfoldScraper(BaseScraper):
                 f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
             )
         return [
-            # The per-job page *is* this path's detail fetch, so reaching it settles whether a
-            # description exists — same two-state rule as the API path (ADR-0050).
             {
                 "id": _sitemap_position_id(u),
                 "url": u,
                 "fields": f,
-                "detail_fetched": f is not None,
             }
             for u, f in zip(listed, fields)
         ]
@@ -453,7 +446,6 @@ class EightfoldScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
-                    detail_fetched=bool(item.get("detail_fetched")),
                 )
             )
         return jobs

@@ -63,7 +63,7 @@ from headstart.corpus import board_of, iter_jobs
 from headstart.harvest import COST_FILENAME
 from headstart.ingest import REPO_ROOT, board_failures, observability
 from headstart.ingest.index_plan import read_unauthoritative_boards, resolve_board
-from headstart.ingest.update_descriptions import settled_ids
+from headstart.ingest.update_descriptions import held_ids
 
 _log = log.get(__name__, __spec__)
 
@@ -233,7 +233,7 @@ def gap(args: argparse.Namespace) -> int:
         _log.warning(f"gap: no {args.meta} yet — nothing embedded, so no gap to record")
         return 0
 
-    held = settled_ids(args.descriptions)
+    held = held_ids(args.descriptions)
     if not held:
         # The join fetches the description store on a warn-only fallback, so an empty one here
         # means the download failed, not that nothing is settled. Writing the ledger now would
