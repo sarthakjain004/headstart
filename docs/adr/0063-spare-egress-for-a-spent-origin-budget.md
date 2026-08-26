@@ -310,7 +310,9 @@ Measured live 2026-08-26, three independent ways, each on its own sample:
   union of the two runs' failure lists — redirects to the marketing site. Against a base rate of
   **8 of 600** randomly sampled live Boards (1.33%), with **0 of 600** redirecting anywhere else
   and **0** that redirect and still serve a feed. One of the 8, `brugg-rohrsysteme-gmbh`, is itself
-  a terminal-429 Board. The association is total, in both directions.
+  a terminal-429 Board. The association is total, in both directions. (The `live` figures are the
+  original survey; the dead-row figures quoted elsewhere in this amendment — 184 of 200 — come
+  from an independent re-measure during review of #313, on its own sample.)
 - **A different egress IP does not clear it.** The real scraper, driven against those Boards with
   this opt-in live, rotated the spare egress through **three verified-distinct addresses**
   (`104.28.220.169`, `104.28.220.175`, `104.28.252.174` — the module's own trace confirming
@@ -326,8 +328,9 @@ Measured live 2026-08-26, three independent ways, each on its own sample:
   clears the challenge is 1.7 MB of marketing HTML.
 
 **What the shard report said, and why it could not have caught this.** The reported rescue rate was
-95.0% and 95.9% — healthy by the stated criterion — while the outcome the opt-in was adopted to fix
-did not move at all: terminal 429 Board failures were 14 and 14, against a pre-fix baseline of
+95.9% and 95.0% — healthy by the stated criterion — while the outcome the opt-in was adopted to fix
+did not move at all: terminal 429 Board failures were 14 and 14 (in the run order named above,
+as is every paired figure here), against a pre-fix baseline of
 **12.1/run (n=8 runs, sd 2.7, range 8-16)**, i.e. inside noise and marginally *worse* by rate. The
 tightest control, run `32932727429`, differs from the post-fix runs by exactly this one commit and
 had 16.
@@ -343,9 +346,9 @@ outcome can answer whether the fallback bought anything. *Any* future opt-in jud
 inherits the same blind spot — Workday's amendment above included.
 
 **And it cost something.** `ProxyError` on personio (`curl: (97) Failed to receive SOCKS response,
-proxy closed connection`) was 0 across all 8 pre-fix runs and 3 and 1 across the two post-fix ones —
+proxy closed connection`) was 0 across all 8 pre-fix runs and 1 and 3 across the two post-fix ones —
 all 4 ProxyErrors in those runs are personio. Total personio terminal Board failures went
-12.1/run -> 17 and 15. A wall that no IP can clear turns rotation into a tight loop (`deltia-ai`
+12.1/run -> 15 and 17. A wall that no IP can clear turns rotation into a tight loop (`deltia-ai`
 rotated 4 times in 20s), and a Board riding the tunnel when it restarts dies with it. `fetch`'s
 transport-error path does not rotate or re-dial — it retries the same cached SOCKS port — so once
 the spare egress is not carrying traffic, the remaining attempts are spent on a route that cannot

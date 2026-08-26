@@ -24,6 +24,30 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 
 
+def _redirect_host(location: str | None) -> str:
+    """The host a `Location` points at, normalised for comparison — `""` when it names none.
+
+    Lowercased and port-stripped because a host comparison that is neither reads a Board's own
+    host as a *different* one, and this comparison is what decides whether a Board ages toward
+    ADR-0058 quarantine: `Zellerfeld.jobs.personio.com:443` and `zellerfeld.jobs.personio.com`
+    are one host, and calling them two would retire a live Board. The trailing root dot goes for
+    the same reason. Every `Location` personio was observed to send is already the bare lowercase
+    `https://personio.com` (19 of 19 redirects across 600 sampled Boards, 2026-08-26), so this
+    normalisation is about which way the check fails if that ever changes, not about traffic
+    today.
+
+    A **relative** target (`/xml/`) names no host and is this same host by definition, so it
+    yields `""`. A **protocol-relative** one (`//personio.com/`) does name a host, and is
+    resolved rather than mistaken for the relative case.
+    """
+    text = (location or "").strip()
+    if text.startswith("//"):
+        text = f"https:{text}"
+    elif "://" not in text:
+        return ""
+    return host_of(text).lower().partition(":")[0].rstrip(".")
+
+
 def _text(pos: ET.Element, tag: str) -> str | None:
     e = pos.find(tag)
     return e.text.strip() if e is not None and e.text and e.text.strip() else None
@@ -200,7 +224,12 @@ class PersonioScraper(BaseScraper):
         return f"https://{self.slug}/xml"
 
     def fetch_raw(self) -> Any:
-        """The tenant's XML feed — refusing to follow a redirect off the Board host.
+        """The tenant's XML feed — following no redirect, and reading the target as the signal.
+
+        A redirect is never followed. Where it *points* then decides the verdict: an **off-host**
+        target says the Board is not where the ledger has it and is reported as gone, while a
+        same-host or relative one is a path normalisation and merely fails the fetch, because
+        reading that as gone would retire a live Board (see :func:`_redirect_host`).
 
         A tenant that has left personio need not 404 — most do (184 of 200 sampled dead ledger
         rows), but a departed subdomain that is still routed does not: `https://{host}/xml`
@@ -235,22 +264,25 @@ class PersonioScraper(BaseScraper):
             **self._egress(),
         )
         if response.status_code in _REDIRECTS:
-            location = response.headers.get("location") or ""
-            target = host_of(location)  # "" for a relative Location, which is same-host
-            # Only an **off-host** target says the Board is gone. A relative or same-host
+            target = _redirect_host(response.headers.get("location"))
+            # Only an **off-host** target says the Board is gone. A same-host or relative
             # Location is a path normalisation, and reading one as gone would age a live Board
             # toward ADR-0058 quarantine on evidence the origin never gave — the one direction
             # this check must not fail in. None was seen (0 of 600 live and 0 of 200 dead Boards
             # sampled 2026-08-26 redirect anywhere but the marketing site), so it fails the fetch
             # loudly and leaves the verdict to a run that gets an answer.
-            if not target or target == self.slug:
+            #
+            # This branch's message is built only from values we control, never from `Location`:
+            # it is matched by `board_failures._GONE`, so echoing origin-controlled text here
+            # would let the origin flip the verdict to the direction that quarantines.
+            if not target or target == self.slug.lower():
                 raise http.RequestsError(
-                    f"personio redirected {self.url()} to {location or '(no location)'}, "
-                    f"which is not off the board host — not treating it as gone"
+                    f"personio answered {response.status_code} for {self.url()} with a "
+                    f"{'relative' if not target else 'same-host'} Location — not off the board "
+                    f"host, so not read as gone"
                 )
             raise http.RequestsError(
-                f"HTTP Error 404: no personio board for {self.slug} — /xml redirects to "
-                f"{location}"
+                f"HTTP Error 404: no personio board for {self.slug} — /xml redirects to {target}"
             )
         response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.

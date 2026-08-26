@@ -68,6 +68,15 @@ class BaseScraper(ABC):
     #: that means "this request is wrong" — a 401, a 404 — must never appear here; rotating egress
     #: would not fix it and would spend a second budget learning that.
     #:
+    #: **Trace the status to its actual origin before reaching for this.** An aggregate count of
+    #: one status across runs is a symptom, not a mechanism, and two ATSes have now been opted in
+    #: on exactly that and reverted: freshteam's 429s were 502s from a down origin (#311), and
+    #: personio's were a departed tenant's redirect to a bot-walled marketing site (#312, reverted
+    #: by #313 — ADR-0063's 2026-08-26 amendment). Note also that the shard report's `recovered`
+    #: rate cannot adjudicate this: it buckets every request the spare egress carries once the
+    #: group is walled, so it sits ~95% whether or not the fallback bought anything. Only a
+    #: per-Board outcome can.
+    #:
     #: Only requests made through :meth:`_get` carry the opt-in. A scraper that calls
     #: ``http.fetch`` or ``http.fetch_async`` directly (most of them do, for their detail passes) must pass
     #: ``**self._egress()`` itself, or setting this is silently inert.

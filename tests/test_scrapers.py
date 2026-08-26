@@ -5095,24 +5095,59 @@ def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
     assert GreenhouseScraper("acme")._egress() == {}
 
 
-def test_personio_stays_on_its_direct_route_on_429():
+def test_personio_stays_on_its_direct_route_on_429(monkeypatch):
     """#312's spare-egress opt-in is reverted: personio's 429 is not an origin budget.
 
     Measured live 2026-08-26 (ADR-0063's own amendment): every one of the 22 Boards that failed
     terminally with `HTTP Error 429` across runs 32936269675/32942748996 is a tenant that has left
     personio, whose `/xml` 307s off the Board host to the marketing site — and the 429 is Vercel's
-    bot mitigation there, keyed on our User-Agent, not on the client IP. The real scraper driven
+    bot mitigation there, keyed on the request rather than the client IP. The real scraper driven
     against those Boards rotated through three verified-distinct WARP addresses and got 429 on
     every one, so routing this ATS through a second egress cannot ever clear it.
+
+    Asserted through an actual 429, not just off the constant: what has to hold is that the
+    fetch carries **no** egress kwargs, since `http.fetch` walls a group only when it is handed
+    an `egress_group`. A bare `egress_fallback_on == frozenset()` would still pass if some later
+    change started passing a group explicitly.
     """
     from headstart.scrapers.personio import PersonioScraper
 
     assert PersonioScraper.egress_fallback_on == frozenset()
-    assert PersonioScraper("acme.jobs.personio.de", "Acme")._egress() == {}
+
+    seen: list[dict] = []
+
+    class _Walled:
+        status_code = 429
+        headers: ClassVar[dict] = {"x-vercel-mitigated": "challenge"}
+        text = ""
+
+        @staticmethod
+        def raise_for_status():
+            raise http.RequestsError("HTTP Error 429: Too Many Requests")
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append(kw), _Walled())[1]
+    )
+    with pytest.raises(http.RequestsError):
+        PersonioScraper("acme.jobs.personio.de", "Acme").fetch_raw()
+
+    assert "egress_group" not in seen[-1], (
+        "a 429 must not route personio off its own IP"
+    )
+    assert "egress_on" not in seen[-1], "a 429 must not mark personio walled"
 
 
-def test_personio_a_tenant_that_redirects_off_the_board_host_reads_as_gone(monkeypatch):
-    """A departed personio tenant does not 404 — `/xml` 307s to personio's marketing site.
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://personio.com",  # what personio actually sends, 19 of 19 observed
+        "//personio.com/",  # protocol-relative: names a host, so it is still off-host
+    ],
+)
+def test_personio_a_tenant_that_redirects_off_the_board_host_reads_as_gone(
+    monkeypatch, location
+):
+    """A departed personio tenant need not 404 — `/xml` 307s to personio's marketing site.
 
     Following that redirect is what produced every terminal `HTTP Error 429` on this ATS: the
     marketing host is behind Vercel bot mitigation, which answers 429 to our User-Agent (measured
@@ -5132,7 +5167,7 @@ def test_personio_a_tenant_that_redirects_off_the_board_host_reads_as_gone(monke
 
     class _Redirect:
         status_code = 307
-        headers: ClassVar[dict] = {"location": "https://personio.com"}
+        headers: ClassVar[dict] = {"location": location}
         text = ""
 
         @staticmethod
@@ -5147,14 +5182,22 @@ def test_personio_a_tenant_that_redirects_off_the_board_host_reads_as_gone(monke
         scraper.fetch_raw()
 
     assert seen[-1]["allow_redirects"] is False, "the redirect must not be followed"
-    assert is_gone(f"RequestsError: {excinfo.value}"), (
+    assert is_gone(f"{type(excinfo.value).__name__}: {excinfo.value}"), (
         "a departed tenant must age the Board's ADR-0058 gone-streak"
     )
     assert "zellerfeld.jobs.personio.com" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
-    "location", ["https://zellerfeld.jobs.personio.com/xml/", "/xml/", ""]
+    "location",
+    [
+        "https://zellerfeld.jobs.personio.com/xml/",  # same host, exactly
+        "https://Zellerfeld.Jobs.Personio.com/xml",  # hosts are case-insensitive
+        "https://zellerfeld.jobs.personio.com:443/xml",  # the default port is still this host
+        "https://zellerfeld.jobs.personio.com./xml",  # the FQDN root dot is still this host
+        "/xml/",  # relative: no host of its own
+        "",  # a 3xx with no Location at all
+    ],
 )
 def test_personio_a_same_host_redirect_does_not_read_as_gone(monkeypatch, location):
     """Only an **off-host** target may age a Board. The gone verdict is keyed on the redirect's
@@ -5184,7 +5227,7 @@ def test_personio_a_same_host_redirect_does_not_read_as_gone(monkeypatch, locati
     with pytest.raises(http.RequestsError) as excinfo:
         scraper.fetch_raw()
 
-    assert not is_gone(f"RequestsError: {excinfo.value}"), (
+    assert not is_gone(f"{type(excinfo.value).__name__}: {excinfo.value}"), (
         "a same-host redirect must not age the Board toward quarantine"
     )
 

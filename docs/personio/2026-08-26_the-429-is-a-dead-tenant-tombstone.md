@@ -78,7 +78,7 @@ on 4 of 4 Boards reached before the run was stopped. This is the measurement ADR
 
 Artifact: `…_repro_before-fix_rotated-3-distinct-ips.txt`.
 
-## 3. The wall is keyed on the header, not the client
+## 3. The wall is keyed on the request, not the client
 
 Same IP, same second, same TLS fingerprint (`curl_cffi impersonate="chrome"`), one variable — the
 `User-Agent`:
@@ -256,5 +256,5 @@ to `https://personio.com`, 1 a live feed. The §3 A/B reproduces exactly, includ
 1,720,839-byte marketing page, **but only with the TLS fingerprint held**: in a 4-arm × 2-rep
 matrix from one IP, `impersonate="chrome"` + Chrome UA is the only arm that gets 200 — default TLS
 with a Chrome UA is 429, and Chrome TLS with our UA is 429. So the wall reads the whole request
-signature, not the `User-Agent` alone; §3's "keyed on the header" is right that it is **not** the
-client IP, which is the load-bearing part.
+signature, not the `User-Agent` alone — which is why §3 says "keyed on the request". The
+load-bearing part is unchanged either way: it is **not** the client IP.
