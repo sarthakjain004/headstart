@@ -126,7 +126,7 @@ the planning record; the table below is the live status.
 | workable | 971 (190 live w/ openings) | done (pilot) | 0.0% field, 15.4% overall | [workable.md](workable.md) |
 | workday | 16,964 (3,000 sampled) | done | 0.0% field, 27.6% overall | [workday.md](workday.md) |
 | greenhouse | 7,503 (3,000 sampled; 9,152 was a stale liveness snapshot) | done | 0.0% field, 36.1% overall | [greenhouse.md](greenhouse.md) |
-| smartrecruiters | 5,659 (3,000 sampled; 10,845 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall | [smartrecruiters.md](smartrecruiters.md) |
+| smartrecruiters | 5,659 (3,000 sampled; 10,845 was a stale liveness snapshot) | done | 9.14% field, 16.57% overall (corrected 2026-08-25, was 0.0% field, 10.0% overall — a native `compensation` block on the detail response was unread; see smartrecruiters.md's "Post-merge correction") | [smartrecruiters.md](smartrecruiters.md) |
 | zoho | 5,337 (3,000 sampled; 6,550 was a stale liveness snapshot) | done | 0.0% field, 10.0% overall (corrected PR #242, was 9.2%) | [zoho.md](zoho.md) |
 | teamtailor | 3,764 (2,985 sampled after a rate-limit retry; 4,686 was a stale liveness snapshot) | done | 9.8% field, 14.1% overall | [teamtailor.md](teamtailor.md) |
 | ashby | 3,823 (3,000 sampled; 4,347 was a stale liveness snapshot) | done | 38.9% field, 49.7% overall | [ashby.md](ashby.md) |

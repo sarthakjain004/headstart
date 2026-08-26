@@ -16,7 +16,10 @@ its truncation message) to re-enable the 50-page cap.
 
 The postings list has no description; a second pass fetches each posting's detail
 (GET .../postings/{id} -> jobAd.sections.jobDescription.text) in a bounded thread pool to
-fill it in. A failed detail fetch leaves description None — the job is still kept.
+fill it in. That same detail response also carries a native `compensation.{min,max,currency,
+period}` block (10.48% of postings, previously unread — see `_salary()`), so one fetch now
+feeds both `description` and `salary`. A failed detail fetch leaves both None — the job is
+still kept.
 """
 
 from __future__ import annotations
@@ -62,6 +65,50 @@ def _compensation_custom_fields(custom_field: Any) -> str:
     return " ".join(parts)
 
 
+# SmartRecruiters' own adverb form ("YEARLY", "MONTHLY", ...) on the native `compensation.period`
+# field. Mapped to the singular bare word (`_field_range_currency_interval`'s
+# `_period_multiplier_structured` recognizes "1 YEAR"/"1 HOUR"/"1 MONTH"/"1 WEEK"/"1 DAY" via a
+# `\bword\b` match, which "HOURLY" etc. does NOT satisfy — passing the raw adverb through would
+# silently default every non-annual figure to the annual multiplier instead of annualizing it).
+_STRUCTURED_PERIOD = {
+    "YEARLY": "1 YEAR",
+    "MONTHLY": "1 MONTH",
+    "HOURLY": "1 HOUR",
+    "WEEKLY": "1 WEEK",
+    "DAILY": "1 DAY",
+}
+
+
+def _salary(compensation: dict | None) -> str | None:
+    """Format the posting-detail's native ``compensation`` block, e.g. "70000-85000 EUR 1 YEAR"
+    — the same RANGE + CODE + interval shape lever/recruitee/teamtailor/ashby/personio/rippling
+    already produce (``_field_range_currency_interval`` in salary.py, registered for this ATS
+    alongside this helper). Found via direct API inspection (2026-08-25,
+    experiment/location-audit-2026-08-25/smartrecruiters.md): populated on 10.48% of postings,
+    and description-mining independently misses 81.7% of those (134/164 in a 1,500-posting
+    comparison) — reading this field roughly doubles smartrecruiters' salary coverage at zero
+    extra request cost, since the detail fetch already happens for the description.
+
+    ``lo``/``hi`` are checked with ``is not None``, not truthiness: real junk values observed in
+    the same pass include ``{"max": 0, "currency": "GBP"}`` and ``{"min": 1, "max": 1, "currency":
+    "GTQ"}`` — a truthy check on a 0 floor would misread a stated "$0-$85,000" as a bare ceiling
+    figure (the same trap ashby's own ``_salary()`` docstring records from the Ramp
+    ``minValue=0`` code-review catch). Passed through honestly instead, both reach ``_bounded``
+    and are correctly declined there (0 sits below every currency's plausible floor)."""
+    if not compensation:
+        return None
+    lo, hi = compensation.get("min"), compensation.get("max")
+    if lo is None and hi is None:
+        return None
+    span = (
+        f"{lo}-{hi}"
+        if lo is not None and hi is not None
+        else str(lo if lo is not None else hi)
+    )
+    period = _STRUCTURED_PERIOD.get((compensation.get("period") or "").upper())
+    return " ".join(str(x) for x in (span, compensation.get("currency"), period) if x)
+
+
 class SmartRecruitersScraper(BaseScraper):
     ats = "smartrecruiters"
     detail_workers = _DETAIL_WORKERS
@@ -72,8 +119,9 @@ class SmartRecruitersScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         # First pass: page the listing by `offset` until a short page or the cap. Second pass: fill
-        # each posting's description concurrently. The detail pass multiplexes over one HTTP/2
-        # connection by default (ADR-0016); a failed fetch leaves ``_description`` None.
+        # each posting's detail concurrently (description + native compensation, one fetch for
+        # both). The detail pass multiplexes over one HTTP/2 connection by default (ADR-0016); a
+        # failed fetch leaves ``_detail`` empty.
         data = json.loads(self._get())
         batch = data.get("content") or []
         postings = list(batch)
@@ -105,27 +153,31 @@ class SmartRecruitersScraper(BaseScraper):
                 f"read {len(postings)} of {total} postings{cap_note} — the rest unread"
             )
         if self.async_fanout_enabled():
-            descriptions = self.fan_out_async(
+            details = self.fan_out_async(
                 postings,
-                lambda session, p: self._job_description_async(session, p.get("id")),
+                lambda session, p: self._job_detail_async(session, p.get("id")),
             )
         else:
-            descriptions = self.fan_out(
+            details = self.fan_out(
                 postings,
-                lambda p: self._job_description(p.get("id")),
+                lambda p: self._job_detail(p.get("id")),
                 workers=_DETAIL_WORKERS,
             )
-        self.report_detail_gaps(descriptions, "descriptions")
-        for posting, description in zip(postings, descriptions):
-            posting["_description"] = description
+        self.report_detail_gaps(details, "details")
+        for posting, detail in zip(postings, details):
+            posting["_detail"] = detail or {}
         return data
 
     def _detail_url(self, posting_id: str) -> str:
         return f"https://api.smartrecruiters.com/v1/companies/{self.slug}/postings/{posting_id}"
 
     @staticmethod
-    def _extract_description(response: Any) -> str | None:
-        """Concatenate the posting-detail jobAd sections into raw HTML (None on non-200).
+    def _extract_detail(response: Any) -> dict[str, Any] | None:
+        """The posting-detail fields ``parse()`` needs (None on non-200): the jobAd sections
+        concatenated into raw HTML, and the native ``compensation`` block (min/max/currency/
+        period — populated on 10.48% of postings, unread until this pass; see the module-level
+        ``_salary()`` docstring). One fetch for both — this response is already the one the
+        scraper makes for the description alone.
 
         qualifications and additionalInformation carry the requirements (years of
         experience etc.); companyDescription is deliberately skipped — it's the same
@@ -133,15 +185,19 @@ class SmartRecruitersScraper(BaseScraper):
         """
         if response.status_code != 200:
             return None
-        sections = (response.json().get("jobAd") or {}).get("sections") or {}
+        payload = response.json()
+        sections = (payload.get("jobAd") or {}).get("sections") or {}
         parts = [
             (sections.get(k) or {}).get("text")
             for k in ("jobDescription", "qualifications", "additionalInformation")
         ]
-        return "\n".join(p for p in parts if p) or None
+        return {
+            "description": "\n".join(p for p in parts if p) or None,
+            "compensation": payload.get("compensation") or None,
+        }
 
-    def _job_description(self, posting_id: str | None) -> str | None:
-        """GET one posting's detail and return its jobDescription (None on failure). Sync path."""
+    def _job_detail(self, posting_id: str | None) -> dict[str, Any] | None:
+        """GET one posting's detail fields (None on failure). Sync path."""
         if not posting_id:
             return None
         try:
@@ -152,13 +208,13 @@ class SmartRecruitersScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
         except http.RequestsError:
-            return None  # a missing description must not drop the job
-        return self._extract_description(response)
+            return None  # a missing detail must not drop the job
+        return self._extract_detail(response)
 
-    async def _job_description_async(
+    async def _job_detail_async(
         self, session: Any, posting_id: str | None
-    ) -> str | None:
-        """Same as :meth:`_job_description` but over the shared multiplexed ``AsyncSession``."""
+    ) -> dict[str, Any] | None:
+        """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
         if not posting_id:
             return None
         try:
@@ -171,22 +227,38 @@ class SmartRecruitersScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return self._extract_description(response)
+        return self._extract_detail(response)
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for p in raw.get("content", []):
             loc = p.get("location") or {}
+            full_location = loc.get("fullLocation")
             location = (
-                loc.get("fullLocation")
-                or ", ".join(
-                    x
-                    for x in (loc.get("city"), loc.get("region"), loc.get("country"))
-                    if x
+                (
+                    ", ".join(
+                        part
+                        for part in (s.strip() for s in full_location.split(","))
+                        if part
+                    )
+                    or None
                 )
-                or None
+                if full_location
+                else (
+                    ", ".join(
+                        x
+                        for x in (
+                            loc.get("city"),
+                            loc.get("region"),
+                            loc.get("country"),
+                        )
+                        if x
+                    )
+                    or None
+                )
             )
-            description = html_to_text(p.get("_description"))
+            detail = p.get("_detail") or {}
+            description = html_to_text(detail.get("description"))
             comp_fields = _compensation_custom_fields(p.get("customField"))
             if comp_fields:
                 description = f"{description or ''} {comp_fields}".strip()
@@ -205,6 +277,7 @@ class SmartRecruitersScraper(BaseScraper):
                     description=description,
                     experience=(p.get("experienceLevel") or {}).get("label"),
                     employment_type=(p.get("typeOfEmployment") or {}).get("label"),
+                    salary=_salary(detail.get("compensation")),
                 )
             )
         return jobs
