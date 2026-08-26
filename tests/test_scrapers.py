@@ -1978,6 +1978,126 @@ def test_personio_url_is_the_xml_feed_on_a_normalised_slug():
     )
 
 
+def test_personio_additional_offices_are_joined_into_location():
+    """`<additionalOffices>` is a sibling of `<office>` inside the same `<position>` that nothing
+    previously read: 13.28% of positions in a live 147-Board sample (2026-08-25, a separate draw
+    from the scraper docstring's 149-Board/24.89% figure — sample variance, same real defect)
+    carry it. Both are read and joined so the extra offices become filterable instead of silently
+    dropped."""
+    from headstart.scrapers.personio import _location
+
+    pos = ET.fromstring(
+        "<position><office>Zürich</office>"
+        "<additionalOffices><office>Berlin</office><office>Hamburg</office></additionalOffices>"
+        "</position>"
+    )
+    assert _location(pos) == "Zürich, Berlin, Hamburg"
+
+
+def test_personio_placeless_office_marker_recovers_the_dropped_city():
+    """Real, live 2026-08-25: `interlead.jobs.personio.de` serves one position with
+    `<office>Home Office</office>` and `<additionalOffices><office>Bremen</office></additionalOffices>`
+    — today `location` is just "Home Office" and the real city is silently dropped. Joining
+    (rather than enumerating "Home Office"/"Mobil"/"Hybrid"/... as marker strings, which is always
+    one locale behind) recovers it without needing to classify `<office>` at all."""
+    from headstart.scrapers.personio import _location
+
+    pos = ET.fromstring(
+        "<position><office>Home Office</office>"
+        "<additionalOffices><office>Bremen</office></additionalOffices></position>"
+    )
+    assert _location(pos) == "Home Office, Bremen"
+
+
+def test_personio_additional_offices_deduplicated_case_insensitively():
+    """A duplicate spelling of the primary office must not repeat itself in the served string."""
+    from headstart.scrapers.personio import _location
+
+    pos = ET.fromstring(
+        "<position><office>Berlin</office>"
+        "<additionalOffices><office>berlin</office><office>Munich</office></additionalOffices>"
+        "</position>"
+    )
+    assert _location(pos) == "Berlin, Munich"
+
+
+def test_personio_no_additional_offices_leaves_location_as_the_bare_office():
+    """No sibling element -> unchanged behaviour (the pre-fix case, still exercised)."""
+    from headstart.scrapers.personio import _location
+
+    assert (
+        _location(ET.fromstring("<position><office>Munich</office></position>"))
+        == "Munich"
+    )
+    assert _location(ET.fromstring("<position></position>")) is None
+
+
+def test_personio_parse_reflects_the_joined_location():
+    pos_xml = (
+        "<position><id>1</id><office>Home Office</office>"
+        "<additionalOffices><office>Bremen</office></additionalOffices>"
+        "<name>Engineer</name></position>"
+    )
+    raw = ET.fromstring(f"<workzag-jobs>{pos_xml}</workzag-jobs>")
+    jobs = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )
+    assert jobs[0].location == "Home Office, Bremen"
+
+
+def test_personio_experience_prefers_the_native_years_range_over_seniority():
+    """Real, live 2026-08-25: personio's own `<seniority>` is a coarse 4-value enum populated on
+    99%+ of positions, so `seniority or yearsOfExperience` wins the `or` chain almost every time
+    and discards a real numeric range. `yearsOfExperience` must win whenever it actually parses."""
+    from headstart.scrapers.personio import _experience
+
+    pos = ET.fromstring(
+        "<position><seniority>experienced</seniority>"
+        "<yearsOfExperience>1-2</yearsOfExperience></position>"
+    )
+    assert _experience(pos) == "1-2"
+
+
+def test_personio_experience_falls_back_to_seniority_when_the_range_cannot_parse():
+    """personio's own open-ended spellings ("lt-1", "gt-15") do not match `from_field`'s regex
+    (it requires a leading digit). A naive swap would lose these ~1,000 positions to `None`; the
+    fallback must keep serving the seniority-based floor instead."""
+    from headstart.scrapers.personio import _experience
+
+    pos = ET.fromstring(
+        "<position><seniority>entry-level</seniority>"
+        "<yearsOfExperience>lt-1</yearsOfExperience></position>"
+    )
+    assert _experience(pos) == "entry-level"
+
+
+def test_personio_experience_falls_back_when_years_field_is_absent():
+    from headstart.scrapers.personio import _experience
+
+    assert _experience(
+        ET.fromstring("<position><seniority>student</seniority></position>")
+    ) == ("student")
+    assert _experience(ET.fromstring("<position></position>")) is None
+
+
+def test_personio_parse_reflects_the_years_range_preference():
+    pos_xml = (
+        "<position><id>1</id><office>Berlin</office><name>Engineer</name>"
+        "<seniority>experienced</seniority><yearsOfExperience>1-2</yearsOfExperience></position>"
+    )
+    raw = ET.fromstring(f"<workzag-jobs>{pos_xml}</workzag-jobs>")
+    jobs = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )
+    # Through the real cascade: "experienced" alone floors at 5; the native "1-2" range must win.
+    from headstart.experience import extract
+
+    span = extract(jobs[0].experience, jobs[0].description, jobs[0].title)
+    assert span.min_years == 1
+    assert span.max_years == 2
+    assert span.source == "field"
+
+
 def test_join_parse():
     jobs = get_scraper("join", "indie-solutions", "indie").parse(
         _load("join_indie-solutions.json"), SCRAPED_AT
