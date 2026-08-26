@@ -1840,6 +1840,28 @@ def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
     assert len(asked) == 2  # and it stopped rather than walking to _MAX_PAGES
 
 
+def test_teamtailor_marks_its_page_cap(monkeypatch):
+    """`_MAX_PAGES` straight full, all-new pages is the one case that reaches the `for...else`.
+
+    Unlike a feed re-serving page 1 (caught by the `not fresh` break), this is a board that is
+    still handing over fresh ids when the walk gives up — the rest is unread, not absent, and
+    `mark_truncated` is what stops `index sync` reading that as a delisting (ADR-0053).
+    """
+    from headstart.scrapers import teamtailor as tt
+
+    s = get_scraper("teamtailor", "huge", "Huge")
+    pages = [
+        list(range(page * tt._PAGE_SIZE, (page + 1) * tt._PAGE_SIZE))
+        for page in range(tt._MAX_PAGES)
+    ]
+    asked = _teamtailor_pages(monkeypatch, s, pages)
+
+    raw = s.fetch_raw()
+    assert len(raw["items"]) == tt._PAGE_SIZE * tt._MAX_PAGES
+    assert len(asked) == tt._MAX_PAGES
+    assert s.truncated and f"{tt._MAX_PAGES}-page cap" in s.truncated
+
+
 def test_teamtailor_parse():
     jobs = get_scraper("teamtailor", "1komma5", "1KOMMA5").parse(
         _load("teamtailor_1komma5.json"), SCRAPED_AT
