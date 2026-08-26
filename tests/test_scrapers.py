@@ -588,6 +588,10 @@ def test_smartrecruiters_compensation_custom_field_absent_leaves_description_unc
         # number instead — so both decline the same way now.
         ({"max": 0, "currency": "GBP"}, None),
         ({"max": 12150, "currency": "MXN", "period": "MONTHLY"}, None),
+        # min-only ("$X+, no stated ceiling") is a genuine floor-only disclosure, not the same
+        # ambiguity as max-only — unaffected by the max-only decline above and still passed
+        # through as a bare single value, which correctly reads as floor-only.
+        ({"min": 65000, "currency": "USD", "period": "YEARLY"}, "65000 USD 1 YEAR"),
     ],
 )
 def test_smartrecruiters_salary_from_native_compensation_block(compensation, expected):

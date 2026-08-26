@@ -266,6 +266,10 @@ detail fetches ok, 4 errors — 0.14%, real-world noise, not systematic):
 | gained (found only after the fix) | 152 |
 | lost (found only before the fix) | 0 |
 
+**These AFTER/gained figures predate the max-only decline fixed below (see "Follow-up
+(2026-08-26, code review)") and were not re-measured against it — the true AFTER count is
+somewhat lower than 466/16.57%, by however many of the 152 gained postings were max-only.**
+
 The relative jump is smaller here (~1.48x) than the original 1,500-posting comparison's 7.40%→
 16.33% (~2.2x) — this sample's Tier-2-only baseline happened to be higher (11.17% vs. 7.40%,
 board-mix variance), but the AFTER number lands within half a point of that comparison's
