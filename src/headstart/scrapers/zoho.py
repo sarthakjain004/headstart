@@ -53,6 +53,10 @@ _JS_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\(.)")
 _DETAIL_WORKERS = (
     6  # detail pages are ~1.7MB each — bandwidth, not rate limits, is the constraint
 )
+#: State/City/Country values that carry no place information — filtered out of the joined
+#: `location`, not just left to win the old truthy-`or` (14 State occurrences measured, and the
+#: empty segment a trailing-comma City leaves behind after the join splits it back apart).
+_JUNK_LOCATION_SEGMENTS = {"", ".", "-", "--"}
 
 
 def _js_unescape(s: str) -> str:
@@ -60,6 +64,84 @@ def _js_unescape(s: str) -> str:
     return _JS_ESCAPE.sub(
         lambda m: chr(int(m.group(1), 16)) if m.group(1) else m.group(2), s
     )
+
+
+def _zoho_location(
+    city: str | None, state: str | None, country: str | None
+) -> str | None:
+    """``City, State, Country`` for the served ``location`` — replaces the old ``City or (State,
+    Country)`` fallback, which discarded a real Country on 85.69% of jobs (13,759/16,056) whenever
+    City was present, 168 of them invisible to ``headstart.geo.where("india")`` as a result
+    (audit: experiment/location-audit-2026-08-25/zoho.md).
+
+    Joined raw, then re-split on comma and de-duped/filtered per segment — the same technique
+    darwinbox and keka already use for their own location strings. One pass over the joined
+    string, rather than pairwise checks between City/State/Country, clears three things at once:
+    junk segments (".", "-", "--" — 14 State values), an empty segment left by a City that itself
+    ends in a comma ("Hyderabad,"), and a State or Country that's already present verbatim inside
+    City — both the simple case (City == State, 743 jobs, "Riyadh, Riyadh") and the fixture's own
+    pnbcsl record, whose City lists a dozen cities including "Delhi", its own State value.
+    """
+    raw = ", ".join(v for v in (city, state, country) if v and v.strip())
+    segments: list[str] = []
+    seen: set[str] = set()
+    for seg in raw.split(","):
+        text = seg.strip()
+        key = text.lower()
+        if not text or text in _JUNK_LOCATION_SEGMENTS or key in seen:
+            continue
+        seen.add(key)
+        segments.append(text)
+    return ", ".join(segments) or None
+
+
+def _merge_detail(record: dict, detail: dict | None) -> dict:
+    """The listing record, overlaid with the detail record's fields wherever the detail page
+    returned a truthy value. The detail page is already fetched for every published job (see
+    ``fetch_raw``'s docstring) and measured a strict superset over the listing — zero value
+    conflicts, zero fields lost across 205 paired tenants (experiment/location-audit-2026-08-25/
+    zoho.md) — so this recovers ``Date_Opened`` (+49.3pp), ``Work_Experience`` (+31.2pp),
+    ``State`` (+37.6pp) and ``Industry`` (+20.0pp) for free. Falls back to the bare listing record
+    when the detail fetch failed or found nothing."""
+    if not detail:
+        return record
+    merged = dict(record)
+    merged.update({k: v for k, v in detail.items() if v not in (None, "", [], {})})
+    return merged
+
+
+def _salary_field(salary: Any, currency: Any) -> str | None:
+    """``Job.salary`` from the detail record's ``Salary`` (plus ``Currency`` when present) — e.g.
+    "250,000 - 300,000 USD" — so ``salary.extract``'s field tier and the served ``salary`` display
+    column (ADR-0019) stop being permanently empty for zoho. Previously ``Salary``/``Currency``
+    were only ever spliced into the description text; the value itself never reached ``Job.salary``
+    (audit: experiment/location-audit-2026-08-25/zoho.md). This is strictly additive — the splice
+    into the description (``_description_text``) stays, as a fallback for `salary.extract`'s
+    description-mining tier on any tenant's phrasing the field tier's parser doesn't handle."""
+    salary_text = (salary or "").strip()
+    if not salary_text:
+        return None
+    currency_text = (currency or "").strip()
+    return f"{salary_text} {currency_text}" if currency_text else salary_text
+
+
+def _description_text(record: dict) -> str | None:
+    """Job_Description with Salary/Currency appended when present (unchanged from PR #238's
+    behaviour) — Salary/Currency are free-text, per-tenant strings ("5-10 Lakhs", "DOE"), not a
+    clean structured field, so they ride along in the description text for Tier-2 mining too, the
+    same treatment smartrecruiters' customField compensation gets in ``smartrecruiters.py``, on
+    top of now also feeding the structured ``Job.salary`` field (`_salary_field`)."""
+    description = record.get("Job_Description") or ""
+    comp = " ".join(
+        f"{label}: {value}"
+        for label, value in (
+            ("Salary", record.get("Salary")),
+            ("Currency", record.get("Currency")),
+        )
+        if value
+    )
+    combined = f"{description} {comp}".strip() if comp else description
+    return combined or None
 
 
 class ZohoScraper(BaseScraper):
@@ -83,7 +165,7 @@ class ZohoScraper(BaseScraper):
         # Every published, non-locked job gets a detail-page fetch — not just the ones whose
         # listing lacks Job_Description. This used to be gated on a missing description (some
         # tenants configure the careers site without that column, 28 of 71 in the corpus), but
-        # Salary/Currency live ONLY on the detail page (`_description_of`'s docstring), never on
+        # Salary/Currency live ONLY on the detail page (`_detail_record_of`'s docstring), never on
         # the listing, so gating on description presence meant the ~60% of jobs whose listing
         # already carries a description (live-measured 2026-08-24: 150 tenants sampled, 130
         # successfully probed) never had
@@ -100,10 +182,10 @@ class ZohoScraper(BaseScraper):
         if ids:
             # Multiplexed by default (ADR-0016); HEADSTART_ASYNC_FANOUT=0 falls back to threads.
             if self.async_fanout_enabled():
-                fetched = self.fan_out_async(ids, self._detail_description_async)
+                fetched = self.fan_out_async(ids, self._detail_record_async)
             else:
                 fetched = self.fan_out(
-                    ids, self._detail_description, workers=_DETAIL_WORKERS
+                    ids, self._detail_record, workers=_DETAIL_WORKERS
                 )
             self.report_detail_gaps(fetched, "detail pages")
             details = {jid: d for jid, d in zip(ids, fetched) if d}
@@ -128,15 +210,15 @@ class ZohoScraper(BaseScraper):
         return f"https://{self.slug}/jobs/Careers/{jid}"
 
     @staticmethod
-    def _description_of(page: str) -> str | None:
-        """Job_Description, with Salary/Currency appended when present, from a detail page's
-        embedded record (None when neither is found). Salary/Currency only live on the detail
-        page, never the listing (found via a code-review-triggered re-probe on PR #238, after an
-        earlier check against the listing wrongly called the field a dead end) — and they're
-        free-text, per-tenant strings ("5-10 Lakhs", "DOE", "$35.00 per hour"), not a clean
-        structured field, so they ride along in the description text for Tier-2 mining rather
-        than a bespoke Tier-1 parser, the same treatment smartrecruiters' customField
-        compensation gets in ``smartrecruiters.py``."""
+    def _detail_record_of(page: str) -> dict | None:
+        """The job record embedded in a detail page (None when the embedded blob is missing,
+        empty, or doesn't parse). Salary/Currency, a fuller State, Date_Opened and Work_Experience
+        all live on the detail page at meaningfully higher coverage than the listing (found via a
+        code-review-triggered re-probe on PR #238, after an earlier check against the listing
+        wrongly called Salary a dead end; the wider field-by-field gap measured in
+        experiment/location-audit-2026-08-25/zoho.md). ``parse()`` merges this over the thinner
+        listing record (``_merge_detail``) rather than reading only a computed description
+        string, so every field the detail page carries gets a chance to reach the Job."""
         m = _DETAIL_JOBS.search(page)
         if not m:
             return None
@@ -146,26 +228,15 @@ class ZohoScraper(BaseScraper):
             return None
         if not records:
             return None
-        r = records[0]
-        description = r.get("Job_Description") or ""
-        comp = " ".join(
-            f"{label}: {value}"
-            for label, value in (
-                ("Salary", r.get("Salary")),
-                ("Currency", r.get("Currency")),
-            )
-            if value
-        )
-        combined = f"{description} {comp}".strip() if comp else description
-        return combined or None
+        return records[0]
 
-    def _detail_description(self, jid: str) -> str | None:
-        """GET one job's detail page and pull Job_Description from its embedded record."""
-        return self._description_of(self._get(self._detail_url(jid)))
+    def _detail_record(self, jid: str) -> dict | None:
+        """GET one job's detail page and return its embedded record."""
+        return self._detail_record_of(self._get(self._detail_url(jid)))
 
-    async def _detail_description_async(self, session: Any, jid: str) -> str | None:
-        """Same as :meth:`_detail_description` over the shared multiplexed ``AsyncSession``."""
-        return self._description_of(
+    async def _detail_record_async(self, session: Any, jid: str) -> dict | None:
+        """Same as :meth:`_detail_record` over the shared multiplexed ``AsyncSession``."""
+        return self._detail_record_of(
             await self._get_async(session, self._detail_url(jid))
         )
 
@@ -196,32 +267,29 @@ class ZohoScraper(BaseScraper):
             jid = r.get("id")
             if not jid:
                 continue
+            # The detail record wins field-by-field when it landed — measured a strict superset
+            # over the listing (`_merge_detail`'s docstring) — and falls back to the bare listing
+            # record if the detail fetch failed.
+            d = _merge_detail(r, details.get(jid))
             title = (r.get("Posting_Title") or r.get("Job_Opening_Name") or "").strip()
-            location = (
-                r.get("City")
-                or ", ".join(x for x in (r.get("State"), r.get("Country")) if x)
-                or None
-            )
             jobs.append(
                 Job(
                     id=f"{self.ats}:{self.slug}:{jid}",
                     ats=self.ats,
                     company=company,
                     title=title,
-                    location=location,
-                    remote=bool(r.get("Remote_Job")),
-                    department=(r.get("Industry") or "").strip() or None,
-                    url=f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite",
-                    posted_at=r.get("Date_Opened") or None,
-                    scraped_at=scraped_at,
-                    # The detail page wins when it landed: `_description_of` appends Salary/
-                    # Currency to it, so it is a strict superset of the listing's bare
-                    # Job_Description. Falls back to the listing only if the detail fetch failed.
-                    description=html_to_text(
-                        details.get(jid) or r.get("Job_Description")
+                    location=_zoho_location(
+                        d.get("City"), d.get("State"), d.get("Country")
                     ),
-                    experience=r.get("Work_Experience"),
-                    employment_type=r.get("Job_Type"),
+                    remote=bool(d.get("Remote_Job")),
+                    department=(d.get("Industry") or "").strip() or None,
+                    url=f"https://{self.slug}/jobs/Careers/{jid}/{_SLUG.sub('-', title)}?source=CareerSite",
+                    posted_at=d.get("Date_Opened") or None,
+                    scraped_at=scraped_at,
+                    description=html_to_text(_description_text(d)),
+                    experience=d.get("Work_Experience"),
+                    employment_type=d.get("Job_Type"),
+                    salary=_salary_field(d.get("Salary"), d.get("Currency")),
                 )
             )
         return jobs
