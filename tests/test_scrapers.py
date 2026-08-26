@@ -1895,8 +1895,10 @@ def test_personio_url_is_the_xml_feed_on_a_normalised_slug():
 
 def test_personio_additional_offices_are_joined_into_location():
     """`<additionalOffices>` is a sibling of `<office>` inside the same `<position>` that nothing
-    previously read: 13.28% of positions in a live 147-Board sample (2026-08-25) carry it. Both
-    are read and joined so the extra offices become filterable instead of silently dropped."""
+    previously read: 13.28% of positions in a live 147-Board sample (2026-08-25, a separate draw
+    from the scraper docstring's 149-Board/24.89% figure — sample variance, same real defect)
+    carry it. Both are read and joined so the extra offices become filterable instead of silently
+    dropped."""
     from headstart.scrapers.personio import _location
 
     pos = ET.fromstring(
