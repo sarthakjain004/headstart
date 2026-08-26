@@ -17,35 +17,38 @@ sit behind the same DataDome edge; a failed fetch leaves description None — th
 kept.
 
 **Fixed (2026-08-25): the careers page above silently caps at 25 rendered job cards, and
-``fetch_raw()`` now falls back to the RSS feed when it does.** Measured at scale
-(``docs/location-audit/2026-08-25_ats-field-audit.md``, 906 feed-verified boards): the cap hides
-4,968 of 10,210 real jobs (48.7%), concentrated in 72 boards (7.9%) that sit at or over it.
-Trakstar also serves a per-tenant RSS feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items``
-below) that carries every job with no such cap and embeds the full description inline (no
-per-job detail fetch needed) — confirmed a strict superset of the HTML path on every one of
-those 906 boards.
+``fetch_raw()`` now falls back to the RSS feed when it does.** A large-scale audit
+(``docs/location-audit/2026-08-25_ats-field-audit.md``) found **48.7% of all Jobs hidden** by the
+cap; a smaller, independently reproducible live sample
+(``docs/location-audit/2026-08-26_trakstar-cap-verification.md``, 80 tenants drawn from the
+tracked liveness ledger) confirms the same shape at a smaller scale: 5/80 boards (6.25%) landed
+capped, hiding 248 of the sample's 634 real jobs (39.1%). Trakstar also serves a per-tenant RSS
+feed (``/jobfeeds/{slug}``, ``_fetch_feed``/``_feed_items`` below) that carries every job with no
+such cap and embeds the full description inline (no per-job detail fetch needed) — a strict
+superset of the HTML path on every capped board checked in that same sample.
 
 ``fetch_raw()`` tells a Board genuinely at its full count apart from one the cap is actually
 hiding jobs on by reading the careers page's own "View N Openings" total (``_total_openings``),
-not just the card count: re-verified live 2026-08-25, ``interglobalhomes``/``2workonline1``/
-``dataentrydirect`` all render exactly 25 cards with that total also reading 25 — not capped, no
-RSS fetch — while ``sleekr``/``colcare``/``hazelhawkins``/``turnkeyconsulting``/
-``sajenaturalwellnessretail`` render 25 cards with a higher total and are. Only the latter case
-reaches for the feed (and, since the feed embeds its own description, skips this scraper's
-per-job JSON-LD detail pass entirely rather than fetching 25 DataDome-guarded pages it's about
-to discard) — so the 92%+ of boards that were never capped still cost exactly the one
-careers-page request they always did.
+not just the card count: re-verified live 2026-08-26 (see the verification doc above),
+``interglobalhomes``/``2workonline1``/``dataentrydirect`` all render exactly 25 cards with that
+total also reading 25 — not capped, no RSS fetch — while
+``sleekr``/``colcare``/``hazelhawkins``/``turnkeyconsulting``/``sajenaturalwellnessretail`` render
+25 cards with a higher total and are. Only the latter case reaches for the feed (and, since the
+feed embeds its own description, skips this scraper's per-job JSON-LD detail pass entirely rather
+than fetching 25 DataDome-guarded pages it's about to discard) — so the large majority of boards
+that were never capped still cost exactly the one careers-page request they always did.
 
-The feed is NOT universal — unreachable (404, or a CSB-rendered ``/search/``) on 3.9% of tenants
-(confirmed live 2026-08-25: sleekr still 404s) — so a capped Board whose feed fails keeps its
-(known-short) HTML result rather than losing the Board outright. It is marked ``truncated``
-(ADR-0053) only when the page's own total proved the shortfall — reaching the cap used to be
-treated as ambiguous evidence not worth marking, and stays that way on the rare template with no
-total to compare against: the bare card-count fallback (``_is_capped``) is the same ambiguous
-signal as before, so it still doesn't mark_truncated on its own. ``fetch_via_feed`` below remains
-a separate, complete investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still
-uses it to compare both paths at scale) built on the same ``_fetch_feed``/``_feed_items``
-primitives ``fetch_raw()`` now also calls directly.
+The feed is NOT universal — unreachable (404, or a CSB-rendered ``/search/``) on some tenants
+(confirmed live 2026-08-26: 2 of 5 capped boards in the verification sample above, ``sleekr`` and
+``iqraeducation``, still 404) — so a capped Board whose feed fails keeps its (known-short) HTML
+result rather than losing the Board outright. It is marked ``truncated`` (ADR-0053) only when the
+page's own total proved the shortfall — reaching the cap used to be treated as ambiguous evidence
+not worth marking, and stays that way on the rare template with no total to compare against: the
+bare card-count fallback (``_is_capped``) is the same ambiguous signal as before, so it still
+doesn't mark_truncated on its own. ``fetch_via_feed`` below remains a separate, complete
+investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still uses it to compare
+both paths at scale) built on the same ``_fetch_feed``/``_feed_items`` primitives
+``fetch_raw()`` now also calls directly.
 """
 
 from __future__ import annotations
@@ -73,10 +76,12 @@ _CODE = re.compile(r'data-href="/jobs/([^/"]+)/?"')
 _TITLE = re.compile(r'js-job-list-opening-name[^>]*\btitle="([^"]*)"')
 _LOC = re.compile(r'js-job-list-opening-loc[^>]*\btitle="([^"]*)"')
 # The careers page's own running total, e.g. `<a class="js-show-openings ..." href="#content">
-# View 634 Openings</a>` — confirmed present on 58/60 live-sampled boards 2026-08-25, absent
-# only on the 2/60 with zero postings (the button doesn't render at all when there's nothing to
-# view). Reading it is what tells a Board genuinely at its full count (25 cards, total 25 — not
-# capped) apart from one the render cap is actually hiding jobs on (25 cards, total 634).
+# View 634 Openings</a>` — confirmed present on 80/80 live-sampled boards with real postings,
+# absent on 15/15 sampled boards with zero postings (the button doesn't render at all when
+# there's nothing to view); full methodology in
+# docs/location-audit/2026-08-26_trakstar-cap-verification.md. Reading it is what tells a Board
+# genuinely at its full count (25 cards, total 25 — not capped) apart from one the render cap is
+# actually hiding jobs on (25 cards, total 634).
 _TOTAL_OPENINGS = re.compile(
     r"js-show-openings[^>]*>\s*View\s*(\d+)\s*(?:<[^>]*>\s*)*Openings?",
     re.IGNORECASE | re.DOTALL,
@@ -139,8 +144,9 @@ class TrakstarScraper(BaseScraper):
                     f"supplied the full {len(feed_items)} jobs, no detail pass needed"
                 )
                 return {"feed_items": feed_items}
-            # The feed is unreachable for this tenant (404, or a CSB-rendered /search/ —
-            # measured on 3.9% of boards). The capped HTML list below is the best we have.
+            # The feed is unreachable for this tenant (404, or a CSB-rendered /search/ — see
+            # docs/location-audit/2026-08-26_trakstar-cap-verification.md for measured examples).
+            # The capped HTML list below is the best we have.
             # Only mark_truncated (ADR-0053) when the page's own total proves the shortfall —
             # when _is_capped instead fell back to the bare card-count heuristic (no "View N
             # Openings" total on the page), that's the exact same ambiguous "landed on the cap"
@@ -407,8 +413,9 @@ def _feed_location(city: str, state: str, country: str) -> str | None:
     routinely carries a stray leading/trailing space — ``'fort worth '``, ``' Jordan'`` — that
     an unstripped join turns into a double space or a dangling comma), and a state that only
     repeats the city (``'Hamburg, Hamburg, Deutschland'``, ``'Ho Chi Minh City, Ho Chi Minh
-    City, Vietnam'`` — confirmed on ~6% of records) is dropped rather than kept twice, matching
-    what the HTML card actually renders for the same job."""
+    City, Vietnam'`` — a real pattern, re-confirmed live on ``anduin``'s feed 2026-08-26, see
+    ``docs/location-audit/2026-08-26_trakstar-cap-verification.md`` for how common) is dropped
+    rather than kept twice, matching what the HTML card actually renders for the same job."""
     parts = [p.strip() for p in (city, state, country)]
     if parts[0] and parts[1] and parts[0].casefold() == parts[1].casefold():
         parts[1] = ""

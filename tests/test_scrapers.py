@@ -1827,7 +1827,8 @@ def test_trakstar_feed_location_drops_whitespace_only_part():
 
 
 def test_trakstar_feed_location_drops_state_that_repeats_city():
-    # real values, live-fetched 2026-08-25 (anduin): confirmed on ~6% of feed records
+    # real values, live-fetched 2026-08-25 (anduin), re-confirmed live 2026-08-26 -- see
+    # docs/location-audit/2026-08-26_trakstar-cap-verification.md for how common this is
     from headstart.scrapers.trakstar import _feed_location
 
     assert _feed_location("Hamburg", "Hamburg", "Deutschland") == "Hamburg, Deutschland"
