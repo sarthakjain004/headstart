@@ -311,10 +311,6 @@ class EightfoldScraper(BaseScraper):
                     "url": f"https://{self.slug}{path}"
                     if path.startswith("/")
                     else path,
-                    # `desc` is None when the detail was skipped or failed, "" when it answered
-                    # with no description — which the store records as authoritative absence so
-                    # the Job stops being re-fetched every run (ADR-0050).
-                    "detail_fetched": desc is not None,
                     "fields": {
                         "title": pos.get("name"),
                         "description": desc or None,
@@ -370,13 +366,10 @@ class EightfoldScraper(BaseScraper):
                 f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt"
             )
         return [
-            # The per-job page *is* this path's detail fetch, so reaching it settles whether a
-            # description exists — same two-state rule as the API path (ADR-0050).
             {
                 "id": _sitemap_position_id(u),
                 "url": u,
                 "fields": f,
-                "detail_fetched": f is not None,
             }
             for u, f in zip(listed, fields)
         ]
@@ -453,7 +446,6 @@ class EightfoldScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
-                    detail_fetched=bool(item.get("detail_fetched")),
                 )
             )
         return jobs
@@ -585,12 +577,15 @@ def _remote_from(option: Any) -> bool | None:
 
 
 def _description_of(response: Any) -> str | None:
-    """The posting's description, ``""`` when the detail answered but carries none, ``None`` when
-    it could not be read at all.
+    """The posting's description; ``""`` when the payload carries no ``jobDescription``, and
+    ``None`` only when the body could not be read at all.
 
-    The empty string is load-bearing (ADR-0050): it is the difference between *this posting has no
-    description* — authoritative, record it and stop re-fetching forever — and *we failed to find
-    out*, which must be retried. An unparseable body is the second kind, not the first.
+    The distinction is no longer load-bearing (ADR-0089) — ``_api_records`` maps both to ``None``
+    via ``desc or None`` — and it must not become so again. It looks like *this posting has no
+    description* versus *we failed to find out*, but it is not: ``position_details`` answers 200
+    with no ``jobDescription`` for postings whose pages carry full text (measured 5 of 5 on
+    ``telekom-growthhub``), so the empty string means only that the request completed. That is
+    what made the removed ``detail_fetched`` flag write a permanent falsehood into the store.
     """
     try:
         data = response.json().get("data") or {}

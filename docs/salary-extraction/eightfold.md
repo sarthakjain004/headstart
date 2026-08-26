@@ -223,6 +223,11 @@ from the flag describing whether fetching it succeeded). Both bugs would still s
 future re-run or the ADR-0050 description-store pipeline downstream, which does read
 `detail_fetched` — worth fixing regardless of whether this pass's own numbers moved.
 
+> **Superseded 2026-08-26 by [ADR-0089](../adr/0089-the-description-store-holds-text-not-verdicts.md):**
+> `Job.detail_fetched` is removed, along with this script's own write of it, so nothing
+> downstream reads the flag any more. The bugs above were real when found; the second one's
+> downstream consequence no longer exists.
+
 ## Carried forward
 
 - **Lesson 40** (check `BaseScraper` and the scraper's own smaller primitives for a reusable

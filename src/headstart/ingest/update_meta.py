@@ -18,11 +18,12 @@ ones. Cheap, and it runs every time.
 **Derivations** — ``min_years`` / ``max_years`` / ``experience_source`` are ``f(code, facts)``, so a
 change in the code has to reach every row. :data:`doc_prep.DERIVATIONS_VERSION` is compared against
 the watermark in ``data/state/derivations.json``; when the code is newer, every row whose
-description the ADR-0050 store *settles* is re-derived through the full cascade. Rows the store has
-never settled are left alone — recomputing without the text a value came from could only downgrade
-it, and #162 measured 127,501 such rows (all pre-ADR-0050, they carry no ``has_description``).
+description the ADR-0050 store *holds* is re-derived through the full cascade. Rows whose text the
+store does not hold are left alone — recomputing without the text a value came from could only
+downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, so they carry no
+``has_description``).
 
-**The re-derivation queue** (ADR-0062) is the other half of that: when a run finally settles one of
+**The re-derivation queue** (ADR-0062) is the other half of that: when a run finally supplies one of
 those descriptions, the row is still carrying numbers derived without it, and no version has moved.
 ``update_descriptions`` appends the ids to ``data/state/pending_rederive.txt``; this module runs the
 cascade for exactly those rows and clears the file. Without it, closing the description gap would
@@ -144,16 +145,14 @@ def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
     return facts
 
 
-def held_descriptions(
-    store_dir: Path, keep: set[str] | None = None
-) -> dict[str, str | None]:
-    """Every settled description across the ADR-0050 store, keyed by Job id.
+def held_descriptions(store_dir: Path, keep: set[str] | None = None) -> dict[str, str]:
+    """Every description the ADR-0050 store holds, keyed by Job id.
 
     ``keep`` narrows the result to those ids. A version sweep needs all of them, but the ADR-0062
-    re-derivation only needs this run's newly-settled handful — and holding the whole store is
+    re-derivation only needs this run's newly-stored handful — and holding the whole store is
     ~1 GB of text on a runner that is already the pipeline's memory ceiling.
     """
-    held: dict[str, str | None] = {}
+    held: dict[str, str] = {}
     if store_dir.is_dir():
         for ats_dir in sorted(p for p in store_dir.iterdir() if p.is_dir()):
             rows = read_store(ats_dir)
@@ -204,16 +203,16 @@ def derivation_delta(
 def refresh_row(
     meta: dict,
     facts: dict | None,
-    descriptions: dict[str, str | None],
+    descriptions: dict[str, str],
     sweep: bool,
     rederive: bool = False,
 ) -> tuple[dict, bool, bool]:
     """One row's refresh. Returns ``(row, facts_changed, derivations_changed)``.
 
     ``rederive`` marks a single row for the cascade at an unchanged version — the ADR-0062 case,
-    where this run's scrape settled a description the row was never derived from. It is kept
+    where this run's scrape supplied a description the row was never derived from. It is kept
     separate from ``sweep`` because the two mean different things: ``sweep`` is "the extractor
-    changed, redo everything the store settles", ``rederive`` is "this row's third cascade input
+    changed, redo everything the store holds", ``rederive`` is "this row's third cascade input
     just arrived".
 
     Pure, so the whole policy is unit-testable without a store on disk.
@@ -357,7 +356,7 @@ def refresh(
         f"derivations v{stored_version} stored, v{DERIVATIONS_VERSION} in code — "
         f"{'SWEEPING' if sweep else 'no sweep'}; corpus facts for {len(facts)} Jobs; "
         f"{len(pending)} queued to re-derive"
-        + (f"; {len(descriptions)} settled descriptions" if descriptions else "")
+        + (f"; {len(descriptions)} held descriptions" if descriptions else "")
     )
 
     detail_pass = registry.detail_pass_atses()
@@ -399,7 +398,7 @@ def refresh(
                 #
                 # Read from `meta`, the row as it was BEFORE this refresh — never from `row`. The
                 # cascade above may have just set `experience_source = "regex"` from a description
-                # that settled *this run*, which the vector was never built from. Reading that back
+                # that arrived *this run*, which the vector was never built from. Reading that back
                 # as proof would mark a genuinely title-only vector `has_description: True` and hide
                 # it from the upgrade path forever — the exact failure ADR-0061 froze this field
                 # against.
@@ -465,7 +464,7 @@ def main() -> int:
         "--pending-rederive",
         type=Path,
         default=PENDING_REDERIVE_PATH,
-        help="ids whose description settled since they were embedded (ADR-0062); "
+        help="ids whose description arrived after they were embedded (ADR-0062); "
         "re-derived at an unchanged version, then cleared",
     )
     args = parser.parse_args()

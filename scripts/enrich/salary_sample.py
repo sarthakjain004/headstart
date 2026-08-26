@@ -420,7 +420,6 @@ def _fetch_eightfold(scraper: BaseScraper) -> list[Job]:
                 "id": _sitemap_position_id(u),
                 "url": u,
                 "fields": fields,
-                "detail_fetched": fields is not None,
             }
         )
     return scraper.parse(records, datetime.now(UTC).isoformat())
