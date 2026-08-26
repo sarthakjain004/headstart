@@ -26,8 +26,10 @@ per-Job detail fetch *completed*.
 Two findings, both measured 2026-08-26, say that row does not earn its complexity.
 
 **The middle row is real, but it is ~7 tech Jobs wide.** An earlier draft of this ADR claimed the
-category was empty, on a 713-Job sample. Re-measuring wider refuted that: the category exists, and
-finding it changes the argument for removal rather than weakening it.
+category was empty, on a 713-Job sample. Re-measuring wider refuted that: the category exists — 4
+verified Jobs in the pass below — and finding it changes the argument for removal rather than
+weakening it. Its width in *tech* Jobs is pinned only by the store's own lifetime `null` count of
+**7**; the sample found no tech Job in the category at all.
 
 The wider pass ran the real scrapers — `registry.get_scraper(ats, slug, slug).fetch()` over boards
 drawn at random from `data/validate/liveness/{ats}.csv` — across six of the eight scrapable
@@ -45,25 +47,36 @@ drawn at random from `data/validate/liveness/{ats}.csv` — across six of the ei
 
 Each of the 399 was then traced to a cause:
 
-- **9 are the middle row** — the detail answered, and the posting's *own public page* carries an
-  empty description. Verified on the page's JSON-LD (`"description": ""` on
-  `cbts.eightfold.ai/careers/job/1443152815632` and `trinet.eightfold.ai/careers/job/44020930`) and
-  on SuccessFactors' `itemprop="description"` span, which on Hyundai Motor Europe's
-  `1340431355` contains literally `<div></div>`. Boards: cbts 2, trinet 1, telekom-growthhub 5,
-  jobs.hyundai-europe.com 1 — the telekom-growthhub count re-probed independently on 2026-08-26
-  and reproduced exactly (219 Jobs, 5 empty). **Only 1 of the 9 is a tech role**, and only tech
-  Jobs reach `data/jobs/tech/` and therefore the store — which is exactly why the store accumulated
-  **7** `null` entries in its lifetime and not 700. Read "tech role" strictly as
-  `tech_filter.is_tech()`, the ADR-0017 gate that decides what reaches the store, **not** as a
-  human reading of the title: telekom-growthhub's 5 are all German-titled engineering posts
-  (`Senior Softwareentwickler`, `Senior Datenbank-Entwickler für Oracle`, `IT-Projektleiter`, …)
-  that a person would call tech and the filter scores 1 of 5. That is a pre-existing recall gap on
-  German titles, out of scope here — but it means this ratio describes the *corpus*, which is the
-  right frame, since only what passes the gate can ever become a `null` entry.
-- **322 are failed fetches.** `kraftheinz.eightfold.ai`, 198 of 797: instrumented at
+- **4 are the middle row** — the detail answered, and the posting's *own public page* carries an
+  empty description. Boards: cbts 2, trinet 1, jobs.hyundai-europe.com 1. Verified on the page's
+  JSON-LD (`"description": ""` on `cbts.eightfold.ai/careers/job/1443152815632`, a *Senior Project
+  Manager*, and `trinet.eightfold.ai/careers/job/44020930`, a *Sales Development Representative*)
+  and on SuccessFactors' `itemprop="description"` span, which on Hyundai Motor Europe's
+  `1340431355` contains literally `<div></div>`.
+
+  **This bullet read "9, of which 1 is tech" until a review re-probe on 2026-08-26 refuted it.**
+  The 9 included `telekom-growthhub` 5 — the one board in the list the original pass never
+  JSON-LD-verified. Re-probed: the scraper still returns exactly 5 empties of 219 Jobs, but **5 of
+  5 of those Jobs carry a full description in their public JSON-LD** (HTTP 200, ~205 KB pages).
+  The descriptions exist, so these are not the posting's own absence and they move to the bullet
+  below. That also removes the
+  only tech role in the group: the 5 are German-titled engineering posts and
+  `tech_filter.is_tech()` — the ADR-0017 gate that decides what reaches `data/jobs/tech/` and
+  therefore the store — scores exactly 1 of them tech, the `Senior DevOps Engineer`. So **0 of the
+  4 verified middle-row Jobs are tech**, and this sample corroborates nothing about the store's
+  lifetime `null` count; that count stands on its own observation.
+
+  Note what the refutation *is*: five postings that a flag meaning "the detail answered" would have
+  settled as description-less, on a board where the descriptions demonstrably exist. One of them
+  passes the tech gate, so one of them would have reached the store and been wrong there
+  permanently. This is the ADR's own argument, measured rather than reasoned.
+- **327 the detail got wrong.** Two distinct mechanisms, and the difference is the whole ADR.
+  `telekom-growthhub.eightfold.ai`, 5: the detail **answered** — HTTP 200, no `jobDescription` —
+  for postings whose pages carry full text, so `detail_fetched` would have been `True` and the
+  state *would* have fired, wrongly. `kraftheinz.eightfold.ai`, 198 of 797: instrumented at
   `_description`, every one returned `None` (non-200), not `""` — so `detail_fetched` would have
-  been `False` and the removed state would not have fired on any of them, and the job pages
-  themselves carry a full JSON-LD description, so settling them would have been a lie.
+  been `False` and the state would *not* have fired; the job pages carry a full JSON-LD
+  description, so settling them would have been a lie the flag happened to avoid.
   `techrecruitment.zohorecruit.com`, 123 of 131: 4 of 4 job pages sampled in this pass serve Zoho's
   2,182-byte "sorry" error page under **HTTP 200** (re-probed wider below). `kone/careers` (workday), 1 of 923: its listing row is
   `{"bulletFields": ["R0663872"]}` — no `externalPath`, so no detail was ever attempted.
@@ -81,39 +94,54 @@ JSON-LD. Its own conclusion is this ADR's: *"Settling these Jobs as 'has none' w
 a falsehood — the descriptions exist."*
 
 **So the state fires, and what it buys is ~7 skipped detail fetches per run.** That is the store's
-own lifetime `null` count, and the 1-tech-in-9 rate above says it is the right order. Against that,
-the same measurement prices the cost of keeping it. Of the **seven** scrapable detail-pass scrapers
-that never set the flag, **four cannot reliably tell an empty answer from a failure** — and the
-count is read off their code, not off the sample:
+own lifetime `null` count — an observation, not an estimate from the sample, which found 0 tech
+Jobs in the category. Against that,
+the same measurement prices the cost of keeping it — and the price was measured on the one scraper
+where the state was actually live.
+
+**Eightfold's flag is wrong on live data, 5 of 5.** The telekom-growthhub Jobs above are not a
+near-miss; they are the removed state firing incorrectly. Instrumented at `_description` on
+2026-08-26, the `position_details` API answers **HTTP 200 with no `jobDescription` field** for all
+five. `_description_of` maps that to `""` — *not* `None` — and `""` is precisely what set
+`detail_fetched = True`. So under the three-state design all five would have been recorded as "this
+posting genuinely has none", permanently, while their public pages serve full descriptions. One of
+the five passes the tech gate, so one would have reached the store and been wrong there forever.
+
+That is the whole argument, and it does not depend on the other scrapers at all. The flag's premise
+is that a completed fetch means an authoritative answer. Eightfold's own API breaks that premise:
+it completes, returns 200, and omits a field the posting has. No amount of care in the *scraper*
+recovers this, because the scraper is told the truth about its request and a falsehood about the
+posting.
+
+The same shape appears elsewhere, which is why extending the flag was abandoned rather than fixed:
 
 - **Zoho** serves failed details as HTTP 200 error bodies. Re-verified independently on 2026-08-26:
   5 of 5 sampled failing ids on `techrecruitment.zohorecruit.com` returned the same 2,182-byte
   "sorry" page under 200, while 6 of 6 sampled succeeding ids returned a real ~1.7 MB record.
-- **Ripplehire** collapses the two cases in one expression —
-  `[(d or {}).get("jobDesc") or None for d in details]` (`ripplehire.py:135`): a detail that failed
-  and a detail that answered with no `jobDesc` both arrive as `None`.
-- **Trakstar**'s job page is a JS shell carrying no description marker at all.
-- **Successfactors**' detail is an HTML *parse*, so an unparseable page and an empty one look
-  identical — which is why setting the flag there was attempted and reverted (see below).
+- **Successfactors** and **trakstar** read an HTML *parse*, so a page that did not parse and a page
+  with no description are the same observation — which is why setting the flag on successfactors
+  was attempted and reverted (see below).
 
-The other three (**workday**, **smartrecruiters**, **rippling**) read JSON APIs where an absent
-field is unambiguous. Eightfold, the one scraper that *does* set the flag, is not in either group:
-its documented failure mode is a non-200 that yields `None` rather than `""`, which the flag
-handles correctly — but the measurement could not classify elcompanies' 65 empties either way, and
-that board moved between 65 and 6 depending on which egress it was riding. A flag that means "the
-detail answered" is only as trustworthy as the scraper's ability to tell answering from failing —
-and where it is wrong it writes a *permanent* falsehood, suppressing the very signal that a
-description is missing. That asymmetry, not an empty category, is what decides this: seven fetches
-a run is less than one silently mis-settled Job.
+The JSON-API scrapers (**workday**, **smartrecruiters**, **rippling**, **ripplehire**) can all tell
+a failed *request* from an answered one — each keeps the raw detail object and a
+`detail is not None` test would be a clean one-liner. Eightfold is the proof that this is not the
+hard part. A flag meaning "the detail answered" is only as trustworthy as the *origin's* willingness
+to answer honestly, and where it is wrong it writes a *permanent* falsehood, suppressing the very
+signal that a description is missing. That asymmetry, not an empty category, is what decides this:
+seven skipped fetches a run is less than one silently mis-settled Job — and we have now watched five
+of them nearly happen on one board.
 
 **What this does not establish.** 95 boards is a sample, not a census: the rate is bounded within
-an order of magnitude, not pinned. Three things could move it and none is measured here — the two
-detail-pass ATSes not probed at all, the 68 unclassified, and the board draw itself, which was
-random and unseeded, so the per-ATS counts above are **not** reproducible run-for-run and no
-committed artifact backs them. What is independently checkable is the mechanism, and that is what
+an order of magnitude, not pinned. Four things could move it and none is measured here — the two
+detail-pass ATSes not probed at all, the 68 unclassified, the board draw itself (random and
+unseeded, so the per-ATS counts above are **not** reproducible run-for-run and no committed
+artifact backs them), and the trace's own reliability: re-probing one of its four middle-row
+boards moved 5 Jobs out of the category, so the remaining unverified classifications should be
+read as provisional. What is independently checkable is the mechanism, and that is what
 the argument rests on: the two JSON-LD pages and the zoho re-probe cited above were all re-verified
-from scratch. What the sample *does* pin is the shape: the middle row is rare, mostly outside the
-tech gate, and every large block of empties turned out to be a failure rather than an answer.
+from scratch. What the sample *does* pin is the shape: the middle row is rare, every verified
+member of it fell outside the tech gate, and every large block of empties turned out to be a
+failure rather than an answer.
 
 **Only one scraper ever set the flag.** Nine scraper classes declare `has_detail_pass` — eight
 scrapable, since `join` is in `DISABLED_ATS` — and `detail_fetched` is set by eightfold alone. That
@@ -152,9 +180,10 @@ already treats them as unheld.
 ## Consequences
 
 **Eightfold re-fetches those 7 Jobs, and every genuinely empty posting it finds after.** They are
-the only Jobs the removed state was skipping, on the only scraper that skips — measured above at
-roughly 1 tech posting in 6,249, so single digits per full sweep, and only when their boards are in
-slice. This is the price of the removal, and it is paid every run rather than once.
+the only Jobs the removed state was skipping, on the only scraper that skips. The 95-board sample
+found no tech Job genuinely lacking a description at all, so the store's own lifetime count of 7 is
+the only measurement of the population — single digits per full sweep, and only when their boards
+are in slice. This is the price of the removal, and it is paid every run rather than once.
 
 **A genuinely description-less posting is now chased forever** — it stays in the ADR-0062 gap
 ledger, so `scrape_plan` keeps reserving exploration budget for its Board. The bound is the quota,

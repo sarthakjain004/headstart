@@ -22,14 +22,18 @@ coverage rather than as not measured.
 briefly recorded a second kind of entry — a ``null`` meaning "the detail answered and this posting
 genuinely has none" — gated on ``Job.detail_fetched``. That was removed (ADR-0089). The state is
 real but tiny: measured 2026-08-26 over 13,061 live Jobs on 95 boards across six detail-pass
-ATSes, 399 descriptions came back empty and only **9** were a posting that genuinely has none —
-1 of them a tech role, which is why the store accumulated **7** such entries in its lifetime
-(0.002% of 328,930) and not 700. The rest were failed fetches or unclassified. What removed the
-state is that the flag feeding it cannot be trusted: on most detail-pass ATSes an empty answer is
-not reliably distinguishable from a failed fetch (zoho serves its error page under HTTP 200), and
-a wrong settle records a *permanent* falsehood — suppressing the very signal that a description is
-missing. ``read_store`` skips any legacy ``null`` so "held" means one thing everywhere;
-``--compact`` drops them on its next pass.
+ATSes, 399 descriptions came back empty and only **4** were a posting that genuinely has none —
+none of them a tech role. The store's own lifetime count of **7** such entries (0.002% of 328,930)
+is the only measure of the population.
+
+What removed the state is that the flag feeding it is wrong on live data. Instrumented on
+`telekom-growthhub.eightfold.ai`, eightfold's ``position_details`` answers HTTP 200 with no
+``jobDescription`` for 5 of 5 postings whose public pages carry full text — so
+``_description_of`` returns ``""``, ``detail_fetched`` would have been ``True``, and all five
+would have been settled "has none" permanently. One of them passes the tech gate. A completed
+fetch is not an authoritative answer, and a wrong settle is a *permanent* falsehood that suppresses
+the very signal that a description is missing. ``read_store`` skips any legacy ``null`` so "held"
+means one thing everywhere; ``--compact`` drops them on its next pass.
 
 **Writes are append-only** (ADR-0050). Each run writes one small ``{seq}.jsonl.gz`` fragment per
 ATS holding only what changed; the ``base.jsonl.gz`` is rewritten only by ``--compact``. Readers
@@ -209,12 +213,13 @@ def reconcile(jobs_path: Path, ats_dir: Path) -> Reconciled:
                     # No text this run and none stored, so the next run starts here again.
                     #
                     # Deliberately NOT called "the detail never ran", and no longer split by
-                    # whether it did: measured 2026-08-26 (ADR-0089), only 9 of 399 empty
+                    # whether it did: measured 2026-08-26 (ADR-0089), only 4 of 399 empty
                     # descriptions across 13,061 live Jobs were a posting that genuinely has none,
-                    # and the signal that would separate those from a failed fetch is unreliable
-                    # on most detail-pass ATSes — so splitting on it would mis-settle more Jobs
-                    # than it spared. The count is exact — these Jobs really are unrecorded and
-                    # really do return every run.
+                    # and the signal that would separate those from a bad fetch is wrong on live
+                    # data — eightfold answers 200 with no description for postings that have one,
+                    # 5 of 5 on one board — so splitting on it mis-settles more Jobs than it
+                    # spares. The count is exact — these Jobs really are unrecorded and really do
+                    # return every run.
                     unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 

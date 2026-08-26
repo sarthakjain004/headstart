@@ -61,10 +61,10 @@ the one being asked.
 > paragraph below describes the code as it stood when this was written.
 
 `reconcile()` only settled a Job as authoritatively description-less when `job["detail_fetched"]`
-was truthy (`update_descriptions.py`). `Job.detail_fetched` is set by **eightfold alone**, and
-personio does not declare `has_detail_pass` — so personio can *never* settle anything, by
-construction. Its empty Jobs fall to the `unrecorded` branch and are re-counted as a fresh backlog
-every run forever.
+was truthy (`update_descriptions.py`). `Job.detail_fetched` was set by **eightfold alone**, and
+personio does not declare `has_detail_pass` — so personio could *never* settle anything, by
+construction. Its empty Jobs fell to the `unrecorded` branch and were re-counted as a fresh
+backlog every run forever.
 
 That is worth knowing, but it was the **wrong thing to fix**. Settling these Jobs as "has none"
 would have recorded a falsehood — the descriptions exist — and permanently suppressed the signal

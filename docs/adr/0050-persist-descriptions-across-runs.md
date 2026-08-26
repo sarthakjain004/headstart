@@ -53,8 +53,8 @@ so they leave the list and are fetched again.
 > description-less" — describe a design that no longer exists. The `null` entry and
 > `Job.detail_fetched` are gone and the store is two-state; in particular the obligation below —
 > *a scraper that starts consulting `have_details` must also set `detail_fetched`* — is void,
-> and there is no longer a flag to set. Everything from `meta.jsonl` gains `has_description`
-> onward is current and untouched.
+> and there is no longer a flag to set. The rest of this ADR stands, except the "Authoritative
+> absence speeds convergence" paragraph further down, which carries its own note.
 
 **The store records two kinds of entry**, because "empty" has two causes that are otherwise
 identical in the corpus:
@@ -136,8 +136,9 @@ description leaves the retry set after one successful fetch.
 
 > **Amended 2026-08-26 by [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md).**
 > The last sentence no longer holds: with the `null` entry gone, a posting that genuinely has no
-> description never leaves the retry set. Measured at roughly one tech posting in 6,249, that is
-> the cost ADR-0089 accepts.
+> description never leaves the retry set. ADR-0089's 95-board sample found no such tech posting at
+> all, so the store's own lifetime count of 7 `null` entries is the only measure of the population.
+> That is the cost ADR-0089 accepts.
 
 **A pre-ADR-0050 `meta.jsonl` row carries no flag**, and is read as degraded only on an ATS with a
 detail pass (`BaseScraper.has_detail_pass`). Reading absence as degraded everywhere would re-embed

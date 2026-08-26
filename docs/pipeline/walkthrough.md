@@ -191,17 +191,20 @@ would stop being re-fetched every run. It was gated on a `Job.detail_fetched` fl
 It was removed, and the reasoning is worth keeping because it is a good example of a design that
 looks right and measures wrong.
 
-**The state is real, but it is tiny — and the flag feeding it is untrustworthy.** Sampled live on
-2026-08-26 across **13,061 Jobs on 95 boards and six detail-pass ATSes**: 399 came back with an
-empty description, and only **9** of those were a posting that genuinely has none (1 of them a tech
-role). The rest were failures or unclassified — eightfold details returning non-200, Zoho job pages
-serving an error body under HTTP 200, a Workday listing row with no `externalPath`. And of
+**The state is real, but it is tiny — and the flag feeding it is wrong on live data.** Sampled live
+on 2026-08-26 across **13,061 Jobs on 95 boards and six detail-pass ATSes**: 399 came back with an
+empty description, and only **4** of those were a posting that genuinely has none — none of them a
+tech role. The rest were bad fetches or unclassified — Zoho job pages serving an error body under
+HTTP 200, eightfold details returning non-200, a Workday listing row with no `externalPath`. And of
 **328,930** entries the store had accumulated, only **7** were `null` — 0.002%, all eightfold.
 
-That is the whole argument. What the state buys is ~7 skipped fetches per run. What it costs is
-that on most of the ATSes probed an empty answer is not reliably distinguishable from a failure, so
-a wrong settle records "has no description" *permanently* for a Job that has one. ADR-0089 has the
-per-ATS table and the trace of all 399; read it there rather than trusting this retelling.
+The decisive measurement is on eightfold itself, the only scraper that ever set the flag. On
+`telekom-growthhub`, its `position_details` API answers **HTTP 200 with no description** for 5 of 5
+postings whose public pages carry full text. That maps to `""`, which is exactly what set
+`detail_fetched = True` — so all five would have been recorded as "genuinely has none",
+permanently, and one of them passes the tech gate and would have reached the store. A completed
+fetch is not an authoritative answer. ADR-0089 has the per-ATS table and the trace of all 399; read
+it there rather than trusting this retelling.
 
 **The flag was inert almost everywhere.** Nine scrapers declare `has_detail_pass` — eight
 scrapable, since `join` is disabled — but only eightfold ever set `detail_fetched`, and, not
