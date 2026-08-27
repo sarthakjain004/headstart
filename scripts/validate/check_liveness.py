@@ -69,6 +69,10 @@ from headstart.models import (  # one host rule, shared with the scrapers
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
+from headstart.scrapers.zwayam import (  # request shape + dead-vs-failed line, single source
+    body_error_code,
+    search_request,
+)
 
 try:  # bot-wall fallback (see _cloudscraper_fetch below) — optional, not a base dependency
     import cloudscraper
@@ -1511,6 +1515,53 @@ def p_join(t, u):
     )
 
 
+def p_zwayam(t, u):
+    """One POST to the shared API, which selects the Board by hostname (`t`).
+
+    Read the BODY, never the status: a hostname that is no longer a registered Board answers
+    HTTP 200 with `"data": null`, identical in every other respect to a live one — and a
+    *failing* request answers HTTP 200 with `data: null` too, distinguished only by its body
+    `code` of 500, so DEAD additionally requires `body_error_code` to be quiet. The whole
+    request — url, headers and body — comes from the scraper's `search_request`, and the
+    dead-vs-failed line from its `body_error_code`, so neither can drift; an earlier version
+    imported only the body helpers and re-declared the headers, and had already drifted on the
+    User-Agent.
+    """
+    url, headers, body = search_request(t)
+    try:
+        r = _fetch("POST", url, data=body, headers=headers)
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code != 200:
+        # Never DEAD on a status alone here: a real absence is a 200 with `data: null`, so any
+        # non-200 is about the request or the edge, not the Board. (A 403 from the Akamai front
+        # has been seen once, in 2026-08 discovery; ~2,160 requests of deliberate load-testing on
+        # 2026-08-27 — 34 req/s sustained, 32-wide concurrency, 60 distinct domains — could not
+        # reproduce it, so treat it as rare and transient rather than a known threshold.)
+        return UNKNOWN, None
+    try:
+        payload = r.json() or {}
+    except ValueError:
+        return UNKNOWN, None
+    failed = body_error_code(payload)
+    if failed is not None:
+        # A failing request carries the same `data: null` a dead Board answers (measured
+        # 2026-08-27 by sending malformed input); only a quiet body code makes the null
+        # authoritative. Anything else is the request or the service, not the Board.
+        _note(f"body-code-{failed}")
+        return UNKNOWN, None
+    data = payload.get("data")
+    if not data:
+        return DEAD, None
+    return LIVE, data.get("totalCount", 0)
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -1531,6 +1582,7 @@ PROBES = {
     "freshteam": p_freshteam,
     "eightfold": p_eightfold,
     "successfactors": p_successfactors,
+    "zwayam": p_zwayam,
 }
 
 

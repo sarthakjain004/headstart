@@ -28,6 +28,20 @@ class CompanyRef:
 # one entry covers a Board that appears under several casings (smartrecruiters Dev2/dev2).
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
+        # Zwayam's own demo/QA tenants, confirmed by reading their board content on 2026-08-27
+        # rather than inferred from the slug — the same bar the darwinbox entries below were held
+        # to. `testcompany.cluster3` is the worst of them and the reason this entry exists: it is
+        # `live` with 77 postings titled "TEDT", "tesdt", "xyz_zbc", "dsf", "14 dec", whose
+        # locations are "fd", "sd", "c", "dfs", "H". `zhirematetest` posts "Test Job", "Hi",
+        # "Hello Test", "Testing job".
+        #
+        # Deliberately NOT excluded, though their slugs invite it: `ssttest` ("Software Engineer",
+        # "Implementation Engineer") and `hirematetest1` ("Senior Java Developer") carry ordinary
+        # titles and real Indian locations, so the content does not confirm the slug's hint. Two
+        # further vendor-shaped hosts, `ratestcompany` (0 postings) and `wisseninfotechhiremate`
+        # (1), are left for the same reason.
+        "zwayam:testcompany.cluster3.openings.co",
+        "zwayam:zhirematetest.openings.co",
         "darwinbox:training",  # company "training"; "Ali marketing Executive", "SK_Jr. Associate"
         # More of Darwinbox's own demo/QA/training tenants (found during darwinbox's salary-
         # extraction pass, 2026-08-22, reading real board content — not from the slug alone).

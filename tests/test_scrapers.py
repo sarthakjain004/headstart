@@ -6172,3 +6172,530 @@ def test_oracle_stops_on_a_short_page_when_no_total_is_given(monkeypatch):
 
     assert seen == [0, 200]  # it did NOT stop after page 1
     assert len(jobs) == 205
+
+
+def test_zwayam_parse():
+    raw = _load("zwayam_tavant.json")
+    jobs = get_scraper("zwayam", "careers.tavant.com", "Tavant").parse(raw, SCRAPED_AT)
+    assert len(jobs) == 3
+    j = jobs[0]
+    assert j.ats == "zwayam"
+    assert j.company == "Tavant"
+    assert j.id == f"zwayam:careers.tavant.com:{raw['rows'][0]['id']}"
+    assert j.scraped_at == SCRAPED_AT
+    # Structured record wins over the shouted flat `location` field.
+    assert j.location == "Bengaluru, Karnataka, India"
+    assert j.remote is False
+    # The deep link carries the SPA's own `<base href>` prefix, not a guessed one.
+    assert j.url.startswith("https://careers.tavant.com/tavant/jobview/")
+    assert j.description and "</" not in j.description
+    assert j.posted_at and j.posted_at.startswith("20")
+
+
+def test_zwayam_experience_falls_back_only_when_the_numbers_are_blank():
+    """The regression test 4e59dfa's fix never had.
+
+    The fixture's row 0 states both forms and they agree, so it cannot tell the two orderings
+    apart — which is why the old name (`...prefers_the_tenants_own_phrasing`) outlived the
+    behaviour it described. These assertions can: `extract("Upto 4 years")` returns None while the
+    numeric pair (0, 4) parses to 0-4, so preferring the prose silently loses a stated range.
+    """
+    from headstart.experience import extract
+    from headstart.scrapers.zwayam import _experience
+
+    assert (
+        extract("Upto 4 years", None, None) is None
+    )  # the premise, asserted not assumed
+    assert (
+        _experience(
+            {
+                "minYearOfExperience": 0,
+                "maxYearOfExperience": 4,
+                "experienceUIField": "Upto 4 years",
+            }
+        )
+        == "0-4 years"
+    )
+    assert (
+        _experience(
+            {
+                "minYearOfExperience": 0,
+                "maxYearOfExperience": 0,
+                "experienceUIField": "Fresher",
+            }
+        )
+        == "Fresher"
+    )
+
+
+def test_zwayam_experience_prefers_the_structured_numeric_pair():
+    """The fixture's row 0 states both forms and they agree, so it cannot tell the orderings
+    apart on its own — the disagreeing copy below is what makes this test discriminate (the same
+    trap that let the old `..._prefers_the_tenants_own_phrasing` name outlive its behaviour)."""
+    raw = _load("zwayam_tavant.json")
+    assert raw["rows"][0]["experienceUIField"] == "5-8 years"  # the premise, asserted
+    raw["rows"][0]["experienceUIField"] = "prose the numbers disagree with"
+    jobs = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)
+    assert jobs[0].experience == "5-8 years"  # the (5, 8) pair, not the prose
+
+
+def test_zwayam_zero_to_zero_years_is_an_unfilled_form_not_a_range():
+    """min=max=0 is what an untouched form submits, so it must not become "0-0 years"."""
+    jobs = get_scraper("zwayam", "careers.tavant.com").parse(
+        _load("zwayam_tavant.json"), SCRAPED_AT
+    )
+    assert jobs[2].experience is None
+
+
+def test_zwayam_publishes_amounts_regardless_of_the_show_toggle():
+    """`showSal` is off on 19 of 23 rows that carry amounts, and Zwayam has no Tier-2 fallback
+    (description mining recovers 0 of 52), so honouring the toggle emptied the column entirely."""
+    raw = _load("zwayam_tavant.json")
+    assert raw["rows"][1]["showSal"] is False  # toggle off...
+    off = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert off.salary == "100000-200000 INR"  # ...and the figure is published anyway
+
+    raw["rows"][1]["showSal"] = True
+    on = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert on.salary == "100000-200000 INR"  # same either way
+
+
+def test_zwayam_no_amounts_still_yields_no_salary():
+    raw = _load("zwayam_tavant.json")
+    raw["rows"][1]["minJobSalary"] = raw["rows"][1]["maxJobSalary"] = ""
+    assert (
+        get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1].salary
+        is None
+    )
+
+
+def test_zwayam_slug_is_the_board_host():
+    """The API keys on the hostname, so a ledger row carrying a full URL must normalise to it."""
+    from headstart.scrapers.zwayam import ZwayamScraper
+
+    assert ZwayamScraper.slug_from(
+        "careers.persistent.com", "https://careers.persistent.com/"
+    ) == ("careers.persistent.com")
+    assert ZwayamScraper.slug_from(
+        "impetus", "https://impetus.openings.co/impetus/"
+    ) == ("impetus.openings.co")
+
+
+class _ZwayamNullBody:
+    """The 200-with-`data: null` a non-Board hostname answers with."""
+
+    status_code = 200
+    text = ""
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"code": 200, "data": None}
+
+
+def test_zwayam_unregistered_host_yields_no_jobs(monkeypatch):
+    """A hostname that is not a Board answers 200 with data: null — not an error, and not jobs."""
+    from headstart.scrapers import zwayam as mod
+
+    monkeypatch.setattr(mod.http, "fetch", lambda *a, **k: _ZwayamNullBody())
+    scraper = get_scraper("zwayam", "careers.not-a-board.example")
+    assert scraper.parse(scraper.fetch_raw(), SCRAPED_AT) == []
+
+
+class _ZwayamHomepage:
+    status_code = 200
+
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        return None
+
+
+def test_zwayam_link_base_tells_the_three_frontend_generations_apart(monkeypatch):
+    """One API, three careers frontends, three job routes (live-classified across all 224 hiring
+    Boards): Angular's `<base href>` + `jobview/`, Next.js's root `/job-view/` (where `jobview`
+    hard-404s, 10/10 Boards), and the old Angular 1 shell's hash route `/#!/job-view/`."""
+    from headstart.scrapers import zwayam as mod
+
+    cases = [
+        ('<base href="/tavant/"><app-root>', "https://h.example/tavant/jobview/"),
+        ('<script src="/_next/static/x.js">', "https://h.example/job-view/"),
+        ('<div ng-view="" id="ng-view">', "https://h.example/#!/job-view/"),
+    ]
+    for html, expected in cases:
+        monkeypatch.setattr(
+            mod.http, "fetch", lambda *a, _h=html, **k: _ZwayamHomepage(_h)
+        )
+        assert get_scraper("zwayam", "h.example")._link_base() == expected
+
+
+def test_zwayam_unreadable_homepage_falls_back_on_the_hostname_prior(monkeypatch):
+    """When the homepage GET fails the shape comes from the measured prior: `openings.co` hosts
+    are the Next generation 102:12, custom domains Angular 92:0. A wrong guess costs a dead link,
+    not a lost Job — so the Board must still return its rows."""
+    from headstart.scrapers import zwayam as mod
+
+    def _boom(*a, **k):
+        raise OSError("refused")
+
+    monkeypatch.setattr(mod.http, "fetch", _boom)
+    assert (
+        get_scraper("zwayam", "x.openings.co")._link_base()
+        == "https://x.openings.co/job-view/"
+    )
+    assert (
+        get_scraper("zwayam", "careers.x.com")._link_base()
+        == "https://careers.x.com/jobview/"
+    )
+
+
+def test_zwayam_reports_a_short_read_as_truncated():
+    """A Board whose pages stop before totalCount must NOT look complete to `harvest`, or
+    `index sync` reads the unread postings as delisted (ADR-0053)."""
+
+    scraper = get_scraper("zwayam", "careers.short.example")
+    page = {
+        "data": {
+            "totalCount": 50,
+            "hasMoreData": False,  # server says "no more" while 40 postings are unread
+            "data": [
+                {
+                    "_source": {
+                        "id": i,
+                        "jobTitle": f"Dev {i}",
+                        "jobUrl": f"d-{i}",
+                        "mediumDescriptionWithoutHtml": "text",
+                    }
+                }
+                for i in range(10)
+            ],
+        }
+    }
+    scraper._page = lambda start: page
+    scraper._link_base = lambda: "https://careers.short.example/x/jobview/"
+    scraper._company_id = lambda: None  # keeps the detail pass off the network
+    raw = scraper.fetch_raw()
+    assert len(raw["rows"]) == 10
+    assert scraper.truncated == "read 10 of 50 postings"
+
+
+def test_zwayam_truncation_keeps_the_first_reason(monkeypatch):
+    """`mark_truncated` is the base-class seam; the page cap must win over the shortfall."""
+    from headstart.scrapers import zwayam as mod
+
+    scraper = get_scraper("zwayam", "careers.runaway.example")
+    monkey_cap = 3
+    monkeypatch.setattr(mod, "_MAX_PAGES", monkey_cap)
+    page = {
+        "data": {
+            "totalCount": 10_000,
+            "hasMoreData": True,
+            "data": [
+                {
+                    "_source": {
+                        "id": i,
+                        "jobTitle": "Dev",
+                        "jobUrl": "d",
+                        "mediumDescriptionWithoutHtml": "text",
+                    }
+                }
+                for i in range(10)
+            ],
+        }
+    }
+    scraper._page = lambda start: page
+    scraper._link_base = lambda: "https://careers.runaway.example/x/jobview/"
+    scraper._company_id = lambda: None  # keeps the detail pass off the network
+    scraper.fetch_raw()
+    assert scraper.truncated.startswith(f"stopped at the {monkey_cap}-page cap")
+
+
+def test_zwayam_multipart_encodes_every_field():
+    from headstart.scrapers.zwayam import _BOUNDARY, _multipart
+
+    body = _multipart({"a": "1", "b": "two"}).decode()
+    assert body.count(f"--{_BOUNDARY}\r\n") == 2
+    assert body.endswith(f"--{_BOUNDARY}--\r\n")
+    assert 'name="a"\r\n\r\n1\r\n' in body
+    assert 'name="b"\r\n\r\ntwo\r\n' in body
+
+
+def test_zwayam_absolute_base_href_does_not_corrupt_the_link(monkeypatch):
+    """An absolute <base href> is legal HTML; pasting it onto the Board host would build
+    https://host/https://cdn.../jobview/… — unresolvable."""
+    from headstart.scrapers import zwayam as mod
+
+    html = '<html><base href="https://cdn.example.com/x/"><app-root></app-root></html>'
+    monkeypatch.setattr(mod.http, "fetch", lambda *a, **k: _ZwayamHomepage(html))
+    assert (
+        get_scraper("zwayam", "careers.abs.example")._link_base()
+        == "https://careers.abs.example/jobview/"
+    )
+
+
+def test_zwayam_row_without_a_joburl_is_skipped_not_linked_to_the_board_root():
+    """Unobserved (0 of 16,427 rows), but a Board-root link would be a URL no shape can match."""
+    raw = {
+        "link_base": "https://careers.nolink.example/x/jobview/",
+        "rows": [{"id": 1, "jobTitle": "Dev", "jobUrl": ""}],
+    }
+    assert get_scraper("zwayam", "careers.nolink.example").parse(raw, SCRAPED_AT) == []
+
+
+def test_zwayam_bare_amounts_default_to_rupees():
+    """Most rows carrying amounts state no `currencyType`, and `salary.extract`'s plausibility
+    guard falls back to USD bounds for an unknown currency — so a real 17-20 lakh range reads as
+    $1.7M and is dropped, while small placeholder ranges survive. Defaulting to INR is what makes
+    the large, genuine figures reach the index."""
+    from headstart.salary import extract
+    from headstart.scrapers.zwayam import _salary
+
+    assert (
+        _salary({"minJobSalary": "1700000", "maxJobSalary": "2000000"})
+        == "1700000-2000000 INR"
+    )
+    span = extract(
+        _salary({"minJobSalary": "1700000", "maxJobSalary": "2000000"}), None, "zwayam"
+    )
+    assert span and span.currency == "INR" and span.min_annual == 1700000
+
+    # a stated currency always wins over the default
+    assert (
+        _salary(
+            {"minJobSalary": "9000", "maxJobSalary": "15000", "currencyType": "QAR"}
+        )
+        == "9000-15000 QAR"
+    )
+
+
+def test_zwayam_fixture_row_without_a_currency_gets_the_default():
+    """The fixture's salaried rows all state INR, so the shipped fixture never exercised the
+    default that most real rows depend on."""
+    raw = _load("zwayam_tavant.json")
+    raw["rows"][1]["currencyType"] = None
+    job = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert job.salary.endswith(" INR")
+
+
+def test_zwayam_a_zero_bound_is_an_unfilled_form_half():
+    """`1000000-0` makes `salary.extract` reject the whole row, losing a real floor that parses
+    fine alone — 17 of 5,079 amount rows carried a floor with a zero ceiling."""
+    from headstart.salary import extract
+    from headstart.scrapers.zwayam import _salary
+
+    assert _salary({"minJobSalary": "1000000", "maxJobSalary": "0"}) == "1000000 INR"
+    assert extract("1000000 INR", None, "zwayam").min_annual == 1000000
+    assert _salary({"minJobSalary": "0", "maxJobSalary": "0"}) is None
+
+
+def test_zwayam_a_ceiling_without_a_floor_is_shown_but_never_read_as_a_floor():
+    """A lone figure parses as a *floor*, so a bare ceiling would serve a job capped at 200k as
+    one paying at least that (10 of 5,079 amount rows). "Upto" keeps the display column honest —
+    `Job.salary` is "raw, for display" — while parsing to nothing, so no derived column inverts.
+    """
+    from headstart.salary import extract
+    from headstart.scrapers.zwayam import _salary
+
+    # the premise, asserted not assumed
+    assert (
+        extract("200000 INR", None, "zwayam").min_annual == 200000
+    )  # reads as a FLOOR
+    assert _salary({"minJobSalary": "", "maxJobSalary": "200000"}) == "Upto 200000 INR"
+    assert _salary({"minJobSalary": "0", "maxJobSalary": "200000"}) == "Upto 200000 INR"
+    assert extract("Upto 200000 INR", None, "zwayam") is None  # shown, never inverted
+
+
+def test_zwayam_job_url_is_percent_encoded():
+    """Real jobUrl values carry spaces, commas and slashes; pasted raw they make a malformed URL
+    (and the Next.js generation hard-404s a raw slash while routing its %2F encoding)."""
+    raw = {
+        "link_base": "https://careers.enc.example/x/jobview/",
+        "rows": [{"id": 7, "jobTitle": "SDET", "jobUrl": "sdet-pune-gen ai, py/sql"}],
+    }
+    url = get_scraper("zwayam", "careers.enc.example").parse(raw, SCRAPED_AT)[0].url
+    assert " " not in url and "," not in url
+    assert url.endswith("/jobview/sdet-pune-gen%20ai%2C%20py%2Fsql")
+
+
+def test_zwayam_above_n_years_is_an_open_floor_not_an_inverted_range():
+    """59 of 60 lo>hi pairs walked are "Above N years" rows — max left at the form's 0. Emitting
+    "3.5-0 years" ships an inverted range; "3.5+ years" is what `experience.extract` reads as an
+    open floor."""
+    from headstart.experience import extract
+    from headstart.scrapers.zwayam import _experience
+
+    source = {
+        "minYearOfExperience": 3.5,
+        "maxYearOfExperience": 0,
+        "experienceUIField": "Above 3.5 years",
+    }
+    assert _experience(source) == "3.5+ years"
+    span = extract(_experience(source), None, None)
+    assert span and span.min_years == 3 and span.max_years is None
+
+
+def test_zwayam_department_survives_the_lowercase_key_being_null():
+    """`departmentName` is null while `DepartmentName` carries the value on 1,399 of 16,427
+    walked rows; the two agree everywhere both are set, so the fallback only recovers."""
+    raw = {
+        "link_base": "https://h.example/jobview/",
+        "rows": [
+            {
+                "id": 1,
+                "jobTitle": "Dev",
+                "jobUrl": "d",
+                "departmentName": None,
+                "DepartmentName": "Engineering",
+            }
+        ],
+    }
+    job = get_scraper("zwayam", "h.example").parse(raw, SCRAPED_AT)[0]
+    assert job.department == "Engineering"
+
+
+def test_zwayam_a_body_error_code_raises_rather_than_reading_as_an_empty_board(
+    monkeypatch,
+):
+    """The endpoint reports its own failures as HTTP 200 with body `code: 500` and `data: null`
+    (measured) — byte-identical to a dead Board except for the code. Reading it as "no jobs"
+    marks every posting Unconfirmed, and a second one evicts them all (ADR-0083)."""
+    import pytest
+
+    from headstart.scrapers import zwayam as mod
+
+    class _ErrorBody:
+        status_code = 200
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 500, "data": None, "message": "Internal Server Error"}
+
+    monkeypatch.setattr(mod.http, "fetch", lambda *a, **k: _ErrorBody())
+    scraper = get_scraper("zwayam", "careers.err.example")
+    with pytest.raises(RuntimeError, match="body code 500"):
+        scraper.fetch_raw()
+
+
+def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
+    """The listing's text can be silently truncated with no way to tell (632 chars listed vs
+    909 of stripped detail text, measured), so the detail is fetched for every row not on the
+    ADR-0050 skip-list and its text wins over whatever the listing carried."""
+    page = {
+        "data": {
+            "totalCount": 3,
+            "hasMoreData": False,
+            "data": [
+                {"_source": {"id": 1, "jobTitle": "A", "jobUrl": "a"}},
+                {
+                    "_source": {
+                        "id": 2,
+                        "jobTitle": "B",
+                        "jobUrl": "b",
+                        "mediumDescriptionWithoutHtml": "possibly truncated listing",
+                    }
+                },
+                {
+                    "_source": {
+                        "id": 3,
+                        "jobTitle": "C",
+                        "jobUrl": "c",
+                        # The row MUST carry listing text: without it this test passes whether
+                        # or not a skip-listed row falls through to the listing, which is the
+                        # exact regression it exists to catch.
+                        "mediumDescriptionWithoutHtml": "possibly truncated listing",
+                    }
+                },
+            ],
+        }
+    }
+    scraper = get_scraper("zwayam", "h.example")
+    scraper._page = lambda start: page
+    scraper._link_base = lambda: "https://h.example/jobview/"
+    scraper._company_id = lambda: 4242
+    fetched = []
+
+    def _detail(company_id, job_url):
+        fetched.append((company_id, job_url))
+        return f"detail text for {job_url}"
+
+    scraper._job_detail = _detail
+    # id 3 is on the skip-list: the store already holds its (detail-derived) text, so the row
+    # must ship None and let the store supply it. Shipping the listing text instead would be
+    # worse than a no-op — `update_descriptions` treats fresh corpus text as authoritative
+    # ("Fresh text always wins"), so run 2 would *overwrite* the stored full text with the
+    # truncated listing, and every later run would re-confirm it.
+    scraper.have_details = {"zwayam:h.example:3"}
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert fetched == [(4242, "a"), (4242, "b")]
+    by_id = {j.id.rsplit(":", 1)[1]: j.description for j in jobs}
+    assert by_id == {"1": "detail text for a", "2": "detail text for b", "3": None}
+
+
+def _zwayam_two_row_board(scraper):
+    """A Board of two rows — one carrying listing text, one carrying none."""
+    page = {
+        "data": {
+            "totalCount": 2,
+            "hasMoreData": False,
+            "data": [
+                {
+                    "_source": {
+                        "id": 1,
+                        "jobTitle": "A",
+                        "jobUrl": "a",
+                        "mediumDescriptionWithoutHtml": "possibly truncated listing",
+                    }
+                },
+                {"_source": {"id": 2, "jobTitle": "B", "jobUrl": "b"}},
+            ],
+        }
+    }
+    scraper._page = lambda start: page
+    scraper._link_base = lambda: "https://h.example/jobview/"
+    return scraper
+
+
+def test_zwayam_a_failed_detail_ships_nothing_so_the_next_run_retries():
+    """A transient failure must NOT fall back to the listing text: the store persists whatever
+    the scrape emits and membership in it is the skip-list, so one bad fetch would freeze
+    possibly-truncated text forever. Emitting nothing leaves `needs_detail` true."""
+    scraper = _zwayam_two_row_board(get_scraper("zwayam", "h.example"))
+    scraper._company_id = lambda: 4242
+
+    def _boom(company_id, job_url):
+        raise OSError("detail refused")
+
+    scraper._job_detail = _boom
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert {j.id.rsplit(":", 1)[1]: j.description for j in jobs} == {
+        "1": None,
+        "2": None,
+    }
+
+
+def test_zwayam_a_failed_config_call_ships_no_descriptions_not_stale_ones():
+    """The config call is per-Board, so its failure fails every detail on the Board — and must
+    behave like any other failed detail rather than freezing the whole Board's listing text."""
+    scraper = _zwayam_two_row_board(get_scraper("zwayam", "h.example"))
+    scraper._company_id = lambda: None
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == 2  # the Jobs themselves still ship
+    assert {j.description for j in jobs} == {None}
+
+
+def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text():
+    """An answered-but-bodyless detail is the posting's final word, so the listing text is the
+    best that will ever exist for it — kept, unlike the failed-fetch case above."""
+    scraper = _zwayam_two_row_board(get_scraper("zwayam", "h.example"))
+    scraper._company_id = lambda: 4242
+    scraper._job_detail = lambda company_id, job_url: ""
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert {j.id.rsplit(":", 1)[1]: j.description for j in jobs} == {
+        "1": "possibly truncated listing",
+        "2": None,
+    }
