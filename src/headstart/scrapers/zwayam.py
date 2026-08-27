@@ -100,13 +100,14 @@ _log = log.get(__name__)
 
 _API = "https://public.zwayam.com/jobs/search"
 #: Resolves a Board host to its tenant record; the detail endpoint needs the numeric ``id`` from
-#: here (base64 or a wrong id both fail it), which is this call's only remaining job.
+#: here (measured: base64 400s, another tenant's or a nonexistent id 404s), which is this call's
+#: only remaining job.
 _CONFIG_API = "https://public.zwayam.com/data-service/v2/public-configurations"
 #: Per-job detail (JSON POST, unlike the multipart search): the only source of text for the 13%
 #: of rows whose listing carries no description at all (module docstring).
 _DETAIL_API = "https://public.zwayam.com/jobs-service/v1/jobs/careersite"
-#: Sent because omitting it 400s, and ignored by the server, so its value is arbitrary. Kept as a
-#: constant rather than threaded from a config call that would buy nothing.
+#: Ignored by the search — even omissible (module docstring) — so its value is arbitrary; sent to
+#: mirror the real client, and kept valid base64 because an *empty or malformed* value body-500s.
 _IGNORED_COMPANY_ID = "MQ=="  # base64("1")
 #: Guards a runaway Board. At the server's fixed 10 rows a page (module docstring), 1,200 pages is
 #: 12,000 postings — well above the largest Board seen (7,638) and far below anything that could
@@ -175,6 +176,20 @@ def _multipart(fields: dict[str, str]) -> bytes:
         )
     out.append(f"--{_BOUNDARY}--\r\n")
     return "".join(out).encode()
+
+
+def body_error_code(payload: dict) -> object | None:
+    """The body ``code`` when the response reports its own failure, else None.
+
+    The endpoint's failures arrive as HTTP 200 with ``code: 500`` and the same ``data: null`` a
+    dead Board answers (module docstring). Public for the same reason as :func:`search_request`:
+    ``check_liveness``'s ``p_zwayam`` must draw the dead-vs-failed line exactly where the scrape
+    does, or the two classify the same Board differently. A body without a ``code`` passes — the
+    field has been present on every response measured, and if the vendor drops it the null data
+    should keep meaning what it always has.
+    """
+    code = payload.get("code")
+    return code if code is not None and code != 200 else None
 
 
 def search_request(host: str, start: int = 0) -> tuple[str, dict[str, str], bytes]:
@@ -350,10 +365,9 @@ class ZwayamScraper(BaseScraper):
         )
         response.raise_for_status()
         payload = response.json() or {}
-        code = payload.get("code")
-        if code is not None and code != 200:
-            # HTTP 200 with a non-200 body code is how this endpoint reports its own failures
-            # (module docstring). Without this raise it reads exactly like a dead Board's
+        code = body_error_code(payload)
+        if code is not None:
+            # Without this raise a failing response reads exactly like a dead Board's
             # `data: null` and silently empties a live one — the ADR-0083 mass-eviction setup.
             raise RuntimeError(
                 f"zwayam body code {code}: {payload.get('message') or 'no message'}"
@@ -423,8 +437,8 @@ class ZwayamScraper(BaseScraper):
 
     def _company_id(self) -> int | None:
         """The tenant's numeric id, from the config endpoint — the detail POST rejects anything
-        else (base64 400s, a wrong id is another tenant). ``None`` on any failure: a Board whose
-        config call breaks loses this run's detail fetches, never its Jobs."""
+        else (measured: base64 400s, a wrong numeric id 404s). ``None`` on any failure: a Board
+        whose config call breaks loses this run's detail fetches, never its Jobs."""
         try:
             response = http.fetch(
                 "POST",

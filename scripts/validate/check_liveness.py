@@ -63,7 +63,8 @@ from headstart.models import (  # one host rule, shared with the scrapers
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
-from headstart.scrapers.zwayam import (  # the whole request shape, single source of truth
+from headstart.scrapers.zwayam import (  # request shape + dead-vs-failed line, single source
+    body_error_code,
     search_request,
 )
 
@@ -1216,10 +1217,11 @@ def p_zwayam(t, u):
     Read the BODY, never the status: a hostname that is no longer a registered Board answers
     HTTP 200 with `"data": null`, identical in every other respect to a live one — and a
     *failing* request answers HTTP 200 with `data: null` too, distinguished only by its body
-    `code` of 500, so DEAD requires the code to be 200 as well. The whole request — url, headers
-    and body — comes from the scraper's `search_request`, so the two cannot drift; an earlier
-    version imported only the body helpers and re-declared the headers, and had already drifted
-    on the User-Agent.
+    `code` of 500, so DEAD additionally requires `body_error_code` to be quiet. The whole
+    request — url, headers and body — comes from the scraper's `search_request`, and the
+    dead-vs-failed line from its `body_error_code`, so neither can drift; an earlier version
+    imported only the body helpers and re-declared the headers, and had already drifted on the
+    User-Agent.
     """
     url, headers, body = search_request(t)
     try:
@@ -1243,12 +1245,12 @@ def p_zwayam(t, u):
         payload = r.json() or {}
     except ValueError:
         return UNKNOWN, None
-    if payload.get("code") not in (200, None):
-        # The endpoint reports its own failures as HTTP 200 with body `code: 500` — and the same
-        # `data: null` a dead Board answers (measured 2026-08-27 by sending malformed input).
-        # Only a body code of 200 makes the null authoritative; anything else is the request or
-        # the service, not the Board.
-        _note(f"body-code-{payload.get('code')}")
+    failed = body_error_code(payload)
+    if failed is not None:
+        # A failing request carries the same `data: null` a dead Board answers (measured
+        # 2026-08-27 by sending malformed input); only a quiet body code makes the null
+        # authoritative. Anything else is the request or the service, not the Board.
+        _note(f"body-code-{failed}")
         return UNKNOWN, None
     data = payload.get("data")
     if not data:
