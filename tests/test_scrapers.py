@@ -6352,3 +6352,29 @@ def test_zwayam_row_without_a_joburl_is_skipped_not_linked_to_the_board_root():
     """Unobserved (0 of 182 rows), but a Board-root link would be a URL no shape can match."""
     raw = {"prefix": "/x/", "rows": [{"id": 1, "jobTitle": "Dev", "jobUrl": ""}]}
     assert get_scraper("zwayam", "careers.nolink.example").parse(raw, SCRAPED_AT) == []
+
+
+def test_zwayam_bare_amounts_default_to_rupees():
+    """Most rows carrying amounts state no `currencyType`, and `salary.extract`'s plausibility
+    guard falls back to USD bounds for an unknown currency — so a real 17-20 lakh range reads as
+    $1.7M and is dropped, while small placeholder ranges survive. Defaulting to INR is what makes
+    the large, genuine figures reach the index."""
+    from headstart.salary import extract
+    from headstart.scrapers.zwayam import _salary
+
+    assert (
+        _salary({"minJobSalary": "1700000", "maxJobSalary": "2000000"})
+        == "1700000-2000000 INR"
+    )
+    span = extract(
+        _salary({"minJobSalary": "1700000", "maxJobSalary": "2000000"}), None, "zwayam"
+    )
+    assert span and span.currency == "INR" and span.min_annual == 1700000
+
+    # a stated currency always wins over the default
+    assert (
+        _salary(
+            {"minJobSalary": "9000", "maxJobSalary": "15000", "currencyType": "QAR"}
+        )
+        == "9000-15000 QAR"
+    )

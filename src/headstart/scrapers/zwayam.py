@@ -67,6 +67,21 @@ _IGNORED_COMPANY_ID = "MQ=="  # base64("1")
 #: 12,000 postings — well above the largest Board seen (7,638) and far below anything that could
 #: pin a shard.
 _MAX_PAGES = 1_200
+#: Currency to assume when ``currencyType`` is absent, which is most rows that carry amounts.
+#:
+#: Without it those figures reach ``salary.extract`` bare, and its plausibility guard falls back to
+#: **USD** bounds for an unknown currency — so a real ₹17,00,000-20,00,000 reads as $1.7M,
+#: implausible, and is dropped. The effect is perverse: small placeholder ranges survive while the
+#: genuinely large rupee salaries are exactly the ones lost.
+#:
+#: Safe here because it only applies where the tenant stated nothing, and every such row measured
+#: is an Indian job (2026-08-27, rows carrying amounts across 12 Boards): ``trask.openings.co``
+#: reads Czech but its salaried postings are Bengaluru/Ahmedabad; ``careers.eaplworld.com`` is all
+#: Delhi/Himachal. The one non-INR currency seen anywhere, QAR on ``kpmgcareersqatar.com``, is
+#: always *stated* — that Board carries no amounts at all — so this default never overrides it.
+#: A tenant that starts posting bare non-rupee figures would break the assumption; the guard is
+#: that stated currencies always win.
+_DEFAULT_CURRENCY = "INR"
 #: The careers SPA declares its own path prefix here; the job deep link has to carry it.
 _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
 
@@ -168,7 +183,7 @@ def _salary(source: dict) -> str | None:
     hi = (str(source.get("maxJobSalary") or "")).strip()
     if not lo and not hi:
         return None
-    currency = (source.get("currencyType") or "").strip()
+    currency = (source.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
     span = f"{lo}-{hi}" if lo and hi else (lo or hi)
     return f"{span} {currency}".strip()
 
