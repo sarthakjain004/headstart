@@ -306,6 +306,55 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 q,
             )
         )
+        # The ADR-0082 numeric salary bracket had NO check cases at all until 2026-08-27, while
+        # `has_salary` did — so the boolean "is there a figure" was verified and the bracket that
+        # reads the parsed figures was not. `build_filter` only applies the bracket when a known
+        # currency AND at least one bound are given, so both must be sent or the case silently
+        # tests nothing.
+        #
+        # Assert the DERIVED columns, never the raw `salary` string. 84% of rows carrying a
+        # parsed figure have no raw string at all (77,119 of 91,550, local table 2026-08-27) —
+        # the figure came from `salary_source='regex'` over the description, not from an ATS
+        # salary field. A predicate on `r["salary"]` therefore fails on legitimate rows, which
+        # is exactly what the first draft of these cases did.
+        #
+        # The bound is an OVERLAP test, not containment (see `build_filter`): the job's top of
+        # range must clear the user's floor, and `max_salary_annual` is null on single-figure
+        # postings, so the COALESCE fallback has to be mirrored here.
+        cases.append(
+            (
+                f"salary_min+currency [{q}]",
+                {"q": q, "salary_min": "500000", "salary_currency": "INR", "k": 30},
+                lambda r: (
+                    r.get("salary_currency") == "INR"
+                    and (
+                        r.get("max_salary_annual")
+                        if r.get("max_salary_annual") is not None
+                        else r.get("min_salary_annual")
+                    )
+                    is not None
+                    and (
+                        r.get("max_salary_annual")
+                        if r.get("max_salary_annual") is not None
+                        else r.get("min_salary_annual")
+                    )
+                    >= 500_000
+                ),
+                q,
+            )
+        )
+        cases.append(
+            (
+                f"salary_max+currency [{q}]",
+                {"q": q, "salary_max": "5000000", "salary_currency": "INR", "k": 30},
+                lambda r: (
+                    r.get("salary_currency") == "INR"
+                    and r.get("min_salary_annual") is not None
+                    and r.get("min_salary_annual") <= 5_000_000
+                ),
+                q,
+            )
+        )
     for years in (0, 2, 5):
         cases.append(
             (
