@@ -1214,10 +1214,12 @@ def p_zwayam(t, u):
     """One POST to the shared API, which selects the Board by hostname (`t`).
 
     Read the BODY, never the status: a hostname that is no longer a registered Board answers
-    HTTP 200 with `"data": null`, identical in every other respect to a live one. The whole
-    request — url, headers and body — comes from the scraper's `search_request`, so the two
-    cannot drift; an earlier version imported only the body helpers and re-declared the headers,
-    and had already drifted on the User-Agent.
+    HTTP 200 with `"data": null`, identical in every other respect to a live one — and a
+    *failing* request answers HTTP 200 with `data: null` too, distinguished only by its body
+    `code` of 500, so DEAD requires the code to be 200 as well. The whole request — url, headers
+    and body — comes from the scraper's `search_request`, so the two cannot drift; an earlier
+    version imported only the body helpers and re-declared the headers, and had already drifted
+    on the User-Agent.
     """
     url, headers, body = search_request(t)
     try:
@@ -1238,9 +1240,17 @@ def p_zwayam(t, u):
         # reproduce it, so treat it as rare and transient rather than a known threshold.)
         return UNKNOWN, None
     try:
-        data = (r.json() or {}).get("data")
+        payload = r.json() or {}
     except ValueError:
         return UNKNOWN, None
+    if payload.get("code") not in (200, None):
+        # The endpoint reports its own failures as HTTP 200 with body `code: 500` — and the same
+        # `data: null` a dead Board answers (measured 2026-08-27 by sending malformed input).
+        # Only a body code of 200 makes the null authoritative; anything else is the request or
+        # the service, not the Board.
+        _note(f"body-code-{payload.get('code')}")
+        return UNKNOWN, None
+    data = payload.get("data")
     if not data:
         return DEAD, None
     return LIVE, data.get("totalCount", 0)

@@ -69,12 +69,17 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
 - **Zwayam / Naukri Talent Cloud** ✅ DONE (2026-08-27, #320) — `scrapers/zwayam.py`, wired through
   liveness (757 live / 224 hiring boards in `data/validate/liveness/zwayam.csv`). Slug = the board
   hostname. Four things the original research got wrong, each measured live before building:
-  `companyId` is **ignored** (so it is one call per page, not two per board); `Origin`/`Referer`
+  `companyId` is **ignored by the search** (so the listing walk is one call per page, not two per
+  board — the *real* numeric id matters only for the selective per-job detail POST that fills the
+  ~13% of rows whose listing carries no description); `Origin`/`Referer`
   are **ignored** too, so `domain` alone is the key; a **non-stock** `User-Agent` is required and a
   missing one **hangs** rather than returning empty (`curl` and `python-requests` defaults both
   time out; this repo's own UA is fine, so it is not a browser check); and `.openings.co` hosts
   are **live** — 643 of the 757 boards are there. Only `{slug}.zwayam.com` is genuinely dead.
   There is also **no reproducible rate limit** (~2,160 requests at up to 94 req/s, zero non-200s).
+  Job links are **per-frontend-generation** — Angular `{base}jobview/`, Next.js `/job-view/`
+  (wrong spelling hard-404s), old shell `/#!/job-view/` — detected from one homepage GET per
+  board (`zwayam.py` module docstring has the classified split across all 224 hiring boards).
   Discovery is the real cost and has its own playbook:
   `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
   endpoint carry it) plus the generalisable

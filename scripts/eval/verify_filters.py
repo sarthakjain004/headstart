@@ -121,15 +121,17 @@ URL_SHAPES = {
     # data/jobs/wellfound.csv (zero non-matching). Wellfound was served with NO shape entry
     # until 2026-08-05 — the same class of gap the coverage gate above was added to catch.
     "wellfound": r"https://wellfound\.com/jobs/\d+(-[\w-]+)?",
-    # scraper: f"https://{slug}{prefix}jobview/{jobUrl}" where the SLUG IS THE BOARD HOST — the
-    # API keys on the hostname, and Boards sit on customer domains (careers.persistent.com,
-    # career.crisil.com, jobs.happiestminds.com) as well as the vendor namespace
-    # ({slug}.openings.co), so there is no host to anchor on. `prefix` is the careers SPA's own
-    # `<base href>`: measured over 10 Boards, 8 declare `/{slug}/` and one declares `/`, hence the
-    # optional path segment. The trailing `jobUrl` is the vendor's own slug and ends in a 16-digit
-    # timestamp. NOTE the SPA answers 200 for ANY path (client-side routing), so `status_ok` is
-    # not evidence of a good link for this ATS — only the shape is.
-    "zwayam": r"https://[^/]+(?:/[\w.-]+)*/jobview/[\w.%~-]+$",
+    # scraper: f"{link_base}{quote(jobUrl)}" where the SLUG IS THE BOARD HOST — the API keys on
+    # the hostname, and Boards sit on customer domains (careers.persistent.com) as well as the
+    # vendor namespace ({slug}.openings.co), so there is no host to anchor on. `link_base` is one
+    # of the three frontend generations' own job routes (zwayam.py module docstring, classified
+    # live across all 224 hiring Boards 2026-08-27): Angular's `{base href}jobview/` (the optional
+    # path segments), Next.js's root `/job-view/`, or the old Angular 1 shell's hash route
+    # `/#!/job-view/`. The trailing `jobUrl` is the vendor's own slug, percent-encoded. NOTE the
+    # Angular generation answers 200 for ANY path and the hash route never reaches the server, so
+    # `status_ok` is not evidence of a good link for this ATS — only the shape is (Next.js is the
+    # one generation where a bad route would actually 404).
+    "zwayam": r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$",
 }
 
 
