@@ -6229,10 +6229,14 @@ def test_zwayam_experience_falls_back_only_when_the_numbers_are_blank():
 
 
 def test_zwayam_experience_prefers_the_structured_numeric_pair():
-    jobs = get_scraper("zwayam", "careers.tavant.com").parse(
-        _load("zwayam_tavant.json"), SCRAPED_AT
-    )
-    assert jobs[0].experience == "5-8 years"  # experienceUIField, verbatim
+    """The fixture's row 0 states both forms and they agree, so it cannot tell the orderings
+    apart on its own — the disagreeing copy below is what makes this test discriminate (the same
+    trap that let the old `..._prefers_the_tenants_own_phrasing` name outlive its behaviour)."""
+    raw = _load("zwayam_tavant.json")
+    assert raw["rows"][0]["experienceUIField"] == "5-8 years"  # the premise, asserted
+    raw["rows"][0]["experienceUIField"] = "prose the numbers disagree with"
+    jobs = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)
+    assert jobs[0].experience == "5-8 years"  # the (5, 8) pair, not the prose
 
 
 def test_zwayam_zero_to_zero_years_is_an_unfilled_form_not_a_range():
@@ -6477,13 +6481,30 @@ def test_zwayam_fixture_row_without_a_currency_gets_the_default():
 
 def test_zwayam_a_zero_bound_is_an_unfilled_form_half():
     """`1000000-0` makes `salary.extract` reject the whole row, losing a real floor that parses
-    fine alone — 9 of 234 live amount rows carried a one-sided zero."""
+    fine alone — 17 of 5,079 amount rows carried a floor with a zero ceiling."""
     from headstart.salary import extract
     from headstart.scrapers.zwayam import _salary
 
     assert _salary({"minJobSalary": "1000000", "maxJobSalary": "0"}) == "1000000 INR"
     assert extract("1000000 INR", None, "zwayam").min_annual == 1000000
     assert _salary({"minJobSalary": "0", "maxJobSalary": "0"}) is None
+
+
+def test_zwayam_a_ceiling_without_a_floor_is_dropped_not_served_backwards():
+    """No phrasing `salary.extract` reads as an upper bound, so a bare ceiling would index a job
+    *capped* at 200k as paying *at least* 200k. 10 of 5,079 amount rows; dropping beats
+    inverting."""
+    from headstart.salary import extract
+    from headstart.scrapers.zwayam import _salary
+
+    # the premise, asserted not assumed: every way of stating a ceiling either inverts or fails
+    assert (
+        extract("200000 INR", None, "zwayam").min_annual == 200000
+    )  # reads as a FLOOR
+    assert extract("Upto 200000 INR", None, "zwayam") is None
+    assert extract("0-200000 INR", None, "zwayam") is None
+    assert _salary({"minJobSalary": "", "maxJobSalary": "200000"}) is None
+    assert _salary({"minJobSalary": "0", "maxJobSalary": "200000"}) is None
 
 
 def test_zwayam_job_url_is_percent_encoded():

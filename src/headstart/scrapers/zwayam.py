@@ -117,8 +117,8 @@ _API = "https://public.zwayam.com/jobs/search"
 #: here (measured: base64 400s, another tenant's or a nonexistent id 404s), which is this call's
 #: only remaining job.
 _CONFIG_API = "https://public.zwayam.com/data-service/v2/public-configurations"
-#: Per-job detail (JSON POST, unlike the multipart search): the only source of text for the 13%
-#: of rows whose listing carries no description at all (module docstring).
+#: Per-job detail (JSON POST, unlike the multipart search): the source of every Job's
+#: description, since the listing's own text can be silently truncated (module docstring).
 _DETAIL_API = "https://public.zwayam.com/jobs-service/v1/jobs/careersite"
 #: Ignored by the search — even omissible (module docstring) — so its value is arbitrary; sent to
 #: mirror the real client, and kept valid base64 because an *empty or malformed* value body-500s.
@@ -307,22 +307,31 @@ def _salary(source: dict) -> str | None:
     # A zero bound is an unfilled half of the form, not a stated floor or ceiling — the same
     # reading `_experience` gives an all-zero pair. Kept as a *pair* check rather than dropped
     # blindly: emitting "1000000-0" makes `salary.extract` reject the whole row, losing a real
-    # 1,000,000 floor that parses fine on its own (9 of 234 live amount rows, 2026-08-27).
+    # 1,000,000 floor that parses fine on its own (17 of 5,079 amount rows, 2026-08-27).
     lo = _amount(source.get("minJobSalary"))
     hi = _amount(source.get("maxJobSalary"))
-    if not lo and not hi:
-        return None
     currency = (source.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
-    span = f"{lo}-{hi}" if lo and hi else (lo or hi)
-    return f"{span} {currency}".strip()
+    if lo and hi:
+        return f"{lo}-{hi} {currency}"
+    if lo:
+        return f"{lo} {currency}"
+    # Ceiling-only (10 of 5,079 rows) is dropped rather than emitted bare, because there is no
+    # phrasing `salary.extract` reads as an upper bound: "200000 INR", "Upto 200000 INR" and
+    # "0-200000 INR" were each measured, and the first parses to min_annual=200000 while the
+    # other two parse to nothing. So a bare figure would index a job *capped* at 200k as one
+    # paying *at least* 200k — the inverse of what the tenant stated. Losing 0.2% of amount
+    # rows beats serving them backwards.
+    return None
 
 
 def _description(source: dict) -> str | None:
     """The detail pass's text first — it is the complete posting, where the listing fields can be
-    silently truncated (module docstring) — then the longest listing body as the fallback for a
-    failed or skipped detail. Within the listing: ``medium*`` over the sometimes-teaser
-    ``short*``, and the vendor-pre-stripped ``*WithoutHtml`` variants over their HTML siblings
-    (never longer than them — 0 of 16,427 walked rows, so that order costs nothing).
+    silently truncated (module docstring) — then a listing body as the fallback for a failed or
+    skipped detail. The listing fields are tried in a fixed order rather than compared by
+    length: ``medium*`` over the sometimes-teaser ``short*``, and the vendor-pre-stripped
+    ``*WithoutHtml`` variants over their HTML siblings, which is measurement-backed rather than
+    arbitrary (a ``*WithoutHtml`` value was never the shorter of its pair — 0 of 16,427 walked
+    rows — so length-comparing them would pick the same field at more cost).
     """
     detail = source.get("_detail_description")
     if detail:

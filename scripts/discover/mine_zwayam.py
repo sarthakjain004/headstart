@@ -33,12 +33,16 @@ recall (measured: 17 explicit records over 1,232 labels, 12 of them live Boards)
 ``careers.azad.in`` CNAMEs into the namespace but is not a registered Board. Parse the body, never
 the status: an unregistered domain answers HTTP 200 with ``"data": null``.
 
-WARP is **required** for `verify`: Akamai 403s direct bursts persistently. 4 concurrent, 0.25s
-apart drew zero 403s over ~1,500 probes.
+`verify` paces itself at 4 concurrent, 0.25s apart. An earlier version of this note called WARP
+*required* — "Akamai 403s direct bursts persistently" — but a 2026-08-27 load test could not
+reproduce that (~2,160 direct requests, 34 req/s sustained, zero 403s; `experiment/zwayam-rate-
+limit/`), so the one 403 ever seen is rare and transient, not a threshold. The optional
+``--warp`` flag still routes through the local WARP SOCKS proxy for the odd host that does wall,
+but the direct path is the default.
 
 Run:  python -m ... cert   OUT_TXT              # SAN list -> candidate hostnames
       python -m ... dns    WORDS OUT_CSV        # labels -> explicit-record namespaces
-      python -m ... verify CAND OUT_CSV         # hostnames -> host,verdict,jobs
+      python -m ... verify CAND OUT_CSV [--warp] # hostnames -> host,verdict,jobs
 
 All stages stream per item and resume from their output file.
 
@@ -55,7 +59,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 API = "https://public.zwayam.com/jobs/search"
-PROXY = {"http": "socks5h://127.0.0.1:40000", "https": "socks5h://127.0.0.1:40000"}
+_WARP_PROXY = {
+    "http": "socks5h://127.0.0.1:40000",
+    "https": "socks5h://127.0.0.1:40000",
+}
+#: None = the direct path (the default; the endpoint does not wall bursts — see the module
+#: docstring). `--warp` sets this to route through the local WARP SOCKS proxy.
+PROXY: dict[str, str] | None = None
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
@@ -305,13 +315,18 @@ def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__)
         return 2
+    global PROXY
+    rest = [a for a in argv[2:] if a != "--warp"]
+    if "--warp" in argv[2:]:
+        PROXY = _WARP_PROXY
+        print("[warp] routing verify through the WARP SOCKS proxy", flush=True)
     stage = argv[1]
-    if stage == "cert" and len(argv) == 3:
-        stage_cert(Path(argv[2]))
-    elif stage == "dns" and len(argv) == 4:
-        stage_dns(Path(argv[2]), Path(argv[3]))
-    elif stage == "verify" and len(argv) == 4:
-        stage_verify(Path(argv[2]), Path(argv[3]))
+    if stage == "cert" and len(rest) == 1:
+        stage_cert(Path(rest[0]))
+    elif stage == "dns" and len(rest) == 2:
+        stage_dns(Path(rest[0]), Path(rest[1]))
+    elif stage == "verify" and len(rest) == 2:
+        stage_verify(Path(rest[0]), Path(rest[1]))
     else:
         print(__doc__)
         return 2
