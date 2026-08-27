@@ -6192,7 +6192,43 @@ def test_zwayam_parse():
     assert j.posted_at and j.posted_at.startswith("20")
 
 
-def test_zwayam_experience_prefers_the_tenants_own_phrasing():
+def test_zwayam_experience_falls_back_only_when_the_numbers_are_blank():
+    """The regression test 4e59dfa's fix never had.
+
+    The fixture's row 0 states both forms and they agree, so it cannot tell the two orderings
+    apart — which is why the old name (`...prefers_the_tenants_own_phrasing`) outlived the
+    behaviour it described. These assertions can: `extract("Upto 4 years")` returns None while the
+    numeric pair (0, 4) parses to 0-4, so preferring the prose silently loses a stated range.
+    """
+    from headstart.experience import extract
+    from headstart.scrapers.zwayam import _experience
+
+    assert (
+        extract("Upto 4 years", None, None) is None
+    )  # the premise, asserted not assumed
+    assert (
+        _experience(
+            {
+                "minYearOfExperience": 0,
+                "maxYearOfExperience": 4,
+                "experienceUIField": "Upto 4 years",
+            }
+        )
+        == "0-4 years"
+    )
+    assert (
+        _experience(
+            {
+                "minYearOfExperience": 0,
+                "maxYearOfExperience": 0,
+                "experienceUIField": "Fresher",
+            }
+        )
+        == "Fresher"
+    )
+
+
+def test_zwayam_experience_prefers_the_structured_numeric_pair():
     jobs = get_scraper("zwayam", "careers.tavant.com").parse(
         _load("zwayam_tavant.json"), SCRAPED_AT
     )
@@ -6378,3 +6414,34 @@ def test_zwayam_bare_amounts_default_to_rupees():
         )
         == "9000-15000 QAR"
     )
+
+
+def test_zwayam_fixture_row_without_a_currency_gets_the_default():
+    """The fixture's salaried rows all state INR, so the shipped fixture never exercised the
+    default that most real rows depend on."""
+    raw = _load("zwayam_tavant.json")
+    raw["rows"][1]["currencyType"] = None
+    job = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert job.salary.endswith(" INR")
+
+
+def test_zwayam_a_zero_bound_is_an_unfilled_form_half():
+    """`1000000-0` makes `salary.extract` reject the whole row, losing a real floor that parses
+    fine alone — 9 of 234 live amount rows carried a one-sided zero."""
+    from headstart.salary import extract
+    from headstart.scrapers.zwayam import _salary
+
+    assert _salary({"minJobSalary": "1000000", "maxJobSalary": "0"}) == "1000000 INR"
+    assert extract("1000000 INR", None, "zwayam").min_annual == 1000000
+    assert _salary({"minJobSalary": "0", "maxJobSalary": "0"}) is None
+
+
+def test_zwayam_job_url_is_percent_encoded():
+    """37% of real jobUrl values carry spaces or commas; pasted raw they make a malformed URL."""
+    raw = {
+        "prefix": "/x/",
+        "rows": [{"id": 7, "jobTitle": "SDET", "jobUrl": "sdet-pune-gen ai, py"}],
+    }
+    url = get_scraper("zwayam", "careers.enc.example").parse(raw, SCRAPED_AT)[0].url
+    assert " " not in url and "," not in url
+    assert url.endswith("/jobview/sdet-pune-gen%20ai%2C%20py")

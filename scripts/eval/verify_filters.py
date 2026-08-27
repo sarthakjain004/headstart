@@ -129,7 +129,7 @@ URL_SHAPES = {
     # optional path segment. The trailing `jobUrl` is the vendor's own slug and ends in a 16-digit
     # timestamp. NOTE the SPA answers 200 for ANY path (client-side routing), so `status_ok` is
     # not evidence of a good link for this ATS — only the shape is.
-    "zwayam": r"https://[^/]+(?:/[\w.-]+)*/jobview/[\w.-]+$",
+    "zwayam": r"https://[^/]+(?:/[\w.-]+)*/jobview/[\w.%~-]+$",
 }
 
 

@@ -52,6 +52,7 @@ import json
 import re
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from headstart import http, log
 from headstart.models import Job, host_of, html_to_text, is_remote
@@ -77,10 +78,17 @@ _MAX_PAGES = 1_200
 #: Safe here because it only applies where the tenant stated nothing, and every such row measured
 #: is an Indian job (2026-08-27, rows carrying amounts across 12 Boards): ``trask.openings.co``
 #: reads Czech but its salaried postings are Bengaluru/Ahmedabad; ``careers.eaplworld.com`` is all
-#: Delhi/Himachal. The one non-INR currency seen anywhere, QAR on ``kpmgcareersqatar.com``, is
-#: always *stated* — that Board carries no amounts at all — so this default never overrides it.
-#: A tenant that starts posting bare non-rupee figures would break the assumption; the guard is
-#: that stated currencies always win.
+#: Delhi/Himachal.
+#:
+#: Non-INR currencies do exist but are always *stated*, so this default never overrides one: QAR on
+#: ``kpmgcareersqatar.com`` (which carries no amounts at all) and EUR on one
+#: ``careers.torryharris.com`` row. An earlier version of this comment called QAR the only one —
+#: it was not, and the survey behind it was too small to say so. What the wider look does support
+#: is the narrower claim that matters here: no Board was found posting a *bare* non-rupee figure.
+#: A tenant that starts doing so breaks the assumption, and nothing here would detect it.
+#:
+#: (The EUR row reads ``2500000-3500000 EUR`` — plainly rupees mislabelled by the tenant. A stated
+#: currency still wins, so the row is left wrong rather than second-guessed here.)
 _DEFAULT_CURRENCY = "INR"
 #: The careers SPA declares its own path prefix here; the job deep link has to carry it.
 _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
@@ -161,6 +169,15 @@ def _experience(source: dict) -> str | None:
     return (source.get("experienceUIField") or "").strip() or None
 
 
+def _amount(value: object) -> str:
+    """One salary bound, or "" when the tenant left it blank. Zero counts as blank."""
+    text = str(value or "").strip()
+    try:
+        return "" if float(text) == 0 else text
+    except ValueError:
+        return text
+
+
 def _salary(source: dict) -> str | None:
     """Every posted range, whether or not the tenant flipped its display toggle.
 
@@ -179,8 +196,12 @@ def _salary(source: dict) -> str | None:
     identical ``100000-200000`` with no currency across ten unrelated roles), so a minority of
     published figures are placeholders rather than offers.
     """
-    lo = (str(source.get("minJobSalary") or "")).strip()
-    hi = (str(source.get("maxJobSalary") or "")).strip()
+    # A zero bound is an unfilled half of the form, not a stated floor or ceiling — the same
+    # reading `_experience` gives an all-zero pair. Kept as a *pair* check rather than dropped
+    # blindly: emitting "1000000-0" makes `salary.extract` reject the whole row, losing a real
+    # 1,000,000 floor that parses fine on its own (9 of 234 live amount rows, 2026-08-27).
+    lo = _amount(source.get("minJobSalary"))
+    hi = _amount(source.get("maxJobSalary"))
     if not lo and not hi:
         return None
     currency = (source.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
@@ -372,7 +393,13 @@ class ZwayamScraper(BaseScraper):
                     # across four Boards), so this is the post-hoc location heuristic alone.
                     remote=is_remote(location),
                     department=(source.get("departmentName") or "").strip() or None,
-                    url=f"https://{self.slug}{prefix}jobview/{job_url}",
+                    # Percent-encoded: 37% of real `jobUrl` values carry spaces or commas
+                    # ("…/jobview/cfd engineer-pune-ansa ,fluent, star ccm+…", measured over 119
+                    # rows on 26 Boards), and pasting those raw makes a malformed URL. One path
+                    # segment, so nothing inside it may stay unescaped — `safe=""`.
+                    # NOTE the SPA answers 200 for ANY path (client-side routing), so this is
+                    # verified as well-formed, not as routing.
+                    url=f"https://{self.slug}{prefix}jobview/{quote(job_url, safe='')}",
                     posted_at=_posted_at(source),
                     scraped_at=scraped_at,
                     description=_description(source),

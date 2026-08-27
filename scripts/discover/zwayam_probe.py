@@ -7,8 +7,17 @@ truth is the search endpoint itself: it keys off the `domain` form field (the `c
 accepted but IGNORED — verified 2026-08-27), so posting a candidate hostname and reading back
 `data.totalCount` is a definitive registered/not-registered answer.
 
-Akamai IP-blocks direct bursts with a persistent 403, so every request goes through Cloudflare WARP
-(socks5h://127.0.0.1:40000) with a browser User-Agent — without the UA the body comes back empty.
+A **non-stock User-Agent is mandatory**: `curl` and `python-requests` defaults are blackholed and
+the request HANGS rather than answering, so a caller reading timeouts as transient retries forever.
+It is not a browser check — this repo's own UA is fine.
+
+The pacing below (`PACE`, `--workers`, the 60s back-off on 403) is **precautionary, not a measured
+threshold**. An earlier version of this docstring claimed Akamai IP-blocks direct bursts; a
+2026-08-27 load test could not reproduce that — ~2,160 requests at up to 94 req/s, 32-wide, across
+60 distinct `domain` values, all 200. One real 403 was seen during 2026-08 discovery, so the
+back-off stays, but nothing here is tuned to a known limit. `--proxy` is likewise **off by
+default** now: direct works, and routing through an unstable tunnel caused more failures than it
+prevented.
 
 Registered   -> HTTP 200, data.totalCount + data.data[]
 Unregistered -> HTTP 200, "data": null
@@ -29,7 +38,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-PROXY = "socks5h://127.0.0.1:40000"
+#: Set by --proxy. Direct by default: measured 2026-08-27, the endpoint does not rate-limit, and
+#: routing through the local WARP tunnel caused more failures than it prevented.
+PROXY: str | None = None
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
@@ -56,8 +67,7 @@ def probe(host: str, attempts: int = 3):
             [
                 "curl",
                 "-s",
-                "-x",
-                PROXY,
+                *(("-x", PROXY) if PROXY else ()),
                 "-w",
                 "\n%{http_code}",
                 "--connect-timeout",
@@ -107,7 +117,16 @@ def main() -> int:
     ap.add_argument("candidates")
     ap.add_argument("out")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument(
+        "--proxy",
+        nargs="?",
+        const="socks5h://127.0.0.1:40000",
+        default=None,
+        help="route through a proxy (bare flag uses the local WARP SOCKS port); direct otherwise",
+    )
     a = ap.parse_args()
+    global PROXY
+    PROXY = a.proxy
 
     raw = (
         sys.stdin.read()

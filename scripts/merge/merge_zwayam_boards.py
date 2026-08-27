@@ -6,7 +6,7 @@ CT logs, web corpora, SERP dorking, vendor lists). They overlap by construction,
 them on the canonical board key and re-checks the survivors against the live API.
 
 Zwayam's board key is the **career-site hostname**: the API's `companyId` field is ignored, and
-`domain` + a matching Origin/Referer selects the board. So the ledger's `tenant` is the bare host.
+`domain` alone selects the board (Origin/Referer are ignored). So the ledger's `tenant` is the host.
 
 The duplicate risk CLAUDE.md warns about is real here in a Zwayam-specific form: one company can
 register more than one hostname (careers.acme.com *and* jobs.acme.com), and both answer `live`.

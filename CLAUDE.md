@@ -68,10 +68,13 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
 - **TurboHire** — M, token flow: `/api/token/noauth` (needs Referer) → `POST /api/careerpagev2/filteredjobs?orgId={GUID}`. 72 hosts; unlocks Cleartrip/Flipkart, Ola.
 - **Zwayam / Naukri Talent Cloud** ✅ DONE (2026-08-27, #320) — `scrapers/zwayam.py`, wired through
   liveness (757 live / 224 hiring boards in `data/validate/liveness/zwayam.csv`). Slug = the board
-  hostname. Three things the original research got wrong, each re-verified before building:
-  `companyId` is **ignored** (so it is one call per page, not two per board), a browser
-  `User-Agent` is **required** (without one the body is empty, not a 403), and `.openings.co` hosts
+  hostname. Four things the original research got wrong, each measured live before building:
+  `companyId` is **ignored** (so it is one call per page, not two per board); `Origin`/`Referer`
+  are **ignored** too, so `domain` alone is the key; a **non-stock** `User-Agent` is required and a
+  missing one **hangs** rather than returning empty (`curl` and `python-requests` defaults both
+  time out; this repo's own UA is fine, so it is not a browser check); and `.openings.co` hosts
   are **live** — 643 of the 757 boards are there. Only `{slug}.zwayam.com` is genuinely dead.
+  There is also **no reproducible rate limit** (~2,160 requests at up to 94 req/s, zero non-200s).
   Discovery is the real cost and has its own playbook:
   `docs/discovery/zwayam-tenant-discovery.md` (the shared-TLS-cert roster and the tenant-directory
   endpoint carry it) plus the generalisable
