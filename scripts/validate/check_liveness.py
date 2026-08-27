@@ -1244,8 +1244,11 @@ def p_zwayam(t, u):
         _note("breaker-open")
         return UNKNOWN, None
     if r.status_code != 200:
-        # Akamai fronts this host and answers 403 to a refused IP, which says nothing about the
-        # Board. Never DEAD on a status alone here.
+        # Never DEAD on a status alone here: a real absence is a 200 with `data: null`, so any
+        # non-200 is about the request or the edge, not the Board. (A 403 from the Akamai front
+        # has been seen once, in 2026-08 discovery; ~2,160 requests of deliberate load-testing on
+        # 2026-08-27 — 34 req/s sustained, 32-wide concurrency, 60 distinct domains — could not
+        # reproduce it, so treat it as rare and transient rather than a known threshold.)
         return UNKNOWN, None
     try:
         data = (r.json() or {}).get("data")

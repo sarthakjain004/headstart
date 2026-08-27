@@ -74,11 +74,23 @@ Three corrections to the captured protocol in `research_zwayam.md`, each verifie
 - **Live vs not** is read from the body, never the status: a non-Board answers `HTTP 200` with
   `"data": null`; a Board carries `data.totalCount`.
 
-**Akamai IP-blocks bursts.** 296 concurrent probes from a residential IP drew `403 Access Denied`
-that persisted through a 150s backoff — IP-scoped, not a rate limit. Route through the spare egress
-(`socks5h://127.0.0.1:40000`) and rotate on refusal; `headstart.spare_egress` has the recipe, and
-the important part is that `warp-cli disconnect`/`connect` is a no-op — only a daemon restart moves
-the address.
+**There is no reproducible rate limit — an earlier claim here overstated it.** A deliberate load
+test on 2026-08-27 could not make the endpoint refuse: ~2,160 requests across 150 sequential,
+32-wide concurrency (~94 req/s), 60 distinct `domain` values, and 1,500 sustained at 34 req/s, all
+200. One `403 Access Denied` from the Akamai front was seen during 2026-08 discovery and did
+survive a 150s backoff, so it is real — but it is rare and transient, **not a threshold to design
+around**, and this page previously described it as one. If it does appear, rotating the spare
+egress clears it (`headstart.spare_egress`; note `warp-cli disconnect`/`connect` is a no-op — only
+a daemon restart moves the address).
+
+**What actually breaks the request is the User-Agent.** `curl/8.7.1` and `python-requests`'s own
+default both **hang** rather than answering — no status, just a read timeout — so a caller that
+reads a timeout as a transient fault retries forever. Any non-stock agent works, including this
+repo's own `headstart/0.1 (job-board reader)`.
+
+**`Origin`/`Referer` are ignored.** Omitting them returns the right Board, and sending another
+tenant's Origin still returns the one named in `domain`. Earlier notes here called them part of the
+key; they are not.
 
 ## Step 2b — the tenant directory (the other channel, and a permission question)
 

@@ -6,19 +6,26 @@ the Board by the **career-site hostname** — so this scraper's slug is a host
 bare tenant label. Discovery of those hosts is a separate problem with its own writeup:
 ``docs/discovery/zwayam-tenant-discovery.md``.
 
-Three things about the protocol are not what the earlier capture in
-``experiment/ats-provider-expansion/artifacts/research_zwayam.md`` recorded, each re-verified
-2026-08-27 before this scraper was written:
+Four things about the protocol are not what the earlier capture in
+``experiment/ats-provider-expansion/artifacts/research_zwayam.md`` recorded, each measured against
+the live endpoint on 2026-08-27 rather than carried over:
 
 * **``companyId`` is ignored by the server.** That capture describes a two-call flow — POST the
   config endpoint for a numeric company id, base64 it, then search. Measured on 4 Boards, passing
   ``base64("1")`` returns the correct per-Board count, and passing *another tenant's* real id
-  alongside Persistent's ``domain`` returns Persistent's own count. ``domain`` plus a matching
-  ``Origin``/``Referer`` is the entire key, so the config call is dead weight and this scraper
-  makes one request per page rather than two per Board. The field is still sent because omitting
-  it 400s.
-* **A browser ``User-Agent`` is required.** Without one both endpoints return an empty body — not
-  the 403 the capture describes, so a caller that trusts the status sees "success, no jobs".
+  alongside Persistent's ``domain`` returns Persistent's own count. **``domain`` alone is the
+  key** (see the Origin bullet), so the config call is dead weight and this scraper makes one
+  request per page rather than two per Board. The field is still sent because omitting it 400s.
+* **A non-default ``User-Agent`` is required, and a missing one HANGS.** Measured 2026-08-27:
+  ``curl/8.7.1`` and ``python-requests``'s own default both **time out** rather than answering, so
+  a caller that treats a timeout as a transient fault will retry forever. It is not a *browser*
+  check — this repo's own ``headstart/0.1 (job-board reader)`` returns 200 like Chrome does — it
+  is the stock tool agents that get blackholed.
+* **``Origin``/``Referer`` are ignored.** The capture calls them part of what selects the Board and
+  says a mismatch 403s. Measured on the same Board: omitting them entirely returns the right Board,
+  and sending *another tenant's* Origin still returns the one named in ``domain``. ``domain`` alone
+  is the key. They are still sent below because mirroring the real client is cheap insurance
+  against the server starting to check, but **no logic may depend on them**.
 * **Liveness is in the body, never the status.** A hostname that is not a registered Board answers
   ``HTTP 200`` with ``"data": null``.
 
@@ -30,6 +37,13 @@ to the endpoint, not a tuning choice.
 
 **No detail pass.** The listing row already carries the description, so ``description`` can never
 go missing the way ADR-0050 describes for the ATSes that fetch it separately.
+
+**No reproducible rate limit.** A 2026-08-27 load test could not make the endpoint refuse:
+~2,160 requests across 150 sequential, 32-wide concurrency (~94 req/s), 60 distinct ``domain``
+values, and 1,500 sustained at 34 req/s — zero non-200s. One Akamai 403 was seen during 2026-08
+discovery and is real, but it is rare and transient rather than a threshold to pace against. The
+binding cost is **bytes, not requests**: a 10-row page is 70-200 KB, so a full 22,456-posting
+scrape moves roughly 340 MB.
 """
 
 from __future__ import annotations
@@ -133,15 +147,23 @@ def _experience(source: dict) -> str | None:
 
 
 def _salary(source: dict) -> str | None:
-    """The posted range, but only where the tenant chose to publish it.
+    """Every posted range, whether or not the tenant flipped its display toggle.
 
-    ``showSal`` is the tenant's own display toggle and is false on the large majority of rows
-    (37 of 40 across four Boards). The amounts are still present in the payload when it is off,
-    and publishing those would put a figure on the job that the employer deliberately withheld —
-    so the toggle is honoured rather than the amounts being read whenever they parse.
+    ``showSal`` is the tenant's own careers-page toggle, and it is off on most rows that
+    nonetheless carry amounts (19 of 23 across four Boards). An earlier version honoured it, on
+    the reasoning that publishing a withheld figure asserts something the employer chose not to.
+    **That was overruled deliberately: a figure beats an empty column here.**
+
+    What makes the trade different on this ATS than it looks: salary has no second path. The
+    Tier-2 description mine that supplies most of the index's parsed salaries — 84% of rows with
+    a figure have no raw field string — recovers **0 of 52** on Zwayam, because Indian postings
+    do not state compensation in prose. So this field is the only source there will ever be, and
+    the toggle was not one filter among several but the whole gate.
+
+    The cost is accepted knowingly: some tenants leave a form default in place (one Board posts an
+    identical ``100000-200000`` with no currency across ten unrelated roles), so a minority of
+    published figures are placeholders rather than offers.
     """
-    if not source.get("showSal"):
-        return None
     lo = (str(source.get("minJobSalary") or "")).strip()
     hi = (str(source.get("maxJobSalary") or "")).strip()
     if not lo and not hi:
@@ -196,8 +218,9 @@ class ZwayamScraper(BaseScraper):
         return f"https://{self.slug}/"
 
     def _headers(self) -> dict[str, str]:
-        # Origin/Referer must match the Board being asked for: they are part of what selects it,
-        # and a mismatch 403s. The browser UA is required — see the module docstring.
+        # `domain` alone selects the Board — Origin/Referer are measurably ignored (module
+        # docstring). Sent anyway to mirror the real client, but nothing here depends on them.
+        # The User-Agent is NOT decorative: without a non-default one the endpoint hangs.
         return {
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",

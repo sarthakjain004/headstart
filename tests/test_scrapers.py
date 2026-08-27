@@ -6207,16 +6207,26 @@ def test_zwayam_zero_to_zero_years_is_an_unfilled_form_not_a_range():
     assert jobs[2].experience is None
 
 
-def test_zwayam_salary_honours_the_tenants_show_toggle():
-    """Amounts ride along in the payload even when the employer chose not to publish them."""
+def test_zwayam_publishes_amounts_regardless_of_the_show_toggle():
+    """`showSal` is off on 19 of 23 rows that carry amounts, and Zwayam has no Tier-2 fallback
+    (description mining recovers 0 of 52), so honouring the toggle emptied the column entirely."""
     raw = _load("zwayam_tavant.json")
-    hidden = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
-    assert raw["rows"][1]["minJobSalary"] == "100000"  # present in the payload...
-    assert hidden.salary is None  # ...and deliberately not published
+    assert raw["rows"][1]["showSal"] is False  # toggle off...
+    off = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert off.salary == "100000-200000 INR"  # ...and the figure is published anyway
 
     raw["rows"][1]["showSal"] = True
-    shown = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
-    assert shown.salary == "100000-200000 INR"
+    on = get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1]
+    assert on.salary == "100000-200000 INR"  # same either way
+
+
+def test_zwayam_no_amounts_still_yields_no_salary():
+    raw = _load("zwayam_tavant.json")
+    raw["rows"][1]["minJobSalary"] = raw["rows"][1]["maxJobSalary"] = ""
+    assert (
+        get_scraper("zwayam", "careers.tavant.com").parse(raw, SCRAPED_AT)[1].salary
+        is None
+    )
 
 
 def test_zwayam_slug_is_the_board_host():
