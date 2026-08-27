@@ -23,12 +23,17 @@ on:
   schedule:
     - cron: "0 3 * * *" # 03:00 UTC. The hour is not load-bearing — this run can no longer be
     # displaced by anything (see `concurrency` below), so it does not need a quiet slot. It waits
-    # for whatever pipeline is mid-flight and then holds the field until it is done
+    # out whatever pipeline is mid-flight, and re-dispatches itself if that takes too long
   workflow_dispatch:
+    inputs:
+      attempt:
+        description: "Retry counter — set by this workflow re-dispatching itself. Leave blank."
+        required: false
+        default: "1"
 
 permissions:
   contents: read
-  actions: read # to see whether a pipeline run is in flight before touching shared state
+  actions: write # read: is a pipeline in flight; write: re-dispatch this workflow when one is
 
 concurrency:
   # Its OWN group, not the pipeline's. Sharing one looked like mutual exclusion and behaved like
@@ -55,57 +60,65 @@ env:
   HF_HUB_DISABLE_XET: "1"
 
 jobs:
-  cleanup:
+  # Hold the door open until the pipeline lets go — and if it does not, come back rather than
+  # give up. Split from `cleanup` so a blocked attempt can end without running any of the work.
+  window:
     runs-on: ubuntu-latest
-    # Wait budget PLUS work budget. An earlier version had 90 for both, so a wait that *succeeded*
-    # could leave 30 minutes for compaction that needs 40-90 and be killed mid-rebuild. 240 for the
-    # wait, ~90 for the work, 10 slack — and it has to stay under GitHub's 6-hour ceiling for a
-    # single job, which is what stops this simply waiting indefinitely.
-    timeout-minutes: 340
+    timeout-minutes: 60
+    outputs:
+      proceed: ${{ steps.wait.outputs.proceed }}
     steps:
-      # Wait, do not race. This job and a pipeline both write `data/lancedb` AND
-      # `data/descriptions` — and this one's description upload passes `--delete "*"`, so
-      # overlapping with a pipeline that has just uploaded fragments would delete live data, not
-      # merely contend for it. The pipeline's gate stands down while this run exists, but a
-      # pipeline already in flight when this starts cannot be called back, so it is waited out.
+      # **This wait is what creates the window it is waiting for.** The pipeline runs 80-130
+      # minutes and fires hourly, so it is busy nearly all the time and there is no free gap to
+      # arrive into. Once this job exists, the pipeline's gate stands every later fire down, so
+      # the one already in flight drains and nothing replaces it. Exiting immediately instead of
+      # waiting would look tidier and would never compact again.
       #
-      # Waiting is safe here in a way it would not have been before: this run has its own
-      # concurrency group now, so nothing can cancel it while it sits. It also cannot deadlock —
-      # the pipeline *skips* rather than waits, so there is no cycle for the two to sit in.
-      - name: Wait for any in-flight pipeline
+      # 45 minutes per attempt, then re-dispatch. A single long wait was the first shape here, and
+      # it had to be justified by "no pipeline has ever run past 240 minutes" — the same kind of
+      # rare-case tolerance that caused the outage this whole change is fixing (the old comment
+      # read "tolerated, because compaction is idempotent and simply runs the next day"). Coming
+      # back is a guarantee; a long-enough timeout is an estimate. It also stops a runner idling
+      # for four hours, and sidesteps GitHub's 6-hour ceiling on a single job entirely.
+      #
+      # `workflow_dispatch` is one of the two events the default `GITHUB_TOKEN` may still trigger
+      # (docs: "events triggered by the GITHUB_TOKEN will not create a new workflow run, with the
+      # following exceptions"), so this needs no PAT.
+      - name: Wait for the pipeline to let go, or come back later
+        id: wait
         env:
           GH_TOKEN: ${{ github.token }}
-        # **This wait is what creates the window it is waiting for.** The pipeline runs 80-130
-        # minutes and fires hourly, so it is busy nearly all the time and there is no free gap to
-        # find. Once this job is running, the pipeline's gate stands every later fire down, so the
-        # one already in flight drains and nothing replaces it. Exiting early instead of waiting
-        # would look tidier and would never compact again.
-        #
-        # 240 minutes, and the reason it is not simply unbounded is GitHub's 6-hour cap on a single
-        # job: the work still needs ~90 of those. 240 covers the measured maximum of 129 (ten runs)
-        # by a wide margin and every job timeout on the sequential path bar a pathological `embed`,
-        # whose own 198-minute cap puts the theoretical worst case at 385 — beyond anything this
-        # job could wait for and still have time to run.
-        #
-        # Expiry fails loudly rather than compacting anyway. Compacting under a live pipeline is
-        # the data-loss case this step exists to prevent (`--delete "*"` on the description store),
-        # so the safe direction is to skip a day: the cron is daily and the 2048 delete chunk
-        # leaves ~12 days of headroom before the file ceiling, so one miss is affordable. A run of
-        # misses is not, and a red run is how anyone finds out — which is exactly what was missing
-        # when this failed silently for three days.
+          ATTEMPT: ${{ github.event.inputs.attempt || '1' }}
         run: |
-          for _ in $(seq 1 240); do
+          for _ in $(seq 1 45); do
             n=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml \
                   --status in_progress --json databaseId --jq 'length')
             if [ "$n" = "0" ]; then
-              echo "no pipeline in flight — proceeding"
+              echo "no pipeline in flight — compacting"
+              echo "proceed=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "pipeline in flight ($n); re-checking in 60s"
             sleep 60
           done
-          echo "::error::a pipeline was still in flight after 240 min; skipping compaction today"
-          exit 1
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          # Bounded, so a pipeline that never yields surfaces as a red run instead of an
+          # invisible loop. Six attempts is ~4.5 hours of patience against a 130-minute worst
+          # case observed over ten runs.
+          if [ "$ATTEMPT" -ge 6 ]; then
+            echo "::error::a pipeline has been in flight across $ATTEMPT attempts; not compacting"
+            exit 1
+          fi
+          next=$((ATTEMPT + 1))
+          gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY" -f "attempt=$next"
+          echo "still blocked — re-dispatched as attempt $next"
+
+  cleanup:
+    needs: window
+    if: needs.window.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
