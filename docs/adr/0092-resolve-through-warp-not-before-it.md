@@ -47,8 +47,13 @@ apply.workable.com  via socks5h://  -> 200
 ```
 
 **Safe for IPv4-only hosts.** WARP resolves, finds only an A record, and egresses IPv4 exactly as
-before — verified against `api.lever.co` and `*.myworkdayjobs.com`, both without AAAA. Greenhouse
-and Ashby (both with AAAA) were unchanged at 200. Nothing regressed under either scheme.
+before — verified against `api.lever.co`, `*.myworkdayjobs.com` and Greenhouse, none of which
+publishes AAAA on any host (`boards-api`, `boards.us`, `job-boards`, `api`: all `AAAA=0`). Ashby
+and workable, which do publish AAAA, were unchanged or improved. Nothing regressed under either
+scheme.
+
+The AAAA-side evidence is therefore **workable and Ashby only** — two hosts. An earlier draft of
+this ADR counted Greenhouse among them, which was simply wrong and overstated the sample.
 
 ## Why ADR-0067 and ADR-0081 disagreed
 
@@ -71,13 +76,26 @@ family it counted.*
 ## Consequences
 
 - Rotation on a developer machine is no longer structurally worse than on CI. The observed
-  difference — 5.7% fresh addresses locally against 99.8% on runners — was the resolver, not the
-  hardware, the colo, or the registration.
+  difference — 5.7% fresh addresses locally against 99.8% on runners — came from the *interaction*
+  of local resolution with a machine that has no global IPv6; the resolver is the half we control,
+  and changing it is sufficient. It was **not** the colo (BOM either way) or the registration
+  (four fresh ones returned the same address).
 - **`stream_width`'s narrowing (ADR-0078) rests on a premise that is now doubly undermined.** It
   narrows fan-out because "rotation buys one address at a time"; ADR-0081 already weakened that,
   and IPv6 resolution weakens it further. Not changed here — it wants its own measurement — but it
   should not be read as settled.
 - Hosts without AAAA still draw from the shallow IPv4 pool, so for those, pacing remains the better
   lever than rotation. Worth checking the AAAA record before assuming rotation will help.
+- **This blinds `check_liveness`'s rest-on-repeat guard, and that is not yet fixed.** The guard
+  fires when a rotation returns an address the gate is already on, detected via `_addresses_seen()`
+  — a count fed by `_observe_egress_ip()`, which traces `www.cloudflare.com`. That host publishes
+  AAAA, so under `socks5h` the trace egresses IPv6 and reports a fresh address on essentially every
+  rotation. The count therefore always increments and the guard can never fire: the sweep that
+  prompted this recorded 70 rotations, 70 distinct addresses, **0 rests**.
+  For IPv6-capable hosts that is correct — rotation really does hand out a new address every time.
+  For IPv4-only hosts it is a blind spot: the *egress* still repeats, but the *detector* cannot see
+  it, so the gate rotates (~7s of process-wide downtime each) where it should rest. The honest fix
+  is a per-gate signal — consecutive rotations with no answered request — rather than a global
+  address counter, which cannot express a per-host-family question. Tracked, not done here.
 - Concepts, colo codes and the full measurement are written up for newcomers in
   `docs/spare-egress/how-warp-egress-works.md`.

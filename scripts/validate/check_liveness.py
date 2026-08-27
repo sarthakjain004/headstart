@@ -794,11 +794,19 @@ def _ban_or_rotate(gate, r, url, seconds, why):
         # again within a minute of going quiet, so the supply is time, and a restart that changes
         # nothing still costs ~7s of gate downtime.
         #
-        # Repeats are now rare — ADR-0092 moved the spare egress onto `socks5h`, so rotation draws
-        # from the deep IPv6 pool (5 of 5 distinct over five rotations) rather than the recycled
-        # IPv4 one (3 of 5) this rest was originally written against. It still earns its place: a
-        # host with no AAAA record (`api.lever.co`, Workday) egresses IPv4 whatever the scheme, and
-        # goes on repeating exactly as before.
+        # **This arm is currently unreachable, and that is a known defect — see ADR-0092.**
+        # `_addresses_seen()` counts what `_observe_egress_ip()` reports, and that traces
+        # `www.cloudflare.com`, which publishes AAAA. Since ADR-0092 put the spare egress on
+        # `socks5h` the trace egresses IPv6 and shows a fresh address on essentially every
+        # rotation, so `address == was` never holds and the rest never fires — 70 rotations, 70
+        # distinct addresses, 0 rests on the sweep that prompted this.
+        #
+        # For an IPv6-capable host that is the right answer anyway: rotation genuinely does supply
+        # a new address each time, so there is nothing to rest for. For an IPv4-only host
+        # (`api.lever.co`, Workday, Greenhouse — none publishes AAAA) the egress really does
+        # repeat and this really should fire; the detector just cannot see it, because a global
+        # address counter cannot answer a per-host-family question. The fix is a per-gate signal —
+        # consecutive rotations with no answered request — and it is not written yet.
         _note("429-same-address")
         gate.rest(_EGRESS_REST_S)
         return

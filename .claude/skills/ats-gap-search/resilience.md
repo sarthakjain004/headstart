@@ -49,7 +49,7 @@ warp-cli registration new     # accept ToS
 warp-cli mode proxy           # proxy mode, never VPN mode
 warp-cli proxy port 40000     # SOCKS5 on localhost:40000
 warp-cli connect
-curl -x socks5://127.0.0.1:40000 https://ifconfig.me   # must differ from plain curl
+curl -x socks5h://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace   # socks5h, not socks5 (ADR-0092)   # must differ from plain curl
 ```
 
 **Proxy mode is load-bearing.** VPN mode routes *all* machine traffic through Cloudflare, including
