@@ -28,6 +28,12 @@ magnitude of sample size, and by direction.
 
 ## What was measured
 
+> **Mechanism established 2026-08-27 by [ADR-0092](0092-resolve-through-warp-not-before-it.md).**
+> The depth measured here is real and is a property of **IPv6**, which this ADR names in the
+> line below and ADR-0067 never did. Both counts were right about their own pool. Which one a
+> caller draws from is decided by whether the hostname is resolved locally (`socks5://`, A
+> record, shallow IPv4) or by WARP (`socks5h://`, AAAA, deep IPv6).
+
 - **12,702 rotation events, 11,007 distinct IPv6 addresses.** The single most-reused address
   landed 7 times out of 150 shard-runs — nowhere near "one to three."
 - **Per-shard churn (unique IPs ÷ rotation events) is 0.93–1.00 in effectively every one of the
