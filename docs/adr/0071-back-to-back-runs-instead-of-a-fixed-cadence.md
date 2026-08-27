@@ -88,6 +88,13 @@ equivalent to a schedule if someone does that arithmetic.
 
 ### `cleanup-index` keeps the shared group, and may occasionally be displaced
 
+> **Superseded 2026-08-27 by [ADR-0091](0091-compaction-outranks-the-pipeline.md).** The exposure
+> this section tolerated is exactly what fired: `cleanup-index` was displaced on three consecutive
+> days, `_deletions/` passed HF's 10,000-file directory limit, and every pipeline upload was
+> rejected for eight hours. The tell named below — "if compaction starts visibly slipping, this is
+> the first thing to look at" — was correct, but nothing was watching for it. `cleanup-index` now
+> has its own group and the pipeline stands down for it.
+
 `cleanup-index` compacts the whole table — ~1.9 GB rewritten — which is precisely why it does not
 live in the 2-hourly run. It cannot move into `merge` for the same reason, so it keeps the shared
 group and, under the hourly cron, a pending `cleanup-index` can be displaced by the next pipeline

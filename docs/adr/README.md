@@ -99,3 +99,4 @@ supersedes it and note the supersession in both.
 | [0088](0088-a-lost-detail-is-not-a-truncation.md) | A lost detail is not a truncation — classify it, don't scope-exclude on it | 2026-08-26 |
 | [0089](0089-the-description-store-holds-text-not-verdicts.md) | The description store holds text, not verdicts — drop `detail_fetched` | 2026-08-26 |
 | [0090](0090-rotate-the-egress-before-banning-a-liveness-host.md) | Rotate the egress before banning a liveness host | 2026-08-27 |
+| [0091](0091-compaction-outranks-the-pipeline.md) | Compaction outranks the pipeline | 2026-08-27 |
