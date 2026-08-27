@@ -449,7 +449,15 @@ def test_a_rotation_that_lands_the_same_address_rests_instead_of_spinning(cl, eg
         gate, _Resp(429, {"Retry-After": "72000"}), _URL
     )  # rotation returns the same one
 
-    assert gate.blocked(), "nowhere to move, so let the address refill rather than spin"
+    assert not gate.blocked(), (
+        "resting must not trip the breaker — `_through_gate` short-circuits every board behind a "
+        "blocked gate straight to UNKNOWN, so a 'pause' built on `trip` discards them. It did: "
+        "19,117 boards in 72 seconds, and this assertion used to demand exactly that."
+    )
+    waited = gate._next - time.monotonic()
+    assert waited > cl._EGRESS_REST_S / 2, (
+        f"workers must be delayed, not dropped (waited {waited:.0f}s)"
+    )
     spent, _ = gate.egress_account()
     assert spent == 1, f"one address was ever handed out; counted {spent}"
 

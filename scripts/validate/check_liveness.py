@@ -244,6 +244,21 @@ class _HostGate:
                 flush=True,
             )
 
+    def rest(self, seconds):
+        """Hold every worker on this gate for `seconds`, without dropping a single board.
+
+        Deliberately **not** `trip`. The breaker is how a gate gives up: `_through_gate` sees
+        `blocked()` and short-circuits each board to UNKNOWN without sending a request. Resting is
+        the opposite — nothing is abandoned, the queue simply waits. Conflating them cost a whole
+        sweep: a `trip(60, ...)` meant as a pause discarded 19,117 boards in 72 seconds, because
+        every worker behind the gate took the short-circuit instead of the wait.
+
+        Implemented by pushing the gate's next permitted start, which is the same field `wait_turn`
+        already paces on — so workers sleep in the queue they were in anyway.
+        """
+        with self._lock:
+            self._next = max(self._next, time.monotonic() + seconds)
+
     def egress_account(self):
         """`(addresses moved to, banned now)` — what the pass report says about this gate."""
         with self._lock:
@@ -777,7 +792,7 @@ def _ban_or_rotate(gate, r, url, seconds, why):
         # again within a minute of going quiet. So the supply is not more restarts, it is time —
         # and each restart that changes nothing still costs ~7s of gate downtime.
         _note("429-same-address")
-        gate.trip(_EGRESS_REST_S, f"{why}, and rotation returned the same address")
+        gate.rest(_EGRESS_REST_S)
         return
     gate.recover(why, address, since)
 

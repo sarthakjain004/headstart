@@ -115,6 +115,13 @@ restart that returns the same address still costs ~7s of gate downtime. So a rep
 gate for `_EGRESS_REST_S` (60s, the measured refill) instead of spinning. Observed throughput was
 ~80 boards/min against ~140 during the minutes a rested address was carrying.
 
+**Resting is a delay, not a breaker trip, and the first attempt got that wrong.** `_HostGate.trip`
+is how a gate *gives up*: `_through_gate` reads `blocked()` and short-circuits every board behind
+it to UNKNOWN without sending a request. Building the pause on `trip(60, ...)` therefore discarded
+the queue rather than holding it — a sweep ended in 72 seconds with `breaker-open=19117` against 8
+real 429s. `rest()` pushes the gate's next permitted start instead, which is the field `wait_turn`
+already paces on, so workers sleep in the queue they were already in and no board is abandoned.
+
 ## Scripts
 
 Under `experiment/workable-cloudflare-challenge/` (gitignored, local to whoever ran it):
