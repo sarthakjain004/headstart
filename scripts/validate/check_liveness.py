@@ -309,7 +309,7 @@ _MIN_SPACING, _MAX_SPACING = 0.02, 1.0
 #: How long a gate rests when rotation cannot produce an address it is not already on. Sized to
 #: the measured refill: `apply.workable.com` answered 200 again within a minute of load stopping,
 #: twice. Short enough that the run keeps moving, long enough that the address it returns to has
-#: something left — which is the whole supply on a machine whose colo holds about three of them.
+#: something left. Reached mainly on IPv4-only hosts now — see `_ban_or_rotate` and ADR-0092.
 _EGRESS_REST_S = 60
 
 #: There is deliberately **no cap on how many addresses a gate may be refused from.** An earlier
@@ -786,11 +786,15 @@ def _ban_or_rotate(gate, r, url, seconds, why):
         return
     if address == was:
         # The daemon restarted and Cloudflare handed back the address we were already on, so
-        # there is nothing to recover onto. Resting beats spinning: measured 2026-08-27, this
-        # machine reaches one colo holding ~3 addresses (3 distinct across 53 restarts, and four
-        # fresh registrations all returned 104.28.220.169), while a spent address answers 200
-        # again within a minute of going quiet. So the supply is not more restarts, it is time —
-        # and each restart that changes nothing still costs ~7s of gate downtime.
+        # there is nothing to recover onto. Resting beats spinning: a spent address answers 200
+        # again within a minute of going quiet, so the supply is time, and a restart that changes
+        # nothing still costs ~7s of gate downtime.
+        #
+        # Repeats are now rare — ADR-0092 moved the spare egress onto `socks5h`, so rotation draws
+        # from the deep IPv6 pool (5 of 5 distinct over five rotations) rather than the recycled
+        # IPv4 one (3 of 5) this rest was originally written against. It still earns its place: a
+        # host with no AAAA record (`api.lever.co`, Workday) egresses IPv4 whatever the scheme, and
+        # goes on repeating exactly as before.
         _note("429-same-address")
         gate.rest(_EGRESS_REST_S)
         return

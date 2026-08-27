@@ -100,3 +100,4 @@ supersedes it and note the supersession in both.
 | [0089](0089-the-description-store-holds-text-not-verdicts.md) | The description store holds text, not verdicts — drop `detail_fetched` | 2026-08-26 |
 | [0090](0090-rotate-the-egress-before-banning-a-liveness-host.md) | Rotate the egress before banning a liveness host | 2026-08-27 |
 | [0091](0091-compaction-outranks-the-pipeline.md) | Compaction outranks the pipeline | 2026-08-27 |
+| [0092](0092-resolve-through-warp-not-before-it.md) | Resolve through WARP, not before it | 2026-08-27 |

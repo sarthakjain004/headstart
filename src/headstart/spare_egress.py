@@ -22,7 +22,10 @@ reasoning that rotation buys one address at a time rather than a wider allowance
 rescue a shard that is simply too wide (#195). The pool that address is drawn from was measured by
 ADR-0067 at "one to three" per colo; ADR-0081 corrected that to a deep pool with a ~100% rescue
 rate on 150 shard-runs of real traffic, which weakens this module's stated reason for narrowing —
-see :func:`stream_width`.
+see :func:`stream_width`. ADR-0092 then explained the disagreement: both counts were right about
+their own **address family**. Which one a caller draws from is decided by the proxy scheme —
+``socks5h`` (WARP resolves, AAAA, deep IPv6) versus ``socks5`` (client resolves, A, recycled
+IPv4) — which is why :func:`proxy_url` hands out the former.
 
 WARP runs in **proxy mode**, never VPN mode. VPN mode routes the whole machine through Cloudflare,
 which on a runner means the artifact upload, the HF push and the GitHub API calls too; proxy mode
@@ -169,7 +172,23 @@ def _connect() -> str | None:
     if not _run("connect"):
         return None
     if _await_socks5():
-        return f"socks5://127.0.0.1:{_PORT}"
+        # `socks5h`, not `socks5` — the `h` hands hostname resolution to WARP instead of doing it
+        # locally, and that one letter decides which address family we egress from.
+        #
+        # Resolving locally means a machine with no global IPv6 (only `fe80::` link-local, which
+        # is every runner and laptop measured here) gets an A record, so the request leaves over
+        # IPv4 — and Cloudflare's IPv4 egress pool is small and recycled. Letting WARP resolve
+        # gets the AAAA where the host publishes one, and IPv6 egress is drawn from a `/32` deep
+        # enough to hand out a fresh address essentially every rotation.
+        #
+        # Measured 2026-08-27, same daemon and same colo (BOM), five consecutive rotations:
+        # `socks5` returned 3 distinct addresses (104.28.220.169 three times), `socks5h` returned
+        # 5 of 5 distinct. On the host that prompted this, `apply.workable.com`, the IPv4 egress
+        # answered 429 while the IPv6 one answered 200 in the same second.
+        #
+        # Safe for hosts with no AAAA: WARP resolves, finds only A records, and egresses IPv4
+        # exactly as before — verified against `api.lever.co` and Workday, both IPv4-only.
+        return f"socks5h://127.0.0.1:{_PORT}"
     _log.warning(
         f"spare egress: dialled but the SOCKS5 listener did not answer within "
         f"{_CONNECT_TIMEOUT:.0f}s — staying on the direct route"
@@ -259,7 +278,8 @@ def stream_width(group: str | None, ceiling: int) -> int:
 
     It does not ask whether the walled group *has* a spare egress either — that stays true
     regardless of pool depth, since :func:`proxy_url` would have to dial WARP to find out. The
-    narrowing itself was justified by ADR-0067's "one to three IPs per colo" measurement; ADR-0081
+    narrowing itself was justified by ADR-0067's "one to three IPs per colo" measurement — an IPv4
+    figure, per ADR-0092, and not what this module egresses on any more; ADR-0081
     corrected that to a deep pool with a ~100% rescue rate on real traffic, which removes that
     specific justification without supplying a re-measured width to replace `12` — see ADR-0081's
     consequences before trusting this constant as tuned.
@@ -654,7 +674,9 @@ def _observe_egress_ip() -> None:
     ADR-0067 measured (2026-08-19, 18-30 probe jobs) that `systemctl restart warp-svc` returns a
     *different* egress IP only about 11 times in 30, and pinned that to pool depth: a WARP client
     is pinned to its nearest colo, the colo never moves under any rotation verb, and each colo was
-    measured to carry a pool of one to three addresses. The colo-pinning half still holds. The
+    measured to carry a pool of one to three addresses — over IPv4, as ADR-0092 later established;
+    over IPv6 the same colo hands out a fresh address nearly every time. The colo-pinning half
+    still holds. The
     pool-depth half does not: ADR-0081 (2026-08-21) parsed 150 shard-runs of real pipeline traffic
     and found 12,702 rotations landing 11,007 distinct addresses, with per-shard churn of
     0.93-1.00 and a ~100% rescue rate — a deep pool, not a 1-3 one. Neither ADR changes why this

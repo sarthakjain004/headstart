@@ -105,8 +105,20 @@ So the budget model holds and the constraint is supply. Re-registration does not
 consecutive `warp-cli registration delete` + `new` cycles — four brand-new device identities — all
 came back on `104.28.220.169` via BOM. **This corrects ADR-0063's stated reason for the
 stickiness.** It is not that "a registration is sticky to its WARP edge node"; a brand-new
-registration gets the same address. What pins it is the client's network location and its colo,
-which no `warp-cli` verb reaches.
+registration gets the same address.
+
+> **Superseded later the same day by [ADR-0092](../adr/0092-resolve-through-warp-not-before-it.md).**
+> The conclusion drawn here — that the pool is three addresses and cannot be widened from this
+> machine — was **wrong**, and wrong in an instructive way. Every measurement above was taken over
+> **IPv4**, because `spare_egress` handed callers `socks5://` and curl_cffi then resolved hostnames
+> locally; this machine has no global IPv6, so every request took an A record into Cloudflare's
+> small recycled IPv4 pool. Switching to `socks5h://` lets WARP resolve, reaches workable's AAAA
+> record, and draws from the IPv6 `/32` instead: five consecutive rotations gave **5 distinct
+> addresses instead of 3**, and `apply.workable.com` answered **200 over IPv6 while still
+> answering 429 over IPv4 in the same second**.
+>
+> The colo never mattered. It was BOM for the IPv6 addresses too. What follows below about pool
+> depth and "a WARP-config problem" should be read as an artifact of the resolver, not a finding.
 
 ### Consequence for the ladder
 

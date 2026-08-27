@@ -85,8 +85,13 @@ def _happy(argv):
 
 
 def test_connects_in_proxy_mode_and_returns_the_socks_url(monkeypatch):
+    """The scheme is `socks5h`, and the `h` is the whole point: it hands hostname resolution to
+    WARP rather than doing it locally. A machine with no global IPv6 resolves to an A record and
+    egresses from Cloudflare's small, recycled IPv4 pool; letting WARP resolve reaches the AAAA
+    and a far deeper IPv6 one. Measured over five rotations on one colo: 3 distinct addresses
+    with `socks5`, 5 of 5 with `socks5h`."""
     calls = _stub(monkeypatch, _happy)
-    assert spare_egress.proxy_url() == f"socks5://127.0.0.1:{spare_egress._PORT}"
+    assert spare_egress.proxy_url() == f"socks5h://127.0.0.1:{spare_egress._PORT}"
     flat = [" ".join(c) for c in calls]
     assert any("mode proxy" in c for c in flat)
     assert any(f"proxy port {spare_egress._PORT}" in c for c in flat)
