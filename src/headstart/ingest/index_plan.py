@@ -295,12 +295,29 @@ def apply_sync(
     add_rows: list[dict],
     delete_ids: Iterable[str],
     *,
-    chunk: int = 512,
+    chunk: int = 2048,
 ) -> None:
     """Execute a plan on a LanceDB ``table``: delete evicted ids by predicate, then add new rows.
 
     Deletes are chunked so the ``id IN (...)`` predicate can't grow unbounded. ``add_rows`` must
     already carry the table's schema (vector + metadata); embedding them is the caller's job.
+
+    **The chunk is 2048, not 512, because each call is far more expensive than the predicate it
+    carries.** Lance writes one deletion file per *fragment* a delete touches, and the ids in any
+    chunk are scattered across every fragment — so a run writes ``ceil(deleted / chunk) x
+    fragments`` of them, and the call count is the only half of that this can move. At ~40
+    characters per id (``smartrecruiters:Nagarro1:744000144258659``) the predicate grows from
+    ~21 KB to ~86 KB: a flat, un-nested ``IN`` list that DataFusion parses once, against a scan of
+    every fragment the call was going to make anyway. So fewer, larger calls are also fewer scans.
+
+    Measured over ten runs, evictions are 317-1,560 per run (median 688), which at 512 is 1-4
+    delete calls (mean 1.9) and at 2048 is exactly 1 — so **roughly half** the deletion files on
+    the eviction path, not a quarter. The larger win is ``index._refresh_metadata``, which already
+    batches 2,048 rows at a time and so made four delete calls per batch where it now makes one.
+
+    Either way this only divides a constant. The term that grows is the fragment count, which
+    climbs every run and is reset only by ``index compact``. Halving the constant roughly doubles
+    the time to the 10,000-file directory ceiling; it does not remove it.
     """
     ids = list(delete_ids)
     for start in range(0, len(ids), chunk):

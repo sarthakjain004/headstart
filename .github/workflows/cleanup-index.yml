@@ -17,21 +17,36 @@ name: cleanup-index
 #
 # Was every 2 days. Daily doubles the ~755 MB rebuild's blob churn, which the daily history squash
 # still bounds to a week (~5.3 GB against a 100 GB quota). The real cost is contention: this job
-# shares the pipeline's concurrency group and can run 90 minutes, so a pipeline run queues behind
-# it once more per two days.
+# no longer shares the pipeline's concurrency group — see `concurrency` below for why that had to
+# change, and ADR-0091 for the decision.
 on:
   schedule:
-    - cron: "0 6 * * *" # 06:00 UTC. No longer clear of anything: the pipeline fires hourly at :30 (ADR-0071) and the
-    # dataset squash moved into its merge job. This run shares the pipeline's concurrency group,
-    # so while it is *pending* the next pipeline fire can displace it — tolerated, because
-    # compaction is idempotent and simply runs the next day
+    - cron: "0 3 * * *" # 03:00 UTC. The hour is not load-bearing — this run can no longer be
+    # displaced by anything (see `concurrency` below), so it does not need a quiet slot. It waits
+    # out whatever pipeline is mid-flight, and re-dispatches itself if that takes too long
   workflow_dispatch:
+    inputs:
+      attempt:
+        description: "Retry counter — set by this workflow re-dispatching itself. Leave blank."
+        required: false
+        default: "1"
 
 permissions:
-  contents: read
+  contents: read # `window` widens this for itself; `cleanup` must not inherit the widening
 
 concurrency:
-  group: nightly-pipeline # share the pipeline's group so cleanup and a nightly never race on state
+  # Its OWN group, not the pipeline's. Sharing one looked like mutual exclusion and behaved like
+  # starvation: GitHub keeps a single *pending* run per group and a newer arrival replaces it, so
+  # an hourly pipeline (80-130 min per run) nearly always had a fresher run waiting and this
+  # once-a-day job was the one displaced. It last succeeded 2026-08-24, was cancelled on the 25th
+  # and 26th, and by the 27th `_deletions/` had passed HF's 10,000-files-per-directory limit and
+  # every pipeline upload was rejected.
+  #
+  # Exclusion is now the other way round and is enforced by both sides: this job waits for any
+  # in-flight pipeline before it touches anything, and the pipeline's own gate stands down while
+  # this is running or queued. The pipeline is hourly and idempotent, so it is the one that can
+  # afford to yield — which is exactly the priority the shared group had backwards.
+  group: index-compaction
   cancel-in-progress: false
 
 env:
@@ -44,7 +59,83 @@ env:
   HF_HUB_DISABLE_XET: "1"
 
 jobs:
+  # Hold the door open until the pipeline lets go — and if it does not, come back rather than
+  # give up. Split from `cleanup` so a blocked attempt can end without running any of the work.
+  window:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Scoped to this job on purpose, following `pipeline.yml`'s own precedent: `cleanup` below
+    # holds HF_TOKEN and runs `--delete "*"`, and nothing it does needs the Actions API. A
+    # workflow-level grant would hand it the ability to dispatch workflows for no reason.
+    permissions:
+      contents: read
+      actions: write # read: is a pipeline in flight; write: re-dispatch this workflow when one is
+    outputs:
+      proceed: ${{ steps.wait.outputs.proceed }}
+    steps:
+      # **This wait is what creates the window it is waiting for.** The pipeline runs 80-130
+      # minutes and fires hourly, so it is busy nearly all the time and there is no free gap to
+      # arrive into. Once this job exists, the pipeline's gate stands every later fire down, so
+      # the one already in flight drains and nothing replaces it. Exiting immediately instead of
+      # waiting would look tidier and would never compact again.
+      #
+      # 45 minutes per attempt, then re-dispatch. A single long wait was the first shape here, and
+      # it had to be justified by "no pipeline has ever run past 240 minutes" — the same kind of
+      # rare-case tolerance that caused the outage this whole change is fixing (the old comment
+      # read "tolerated, because compaction is idempotent and simply runs the next day"). Coming
+      # back is a guarantee; a long-enough timeout is an estimate. It also stops a runner idling
+      # for four hours, and sidesteps GitHub's 6-hour ceiling on a single job entirely.
+      #
+      # `workflow_dispatch` is one of the two events the default `GITHUB_TOKEN` may still trigger
+      # (docs: "events triggered by the GITHUB_TOKEN will not create a new workflow run, with the
+      # following exceptions"), so this needs no PAT.
+      - name: Wait for the pipeline to let go, or come back later
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTEMPT: ${{ github.event.inputs.attempt || '1' }}
+        run: |
+          for _ in $(seq 1 45); do
+            n=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml \
+                  --status in_progress --json databaseId --jq 'length')
+            if [ "$n" = "0" ]; then
+              echo "no pipeline in flight — compacting"
+              echo "proceed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "pipeline in flight ($n); re-checking in 60s"
+            sleep 60
+          done
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+          # Bounded, so a pipeline that never yields surfaces as a red run instead of an
+          # invisible loop. Six attempts is ~4.5 hours of patience against a 130-minute worst
+          # case observed over ten runs.
+          if [ "$ATTEMPT" -ge 6 ]; then
+            echo "::error::a pipeline has been in flight across $ATTEMPT attempts; not compacting"
+            exit 1
+          fi
+          next=$((ATTEMPT + 1))
+          gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY" -f "attempt=$next"
+          # `gh workflow run` is fire-and-forget: it returns on a 202, not on a run existing. If
+          # the dispatch were dropped this job would still exit 0 and the retry chain would end
+          # **green**, which is the silent-starvation failure this whole change exists to remove —
+          # so confirm the successor is really there, and go red if it is not.
+          for _ in $(seq 1 12); do
+            sleep 5
+            alive=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 5 \
+                      --json status,databaseId \
+                      --jq "[.[] | select(.status != \"completed\" and .databaseId != $GITHUB_RUN_ID)] | length")
+            if [ "$alive" != "0" ]; then
+              echo "still blocked — attempt $next is queued"
+              exit 0
+            fi
+          done
+          echo "::error::re-dispatch of attempt $next never appeared; the retry chain ends here"
+          exit 1
+
   cleanup:
+    needs: window
+    if: needs.window.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
