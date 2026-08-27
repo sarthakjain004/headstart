@@ -44,7 +44,7 @@ a row is written a SECOND time with its full description. The file's contract is
 
 Run:  python scripts/scrape/run_wellfound_job_details.py
           [--headless] [--append] [--limit N] [--delay S] [--jitter S]
-          [--all-titles] [--audio-first]
+          [--all-titles] [--audio-first] [--proxy socks5://host:port]
 """
 
 import asyncio
@@ -61,6 +61,7 @@ from pydoll.browser import Chrome
 from run_wellfound import (
     EXP,
     ROOT,
+    HardBlocked,
     _captcha_frame_html,
     _flag,
     _lf,
@@ -71,7 +72,7 @@ from run_wellfound import (
 from run_wellfound import (
     OUT as BOARD_CSV,
 )
-from run_wellfound_company_jobs import COLS
+from run_wellfound_company_jobs import COLS, warp_on_via
 from run_wellfound_company_jobs import OUT as ROSTER_CSV
 from run_wellfound_sweep import warp_on
 
@@ -194,11 +195,104 @@ def read_roster() -> list[dict]:
         return list(csv.DictReader(f))
 
 
+def needs_fetch(row: dict, board: dict, all_titles: bool) -> bool:
+    """Whether this row is worth spending a live page load on: no free board description, and
+    the tech gate says the title is worth it (ADR-0017's `is_tech` as a *cost reducer* only)."""
+    if row["id"] in board:
+        return False  # already have the full text for free
+    return all_titles or is_tech(row.get("title"), row.get("department") or None)
+
+
+async def resolve_row(
+    tab,
+    browser,
+    row: dict,
+    board: dict,
+    stats: dict,
+    *,
+    all_titles: bool,
+    delay: float,
+    jitter: float,
+) -> dict | None:
+    """The finished row to write, or None when it must be left for the next ``--append``.
+
+    Everything one job needs, in one place, because two drivers now run it: this module's
+    sequential loop and ``run_wellfound_job_details_parallel.py``'s tab fleet. Extracted rather
+    than copied — the decisions here are subtle enough (a posting must be proven to belong to
+    *this* job; a challenged page must not freeze a snippet) that a second copy would drift.
+
+    Raises :class:`HardBlocked` so the caller decides what a burnt IP means — the sequential
+    driver stops, the parallel one stops the whole fleet.
+    """
+    out = dict(row)
+    if row["id"] in board:
+        out["description"] = board[row["id"]][0]
+        out["desc_source"] = "board"
+        out["department"] = out.get("department") or board[row["id"]][1]
+        stats["board"] += 1
+        return out
+    if not needs_fetch(row, board, all_titles):
+        out["desc_source"] = "snippet"  # non-tech title: snippet is enough
+        stats["snippet"] += 1
+        return out
+
+    try:
+        page_html = await load_detail(tab, row["url"], browser)
+    except Exception as e:  # noqa: BLE001 - one job's fetch must not sink the run
+        print(f"  {row['url']} fetch error: {type(e).__name__}", flush=True)
+        page_html = ""
+    if is_challenged(page_html) and is_hard_block(
+        await _captcha_frame_html(tab, browser)
+    ):
+        raise HardBlocked(f"hard block on {row['url']}")
+    if is_challenged(page_html):
+        # Still challenged after the solve budget: leave the row unwritten so the next --append
+        # retries it, rather than freezing a snippet in place.
+        stats["challenged"] += 1
+        print(f"  still challenged, will retry: {row['url']}", flush=True)
+        await asyncio.sleep(delay + random.random() * jitter)
+        return None
+
+    ld = ld_jobposting(page_html)
+    job_id = row["id"].rsplit(":", 1)[-1]
+    # Either source must demonstrably belong to THIS job before it is written.
+    mismatch = (
+        not posting_matches(ld, job_id) if ld is not None else job_id not in page_html
+    )
+    if mismatch:
+        # Wrong job's page (stale read): skip rather than write a mismatched description.
+        stats["mismatch"] += 1
+        print(f"  posting id mismatch, will retry: {row['url']}", flush=True)
+        await asyncio.sleep(delay + random.random() * jitter)
+        return None
+
+    text = html_to_text(ld.get("description")) if ld else None
+    if not text:
+        # Live listing with no JSON-LD — read the rendered block instead.
+        text = html_to_text(description_html(page_html))
+    if text:
+        out["description"] = _lf(text)
+        out["desc_source"] = "detail"
+        stats["detail"] += 1
+    else:
+        # Resolved page with no posting = the listing is closed/404. Keep the row (it is real
+        # history) but mark it so it is never mistaken for a fetched one.
+        out["desc_source"] = "gone"
+        stats["gone"] += 1
+        print(f"  listing gone (no JobPosting): {row['url']}", flush=True)
+    await asyncio.sleep(delay + random.random() * jitter)
+    return out
+
+
 async def main() -> int:
-    if not warp_on():
+    proxy = (
+        _flag("--proxy", "") or None
+    )  # e.g. socks5://127.0.0.1:40000 (WARP proxy mode)
+    if not (warp_on_via(proxy) if proxy else warp_on()):
+        where = f"through {proxy}" if proxy else "on the default route"
         print(
-            "ABORT: WARP is not on. Standing rule: never scrape Wellfound on the "
-            "residential IP. Connect WARP and retry.",
+            f"ABORT: WARP is not on {where}. Standing rule: never scrape Wellfound on the "
+            "residential IP. Connect WARP and retry — or pass --proxy for WARP proxy mode.",
             flush=True,
         )
         return 2
@@ -264,13 +358,7 @@ async def main() -> int:
     if limit:
         todo = todo[:limit]
 
-    # Rows needing a live fetch: no board description, and the tech gate says it's worth one.
-    def needs_fetch(row: dict) -> bool:
-        if row["id"] in board:
-            return False  # already have the full text for free
-        return all_titles or is_tech(row.get("title"), row.get("department") or None)
-
-    n_fetch = sum(1 for r in todo if needs_fetch(r))
+    n_fetch = sum(1 for r in todo if needs_fetch(r, board, all_titles))
     print(
         f"to write {len(todo)} rows; {n_fetch} need a detail fetch "
         f"({'all titles' if all_titles else 'tech-titled only'}) -> {OUT}",
@@ -285,89 +373,35 @@ async def main() -> int:
         "challenged": 0,  # unwritten, retried by the next --append
         "mismatch": 0,  # unwritten, retried by the next --append
     }
-    async with Chrome(options=_options(headless, None)) as browser:
+    async with Chrome(options=_options(headless, proxy)) as browser:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
         except Exception:  # noqa: BLE001, S110
             pass
         for i, row in enumerate(todo):
-            out = dict(row)
-            if row["id"] in board:
-                out["description"] = board[row["id"]][0]
-                out["desc_source"] = "board"
-                out["department"] = out.get("department") or board[row["id"]][1]
-                stats["board"] += 1
-            elif not needs_fetch(row):
-                out["desc_source"] = "snippet"  # non-tech title: snippet is enough
-                stats["snippet"] += 1
-            else:
-                try:
-                    page_html = await load_detail(tab, row["url"], browser)
-                except Exception as e:  # noqa: BLE001
-                    print(
-                        f"  [{i + 1}] {row['url']} fetch error: {type(e).__name__}",
-                        flush=True,
-                    )
-                    page_html = ""
-                if is_challenged(page_html) and is_hard_block(
-                    await _captcha_frame_html(tab, browser)
-                ):
-                    f.close()
-                    print(
-                        f"\n!! HARD BLOCK on {row['url']}\n"
-                        f"   Stopping. Let it lapse, then resume from this job with:\n"
-                        f"     python scripts/scrape/run_wellfound_job_details.py --append",
-                        flush=True,
-                    )
-                    raise SystemExit(1)
-                if is_challenged(page_html):
-                    # Still challenged after the solve budget: leave the row unwritten so the
-                    # next --append retries it, rather than freezing a snippet in place.
-                    stats["challenged"] += 1
-                    print(
-                        f"  [{i + 1}] still challenged, will retry: {row['url']}",
-                        flush=True,
-                    )
-                    await asyncio.sleep(delay + random.random() * jitter)
-                    continue
-                ld = ld_jobposting(page_html)
-                job_id = row["id"].rsplit(":", 1)[-1]
-                # Either source must demonstrably belong to THIS job before it is written.
-                mismatch = (
-                    not posting_matches(ld, job_id)
-                    if ld is not None
-                    else job_id not in page_html
+            try:
+                out = await resolve_row(
+                    tab,
+                    browser,
+                    row,
+                    board,
+                    stats,
+                    all_titles=all_titles,
+                    delay=delay,
+                    jitter=jitter,
                 )
-                if mismatch:
-                    # Wrong job's page (stale read): skip rather than write a mismatched
-                    # description. The next --append re-fetches it.
-                    stats["mismatch"] += 1
-                    print(
-                        f"  [{i + 1}] posting id mismatch, will retry: {row['url']}",
-                        flush=True,
-                    )
-                    await asyncio.sleep(delay + random.random() * jitter)
-                    continue
-                text = html_to_text(ld.get("description")) if ld else None
-                if not text:
-                    # Live listing with no JSON-LD — read the rendered block instead.
-                    text = html_to_text(description_html(page_html))
-                if text:
-                    out["description"] = _lf(text)
-                    out["desc_source"] = "detail"
-                    stats["detail"] += 1
-                else:
-                    # Resolved page with no posting = the listing is closed/404. Keep the row
-                    # (it is real history) but mark it so it is never mistaken for a fetched one.
-                    out["desc_source"] = "gone"
-                    stats["gone"] += 1
-                    print(
-                        f"  [{i + 1}] listing gone (no JobPosting): {row['url']}",
-                        flush=True,
-                    )
-                await asyncio.sleep(delay + random.random() * jitter)
-
+            except HardBlocked as exc:
+                f.close()
+                print(
+                    f"\n!! HARD BLOCK on {exc}\n"
+                    f"   Stopping. Let it lapse, then resume from this job with:\n"
+                    f"     python scripts/scrape/run_wellfound_job_details.py --append",
+                    flush=True,
+                )
+                raise SystemExit(1) from exc
+            if out is None:
+                continue  # challenged or mismatched: left for the next --append
             writer.writerow(out)
             f.flush()
             if (i + 1) % 25 == 0 or i + 1 == len(todo):

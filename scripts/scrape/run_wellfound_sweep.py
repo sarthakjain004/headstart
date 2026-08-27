@@ -12,7 +12,8 @@ Standing rule: only ever request Wellfound through Cloudflare WARP — this abor
 so it can't leak the residential IP.
 
 Run:  python scripts/scrape/run_wellfound_sweep.py
-          [--headless] [--max-pages N] [--delay S] [--jitter S] [--no-warmup] [--no-scroll] [--audio-first]
+          [--headless] [--max-pages N] [--delay S] [--jitter S] [--no-warmup] [--no-scroll]
+          [--audio-first] [--proxy socks5://host:port]
 """
 
 import asyncio
@@ -61,10 +62,16 @@ def warp_on() -> bool:
 
 
 async def main() -> int:
-    if not warp_on():
+    from run_wellfound_company_jobs import warp_on_via
+
+    proxy = (
+        _flag("--proxy", "") or None
+    )  # e.g. socks5://127.0.0.1:40000 (WARP proxy mode)
+    if not (warp_on_via(proxy) if proxy else warp_on()):
+        where = f"through {proxy}" if proxy else "on the default route"
         print(
-            "ABORT: WARP is not on. Standing rule: never scrape Wellfound on the "
-            "residential IP. Connect WARP and retry.",
+            f"ABORT: WARP is not on {where}. Standing rule: never scrape Wellfound on the "
+            "residential IP. Connect WARP and retry — or pass --proxy for WARP proxy mode.",
             flush=True,
         )
         return 2
@@ -112,7 +119,7 @@ async def main() -> int:
         f"(start page {start_page}) -> {OUT}",
         flush=True,
     )
-    async with Chrome(options=_options(headless, None)) as browser:
+    async with Chrome(options=_options(headless, proxy)) as browser:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()

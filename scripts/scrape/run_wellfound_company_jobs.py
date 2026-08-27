@@ -26,7 +26,7 @@ Resume: completed slugs are appended to a done-file as each company finishes, so
 with --append is always safe.
 
 Run:  python scripts/scrape/run_wellfound_company_jobs.py
-          [--headless] [--append] [--limit N]
+          [--headless] [--append] [--limit N] [--proxy socks5://host:port]
           [--delay S] [--jitter S] [--no-scroll] [--audio-first]
 """
 
@@ -64,6 +64,30 @@ from run_wellfound import (
     OUT as BOARD_CSV,
 )
 from run_wellfound_sweep import warp_on
+
+
+def warp_on_via(proxy: str) -> bool:
+    """Whether requests *through ``proxy``* egress on WARP.
+
+    `warp_on` asks the machine's default route, which answers correctly only when WARP runs as
+    a full tunnel. This repo's own spare-egress machinery instead configures WARP as a SOCKS
+    proxy (`WarpProxy on port 40000`, what `spare_egress` dials), and on such a machine the
+    default route is the residential IP while the proxy is the tunnel — so the default-route
+    check reports "WARP off" for a setup that is entirely WARP-covered. Asking through the
+    proxy is what the standing rule actually cares about: the requests this scrape makes.
+    """
+    try:
+        from curl_cffi import requests as _cffi
+
+        r = _cffi.get(
+            "https://www.cloudflare.com/cdn-cgi/trace",
+            proxies={"http": proxy, "https": proxy},
+            timeout=15,
+        )
+        return "warp=on" in r.text
+    except Exception:  # noqa: BLE001 - unreachable proxy is not WARP
+        return False
+
 
 OUT = ROOT / "data" / "jobs" / "wellfound_company_jobs.csv"
 DONE = ROOT / "data" / "jobs" / "wellfound_company_jobs.done.txt"
@@ -319,10 +343,15 @@ async def scrape_company(
 
 
 async def main() -> int:
-    if not warp_on():
+    # Chrome is pointed at this too, so the check and the scrape share one egress.
+    proxy = (
+        _flag("--proxy", "") or None
+    )  # e.g. socks5://127.0.0.1:40000 (WARP proxy mode)
+    if not (warp_on_via(proxy) if proxy else warp_on()):
+        where = f"through {proxy}" if proxy else "on the default route"
         print(
-            "ABORT: WARP is not on. Standing rule: never scrape Wellfound on the "
-            "residential IP. Connect WARP and retry.",
+            f"ABORT: WARP is not on {where}. Standing rule: never scrape Wellfound on the "
+            "residential IP. Connect WARP and retry — or pass --proxy for WARP proxy mode.",
             flush=True,
         )
         return 2
@@ -378,7 +407,7 @@ async def main() -> int:
 
     incomplete = 0
     print(f"WARP on. {len(todo)} companies to scrape -> {OUT}", flush=True)
-    async with Chrome(options=_options(headless, None)) as browser:
+    async with Chrome(options=_options(headless, proxy)) as browser:
         tab = await browser.start()
         try:
             await tab.enable_auto_solve_cloudflare_captcha()
