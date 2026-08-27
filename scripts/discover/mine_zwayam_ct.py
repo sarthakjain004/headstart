@@ -100,7 +100,11 @@ def main(argv: list[str]) -> int:
     out = Path(argv[1])
     seeds = argv[2:] or SEEDS
     out.parent.mkdir(parents=True, exist_ok=True)
-    seen = {ln.strip() for ln in out.read_text().splitlines() if ln.strip()} if out.exists() else set()
+    seen = (
+        {ln.strip() for ln in out.read_text().splitlines() if ln.strip()}
+        if out.exists()
+        else set()
+    )
     print(f"ct-zwayam: {len(seeds)} seeds, {len(seen)} known", flush=True)
 
     with out.open("a") as f:
@@ -113,7 +117,10 @@ def main(argv: list[str]) -> int:
                     f.write(h + "\n")
                     new += 1
                 f.flush()  # stream: a killed run keeps everything already found
-                print(f"  {src} {d}: {len(found)} names, +{new} (total {len(seen)})", flush=True)
+                print(
+                    f"  {src} {d}: {len(found)} names, +{new} (total {len(seen)})",
+                    flush=True,
+                )
     print(f"DONE {len(seen)} candidate hosts -> {out}", flush=True)
     return 0
 

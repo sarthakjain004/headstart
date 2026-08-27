@@ -54,14 +54,28 @@ def probe(host: str, attempts: int = 3):
     for i in range(attempts):
         p = subprocess.run(  # noqa: PLW1510
             [
-                "curl", "-s", "-x", PROXY, "-w", "\n%{http_code}",
-                "--connect-timeout", "15", "-m", "60",
-                "-A", UA,
-                "-H", f"Origin: https://{host}",
-                "-H", f"Referer: https://{host}/",
-                "-F", f"filterCri={FILTER_CRI}",
-                "-F", f"domain={host}",
-                "-F", "companyId=MQ==",
+                "curl",
+                "-s",
+                "-x",
+                PROXY,
+                "-w",
+                "\n%{http_code}",
+                "--connect-timeout",
+                "15",
+                "-m",
+                "60",
+                "-A",
+                UA,
+                "-H",
+                f"Origin: https://{host}",
+                "-H",
+                f"Referer: https://{host}/",
+                "-F",
+                f"filterCri={FILTER_CRI}",
+                "-F",
+                f"domain={host}",
+                "-F",
+                "companyId=MQ==",
                 "https://public.zwayam.com/jobs/search",
             ],
             capture_output=True,
@@ -115,10 +129,17 @@ def main() -> int:
     if checked_p.exists():
         done |= {ln.strip() for ln in checked_p.read_text().splitlines() if ln.strip()}
     todo = [h for h in cands if h not in done]
-    print(f"zwayam-probe: {len(todo)} to probe ({len(cands) - len(todo)} already checked)", flush=True)
+    print(
+        f"zwayam-probe: {len(todo)} to probe ({len(cands) - len(todo)} already checked)",
+        flush=True,
+    )
 
     hits = 0
-    with out.open("a") as fo, checked_p.open("a") as fc, ThreadPoolExecutor(a.workers) as ex:
+    with (
+        out.open("a") as fo,
+        checked_p.open("a") as fc,
+        ThreadPoolExecutor(a.workers) as ex,
+    ):
         futs = {}
         for h in todo:
             futs[ex.submit(probe, h)] = h

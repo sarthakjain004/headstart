@@ -73,7 +73,9 @@ def main(argv: list[str]) -> int:
     out = Path(argv[1])
     queries = argv[2:] or QUERIES
     out.parent.mkdir(parents=True, exist_ok=True)
-    seen = {ln.strip() for ln in out.read_text().splitlines()} if out.exists() else set()
+    seen = (
+        {ln.strip() for ln in out.read_text().splitlines()} if out.exists() else set()
+    )
     seen.discard("")
     total = len(queries) * len(YEARS) * len(HALVES)
     print(f"urlscan-zwayam: {total} queries, {len(seen)} known", flush=True)

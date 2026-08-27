@@ -35,6 +35,7 @@ OUT = Path("data/scratch/zwayam/cc_urls.txt")
 DONE = Path("data/scratch/zwayam/cc_checkpoint.txt")
 _URL = re.compile(r"https?://[^\s\"']+", re.IGNORECASE)
 
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--targets", nargs="+", default=["openings.co", "zwayam.com"])
@@ -64,7 +65,10 @@ def main(argv: list[str]) -> int:
                     continue
                 n_pages = cc_miner.num_pages(cdx, t)
                 if n_pages is None:  # blocked, not empty
-                    print(f"  [{ci}] {c['id']} {t}: BLOCKED (rotate egress, re-run)", flush=True)
+                    print(
+                        f"  [{ci}] {c['id']} {t}: BLOCKED (rotate egress, re-run)",
+                        flush=True,
+                    )
                     continue
                 new, blocked = 0, False
                 for pg in range(n_pages):
