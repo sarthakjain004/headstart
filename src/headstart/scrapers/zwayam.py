@@ -355,6 +355,11 @@ class ZwayamScraper(BaseScraper):
     #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings. True so
     #: the embed planner knows a zwayam vector can have been built before its text arrived.
     has_detail_pass = True
+    #: The knee of the measured concurrency curve (module docstring): the endpoint serves ~8-9
+    #: responses/s from one IP no matter how wide the client goes (16-wide → 7.8/s, 32-wide →
+    #: 9.3/s), so width past this buys queueing, not throughput — which is also why there is no
+    #: async fan-out here: multiplexing cannot raise a server-side ceiling.
+    detail_workers = 16
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -557,6 +562,7 @@ class ZwayamScraper(BaseScraper):
                 details = self.fan_out(
                     need,
                     lambda row: self._job_detail(company_id, row["jobUrl"].strip()),
+                    workers=self.detail_workers,
                 )
                 self.report_detail_gaps(details, "descriptions")
                 for row, text in zip(need, details):
