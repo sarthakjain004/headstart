@@ -57,7 +57,11 @@ env:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Wait budget PLUS work budget. An earlier version had 90 for both, so a wait that *succeeded*
+    # could leave 30 minutes for compaction that needs 40-90 and be killed mid-rebuild. 240 for the
+    # wait, ~90 for the work, 10 slack — and it has to stay under GitHub's 6-hour ceiling for a
+    # single job, which is what stops this simply waiting indefinitely.
+    timeout-minutes: 340
     steps:
       # Wait, do not race. This job and a pipeline both write `data/lancedb` AND
       # `data/descriptions` — and this one's description upload passes `--delete "*"`, so
@@ -71,8 +75,26 @@ jobs:
       - name: Wait for any in-flight pipeline
         env:
           GH_TOKEN: ${{ github.token }}
+        # **This wait is what creates the window it is waiting for.** The pipeline runs 80-130
+        # minutes and fires hourly, so it is busy nearly all the time and there is no free gap to
+        # find. Once this job is running, the pipeline's gate stands every later fire down, so the
+        # one already in flight drains and nothing replaces it. Exiting early instead of waiting
+        # would look tidier and would never compact again.
+        #
+        # 240 minutes, and the reason it is not simply unbounded is GitHub's 6-hour cap on a single
+        # job: the work still needs ~90 of those. 240 covers the measured maximum of 129 (ten runs)
+        # by a wide margin and every job timeout on the sequential path bar a pathological `embed`,
+        # whose own 198-minute cap puts the theoretical worst case at 385 — beyond anything this
+        # job could wait for and still have time to run.
+        #
+        # Expiry fails loudly rather than compacting anyway. Compacting under a live pipeline is
+        # the data-loss case this step exists to prevent (`--delete "*"` on the description store),
+        # so the safe direction is to skip a day: the cron is daily and the 2048 delete chunk
+        # leaves ~12 days of headroom before the file ceiling, so one miss is affordable. A run of
+        # misses is not, and a red run is how anyone finds out — which is exactly what was missing
+        # when this failed silently for three days.
         run: |
-          for _ in $(seq 1 60); do
+          for _ in $(seq 1 240); do
             n=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml \
                   --status in_progress --json databaseId --jq 'length')
             if [ "$n" = "0" ]; then
@@ -82,7 +104,7 @@ jobs:
             echo "pipeline in flight ($n); re-checking in 60s"
             sleep 60
           done
-          echo "::error::a pipeline was still in flight after 60 min; not compacting this run"
+          echo "::error::a pipeline was still in flight after 240 min; skipping compaction today"
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
