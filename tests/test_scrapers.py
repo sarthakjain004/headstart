@@ -6362,7 +6362,7 @@ def test_zwayam_reports_a_short_read_as_truncated():
                         "id": i,
                         "jobTitle": f"Dev {i}",
                         "jobUrl": f"d-{i}",
-                        "mediumDescriptionWithoutHtml": "text",  # keeps the detail pass idle
+                        "mediumDescriptionWithoutHtml": "text",
                     }
                 }
                 for i in range(10)
@@ -6371,6 +6371,7 @@ def test_zwayam_reports_a_short_read_as_truncated():
     }
     scraper._page = lambda start: page
     scraper._link_base = lambda: "https://careers.short.example/x/jobview/"
+    scraper._company_id = lambda: None  # keeps the detail pass off the network
     raw = scraper.fetch_raw()
     assert len(raw["rows"]) == 10
     assert scraper.truncated == "read 10 of 50 postings"
@@ -6402,6 +6403,7 @@ def test_zwayam_truncation_keeps_the_first_reason(monkeypatch):
     }
     scraper._page = lambda start: page
     scraper._link_base = lambda: "https://careers.runaway.example/x/jobview/"
+    scraper._company_id = lambda: None  # keeps the detail pass off the network
     scraper.fetch_raw()
     assert scraper.truncated.startswith(f"stopped at the {monkey_cap}-page cap")
 
@@ -6558,10 +6560,10 @@ def test_zwayam_a_body_error_code_raises_rather_than_reading_as_an_empty_board(
         scraper.fetch_raw()
 
 
-def test_zwayam_detail_pass_fills_only_the_rows_the_listing_left_empty():
-    """13% of walked rows carry no description in any listing field while the detail endpoint
-    holds their full postings. The pass must fetch exactly those rows — a Board with full
-    listings makes zero detail calls — and honour the ADR-0050 skip-list."""
+def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
+    """The listing's text can be silently truncated with no way to tell (632 chars listed vs
+    909 of stripped detail text, measured), so the detail is fetched for every row not on the
+    ADR-0050 skip-list and its text wins over whatever the listing carried."""
     page = {
         "data": {
             "totalCount": 3,
@@ -6573,7 +6575,7 @@ def test_zwayam_detail_pass_fills_only_the_rows_the_listing_left_empty():
                         "id": 2,
                         "jobTitle": "B",
                         "jobUrl": "b",
-                        "mediumDescriptionWithoutHtml": "already listed",
+                        "mediumDescriptionWithoutHtml": "possibly truncated listing",
                     }
                 },
                 {"_source": {"id": 3, "jobTitle": "C", "jobUrl": "c"}},
@@ -6591,26 +6593,40 @@ def test_zwayam_detail_pass_fills_only_the_rows_the_listing_left_empty():
         return f"detail text for {job_url}"
 
     scraper._job_detail = _detail
-    # id 3 is on the skip-list: the store already holds its text (ADR-0050)
+    # id 3 is on the skip-list: the store already holds its text (ADR-0050), so its row ships
+    # None and the store supplies the text downstream.
     scraper.have_details = {"zwayam:h.example:3"}
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
-    assert fetched == [(4242, "a")]
+    assert fetched == [(4242, "a"), (4242, "b")]
     by_id = {j.id.rsplit(":", 1)[1]: j.description for j in jobs}
-    assert by_id == {"1": "detail text for a", "2": "already listed", "3": None}
+    assert by_id == {"1": "detail text for a", "2": "detail text for b", "3": None}
 
 
-def test_zwayam_a_failed_config_call_costs_the_details_not_the_board():
-    """`_company_id` degrading to None must leave the walk's Jobs intact."""
+def test_zwayam_a_failed_detail_falls_back_to_the_listing_text():
+    """A failed detail call (fan_out yields None) must not blank a Job whose listing carried
+    text — a truncated description beats none, and a Board whose config call breaks entirely
+    ships all its listing text rather than nothing."""
     page = {
         "data": {
-            "totalCount": 1,
+            "totalCount": 2,
             "hasMoreData": False,
-            "data": [{"_source": {"id": 1, "jobTitle": "A", "jobUrl": "a"}}],
+            "data": [
+                {
+                    "_source": {
+                        "id": 1,
+                        "jobTitle": "A",
+                        "jobUrl": "a",
+                        "mediumDescriptionWithoutHtml": "listing text",
+                    }
+                },
+                {"_source": {"id": 2, "jobTitle": "B", "jobUrl": "b"}},
+            ],
         }
     }
     scraper = get_scraper("zwayam", "h.example")
     scraper._page = lambda start: page
     scraper._link_base = lambda: "https://h.example/jobview/"
-    scraper._company_id = lambda: None
+    scraper._company_id = lambda: None  # the config call failed this run
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
-    assert len(jobs) == 1 and jobs[0].description is None
+    by_id = {j.id.rsplit(":", 1)[1]: j.description for j in jobs}
+    assert by_id == {"1": "listing text", "2": None}

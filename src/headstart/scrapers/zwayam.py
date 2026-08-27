@@ -46,17 +46,24 @@ Board and every one returned the same 10 rows. So a Board costs ``ceil(jobs / 10
 the largest known Board (``career.axismaxlife.com``, 7,638 postings) costs ~764. That is inherent
 to the endpoint, not a tuning choice.
 
-**A selective detail pass, for the rows the listing leaves textless.** The listing row carries
-the full description for most rows — but not all: 2,162 of 16,427 rows walked across 19 Boards
-(13%) have *nothing* in any of the four description fields, while the per-job detail endpoint
-(``jobs-service/v1/jobs/careersite``, JSON POST of ``jobUrl`` + the *real numeric* ``companyId``)
-holds their complete postings (a 6,033-char JD was measured behind a listing row with none). So
-the detail POST is made **only for rows whose listing text is empty** — a Board with full listings
-costs zero detail requests, and the ADR-0050 store's skip-list keeps a fetched description from
-ever being fetched twice. The detail also serves *longer* text than the listing on some rows that
-do carry a medium description (one Board measured 632 chars listed vs 6,572 in detail); fetching
-detail for every row would recover those but triples the request count, and is deliberately not
-done — the trigger is "no text at all", not "short text".
+**A detail pass for every new Job — the listing's text cannot be trusted complete.** The listing
+carries description fields, but what they hold ranges from the full posting to nothing at all:
+2,162 of 16,427 rows walked across 19 Boards (13%) have *nothing* in any of the four fields, and
+rows that do carry text can be silently truncated (one Board measured 632 chars listed against
+909 of stripped detail text — 6,572 raw) with **no client-side way to tell a short posting from a
+cut one**.
+The per-job detail endpoint (``jobs-service/v1/jobs/careersite``, JSON POST of ``jobUrl`` + the
+*real numeric* ``companyId``) holds the complete posting in ``longDescription`` (a 6,033-char JD
+was measured behind a listing row with none), so it is fetched for **every row not on the
+ADR-0050 skip-list** and wins over the listing text; the listing fields are the fallback when the
+detail call fails, so a Board whose config call breaks ships its listing text rather than
+nothing. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
+response, so the first pass over the 22,456-posting corpus moves ~340 MB; steady state is new
+postings only). What the detail holds is the tenant's own paste, junk included — one measured
+posting carries an AI-chat UI's class markup verbatim, and ``html_to_text``'s
+unescape-before-strip order (a deliberate Darwinbox accommodation, per its docstring) lets an
+escaped ``&gt;`` inside such an attribute leak fragments of it into the text. Tenant data
+quality, logged here so the next reader doesn't chase it as a scraper bug.
 
 **Three frontend generations, three job-link shapes.** The API is one host, but the careers sites
 in front of it are not one SPA — classified live across all 224 hiring Boards (2026-08-27):
@@ -72,16 +79,23 @@ in front of it are not one SPA — classified live across all 224 hiring Boards 
   hash prefix, so the user-facing link is ``/#!/job-view/{jobUrl}``. Both plain paths 404.
 
 :meth:`ZwayamScraper._link_base` reads one homepage GET per Board to pick the shape, so a run
-costs ``ceil(jobs / 10) + 1`` requests per Board plus the selective details. When that GET fails
+costs ``ceil(jobs / 10) + 1`` requests per Board plus the details. When that GET fails
 the shape falls back on the measured hostname prior: ``openings.co`` Boards are Next 102:12, every
 custom domain measured is Angular 92:0.
 
-**No reproducible rate limit.** A 2026-08-27 load test could not make the endpoint refuse:
-~2,160 requests across 150 sequential, 32-wide concurrency (~94 req/s), 60 distinct ``domain``
-values, and 1,500 sustained at 34 req/s — zero non-200s. One Akamai 403 was seen during 2026-08
-discovery and is real, but it is rare and transient rather than a threshold to pace against. The
-binding cost is **bytes, not requests**: a 10-row page is 70-200 KB, so a full 22,456-posting
-scrape moves roughly 340 MB.
+**No reproducible rate limit — on either endpoint.** A 2026-08-27 load test could not make the
+search refuse: ~2,160 requests across 150 sequential, 32-wide concurrency (~94 req/s), 60
+distinct ``domain`` values, and 1,500 sustained at 34 req/s — zero non-200s. The **detail**
+endpoint was probed separately the same day (1,360 requests: 300 sequential, 600 at 32-wide, 400
+cross-tenant at 16-wide, 60 config calls — ``experiment/zwayam-rate-limit/``): zero refusals
+there too, but it is **slow, not limited** — ~1.4 s a response alone and ~3.4 s under 32-wide
+load, an effective capacity ceiling of ~8-9 responses/s regardless of offered width. So wider
+fan-out past ~16 buys queueing, not throughput. One Akamai 403 was seen during 2026-08 discovery
+and is real, but it is rare and transient rather than a threshold to pace against. The binding
+costs are **bytes and detail latency, not request counts**: a 10-row page is 70-200 KB and a
+detail ~15 KB, so the first full pass moves ~680 MB and its 22,456 details take ~45 minutes of
+aggregate wall-clock at the ceiling — once, since the ADR-0050 store prunes every later run to
+new postings.
 """
 
 from __future__ import annotations
@@ -304,14 +318,15 @@ def _salary(source: dict) -> str | None:
 
 
 def _description(source: dict) -> str | None:
-    """Longest available body. ``medium*`` is the full posting; ``short*`` is a truncated teaser
-    on some tenants and the whole posting on others, so it is the fallback rather than the
-    preference. The ``*WithoutHtml`` variants are pre-stripped by the vendor; the others are HTML
-    (and never longer than their pre-stripped sibling — 0 of 16,427 walked rows, so the order
-    between the pairs costs nothing). Last comes the text the detail pass injected, which by the
-    ``need`` selection in :meth:`ZwayamScraper.fetch_raw` only exists when every listing field
-    above was empty.
+    """The detail pass's text first — it is the complete posting, where the listing fields can be
+    silently truncated (module docstring) — then the longest listing body as the fallback for a
+    failed or skipped detail. Within the listing: ``medium*`` over the sometimes-teaser
+    ``short*``, and the vendor-pre-stripped ``*WithoutHtml`` variants over their HTML siblings
+    (never longer than them — 0 of 16,427 walked rows, so that order costs nothing).
     """
+    detail = source.get("_detail_description")
+    if detail:
+        return detail
     for key in ("mediumDescriptionWithoutHtml", "shortDescriptionWithoutHtml"):
         value = (source.get(key) or "").strip()
         if value:
@@ -320,7 +335,7 @@ def _description(source: dict) -> str | None:
         value = html_to_text(source.get(key))
         if value:
             return value
-    return source.get("_detail_description") or None
+    return None
 
 
 def _posted_at(source: dict) -> str | None:
@@ -336,9 +351,9 @@ def _posted_at(source: dict) -> str | None:
 
 class ZwayamScraper(BaseScraper):
     ats = "zwayam"
-    #: A *selective* pass: the detail POST is made only for the ~13% of rows whose listing
-    #: carries no description in any field (module docstring). True so the embed planner knows a
-    #: zwayam vector can have been built before its text arrived (ADR-0050).
+    #: The detail POST supplies every Job's description (the listing's own text can be silently
+    #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings. True so
+    #: the embed planner knows a zwayam vector can have been built before its text arrived.
     has_detail_pass = True
 
     @staticmethod
@@ -484,8 +499,8 @@ class ZwayamScraper(BaseScraper):
         return html_to_text(detail.get("longDescription")) or None
 
     def fetch_raw(self) -> Any:
-        """Walk the Board's pages, fetch detail text for the rows the listing left empty, then
-        read the homepage once for the Board's link shape.
+        """Walk the Board's pages, fetch each new Job's detail text, then read the homepage once
+        for the Board's link shape.
 
         Stops on the server's own ``hasMoreData``, on a short/empty page, or at
         :data:`_MAX_PAGES`. A stop at the cap is recorded in :attr:`truncated` so the merge stage
@@ -526,13 +541,14 @@ class ZwayamScraper(BaseScraper):
             self.mark_truncated(f"read {len(rows)} of {total} postings")
         if self.truncated:
             _log.warning(f"{self.board_key()}: {self.truncated}")
-        # Selective detail pass: only rows with no listing text at all, minus the ids whose text
-        # the ADR-0050 store already holds. A Board with full listings makes zero detail calls.
+        # Detail pass for every row the ADR-0050 store does not already hold text for: the
+        # listing's own fields can be silently truncated (module docstring), so the detail is
+        # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
+        # Board's new postings.
         need = [
             row
             for row in rows
-            if _description(row) is None
-            and (row.get("jobUrl") or "").strip()
+            if (row.get("jobUrl") or "").strip()
             and self.needs_detail(str(row.get("id")))
         ]
         if need:

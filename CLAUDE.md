@@ -70,8 +70,8 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   liveness (757 live / 224 hiring boards in `data/validate/liveness/zwayam.csv`). Slug = the board
   hostname. Four things the original research got wrong, each measured live before building:
   `companyId` is **ignored by the search** (so the listing walk is one call per page, not two per
-  board — the *real* numeric id matters only for the selective per-job detail POST that fills the
-  ~13% of rows whose listing carries no description); `Origin`/`Referer`
+  board — the *real* numeric id matters only for the per-job detail POST that supplies every new
+  Job's description, since the listing's own text can be silently truncated); `Origin`/`Referer`
   are **ignored** too, so `domain` alone is the key; a **non-stock** `User-Agent` is required and a
   missing one **hangs** rather than returning empty (`curl` and `python-requests` defaults both
   time out; this repo's own UA is fine, so it is not a browser check); and `.openings.co` hosts
