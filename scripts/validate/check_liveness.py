@@ -34,6 +34,12 @@ fires on the ones it doesn't. Optional (`pip install cloudscraper`), kept out of
 dependencies so CI's quality job (base deps only) stays green — the checker degrades to the
 original curl_cffi-only behaviour when it's absent.
 
+A 429 that would otherwise ban a host for the rest of the run tries a different egress address
+first (`_ban_or_rotate`), through `headstart.spare_egress` — the same Cloudflare-WARP fallback the
+scrape uses (ADR-0063), which already carries the per-platform daemon recipe and the coalescing.
+Ordinary 429s still just ease the pace; only the bottom rung rotates, and only when the refusal
+came from the host we actually asked. Degrades to the old ban when WARP isn't reachable.
+
 Run:   python scripts/validate/check_liveness.py                       # all ATSes, respect TTLs
        python scripts/validate/check_liveness.py zoho workday          # only these ATSes
        python scripts/validate/check_liveness.py --force               # re-probe everything
@@ -56,7 +62,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http, liveness  # needs src on sys.path first
+from headstart import http, liveness, spare_egress  # needs src on sys.path first
 from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
@@ -100,10 +106,27 @@ PASSES = [(12, _W), (25, _W), (45, _W), (70, _W)]
 #   breaker  a 429 with a long Retry-After marks the host banned, and its remaining probes
 #            short-circuit to a transient failure (-> UNKNOWN, re-probed a later run) instead of
 #            re-extending the ban with thousands more requests. Never DEAD, by construction.
+#   egress   before the breaker trips, try the refusal from a different IP (_ban_or_rotate).
+#            A ban costs every board behind the gate for the rest of the run; a fresh address
+#            costs seconds, and on a per-IP limiter it is the only thing that actually clears.
 class _HostGate:
     def __init__(self, cap, spacing, key=""):
         self.sem = threading.BoundedSemaphore(cap)
         self.spacing = spacing  # min seconds between request *starts*
+        # What `recover` returns `spacing` to. Easing is tuned to the IP that was refusing us, so
+        # on a fresh one it throttles against a limit that no longer applies — but the seed was
+        # measured against a healthy origin, so recovery goes back to it and not to no pacing.
+        self._seed_spacing = spacing
+        # Egress accounting. `_address` is what is carrying this gate (None = the direct route),
+        # and it is what makes `recover` idempotent: a herd coalesced onto one rotation arrives
+        # holding the same address and spends one of the allowance between them. `_rotations`
+        # counts addresses refused *in a row*; `_recovered_at` is what lets an address that did
+        # its job clear that count. See `recover`.
+        self._address = None
+        self._rotations = (
+            0  # addresses this gate has been moved to — reported, never bounded
+        )
+        self._banned_at = 0.0  # when the standing ban was set — see `recover`
         self.key = key  # what this gate governs — a shared host, or one tenant's host
         self._lock = threading.Lock()
         self._next = 0.0
@@ -151,6 +174,7 @@ class _HostGate:
             was_banned = now < self._banned_until
             until = now + seconds
             self._banned_until = max(self._banned_until, until)
+            self._banned_at = now
             first = not was_banned
         if first:
             print(
@@ -174,6 +198,71 @@ class _HostGate:
             # Printed under the lock so concurrent easings can't report out of order.
             print(f"  [gate] {self.key} 429 — easing to {rate:.1f} req/s", flush=True)
         return True
+
+    def address(self):
+        """What is carrying this gate — None while it is still on the direct route."""
+        with self._lock:
+            return self._address
+
+    def recover(self, why, address, since):
+        """A fresh egress address is carrying this gate now: drop any ban and un-ease.
+
+        Both halves matter and neither is enough alone. Leaving the ban up would make the rotation
+        pointless — every board behind the gate still short-circuits to UNKNOWN. Leaving the eased
+        spacing would throttle the new address against the old one's exhausted quota: 21,428
+        workable boards held at the 1 req/s floor is ~6h against ~1.5h at the seeded 4 req/s.
+
+        **Idempotent per address.** `spare_egress` coalesces a herd of walled workers onto a
+        single daemon restart, so they all arrive here holding the same address between them —
+        and a restart need not even land a new one (measured on the first workable sweep: two
+        rotations, `1 moved, 1 repeated`). Recovering once per *address* rather than once per
+        caller is what keeps the log honest about how far the run has actually moved, and stops
+        sixteen threads each clearing the ban and re-announcing it.
+
+        `since` is when this rotation began, and only a ban older than that is cleared. An earlier
+        draft cleared unconditionally, defending it as "the branches that ban for reasons no
+        address can fix return before reaching here" — per-thread reasoning about an object dozens
+        of threads share, and false on a spanning gate. `jobs.personio.de` carries every tenant, so
+        a departed tenant's off-host trip and a live tenant's recovery land on it concurrently, and
+        `_fetch`'s non-429 bot-wall trip races the same field. A ban set *after* the rotation
+        started knows something the rotation does not, so it stands.
+        """
+        with self._lock:
+            if address == self._address:
+                return  # a peer already moved us here; one address, one charge
+            self._address = address
+            self._rotations += 1
+            if self._banned_at <= since:
+                self._banned_until = 0.0
+            self.spacing = self._seed_spacing
+            pace = f"{1 / self.spacing:.1f} req/s" if self.spacing else "unpaced"
+            # Printed under the lock, as `ease` is, so concurrent recoveries can't interleave.
+            print(
+                f"  [gate] {self.key} on a fresh egress address "
+                f"(#{self._rotations}, was {why}) — "
+                f"ban cleared, back to {pace}",
+                flush=True,
+            )
+
+    def rest(self, seconds):
+        """Hold every worker on this gate for `seconds`, without dropping a single board.
+
+        Deliberately **not** `trip`. The breaker is how a gate gives up: `_through_gate` sees
+        `blocked()` and short-circuits each board to UNKNOWN without sending a request. Resting is
+        the opposite — nothing is abandoned, the queue simply waits. Conflating them cost a whole
+        sweep: a `trip(60, ...)` meant as a pause discarded 19,117 boards in 72 seconds, because
+        every worker behind the gate took the short-circuit instead of the wait.
+
+        Implemented by pushing the gate's next permitted start, which is the same field `wait_turn`
+        already paces on — so workers sleep in the queue they were in anyway.
+        """
+        with self._lock:
+            self._next = max(self._next, time.monotonic() + seconds)
+
+    def egress_account(self):
+        """`(addresses moved to, banned now)` — what the pass report says about this gate."""
+        with self._lock:
+            return self._rotations, time.monotonic() < self._banned_until
 
 
 # A gate governs whatever shares one rate limit. Two shapes, and conflating them is a real hazard:
@@ -217,6 +306,24 @@ _gates_lock = threading.Lock()
 # ease() moves between (50 req/s down to 1 req/s, where it stops easing and trips instead).
 _AUTO_CAP, _AUTO_SPACING = 16, 0.1
 _MIN_SPACING, _MAX_SPACING = 0.02, 1.0
+#: How long a gate rests when rotation cannot produce an address it is not already on. Sized to
+#: the measured refill: `apply.workable.com` answered 200 again within a minute of load stopping,
+#: twice. Short enough that the run keeps moving, long enough that the address it returns to has
+#: something left — which is the whole supply on a machine whose colo holds about three of them.
+_EGRESS_REST_S = 60
+
+#: There is deliberately **no cap on how many addresses a gate may be refused from.** An earlier
+#: version stopped after three and banned, reasoning that a host still refusing from a third is
+#: refusing us rather than the address. The first real sweep measured what that costs: workable
+#: spent its three inside the first ~300 boards and the ban then short-circuited **20,916** of the
+#: remaining 21,228 without a request being sent. Rotating on is degraded throughput; banning is
+#: total loss of everything behind the gate, and the two are not close.
+#:
+#: The bound is `spare_egress`'s own rotation cooldown, which is a real one: at one restart per
+#: five seconds a gate cannot spend the run bouncing the daemon, and between restarts it keeps
+#: probing at its own pace. Nothing else is needed, which is the point — the cap needed a credit
+#: rule to stay usable across a long run, the credit rule needed to be earned by answered traffic
+#: rather than elapsed time to resist laundering, and none of that machinery has to exist.
 
 
 def _spanning_key(netloc):
@@ -227,32 +334,46 @@ def _spanning_key(netloc):
     )
 
 
+def _gate_key(netloc):
+    """What a gate for this host is — or would be — filed under: the listed domain it sits under,
+    else the exact host.
+
+    One function because three things must agree on it: the gate lookup, the auto-gate that
+    creates one, and the spare-egress group the same boards are routed under. A key computed
+    separately in each place is a key that can drift, and a drifted egress group would route one
+    spelling of the host while walling another.
+    """
+    return _spanning_key(netloc) or netloc
+
+
 def _gate_for(netloc):
     """The gate governing this host, or None if it has never pushed back."""
     with _gates_lock:
-        gate = _GATES.get(netloc)
-        if gate is None:
-            span = _spanning_key(netloc)
-            gate = _GATES.get(span) if span else None
-        return gate
+        return _GATES.get(_gate_key(netloc))
 
 
 def _ensure_gate(netloc, why):
-    """A host that starts refusing with no gate gets one, keyed on the exact host.
+    """A host that starts refusing with no gate gets one, filed under its `_gate_key`.
 
-    Deliberately never widened to a parent domain: an unlisted host might be one tenant among
+    Never *inferred* wider than the exact host: an unlisted host might be one tenant among
     thousands on a shared suffix (Workday), and throttling — or worse, banning — all of them off
-    one tenant's refusal costs far more coverage than the extra requests ever save.
+    one tenant's refusal costs far more coverage than the extra requests ever save. A `_SPANNING`
+    entry is not an inference, so a host under one is filed under that domain, which is the whole
+    point of listing it.
+
+    Storing under the key it was looked up by is what keeps the three views of a gate consistent —
+    lookup, creation, and the egress group `_fetch` routes it under. Storing under `netloc` while
+    looking up `_gate_key(netloc)` meant a `_SPANNING` domain with no seeded gate would rebuild a
+    fresh gate on every request (pacing, ban and egress state lost each time) and route under a key
+    that never matched. Latent only because all three listed domains are seeded today.
     """
     with _gates_lock:
-        gate = _GATES.get(netloc)
+        key = _gate_key(netloc)
+        gate = _GATES.get(key)
         if gate is None:
-            span = _spanning_key(netloc)
-            gate = _GATES.get(span) if span else None
-        if gate is None:
-            gate = _GATES[netloc] = _HostGate(_AUTO_CAP, _AUTO_SPACING, netloc)
+            gate = _GATES[key] = _HostGate(_AUTO_CAP, _AUTO_SPACING, key)
             print(
-                f"  [gate] {netloc} answered {why} unprompted — throttling it to "
+                f"  [gate] {key} answered {why} unprompted — throttling it to "
                 f"{1 / _AUTO_SPACING:.0f} req/s for the rest of the run",
                 flush=True,
             )
@@ -352,6 +473,51 @@ def _report_cs_cleared():
     print(f"  cloudscraper cleared a wall: {detail}", flush=True)
 
 
+def _report_egress():
+    """Print the spare egress's own account — silent when no gate ever needed one.
+
+    Cumulative, not per-pass, and labelled so: a gate walled in pass 1 must stay routed in pass 4,
+    so the state behind these numbers is process-global by design and resetting it between passes
+    would cost the routing to make the report tidier.
+
+    Deliberately **not** `spare_egress.report()`. That function's headline is
+    `rescued / (rescued + walled)`, and `walled` counts settles whose status is in the caller's
+    `egress_on` — empty here (see `_EGRESS_ON`), so the denominator can never grow and the rate
+    reads 100% however badly rotation is going. A number that cannot come out low is not a
+    measurement. The two that *are* falsifiable get printed instead: how many distinct addresses
+    the run was actually given, and, per gate, how many refused it in a row and whether it ended
+    up banned regardless — which is the outcome that matters.
+    """
+    spins = spare_egress.rotations()
+    addresses = spare_egress.egress_ips()
+    seen = {k[3:] for k in addresses if k.startswith("ip:")}
+    if spins:
+        print(
+            "  [egress] rotations: "
+            + ", ".join(f"{why} {n:,}" for why, n in sorted(spins.items()) if n),
+            flush=True,
+        )
+    if seen:
+        print(
+            f"  [egress] {len(seen)} distinct address(es) across "
+            f"{addresses['moved'] + addresses['repeat']} comparison(s) "
+            f"({addresses['moved']} moved, {addresses['repeat']} repeated): "
+            + ", ".join(sorted(seen)),
+            flush=True,
+        )
+    with _gates_lock:
+        gates = list(_GATES.values())
+    for gate in gates:
+        spent, banned = gate.egress_account()
+        if not spent:
+            continue
+        print(
+            f"  [egress] {gate.key}: moved across {spent} address(es); "
+            + ("banned anyway" if banned else "probing"),
+            flush=True,
+        )
+
+
 def _retry_after_s(value):
     """Retry-After header -> seconds (int form or HTTP-date form), None if absent/garbled."""
     if not value:
@@ -417,6 +583,17 @@ def _cloudscraper_fetch(method, url, **kw):
         return None
 
 
+#: Empty on purpose, and load-bearing rather than a default. `http.fetch` reads `egress_group` to
+#: decide *routing* (send this request over the spare egress once its group is walled) and
+#: `egress_on` to decide *marking* (these statuses, seen here, are what walls the group). Naming a
+#: group with no marking statuses takes the first and declines the second — the shape ADR-0063
+#: gives Eightfold's availability probe. The checker wants exactly that: a 429 here is not on its
+#: own evidence that our IP is spent (`_ban_or_rotate` has the reasons), so the decision to wall a
+#: gate stays in the ladder below where the Retry-After, the challenge markers and the redirect
+#: chain are all in view, and never fires from inside a single request.
+_EGRESS_ON = frozenset()
+
+
 def _fetch(method, url, **kw):
     """One request, paced by its host's gate. Returns the response, or None when the host's
     circuit breaker is open (callers treat None as a transient failure -> UNKNOWN).
@@ -432,10 +609,18 @@ def _fetch(method, url, **kw):
     """
     netloc = urllib.parse.urlsplit(url).netloc
     gate = _gate_for(netloc)
+    key = _gate_key(netloc)
     r = _through_gate(
         gate,
         lambda: http.fetch(
-            method, url, timeout=TIMEOUT, verify=False, attempts=_ATTEMPTS, **kw
+            method,
+            url,
+            timeout=TIMEOUT,
+            verify=False,
+            attempts=_ATTEMPTS,
+            egress_group=key,
+            egress_on=_EGRESS_ON,
+            **kw,
         ),
     )
     if r is None:
@@ -449,7 +634,7 @@ def _fetch(method, url, **kw):
             _note_cs_cleared()
             return cs
     if r.status_code == 429:
-        _on_429(gate or _ensure_gate(netloc, "429"), r)
+        _on_429(gate or _ensure_gate(netloc, "429"), r, url)
     elif challenged:
         _note(f"challenge-{r.status_code}")
         (gate or _ensure_gate(netloc, str(r.status_code))).trip(
@@ -477,7 +662,7 @@ def _is_challenge(r):
     return any(m in body for m in _CHALLENGE_BODIES)
 
 
-def _on_429(gate, r):
+def _on_429(gate, r, url):
     """Back off this host: ban outright when it tells us to, else ease the rate and keep going.
 
     The last branch used to trip on a run of *consecutive* 429s. That cannot work on a gate many
@@ -485,16 +670,131 @@ def _on_429(gate, r):
     threshold depended on luck — measured, 1,800 rejections in 2,000 requests left the counter at
     5. Easing to the floor is the honest signal instead: if we are already as slow as this gate
     goes and the host still refuses, slowing further cannot help, so stop asking.
+
+    Every branch that would ban now offers the refusal a different IP first (`_ban_or_rotate`).
+    Nothing about the pacing ladder changes — an ordinary 429 still eases, because easing is what
+    a real rate limit responds to and rotation is not free. What changes is the bottom rung: a ban
+    costs every board behind the gate for the rest of the run, and where the limiter is keyed on
+    our address that price buys nothing a fresh address would not have avoided.
     """
     retry = _retry_after_s(r.headers.get("Retry-After"))
     if retry and retry > _BAN_RETRY_AFTER_S:
-        gate.trip(retry, f"429, retry-after {retry}s")
+        _ban_or_rotate(gate, r, url, retry, f"429, retry-after {retry}s")
     elif _is_challenge(r):
-        gate.trip(_CHALLENGE_COOLDOWN_S, "429, bot-wall challenge")
+        _ban_or_rotate(gate, r, url, _CHALLENGE_COOLDOWN_S, "429, bot-wall challenge")
     elif not gate.ease():
-        gate.trip(
-            _CHALLENGE_COOLDOWN_S, f"still refusing at {1 / _MAX_SPACING:.1f} req/s"
+        _ban_or_rotate(
+            gate,
+            r,
+            url,
+            _CHALLENGE_COOLDOWN_S,
+            f"still refusing at {1 / _MAX_SPACING:.1f} req/s",
         )
+
+
+def _redirected_off_host(url, r):
+    """Whether the refusal came from a host we were redirected to rather than the one we asked.
+
+    A 429 served by another property is not this board's rate limiter and no egress IP touches it.
+    Measured 2026-08-27: personio boards left `unknown` in the ledger 307 off
+    `{tenant}.jobs.personio.de/xml` to `personio.com`, whose wall answered 429 over the direct
+    route and over a WARP address alike — the dead-tenant tombstone of
+    `docs/personio/2026-08-26_the-429-is-a-dead-tenant-tombstone.md`, and the false premise that
+    got PR #312's rotate-on-429 reverted. That ledger holds 5,178 such rows, so without this guard
+    the first `--force` personio pass would spend itself restarting the tunnel against boards no
+    address can reach.
+
+    Compares the settled `url` — curl_cffi reports the *final* hop — against what was asked for.
+    A response with no readable url is treated as same-host: the guard exists to stop a rotation
+    that cannot help, and refusing to rotate on missing evidence would instead stop ones that can.
+    """
+    final = getattr(r, "url", None)
+    if not final:
+        return False
+    return urllib.parse.urlsplit(final).netloc != urllib.parse.urlsplit(url).netloc
+
+
+def _addresses_seen():
+    """How many distinct egress addresses this run has actually been given.
+
+    The honest identity for the address a gate is on, and the one thing that tells "we moved" apart
+    from "the daemon restarted onto the same IP". An address the tunnel could not report leaves
+    this unchanged, so a genuinely new one occasionally goes uncharged — the safe direction to be
+    wrong in, costing one extra rotation rather than an early ban.
+    """
+    return sum(1 for key in spare_egress.egress_ips() if key.startswith("ip:"))
+
+
+def _fresh_egress(gate):
+    """Move this gate onto a different egress address. Its identity, or None if none can be had.
+
+    Two rungs, the same pair `http.fetch` climbs: a gate still on the direct route is *moved onto*
+    the spare egress, which is already a different address; one refused there rotates the tunnel to
+    another. `headstart.spare_egress` owns both, and owning them is the point — the daemon recipe
+    (`launchctl kickstart -k` on macOS, `systemctl restart warp-svc` on Linux, each under
+    `sudo -n`), the SOCKS5 readiness handshake, the cooldown, and the coalescing that keeps
+    hundreds of liveness workers meeting one wall to a single restart are all already solved there.
+
+    The rung is chosen from **this gate's** recorded address, not from whether a proxy exists. Read
+    the other way round, every peer arriving just after the first thread dialled would see a proxy
+    and take the rotate branch — bouncing the daemon, and severing its own in-flight requests, on
+    an address that had not yet carried a single request.
+
+    The identity returned counts **distinct addresses observed**, never rotations. Those differ: a
+    daemon restart need not land a different IP, and the first real workable sweep rotated twice
+    for `1 moved, 1 repeated`, so keying on the rotation counter charged the allowance for an
+    address the run never got. Process-global on purpose — a rotation moves every group at once, so
+    a gate whose address changed underneath it really is on a new one. `None` stands for the direct
+    route, so the first dial always reads as a change.
+
+    WARP is dialled *before* the group is marked walled, so a machine without it is never recorded
+    as having spent an egress it never had. Every failure returns None rather than raising, and the
+    caller then bans exactly as it did before this existed.
+    """
+    if gate.address() is not None:
+        return _addresses_seen() if spare_egress.rotate(gate.key) else None
+    if (
+        spare_egress.proxy_url() is None
+    ):  # no WARP here — cached, so only the first caller waits
+        return None
+    spare_egress.mark_walled(gate.key, 429)
+    return _addresses_seen()
+
+
+def _ban_or_rotate(gate, r, url, seconds, why):
+    """Try the refusal from a different address; ban the host only when none can be had.
+
+    Two ways to end up banning anyway, and each is a case where an address cannot be the answer:
+    the 429 came from a host we were redirected to, or no spare egress could be raised at all.
+    Both fall through to the exact `trip` the ladder performed before, so the worst case here is
+    the old behaviour plus one bounded attempt at a fresh address.
+
+    There is no third arm and no allowance — see the block above `_HostGate`. A gate that keeps
+    being refused keeps being moved, for as long as the refusals continue, because the ban it
+    would otherwise take costs every board behind it and a rotation costs seconds.
+    """
+    if _redirected_off_host(url, r):
+        _note("429-off-host")
+        gate.trip(seconds, f"{why}, from a redirect off-host")
+        return
+    # Bans older than this are about the address we are leaving, so `recover` may clear them.
+    since = time.monotonic()
+    was = gate.address()
+    address = _fresh_egress(gate)
+    if address is None:
+        gate.trip(seconds, why)
+        return
+    if address == was:
+        # The daemon restarted and Cloudflare handed back the address we were already on, so
+        # there is nothing to recover onto. Resting beats spinning: measured 2026-08-27, this
+        # machine reaches one colo holding ~3 addresses (3 distinct across 53 restarts, and four
+        # fresh registrations all returned 104.28.220.169), while a spent address answers 200
+        # again within a minute of going quiet. So the supply is not more restarts, it is time —
+        # and each restart that changes nothing still costs ~7s of gate downtime.
+        _note("429-same-address")
+        gate.rest(_EGRESS_REST_S)
+        return
+    gate.recover(why, address, since)
 
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
@@ -1380,6 +1680,7 @@ def main():
         )
         _report_reasons(len(unknowns))
         _report_cs_cleared()
+        _report_egress()
         return unknowns
 
     for n, (timeout, cap) in enumerate(PASSES, 1):

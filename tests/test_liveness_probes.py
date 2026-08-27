@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import html
 import importlib.util
+from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location(
@@ -17,6 +21,30 @@ _spec = importlib.util.spec_from_file_location(
 )
 cl = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cl)
+
+
+@pytest.fixture(autouse=True)
+def _no_spare_egress(monkeypatch):
+    """No test in this file may reach the machine's real WARP daemon.
+
+    `_on_429`'s bottom rung asks `spare_egress` for a different egress address before it bans a
+    host, and left unpatched the breaker tests below take that literally — an early run of this
+    suite kicked the local daemon four times. "Unavailable" is also exactly the state every test
+    here was written against, so stubbing it restores their subject rather than changing it.
+    """
+    monkeypatch.setattr(
+        cl,
+        "spare_egress",
+        SimpleNamespace(
+            proxy_url=lambda: None,
+            proxy_for=lambda key: None,
+            generation=lambda: 0,
+            mark_walled=lambda key, status: None,
+            rotate=lambda key: False,
+            rotations=Counter,
+            egress_ips=Counter,
+        ),
+    )
 
 
 def _stub_get(status, body):
