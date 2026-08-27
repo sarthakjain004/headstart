@@ -86,16 +86,24 @@ family it counted.*
   should not be read as settled.
 - Hosts without AAAA still draw from the shallow IPv4 pool, so for those, pacing remains the better
   lever than rotation. Worth checking the AAAA record before assuming rotation will help.
-- **This blinds `check_liveness`'s rest-on-repeat guard, and that is not yet fixed.** The guard
+- **This inverts `check_liveness`'s rest-on-repeat guard, and that is not yet fixed.** The guard
   fires when a rotation returns an address the gate is already on, detected via `_addresses_seen()`
-  — a count fed by `_observe_egress_ip()`, which traces `www.cloudflare.com`. That host publishes
-  AAAA, so under `socks5h` the trace egresses IPv6 and reports a fresh address on essentially every
-  rotation. The count therefore always increments and the guard can never fire: the sweep that
-  prompted this recorded 70 rotations, 70 distinct addresses, **0 rests**.
-  For IPv6-capable hosts that is correct — rotation really does hand out a new address every time.
-  For IPv4-only hosts it is a blind spot: the *egress* still repeats, but the *detector* cannot see
-  it, so the gate rotates (~7s of process-wide downtime each) where it should rest. The honest fix
-  is a per-gate signal — consecutive rotations with no answered request — rather than a global
-  address counter, which cannot express a per-host-family question. Tracked, not done here.
+  — a count of distinct addresses `_observe_egress_ip()` has ever recorded, and it traces
+  `www.cloudflare.com`, which publishes AAAA. Under `socks5h` that trace egresses IPv6 and almost
+  always reports an address not seen before, so the count moves and the comparison almost never
+  holds: the sweep that prompted this recorded 70 rotations, 70 distinct addresses, **0 rests**.
+  "Never fires" would be too strong — an unreadable trace records no address, and a recurrence of a
+  previously-seen one leaves the count flat, so it still fires, mostly when it should not. It was
+  also already partly blind, the counter being process-global: a peer gate's new address masks this
+  gate's repeat.
+  For IPv6-capable hosts none of this matters — rotation really does supply a new address each
+  time. For IPv4-only hosts it does, and the cost is larger than it first looks: `recover()` resets
+  `spacing` to the seed, and the branch that most often reaches it is `elif not gate.ease()`, i.e.
+  a gate already eased to the 1 req/s floor. A missed rest therefore discards the backoff and
+  returns to 4 req/s against an address the host just refused — the spin the guard exists to
+  prevent, not merely a lost ~7s.
+  Two fixes are open: a general per-gate signal (consecutive rotations with no answered request),
+  or a much smaller one — a cached AAAA lookup per gate, since a host with no AAAA provably cannot
+  have its egress moved by rotation and should rest unconditionally. Tracked, not done here.
 - Concepts, colo codes and the full measurement are written up for newcomers in
   `docs/spare-egress/how-warp-egress-works.md`.

@@ -794,19 +794,30 @@ def _ban_or_rotate(gate, r, url, seconds, why):
         # again within a minute of going quiet, so the supply is time, and a restart that changes
         # nothing still costs ~7s of gate downtime.
         #
-        # **This arm is currently unreachable, and that is a known defect — see ADR-0092.**
-        # `_addresses_seen()` counts what `_observe_egress_ip()` reports, and that traces
-        # `www.cloudflare.com`, which publishes AAAA. Since ADR-0092 put the spare egress on
-        # `socks5h` the trace egresses IPv6 and shows a fresh address on essentially every
-        # rotation, so `address == was` never holds and the rest never fires — 70 rotations, 70
+        # **This arm is inverted, not dead, and that is a known defect — see ADR-0092.**
+        # `_addresses_seen()` counts distinct addresses `_observe_egress_ip()` has ever recorded,
+        # and that traces `www.cloudflare.com`, which publishes AAAA. Since ADR-0092 put the spare
+        # egress on `socks5h` the trace egresses IPv6 and almost always reports an address not seen
+        # before, so the count moves and `address == was` almost never holds — 70 rotations, 70
         # distinct addresses, 0 rests on the sweep that prompted this.
         #
-        # For an IPv6-capable host that is the right answer anyway: rotation genuinely does supply
-        # a new address each time, so there is nothing to rest for. For an IPv4-only host
-        # (`api.lever.co`, Workday, Greenhouse — none publishes AAAA) the egress really does
-        # repeat and this really should fire; the detector just cannot see it, because a global
-        # address counter cannot answer a per-host-family question. The fix is a per-gate signal —
-        # consecutive rotations with no answered request — and it is not written yet.
+        # It does still fire, just for the wrong reasons: an unreadable trace records no `ip:` key
+        # at all, and a recurrence of any previously-seen address leaves the count flat. Both mean
+        # the surviving firings skew towards false positives — resting a gate that actually moved.
+        # And the counter was already partly blind before `socks5h`, being process-global: a peer
+        # gate's new address hides this gate's repeat.
+        #
+        # The cost of a *missed* rest is not the ~7s rotation. `recover()` also resets
+        # `spacing` to the seed, and the branch that reaches here most often is `elif not
+        # gate.ease()` — i.e. the gate had already eased to the 1 req/s floor. So on an IPv4-only
+        # host (`api.lever.co`, Workday, Greenhouse — none publishes AAAA) a missed rest throws
+        # the backoff away and returns to 4 req/s on an address the host just refused, which is
+        # precisely the spin this was written to stop.
+        #
+        # A per-gate "consecutive rotations with no answered request" signal would fix it
+        # generally. So would something much smaller: one cached AAAA lookup per gate, since a
+        # host with no AAAA provably cannot have its egress moved by rotation, so it should rest
+        # unconditionally. Neither is written yet.
         _note("429-same-address")
         gate.rest(_EGRESS_REST_S)
         return
