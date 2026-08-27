@@ -17,8 +17,8 @@ name: cleanup-index
 #
 # Was every 2 days. Daily doubles the ~755 MB rebuild's blob churn, which the daily history squash
 # still bounds to a week (~5.3 GB against a 100 GB quota). The real cost is contention: this job
-# shares the pipeline's concurrency group and can run 90 minutes, so a pipeline run queues behind
-# it once more per two days.
+# no longer shares the pipeline's concurrency group — see `concurrency` below for why that had to
+# change, and ADR-0091 for the decision.
 on:
   schedule:
     - cron: "0 3 * * *" # 03:00 UTC. The hour is not load-bearing — this run can no longer be
@@ -32,8 +32,7 @@ on:
         default: "1"
 
 permissions:
-  contents: read
-  actions: write # read: is a pipeline in flight; write: re-dispatch this workflow when one is
+  contents: read # `window` widens this for itself; `cleanup` must not inherit the widening
 
 concurrency:
   # Its OWN group, not the pipeline's. Sharing one looked like mutual exclusion and behaved like
@@ -65,6 +64,12 @@ jobs:
   window:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # Scoped to this job on purpose, following `pipeline.yml`'s own precedent: `cleanup` below
+    # holds HF_TOKEN and runs `--delete "*"`, and nothing it does needs the Actions API. A
+    # workflow-level grant would hand it the ability to dispatch workflows for no reason.
+    permissions:
+      contents: read
+      actions: write # read: is a pipeline in flight; write: re-dispatch this workflow when one is
     outputs:
       proceed: ${{ steps.wait.outputs.proceed }}
     steps:
@@ -111,7 +116,22 @@ jobs:
           fi
           next=$((ATTEMPT + 1))
           gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY" -f "attempt=$next"
-          echo "still blocked — re-dispatched as attempt $next"
+          # `gh workflow run` is fire-and-forget: it returns on a 202, not on a run existing. If
+          # the dispatch were dropped this job would still exit 0 and the retry chain would end
+          # **green**, which is the silent-starvation failure this whole change exists to remove —
+          # so confirm the successor is really there, and go red if it is not.
+          for _ in $(seq 1 12); do
+            sleep 5
+            alive=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 5 \
+                      --json status,databaseId \
+                      --jq "[.[] | select(.status != \"completed\" and .databaseId != $GITHUB_RUN_ID)] | length")
+            if [ "$alive" != "0" ]; then
+              echo "still blocked — attempt $next is queued"
+              exit 0
+            fi
+          done
+          echo "::error::re-dispatch of attempt $next never appeared; the retry chain ends here"
+          exit 1
 
   cleanup:
     needs: window
