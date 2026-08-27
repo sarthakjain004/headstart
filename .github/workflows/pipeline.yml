@@ -80,14 +80,17 @@ on:
 
 permissions:
   contents: read
+  actions: read # to see whether `cleanup-index` holds the field before starting a run
 
 concurrency:
-  # Shared with `cleanup-index` on purpose: neither may race the other on HF dataset state.
-  # Only ONE run may be pending per group and a newer arrival cancels the older, so under an
-  # hourly cron a `cleanup-index` run that is still *pending* can be displaced by the next
-  # pipeline fire. That is tolerated: compaction is idempotent and simply runs the next day
-  # (ADR-0071). The dataset *squash* is not tolerated on those terms — it is storage-critical —
-  # so it moved into the merge job below, where it holds this group already and races nothing.
+  # This group now serializes pipeline runs against EACH OTHER only. `cleanup-index` used to share
+  # it, which starved it (see the gate step below); exclusion against compaction is enforced there
+  # and by that workflow's own wait, not here.
+  # Only ONE run may be pending per group and a newer arrival cancels the older. Between pipeline
+  # runs that is exactly right — the newest scrape is the one worth having. It was ruinous for a
+  # once-a-day compaction, which is why that no longer shares this group (ADR-0071). The dataset
+  # *squash* still does, and safely: it is `workflow_dispatch` only and runs inside the merge job
+  # below, which holds this group already and therefore races nothing.
   group: nightly-pipeline # never let two runs race on the dataset state
   cancel-in-progress: false
 
@@ -124,9 +127,29 @@ jobs:
         id: gate
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # Two reasons to stand down, and this one output is what every downstream job already
+          # reads — so yielding to a compaction costs no new job and no rewiring.
+          #
+          # `cleanup-index` rebuilds the LanceDB table and re-uploads the description store with
+          # `--delete "*"`, so a pipeline running alongside it can have data it just uploaded
+          # deleted. The two used to share a concurrency group to prevent that, which quietly
+          # starved the compaction instead: one pending run per group, newer replaces older, and
+          # an hourly pipeline always had a fresher run waiting. Three missed days later
+          # `_deletions/` passed HF's 10,000-file directory limit and every upload was rejected.
+          #
+          # So the pipeline yields now. It fires hourly and is idempotent, so losing a run or two
+          # a day to a compaction costs nothing; the compaction had no second chance at all.
           if [ -z "$HF_TOKEN" ]; then
             echo "HF_TOKEN secret not set - skipping. See docs/adr/0020-free-tier-deployment.md."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
+                   --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$busy" != "0" ]; then
+            echo "cleanup-index is running or queued ($busy) - standing down; the next fire picks it up."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -587,7 +610,10 @@ jobs:
   # embed was skipped (eviction/prune still needed); every step gated on the run flag.
   merge:
     needs: [scrape-plan, join, embed]
-    if: always()
+    # `always()` so a partial fan-out still publishes what it got — but NOT when the gate stood
+    # down. This is the one job that would otherwise ignore the gate, and it is precisely the job
+    # that writes LanceDB, so a compaction it was meant to yield to would have found it there.
+    if: always() && needs.scrape-plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     # hang detector: ~5 min of work at this scale, up to ~4.5 min of `up()` retry backoff across
     # the three HF uploads, up to ~18 min of state_fetch retries (5 partial downloads of the

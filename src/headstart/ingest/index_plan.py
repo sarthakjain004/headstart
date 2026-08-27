@@ -295,12 +295,24 @@ def apply_sync(
     add_rows: list[dict],
     delete_ids: Iterable[str],
     *,
-    chunk: int = 512,
+    chunk: int = 2048,
 ) -> None:
     """Execute a plan on a LanceDB ``table``: delete evicted ids by predicate, then add new rows.
 
     Deletes are chunked so the ``id IN (...)`` predicate can't grow unbounded. ``add_rows`` must
     already carry the table's schema (vector + metadata); embedding them is the caller's job.
+
+    **The chunk is 2048, not 512, because each call is far more expensive than the predicate it
+    carries.** Lance writes one deletion file per *fragment* a delete touches, and the ids in any
+    chunk are scattered across every fragment — so the files written by a run are
+    ``ceil(deleted / chunk) x fragments``, and quartering the call count quarters the files. At
+    ~40 characters per id (``smartrecruiters:Nagarro1:744000144258659``) the predicate goes from
+    ~21 KB to ~86 KB, which is a string DataFusion parses once against a scan of every fragment
+    that the call was going to perform anyway — so fewer, larger calls are also fewer full scans.
+
+    This only divides the constant. The term that actually grows is the fragment count, which
+    climbs every run and is reset only by ``index compact``; 512 -> 2048 turns "the 10,000-file
+    directory ceiling in ~3 days" into "~12 days", it does not remove the ceiling.
     """
     ids = list(delete_ids)
     for start in range(0, len(ids), chunk):

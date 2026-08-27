@@ -21,17 +21,28 @@ name: cleanup-index
 # it once more per two days.
 on:
   schedule:
-    - cron: "0 6 * * *" # 06:00 UTC. No longer clear of anything: the pipeline fires hourly at :30 (ADR-0071) and the
-    # dataset squash moved into its merge job. This run shares the pipeline's concurrency group,
-    # so while it is *pending* the next pipeline fire can displace it — tolerated, because
-    # compaction is idempotent and simply runs the next day
+    - cron: "0 3 * * *" # 03:00 UTC. The hour is not load-bearing — this run can no longer be
+    # displaced by anything (see `concurrency` below), so it does not need a quiet slot. It waits
+    # for whatever pipeline is mid-flight and then holds the field until it is done
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read # to see whether a pipeline run is in flight before touching shared state
 
 concurrency:
-  group: nightly-pipeline # share the pipeline's group so cleanup and a nightly never race on state
+  # Its OWN group, not the pipeline's. Sharing one looked like mutual exclusion and behaved like
+  # starvation: GitHub keeps a single *pending* run per group and a newer arrival replaces it, so
+  # an hourly pipeline (80-130 min per run) nearly always had a fresher run waiting and this
+  # once-a-day job was the one displaced. It last succeeded 2026-08-24, was cancelled on the 25th
+  # and 26th, and by the 27th `_deletions/` had passed HF's 10,000-files-per-directory limit and
+  # every pipeline upload was rejected.
+  #
+  # Exclusion is now the other way round and is enforced by both sides: this job waits for any
+  # in-flight pipeline before it touches anything, and the pipeline's own gate stands down while
+  # this is running or queued. The pipeline is hourly and idempotent, so it is the one that can
+  # afford to yield — which is exactly the priority the shared group had backwards.
+  group: index-compaction
   cancel-in-progress: false
 
 env:
@@ -48,6 +59,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      # Wait, do not race. This job and a pipeline both write `data/lancedb` AND
+      # `data/descriptions` — and this one's description upload passes `--delete "*"`, so
+      # overlapping with a pipeline that has just uploaded fragments would delete live data, not
+      # merely contend for it. The pipeline's gate stands down while this run exists, but a
+      # pipeline already in flight when this starts cannot be called back, so it is waited out.
+      #
+      # Waiting is safe here in a way it would not have been before: this run has its own
+      # concurrency group now, so nothing can cancel it while it sits. It also cannot deadlock —
+      # the pipeline *skips* rather than waits, so there is no cycle for the two to sit in.
+      - name: Wait for any in-flight pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 1 60); do
+            n=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml \
+                  --status in_progress --json databaseId --jq 'length')
+            if [ "$n" = "0" ]; then
+              echo "no pipeline in flight — proceeding"
+              exit 0
+            fi
+            echo "pipeline in flight ($n); re-checking in 60s"
+            sleep 60
+          done
+          echo "::error::a pipeline was still in flight after 60 min; not compacting this run"
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
