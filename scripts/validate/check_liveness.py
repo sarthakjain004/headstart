@@ -291,6 +291,12 @@ _gates_lock = threading.Lock()
 # ease() moves between (50 req/s down to 1 req/s, where it stops easing and trips instead).
 _AUTO_CAP, _AUTO_SPACING = 16, 0.1
 _MIN_SPACING, _MAX_SPACING = 0.02, 1.0
+#: How long a gate rests when rotation cannot produce an address it is not already on. Sized to
+#: the measured refill: `apply.workable.com` answered 200 again within a minute of load stopping,
+#: twice. Short enough that the run keeps moving, long enough that the address it returns to has
+#: something left — which is the whole supply on a machine whose colo holds about three of them.
+_EGRESS_REST_S = 60
+
 #: There is deliberately **no cap on how many addresses a gate may be refused from.** An earlier
 #: version stopped after three and banned, reasoning that a host still refusing from a third is
 #: refusing us rather than the address. The first real sweep measured what that costs: workable
@@ -758,9 +764,20 @@ def _ban_or_rotate(gate, r, url, seconds, why):
         return
     # Bans older than this are about the address we are leaving, so `recover` may clear them.
     since = time.monotonic()
+    was = gate.address()
     address = _fresh_egress(gate)
     if address is None:
         gate.trip(seconds, why)
+        return
+    if address == was:
+        # The daemon restarted and Cloudflare handed back the address we were already on, so
+        # there is nothing to recover onto. Resting beats spinning: measured 2026-08-27, this
+        # machine reaches one colo holding ~3 addresses (3 distinct across 53 restarts, and four
+        # fresh registrations all returned 104.28.220.169), while a spent address answers 200
+        # again within a minute of going quiet. So the supply is not more restarts, it is time —
+        # and each restart that changes nothing still costs ~7s of gate downtime.
+        _note("429-same-address")
+        gate.trip(_EGRESS_REST_S, f"{why}, and rotation returned the same address")
         return
     gate.recover(why, address, since)
 

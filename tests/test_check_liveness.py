@@ -428,26 +428,30 @@ def test_a_gate_refused_from_every_address_keeps_moving_and_never_bans(cl, egres
     )
 
 
-def test_a_rotation_that_lands_the_same_address_is_not_double_counted(cl, egress):
-    """Measured on that same sweep: two rotations, `1 moved, 1 repeated`.
+def test_a_rotation_that_lands_the_same_address_rests_instead_of_spinning(cl, egress):
+    """Measured 2026-08-27: this machine's colo holds about three addresses. 53 daemon restarts
+    produced 3 distinct ones, and four *fresh registrations* all came back on 104.28.220.169 — so
+    the supply cannot be increased by asking harder.
 
-    A daemon restart is not an address. The count exists to report how far the run actually got,
-    so a restart that comes back on the IP we were already using must not inflate it — and it
-    must not re-announce a move that did not happen.
+    Treating a repeat as a non-event made the ladder spin: resume on the spent address, wall,
+    restart, repeat, at ~7s of gate downtime per restart that changed nothing. A spent address
+    answers 200 again within a minute of going quiet, so the supply is time. Rest for it.
     """
     egress.available = True
     egress.repeats = True  # every restart comes back on the same IP
     gate = cl._HostGate(8, 0.25, "apply.workable.com")
 
-    for _ in range(5):
-        cl._on_429(gate, _Resp(429, {"Retry-After": "72000"}), _URL)
+    cl._on_429(
+        gate, _Resp(429, {"Retry-After": "72000"}), _URL
+    )  # moves onto the spare egress
+    assert not gate.blocked()
+    cl._on_429(
+        gate, _Resp(429, {"Retry-After": "72000"}), _URL
+    )  # rotation returns the same one
 
-    spent, banned = gate.egress_account()
+    assert gate.blocked(), "nowhere to move, so let the address refill rather than spin"
+    spent, _ = gate.egress_account()
     assert spent == 1, f"one address was ever handed out; counted {spent}"
-    assert not banned
-    assert len(egress.rotated) >= 1, (
-        "it did keep asking — it just never got anywhere new"
-    )
 
 
 def test_a_ban_set_after_the_rotation_began_survives_it(cl, egress, monkeypatch):
