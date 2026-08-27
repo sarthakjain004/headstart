@@ -89,8 +89,10 @@ distinct ``domain`` values, and 1,500 sustained at 34 req/s — zero non-200s. T
 endpoint was probed separately the same day (1,360 requests: 300 sequential, 600 at 32-wide, 400
 cross-tenant at 16-wide, 60 config calls — ``experiment/zwayam-rate-limit/``): zero refusals
 there too, but it is **slow, not limited** — ~1.4 s a response alone and ~3.4 s under 32-wide
-load, an effective capacity ceiling of ~8-9 responses/s regardless of offered width. So wider
-fan-out past ~16 buys queueing, not throughput. One Akamai 403 was seen during 2026-08 discovery
+load, so throughput lands at ~8-9 responses/s per IP at both widths probed (16-wide 7.8/s,
+32-wide 9.3/s — different Boards, so they bound the ceiling rather than rank the widths; see
+:attr:`ZwayamScraper.detail_workers` for why the narrower one is used regardless). One Akamai
+403 was seen during 2026-08 discovery
 and is real, but it is rare and transient rather than a threshold to pace against. The binding
 costs are **bytes and detail latency, not request counts**: a 10-row page is 70-200 KB and a
 detail ~15 KB, so the first full pass moves ~680 MB and its 22,456 details take ~45 minutes of
@@ -151,6 +153,11 @@ _MAX_PAGES = 1_200
 _DEFAULT_CURRENCY = "INR"
 #: The careers SPA declares its own path prefix here; the job deep link has to carry it.
 _BASE_HREF = re.compile(r"<base\s+href=\"([^\"]*)\"", re.IGNORECASE)
+#: Where :meth:`ZwayamScraper.fetch_raw` records the text a Job should ship with. Absent means
+#: **no description this run** — either the detail failed (retry next run) or the ADR-0050 store
+#: already holds this Job's text and will supply it, which is why the listing's own fields are
+#: never read at parse time.
+_TEXT = "_resolved_description"
 
 
 def _filter_at(start: int) -> str:
@@ -305,9 +312,9 @@ def _salary(source: dict) -> str | None:
     published figures are placeholders rather than offers.
     """
     # A zero bound is an unfilled half of the form, not a stated floor or ceiling — the same
-    # reading `_experience` gives an all-zero pair. Kept as a *pair* check rather than dropped
-    # blindly: emitting "1000000-0" makes `salary.extract` reject the whole row, losing a real
-    # 1,000,000 floor that parses fine on its own (17 of 5,079 amount rows, 2026-08-27).
+    # reading `_experience` gives an all-zero pair. Each side is blanked on its own rather than
+    # the pair dropped: emitting "1000000-0" makes `salary.extract` reject the whole row, losing
+    # a real 1,000,000 floor that parses fine alone (17 of 5,079 amount rows, 2026-08-27).
     lo = _amount(source.get("minJobSalary"))
     hi = _amount(source.get("maxJobSalary"))
     currency = (source.get("currencyType") or "").strip() or _DEFAULT_CURRENCY
@@ -315,27 +322,28 @@ def _salary(source: dict) -> str | None:
         return f"{lo}-{hi} {currency}"
     if lo:
         return f"{lo} {currency}"
-    # Ceiling-only (10 of 5,079 rows) is dropped rather than emitted bare, because there is no
-    # phrasing `salary.extract` reads as an upper bound: "200000 INR", "Upto 200000 INR" and
-    # "0-200000 INR" were each measured, and the first parses to min_annual=200000 while the
-    # other two parse to nothing. So a bare figure would index a job *capped* at 200k as one
-    # paying *at least* 200k — the inverse of what the tenant stated. Losing 0.2% of amount
-    # rows beats serving them backwards.
+    if hi:
+        # Ceiling-only (10 of 5,079 rows) must not be emitted *bare*: `salary.extract` reads a
+        # lone figure as a floor (measured: "200000 INR" -> min_annual=200000), so a job capped
+        # at 200k would be served as one paying at least that. "Upto" is the honest rendering —
+        # `Job.salary` is a display column (README §"The served table": "raw, for display"), so
+        # the reader sees the real bound, while `extract` measurably parses it to None and the
+        # derived columns stay empty rather than inverted.
+        return f"Upto {hi} {currency}"
     return None
 
 
-def _description(source: dict) -> str | None:
-    """The detail pass's text first — it is the complete posting, where the listing fields can be
-    silently truncated (module docstring) — then a listing body as the fallback for a failed or
-    skipped detail. The listing fields are tried in a fixed order rather than compared by
-    length: ``medium*`` over the sometimes-teaser ``short*``, and the vendor-pre-stripped
+def _listing_description(source: dict) -> str | None:
+    """The best text the *listing row itself* carries, or None.
+
+    Never the whole answer — the listing can be silently truncated, which is why there is a
+    detail pass (module docstring) — so :meth:`ZwayamScraper.fetch_raw` decides when this is
+    allowed to stand. The fields are tried in a fixed order rather than compared by length:
+    ``medium*`` over the sometimes-teaser ``short*``, and the vendor-pre-stripped
     ``*WithoutHtml`` variants over their HTML siblings, which is measurement-backed rather than
     arbitrary (a ``*WithoutHtml`` value was never the shorter of its pair — 0 of 16,427 walked
     rows — so length-comparing them would pick the same field at more cost).
     """
-    detail = source.get("_detail_description")
-    if detail:
-        return detail
     for key in ("mediumDescriptionWithoutHtml", "shortDescriptionWithoutHtml"):
         value = (source.get(key) or "").strip()
         if value:
@@ -364,10 +372,13 @@ class ZwayamScraper(BaseScraper):
     #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings. True so
     #: the embed planner knows a zwayam vector can have been built before its text arrived.
     has_detail_pass = True
-    #: The knee of the measured concurrency curve (module docstring): the endpoint serves ~8-9
-    #: responses/s from one IP no matter how wide the client goes (16-wide → 7.8/s, 32-wide →
-    #: 9.3/s), so width past this buys queueing, not throughput — which is also why there is no
-    #: async fan-out here: multiplexing cannot raise a server-side ceiling.
+    #: A judgement call, not a measured optimum — say so plainly, because the two probe numbers
+    #: it rests on are **not** a width sweep: 32-wide measured 9.3 responses/s and 16-wide 7.8,
+    #: but against different Boards and row counts, so they bound the endpoint's throughput
+    #: (~8-9/s per IP either way) without ranking the two widths. Doubling concurrency against a
+    #: shared origin for at most ~19% is not a trade this repo makes on one unpaired pair of
+    #: measurements, and the ADR-0050 skip-list makes the full-corpus pass a one-time cost
+    #: anyway. Whatever the width, no async fan-out: multiplexing cannot raise a server ceiling.
     detail_workers = 16
 
     @staticmethod
@@ -510,7 +521,10 @@ class ZwayamScraper(BaseScraper):
         )
         response.raise_for_status()
         detail = response.json() or {}
-        return html_to_text(detail.get("longDescription")) or None
+        # `""`, never None, when the endpoint answers with no body: `fan_out` turns a *raising*
+        # call into None, and `fetch_raw` needs the two apart — one is transient and must be
+        # retried next run, the other is this posting's final answer.
+        return html_to_text(detail.get("longDescription")) or ""
 
     def fetch_raw(self) -> Any:
         """Walk the Board's pages, fetch each new Job's detail text, then read the homepage once
@@ -567,15 +581,32 @@ class ZwayamScraper(BaseScraper):
         ]
         if need:
             company_id = self._company_id()
-            if company_id is not None:
-                details = self.fan_out(
+            details = (
+                self.fan_out(
                     need,
                     lambda row: self._job_detail(company_id, row["jobUrl"].strip()),
                     workers=self.detail_workers,
                 )
-                self.report_detail_gaps(details, "descriptions")
-                for row, text in zip(need, details):
-                    row["_detail_description"] = text
+                if company_id is not None
+                # The config call is per-Board, so its failure fails every detail on the Board.
+                # Recorded as the same None a failed fetch gives, so both retry next run.
+                else [None] * len(need)
+            )
+            self.report_detail_gaps(details, "descriptions")
+            for row, text in zip(need, details):
+                if text:
+                    row[_TEXT] = text
+                elif text == "":
+                    # The detail answered with no body: this posting has no fuller text than the
+                    # listing's, so the listing's is final rather than provisional.
+                    row[_TEXT] = _listing_description(row)
+                # A *failed* detail (None) records nothing, so the Job ships with no description
+                # and `update_descriptions` stores none — leaving `needs_detail` true so the next
+                # run retries it. Falling back to the listing text here would be a one-way door:
+                # the store persists whatever the scrape emits, membership in it *is* the
+                # skip-list, and a skip-listed Job never fetches a detail again — so one
+                # transient failure would freeze text this module measured as possibly
+                # truncated, permanently and invisibly.
         return {"rows": rows, "link_base": self._link_base() if rows else ""}
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -625,7 +656,7 @@ class ZwayamScraper(BaseScraper):
                     url=f"{link_base}{quote(job_url, safe='')}",
                     posted_at=_posted_at(source),
                     scraped_at=scraped_at,
-                    description=_description(source),
+                    description=source.get(_TEXT),
                     experience=_experience(source),
                     # `jobType` is "J" on all 16,427 rows walked and `employeeType`/
                     # `jobTypeFieldDisplayName` are null, so the listing states no employment

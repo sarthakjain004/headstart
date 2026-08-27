@@ -6490,21 +6490,21 @@ def test_zwayam_a_zero_bound_is_an_unfilled_form_half():
     assert _salary({"minJobSalary": "0", "maxJobSalary": "0"}) is None
 
 
-def test_zwayam_a_ceiling_without_a_floor_is_dropped_not_served_backwards():
-    """No phrasing `salary.extract` reads as an upper bound, so a bare ceiling would index a job
-    *capped* at 200k as paying *at least* 200k. 10 of 5,079 amount rows; dropping beats
-    inverting."""
+def test_zwayam_a_ceiling_without_a_floor_is_shown_but_never_read_as_a_floor():
+    """A lone figure parses as a *floor*, so a bare ceiling would serve a job capped at 200k as
+    one paying at least that (10 of 5,079 amount rows). "Upto" keeps the display column honest —
+    `Job.salary` is "raw, for display" — while parsing to nothing, so no derived column inverts.
+    """
     from headstart.salary import extract
     from headstart.scrapers.zwayam import _salary
 
-    # the premise, asserted not assumed: every way of stating a ceiling either inverts or fails
+    # the premise, asserted not assumed
     assert (
         extract("200000 INR", None, "zwayam").min_annual == 200000
     )  # reads as a FLOOR
-    assert extract("Upto 200000 INR", None, "zwayam") is None
-    assert extract("0-200000 INR", None, "zwayam") is None
-    assert _salary({"minJobSalary": "", "maxJobSalary": "200000"}) is None
-    assert _salary({"minJobSalary": "0", "maxJobSalary": "200000"}) is None
+    assert _salary({"minJobSalary": "", "maxJobSalary": "200000"}) == "Upto 200000 INR"
+    assert _salary({"minJobSalary": "0", "maxJobSalary": "200000"}) == "Upto 200000 INR"
+    assert extract("Upto 200000 INR", None, "zwayam") is None  # shown, never inverted
 
 
 def test_zwayam_job_url_is_percent_encoded():
@@ -6599,7 +6599,17 @@ def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
                         "mediumDescriptionWithoutHtml": "possibly truncated listing",
                     }
                 },
-                {"_source": {"id": 3, "jobTitle": "C", "jobUrl": "c"}},
+                {
+                    "_source": {
+                        "id": 3,
+                        "jobTitle": "C",
+                        "jobUrl": "c",
+                        # The row MUST carry listing text: without it this test passes whether
+                        # or not a skip-listed row falls through to the listing, which is the
+                        # exact regression it exists to catch.
+                        "mediumDescriptionWithoutHtml": "possibly truncated listing",
+                    }
+                },
             ],
         }
     }
@@ -6614,8 +6624,11 @@ def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
         return f"detail text for {job_url}"
 
     scraper._job_detail = _detail
-    # id 3 is on the skip-list: the store already holds its text (ADR-0050), so its row ships
-    # None and the store supplies the text downstream.
+    # id 3 is on the skip-list: the store already holds its (detail-derived) text, so the row
+    # must ship None and let the store supply it. Shipping the listing text instead would be
+    # worse than a no-op — `update_descriptions` treats fresh corpus text as authoritative
+    # ("Fresh text always wins"), so run 2 would *overwrite* the stored full text with the
+    # truncated listing, and every later run would re-confirm it.
     scraper.have_details = {"zwayam:h.example:3"}
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
     assert fetched == [(4242, "a"), (4242, "b")]
@@ -6623,10 +6636,8 @@ def test_zwayam_detail_text_wins_and_the_skip_list_prunes_the_fetch():
     assert by_id == {"1": "detail text for a", "2": "detail text for b", "3": None}
 
 
-def test_zwayam_a_failed_detail_falls_back_to_the_listing_text():
-    """A failed detail call (fan_out yields None) must not blank a Job whose listing carried
-    text — a truncated description beats none, and a Board whose config call breaks entirely
-    ships all its listing text rather than nothing."""
+def _zwayam_two_row_board(scraper):
+    """A Board of two rows — one carrying listing text, one carrying none."""
     page = {
         "data": {
             "totalCount": 2,
@@ -6637,17 +6648,54 @@ def test_zwayam_a_failed_detail_falls_back_to_the_listing_text():
                         "id": 1,
                         "jobTitle": "A",
                         "jobUrl": "a",
-                        "mediumDescriptionWithoutHtml": "listing text",
+                        "mediumDescriptionWithoutHtml": "possibly truncated listing",
                     }
                 },
                 {"_source": {"id": 2, "jobTitle": "B", "jobUrl": "b"}},
             ],
         }
     }
-    scraper = get_scraper("zwayam", "h.example")
     scraper._page = lambda start: page
     scraper._link_base = lambda: "https://h.example/jobview/"
-    scraper._company_id = lambda: None  # the config call failed this run
+    return scraper
+
+
+def test_zwayam_a_failed_detail_ships_nothing_so_the_next_run_retries():
+    """A transient failure must NOT fall back to the listing text: the store persists whatever
+    the scrape emits and membership in it is the skip-list, so one bad fetch would freeze
+    possibly-truncated text forever. Emitting nothing leaves `needs_detail` true."""
+    scraper = _zwayam_two_row_board(get_scraper("zwayam", "h.example"))
+    scraper._company_id = lambda: 4242
+
+    def _boom(company_id, job_url):
+        raise OSError("detail refused")
+
+    scraper._job_detail = _boom
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
-    by_id = {j.id.rsplit(":", 1)[1]: j.description for j in jobs}
-    assert by_id == {"1": "listing text", "2": None}
+    assert {j.id.rsplit(":", 1)[1]: j.description for j in jobs} == {
+        "1": None,
+        "2": None,
+    }
+
+
+def test_zwayam_a_failed_config_call_ships_no_descriptions_not_stale_ones():
+    """The config call is per-Board, so its failure fails every detail on the Board — and must
+    behave like any other failed detail rather than freezing the whole Board's listing text."""
+    scraper = _zwayam_two_row_board(get_scraper("zwayam", "h.example"))
+    scraper._company_id = lambda: None
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == 2  # the Jobs themselves still ship
+    assert {j.description for j in jobs} == {None}
+
+
+def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text():
+    """An answered-but-bodyless detail is the posting's final word, so the listing text is the
+    best that will ever exist for it — kept, unlike the failed-fetch case above."""
+    scraper = _zwayam_two_row_board(get_scraper("zwayam", "h.example"))
+    scraper._company_id = lambda: 4242
+    scraper._job_detail = lambda company_id, job_url: ""
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert {j.id.rsplit(":", 1)[1]: j.description for j in jobs} == {
+        "1": "possibly truncated listing",
+        "2": None,
+    }

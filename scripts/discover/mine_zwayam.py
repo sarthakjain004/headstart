@@ -316,11 +316,14 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 2
     global PROXY
+    stage = argv[1]
     rest = [a for a in argv[2:] if a != "--warp"]
     if "--warp" in argv[2:]:
+        if stage != "verify":
+            print(f"--warp applies to `verify`, not `{stage}`", flush=True)
+            return 2
         PROXY = _WARP_PROXY
         print("[warp] routing verify through the WARP SOCKS proxy", flush=True)
-    stage = argv[1]
     if stage == "cert" and len(rest) == 1:
         stage_cert(Path(rest[0]))
     elif stage == "dns" and len(rest) == 2:

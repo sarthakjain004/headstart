@@ -18,6 +18,8 @@ Usage:
     python scripts/merge/merge_zwayam_boards.py                 # union only, report duplicates
     python scripts/merge/merge_zwayam_boards.py --verify        # re-probe every board, dedupe
     python scripts/merge/merge_zwayam_boards.py --verify --write  # ... and write the ledger
+
+Add `--warp` to any of those to probe through the local WARP SOCKS proxy instead of directly.
 """
 
 from __future__ import annotations
@@ -32,6 +34,10 @@ from pathlib import Path
 
 import requests
 
+from headstart.scrapers.zwayam import (  # the dead-vs-failed line, single source of truth
+    body_error_code,
+)
+
 SRC_GLOB = "experiment/india-ats-priority/artifacts/2026-08-27_zwayam-boards-*.csv"
 LEDGER = Path("data/validate/liveness/zwayam.csv")
 FIELDS = ["ats", "tenant", "url", "status", "jobs", "checked_at"]
@@ -40,7 +46,15 @@ UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-PROXY = {"http": "socks5h://127.0.0.1:40000", "https": "socks5h://127.0.0.1:40000"}
+_WARP_PROXY = {
+    "http": "socks5h://127.0.0.1:40000",
+    "https": "socks5h://127.0.0.1:40000",
+}
+#: None = the direct path (the default). An earlier version pinned every probe to the WARP SOCKS
+#: proxy because "Akamai 403s direct bursts", which a 2026-08-27 load test could not reproduce
+#: (~2,160 direct requests, 34 req/s sustained, zero 403s — `experiment/zwayam-rate-limit/`).
+#: `--warp` restores it for the odd host that does wall.
+PROXY: dict[str, str] | None = None
 SEARCH = "https://public.zwayam.com/jobs/search"
 FILTER = (
     '{"paginationStartNo":0,"selectedCall":"sort",'
@@ -74,7 +88,16 @@ def probe(host: str) -> tuple[int, str] | None:
         raise RuntimeError(
             f"{host}: HTTP {r.status_code} (rotate the egress and retry)"
         )
-    data = (r.json() or {}).get("data")
+    payload = r.json() or {}
+    failed = body_error_code(payload)
+    if failed is not None:
+        # This endpoint answers its own failures with HTTP 200, `data: null` and a body code of
+        # 500 — byte-identical to a dead Board but for the code. This script *writes the
+        # ledger*, so reading that as "not a board" would persist a wrong `dead` verdict and
+        # drop a live Board from the scrape until someone re-probed it. Raise instead: the
+        # caller already knows how to retry.
+        raise RuntimeError(f"{host}: body code {failed} (transient; retry)")
+    data = payload.get("data")
     if not data:
         return None
     rows = data.get("data") or []
@@ -120,7 +143,16 @@ def main() -> int:
     ap.add_argument(
         "--write", action="store_true", help="write the ledger (implies --verify)"
     )
+    ap.add_argument(
+        "--warp",
+        action="store_true",
+        help="route probes through the local WARP SOCKS proxy (default: direct)",
+    )
     args = ap.parse_args()
+    if args.warp:
+        global PROXY
+        PROXY = _WARP_PROXY
+        print("[warp] probing through the WARP SOCKS proxy")
 
     rows = load_sources()
     by_src: defaultdict[str, int] = defaultdict(int)
