@@ -63,11 +63,8 @@ from headstart.models import (  # one host rule, shared with the scrapers
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
-from headstart.scrapers.zwayam import (  # the request shape, single source of truth
-    _BOUNDARY,
-    _IGNORED_COMPANY_ID,
-    _filter_at,
-    _multipart,
+from headstart.scrapers.zwayam import (  # the whole request shape, single source of truth
+    search_request,
 )
 
 try:  # bot-wall fallback (see _cloudscraper_fetch below) — optional, not a base dependency
@@ -1217,24 +1214,14 @@ def p_zwayam(t, u):
     """One POST to the shared API, which selects the Board by hostname (`t`).
 
     Read the BODY, never the status: a hostname that is no longer a registered Board answers
-    HTTP 200 with `"data": null`, identical in every other respect to a live one. The request
-    shape is imported from the scraper so the two can never drift — a probe that asked
-    differently would classify Boards the scrape then handles differently.
+    HTTP 200 with `"data": null`, identical in every other respect to a live one. The whole
+    request — url, headers and body — comes from the scraper's `search_request`, so the two
+    cannot drift; an earlier version imported only the body helpers and re-declared the headers,
+    and had already drifted on the User-Agent.
     """
-    headers = {
-        "User-Agent": UA,
-        "Accept": "application/json, text/plain, */*",
-        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
-        "Origin": f"https://{t}",
-        "Referer": f"https://{t}/",
-    }
-    body = _multipart(
-        {"filterCri": _filter_at(0), "domain": t, "companyId": _IGNORED_COMPANY_ID}
-    )
+    url, headers, body = search_request(t)
     try:
-        r = _fetch(
-            "POST", "https://public.zwayam.com/jobs/search", data=body, headers=headers
-        )
+        r = _fetch("POST", url, data=body, headers=headers)
     except http.RequestsError as e:
         if _is_dns(e):
             return DEAD, None

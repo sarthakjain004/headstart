@@ -6329,30 +6329,26 @@ def test_zwayam_reports_a_short_read_as_truncated():
     assert scraper.truncated == "read 10 of 50 postings"
 
 
-def test_zwayam_truncation_keeps_the_first_reason():
+def test_zwayam_truncation_keeps_the_first_reason(monkeypatch):
     """`mark_truncated` is the base-class seam; the page cap must win over the shortfall."""
     from headstart.scrapers import zwayam as mod
 
     scraper = get_scraper("zwayam", "careers.runaway.example")
     monkey_cap = 3
-    original = mod._MAX_PAGES
-    mod._MAX_PAGES = monkey_cap
-    try:
-        page = {
-            "data": {
-                "totalCount": 10_000,
-                "hasMoreData": True,
-                "data": [
-                    {"_source": {"id": i, "jobTitle": "Dev", "jobUrl": "d"}}
-                    for i in range(10)
-                ],
-            }
+    monkeypatch.setattr(mod, "_MAX_PAGES", monkey_cap)
+    page = {
+        "data": {
+            "totalCount": 10_000,
+            "hasMoreData": True,
+            "data": [
+                {"_source": {"id": i, "jobTitle": "Dev", "jobUrl": "d"}}
+                for i in range(10)
+            ],
         }
-        scraper._page = lambda start: page
-        scraper._path_prefix = lambda: "/x/"
-        scraper.fetch_raw()
-    finally:
-        mod._MAX_PAGES = original
+    }
+    scraper._page = lambda start: page
+    scraper._path_prefix = lambda: "/x/"
+    scraper.fetch_raw()
     assert scraper.truncated.startswith(f"stopped at the {monkey_cap}-page cap")
 
 

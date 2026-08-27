@@ -36,7 +36,11 @@ the largest known Board (``career.axismaxlife.com``, 7,638 postings) costs ~764.
 to the endpoint, not a tuning choice.
 
 **No detail pass.** The listing row already carries the description, so ``description`` can never
-go missing the way ADR-0050 describes for the ATSes that fetch it separately.
+go missing the way ADR-0050 describes for the ATSes that fetch it separately. There *is* one extra
+GET per Board — :meth:`ZwayamScraper._path_prefix` reads the careers SPA's ``<base href>`` for the
+job deep links — so a run costs ``ceil(jobs / 10) + 1`` requests per Board. It is not cached: the
+prefix is per-Board and a scrape holds no state between runs, and it is skipped entirely for a
+Board that returned no rows.
 
 **No reproducible rate limit.** A 2026-08-27 load test could not make the endpoint refuse:
 ~2,160 requests across 150 sequential, 32-wide concurrency (~94 req/s), 60 distinct ``domain``
@@ -131,6 +135,35 @@ def _multipart(fields: dict[str, str]) -> bytes:
         )
     out.append(f"--{_BOUNDARY}--\r\n")
     return "".join(out).encode()
+
+
+def search_request(host: str, start: int = 0) -> tuple[str, dict[str, str], bytes]:
+    """``(url, headers, body)`` for one page of ``host``'s Board — the whole request, in one place.
+
+    Public because ``check_liveness``'s ``p_zwayam`` asks the same question the scrape does, and a
+    probe that asks it *differently* classifies Boards the scrape then handles differently. It
+    previously imported only the body helpers and re-declared the headers, which is exactly how the
+    two drift: its copy already sent a different ``User-Agent``, the one header measured to decide
+    whether this endpoint answers at all.
+    """
+    return (
+        _API,
+        {
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
+            # Ignored by the server (module docstring); sent to mirror the real client.
+            "Origin": f"https://{host}",
+            "Referer": f"https://{host}/",
+        },
+        _multipart(
+            {
+                "filterCri": _filter_at(start),
+                "domain": host,
+                "companyId": _IGNORED_COMPANY_ID,
+            }
+        ),
+    )
 
 
 def _location(source: dict) -> str | None:
@@ -253,30 +286,13 @@ class ZwayamScraper(BaseScraper):
         SPA's declared base path; the JSON lives at the shared :data:`_API` instead."""
         return f"https://{self.slug}/"
 
-    def _headers(self) -> dict[str, str]:
-        # `domain` alone selects the Board — Origin/Referer are measurably ignored (module
-        # docstring). Sent anyway to mirror the real client, but nothing here depends on them.
-        # The User-Agent is NOT decorative: without a non-default one the endpoint hangs.
-        return {
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
-            "Origin": f"https://{self.slug}",
-            "Referer": f"https://{self.slug}/",
-        }
-
     def _page(self, start: int) -> dict[str, Any]:
+        url, headers, body = search_request(self.slug, start)
         response = http.fetch(
             "POST",
-            _API,
-            data=_multipart(
-                {
-                    "filterCri": _filter_at(start),
-                    "domain": self.slug,
-                    "companyId": _IGNORED_COMPANY_ID,
-                }
-            ),
-            headers=self._headers(),
+            url,
+            data=body,
+            headers=headers,
             timeout=45,
             **self._egress(),
         )
@@ -352,8 +368,9 @@ class ZwayamScraper(BaseScraper):
             ):
                 break
             if page == _MAX_PAGES - 1:
+                known = f" of {total}" if total is not None else ""
                 self.mark_truncated(
-                    f"stopped at the {_MAX_PAGES}-page cap with {len(rows)} of {total}"
+                    f"stopped at the {_MAX_PAGES}-page cap with {len(rows)}{known} postings"
                 )
         if total is not None and rows and len(rows) < total:
             # `mark_truncated` keeps the FIRST reason, so the page cap above still wins where it
