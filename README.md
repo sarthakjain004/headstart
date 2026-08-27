@@ -1,21 +1,70 @@
 # HeadStart
 
+[![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
+[![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
+[![ADRs](https://img.shields.io/badge/ADRs-92-blue)](./docs/adr/)
+[![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
+
 Find software-engineering openings straight from companies' ATS (Applicant Tracking
 System) career boards — earlier and more completely than relying on LinkedIn.
 
+**[Search the index](https://imposeidon-headstart-search.hf.space)** ·
+**[Read the decisions](./docs/adr/)**
+
 HeadStart discovers which companies host boards on which ATS, validates those boards, scrapes
 them through **22 per-ATS scrapers**, normalizes everything into one `Job` shape, and serves it
-two ways: a static dashboard over a curated feed, and an **AI semantic-search layer** (local
+three ways: a static dashboard over a curated feed; an **AI semantic-search layer** (local
 embeddings + vector search with structured filters) running live on a free-tier Hugging Face
-Space over a **285,065-row** index of the tech corpus.
+Space over a **320,628-row** index of the tech corpus; and **job alerts** — saved searches
+delivered by email or Telegram to signed-in accounts (ADR-0035, ADR-0038).
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 62 numbered ADRs (the option picked, the
+All of it runs on free tiers (see *Cost is a design constraint*, below). The dashboard is built
+into `docs/` and served locally — GitHub Pages publishing is currently off.
+
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — 92 numbered ADRs (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).
 - **AI layer design + results:** [`docs/AI_Integration/`](./docs/AI_Integration/).
 - **Deployment runbook:** [`docs/agents/deployment.md`](./docs/agents/deployment.md).
-- **Dashboard:** GitHub Pages serves [`docs/`](./docs/) → `https://sarthakjain004.github.io/headstart/`.
+- **Dashboard:** [`docs/index.html`](./docs/index.html) over generated `jobs.json`; run it locally (see Development). Not currently published.
+
+## What this optimises for
+
+Six commitments show up in almost every design decision here, and they are worth stating because
+they explain choices that would otherwise look strange.
+
+**Measure it; don't reason about it.** Claims about how a remote host behaves are settled by
+hitting the host, not by reading code. This is a rule with a scar behind it: a "probe the host root
+to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
+the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
+
+**Record the rejected options, not just the chosen one.** 92 ADRs, **63** carrying a heading that
+weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'`).
+When a later measurement contradicts an earlier one the ADR is amended or superseded in place
+rather than quietly edited — **34** name an `Amends:` / `Supersedes:` relationship in their header —
+so the reasoning stays auditable even when it turns out to be wrong.
+
+**Publish the limits next to the result.** The retrieval score ships with the two reasons not to
+over-trust it. Coverage tables say what is excluded and why. A number without its caveat is treated
+as a defect.
+
+**Degrade where degrading is possible.** A missing binary, an unregistered client, a walled
+origin: the spare egress returns "not available" and leaves the caller on the path it already had,
+because a fallback is worth having only if its absence costs nothing. Not universal — `llm_router`
+and `browser_http` raise, and `state_fetch` aborts the run, because a stage that silently proceeds
+without its inputs would publish a wrong answer rather than no answer.
+
+**Recall over precision, where the two conflict.** The tech filter tolerates non-tech creep and
+refuses to drop a real tech job. `scripts/filter/verify_tech.py` exists to audit the *discarded*
+pile with an independent LLM gate — but it is run by hand, not wired into the pipeline, so treat it
+as a tool that has been used rather than a check that runs.
+
+**Cost is a design constraint, not an afterthought.** The whole system runs on free tiers, so
+storage and minutes bound the architecture directly — that is why compaction moved out of the
+back-to-back run into its own daily one, why embedding shards across 15 VMs, and why a run takes a
+20,000-board slice rather than scraping exhaustively (30% by measured yield, 70% random
+exploration, so a newly-productive board can never starve).
 
 ## Why
 
@@ -39,14 +88,14 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>100,254 live of 176,733<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>117,640 live of 178,129<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM · 10m<br/>pick 20k boards, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>20 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>21 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM · 40m<br/>union · tech-filter · descriptions<br/>priority · cost · failures · gap · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · 48m · single writer<br/>concat · meta refresh · sync · prune · trends"]
@@ -64,7 +113,7 @@ flowchart TB
         direction LR
         S1[("<b>HF dataset</b><br/>headstart-index<br/>vectors · LanceDB · ledger")]
         S2["<b>HF Space</b><br/>headstart-search<br/>filter-then-rank"]
-        S3["<b>GitHub Pages</b><br/>static dashboard"]
+        S3["<b>static dashboard</b><br/>local, not published"]
         S4["<b>Telegram bot</b><br/>every 15m · enrolment only"]
         S1 --> S2
     end
@@ -104,25 +153,25 @@ scrape). A run-level `concurrency` group serializes whole runs so two never race
 **Serving** has two independent paths. The search index is the single-writer end: `merge` uploads
 to the private HF dataset `imPoseidon/headstart-index` and restarts the Space
 `imPoseidon/headstart-search`. Separately, `python -m headstart` scrapes the same ledger and writes
-`docs/jobs.json`; the GitHub Pages dashboard reads *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
+`docs/jobs.json`; the static dashboard reads *that* file, not the index. The two paths share the `Job` model and the tech filter but run on
 their own schedules.
 
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 100,254 live boards reduce to 66,433 a run can even consider:
+that matters. The 117,640 live boards reduce to 85,630 a run can even consider:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 100,254 | |
+| live rows in the ledger | 117,640 | |
 | − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
-| − case-variant dedupe | −8,391 | `company/External` and `company/external` are one board (ADR-0023) |
-| − `config.EXCLUDED_BOARDS` | −13 | vendor test/sandbox boards, confirmed by reading their postings |
-| − `config.PARKED_BOARDS` | −1 | real boards withheld for now — Accenture's 48,369-job Workday board outruns any shard budget |
-| = selectable | **66,433** | |
+| − `config.EXCLUDED_BOARDS` | −43 | vendor test/sandbox boards, confirmed by reading their postings |
+| − case-variant dedupe | −6,549 | `company/External` and `company/external` are one board (ADR-0023) |
+| − `config.PARKED_BOARDS` | −2 | real boards withheld for now — Accenture's Workday board and EY's SuccessFactors one outrun any shard budget |
+| = selectable | **85,630** | |
 
-Of those, **49,622 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
-the 16,811 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
+Of those, **53,834 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+the 31,796 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
@@ -133,7 +182,7 @@ it re-samples known boards too; that is what keeps eviction working on boards ou
 A slice of that exploration tail — `GAP_FRAC`, 5%, so ~700 boards — is reserved for boards holding
 **unsettled descriptions** (ADR-0062): jobs already in the store whose text we have never held, and
 whose experience numbers therefore cannot be repaired without scraping the board again. There are
-12,436 such boards holding 179,205 jobs, and the priority ordering would otherwise never reach
+6,153 such boards holding 41,353 jobs, and the priority ordering would otherwise never reach
 them. `data/state/board_description_gap.csv` is recomputed every run, so a board leaves it as soon
 as its descriptions settle and the reservation cancels itself once the backlog drains.
 Boards a run skips are simply left alone — eviction is scoped to boards actually present in the
@@ -153,7 +202,8 @@ to the next stage, and the unfinished boards and Docs simply reappear in the nex
 Every job is scraped, but only tech roles are embedded, indexed, and shown. The scrape writes the
 full set to `data/jobs/{ats}.jsonl`; a recall-biased regex filter (`headstart.tech_filter`) derives
 the tech subset in `data/jobs/tech/{ats}.jsonl` — **241,602 of 1,261,562 scraped rows, 19.2%**, in
-run 32114156695 (2026-08-18), though the rate swings hard by ATS (Freshteam 56.4%, Ashby 42.4%,
+run 32114156695 (2026-08-18 — a stale figure by construction: `data/jobs/` is ephemeral stage
+output with no durable source, so it cannot be refreshed without a re-run), though the rate swings hard by ATS (Freshteam 56.4%, Ashby 42.4%,
 Eightfold 40.8%, SuccessFactors 11.8%, Workday 11.8%). A non-tech job
 creeping in is fine; dropping a tech job is not, so a two-part verification gate guards recall: a
 deterministic self-consistency check plus an independent LLM reasoning gate
@@ -161,7 +211,7 @@ deterministic self-consistency check plus an independent LLM reasoning gate
 tech job the regex missed (ADR-0017). A `langdetect` gate then holds non-English descriptions out
 of the index before embedding — the scrape and the feed keep them, only retrieval is English-only.
 
-No always-on server: scheduled GitHub Actions, a static Pages site, and a free-tier Space.
+No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
@@ -175,7 +225,7 @@ than scraped. Its scraper class and tests stay intact; re-enable by removing it 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **176,733 boards**: 100,254 live, 47,494 dead, 28,985 unknown. Of the
+liveness pipeline has probed **178,129 boards**: 117,640 live, 52,933 dead, 7,556 unknown. Of the
 22 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
 nothing indexed yet, `zwayam` was added 2026-08-27 and has not run in the pipeline yet, and
 `join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
@@ -251,8 +301,8 @@ fails if this table drifts from it.
 | `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
 | `department` | string | raw ATS text |
 | `url` | string | the job-detail link |
-| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 13.4%** of rows (measured over all 481,396 stored rows, 2026-08-18; an earlier 1,000-row sample read 29%, which the full count corrects) |
-| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once, and null on rows added before the column existed (ADR-0031). Measured **null on 77%** of that same sample, so the "new since" filter currently reaches under a quarter of the table |
+| `posted_at` | string | **the company's** posting date, straight from the ATS — inconsistent (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and **null on 13.4%** of rows (measured over 481,396 rows of the embedding *store* — not the served index — on 2026-08-18, when the store held that many; it holds **572,871** today; an earlier 1,000-row sample read 29%, which the full count corrects) |
+| `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` adds the row. Write-once, and null on rows added before the column existed (ADR-0031). Measured **null on 77%** of a 1,000-row sample (2026-08-18), so the "new since" filter reached under a quarter of the table then |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
 
 Two example rows, fetched from the live index on 2026-08-12 (signed in — `/search` 401s an
@@ -317,8 +367,16 @@ registered; bot walls (403/429) stay advisory.
   reliable-fetch seam), `config.py`, `harvest.py` (the scrape engine — `scrape_all`, `JobWriter`,
   feed builders), `liveness.py`, `corpus.py`, `tech_filter.py` (ADR-0017), `experience.py`,
   `geo.py`, `search.py` (shared embed/search constants + filter builder), `board_priority.py`
-  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); plus `telegram_bot_api.py`, the
-  polling client the enrolment bot uses.
+  (ADR-0022), `board_cost.py` (measured scrape seconds, ADR-0027); `salary.py` (the two-tier
+  extraction cascade, ADR-0082), `facets.py` (filter-shaped facet counts, ADR-0084), `roles.py`
+  and `profile_extract.py`; plus `telegram_bot_api.py`, the polling client the enrolment bot uses.
+- **Getting past walls**, the part with the most measurement behind it: `spare_egress.py` — a
+  second network origin for a shard whose ATS budget is spent, dialling Cloudflare WARP in proxy
+  mode and rotating the egress address when a host refuses it (ADR-0063, ADR-0067, ADR-0081,
+  ADR-0090, ADR-0092); `browser_http.py`, its browser twin, for the hosts that admit a genuine
+  Chrome and nothing else (ADR-0056); and `llm_router.py`, the one seam every LLM call goes
+  through (ADR-0032).
+- `src/headstart/ui/` — the templates and static assets the Space serves (ADR-0042).
 - `src/headstart/alerts/` — job alerts (ADR-0035, ADR-0038) plus the signed-in per-account
   records: `store` (Subscriptions, Saved sets, Saved jobs and Profiles — the name now undersells
   it), `registry`, `access` (the invite allowlist), `identity` (Google token verification),
@@ -338,15 +396,15 @@ registered; bot walls (403/429) stay advisory.
   (ADR-0057), `observability.py` (run context, step summaries and the per-shard reports the join
   aggregates), `state_fetch.py` (ADR-0030).
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
-  `scrape/` (one-off pulls), `filter/` (recall verification), plus `alerts/`, `bench/`
-  (performance measurement), and the AI layer in `embed/` (local index tools), `enrich/`, `eval/`,
-  `ui/`.
+  `scrape/` (one-off pulls), `filter/` (recall verification), `fetch/` (pull HF data down),
+  `runlog/` (post-hoc analysis of a fan-out run's logs), plus `alerts/`, `bench/` (performance
+  measurement), and the AI layer in `embed/` (local index tools), `enrich/`, `eval/`, `ui/`.
 - `data/` — `validate/liveness/` is git-tracked and authoritative. **Everything else under `data/`
   is gitignored and lives in the HF dataset**, not in the repo: `state/`, `embeddings/`,
   `lancedb/`, `jobs/`. Pull them from HF before trusting any local copy.
 - `deploy/hf-space/` — the Space app; `deploy-space.yml` pushes it on change, so the repo stays
   the single source of truth for what runs there.
-- `docs/` — `index.html` dashboard + generated `jobs.json` (served by Pages), `adr/`,
+- `docs/` — `index.html` dashboard + generated `jobs.json` (local; Pages publishing is off), `adr/`,
   `AI_Integration/`, `agents/` (issue tracker, triage, domain, deployment runbooks).
 - `.github/workflows/` — `pipeline.yml` (the 5-stage ingest), `pipeline-smoke.yml`, `ci.yml`
   (lint + format + tests), `alerts.yml` and `bot.yml` (email/Telegram alerts), `deploy-space.yml`,
