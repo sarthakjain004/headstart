@@ -230,6 +230,17 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # carry no facet mechanism to fetch only a tech-labeled subset. Un-park once one exists,
         # or a per-board timeout bounds the cost instead.
         "successfactors:careers.ey.com",
+        # 23,806 postings for **136 tech jobs** — the worst cost-to-yield Board in the corpus, and
+        # the run-owning straggler in all 7 of the runs 33065892407..33151091246. Measured from
+        # those runs' own `scrape_run` lines: 1,466 s, against a shard total of 1,471 s. It is not
+        # merely the slowest board in its shard, it *is* its shard — everything else had finished
+        # 5 s earlier, and `board seconds` for that shard reads p50 0.4, p99 118, max 1,466.
+        # Scrape is 42% of the run's wall clock and straggler-bound, so this one Board costs ~10
+        # min of critical path per run to contribute 0.04% of the index (136 of 330,487 rows,
+        # `data/state/board_priority.csv` 2026-08-28) — 10.8 s of makespan per tech job.
+        # Un-park if its tech yield ever justifies the floor, or once a per-board deadline bounds
+        # it — the same condition that would un-park Accenture above.
+        "smartrecruiters:adeebaeservicespvtltd",
     }
 )
 
