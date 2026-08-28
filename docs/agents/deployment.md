@@ -6,7 +6,8 @@ the operational how-to. Deployed and verified live on 2026-07-04, seeded with 42
 
 ## The three parts
 
-**State — private HF dataset `imPoseidon/headstart-index`** (~330 MB). Exact mirror of the local
+**State — private HF dataset `imPoseidon/headstart-index`** (~4.2 GB live, measured 2026-08-28;
+`usedStorage` is far higher because it counts every past revision). Exact mirror of the local
 paths, same layout on both sides:
 
 ```
@@ -14,8 +15,12 @@ data/embeddings/jobs/embeddings.f32   # id-keyed vector store, f32, dim 768
 data/embeddings/jobs/meta.jsonl       # one row per vector: id + typed Job metadata
 data/embeddings/jobs/manifest.json    # dtype/dim/count
 data/lancedb/jobs.lance/…             # the production `jobs` table LanceDB reads
+data/descriptions/{ats}/…             # the ADR-0050 description store, append-only
 data/state/board_priority.csv         # sticky per-board tech-priority EWMA (ADR-0022)
+data/state/published_dirs.json        # which roots were last published (ADR-0095)
 ```
+
+`docs/agents/hf-dataset-inspection.md` has copy-pasteable read-only recipes for all of it.
 
 The dataset is private because the public GitHub repo deliberately ships only a ~2,000-job subset —
 the full corpus must never land anywhere public (including git history).
@@ -66,10 +71,12 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
    dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
-   keep-set), **compact** the table fresh to reclaim orphan fragments (`index compact` — keeps the
-   served index small enough for the free-tier Space to cold-start), **upload** all three dirs back
-   (`data/embeddings/jobs`, `data/lancedb` with `--delete`, `data/state`) with retry/backoff, and
-   **restart the Space** to pick up the new table.
+   keep-set) — `index compact` is **not** in this run, it moved to `cleanup-index` — then
+   **upload** four dirs back —
+   `data/embeddings/jobs`, `data/lancedb`, `data/descriptions`, then `data/state` **last** because
+   it carries the ADR-0095 witness — with retry/backoff, and **restart the Space** to pick up the
+   new table. None of the four passes `--delete` any more; the daily `cleanup-index` run is what
+   compacts and re-uploads *with* it (ADR-0091).
 
 The two `scrape`/`embed` fan-outs run `max-parallel: 15` (leaving 5 of the free tier's 20 concurrent jobs
 for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group: nightly-pipeline`

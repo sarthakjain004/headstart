@@ -20,6 +20,10 @@ So ask. The remote listing is the missing fact, and it fails closed where the do
 without a ``siblings`` list at all. Requiring exactly what the Hub reports also needs no bootstrap
 opt-out — a first run matches nothing, requires nothing, and proceeds.
 
+What the listing cannot rule on is an empty *match*: a first run and an emptied or mistyped
+``HF_DATASET`` look identical to it. ADR-0095 gives the dataset a witness that survives a failed
+fetch — see :mod:`headstart.ingest.state_witness` — and it is consulted only in that one case.
+
 Retries wait as long as the Hub says to, within a fixed total budget. HF meters **fixed 5-minute
 windows** and reports the remaining seconds in the ``RateLimit`` header of every 429, so
 ``reset_after`` reads it and :func:`wait_before`'s exponential ladder (ADR-0033) is only the
@@ -41,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, state_witness
 
 _log = log.get(__name__, __spec__)
 
@@ -186,7 +190,35 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
-            wanted = remote_matches(remote_files(repo, token), patterns)
+            listing = remote_files(repo, token)
+            wanted = remote_matches(listing, patterns)
+            # A pattern that matches nothing is the one case the listing cannot rule on: a genuine
+            # first run and an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says
+            # exactly this and leaves the hole open for want of a witness that survives a failed
+            # fetch; the dataset now carries one (ADR-0095).
+            #
+            # Asked **per pattern**, not of `wanted`. `wanted` is the union, so `merge`'s
+            # `data/embeddings/jobs/* data/lancedb/*` would stay non-empty with the whole table
+            # wiped, and the witness would never be consulted on the root that actually vanished.
+            # Per-pattern, each root answers for itself.
+            #
+            # `break`, not `continue`: the answer is deterministic, so retrying would re-list four
+            # more times to be told the same thing, spending the budget that a real rate-limit
+            # would need. A witness that cannot be READ is a different case — it raises, lands in
+            # the handler below, and is retried like any other Hub failure.
+            barren = [p for p in patterns if not remote_matches(listing, [p])]
+            if barren and state_witness.speaks_for(barren):
+                claimed = state_witness.unwitnessed(
+                    barren, state_witness.published_roots(repo, token)
+                )
+                if claimed:
+                    reason = (
+                        f"the Hub lists no files under {' '.join(claimed)}, but "
+                        f"{state_witness.WITNESS_PATH} says this dataset published "
+                        f"{'it' if len(claimed) == 1 else 'them'} — refusing to read that as a "
+                        "first run"
+                    )
+                    break
             snapshot_download(
                 repo,
                 repo_type="dataset",
