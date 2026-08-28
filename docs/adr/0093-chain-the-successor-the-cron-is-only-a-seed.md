@@ -50,22 +50,50 @@ the **recovery path** if a chain ever breaks. It no longer paces anything.
 
 Three guards, because a self-sustaining loop that fires on failure is a runaway by construction:
 
-- **`!cancelled()`, not `always()`.** A run that succeeded, *failed*, or was stood down by the
-  ADR-0091 gate must still hand off; a stand-down completes in ~2 min and would otherwise end the
-  chain for as long as a compaction ran. A **cancelled** run must not: cancellation is either a
-  human stopping the line or the 6 h ceiling, and dispatching past either is precisely the
-  runaway.
-- **A 20-minute floor.** Before dispatching, the job sleeps until this run is 20 min old. A
-  healthy ~85-min run is long past that, so the floor costs nothing in the normal case. It bites
-  only when a run ends early — the exact shape that would spin. Without it, one 45-min compaction
-  window would produce ~30 dispatches.
-- **A three-consecutive-failure breaker.** If the last three completed runs all failed, the job
-  logs `::error::` and hands off to nobody. Three in a row is not a flake — 2026-08-02 lost 21 of
-  25 runs to a single cause — and a chain would spend ~22 jobs per cycle rediscovering it. A
-  stand-down cannot trip this: it publishes nothing but still concludes `success`.
+- **`!cancelled()`, not `always()`.** A run that succeeded or *failed* still hands off. A
+  **cancelled** one must not: cancellation is either a human stopping the line or the 6 h ceiling,
+  and dispatching past either is precisely the runaway.
+- **`needs.scrape-plan.outputs.run == 'true'` — the one that keeps ADR-0091 working.** The chain
+  goes silent whenever the gate stands a run down. This is not a nicety: `cleanup-index` acquires
+  its window by polling `gh run list --workflow=pipeline.yml --status in_progress` every 60 s and
+  proceeding only at **zero**. Today a stood-down run is in flight ~2 min per hour, so the zero is
+  trivially found. A chain that handed off on stand-down would start a successor seconds after
+  each one ended, holding the pipeline in flight almost continuously against that poll —
+  reinstating the exact starvation ADR-0091 was written to remove, from the opposite direction.
+  The same condition is what keeps the workflow inert when `HF_TOKEN` is unset, as its header
+  promises; without it a token-less repo would dispatch itself forever, entirely green.
+- **A three-consecutive-failure breaker.** If this run's `merge` did not succeed *and* the last
+  three runs that reached a `success`/`failure` verdict all failed, the job goes red and hands off
+  to nobody. Three in a row is not a flake — 2026-08-02 lost 21 of 25 runs to one cause — and a
+  chain would spend ~22 jobs per cycle rediscovering it. It refuses to count `cancelled` runs,
+  because the cron still displaces pending chained runs and those cancellations say nothing about
+  health: counting them lets `failure, cancelled, failure` read as a single failure so the breaker
+  never trips. It also refuses to count *this* run against the chain when `merge` succeeded — the
+  pipeline has recovered, whatever the three before it did.
+
+Because yielding now silences the chain, restarting it becomes the compaction's job:
+`cleanup-index` gains a `handback` job that dispatches the pipeline once it is finished with the
+dataset. It runs even when the compaction was skipped or failed, since a compaction that could not
+take the field must not also leave the pipeline stopped. It is a separate job rather than a step
+in `cleanup` for the reason that file already states — `cleanup` holds `HF_TOKEN` and must not
+also hold the right to dispatch workflows.
+
+The dispatch is confirmed, not assumed. `gh workflow run` returns on a 202, not on a run existing,
+so the job polls for a live successor and goes **red** if none appears. An unconfirmed dispatch
+would end the cadence silently green, which is the failure this ADR exists to remove.
 
 An internal `chained` input marks chain-initiated runs, so an ad-hoc manual dispatch (a one-off
 `max_boards=100` probe) cannot accidentally seed an endless chain of default-input runs.
+
+### What was tried and removed
+
+An earlier draft added a **20-minute floor** — sleep until the run is 20 min old, then dispatch —
+to stop a fast-ending run from spinning. Review killed it, and the reason is worth keeping: the
+floor made the very property it was protecting *worse*. Sleeping inside the run keeps that run
+`in_progress`, so a stood-down run went from ~2 min in flight to ~21, and a repeatedly-failing one
+would have held the pipeline in flight for ~80 min instead of ~12 — squarely across the window
+`cleanup-index` needs. With stand-downs excluded and the breaker bounding failure spin at four
+runs of a few minutes each, the floor had no remaining job and one real cost.
 
 ## Alternatives rejected
 
@@ -83,6 +111,11 @@ Board is re-scraped and the posting is gone (ADR-0053), so at 3 runs/day the ser
 
 Cadence no longer depends on GitHub delivering cron. It does now depend on the `chain` job itself
 running, which the cron backstops.
+
+**It fails closed.** Every path that loses the chain — a cancelled run, a `scrape-plan` failure
+early enough that no `run` output is set, a tripped breaker, an unconfirmed dispatch — stops the
+cadence rather than accelerating it, and all but the first are visibly red. The recovery in each
+case is the same cron this ADR demotes, which is slow but not absent.
 
 **The volume that plausibly caused this is unchanged, and may not be survivable.** Restoring
 ~20 runs/day restores ~500 jobs/day. If that is what GitHub reacted to, this recovers the cadence

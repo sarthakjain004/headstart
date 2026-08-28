@@ -185,3 +185,29 @@ jobs:
           HfApi(token=os.environ['HF_TOKEN']).restart_space(os.environ['HF_SPACE'])
           print('space restarted')
           "
+
+  # Hands the field back. The pipeline's `chain` job (ADR-0093) deliberately does NOT hand off
+  # while it is standing down for us — if it did, its successors would keep the pipeline in flight
+  # and `window` above would never see the zero it waits for. That makes the chain ours to
+  # restart: without this the cadence would sit idle until a cron fired, and the cron is the
+  # delivery ADR-0093 measured at 653-minute gaps.
+  #
+  # Its own job, not a step in `cleanup`, for the reason `window` states above: `cleanup` holds
+  # HF_TOKEN and must not also be able to dispatch workflows.
+  handback:
+    needs: [window, cleanup]
+    # Runs even when `cleanup` was skipped (window exhausted) or failed. A compaction that could
+    # not take the field must not also leave the pipeline stopped; re-dispatching into a pipeline
+    # that never yielded is harmless, since concurrency parks it.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write # dispatch the pipeline
+    steps:
+      - name: Restart the pipeline chain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pipeline.yml -R "$GITHUB_REPOSITORY" -f chained=true
+          echo "::notice::pipeline chain restarted after compaction"
