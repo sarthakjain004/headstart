@@ -11,7 +11,7 @@ import json
 import sys
 
 import headstart.ingest.scrape_plan as ps
-from headstart.config import CompanyRef
+from headstart.config import CompanyRef, board_identity
 
 
 def test_coldstart_cost_weights_detail_fetchers():
@@ -155,7 +155,7 @@ def test_the_gate_drops_a_giant_board_that_yields_almost_no_tech():
     value is the honest way to say that: 0.2 tech jobs per minute of shard time.
     """
     gated = ps._gated_boards(
-        [("workday:dollartree", "workday:dollartree")],
+        ["workday:dollartree"],
         {"workday:dollartree": _cost(4000.0)},
         {"workday:dollartree": 9.7},
         today="2026-08-18",
@@ -167,7 +167,7 @@ def test_the_gate_keeps_a_giant_board_that_earns_its_hour():
     """Walmart is just as big and just as slow — 15,476 postings, 44.5 min — and returns 903 tech
     jobs for it. A rule that dropped this too would be a volume cap, not a value gate."""
     gated = ps._gated_boards(
-        [("workday:walmart", "workday:walmart")],
+        ["workday:walmart"],
         {"workday:walmart": _cost(2670.0)},
         {"workday:walmart": 903.9},
         today="2026-08-18",
@@ -179,7 +179,7 @@ def test_the_gate_never_touches_a_cheap_board():
     """Almost the whole corpus: a Board too cheap to threaten the makespan is not the gate's
     business however little it yields, and gating on yield alone would gut the long tail."""
     gated = ps._gated_boards(
-        [("lever:tiny", "lever:tiny")],
+        ["lever:tiny"],
         {"lever:tiny": _cost(3.0)},
         {},  # unscored, zero tech jobs — and still none of the gate's business
         today="2026-08-18",
@@ -192,7 +192,7 @@ def test_the_gate_never_drops_a_board_it_has_not_measured():
     estimate would drop Boards for their ATS's reputation rather than their own record — every
     unmeasured SuccessFactors board at once, none of them ever measured to disprove it."""
     gated = ps._gated_boards(
-        [("successfactors:unknown", "successfactors:unknown")],
+        ["successfactors:unknown"],
         {},  # no measurement of its own
         {},
         today="2026-08-18",
@@ -208,7 +208,7 @@ def test_a_gated_board_is_re_measured_once_its_costing_goes_stale():
     it is re-measured and re-judged on what it is now, not what it was.
     """
     stale = ps._gated_boards(
-        [("workday:dollartree", "workday:dollartree")],
+        ["workday:dollartree"],
         {"workday:dollartree": _cost(4000.0, day="2026-07-01")},
         {"workday:dollartree": 9.7},
         today="2026-08-18",
@@ -216,7 +216,7 @@ def test_a_gated_board_is_re_measured_once_its_costing_goes_stale():
     assert stale == {}, "a stale costing must re-admit the board for re-measurement"
 
     fresh = ps._gated_boards(
-        [("workday:dollartree", "workday:dollartree")],
+        ["workday:dollartree"],
         {"workday:dollartree": _cost(4000.0, day="2026-08-17")},
         {"workday:dollartree": 9.7},
         today="2026-08-18",
@@ -224,15 +224,36 @@ def test_a_gated_board_is_re_measured_once_its_costing_goes_stale():
     assert "workday:dollartree" in fresh
 
 
-def test_the_gate_reads_the_score_under_its_own_key():
-    """The two ledgers are keyed differently — cost by `{ats}:{slug}`, priority by
-    `board_identity` — and conflating them is what left every Workday board unscored (ADR-0049).
-    A gate that looked the score up under the cost key would read every Workday giant as
-    zero-yield and drop them all, walmart included."""
+def test_the_gate_finds_a_workday_giants_score_under_the_one_shared_key():
+    """Both ledgers are keyed by `board_identity` since ADR-0096, so a Workday Board — whose slug
+    is a whole careers URL — is looked up the same way in each.
+
+    Before that they disagreed, and a gate reading the score under the *cost* key saw every
+    Workday giant as zero-yield and dropped them all, walmart included (ADR-0049). The regression
+    this guards is now impossible by construction rather than by pairing, so the test asserts the
+    outcome: a high-yield giant survives.
+    """
+    walmart = CompanyRef(
+        ats="workday", slug="https://walmart.wd504.myworkdayjobs.com/x", name="Walmart"
+    )
+    key = board_identity(walmart)
+    assert key == "workday:walmart/x", "the shared key drops the pod"
+
     gated = ps._gated_boards(
-        [("workday:https://walmart.wd504.myworkdayjobs.com/x", "workday:walmart/x")],
-        {"workday:https://walmart.wd504.myworkdayjobs.com/x": _cost(2670.0)},
-        {"workday:walmart/x": 903.9},  # scored under board_identity, not the cost key
-        today="2026-08-18",
+        [key], {key: _cost(2670.0)}, {key: 903.9}, today="2026-08-18"
     )
     assert gated == {}
+
+
+def test_a_workday_board_is_costed_under_the_same_key_two_pods_share():
+    """The point of one keyspace: `accenture.wd3` and `accenture.wd103` are one Board, so they
+    cost-key alike and a tenant migrating between pods keeps its measured history."""
+    wd3 = CompanyRef(
+        ats="workday", slug="https://accenture.wd3.myworkdayjobs.com/careers", name="A"
+    )
+    wd103 = CompanyRef(
+        ats="workday",
+        slug="https://accenture.wd103.myworkdayjobs.com/careers",
+        name="A",
+    )
+    assert board_identity(wd3) == board_identity(wd103) == "workday:accenture/careers"

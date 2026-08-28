@@ -24,7 +24,7 @@ from typing import Any
 
 from headstart import log
 from headstart.board_cost import SHARD_HEADER, shard_row
-from headstart.config import CompanyRef
+from headstart.config import CompanyRef, board_identity
 from headstart.models import Job
 from headstart.scrapers.registry import get_scraper
 
@@ -242,6 +242,13 @@ def scrape_all(
             f"{len(companies)} left"
         )
 
+    # The cost ledger is keyed by `board_key`, one name per Board, so it joins the priority
+    # ledger and survives a Workday tenant moving between pods (ADR-0096). Everything else in this
+    # loop — resume, errors, the `on_board` callback — stays on `{ats}:{slug}`, the shard's own
+    # working identity for the URL it is actually fetching. Built once, after the resume filter,
+    # so it covers exactly the Boards this shard will submit.
+    cost_key = {f"{c.ats}:{c.slug}": board_identity(c) for c in companies}
+
     seen_ids: set[str] = set()
     errors: dict[str, str] = {}
     total, done = len(companies), 0
@@ -270,7 +277,7 @@ def scrape_all(
                 key
             )  # mark on completion (success or error): resume moves on
             seconds = elapsed.pop(key, 0.0)
-            writer.record_cost(key, seconds, n_fresh)
+            writer.record_cost(cost_key.get(key, key), seconds, n_fresh)
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
             if progress_every and done % progress_every == 0:
@@ -303,7 +310,12 @@ def scrape_all(
         with in_flight_lock:
             unfinished = sorted(in_flight.items())
         for key, started_at in unfinished:
-            writer.record_cost(key, time.monotonic() - started_at, 0, unfinished=True)
+            writer.record_cost(
+                cost_key.get(key, key),
+                time.monotonic() - started_at,
+                0,
+                unfinished=True,
+            )
         writer.close()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done

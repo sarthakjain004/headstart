@@ -227,6 +227,44 @@ def test_records_measured_seconds_for_every_board_including_failures(
     assert not harvest.COST_FILENAME.startswith(".")
 
 
+def test_cost_is_recorded_under_board_key_not_the_url_slug(monkeypatch, tmp_path):
+    """ADR-0096: one keyspace. A Workday slug is a whole careers URL including the pod it happens
+    to be hosted on, so costing under it splits one Board across pods and orphans its history the
+    day Workday migrates the tenant. The cost ledger keys on `board_key`, which drops the pod, so
+    it joins the priority ledger and survives the move.
+
+    `x:` boards are unaffected — an ATS with no scraper falls back to `{ats}:{slug}`, which is why
+    the test above still reads `x:good`.
+    """
+    monkeypatch.setattr(
+        harvest, "get_scraper", lambda *a, **k: FakeScraper([make_job("w:1:1")])
+    )
+    scrape_all(
+        [CompanyRef("workday", "https://accenture.wd3.myworkdayjobs.com/careers", "A")],
+        jobs_dir=tmp_path,
+    )
+    rows = read_shard_rows(tmp_path / harvest.COST_FILENAME)
+    assert set(rows) == {"workday:accenture/careers"}
+
+
+def test_resume_still_journals_the_url_the_shard_actually_fetched(
+    monkeypatch, tmp_path
+):
+    """Only the *cost* key moved to `board_key` (ADR-0096). Resume, errors and the `on_board`
+    callback stay on `{ats}:{slug}`, because those name the URL this shard is fetching — and the
+    resume journal is matched against exactly that."""
+    seen = []
+    monkeypatch.setattr(
+        harvest, "get_scraper", lambda *a, **k: FakeScraper([make_job("w:1:1")])
+    )
+    scrape_all(
+        [CompanyRef("workday", "https://accenture.wd3.myworkdayjobs.com/careers", "A")],
+        jobs_dir=tmp_path,
+        on_board=lambda key, *a, **k: seen.append(key),
+    )
+    assert seen == ["workday:https://accenture.wd3.myworkdayjobs.com/careers"]
+
+
 def test_scrape_all_carries_a_short_list_from_the_scraper_to_its_callers(
     monkeypatch, tmp_path
 ):

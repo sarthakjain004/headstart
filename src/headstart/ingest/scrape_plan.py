@@ -109,7 +109,7 @@ _GATE_RECHECK_DAYS = 14
 
 
 def _gated_boards(
-    identities: list[tuple[str, str]],
+    keys: list[str],
     cost_rows: Mapping[str, BoardCost],
     scores: Mapping[str, float],
     *,
@@ -117,10 +117,11 @@ def _gated_boards(
 ) -> dict[str, float]:
     """Boards whose measured hour buys too little tech to be worth a shard's makespan.
 
-    ``identities`` pairs each Board's **cost** key (``{ats}:{slug}``) with its **priority** key
-    (``board_identity``); the two ledgers are keyed differently and reading one with the other's
-    key is what left every Workday board unscored (ADR-0049). Returns ``{cost_key: tech per
-    minute}`` — the number, not just the verdict, so the caller can log why each Board went.
+    One key per Board — `board_identity` — reads both ledgers since ADR-0096. It used to take a
+    *pair*, because the cost ledger was keyed `{ats}:{slug}` and the priority ledger by
+    `board_key`, and reading one with the other's key is what left every Workday board unscored
+    (ADR-0049). Returns ``{board_key: tech per minute}`` — the number, not just the verdict, so
+    the caller can log why each Board went.
 
     Only ever judges a Board on **its own** measurement. An unmeasured Board is costed from its
     ATS's median by :func:`costs_for`, and gating on that would drop a Board for its ATS's
@@ -128,15 +129,15 @@ def _gated_boards(
     """
     today = today or datetime.now(UTC).strftime("%Y-%m-%d")
     gated: dict[str, float] = {}
-    for cost_key, priority_key in identities:
-        row = cost_rows.get(cost_key)
+    for key in keys:
+        row = cost_rows.get(key)
         if row is None or row.seconds <= _GATE_FLOOR_S:
             continue
         if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
             continue  # measurement expired — re-admit it and measure again
-        tech_per_min = scores.get(priority_key, 0.0) / (row.seconds / 60)
+        tech_per_min = scores.get(key, 0.0) / (row.seconds / 60)
         if tech_per_min < _GATE_MIN_TECH_PER_MIN:
-            gated[cost_key] = tech_per_min
+            gated[key] = tech_per_min
     return gated
 
 
@@ -295,12 +296,12 @@ def main() -> int:
     # would still have taken a slot from something that would have been scraped.
     cost_rows = load_cost_ledger(Path(args.cost))
     gated = _gated_boards(
-        [(f"{c.ats}:{c.slug}", board_identity(c)) for c in companies],
+        [board_identity(c) for c in companies],
         cost_rows,
         scores,
     )
     if gated:
-        companies = [c for c in companies if f"{c.ats}:{c.slug}" not in gated]
+        companies = [c for c in companies if board_identity(c) not in gated]
         # Named, every run, not just counted. This gate removes work on purpose, and the only
         # way that stays honest is if the list is in front of whoever reads the run — a Board
         # gated in error is invisible everywhere else, because nothing downstream misses it.
@@ -342,11 +343,11 @@ def main() -> int:
 
     # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
     # heuristic only until the first run has populated it.
-    # Two keyspaces, deliberately: the cost ledger is written by `harvest` under `{ats}:{slug}`
-    # and read back the same way, while the priority ledger is written from `corpus.board_of`
-    # and so is keyed by `board_key()` (ADR-0049). Conflating them is what left every Workday
-    # and Personio board permanently unscored.
-    keys = [f"{c.ats}:{c.slug}" for c in companies]  # cost ledger
+    # One keyspace: both ledgers are keyed by `board_key` (ADR-0096). They were split until
+    # 2026-08-28 — cost written by `harvest` under `{ats}:{slug}`, priority from `corpus.board_of`
+    # under `board_key()` — and conflating them is what left every Workday and Personio board
+    # unscored (ADR-0049). The fix was to make them agree, not to keep pairing them up.
+    keys = [board_identity(c) for c in companies]
     measured = bool(cost_rows)  # branch once; every later format choice reads this
     if measured:
         costs = costs_for(keys, cost_rows)
