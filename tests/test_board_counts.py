@@ -101,7 +101,7 @@ def _counts() -> dict[str, int]:
         # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh
         # clone and in CI, so the one figure derived from it is skipped there rather than guessed.
         "scraped_not_unique": _scraped_not_unique(
-            {board_identity(c).lower() for c in _dedupe_boards(live)}
+            {board_identity(c) for c in _dedupe_boards(live)}
         ),
     }
 
@@ -113,13 +113,19 @@ def counts() -> dict[str, int]:
 
 
 def _scraped_not_unique(unique: set[str]) -> int | None:
-    """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here."""
-    cost = LEDGER.parent.parent / "state" / "board_cost.csv"
-    if not cost.exists():
+    """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here.
+
+    Read through `board_cost.load()`, never the raw CSV: the loader normalises legacy `{ats}:{slug}`
+    keys to `board_key` (ADR-0096), so this figure is the same before and after the ledger migrates
+    itself. Counted off the file directly it would jump the first time a pipeline run rewrote it,
+    turning this test red against a file nobody edited.
+    """
+    from headstart.board_cost import load as load_cost
+
+    path = LEDGER.parent.parent / "state" / "board_cost.csv"
+    if not path.exists():
         return None
-    with cost.open(encoding="utf-8") as fh:
-        keys = {r["board"].lower() for r in csv.DictReader(fh)}
-    return len(keys - unique)
+    return len(set(load_cost(path)) - unique)
 
 
 def _abs_int(text: str) -> int:

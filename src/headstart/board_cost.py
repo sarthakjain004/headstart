@@ -70,19 +70,60 @@ class BoardCost:
     updated_at: str  # ISO date of the last run that measured this Board
 
 
+def _rekeyed(board: str) -> str:
+    """A legacy ``{ats}:{slug}`` row's ``board_key``, or the row's own key if it is one already.
+
+    Transitional, and it is what makes ADR-0096 safe to deploy without an atomic migration.
+    Measured on the live ledger before the shim existed: reading a slug-keyed ledger with
+    ``board_identity`` finds nothing for Workday, so the ADR-0064 value gate stopped gating **7
+    giants totalling 194 min** — dollartree's 3,233 s among them — and ``costs_for`` then priced
+    each at the Workday median of **4.8 s**. That is a packed shard blowing its budget, not
+    "degraded balance", and because nothing prunes this ledger it would have persisted until
+    someone remembered to run a script.
+
+    Idempotent by construction, which is why it can sit on the read path where a write-side
+    migration could not: ``board_key()`` parses a careers URL and **raises** on anything else, so
+    a second pass over an already-converted key keeps it unchanged rather than mangling it. A
+    malformed slug lands in the same branch and also keeps its row.
+
+    Remove once no ledger in flight predates 2026-08-28: one ``update_ledgers cost`` run
+    load-updates-saves the whole file, so the ledger self-migrates on the first run after this
+    ships and the shim is then a no-op on every row.
+    """
+    from headstart.scrapers.registry import SCRAPERS
+
+    ats, _, slug = board.partition(":")
+    scraper = SCRAPERS.get(ats)
+    if scraper is None or not slug:
+        return board
+    try:
+        return scraper(slug).board_key()
+    except Exception:  # noqa: BLE001 — already a board_key, or a slug no scraper can read
+        return board
+
+
 def load(path: str | Path) -> dict[str, BoardCost]:
-    """The ledger as {board: BoardCost}; {} when the file doesn't exist yet."""
+    """The ledger as {board: BoardCost}; {} when the file doesn't exist yet.
+
+    Keys are normalised to ``board_key`` on the way in (ADR-0096) — see :func:`_rekeyed`. Where a
+    legacy row and a current one collapse to the same Board, the **newer** measurement wins, since
+    it is the one describing the Board as it is now.
+    """
     path = Path(path)
     if not path.exists():
         return {}
     rows: dict[str, BoardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardCost(
+            cost = BoardCost(
                 seconds=float(row["seconds"]),
                 jobs=int(row["jobs"]),
                 updated_at=row["updated_at"],
             )
+            key = _rekeyed(row["board"])
+            prior = rows.get(key)
+            if prior is None or cost.updated_at > prior.updated_at:
+                rows[key] = cost
     return rows
 
 

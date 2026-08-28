@@ -1,9 +1,11 @@
 # ADR-0096: One key for both Board ledgers
 
-**Status:** accepted · **Date:** 2026-08-28 · **Amends:**
-[ADR-0027](0027-measured-scrape-cost-ledger.md) (the cost ledger's key),
+**Status:** accepted · **Date:** 2026-08-28 · **Supersedes:**
+[ADR-0059](0059-two-board-keyspaces.md) (which kept the two keyspaces, deliberately) ·
+**Amends:** [ADR-0027](0027-measured-scrape-cost-ledger.md) (the cost ledger's key),
 [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) (which taught the planner to *pair* the
-two keys rather than unify them) · **Relates to:**
+two keys rather than unify them), [ADR-0064](0064-a-boards-hour-must-buy-tech-jobs.md) (whose gate now
+takes one key) · **Relates to:**
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (where `board_key` comes from),
 [ADR-0022](0022-tech-priority-board-ordering.md) (the ledger that was already keyed this way)
 
@@ -39,7 +41,18 @@ Two properties are worth having beyond that:
   board would read as empty."* Keyed by URL, a migrated Board looks brand new and loses its whole
   measured history to the ATS median. Keyed by `board_key`, the pod is not part of the name.
 - **`board_key` is one name per Board.** `accenture.wd3` and `accenture.wd103` are one Board on
-  two pods — 333 such pairs in the live ledger.
+  two pods — 333 such pairs, counting live liveness rows grouped by case-folded `board_key`
+  (a different grouping gives a different number, so the method is part of the figure).
+
+## Why ADR-0059 said no, and what changed
+
+ADR-0059 examined this and kept the split on purpose: *"Anything reading `board_cost.csv` stays on
+`f"{ats}:{slug}"`, because that is what `harvest` writes. 'Fixing' it to match the priority ledger
+would have broken cost lookups for the same 13,402 boards — the mirror of the bug being fixed."*
+
+That is correct, and it is an argument against changing the **read** side alone. This ADR changes
+the **write** side as well, and adds a read-time shim for rows written before it, so there is no
+window in which a lookup misses. ADR-0059's objection is answered rather than overruled.
 
 ## Decision
 
@@ -57,16 +70,38 @@ Job id — Workday ids would carry a full URL with `://` and `/` — and re-inde
 *losing* the 333 pod collapses. `board_key` is also the shorter, readable form, and already the
 canonical identity everywhere else: `_dedupe_boards`, `prune`'s keep-set, `PARKED_BOARDS`.
 
-## Migration
+## Migration: a read-time shim, not a script
 
-Measured on the live ledger: **85,839 rows → 85,825 keys, 14 merged, 0 unmappable**, with 72,006
-rows already board_key-shaped. Only 14 collapse, because a pod pair only holds two cost rows when
-both URLs were scraped, and dedupe usually admits one.
+The first draft of this ADR shipped a one-off migration script and called the gap before it ran
+"one run of degraded packing… not harmful". **Review measured that and it was wrong**, in the
+direction that matters. Against the live ledger, reading slug-keyed rows with `board_identity`
+finds nothing for Workday, so:
 
-Not a self-healing read: **`board_key()` is not idempotent.** Workday's parses a careers URL and
-raises `ValueError` on anything else, so a re-key applied twice fails loudly — which is the safe
-direction, but means a lazy read path would have to track what it had already converted. A one-off
-rewrite leaves no transitional code to forget to delete.
+- the ADR-0064 value gate stops gating **7 giants totalling 194 min** — `dollartree` (3,233 s),
+  `advanceauto` (1,758 s), `lowes` (1,712 s), `oreillyauto`, `trinityhealth`, `michaels`, `circlek`
+- `costs_for` then prices each at the Workday median, **4.8 s**
+
+A 54-minute Board packed as 4.8 seconds is the exact makespan failure ADR-0064 exists to prevent.
+And it would not have been one run: nothing prunes this ledger, so both spellings would coexist
+until someone remembered the script.
+
+So `board_cost.load()` normalises legacy keys on the way in (`_rekeyed`). Measured with the shim,
+on an un-migrated ledger: **15 Boards gated, all 7 giants among them, 97.2% hit rate** — identical
+to the behaviour before this ADR.
+
+**It is idempotent, which is what lets it sit on the read path.** `board_key()` parses a careers
+URL and raises on anything else, so a second pass over an already-converted key keeps it. That same
+property is why a *write*-side self-healing migration was rejected — it would have had to track
+what it had already converted.
+
+The ledger then migrates itself: `update_ledgers cost` does load → update → save, rewriting every
+row, so the file is board_key-keyed after the first run and the shim is a no-op on all of it.
+Remove the shim once no ledger in flight predates 2026-08-28. Where a Board appears under both
+spellings for that one run, the **newer** measurement wins.
+
+Measured shape of the one-off change: **85,839 rows → 85,825 keys, 14 merged, 0 unmappable**,
+72,006 already board_key-shaped. Only 14 collapse, because a pod pair holds two cost rows only when
+both URLs were scraped and dedupe usually admits one.
 
 Case is preserved. `board_key()` does not fold it, and the read side does not either:
 `_dedupe_boards` lowercases only to *choose* among variants, then keeps that row's own spelling —
@@ -76,11 +111,6 @@ were measured contributing **0 s** of mispricing.
 ## Consequences
 
 The two ledgers are now joinable, which is what both people who got this wrong were trying to do.
-
-**One run of degraded packing if the migration is skipped.** A writer emitting `board_key` against
-a ledger still keyed by slug finds no prior row for Workday and Personio, so those Boards fall to
-their ATS median for one run and re-measure. Not harmful — the EWMA recovers next run — but the
-migration is what avoids it, so run it in the same change.
 
 **Resume and cost now use different keys within one shard**, deliberately. Resume answers "did I
 already fetch this URL", cost answers "how expensive is this Board". Merging them would make a

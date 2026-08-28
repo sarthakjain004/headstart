@@ -1,9 +1,15 @@
 # ADR-0059: The priority ledger keys on `board_key`, the cost ledger on `{ats}:{slug}` — deliberately
 
-**Status:** accepted · **Date:** 2026-08-18 · **Amends:**
+**Status:** superseded by [ADR-0096](0096-one-key-for-both-board-ledgers.md) · **Date:** 2026-08-18 · **Amends:**
 [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) (its "mis-scores a colon-bearing Board" note about
 `pick_boards` understated the problem) · **Relates to:**
 [ADR-0022](0022-tech-priority-board-ordering.md), [ADR-0027](0027-measured-scrape-cost-ledger.md)
+
+
+> **Superseded 2026-08-28 by [ADR-0096](0096-one-key-for-both-board-ledgers.md).** This ADR kept the two keyspaces deliberately, on the grounds that
+> re-keying only the *reader* would break cost lookups for the same 13,402 Boards. That holds.
+> ADR-0096 moves the **writer** as well and adds a read-time shim for rows written before it,
+> so no lookup misses at any point — the objection is answered rather than overruled.
 
 ## Context
 
