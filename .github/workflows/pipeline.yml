@@ -72,9 +72,9 @@ on:
     inputs:
       max_boards:
         description: boards to scrape this run (0 = every Scrapable Board)
-        # 20000 of 85,631 **Scrapable Boards** — `scrape_plan` selects with `min_jobs=0`, so that
-        # is the count to compare against, not the 53,835 **Hiring Board** subset (CONTEXT.md
-        # §Counting Boards; `tests/test_board_counts.py` keeps those two honest). Recount
+        # 20000 Boards, under a quarter of the **Scrapable Boards** — `scrape_plan` selects with
+        # `min_jobs=0`, so that is the count to compare against, not the **Hiring Board** subset
+        # (CONTEXT.md §Counting Boards, whose figures a test keeps current). Recount
         # after any liveness sweep rather than trusting this line (it read 52,925 until 2026-08-11):
         #   python -c "from headstart.config import load_active_companies as f; \
         #     print(len(f('data/validate/liveness', min_jobs=0)))"
@@ -82,7 +82,7 @@ on:
         # (EXPLORE_FRAC=0.7, board_priority.py): the top 6,000 scored Boards plus a 14,000-Board
         # random tail. Flipped from 70/30 on 2026-07-27 to work through the unscraped backlog —
         # measured against both HF state ledgers (board_priority ∪ board_cost = 49,449 Boards ever
-        # scraped, keyed through each scraper's slug_from), 8,068 live Boards had never been
+        # scraped, keyed through each scraper's slug_from), 8,068 Scrapable Boards had never been
         # scraped, 4,187 of them Workday. NB the 14,000 tail exceeds that backlog, so once it is
         # cleared the tail is ordinary random resampling, not exploration.
         # Trade-off: the scored head shrinks 14,000 -> 6,000, so top-yield Boards are revisited

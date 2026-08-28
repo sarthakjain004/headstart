@@ -51,7 +51,7 @@ def _live_companies() -> list[CompanyRef]:
 
 
 @functools.cache
-def counts() -> dict[str, int]:
+def _counts() -> dict[str, int]:
     """Every git-derivable figure in CONTEXT.md §Counting Boards, from the ledger itself.
 
     Cached: several tests want it and it re-reads 20 CSVs each time (~1.3s a call).
@@ -99,6 +99,12 @@ def counts() -> dict[str, int]:
         "Scrapable Board": len(load_active_companies(LEDGER, min_jobs=0)),
         "Hiring Board": len(load_active_companies(LEDGER, min_jobs=1)),
     }
+
+
+def counts() -> dict[str, int]:
+    """A private copy of the cached figures — a cached function must not hand every caller the
+    same mutable dict."""
+    return dict(_counts())
 
 
 def _abs_int(text: str) -> int:
@@ -185,21 +191,54 @@ def test_the_readme_funnel_agrees_with_the_ledger() -> None:
     )
 
 
-def test_the_derived_figures_quoted_in_prose_are_current() -> None:
-    """The headline counts are parsed and asserted; the figures *derived* from them are not, and
-    that is how a wrong ratio shipped in the Scored Board entry. These are the ones the docs lean
-    on hardest, so they get checked by presence."""
+def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
+    """The headline counts are parsed and asserted; the figures *derived* from them are not, and a
+    wrong ratio shipped that way once already.
+
+    Matched **per sentence**, not by searching the file for the number. An earlier version did the
+    latter and passed on real drift: `6,617` appears at two sites in CONTEXT.md, so editing one and
+    leaving the other stale — the realistic failure — read as green.
+    """
     truth = counts()
-    context = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     dupes = truth["Live row"] - truth["Unique Board"]
     empty = truth["Scrapable Board"] - truth["Hiring Board"]
-    for figure, where, doc in (
-        (dupes, "CONTEXT.md", context),
-        (dupes, "README.md", readme),
-        (empty, "README.md", readme),
-    ):
-        assert f"{figure:,}" in doc, f"{where} does not mention {figure:,}"
+    skipped = truth["Unique Board"] - truth["Scrapable Board"]
+
+    sites = [
+        (
+            "README.md",
+            r"([\d,]+) live rows of ([\d,]+)",
+            (truth["Live row"], truth["Ledger row"]),
+        ),
+        (
+            "README.md",
+            r"a row, not a board — ([\d,]+) of them are duplicate spellings",
+            (dupes,),
+        ),
+        ("README.md", r"the ([\d,]+) live-but-empty boards", (empty,)),
+        (
+            "README.md",
+            r"\*\*([\d,]+) ledger rows\*\*: ([\d,]+) live, ([\d,]+) dead, ([\d,]+) unknown",
+            (truth["Ledger row"], truth["Live row"], truth["dead"], truth["unknown"]),
+        ),
+        ("README.md", r"collapse to ([\d,]+) Unique Boards", (truth["Unique Board"],)),
+        ("CONTEXT.md", r"because ([\d,]+) live rows are duplicate spellings", (dupes,)),
+        (
+            "CONTEXT.md",
+            r"because ([\d,]+) of those rows are duplicate spellings",
+            (dupes,),
+        ),
+        ("CONTEXT.md", r"the ([\d,]+) Boards between it and Unique Board", (skipped,)),
+    ]
+    for name, pattern, expected in sites:
+        found = re.search(pattern, (ROOT / name).read_text(encoding="utf-8"))
+        assert found, (
+            f"{name}: no sentence matching {pattern!r} — did the wording change?"
+        )
+        got = tuple(_abs_int(g) for g in found.groups())
+        assert got == expected, (
+            f"{name}: {pattern!r} says {got}, ledger says {expected}"
+        )
 
 
 def test_both_orders_reach_the_same_scrapable_count() -> None:

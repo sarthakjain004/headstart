@@ -115,9 +115,8 @@ _TOP_UNCONFIRMED_BOARDS = (
 _TOP_OUT_OF_SCOPE_BOARDS = (
     10  # Boards named when reporting what scope exclusion withholds
 )
-_MIN_KEEP_BOARDS = (
-    1000  # a healthy ledger holds 85,631 Scrapable Boards; refuse to prune below this
-)
+# a healthy ledger holds tens of thousands of Scrapable Boards; refuse to prune below this
+_MIN_KEEP_BOARDS = 1000
 # When *we* first indexed the Job, as an ISO-8601 UTC string — not `posted_at`, which is the
 # company's posting date and says nothing about when we found it (ADR-0031). Held as a module
 # constant because both `_schema` (new tables) and `sync`'s migration (the live table) need it.

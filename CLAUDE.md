@@ -413,8 +413,8 @@ any claim of the form "a single transient miss deletes a live job" has been fals
 Three different mechanisms withhold evictions, are reported separately on purpose, and must not
 be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries are authoritative:
 - **Unconfirmed** (ADR-0083) — per-*Job*; one absence isn't enough. The unit is *scrapes of that
-  Board*, never runs: only ~20k of 85,631 Scrapable Boards are in any run's slice (CONTEXT.md
-  §Counting Boards — "live Boards" names no single number), and a Board the run
+  Board*, never runs: only ~20k are in any run's slice, under a quarter of the Scrapable Boards
+  (CONTEXT.md §Counting Boards — "live Boards" names no single number), and a Board the run
   did not read is no evidence, so its ids keep the state they had.
 - **held** (ADR-0046 collapse guard) — per-*Board* cap; a Board may not shed more than a quarter
   of its rows at once. Bounded drain added by ADR-0055.

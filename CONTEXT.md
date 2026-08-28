@@ -47,7 +47,7 @@ _Avoid_: assuming `salary IS NOT NULL` (the `has_salary` filter) means "well-pai
 
 Five defensible answers exist to "how many Boards do we have", they differ by tens of thousands, and quoting the wrong one has already misled three separate discussions. Each name below binds to exactly one of them.
 
-Every figure here except the last two is **enforced by `tests/test_board_counts.py`**, which recomputes it from the committed ledger — so those cannot go stale without a red test. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted:
+The five headline counts — **Ledger row**, **Live row**, **Unique Board**, **Scrapable Board**, **Hiring Board** — plus the README funnel's every delta are **enforced by `tests/test_board_counts.py`**, which recomputes them from the committed ledger, so they cannot go stale without a red test. The figures *derived* from them in prose (6,617, 25,460, 31,796, 43-vs-41) are checked only where they appear; **Slice**'s 20,000 tracks a CLI default and is not checked at all. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted:
 ```
 python -c "
 from huggingface_hub import hf_hub_download as d
@@ -72,7 +72,7 @@ _Avoid_: "live Boards" for this number — that is the phrase this section exist
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. Everything below is a subset of this; nothing below removes a duplicate, only Boards we choose not to read.
 
 **Scrapable Board** — 85,631:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−41 vendor test Boards) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)`, and the right default answer to "how many Boards do we have".
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−41 vendor test Boards) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
 _Avoid_: calling this "unique" — the 25,460 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated.
 
 **Hiring Board** — 53,835:
@@ -87,7 +87,8 @@ Two more count Board *history* rather than eligibility, and neither is a denomin
 A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. **Distinct Boards, not rows** — that file holds 85,839 lines, 1,936 of them ADR-0023 case-variants of a Board already counted, so a `wc -l` on it reproduces the very conflation this section exists to kill. Some Scrapable Boards have never been scraped at all; that backlog is what the Tail drains.
 
 **Scored Board** — 28,548 *(measured 2026-08-28; not test-enforced)*:
-A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. Distinct Boards again: that file holds 30,577 lines, 2,029 of them case-variants. **Two Scraped Boards in three hold no score** (28,548 of 83,903) — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech and then decayed below the floor is in the same two-thirds.
+A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. Distinct Boards again: that file holds 30,577 lines, 2,029 of them case-variants. **74% of Scraped Boards hold no score** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech and then decayed below the floor is in the same 74%.
+_Avoid_: deriving that 74% by dividing the two figures above. **Scored Board is not a subset of Scraped Board** — 6,906 Scored Boards hold no cost row, so `1 − 28,548/83,903` gives 66% and is wrong. It is a set difference: 62,261 of the 83,903 Scraped Boards are absent from the priority ledger. A review got this backwards and the wrong figure shipped for one commit.
 _Avoid_: reading its absence as a delisting. A Board with no score is not excluded from anything; it competes in the Tail exactly as an unscored Board does, and re-enters the ledger the next time it hires tech.
 
 
