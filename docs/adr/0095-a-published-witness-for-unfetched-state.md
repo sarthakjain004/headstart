@@ -27,7 +27,9 @@ The nearest live edge is `cleanup-index.yml`: it fetches `data/descriptions/*` g
 covers a *failed* fetch. It does not cover a fetch that succeeds having matched nothing. What stops
 a wipe there today is incidental, and now measured: `--compact` iterates `store.glob("*")` and
 never creates the directory, so `hf upload` is handed a path that does not exist and raises
-`FileNotFoundError` **before any network call** (`huggingface_hub/cli/upload.py:237`). Handed an
+`FileNotFoundError` **before any network call** (the `isfile`/`isdir` check in
+`huggingface_hub/cli/upload.py`'s `run_upload`, which precedes `create_repo` — line number moves
+between versions, so grep the guard). Handed an
 *existing but empty* directory it proceeds instead — verified 2026-08-28, the attempt reached the
 Hub and failed only on repo permissions. So the store survives by one `mkdir` that nothing
 currently makes, which is a protection nobody designed and no test holds in place.
@@ -101,6 +103,17 @@ witness, so the fetch requires nothing.
 uploading `data/state`, the witness freezes at its last value — under-claiming as roots are added,
 which is safe, but silently. There is no alarm for that, and adding one would need a second writer,
 which is the lockstep this design exists to avoid.
+
+**`data/state` is now the casualty of an earlier upload failure.** Moving it last buys the
+ordering property above, and costs this: under `bash -e`, a failure uploading the store, the table
+or the descriptions now strands the board-priority ledger and `unconfirmed_ids.txt` (ADR-0083's
+grace state) as well, where previously only `data/descriptions` was stranded. Both are rewritten
+in full next run, so the cost is one run of staleness, not corruption.
+
+**A degraded `merge` publishes a degraded witness.** If the `corpus-state` artifact is lost — the
+documented `continue-on-error` path when `join` times out — `publish` records only the roots
+present in that workspace, under-claiming `data/state` and `data/descriptions`. Safe, but it
+silently weakens the guard until the next healthy run restores it.
 
 **Not covered:** a dataset emptied *and* re-published by something other than this pipeline would
 carry a witness matching its emptiness. Nothing here defends against a writer that is not `merge`.

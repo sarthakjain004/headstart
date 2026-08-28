@@ -24,11 +24,15 @@ import headstart.ingest.state_fetch as sf
 
 
 class _EntryNotFound(Exception):
-    """Stand-in for `huggingface_hub.errors.RemoteEntryNotFoundError` — a real 404 for the file.
+    """Stand-in for `huggingface_hub.errors.EntryNotFoundError` — the Hub's "no such file"."""
 
-    The real class hierarchy is the trap this stub has to mirror: `LocalEntryNotFoundError` (a
-    connection failure) also subclasses `EntryNotFoundError`, so `published_roots` catches only the
-    *Remote* form. A stub that offered just the parent would let a fix for that pass vacuously.
+
+class _LocalEntryNotFound(_EntryNotFound):
+    """Stand-in for `LocalEntryNotFoundError`, and the hierarchy is the point.
+
+    The real class subclasses `EntryNotFoundError` while meaning "connection issue or Hub
+    downtime". A stub that flattened them would let a fail-open regression pass vacuously; the
+    dedicated test lives in `test_state_witness.py`.
     """
 
 
@@ -46,7 +50,8 @@ def hub(monkeypatch):
     """
     module = types.ModuleType("huggingface_hub")
     errors = types.ModuleType("huggingface_hub.errors")
-    errors.RemoteEntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    errors.EntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    errors.LocalEntryNotFoundError = _LocalEntryNotFound  # type: ignore[attr-defined]
     module.errors = errors  # type: ignore[attr-defined]
 
     def _no_witness(*a, **k):
@@ -391,7 +396,9 @@ def test_an_empty_listing_a_witness_contradicts_fails_closed(
     _empty_hub(hub, monkeypatch, tmp_path)
     _witness(hub, tmp_path, ["data/state", "data/lancedb"])
     slept: list[int] = []
-    monkeypatch.setattr(sf.time, "sleep", slept.append)
+    monkeypatch.setattr(
+        sf.time, "sleep", slept.append
+    )  # re-stubbed: this test asserts on it
 
     with caplog.at_level("ERROR"):
         assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
@@ -453,6 +460,24 @@ def test_one_surviving_root_does_not_hide_a_wiped_sibling(
         sf.fetch_state("repo", ["data/embeddings/jobs/*", "data/lancedb/*"], token=None)
         == 1
     )
+
+
+def test_a_root_the_witness_abstains_on_is_not_even_downloaded(
+    hub, monkeypatch, tmp_path
+) -> None:
+    """`cluster-roles.yml` pairs the store with `data/state/role_centroids/*`, which is not a
+    recorded root. Fetching the witness only to abstain would let an unreachable Hub fail a run
+    the witness was never going to have an opinion about."""
+    _empty_hub(hub, monkeypatch, tmp_path)
+    reads = {"n": 0}
+
+    def counted(*a, **k):
+        reads["n"] += 1
+        raise AssertionError("the witness must not be read for a root it abstains on")
+
+    hub.hf_hub_download = counted
+    assert sf.fetch_state("repo", ["data/state/role_centroids/*"], token=None) == 0
+    assert reads["n"] == 0
 
 
 def test_fetch_omits_the_rate_when_nothing_landed_to_divide(

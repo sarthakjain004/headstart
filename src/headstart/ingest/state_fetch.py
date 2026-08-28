@@ -207,7 +207,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             # would need. A witness that cannot be READ is a different case — it raises, lands in
             # the handler below, and is retried like any other Hub failure.
             barren = [p for p in patterns if not remote_matches(listing, [p])]
-            if barren:
+            if barren and state_witness.speaks_for(barren):
                 claimed = state_witness.unwitnessed(
                     barren, state_witness.published_roots(repo, token)
                 )

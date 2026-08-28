@@ -99,7 +99,8 @@ class _EntryNotFound(Exception):
 def _stub_hub(monkeypatch, download) -> None:
     module = types.ModuleType("huggingface_hub")
     errors = types.ModuleType("huggingface_hub.errors")
-    errors.RemoteEntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    errors.EntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    errors.LocalEntryNotFoundError = type("_Local", (_EntryNotFound,), {})  # type: ignore[attr-defined]
     module.errors = errors  # type: ignore[attr-defined]
     module.hf_hub_download = download  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "huggingface_hub", module)

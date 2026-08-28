@@ -71,8 +71,8 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    table (`index sync`: add ids that now have a vector, evict postings gone from scraped boards —
    incremental, no rebuild), **prune** rows the board-scoped sync can't reach (`index prune --apply` —
    dead boards keyed on the live ledger + case-variant dups, ADR-0023; safety-aborts on a too-small
-   keep-set), **compact** the table fresh to reclaim orphan fragments (`index compact` — keeps the
-   served index small enough for the free-tier Space to cold-start), **upload** four dirs back —
+   keep-set) — `index compact` is **not** in this run, it moved to `cleanup-index` — then
+   **upload** four dirs back —
    `data/embeddings/jobs`, `data/lancedb`, `data/descriptions`, then `data/state` **last** because
    it carries the ADR-0095 witness — with retry/backoff, and **restart the Space** to pick up the
    new table. None of the four passes `--delete` any more; the daily `cleanup-index` run is what

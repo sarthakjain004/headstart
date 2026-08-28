@@ -85,21 +85,32 @@ def published_roots(repo: str, token: str | None) -> set[str] | None:
     and the reason this uses ``hf_hub_download`` rather than ``snapshot_download``: the former
     raises where the latter warns and hands back an empty directory (ADR-0030).
 
-    **Catch ``RemoteEntryNotFoundError``, never its parent.** ``EntryNotFoundError`` also covers
-    ``LocalEntryNotFoundError``, which `hf_hub_download` raises for "most likely a connection issue
-    or Hub downtime" — a 429 or a 5xx included. Catching the parent therefore reads an unreachable
-    Hub as "this dataset published nothing", which is precisely the fail-open this module exists to
-    remove, on precisely the transient failure class that lost run 30304173982. Verified against
-    huggingface_hub 1.21.0: ``LocalEntryNotFoundError.__mro__`` runs through ``EntryNotFoundError``,
-    ``HF_HUB_OFFLINE=1`` reached the parent branch, and a real missing file raises the remote form.
+    **The exception hierarchy is the trap here.** ``EntryNotFoundError`` sounds like "no such
+    file", but ``LocalEntryNotFoundError`` — what `hf_hub_download` raises for "most likely a
+    connection issue or Hub downtime", a 429 or 5xx included — **subclasses it**. Catching the
+    parent alone therefore reads an unreachable Hub as "this dataset published nothing", which is
+    exactly the fail-open this module exists to remove, on exactly the transient failure class that
+    lost run 30304173982. The first version of this function had that bug: verified against
+    huggingface_hub 1.21.0, ``HF_HUB_OFFLINE=1`` returned ``None``.
+
+    So the local form is re-raised *before* the parent is caught. Ordering it this way rather than
+    naming ``RemoteEntryNotFoundError`` keeps it correct on versions that predate that class —
+    every workflow installs `huggingface_hub` unpinned, so the floor is not ours to assume.
+
+    Residual: a future ``EntryNotFoundError`` subclass meaning "transient" would fail open again.
+    A malformed witness raises out of ``json.loads`` instead, and is retried like a Hub failure —
+    deterministic, so it burns the ADR-0033 budget to learn nothing. Both are known and unhandled;
+    neither has been observed.
     """
     from huggingface_hub import hf_hub_download
-    from huggingface_hub.errors import RemoteEntryNotFoundError
+    from huggingface_hub.errors import EntryNotFoundError, LocalEntryNotFoundError
 
     try:
         path = hf_hub_download(repo, WITNESS_PATH, repo_type="dataset", token=token)
-    except RemoteEntryNotFoundError:
-        return None
+    except LocalEntryNotFoundError:
+        raise  # a Hub we could not reach is not a dataset that published nothing
+    except EntryNotFoundError:
+        return None  # a genuine 404: no witness here
     return set(json.loads(Path(path).read_text(encoding="utf-8"))["dirs"])
 
 
@@ -112,6 +123,17 @@ def unwitnessed(patterns: list[str], roots: set[str] | None) -> list[str]:
     if not roots:
         return []
     return sorted({pattern_root(p) for p in patterns} & roots)
+
+
+def speaks_for(patterns: list[str]) -> bool:
+    """Whether any of these patterns names a root this witness records.
+
+    Asked before the download, not after: `unwitnessed` would abstain anyway, but only having
+    already fetched — and that fetch can raise on an unreachable Hub, failing a run the witness
+    was never going to have an opinion about. `cluster-roles.yml` is the live case: it pairs the
+    embedding store with `data/state/role_centroids/*`, which is deliberately not a recorded root.
+    """
+    return bool({pattern_root(p) for p in patterns} & set(ROOTS))
 
 
 def publish(root: Path = REPO_ROOT) -> list[str]:
