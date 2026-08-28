@@ -71,7 +71,7 @@ A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre ever
 _Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
 
 **Unique Board** — 111,091:
-Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 2,552 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
+Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 600 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
 **Scrapable Board** — 85,631:
 A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−41 vendor test Boards) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
@@ -85,13 +85,13 @@ The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boar
 
 Two more count Board *history* rather than eligibility, and neither is a denominator for the above:
 
-**Scraped Board** — 85,825 *(measured 2026-08-28; not test-enforced)*:
-A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. **Count it through `board_cost.load()`, not `wc -l`** — the file holds 85,839 lines and the loader normalises legacy keys and folds duplicates (ADR-0096). Some Scrapable Boards have never been scraped at all; that backlog is what the Tail drains.
+**Scraped Board** — 83,880 *(measured 2026-08-28; not test-enforced)*:
+A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. **Distinct Boards, not rows**: the file holds 85,839 lines, of which 1,959 are ADR-0023 case-variants of a Board already counted, so a `wc -l` reproduces the very conflation this section exists to kill. Load it through `board_cost.load()` (which also normalises pre-ADR-0096 keys) and fold case. Some Scrapable Boards have never been scraped at all; that backlog is what the Tail drains.
 
-**Scored Board** — 30,577 *(measured 2026-08-28; not test-enforced)*:
+**Scored Board** — 28,548 *(measured 2026-08-28; not test-enforced)*:
 A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. **68% of Scraped Boards hold no score** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech and then decayed below the floor is in the same 68%.
-_Avoid_: deriving that 68% by dividing the two figures above. **Scored Board is not a subset of Scraped Board** — 3,181 Scored Boards hold no cost row, so `1 − 30,577/85,825` gives 64% and is wrong. It is a set difference: 58,441 of the 85,825 Scraped Boards are absent from the priority ledger.
-_Avoid_ too: comparing these two ledgers from a checkout that predates ADR-0096. They were keyed differently until 2026-08-28 — cost under the scraper's raw slug, priority under `board_key` — so the join was meaningless for Workday and Personio and inflated this gap from 3,181 to 6,906. Two separate analyses read that as a bug in the pipeline; it was a bug in the join.
+_Avoid_: deriving that 68% by dividing the two figures above. **Scored Board is not a subset of Scraped Board** — 2,062 Scored Boards hold no cost row, so `1 − 28,548/83,880` gives 66% and is wrong. It is a set difference: 57,394 of the 83,880 Scraped Boards are absent from the priority ledger.
+_Avoid_ too: comparing these two ledgers from a checkout that predates ADR-0096. They were keyed differently until 2026-08-28 — cost under the scraper's raw slug, priority under `board_key` — so the join was meaningless for Workday and Personio and inflated this gap from 2,062 to 6,906. Two separate analyses read that as a bug in the pipeline; it was a bug in the join.
 _Avoid_: reading its absence as a delisting. A Board with no score is not excluded from anything; it competes in the Tail exactly as an unscored Board does, and re-enters the ledger the next time it hires tech.
 
 

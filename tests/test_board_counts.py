@@ -101,7 +101,7 @@ def _counts() -> dict[str, int]:
         # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh
         # clone and in CI, so the one figure derived from it is skipped there rather than guessed.
         "scraped_not_unique": _scraped_not_unique(
-            {board_identity(c) for c in _dedupe_boards(live)}
+            {board_identity(c).lower() for c in _dedupe_boards(live)}
         ),
     }
 
@@ -125,7 +125,10 @@ def _scraped_not_unique(unique: set[str]) -> int | None:
     path = LEDGER.parent.parent / "state" / "board_cost.csv"
     if not path.exists():
         return None
-    return len(set(load_cost(path)) - unique)
+    # Case-folded on both sides. `board_key()` preserves case, so the ledger carries ADR-0023
+    # variants of one Board; counting them as separate Boards is the conflation this file exists
+    # to catch, and it inflated this figure from 600 to 2,552.
+    return len({k.lower() for k in load_cost(path)} - unique)
 
 
 def _abs_int(text: str) -> int:

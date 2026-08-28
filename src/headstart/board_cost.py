@@ -86,20 +86,19 @@ def _rekeyed(board: str) -> str:
     a second pass over an already-converted key keeps it unchanged rather than mangling it. A
     malformed slug lands in the same branch and also keeps its row.
 
-    Remove once no ledger in flight predates 2026-08-28: one ``update_ledgers cost`` run
-    load-updates-saves the whole file, so the ledger self-migrates on the first run after this
-    ships and the shim is then a no-op on every row.
+    Remove once ``update_ledgers cost`` reports 0 rows re-keyed: one run load-updates-saves the
+    whole file, so the ledger self-migrates on the first run after this ships and the shim is then
+    a no-op on every row. That log line is the reminder — the condition is otherwise invisible.
+
+    Delegates to :func:`headstart.config.board_identity` rather than repeating its cascade.
+    Verified identical across all 85,839 rows of the live ledger, and a second implementation that
+    had to stay in lockstep with the first is precisely what ADR-0049 and ADR-0059 are records of.
+    Imported inside the function, as `board_priority` does, to keep the module import-light.
     """
-    from headstart.scrapers.registry import SCRAPERS
+    from headstart.config import CompanyRef, board_identity
 
     ats, _, slug = board.partition(":")
-    scraper = SCRAPERS.get(ats)
-    if scraper is None or not slug:
-        return board
-    try:
-        return scraper(slug).board_key()
-    except Exception:  # noqa: BLE001 — already a board_key, or a slug no scraper can read
-        return board
+    return board_identity(CompanyRef(ats=ats, slug=slug, name=""))
 
 
 def load(path: str | Path) -> dict[str, BoardCost]:

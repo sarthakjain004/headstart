@@ -24,8 +24,8 @@ same Boards differently.
 Neither key was chosen; both were inherited. Cost is written by `harvest`, which holds the slug it
 is fetching — for Workday that slug *is* the careers URL, pod included. Priority is written from
 Job ids, and a Job id is `{ats}:{board_key}:{native}`, so anything derived from ids speaks
-`board_key`. 17 of 20 ATSes have nothing to strip and the two agree; only Workday and Personio
-diverge.
+`board_key`. Only Workday and Personio override `board_key()`; every other ATS has nothing to
+strip and the two spellings already agree.
 
 Nothing was broken. ADR-0049 taught `scrape_plan` to carry **both** keys for each Board and read
 each ledger with its own, and it works: measured 2026-08-28, the cost lookup hits 99.9% on Workday
@@ -63,7 +63,7 @@ window in which a lookup misses. ADR-0059's objection is answered rather than ov
   callback**, because those name the URL this shard is actually fetching.
 - `scrape_plan` looks the ledger up with the same key, and `_gated_boards` takes one key instead
   of a `(cost_key, priority_key)` pair.
-- The ledger on HF is re-keyed once by `scripts/migrate/rekey_board_cost.py`.
+- The ledger already on HF re-keys itself, via a read-time shim — see Migration below.
 
 `board_key` rather than `{ats}:{slug}` because unifying the other way would mean re-keying every
 Job id — Workday ids would carry a full URL with `://` and `/` — and re-indexing 330k rows, while
