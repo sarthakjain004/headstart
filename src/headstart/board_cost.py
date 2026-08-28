@@ -86,9 +86,10 @@ def _rekeyed(board: str) -> str:
     a second pass over an already-converted key keeps it unchanged rather than mangling it. A
     malformed slug lands in the same branch and also keeps its row.
 
-    Remove once ``update_ledgers cost`` reports 0 rows re-keyed: one run load-updates-saves the
-    whole file, so the ledger self-migrates on the first run after this ships and the shim is then
-    a no-op on every row. That log line is the reminder — the condition is otherwise invisible.
+    Remove once ``update_ledgers cost`` stops reporting ``N legacy key(s) re-keyed`` — see
+    :func:`legacy_key_count`, which exists to make that condition observable rather than a date
+    someone has to remember. One run load-updates-saves the whole file, so the ledger
+    self-migrates on the first run after this ships and the shim is then a no-op on every row.
 
     Delegates to :func:`headstart.config.board_identity` rather than repeating its cascade.
     Verified identical across all 85,839 rows of the live ledger, and a second implementation that
@@ -101,12 +102,30 @@ def _rekeyed(board: str) -> str:
     return board_identity(CompanyRef(ats=ats, slug=slug, name=""))
 
 
+def legacy_key_count(path: str | Path) -> int:
+    """How many rows in the file are still keyed the pre-ADR-0096 way.
+
+    The removal trigger for :func:`_rekeyed`, logged by ``update_ledgers cost``. Without it the
+    shim's exit condition is a date nobody will check — and a comment describing a mechanism that
+    is not there is the exact failure ADR-0059 is the record of.
+    """
+    path = Path(path)
+    if not path.exists():
+        return 0
+    with path.open(newline="", encoding="utf-8") as fh:
+        return sum(
+            1 for row in csv.DictReader(fh) if _rekeyed(row["board"]) != row["board"]
+        )
+
+
 def load(path: str | Path) -> dict[str, BoardCost]:
     """The ledger as {board: BoardCost}; {} when the file doesn't exist yet.
 
     Keys are normalised to ``board_key`` on the way in (ADR-0096) — see :func:`_rekeyed`. Where a
     legacy row and a current one collapse to the same Board, the **newer** measurement wins, since
-    it is the one describing the Board as it is now.
+    it is the one describing the Board as it is now. On an equal ``updated_at`` the first row in
+    the file wins, which given :func:`save`'s cost-descending order is the more expensive of the
+    two — deterministic, and conservative in the direction that matters for packing.
     """
     path = Path(path)
     if not path.exists():

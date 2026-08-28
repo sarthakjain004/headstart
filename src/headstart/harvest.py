@@ -246,7 +246,9 @@ def scrape_all(
     # ledger and survives a Workday tenant moving between pods (ADR-0096). Everything else in this
     # loop — resume, errors, the `on_board` callback — stays on `{ats}:{slug}`, the shard's own
     # working identity for the URL it is actually fetching. Built once, after the resume filter,
-    # so it covers exactly the Boards this shard will submit.
+    # so it covers exactly the Boards this shard will submit — every key both `record_cost` sites
+    # can see comes from this same list, so a subscript is right and a `.get` default would be
+    # unreachable error handling that silently wrote a legacy-shaped key if it ever were not.
     cost_key = {f"{c.ats}:{c.slug}": board_identity(c) for c in companies}
 
     seen_ids: set[str] = set()
@@ -277,7 +279,7 @@ def scrape_all(
                 key
             )  # mark on completion (success or error): resume moves on
             seconds = elapsed.pop(key, 0.0)
-            writer.record_cost(cost_key.get(key, key), seconds, n_fresh)
+            writer.record_cost(cost_key[key], seconds, n_fresh)
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
             if progress_every and done % progress_every == 0:

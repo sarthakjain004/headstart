@@ -58,6 +58,8 @@ for f in ('board_cost', 'board_priority'):
     p = d('imPoseidon/headstart-index', f'data/state/{f}.csv', repo_type='dataset', local_dir='.')
     keys = [r['board'].lower() for r in csv.DictReader(open(p))]
     print(f, len(keys), 'rows ->', len(set(keys)), 'Boards')"
+# for board_cost specifically, read it through the loader so pre-ADR-0096 keys are normalised:
+python -c "from headstart.board_cost import load; print(len({k.lower() for k in load('data/state/board_cost.csv')}))"
 ```
 Count distinct keys, never lines — both files carry case-variants.
 
@@ -86,7 +88,7 @@ The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boar
 Two more count Board *history* rather than eligibility, and neither is a denominator for the above:
 
 **Scraped Board** — 83,880 *(measured 2026-08-28; not test-enforced)*:
-A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. **Distinct Boards, not rows**: the file holds 85,839 lines, of which 1,959 are ADR-0023 case-variants of a Board already counted, so a `wc -l` reproduces the very conflation this section exists to kill. Load it through `board_cost.load()` (which also normalises pre-ADR-0096 keys) and fold case. Some Scrapable Boards have never been scraped at all; that backlog is what the Tail drains.
+A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. **Distinct Boards, not rows**: the file holds 85,839 lines, of which 1,945 are ADR-0023 case-variants of a Board already counted and 14 are two URL spellings of one Workday Board, so a `wc -l` reproduces the very conflation this section exists to kill. Load it through `board_cost.load()` (which normalises pre-ADR-0096 keys) and fold case. Some Scrapable Boards have never been scraped at all; that backlog is what the Tail drains.
 
 **Scored Board** — 28,548 *(measured 2026-08-28; not test-enforced)*:
 A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. **68% of Scraped Boards hold no score** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech and then decayed below the floor is in the same 68%.

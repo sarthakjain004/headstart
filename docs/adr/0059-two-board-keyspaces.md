@@ -5,7 +5,6 @@
 `pick_boards` understated the problem) · **Relates to:**
 [ADR-0022](0022-tech-priority-board-ordering.md), [ADR-0027](0027-measured-scrape-cost-ledger.md)
 
-
 > **Superseded 2026-08-28 by [ADR-0096](0096-one-key-for-both-board-ledgers.md).** This ADR kept the two keyspaces deliberately, on the grounds that
 > re-keying only the *reader* would break cost lookups for the same 13,402 Boards. That holds.
 > ADR-0096 moves the **writer** as well and adds a read-time shim for rows written before it,

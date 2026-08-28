@@ -116,5 +116,10 @@ The two ledgers are now joinable, which is what both people who got this wrong w
 already fetch this URL", cost answers "how expensive is this Board". Merging them would make a
 resumed shard skip a pod it had not actually read.
 
+**Forward-only.** Reverting this after the ledger has migrated is not symmetric: the old code
+reading a board_key-keyed ledger drops to an 81.6% hit rate and loses all 7 gated giants — the
+mirror of the failure that made the shim necessary. If it ever has to come out, re-key the ledger
+back in the same change.
+
 **ADR-0049's pairing is retired, not its lesson.** It remains the record of what reading one
 ledger with the other's key costs.
