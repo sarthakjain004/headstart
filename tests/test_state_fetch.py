@@ -92,28 +92,46 @@ def test_reason_survives_an_error_carrying_no_response() -> None:
     )
 
 
-def test_limiter_note_names_the_quota_when_the_hub_reports_one() -> None:
-    exc = _hub_error(_HF_429, 429)
-    exc.response.headers = {"RateLimit": '"api";r=0;t=137'}  # type: ignore[attr-defined]
+def _with_headers(exc: Exception, headers: dict[str, str]) -> Exception:
+    exc.response.headers = headers  # type: ignore[attr-defined]
+    return exc
+
+
+def test_limiter_note_quotes_the_window_the_hub_reported() -> None:
+    exc = _with_headers(_hub_error(_HF_429, 429), {"RateLimit": '"api";r=0;t=137'})
     assert sf.limiter_note(exc) == '; limiter said "api";r=0;t=137'
 
 
-def test_limiter_note_flags_a_429_the_documented_limiter_did_not_send() -> None:
-    """The header's ABSENCE is the finding, and it is why this exists.
+def test_limiter_note_records_a_429_that_carried_no_header() -> None:
+    """The header's absence is the finding, and it is why this exists.
 
-    HF's own limiter always sets `RateLimit` — measured 2026-08-28, a plain 200 carried
-    `ratelimit: "api";r=999;t=291`. Run 33159268268's 429s carried none, while the pipeline was
-    spending ~30 API calls a run against a 1,000-per-5-minutes allowance. Without this line the
-    log looks identical to real quota exhaustion, and the obvious fix (fewer API calls) is aimed
-    at a cost that was never there.
+    Run 33159268268's 429s carried a CloudFront id and no `RateLimit`, so `reset_after` found
+    nothing and the ladder ran instead of a real window. Without this clause that log line is
+    indistinguishable from real quota exhaustion — and the obvious remedy, spending fewer API
+    calls, is then aimed at a cost the measurements say was never there.
     """
-    assert sf.limiter_note(_hub_error(_HF_429, 429)) == (
-        "; no RateLimit header, so not the documented quota limiter"
+    assert (
+        sf.limiter_note(_hub_error(_HF_429, 429)) == "; no RateLimit header on the 429"
     )
 
 
-def test_limiter_note_is_silent_when_there_is_no_response_to_read() -> None:
+def test_limiter_note_stays_silent_on_statuses_it_cannot_speak_to() -> None:
+    """A 401 or a 503 has no bearing on the rate limiter, so it must not collect a verdict."""
+    assert sf.limiter_note(_hub_error("unauthorized", 401)) == ""
+    assert sf.limiter_note(_hub_error("bad gateway", 503)) == ""
     assert sf.limiter_note(_hub_error("connection reset", None)) == ""
+
+
+def test_limiter_note_treats_a_blank_header_as_absent() -> None:
+    exc = _with_headers(_hub_error(_HF_429, 429), {"RateLimit": "   "})
+    assert sf.limiter_note(exc) == "; no RateLimit header on the 429"
+
+
+def test_reason_stays_one_line_even_when_a_header_carries_a_newline() -> None:
+    """`reason_for` folds the exception text *before* appending the note, so the note has to
+    fold itself — ADR-0039 renders only the first line of an annotation."""
+    exc = _with_headers(_hub_error(_HF_429, 429), {"RateLimit": '"api";r=0;\n t=137'})
+    assert "\n" not in sf.reason_for(exc)
 
 
 def test_reset_after_reads_the_hubs_own_window() -> None:

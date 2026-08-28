@@ -21,7 +21,7 @@ without a ``siblings`` list at all. Requiring exactly what the Hub reports also 
 opt-out — a first run matches nothing, requires nothing, and proceeds.
 
 Retries wait as long as the Hub says to, within a fixed total budget. HF meters **fixed 5-minute
-windows** and reports the remaining seconds in the ``RateLimit`` header of every 429, so
+windows** and reports the remaining seconds in a ``RateLimit`` header, so
 ``reset_after`` reads it and :func:`wait_before`'s exponential ladder (ADR-0033) is only the
 fallback for failures that advise nothing. When the budget cannot cover the window the Hub named,
 the fetch stops rather than retry early, because an early retry spends another request inside the
@@ -98,25 +98,29 @@ def _headers(exc: Exception) -> dict[str, str]:
 
 
 def limiter_note(exc: Exception) -> str:
-    """Whether the Hub's own rate limiter is what refused us — its ABSENCE is the diagnostic.
+    """What the ``RateLimit`` header said on a 429 — including that there wasn't one.
 
-    HF's documented limiter always sets ``RateLimit`` (measured 2026-08-28: a plain 200 carried
-    ``ratelimit: "api";r=999;t=291`` beside ``ratelimit-policy: "fixed window";"api";q=1000;w=300``).
-    So a 429 **without** that header did not come from the quota we are budgeted against — on
-    2026-08-28 run 33159268268 the 429s carried a CloudFront request id and no ``RateLimit`` at
-    all, while this pipeline spends ~30 API calls a run against a 1,000-per-5-minutes allowance.
-    Reading that as quota exhaustion sends you optimising calls that were never the cost.
+    This reports the *fact*, not a verdict, because the inference behind it is weaker than it
+    looks and the log is the wrong place to bury that. What is measured: on 2026-08-28 a plain
+    200 from the datasets API carried ``ratelimit: "api";r=999;t=291`` beside
+    ``ratelimit-policy: "fixed window";"api";q=1000;w=300``, and run 33159268268's five 429s
+    carried a CloudFront request id and no ``RateLimit`` at all — which is why ``reset_after``
+    found nothing and the ladder ran instead of a real window. What is NOT measured: whether a
+    429 the documented limiter *does* send always carries the header. That is one 200 response,
+    not a sample of limiter-sent 429s, so treat a missing header as "look upstream", never as
+    proof the quota was fine.
 
-    Printed on every retry line because the two cases want opposite responses: a real quota 429
-    is answered by waiting the window out (`reset_after`), an edge refusal by retrying at all.
-    Empty for a non-HTTP failure, which has no headers to tell us either way.
+    Why it earns a line: the two cases want opposite responses — a quota 429 is answered by
+    waiting the window out, an edge refusal by retrying at all — and without it both render
+    identically. Scoped to 429 so a 401 or a 503 does not collect a rate-limit verdict it has no
+    bearing on, and whitespace-collapsed because ``reason_for`` folds the exception text *before*
+    appending this, so a newline in a header value would otherwise split the annotation (ADR-0039).
     """
-    if _response(exc) is None:
+    response = _response(exc)
+    if getattr(response, "status_code", None) != 429:
         return ""
-    limit = str(_headers(exc).get("ratelimit", "")).strip()
-    if limit:
-        return f"; limiter said {limit}"
-    return "; no RateLimit header, so not the documented quota limiter"
+    limit = " ".join(str(_headers(exc).get("ratelimit", "")).split())
+    return f"; limiter said {limit}" if limit else "; no RateLimit header on the 429"
 
 
 def reason_for(exc: Exception) -> str:
