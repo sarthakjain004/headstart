@@ -19,13 +19,16 @@ The run is two symmetric halves — **plan → run → gather** — so each modu
                              it moved to the `cleanup-index` workflow)
     role_trends     stage 5  count the served stock into role families (ADR-0040)
 
-One more entry point is not a stage but opens three of them (and ``cleanup-index``)::
+Two more entry points are not stages. One opens three of them (and ``cleanup-index``), the other
+closes the run::
 
     state_fetch     stages 1/3/5  pull this stage's slice of HF state, or abort (ADR-0030)
+    state_witness   stage 5       record which state roots this run published, so a later fetch
+                                  can tell an emptied dataset from a first run (ADR-0095)
 
 Each is run as ``python -m headstart.ingest.<module>``. They live here rather than under
 ``scripts/`` because they are the product's pipeline, not one-off tooling: being importable
-makes them unit-testable without ``importlib`` path-loading, and keeps the run's thirteen entry
+makes them unit-testable without ``importlib`` path-loading, and keeps the run's fourteen entry
 points from being scattered across five ``scripts/`` subdirs mixed in with R&D scripts.
 
 Alongside them, the helper modules with no consumer outside this package::

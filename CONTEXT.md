@@ -191,6 +191,19 @@ _Avoid_: reading it as a probability, or re-scaling it per results page — the 
 
 ### Pipeline scheduling and sharding
 
+**Published-dirs witness** (ADR-0095):
+`data/state/published_dirs.json`, naming the state roots the pipeline last uploaded. It exists to
+answer one question the Hub's own file listing cannot: whether a listing that matched *nothing*
+means a genuine first run or an emptied `HF_DATASET`. Every state root is gitignored, so a file
+published only into the dataset is absent from a fresh fork and present on any repo the pipeline
+has written — the asymmetry the committed liveness ledger lacked. Written by `merge` alone, read
+by `state_fetch` only when a pattern matched nothing, at zero Hub API-bucket cost.
+_Avoid_: calling it a manifest — it lists **directories that exist**, never files, and the
+distinction is the design. `data/embeddings/jobs/manifest.json` (the vector store's dim/count) and
+`data/state/role_centroids/manifest.json` (centroid provenance) are unrelated files with that name.
+_Avoid_: reading it as complete. It can only ever **under**-claim: a root it omits costs nothing,
+while a root it wrongly claimed would fail every later fetch closed.
+
 **Board-priority ledger (EWMA)**:
 The per-Board tech-yield score in `data/state/board_priority.csv`, kept as an **EWMA** — an Exponentially-Weighted Moving Average. Each run blends a Board's fresh tech-Job count into its prior score (`0.7·now + 0.3·history`), so recent nights dominate while older counts decay rather than being forgotten or weighted equally (ADR-0022). Boards the run didn't scrape keep their score unchanged — a partial harvest must not decay what it never looked at — and a score decayed below a floor drops out. The ledger orders both the scrape slice (high-yield Boards first) and the within-**Bucket** embed order.
 _Avoid_: reading it as an exact count — it is a decaying average, an estimate of a Board's tech yield. _Avoid_: using it as a **cost** estimate. It answers "is this Board worth scraping?", not "how long will it take" — ADR-0026 conflated the two and the resulting pack was measurably useless. Cost lives in the **Board-cost ledger**.

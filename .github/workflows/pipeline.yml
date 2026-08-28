@@ -750,6 +750,16 @@ jobs:
             done
             return 1
           }
+          # Record which state roots this run is about to publish (ADR-0095). It is what lets a
+          # later fetch tell a genuine first run from an emptied dataset — the hole ADR-0030 names
+          # and leaves open. Written into data/state/, so the upload below carries it and no new
+          # write point exists to keep in lockstep.
+          # Never fatal: the four uploads below matter more than the witness that describes them.
+          # A failure here leaves the PRIOR witness in place, which names roots this dataset still
+          # holds — stale in the safe direction. Under `bash -e` an unguarded failure would sink
+          # all four uploads instead.
+          python -m headstart.ingest.state_witness publish \
+            || echo "::warning::could not publish the state witness; the prior one stands"
           up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
           # Deliberately NOT --delete: nothing compacts here any more, so no local fragment is
@@ -759,13 +769,18 @@ jobs:
           # fragments get reaped.
           up "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --commit-message "nightly: lancedb index"
-          up "$HF_DATASET" data/state data/state \
-            --repo-type dataset --commit-message "nightly: board priority"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
           # `cleanup-index` folds the fragments into the bases with --delete.
           up "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
+          # data/state LAST, because it carries the witness (ADR-0095). The property is that the
+          # witness is never committed BEFORE the roots it vouches for: if an upload above fails,
+          # `bash -e` stops here and the new witness is simply never published, leaving the prior
+          # one — which names roots the dataset still holds. Uploaded first, it would name a root
+          # whose upload then failed, and an over-claiming witness fails every later fetch closed.
+          up "$HF_DATASET" data/state data/state \
+            --repo-type dataset --commit-message "nightly: board priority + published-dirs witness"
       # Reclaim dataset history here rather than from a separate scheduled workflow (ADR-0071).
       # A standalone squash shares this group, so it sits *pending* behind the run in flight —
       # measured at 37-55 min — and an hourly cron then displaces it. Run from inside the job
