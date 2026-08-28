@@ -17,6 +17,8 @@ actually runs in CI rather than skipping and reading green.
 
 from __future__ import annotations
 
+import csv
+import functools
 import re
 from pathlib import Path
 
@@ -48,13 +50,22 @@ def _live_companies() -> list[CompanyRef]:
     return out
 
 
+@functools.cache
 def counts() -> dict[str, int]:
-    """Every git-derivable figure in CONTEXT.md §Counting Boards, from the ledger itself."""
-    rows = {p.stem: liveness.load(p) for p in sorted(LEDGER.glob("*.csv"))}
+    """Every git-derivable figure in CONTEXT.md §Counting Boards, from the ledger itself.
+
+    Cached: four tests want it and it re-reads 20 CSVs each time (~1.3s a call).
+    """
+    # Counted off the raw lines, not `liveness.load()`'s tenant-keyed dict. The glossary defines a
+    # Ledger row as one LINE, and CLAUDE.md's own "duplicate boards" section says these ledgers
+    # routinely hold more than one row per board — a dict would collapse exactly those and
+    # under-report the number this entry exists to name.
     by_status: dict[str, int] = {}
-    for recs in rows.values():
-        for v in recs.values():
-            by_status[v.status] = by_status.get(v.status, 0) + 1
+    for path in sorted(LEDGER.glob("*.csv")):
+        with path.open(encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                st = (row.get("status") or "").strip()
+                by_status[st] = by_status.get(st, 0) + 1
 
     live = _live_companies()
     unique = _dedupe_boards(live)
@@ -77,18 +88,21 @@ def counts() -> dict[str, int]:
     }
 
 
-def _n(text: str) -> int:
+def _abs_int(text: str) -> int:
+    """The magnitude of a figure, sign discarded — the funnel writes its deltas as `−25,416`
+    and sums them as positives. Handles the Unicode minus the docs use and the ASCII one."""
     return int(text.replace(",", "").replace("−", "").replace("-", "").strip())
 
 
 def _glossary() -> dict[str, int]:
     """`**Term** — 1,234:` lines out of CONTEXT.md's Counting Boards section."""
     body = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
-    section = body.split("#### Counting Boards", 1)[1].split("\n### ", 1)[0]
+    section = body.split("### Counting Boards", 1)[1].split("\n### ", 1)[0]
     # Not anchored on a trailing colon: the two HF-backed entries carry a "measured on" note
     # between the figure and it, and requiring the colon silently dropped them from the parse.
     return {
-        m[1]: _n(m[2]) for m in re.finditer(r"\*\*([\w ]+)\*\* — ([\d,]+)", section)
+        m[1]: _abs_int(m[2])
+        for m in re.finditer(r"\*\*([\w ]+)\*\* — ([\d,]+)", section)
     }
 
 
@@ -109,10 +123,20 @@ def test_the_glossary_agrees_with_the_ledger() -> None:
     )
 
 
-def test_the_glossary_covers_the_hf_backed_counts_it_cannot_check() -> None:
-    """Their presence is the assertion: a reader must not think all of them are guarded."""
-    said = _glossary()
-    assert "Scraped Board" in said and "Scored Board" in said
+def test_the_two_unguarded_counts_say_so_where_a_reader_will_see_it() -> None:
+    """Partial coverage that reads as total is the trap. These two cannot be checked — they live
+    only on HF — so the glossary must both list them and mark them, or a reader takes the whole
+    section as enforced."""
+    body = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
+    section = body.split("### Counting Boards", 1)[1].split("\n### ", 1)[0]
+    for term in ("Scraped Board", "Scored Board"):
+        # the definition line, not the first mention — both terms also appear in the intro prose,
+        # and splitting on the bare name matched that instead (this test caught it on itself)
+        line = re.search(rf"^\*\*{term}\*\* — [\d,]+.*$", section, re.MULTILINE)
+        assert line, f"{term} has no definition line in the glossary"
+        assert "not test-enforced" in line[0], (
+            f"{term} is not marked as unchecked, so the section reads as fully guarded"
+        )
 
 
 def test_the_readme_funnel_agrees_with_the_ledger() -> None:
@@ -122,7 +146,7 @@ def test_the_readme_funnel_agrees_with_the_ledger() -> None:
     table = (ROOT / "README.md").read_text(encoding="utf-8")
     section = table.split("### Which boards a run picks", 1)[1].split("\n## ", 1)[0]
     figures = [
-        _n(m) for m in re.findall(r"\|\s*\*{0,2}(−?[\d,]+)\*{0,2}\s*\|", section)
+        _abs_int(m) for m in re.findall(r"\|\s*\*{0,2}(−?[\d,]+)\*{0,2}\s*\|", section)
     ]
     assert figures, "could not parse the README funnel table"
     start, *deltas, end = figures

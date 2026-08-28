@@ -24,11 +24,34 @@ _Avoid_: job board, careers board.
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
-#### Counting Boards
+**Slug**:
+The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`.
+_Avoid_: handle, id, key, **token** — Greenhouse's own API spells it `boards-api.greenhouse.io/v1/boards/{token}`, so it leaks in easily; the thing it names is still a Slug, and the thing it locates is a **Board**.
+
+**Scraper**:
+The module for one ATS that reads a Board and normalizes its raw postings into Jobs; one per ATS, selected from the registry by `ats`.
+_Avoid_: adapter, parser, client.
+
+**Company**:
+The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
+
+**Required experience**:
+The years of prior experience a Job asks for, as a whole-year range — a floor with an optional ceiling, open-ended when only a minimum is stated. Extracted to a number so it can be filtered on ("at most N years"); the raw phrasing the ATS gave is kept separately. The number is either **stated** (read from a field or the description) or, when none is stated, a lower-confidence **floor estimated from the Job's seniority level** (its title/level suffix, e.g. "Senior" → 5; ADR-0018) — the `source` records which. Only a Job with **neither** a stated number **nor** a seniority signal is **unknown**, and unknown is deliberately not treated as too senior — it passes the "at most N years" filter rather than being hidden; a seniority-estimated floor, by contrast, can place a Job above the filter.
+_Avoid_: conflating **seniority** (a title level) with required experience — seniority only *estimates* a year count as a fallback, it is not itself the requirement.
+
+**Salary**:
+The compensation range a Job states, extracted to numbers so it can eventually be filtered on — a floor with an optional ceiling, open-ended when only a minimum is stated. Every figure is **period-normalized** to an annual amount (an hourly or monthly figure is annualized) but stays in its **native currency**, carried as its own field — a $ figure and a ₹ figure are never compared numerically, so there is no cross-currency conversion and no single "min salary" number spanning currencies. The number is either **stated** in a structured field or read out of the description (`source` records which); unlike **Required experience**, there is deliberately **no seniority-style fallback estimate** — a fabricated salary risks misleading a real financial decision in a way an experience floor-estimate doesn't. Only a Job with no stated number anywhere is **unknown**, and unknown is not treated as exclusionary — it passes any salary-related filter rather than being hidden (ADR-0082).
+_Avoid_: assuming `salary IS NOT NULL` (the `has_salary` filter) means "well-paid" — it is presence-only, not a number; treating the raw `salary` display string as a number before the parsed `min_salary_annual`/`max_salary_annual` columns exist for a given Job.
+
+### Counting Boards
 
 Five defensible answers exist to "how many Boards do we have", they differ by tens of thousands, and quoting the wrong one has already misled three separate discussions. Each name below binds to exactly one of them.
 
-Every figure here except the last two is **enforced by `tests/test_board_counts.py`**, which recomputes it from the committed ledger — so those cannot go stale without a red test. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted (`docs/agents/hf-dataset-inspection.md` has the one-liners).
+Every figure here except the last two is **enforced by `tests/test_board_counts.py`**, which recomputes it from the committed ledger — so those cannot go stale without a red test. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted:
+```
+python -c "from huggingface_hub import snapshot_download as d; d('imPoseidon/headstart-index', repo_type='dataset', local_dir='.', allow_patterns=['data/state/board_cost.csv','data/state/board_priority.csv'])"
+wc -l data/state/board_cost.csv data/state/board_priority.csv   # minus one header each
+```
 
 Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,617 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 43 Boards from the raw live rows but only **41** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −43 / −6,615. Both reconcile; neither is quotable without saying which order it used.
 
@@ -50,7 +73,7 @@ _Avoid_: calling this "unique" — the 25,460 Boards between it and Unique Board
 A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 31,796 are live but empty.
 
 **Slice** — 20,000:
-The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boards` into a **Head** (6,000, the top-scored) and a **Tail** (14,000, random over everything not in the Head). Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
+The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boards` into a **Head** (6,000, the top-scored) and a **Tail** (14,000). The Tail is random over everything not in the Head — *except* that ADR-0062 reserves a share of it for Boards with unsettled descriptions, so it is not purely random. Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
 
 Two more count Board *history* rather than eligibility, and neither is a denominator for the above:
 
@@ -58,27 +81,9 @@ Two more count Board *history* rather than eligibility, and neither is a denomin
 A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. 16,299 Scrapable Boards have never been scraped at all — the backlog the Tail exists to drain.
 
 **Scored Board** — 30,046 *(measured 2026-08-28; not test-enforced)*:
-A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. **74% of Scraped Boards have never earned one** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017).
+A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. **74% of Scraped Boards do not currently hold one** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech long ago and decayed below the floor is in the same 74%.
 _Avoid_: reading its absence as a delisting. A Board with no score is not excluded from anything; it competes in the Tail exactly as an unscored Board does, and re-enters the ledger the next time it hires tech.
 
-**Slug**:
-The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`.
-_Avoid_: handle, id, key, **token** — Greenhouse's own API spells it `boards-api.greenhouse.io/v1/boards/{token}`, so it leaks in easily; the thing it names is still a Slug, and the thing it locates is a **Board**.
-
-**Scraper**:
-The module for one ATS that reads a Board and normalizes its raw postings into Jobs; one per ATS, selected from the registry by `ats`.
-_Avoid_: adapter, parser, client.
-
-**Company**:
-The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
-
-**Required experience**:
-The years of prior experience a Job asks for, as a whole-year range — a floor with an optional ceiling, open-ended when only a minimum is stated. Extracted to a number so it can be filtered on ("at most N years"); the raw phrasing the ATS gave is kept separately. The number is either **stated** (read from a field or the description) or, when none is stated, a lower-confidence **floor estimated from the Job's seniority level** (its title/level suffix, e.g. "Senior" → 5; ADR-0018) — the `source` records which. Only a Job with **neither** a stated number **nor** a seniority signal is **unknown**, and unknown is deliberately not treated as too senior — it passes the "at most N years" filter rather than being hidden; a seniority-estimated floor, by contrast, can place a Job above the filter.
-_Avoid_: conflating **seniority** (a title level) with required experience — seniority only *estimates* a year count as a fallback, it is not itself the requirement.
-
-**Salary**:
-The compensation range a Job states, extracted to numbers so it can eventually be filtered on — a floor with an optional ceiling, open-ended when only a minimum is stated. Every figure is **period-normalized** to an annual amount (an hourly or monthly figure is annualized) but stays in its **native currency**, carried as its own field — a $ figure and a ₹ figure are never compared numerically, so there is no cross-currency conversion and no single "min salary" number spanning currencies. The number is either **stated** in a structured field or read out of the description (`source` records which); unlike **Required experience**, there is deliberately **no seniority-style fallback estimate** — a fabricated salary risks misleading a real financial decision in a way an experience floor-estimate doesn't. Only a Job with no stated number anywhere is **unknown**, and unknown is not treated as exclusionary — it passes any salary-related filter rather than being hidden (ADR-0082).
-_Avoid_: assuming `salary IS NOT NULL` (the `has_salary` filter) means "well-paid" — it is presence-only, not a number; treating the raw `salary` display string as a number before the parsed `min_salary_annual`/`max_salary_annual` columns exist for a given Job.
 
 ### Discovery and validation
 

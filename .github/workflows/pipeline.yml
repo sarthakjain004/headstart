@@ -72,8 +72,9 @@ on:
     inputs:
       max_boards:
         description: boards to scrape this run (0 = all live boards)
-        # 20000 of 59,790 live Boards on enabled ATSes — `scrape_plan` selects with `min_jobs=0`,
-        # so that is the count to compare against, not the 45,133 currently-hiring subset. Recount
+        # 20000 of 85,631 **Scrapable Boards** — `scrape_plan` selects with `min_jobs=0`, so that
+        # is the count to compare against, not the 53,835 **Hiring Board** subset (CONTEXT.md
+        # §Counting Boards; `tests/test_board_counts.py` keeps those two honest). Recount
         # after any liveness sweep rather than trusting this line (it read 52,925 until 2026-08-11):
         #   python -c "from headstart.config import load_active_companies as f; \
         #     print(len(f('data/validate/liveness', min_jobs=0)))"

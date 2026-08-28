@@ -145,7 +145,7 @@ The feed updates when `docs/jobs.json` changes on `main`. Two ways Vercel can pi
 - **~100 GB fast data transfer/month.** With compression the feed is ~1 MB on the wire, so this
   is generous for personal traffic. Watch it only if the dashboard gets popular.
 - **Feed size growth is the real scaling limit.** 5.2 MB / ~11,690 jobs today, but the active
-  board set is ~23k *currently-hiring* boards — the feed can grow to tens of MB. A single
+  board set is 53,835 **Hiring Boards** (CONTEXT.md §Counting Boards) — the feed can grow to tens of MB. A single
   static JSON that the browser downloads in full on every load gets slow well before any Vercel
   cap is hit. See "When to outgrow static" below.
 - **Git history bloat.** Committing a multi-MB `docs/jobs.json` every 6 h grows repo history

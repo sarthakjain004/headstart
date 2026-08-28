@@ -54,7 +54,7 @@ like every other state file.
 
 Four properties make this work, and each was a decision in its own right:
 
-**The unit is scrapes of that board, not runs.** Only ~20,000 of ~66,000 live boards [85,631 **Scrapable Boards** as of 2026-08-28; "live boards" names no single number — CONTEXT.md §Counting Boards] are in any
+**The unit is scrapes of that board, not runs.** Only ~20,000 of ~66,000 live boards are in any
 run's slice (`--max-boards 20000`, `EXPLORE_FRAC = 0.7`), and `index sync` already keeps
 Unauthoritative Boards out of `scraped_boards` (ADR-0053). A board this run did not read is **no
 evidence**, so its ids keep the state they had — the same convention the description-gap ledger
@@ -62,6 +62,11 @@ already uses ("A Board the run did not scrape, and an Unauthoritative Board, are
 keep their counts"). Counting an unscraped board as a confirmed sighting would reset every streak
 and make the grace period unreachable; counting it as an absence would evict against a board
 nobody looked at.
+
+> **Amended 2026-08-28 by the Board-counting vocabulary (CONTEXT.md §Counting Boards).** The
+> figure above was current when written; it is 85,631 today, and the phrase "live Boards" names
+> no single number — the count a Slice is drawn from is the **Scrapable Board**. The ratio has
+> widened, which strengthens the argument here rather than weakening it.
 
 **N = 2, on measured grounds.** Every false eviction in the investigation was a *single isolated*
 miss. The one id evicted twice, `successfactors:careers.hcltech.com:1364226855`, was verified

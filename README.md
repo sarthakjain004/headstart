@@ -164,7 +164,7 @@ consider (measured 2026-08-28; the terms are defined in `CONTEXT.md` §Counting 
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 117,708 | a row, not a board — 6,615 are duplicate spellings |
+| live rows in the ledger | 117,708 | a row, not a board — 6,617 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
 | − `config.EXCLUDED_BOARDS` | −43 | vendor test/sandbox boards, confirmed by reading their postings |
 | − case-variant dedupe | −6,615 | `company/External` and `company/external` are one board (ADR-0023) |

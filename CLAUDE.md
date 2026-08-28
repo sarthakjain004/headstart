@@ -271,7 +271,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   **Scrapable Board** (what a run may pick — the right default), **Hiring Board** (`min_jobs=1`),
   plus **Slice**/**Head**/**Tail** for one run and **Scraped**/**Scored Board** for history. The
   phrase "live boards" names no single number and should not be written. Quoting the wrong one has
-  already misled three separate discussions in one session, by factors up to 4x.
+  already misled three separate discussions in one session; the widest pair differs by 3.3x.
   `tests/test_board_counts.py` keeps the README funnel and the glossary honest by recomputing from
   the committed ledger — it needs no heavy deps, so unlike `test_readme_schema.py` it really runs
   in CI. It deliberately cannot check **Scraped Board** or **Scored Board**: those live only on HF
