@@ -10,7 +10,7 @@ prompted this file moved in opposite directions (1,276 rows then 813) while the 
 underneath barely moved at all.
 
 **Persistence is the number that matters, not the run total.** Each run scrapes only ~20,000 of
-~66,000 live Boards, so the total swings with whichever Boards happened to be in the slice. A
+the Scrapable Boards, so the total swings with whichever Boards happened to be in the slice. A
 Board's *streak* — how many runs in this window excluded it — survives that, and a streak equal
 to the window is the failure mode ADR-0053's Consequences section predicted and left unbounded.
 

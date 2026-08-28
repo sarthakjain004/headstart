@@ -32,6 +32,11 @@ evicts a Job when its Board is re-scraped and the posting is gone (ADR-0053), an
 scrape slice is a 20,000-Board sample of ~59,790 live Boards, throughput *is* freshness: more runs
 per day means each Board is revisited sooner and dead postings leave the index faster.
 
+> **Amended 2026-08-28 by the Board-counting vocabulary (CONTEXT.md §Counting Boards).** The
+> figure above was current when written; it is 85,631 today, and the phrase "live Boards" names
+> no single number — the count a Slice is drawn from is the **Scrapable Board**. The ratio has
+> widened, which strengthens the argument here rather than weakening it.
+
 The mechanism to close the gap was already present and unused. `concurrency: {group:
 nightly-pipeline, cancel-in-progress: false}` serializes runs on the dataset state; a run that
 fires while another is in flight does not race and does not die — it parks as *pending* and starts
