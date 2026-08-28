@@ -32,7 +32,8 @@ on:
         default: "1"
 
 permissions:
-  contents: read # `window` widens this for itself; `cleanup` must not inherit the widening
+  contents: read # `window` and `handback` widen this for themselves; `cleanup` must not
+  # inherit the widening — it holds HF_TOKEN and runs `--delete "*"`.
 
 concurrency:
   # Its OWN group, not the pipeline's. Sharing one looked like mutual exclusion and behaved like
@@ -185,3 +186,49 @@ jobs:
           HfApi(token=os.environ['HF_TOKEN']).restart_space(os.environ['HF_SPACE'])
           print('space restarted')
           "
+
+  # Hands the field back. The pipeline's `chain` job (ADR-0093) deliberately does NOT hand off
+  # while it is standing down for us — if it did, its successors would keep the pipeline in flight
+  # and `window` above would never see the zero it waits for. That makes the chain ours to
+  # restart: without this the cadence would sit idle until a cron fired, and the cron is the
+  # delivery ADR-0093 measured at 653-minute gaps.
+  #
+  # Its own job, not a step in `cleanup`, for the reason the permissions block above states:
+  # `cleanup` holds HF_TOKEN and must not also be able to dispatch workflows.
+  handback:
+    needs: [window, cleanup]
+    # Only once the field is actually ours to hand back — which is NOT the same as "`cleanup` did
+    # not run". `window` exits 0 with `proceed=false` on attempts 1-5, so a bare `!cancelled()`
+    # fired on every retry: five wasted dispatches that the pipeline gate stands straight back
+    # down, each one putting a run in flight against the very zero the next attempt is polling
+    # for. So: either the compaction ran (`proceed == 'true'`), or the retry chain ended red
+    # (`window` failed — exhausted, or its own re-dispatch never appeared), in which case the
+    # pipeline must not be left stopped as well.
+    if: >-
+      ${{ !cancelled() && (needs.window.outputs.proceed == 'true'
+      || needs.window.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # dispatch the pipeline
+    steps:
+      - name: Restart the pipeline chain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pipeline.yml -R "$GITHUB_REPOSITORY" -f chained=true
+          # Confirmed, not assumed, for the same reason `window` confirms its own re-dispatch: a
+          # 202 is not a run. This is the ONLY thing that restarts the chain after a yield, so a
+          # dropped dispatch here ends the cadence green until a cron happens to land.
+          for _ in $(seq 1 12); do
+            sleep 5
+            alive=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml --limit 5 \
+                      --json status --jq '[.[] | select(.status != "completed")] | length')
+            if [ "$alive" != "0" ]; then
+              echo "::notice::pipeline chain restarted after compaction"
+              exit 0
+            fi
+          done
+          echo "::error::the pipeline never restarted after compaction; the chain is stopped until the cron reseeds it"
+          exit 1

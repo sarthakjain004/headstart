@@ -7,16 +7,18 @@ name: nightly-pipeline
 #       → join (union fragments → tech-filter → descriptions → ledgers → plan the embed fan-out)
 #         → embed (matrix, ≤15 shards, each embeds its Docs into a fragment)
 #           → merge (single writer: concatenate → meta → sync → prune → trends → upload
-#             → restart).
+#             → restart)
+#             → chain (dispatch the successor — this is the cadence, ADR-0093).
 # Inert (green no-op) until the repo's HF_TOKEN secret is set: the gate in scrape-plan drives
 # `run`, and every downstream job/step is gated on it.
 #
 # Time budget (sized 2026-07-25 against measured run 30131376268 — see
 # docs/AI_Integration/embedding-throughput.md for the arithmetic):
-#   expected ~171 min, worst case 358 min (sum of job timeouts). The cron is hourly, i.e. shorter
-#   than a run — the `concurrency` group below queues cycles rather than racing them, which is
-#   what makes the cadence back-to-back (ADR-0071); see the note at the cron for the measured
-#   run-duration ceiling.
+#   expected ~171 min, worst case 358 min (sum of job timeouts). The `concurrency` group below
+#   queues cycles rather than racing them, so a successor that already exists starts the instant
+#   this run ends. What SUPPLIES that successor is the `chain` job, not the cron: GitHub stopped
+#   delivering this repo's scheduled events reliably on 2026-08-26 (ADR-0093, superseding ADR-0071
+#   on mechanism only). See the note at the cron for the measurement.
 # Every stage timeout is one of two kinds, and they are set on opposite principles:
 #   - scrape / embed BANK PARTIAL WORK, so their inner `timeout Nm ... || echo` is a *work budget*
 #     sized at ~3x the balanced makespan. Truncation is cheap and deliberate: the fragment uploads
@@ -53,7 +55,18 @@ on:
     # is why the reclaim moved *into* the merge job below (ADR-0071) rather than staying a
     # separate scheduled workflow that this cadence would have starved. Check
     # `repo_info(...).used_storage` before assuming headroom.
-    - cron: "30 * * * *" # hourly at :30; concurrency turns this into back-to-back
+    #
+    # SINCE 2026-08-28 THIS CRON IS NOT THE CADENCE — the `chain` job at the bottom is (ADR-0093).
+    # GitHub stopped delivering this repo's scheduled events reliably on 2026-08-26. Measured over
+    # the 40 hours after: gaps between scheduled pipeline runs went 55 min -> 145 -> 261 -> 653,
+    # and `bot.yml` — a `*/15` workflow nobody had touched — degraded in lockstep to 679-min gaps,
+    # while all four `workflow_dispatch` runs in the same window started instantly. Everything
+    # above about concurrency parking a successor still holds; the hand-off simply supplies the
+    # successor the cron no longer reliably does. The cron stays as a SEED and as the RECOVERY
+    # path if a chain ever breaks. It is not the only seed: `cleanup-index.yml`'s `handback`
+    # restarts the chain after a compaction, because the chain deliberately goes silent while
+    # yielding to one.
+    - cron: "30 * * * *" # hourly at :30; seeds and recovers the chain, no longer paces it
   workflow_dispatch:
     inputs:
       max_boards:
@@ -77,6 +90,13 @@ on:
         # Docs/run, ~126 min of embed across 15 shards at the post-pin-fix 2.89 s/Doc. Overshoot
         # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
         default: "20000"
+      chained:
+        # Set by the `chain` job below and by `cleanup-index.yml`'s `handback`, never by hand.
+        # It marks a run as part of the self-sustaining hand-off, so an ad-hoc manual dispatch —
+        # a one-off `max_boards=100` probe, say — cannot accidentally seed an endless chain of
+        # default-input runs.
+        description: internal - set by the previous run's hand-off; leave false for manual runs
+        default: "false"
 
 permissions:
   contents: read
@@ -158,7 +178,7 @@ jobs:
           if [ "$busy" != "0" ]; then
             # A warning, not an echo: standing down is normal but not free, and a run of them in
             # a row means a compaction is stuck. Silence is what let the mirror bug hide.
-            echo "::warning::cleanup-index is active ($busy) - standing this run down; the next fire picks it up."
+            echo "::warning::cleanup-index is active ($busy) - standing this run down; the hand-off starts a successor."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -816,3 +836,85 @@ jobs:
           HfApi(token=os.environ['HF_TOKEN']).restart_space(os.environ['HF_SPACE'])
           print('space restarted')
           "
+  # ── Stage 6: hand off to the next run. This, not the cron, is what makes the cadence
+  # back-to-back (ADR-0093); the note at `schedule` above has the measurement that forced it.
+  chain:
+    needs: [scrape-plan, merge]
+    # Three conditions, and the middle one is load-bearing for ADR-0091.
+    #
+    # `!cancelled()` rather than `always()`: a run that succeeded or FAILED must still hand off,
+    # but a cancelled one must not — cancellation is a human stopping the line or the 6h ceiling,
+    # and dispatching past either is the runaway.
+    #
+    # `run == 'true'` is what keeps a compaction able to take the field at all. `cleanup-index`
+    # acquires its window by waiting for `gh run list --workflow=pipeline.yml --status
+    # in_progress` to reach ZERO, polling every 60s. So the chain has to go quiet exactly when the
+    # gate stands a run down — otherwise every stand-down hands off, its successor starts seconds
+    # later, and the pipeline is in flight essentially continuously. That starves the window and
+    # reinstates the ADR-0091 outage from the other side. The compaction restarts the chain itself
+    # when it is done (`handback` in cleanup-index.yml), so yielding costs a pause, not the
+    # cadence. The same condition is what keeps this workflow inert when HF_TOKEN is unset, as the
+    # header promises: without it a token-less repo would dispatch itself forever, all green.
+    #
+    # The event guard keeps chains self-sustaining yet un-startable by accident. Two things may
+    # seed a chain — a scheduled run, and a `chained=true` dispatch, which only this job and
+    # `cleanup-index.yml`'s `handback` send. A hand-run `workflow_dispatch` defaults `chained` to
+    # false and therefore ends with itself.
+    if: >-
+      ${{ !cancelled() && needs.scrape-plan.outputs.run == 'true'
+      && (github.event_name == 'schedule' || github.event.inputs.chained == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # a dispatch plus up to 13 API calls across a ≤60s confirmation poll
+    permissions:
+      actions: write # read recent conclusions; dispatch the successor
+    steps:
+      - name: Dispatch the successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE: ${{ needs.merge.result }}
+        run: |
+          # The runaway worth guarding is a pipeline that is simply broken, because a chain that
+          # re-fires on failure spins by construction. Three consecutive failures is not a flake —
+          # 2026-08-02 lost 21 of 25 runs to one cause — and each cycle costs ~22 jobs.
+          #
+          # Two things this deliberately refuses to count. `cancelled`, because the cron still
+          # displaces pending chained runs and those cancellations say nothing about health: count
+          # them and a failure/cancelled/failure sequence reads as one failure, so the breaker
+          # never trips. And this run itself when its `merge` SUCCEEDED — the pipeline has
+          # recovered, whatever the three before it did, so it hands off.
+          #
+          # Two blind spots, stated rather than papered over. A run the gate stood down concludes
+          # `success`, so a compaction's stand-downs reset the streak — harmless in practice,
+          # since the chain is not running during one. And `merge` carries `continue-on-error`
+          # throughout and runs on `always()`, so a run whose `join` died still concludes
+          # `success`: this catches hard failures, not a green run that published nothing. That
+          # case is not a spin — it cycles at the normal ~85 min — so it is a freshness bug to
+          # find in the ledgers, not a runaway for this guard to bound.
+          if [ "$MERGE" != "success" ]; then
+            recent=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml --limit 10 \
+                       --json conclusion \
+                       --jq '[.[].conclusion | select(. == "success" or . == "failure")][:3] | join(",")')
+            if [ "$recent" = "failure,failure,failure" ]; then
+              echo "::error::three consecutive failed runs and this one did not merge - stopping the chain. Fix the run; the cron reseeds it."
+              exit 1
+            fi
+          fi
+
+          gh workflow run pipeline.yml -R "$GITHUB_REPOSITORY" -f chained=true
+          # `gh workflow run` is fire-and-forget: it returns on a 202, not on a run existing, so a
+          # dropped dispatch would end the cadence silently green — the exact failure this job
+          # exists to remove. The question worth asking is not "did my dispatch land" but "is
+          # there a successor", which is why any other live run counts: if the cron already parked
+          # one, the cadence is covered either way.
+          for _ in $(seq 1 12); do
+            sleep 5
+            alive=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml --limit 5 \
+                      --json status,databaseId \
+                      --jq "[.[] | select(.status != \"completed\" and .databaseId != $GITHUB_RUN_ID)] | length")
+            if [ "$alive" != "0" ]; then
+              echo "::notice::successor is queued - concurrency starts it when this run ends"
+              exit 0
+            fi
+          done
+          echo "::error::no successor appeared after dispatch; the chain ends here until the cron reseeds it"
+          exit 1
