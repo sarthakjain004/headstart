@@ -1,6 +1,10 @@
 # ADR-0071: Back-to-back runs instead of a fixed cadence
 
-**Status:** accepted · **Date:** 2026-08-20 · **Relates to:**
+**Status:** accepted · **Date:** 2026-08-20 · **Amended by:**
+[ADR-0093](0093-chain-the-successor-the-cron-is-only-a-seed.md) (on the *mechanism* that delivers
+the cadence — GitHub stopped delivering this repo's cron reliably on 2026-08-26, so each run now
+dispatches its own successor; the cadence target and the storage arithmetic below stand) ·
+**Relates to:**
 [ADR-0020](0020-free-tier-deployment.md) (the free-tier deployment this cadence serves),
 [ADR-0025](0025-parallelize-nightly-pipeline.md) /
 [ADR-0026](0026-parallelize-nightly-scrape.md) (the fan-out whose duration now sets the cadence),
@@ -120,6 +124,13 @@ revisited rather than patched.
   deliberately cannot trigger a workflow recursively, so it needs a PAT to create, store and
   rotate. Worth revisiting if run durations fall well below 60 min, where the cron approach
   degrades and this does not.
+
+  **Adopted 2026-08-28 by [ADR-0093](0093-chain-the-successor-the-cron-is-only-a-seed.md), and the
+  reason for rejecting it was wrong.** `workflow_dispatch` is one of the two events the default
+  `GITHUB_TOKEN` *may* still trigger, so no PAT is involved and there was no cost of ownership to
+  reject it on. The revisit trigger guessed at here was also the wrong one: run durations never
+  fell below 60 min. What forced the change was GitHub ceasing to deliver this repo's scheduled
+  events at all.
 - **Half-hourly cron.** Closes the gap even after a fast run, but at 48 fires against ~19 runs it
   cancels ~29 pending runs a day, swamping `gh run list` and `scripts/runlog/`'s `--latest`.
 - **A hole in the cron reserving a maintenance window.** Implemented, measured, rejected — see
