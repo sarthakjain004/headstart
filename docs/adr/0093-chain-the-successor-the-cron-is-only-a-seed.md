@@ -41,12 +41,15 @@ that `schedule` delivery became unreliable and `workflow_dispatch` did not.
 
 ## Decision
 
-**Each run dispatches its own successor.** A `chain` job, `needs: [merge]`, ends every run with
+**Each run dispatches its own successor.** A `chain` job, `needs: [scrape-plan, merge]`, ends
+every run with
 `gh workflow run pipeline.yml -f chained=true`. The concurrency group then does what it always
 did: the successor parks as pending and starts the moment this run ends.
 
-The cron stays, demoted. It is now the **seed** — only a `schedule` run may start a chain — and
-the **recovery path** if a chain ever breaks. It no longer paces anything.
+The cron stays, demoted. It is now a **seed** and the **recovery path** if a chain ever breaks.
+It no longer paces anything. It is not the only seed: a chain also starts from any `chained=true`
+dispatch, which only the `chain` job and `cleanup-index`'s `handback` send. A hand-run
+`workflow_dispatch` defaults `chained` to false and so ends with itself.
 
 Three guards, because a self-sustaining loop that fires on failure is a runaway by construction:
 
@@ -72,15 +75,20 @@ Three guards, because a self-sustaining loop that fires on failure is a runaway 
   pipeline has recovered, whatever the three before it did.
 
 Because yielding now silences the chain, restarting it becomes the compaction's job:
-`cleanup-index` gains a `handback` job that dispatches the pipeline once it is finished with the
-dataset. It runs even when the compaction was skipped or failed, since a compaction that could not
-take the field must not also leave the pipeline stopped. It is a separate job rather than a step
-in `cleanup` for the reason that file already states — `cleanup` holds `HF_TOKEN` and must not
-also hold the right to dispatch workflows.
+`cleanup-index` gains a `handback` job that dispatches the pipeline once the field is ours to give
+back. That is narrower than "`cleanup` did not run": `window` exits **0** with `proceed=false` on
+retry attempts 1–5, so a bare `!cancelled()` fired on every retry — five wasted dispatches the
+gate stands straight back down, each putting a run in flight against the very zero the next
+attempt is polling for. So `handback` runs when the compaction ran (`proceed == 'true'`) or when
+the retry chain ended red (`window` failed), the latter because a compaction that could not take
+the field must not leave the pipeline stopped as well. It is a separate job rather than a step in
+`cleanup` for the reason that file already states — `cleanup` holds `HF_TOKEN` and must not also
+hold the right to dispatch workflows.
 
-The dispatch is confirmed, not assumed. `gh workflow run` returns on a 202, not on a run existing,
-so the job polls for a live successor and goes **red** if none appears. An unconfirmed dispatch
-would end the cadence silently green, which is the failure this ADR exists to remove.
+Both dispatches are confirmed, not assumed. `gh workflow run` returns on a 202, not on a run
+existing, so each polls for a live successor and goes **red** if none appears. An unconfirmed
+dispatch would end the cadence silently green, which is the failure this ADR exists to remove —
+and `handback` is the *only* thing that restarts the chain after a yield, so it needs it most.
 
 An internal `chained` input marks chain-initiated runs, so an ad-hoc manual dispatch (a one-off
 `max_boards=100` probe) cannot accidentally seed an endless chain of default-input runs.
@@ -111,6 +119,18 @@ Board is re-scraped and the posting is gone (ADR-0053), so at 3 runs/day the ser
 
 Cadence no longer depends on GitHub delivering cron. It does now depend on the `chain` job itself
 running, which the cron backstops.
+
+**One residual race, measured and not eliminated.** `handback` is a job *inside* the
+cleanup-index run, so that run is still `in_progress` while the pipeline it dispatched boots. If
+the pipeline's gate ran before cleanup-index finished, it would see a compaction still active and
+stand the run down — silently ending the chain. Measured on run 33122721078, the gate step
+completes **+23 s** after its job starts (checkout 3 s, setup-python 21 s), while `handback` exits
+at ~10 s: its confirmation poll finds the queued successor on the first 5 s tick. So the margin is
+roughly 15 s and it holds in every observed case, but **nothing enforces the ordering**. The
+recovery if it ever inverts is the cron, and the stand-down emits a `::warning::`, so the failure
+is logged rather than invisible. The clean fix — teaching the gate that a compaction which has
+finished writing is no longer busy — inverts the guard during window acquisition, when `cleanup`
+has not started yet, so it is left undone deliberately rather than half-built.
 
 **It fails closed.** Every path that loses the chain — a cancelled run, a `scrape-plan` failure
 early enough that no `run` output is set, a tripped breaker, an unconfirmed dispatch — stops the
