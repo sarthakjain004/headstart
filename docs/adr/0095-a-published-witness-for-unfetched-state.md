@@ -25,8 +25,12 @@ it **succeeds and matches nothing**:
 The nearest live edge is `cleanup-index.yml`: it fetches `data/descriptions/*` guarded by
 `|| exit 0`, then runs `update_descriptions --compact`, then `hf upload … --delete "*"`. The guard
 covers a *failed* fetch. It does not cover a fetch that succeeds having matched nothing. What stops
-a wipe there today is incidental — `--compact` iterates `store.glob("*")` and never creates the
-directory, so the CLI is handed a path that does not exist — and it is untested.
+a wipe there today is incidental, and now measured: `--compact` iterates `store.glob("*")` and
+never creates the directory, so `hf upload` is handed a path that does not exist and raises
+`FileNotFoundError` **before any network call** (`huggingface_hub/cli/upload.py:237`). Handed an
+*existing but empty* directory it proceeds instead — verified 2026-08-28, the attempt reached the
+Hub and failed only on repo permissions. So the store survives by one `mkdir` that nothing
+currently makes, which is a protection nobody designed and no test holds in place.
 
 ## Decision
 
@@ -42,8 +46,9 @@ claims a root the patterns draw from, the fetch aborts instead of bootstrapping.
 file, from one writer, at the moment of upload. Omitting a root costs nothing — the fetch behaves
 as it did before this ADR. Claiming one wrongly would fail every later fetch closed, which is an
 outage rather than a degradation, so nothing ever unions in a root it did not just observe. The
-`data/state` upload moves **last** in `merge` for the same reason: committed after the roots it
-vouches for, a mid-sequence failure leaves it naming fewer, never more.
+`data/state` upload moves **last** in `merge` for the same reason: the witness is never committed
+*before* the roots it vouches for, so an upload that fails above it leaves the prior witness
+standing rather than a new one naming a root that never landed.
 
 **It abstains on `data/state/role_centroids`.** `cluster-roles.yml` writes that on its own
 schedule, so a pipeline run that never touches it must not be read as having lost it.

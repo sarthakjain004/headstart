@@ -99,7 +99,7 @@ class _EntryNotFound(Exception):
 def _stub_hub(monkeypatch, download) -> None:
     module = types.ModuleType("huggingface_hub")
     errors = types.ModuleType("huggingface_hub.errors")
-    errors.EntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    errors.RemoteEntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
     module.errors = errors  # type: ignore[attr-defined]
     module.hf_hub_download = download  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "huggingface_hub", module)
@@ -114,6 +114,44 @@ def test_published_roots_reads_none_when_the_dataset_has_no_witness(
 
     _stub_hub(monkeypatch, missing)
     assert sw.published_roots("repo", None) is None
+
+
+def test_a_connection_failure_is_not_read_as_an_absent_witness(monkeypatch) -> None:
+    """The trap `published_roots` is written against, as a regression test.
+
+    `hf_hub_download` raises `LocalEntryNotFoundError` for "most likely a connection issue or Hub
+    downtime" — a 429 or 5xx included — and that class **subclasses `EntryNotFoundError`**
+    (verified against huggingface_hub 1.21.0). Catching the parent therefore reads an unreachable
+    Hub as "this dataset published nothing", reopening ADR-0030's hole on exactly the transient
+    failure class that lost run 30304173982. The first version of this module had that bug, and
+    `HF_HUB_OFFLINE=1` returned `None`.
+    """
+
+    class _Parent(Exception):
+        pass
+
+    class _Remote(_Parent):
+        pass
+
+    class _Local(_Parent):  # what a connection failure really raises
+        pass
+
+    module = types.ModuleType("huggingface_hub")
+    errors = types.ModuleType("huggingface_hub.errors")
+    errors.EntryNotFoundError = _Parent  # type: ignore[attr-defined]
+    errors.RemoteEntryNotFoundError = _Remote  # type: ignore[attr-defined]
+    errors.LocalEntryNotFoundError = _Local  # type: ignore[attr-defined]
+    module.errors = errors  # type: ignore[attr-defined]
+
+    def unreachable(*a, **k):
+        raise _Local("connection issue or Hub downtime")
+
+    module.hf_hub_download = unreachable  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", errors)
+
+    with pytest.raises(_Local):
+        sw.published_roots("repo", None)
 
 
 def test_published_roots_propagates_anything_that_is_not_a_missing_file(

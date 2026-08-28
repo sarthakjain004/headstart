@@ -190,20 +190,26 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
-            wanted = remote_matches(remote_files(repo, token), patterns)
-            # An empty match is the one case the listing cannot rule on: a genuine first run and
-            # an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says exactly this
-            # and leaves the hole open for want of a witness that survives a failed fetch; the
-            # dataset now carries one (ADR-0095). Consulted only here, so a normal fetch spends
-            # nothing on it — and reading it costs no API-bucket request even when it is consulted.
+            listing = remote_files(repo, token)
+            wanted = remote_matches(listing, patterns)
+            # A pattern that matches nothing is the one case the listing cannot rule on: a genuine
+            # first run and an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says
+            # exactly this and leaves the hole open for want of a witness that survives a failed
+            # fetch; the dataset now carries one (ADR-0095).
+            #
+            # Asked **per pattern**, not of `wanted`. `wanted` is the union, so `merge`'s
+            # `data/embeddings/jobs/* data/lancedb/*` would stay non-empty with the whole table
+            # wiped, and the witness would never be consulted on the root that actually vanished.
+            # Per-pattern, each root answers for itself.
             #
             # `break`, not `continue`: the answer is deterministic, so retrying would re-list four
             # more times to be told the same thing, spending the budget that a real rate-limit
             # would need. A witness that cannot be READ is a different case — it raises, lands in
             # the handler below, and is retried like any other Hub failure.
-            if not wanted:
+            barren = [p for p in patterns if not remote_matches(listing, [p])]
+            if barren:
                 claimed = state_witness.unwitnessed(
-                    patterns, state_witness.published_roots(repo, token)
+                    barren, state_witness.published_roots(repo, token)
                 )
                 if claimed:
                     reason = (

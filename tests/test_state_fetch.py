@@ -24,7 +24,12 @@ import headstart.ingest.state_fetch as sf
 
 
 class _EntryNotFound(Exception):
-    """Stand-in for `huggingface_hub.errors.EntryNotFoundError` — the Hub's "no such file"."""
+    """Stand-in for `huggingface_hub.errors.RemoteEntryNotFoundError` — a real 404 for the file.
+
+    The real class hierarchy is the trap this stub has to mirror: `LocalEntryNotFoundError` (a
+    connection failure) also subclasses `EntryNotFoundError`, so `published_roots` catches only the
+    *Remote* form. A stub that offered just the parent would let a fix for that pass vacuously.
+    """
 
 
 @pytest.fixture
@@ -41,7 +46,7 @@ def hub(monkeypatch):
     """
     module = types.ModuleType("huggingface_hub")
     errors = types.ModuleType("huggingface_hub.errors")
-    errors.EntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    errors.RemoteEntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
     module.errors = errors  # type: ignore[attr-defined]
 
     def _no_witness(*a, **k):
@@ -347,10 +352,15 @@ def test_fetch_reports_bytes_and_throughput_not_just_seconds(
 
 
 def _empty_hub(hub, monkeypatch, tmp_path):
-    """A Hub that lists nothing — the one case the listing cannot rule on (ADR-0095)."""
+    """A Hub that lists nothing — the one case the listing cannot rule on (ADR-0095).
+
+    Sleep is stubbed here rather than per-test: any path that reaches the retry ladder unstubbed
+    waits the real 450s budget, which reads as a hung suite rather than a failing test.
+    """
     hub.repo_info = lambda *a, **k: type("I", (), {"siblings": []})()
     hub.snapshot_download = lambda *a, **k: None
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
 
 
 def _witness(hub, tmp_path, dirs):
@@ -416,6 +426,33 @@ def test_a_witness_that_cannot_be_read_is_retried_then_fails_closed(
     monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
     assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
     assert tries["n"] == sf._ATTEMPTS  # every attempt, not a single shot
+
+
+def test_one_surviving_root_does_not_hide_a_wiped_sibling(
+    hub, monkeypatch, tmp_path
+) -> None:
+    """`merge` fetches `data/embeddings/jobs/* data/lancedb/*` in one call. Asked of the union,
+    the store surviving would keep `wanted` non-empty and the witness would never be consulted on
+    the table that vanished — the exact publish-over-an-empty-index failure ADR-0030 exists to
+    stop. So the question is asked per pattern."""
+    listing = ["data/embeddings/jobs/meta.jsonl"]  # the store survives; lancedb is gone
+    hub.repo_info = lambda *a, **k: type(
+        "I", (), {"siblings": [type("S", (), {"rfilename": listing[0]})()]}
+    )()
+
+    def snapshot_download(*a, **k):
+        (tmp_path / listing[0]).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / listing[0]).write_text("x", encoding="utf-8")
+
+    hub.snapshot_download = snapshot_download
+    monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
+    _witness(hub, tmp_path, ["data/embeddings/jobs", "data/lancedb"])
+
+    assert (
+        sf.fetch_state("repo", ["data/embeddings/jobs/*", "data/lancedb/*"], token=None)
+        == 1
+    )
 
 
 def test_fetch_omits_the_rate_when_nothing_landed_to_divide(

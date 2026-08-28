@@ -84,13 +84,21 @@ def published_roots(repo: str, token: str | None) -> set[str] | None:
     is not a witness that says nothing. That is the same fail-closed stance `remote_files` takes,
     and the reason this uses ``hf_hub_download`` rather than ``snapshot_download``: the former
     raises where the latter warns and hands back an empty directory (ADR-0030).
+
+    **Catch ``RemoteEntryNotFoundError``, never its parent.** ``EntryNotFoundError`` also covers
+    ``LocalEntryNotFoundError``, which `hf_hub_download` raises for "most likely a connection issue
+    or Hub downtime" — a 429 or a 5xx included. Catching the parent therefore reads an unreachable
+    Hub as "this dataset published nothing", which is precisely the fail-open this module exists to
+    remove, on precisely the transient failure class that lost run 30304173982. Verified against
+    huggingface_hub 1.21.0: ``LocalEntryNotFoundError.__mro__`` runs through ``EntryNotFoundError``,
+    ``HF_HUB_OFFLINE=1`` reached the parent branch, and a real missing file raises the remote form.
     """
     from huggingface_hub import hf_hub_download
-    from huggingface_hub.errors import EntryNotFoundError
+    from huggingface_hub.errors import RemoteEntryNotFoundError
 
     try:
         path = hf_hub_download(repo, WITNESS_PATH, repo_type="dataset", token=token)
-    except EntryNotFoundError:
+    except RemoteEntryNotFoundError:
         return None
     return set(json.loads(Path(path).read_text(encoding="utf-8"))["dirs"])
 
@@ -120,9 +128,8 @@ def main() -> int:
     log.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("command", choices=["publish"])
-    ap.add_argument("--root", default=str(REPO_ROOT), help="repo root to record from")
-    args = ap.parse_args()
-    publish(Path(args.root))
+    ap.parse_args()
+    publish()
     return 0
 
 

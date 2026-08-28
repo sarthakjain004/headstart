@@ -132,7 +132,8 @@ for c in HfApi().list_repo_commits(os.environ["HF_REPO"], repo_type="dataset")[:
 PY
 ```
 
-Four `nightly:` commits per pipeline run (embedding store, lancedb, descriptions, board priority);
+Four `nightly:` commits per pipeline run — embedding store, lancedb, descriptions, then
+`board priority + published-dirs witness` last (ADR-0095);
 `cleanup:` commits come from the daily compaction. A single `Super-squash branch 'main'` commit and
 nothing else means the storage reclaim just ran — history is rewritten, not appended, so the log
 starts over rather than growing.
