@@ -1,6 +1,9 @@
 # ADR-0091: Compaction outranks the pipeline
 
-**Status:** accepted · **Date:** 2026-08-27 · **Amends:**
+**Status:** accepted · **Date:** 2026-08-27 · **Amended by:**
+[ADR-0094](0094-ask-for-compaction-on-a-threshold-not-a-clock.md) (on the *trigger* only — the
+03:00 cron below is now a backstop rather than the sole path, because GitHub stopped delivering it;
+compaction's priority over the pipeline, decided here, is unchanged) · **Amends:**
 [ADR-0071](0071-back-to-back-runs-instead-of-a-fixed-cadence.md) (§"`cleanup-index` keeps the shared group,
 and may occasionally be displaced", whose tolerated risk is what fired) · **Relates to:**
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (the prune whose deletes accumulate),

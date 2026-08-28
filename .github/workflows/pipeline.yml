@@ -8,7 +8,8 @@ name: nightly-pipeline
 #         → embed (matrix, ≤15 shards, each embeds its Docs into a fragment)
 #           → merge (single writer: concatenate → meta → sync → prune → trends → upload
 #             → restart)
-#             → chain (dispatch the successor — this is the cadence, ADR-0093).
+#             → chain (dispatch the successor — this is the cadence, ADR-0093)
+#             → request-compaction (ask cleanup-index for one when `_deletions/` is filling).
 # Inert (green no-op) until the repo's HF_TOKEN secret is set: the gate in scrape-plan drives
 # `run`, and every downstream job/step is gated on it.
 #
@@ -650,8 +651,11 @@ jobs:
     # below (its own cap). Single writer, so it stays generous. Raised 48 -> 58 when the reclaim
     # moved in: the header rule is that the JOB margin covers setup + EVERY step + upload, and a
     # job kill lands after the uploads but before `Restart the Space`, banking the data while the
-    # Space keeps serving the stale index.
-    timeout-minutes: 58
+    # Space keeps serving the stale index. Raised 58 -> 63 for the `_deletions` check below
+    # (ADR-0094), whose own cap is 5 min — the same rule, applied again.
+    timeout-minutes: 63
+    outputs:
+      compact_due: ${{ steps.compaction.outputs.due }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.scrape-plan.outputs.run == 'true'
@@ -825,6 +829,63 @@ jobs:
           print(f"::notice::squashed; live {live2 / 1e9:.2f} GB, usedStorage falls as HF collects "
                 "the orphans", flush=True)
           PY
+      # The compaction that keeps `_deletions/` under HF's 10,000-file **per-directory** limit is
+      # still cron-triggered, and on 2026-08-28 that cron did not fire — the same delivery failure
+      # that forced ADR-0093. Compaction is the one job here that cannot merely be late: its
+      # starvation is what rejected every upload on 2026-08-27. So ask for one on a THRESHOLD, the
+      # way the reclaim above works on `usedStorage` rather than on a clock.
+      #
+      # 3,000 of 10,000, and the honest reason is *cadence*, not headroom. Growth is linear in
+      # fragment count and therefore QUADRATIC IN RUNS: ADR-0091 measured `ceil(deleted / chunk) x
+      # fragments` with fragments climbing ~10 per run, and ~10,000 files accumulated across ~36
+      # runs. Fitting that gives ~7.7n², under which a daily compaction at ~20 runs/day lands at
+      # ~3,086 files — so 3,000 reproduces the daily cadence the cron intended, rather than
+      # buying a long runway. It does not: margin from 3,000 to the limit is only ~16 runs
+      # (~0.8 days), and dropping the threshold to 500 would buy just 28. The quadratic is why
+      # compacting *often* is the protection and a bigger buffer is not.
+      #
+      # Caveat on the evidence: the one measurement here — 309 files after the six runs since the
+      # previous compaction emptied the directory — fits linear (~51/run) and quadratic (~7.7n²,
+      # predicting 278) equally well. One point cannot separate them, so this is sized against the
+      # pessimistic model. Re-measure at a second point before trusting either.
+      - name: Ask for a compaction when _deletions is filling
+        id: compaction
+        if: always() && needs.scrape-plan.outputs.run == 'true'
+        # Never fail a published run over a housekeeping check. If this step dies the output is
+        # never written, the requesting job below reads empty, and nothing is dispatched — the
+        # threshold is still crossed next run, so it fails closed and self-heals.
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          import sys
+          from collections import Counter
+          from huggingface_hub import HfApi
+
+          info = HfApi(token=os.environ["HF_TOKEN"]).repo_info(
+              os.environ["HF_DATASET"], repo_type="dataset")
+
+          # Per DIRECTORY, not a total. The limit HF enforces is per directory, so two half-full
+          # `_deletions/` dirs are fine and summing them would compact for no reason. Today there
+          # is exactly one (`data/lancedb/jobs.lance/_deletions/`), which is why the distinction
+          # costs nothing to make now and would be invisible to find later.
+          per_dir = Counter(
+              f.rfilename.rsplit("/_deletions/", 1)[0]
+              for f in info.siblings
+              if "/_deletions/" in f.rfilename
+          )
+          worst, n = per_dir.most_common(1)[0] if per_dir else ("none", 0)
+          # stdout is redirected into $GITHUB_OUTPUT, which parses `key=value` and nothing else —
+          # the same discipline `scrape-plan` and `join` keep at their own `>> "$GITHUB_OUTPUT"`
+          # heredocs. (The reclaim step just above prints freely, because it has no redirect.)
+          # Diagnostics go to stderr, where they still reach the log.
+          print(f"_deletions: {n} files of 10000 in {worst}/_deletions/", file=sys.stderr,
+                flush=True)
+          print(f"due={str(n > 3000).lower()}")
+          PY
       - name: Restart the Space to pick up the new index
         if: needs.scrape-plan.outputs.run == 'true'
         env:
@@ -918,3 +979,56 @@ jobs:
           done
           echo "::error::no successor appeared after dispatch; the chain ends here until the cron reseeds it"
           exit 1
+
+  # ── Asks for the compaction that `merge` found due. Its own job because `merge` holds HF_TOKEN,
+  # and this repo follows the rule `cleanup-index.yml`'s permissions block states: the job holding
+  # the write token must not also be able to dispatch workflows.
+  #
+  # This is a BACKSTOP for `cleanup-index`'s 03:00 cron, not a replacement — that cron is the same
+  # delivery ADR-0093 measured failing, and on 2026-08-28 it did not fire at all. Compaction is
+  # the one job here that cannot merely be late.
+  request-compaction:
+    needs: [merge]
+    if: ${{ !cancelled() && needs.merge.outputs.compact_due == 'true' }}
+    runs-on: ubuntu-latest
+    # Never redden a run whose data is already published — the same rule the reclaim step states
+    # one job above. Two reasons it matters more here than it looks: the run has fully succeeded
+    # by this point, and ADR-0093's breaker counts *run* conclusions, so three `gh` flakes in a
+    # row would read as three failed runs and stop the chain on housekeeping alone.
+    continue-on-error: true
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # dispatch cleanup-index
+    steps:
+      - name: Dispatch a compaction
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # One already in flight is the answer, not a reason for a second. `cleanup-index` keeps
+          # its own concurrency group with a single pending slot, so a duplicate would displace a
+          # waiting one — the precise starvation ADR-0091 removed.
+          #
+          # This probe is deliberately a copy of the gate's in `scrape-plan`, cutoff included:
+          # they must answer "is a compaction in flight" the same way or the two disagree about
+          # who holds the field. YAML offers no cheap way to share it, so if you change the 8
+          # hours here, change it there.
+          #
+          # Age-bounded for the reason the gate in `scrape-plan` is: `!= "completed"` also matches
+          # `queued`, so a compaction wedged waiting for a runner would suppress every later
+          # request forever and let `_deletions/` walk to the limit unwatched — the mirror image
+          # of the starvation this guard prevents. 8 hours matches the gate's own cutoff.
+          cutoff=$(python3 -c "import datetime as d; print((d.datetime.now(d.UTC) - d.timedelta(hours=8)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
+                   --json status,createdAt \
+                   --jq "[.[] | select(.status != \"completed\" and .createdAt > \"$cutoff\")] | length")
+          if [ "$busy" != "0" ]; then
+            echo "::notice::a compaction is already in flight ($busy) - not asking for another"
+            exit 0
+          fi
+          gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY"
+          # Deliberately NOT confirmed, unlike the hand-offs in `chain` and `handback`. Those are
+          # the only thing that restarts a stopped cadence, so a dropped 202 there is terminal.
+          # This request is re-issued by every later run for as long as the threshold stays
+          # crossed, so it retries itself. The asymmetry is the point, not an oversight.
+          echo "::notice::_deletions crossed the threshold - asked for a compaction"
