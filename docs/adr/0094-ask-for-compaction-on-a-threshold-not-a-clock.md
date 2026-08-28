@@ -60,8 +60,9 @@ It is **not** chosen for headroom, and an earlier draft of this ADR claimed ~7 d
 a linear extrapolation and it was wrong. Under the quadratic, the margin from 3,000 to 10,000 is
 **~16 runs (~0.8 days)**, and lowering the threshold barely helps: 2,000 buys ~20 runs, 500 buys
 ~28. Compacting *often* is the protection; a bigger buffer is not purchasable at any threshold.
-~16 runs is still ~4x the ~4 runs that elapse while a compaction waits out its worst-case 4.5 h
-window. Erring early is nearly free — compaction is idempotent (ADR-0071) and took **31 min** on
+~16 runs is comfortable anyway, and by more than it looks: while `cleanup-index` retries, its run
+is not `completed`, so the gate stands every pipeline run down and only the one already in flight
+consumes margin — roughly **1** run across the worst-case 4.5 h wait, not one per cycle. Erring early is nearly free — compaction is idempotent (ADR-0071) and took **31 min** on
 run 33063013497 (2026-08-27 10:26 → 10:57).
 
 **A backstop, not a replacement.** The 03:00 cron stays. When it fires, nothing here triggers;
@@ -81,8 +82,9 @@ the exact starvation ADR-0091 removed.
 ## Consequences
 
 Compaction now happens on need rather than on a clock, and the frequency falls out of the write
-rate instead of being asserted. At ~1,000 files/day it fires roughly every three days when the
-cron is dead, and never when the cron is alive.
+rate instead of being asserted. Under the quadratic model adopted above that is **about daily** —
+by design, since 3,000 was chosen to reproduce the cron's cadence. When the cron does fire, its
+compaction empties the directory first and the threshold is simply never reached.
 
 It fails closed. If the counting step dies its output is never written, `request-compaction` reads
 empty and dispatches nothing — and the threshold is still crossed on the next run. The step carries
