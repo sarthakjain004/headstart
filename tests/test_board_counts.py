@@ -98,6 +98,11 @@ def _counts() -> dict[str, int]:
         "parked": sum(1 for c in kept if board_identity(c).lower() in PARKED_BOARDS),
         "Scrapable Board": len(load_active_companies(LEDGER, min_jobs=0)),
         "Hiring Board": len(load_active_companies(LEDGER, min_jobs=1)),
+        # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh
+        # clone and in CI, so the one figure derived from it is skipped there rather than guessed.
+        "scraped_not_unique": _scraped_not_unique(
+            {board_identity(c).lower() for c in _dedupe_boards(live)}
+        ),
     }
 
 
@@ -105,6 +110,16 @@ def counts() -> dict[str, int]:
     """A private copy of the cached figures — a cached function must not hand every caller the
     same mutable dict."""
     return dict(_counts())
+
+
+def _scraped_not_unique(unique: set[str]) -> int | None:
+    """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here."""
+    cost = LEDGER.parent.parent / "state" / "board_cost.csv"
+    if not cost.exists():
+        return None
+    with cost.open(encoding="utf-8") as fh:
+        keys = {r["board"].lower() for r in csv.DictReader(fh)}
+    return len(keys - unique)
 
 
 def _abs_int(text: str) -> int:
@@ -203,6 +218,7 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
     dupes = truth["Live row"] - truth["Unique Board"]
     empty = truth["Scrapable Board"] - truth["Hiring Board"]
     skipped = truth["Unique Board"] - truth["Scrapable Board"]
+    scraped_not_unique = truth["scraped_not_unique"]
 
     sites = [
         (
@@ -229,8 +245,34 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
             (dupes,),
         ),
         ("CONTEXT.md", r"the ([\d,]+) Boards between it and Unique Board", (skipped,)),
+        (
+            "CONTEXT.md",
+            r"([\d,]+) Scraped Boards are absent from it",
+            (scraped_not_unique,),
+        ),
+        # the Scrapable Board entry restates the chain it is the end of
+        (
+            "CONTEXT.md",
+            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`config\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\) and `config\.PARKED_BOARDS` \(−([\d,]+)\)",
+            (truth["disabled"], truth["excluded_after_dedupe"], truth["parked"]),
+        ),
+        # and the two-orders rule quotes all four of the numbers that make it true
+        (
+            "CONTEXT.md",
+            r"removes ([\d,]+) Boards from the raw live rows but only \*\*([\d,]+)\*\*",
+            (truth["excluded_before_dedupe"], truth["excluded_after_dedupe"]),
+        ),
+        (
+            "CONTEXT.md",
+            r"the README's funnel excludes first and so reads −([\d,]+) / −([\d,]+)",
+            (truth["excluded_before_dedupe"], truth["dedupe_after_exclude"]),
+        ),
+        # CLAUDE.md carries the same vocabulary and was read by nothing until round 4
+        ("CLAUDE.md", r"still a row — ([\d,]+) are duplicate spellings", (dupes,)),
     ]
     for name, pattern, expected in sites:
+        if None in expected:
+            continue  # derived from an HF-backed ledger this checkout does not have
         found = re.search(pattern, (ROOT / name).read_text(encoding="utf-8"))
         assert found, (
             f"{name}: no sentence matching {pattern!r} — did the wording change?"

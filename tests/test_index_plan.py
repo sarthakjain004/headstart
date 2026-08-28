@@ -573,8 +573,9 @@ def test_reappearing_clears_the_streak():
 
 def test_an_unscraped_board_is_no_evidence_and_carries_its_ids_forward():
     """Only ~20k Boards — under a quarter of the Scrapable Boards — are in a run's slice, and an
-    Unauthoritative Board is kept out of `scraped_boards` too (ADR-0053). Neither is evidence: the ids must keep their state, or a
-    Board sitting out a run would silently reset and never reach a second absence."""
+    Unauthoritative Board is kept out of `scraped_boards` too (ADR-0053). Neither is evidence:
+    the ids must keep their state, or a Board sitting out a run would silently reset and never
+    reach a second absence."""
     indexed = _board("greenhouse:vast", 10)
     owed = set(indexed[:4])
     plan = plan_sync(

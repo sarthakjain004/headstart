@@ -94,7 +94,8 @@ def grace_period_counts(
     ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
     neither came back nor were evicted. **This is the accretion signal**, and it has two distinct
     causes that this single number deliberately does not separate: the id's Board was not in this
-    run's slice at all (only ~20,000 are — under a quarter of the Scrapable Boards, so this dominates a healthy set
+    run's slice at all (only ~20,000 are — under a quarter of the Scrapable Boards, so this
+    dominates a healthy set
     and is entirely benign — the streak simply did not advance), or its Board *was* scraped, the
     id was absent again, and the ADR-0046 collapse guard capped its Board's evictions before
     reaching it. The second is the one worth watching: a number that only ever grows is a queue
@@ -172,7 +173,8 @@ def plan_sync(
     for it.
 
     The unit is *scrapes of that Board*, not runs, and that distinction is the whole point: only
-    ~20,000 Boards, under a quarter of the Scrapable Boards, are in any run's slice, and ``index sync`` already keeps
+    ~20,000 Boards, under a quarter of the Scrapable Boards, are in any run's slice, and
+    ``index sync`` already keeps
     Unauthoritative Boards out of ``scraped_boards`` (ADR-0053) — so a Board this run did not
     read is no evidence either way. Its ids keep their previous state rather than being counted
     as confirmed-present (which would reset the streak and make the grace period unreachable) or

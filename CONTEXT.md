@@ -47,7 +47,9 @@ _Avoid_: assuming `salary IS NOT NULL` (the `has_salary` filter) means "well-pai
 
 Five defensible answers exist to "how many Boards do we have", they differ by tens of thousands, and quoting the wrong one has already misled three separate discussions. Each name below binds to exactly one of them.
 
-The five headline counts — **Ledger row**, **Live row**, **Unique Board**, **Scrapable Board**, **Hiring Board** — plus the README funnel's every delta are **enforced by `tests/test_board_counts.py`**, which recomputes them from the committed ledger, so they cannot go stale without a red test. The figures *derived* from them in prose (6,617, 25,460, 31,796, 43-vs-41) are checked only where they appear; **Slice**'s 20,000 tracks a CLI default and is not checked at all. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted:
+The five headline counts — **Ledger row**, **Live row**, **Unique Board**, **Scrapable Board**, **Hiring Board** — plus the README funnel's every delta are **enforced by `tests/test_board_counts.py`**, which recomputes them from the committed ledger, so they cannot go stale without a red test. The figures *derived* from them are checked at each sentence that quotes one, across this file, `README.md` and `CLAUDE.md`. **Slice**'s 20,000 tracks a CLI default and is not checked.
+
+**Scraped Board** and **Scored Board** cannot be enforced at all: they live only on HF and move every run, with no commit to hang an assertion on. They are marked *measured 2026-08-28* and should be re-measured, not quoted:
 ```
 python -c "
 from huggingface_hub import hf_hub_download as d
@@ -69,7 +71,7 @@ A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre ever
 _Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
 
 **Unique Board** — 111,091:
-Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. Everything below is a subset of this; nothing below removes a duplicate, only Boards we choose not to read.
+Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 14,028 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
 **Scrapable Board** — 85,631:
 A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−41 vendor test Boards) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
