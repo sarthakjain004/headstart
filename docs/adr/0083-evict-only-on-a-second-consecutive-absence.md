@@ -54,7 +54,7 @@ like every other state file.
 
 Four properties make this work, and each was a decision in its own right:
 
-**The unit is scrapes of that board, not runs.** Only ~20,000 of ~66,000 live boards are in any
+**The unit is scrapes of that board, not runs.** Only ~20,000 of ~66,000 live boards [85,631 **Scrapable Boards** as of 2026-08-28; "live boards" names no single number — CONTEXT.md §Counting Boards] are in any
 run's slice (`--max-boards 20000`, `EXPLORE_FRAC = 0.7`), and `index sync` already keeps
 Unauthoritative Boards out of `scraped_boards` (ADR-0053). A board this run did not read is **no
 evidence**, so its ids keep the state they had — the same convention the description-gap ledger

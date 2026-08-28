@@ -24,6 +24,43 @@ _Avoid_: job board, careers board.
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
+#### Counting Boards
+
+Five defensible answers exist to "how many Boards do we have", they differ by tens of thousands, and quoting the wrong one has already misled three separate discussions. Each name below binds to exactly one of them.
+
+Every figure here except the last two is **enforced by `tests/test_board_counts.py`**, which recomputes it from the committed ledger — so those cannot go stale without a red test. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted (`docs/agents/hf-dataset-inspection.md` has the one-liners).
+
+Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,617 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 43 Boards from the raw live rows but only **41** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −43 / −6,615. Both reconcile; neither is quotable without saying which order it used.
+
+**Ledger row** — 178,129:
+One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
+
+**Live row** — 117,708:
+A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre every deliberate exclusion.
+_Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
+
+**Unique Board** — 111,091:
+Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. Everything below is a subset of this; nothing below removes a duplicate, only Boards we choose not to read.
+
+**Scrapable Board** — 85,631:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−41 vendor test Boards) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)`, and the right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 25,460 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated.
+
+**Hiring Board** — 53,835:
+A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 31,796 are live but empty.
+
+**Slice** — 20,000:
+The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boards` into a **Head** (6,000, the top-scored) and a **Tail** (14,000, random over everything not in the Head). Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
+
+Two more count Board *history* rather than eligibility, and neither is a denominator for the above:
+
+**Scraped Board** — 85,334 *(measured 2026-08-28; not test-enforced)*:
+A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. 16,299 Scrapable Boards have never been scraped at all — the backlog the Tail exists to drain.
+
+**Scored Board** — 30,046 *(measured 2026-08-28; not test-enforced)*:
+A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. **74% of Scraped Boards have never earned one** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017).
+_Avoid_: reading its absence as a delisting. A Board with no score is not excluded from anything; it competes in the Tail exactly as an unscored Board does, and re-enters the ledger the next time it hires tech.
+
 **Slug**:
 The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`.
 _Avoid_: handle, id, key, **token** — Greenhouse's own API spells it `boards-api.greenhouse.io/v1/boards/{token}`, so it leaks in easily; the thing it names is still a Slug, and the thing it locates is a **Board**.
@@ -116,7 +153,7 @@ A **Board** whose scraped list this run cannot be read as its complete set of op
 _Avoid_: failed Board, partial Board — a truncated Board still returned real Jobs and they are still indexed; it is only the absences from its list that cannot be trusted.
 
 **Unconfirmed** (ADR-0083):
-A **Job** absent from its **Board**'s most recent scrape but not yet from a second consecutive one, so its **Eviction** is withheld pending another look. Persisted as `data/state/unconfirmed_ids.txt`, rewritten in full each run and handed back to `plan_sync` the next. Exists because an absence is ambiguous — "the posting closed" and "this scrape could not confirm it" arrive identically — and three separate mechanisms were measured deleting live postings through that ambiguity (`docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`). The unit is *scrapes of that Board*, never runs: only ~20,000 of ~66,000 live Boards are in any run's slice, and a Board the run did not read — including an **Unauthoritative Board** — is no evidence, so its ids keep the state they had rather than resetting.
+A **Job** absent from its **Board**'s most recent scrape but not yet from a second consecutive one, so its **Eviction** is withheld pending another look. Persisted as `data/state/unconfirmed_ids.txt`, rewritten in full each run and handed back to `plan_sync` the next. Exists because an absence is ambiguous — "the posting closed" and "this scrape could not confirm it" arrive identically — and three separate mechanisms were measured deleting live postings through that ambiguity (`docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`). The unit is *scrapes of that Board*, never runs: only ~20,000 of 85,631 **Scrapable Boards** are in any run's slice, and a Board the run did not read — including an **Unauthoritative Board** — is no evidence, so its ids keep the state they had rather than resetting.
 _Avoid_: confusing it with **held**, which is the ADR-0046 collapse guard's per-**Board** cap ("this Board may not shed more than a quarter of its rows at once"). Unconfirmed is per-**Job** evidence; the two withhold evictions for unrelated reasons and are reported separately on purpose. _Avoid_: reading it as a deletion queue — most Unconfirmed ids reappear on the next scrape and are never evicted at all.
 
 **Doc**:

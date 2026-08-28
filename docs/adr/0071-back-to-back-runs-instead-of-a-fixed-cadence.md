@@ -29,7 +29,9 @@ of this ADR averaged a 0-minute cancelled run into the duration and understated 
 
 So 39% of every cycle was spent waiting on the clock rather than on work. Because the index only
 evicts a Job when its Board is re-scraped and the posting is gone (ADR-0053), and because the
-scrape slice is a 20,000-Board sample of ~59,790 live Boards, throughput *is* freshness: more runs
+scrape slice is a 20,000-Board sample of ~59,790 live Boards (85,631 **Scrapable Boards** as of
+2026-08-28 — the ratio has widened, which strengthens this argument rather than weakening it; the
+term is defined in CONTEXT.md §Counting Boards), throughput *is* freshness: more runs
 per day means each Board is revisited sooner and dead postings leave the index faster.
 
 The mechanism to close the gap was already present and unused. `concurrency: {group:

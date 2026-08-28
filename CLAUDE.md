@@ -265,6 +265,17 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   CI as proof the docs are current. When you touch that section, re-check the example rows against
   real data rather than editing them from memory: `curl "https://imposeidon-headstart-search.hf.space/search?q=backend+engineer&k=2"`
   returns live rows, and `data/jobs/tech/*.jsonl` has the fields the API projection omits.
+- **"How many Boards do we have" has five defensible answers — use the names, not a number.**
+  CONTEXT.md §Counting Boards binds each to exactly one figure: **Ledger row** (a CSV line),
+  **Live row** (still a row — 6,617 are duplicate spellings), **Unique Board** (deduped),
+  **Scrapable Board** (what a run may pick — the right default), **Hiring Board** (`min_jobs=1`),
+  plus **Slice**/**Head**/**Tail** for one run and **Scraped**/**Scored Board** for history. The
+  phrase "live boards" names no single number and should not be written. Quoting the wrong one has
+  already misled three separate discussions in one session, by factors up to 4x.
+  `tests/test_board_counts.py` keeps the README funnel and the glossary honest by recomputing from
+  the committed ledger — it needs no heavy deps, so unlike `test_readme_schema.py` it really runs
+  in CI. It deliberately cannot check **Scraped Board** or **Scored Board**: those live only on HF
+  and move every run, so they carry a measured-on date instead.
 - **Every LLM API call in this project goes through the llm-router — never a provider SDK pointed
   at a provider.** The router is a LiteLLM deployment on the Oracle box; callers use an
   OpenAI-compatible client against its `/v1` endpoint with `LITELLM_MASTER_KEY` as the `api_key`,
@@ -402,7 +413,8 @@ any claim of the form "a single transient miss deletes a live job" has been fals
 Three different mechanisms withhold evictions, are reported separately on purpose, and must not
 be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries are authoritative:
 - **Unconfirmed** (ADR-0083) — per-*Job*; one absence isn't enough. The unit is *scrapes of that
-  Board*, never runs: only ~20k of ~66k live Boards are in any run's slice, and a Board the run
+  Board*, never runs: only ~20k of 85,631 Scrapable Boards are in any run's slice (CONTEXT.md
+  §Counting Boards — "live Boards" names no single number), and a Board the run
   did not read is no evidence, so its ids keep the state they had.
 - **held** (ADR-0046 collapse guard) — per-*Board* cap; a Board may not shed more than a quarter
   of its rows at once. Bounded drain added by ADR-0055.
