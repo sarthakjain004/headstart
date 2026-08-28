@@ -20,6 +20,10 @@ So ask. The remote listing is the missing fact, and it fails closed where the do
 without a ``siblings`` list at all. Requiring exactly what the Hub reports also needs no bootstrap
 opt-out — a first run matches nothing, requires nothing, and proceeds.
 
+What the listing cannot rule on is an empty *match*: a first run and an emptied or mistyped
+``HF_DATASET`` look identical to it. ADR-0095 gives the dataset a witness that survives a failed
+fetch — see :mod:`headstart.ingest.state_witness` — and it is consulted only in that one case.
+
 Retries wait as long as the Hub says to, within a fixed total budget. HF meters **fixed 5-minute
 windows** and reports the remaining seconds in the ``RateLimit`` header of every 429, so
 ``reset_after`` reads it and :func:`wait_before`'s exponential ladder (ADR-0033) is only the
@@ -41,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log
-from headstart.ingest import REPO_ROOT
+from headstart.ingest import REPO_ROOT, state_witness
 
 _log = log.get(__name__, __spec__)
 
@@ -187,6 +191,28 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
         advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
             wanted = remote_matches(remote_files(repo, token), patterns)
+            # An empty match is the one case the listing cannot rule on: a genuine first run and
+            # an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says exactly this
+            # and leaves the hole open for want of a witness that survives a failed fetch; the
+            # dataset now carries one (ADR-0095). Consulted only here, so a normal fetch spends
+            # nothing on it — and reading it costs no API-bucket request even when it is consulted.
+            #
+            # `break`, not `continue`: the answer is deterministic, so retrying would re-list four
+            # more times to be told the same thing, spending the budget that a real rate-limit
+            # would need. A witness that cannot be READ is a different case — it raises, lands in
+            # the handler below, and is retried like any other Hub failure.
+            if not wanted:
+                claimed = state_witness.unwitnessed(
+                    patterns, state_witness.published_roots(repo, token)
+                )
+                if claimed:
+                    reason = (
+                        f"the Hub lists no files under {' '.join(claimed)}, but "
+                        f"{state_witness.WITNESS_PATH} says this dataset published "
+                        f"{'it' if len(claimed) == 1 else 'them'} — refusing to read that as a "
+                        "first run"
+                    )
+                    break
             snapshot_download(
                 repo,
                 repo_type="dataset",

@@ -111,3 +111,9 @@ requires nothing and the run bootstraps — which is correct for a genuine first
 failed fetch, and the obvious candidate (the committed liveness ledger) is present on a fresh fork
 too, so it would reject exactly the bootstrap this allows. Left as a known limit rather than a guard
 that fires on the wrong runs.
+
+**Closed 2026-08-28 by [ADR-0095](0095-a-published-witness-for-unfetched-state.md).** The witness
+this paragraph could not find is a file published *only into the dataset*: every state root is
+gitignored, so `data/state/published_dirs.json` is absent from a fresh fork and present on any repo
+the pipeline has written — the asymmetry the liveness ledger lacked. Read only when the listing
+matches nothing, at zero Hub API cost.

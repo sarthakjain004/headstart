@@ -750,6 +750,11 @@ jobs:
             done
             return 1
           }
+          # Record which state roots this run is about to publish (ADR-0095). It is what lets a
+          # later fetch tell a genuine first run from an emptied dataset — the hole ADR-0030 names
+          # and leaves open. Written into data/state/, so the upload below carries it and no new
+          # write point exists to keep in lockstep.
+          python -m headstart.ingest.state_witness publish
           up "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --commit-message "nightly: embedding store"
           # Deliberately NOT --delete: nothing compacts here any more, so no local fragment is
@@ -759,13 +764,17 @@ jobs:
           # fragments get reaped.
           up "$HF_DATASET" data/lancedb data/lancedb \
             --repo-type dataset --commit-message "nightly: lancedb index"
-          up "$HF_DATASET" data/state data/state \
-            --repo-type dataset --commit-message "nightly: board priority"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
           # `cleanup-index` folds the fragments into the bases with --delete.
           up "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
+          # data/state LAST, because it carries the witness. Committed after the roots it vouches
+          # for, a failure part-way through leaves the witness naming *fewer* roots than the
+          # dataset holds — which costs nothing. The other order would leave it naming more, and
+          # an over-claiming witness fails every later fetch closed (ADR-0095).
+          up "$HF_DATASET" data/state data/state \
+            --repo-type dataset --commit-message "nightly: board priority + published-dirs witness"
       # Reclaim dataset history here rather than from a separate scheduled workflow (ADR-0071).
       # A standalone squash shares this group, so it sits *pending* behind the run in flight —
       # measured at 37-55 min — and an hourly cron then displaces it. Run from inside the job

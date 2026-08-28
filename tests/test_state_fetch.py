@@ -13,6 +13,7 @@ The rest is what the Hub tells us and how we answer it (ADR-0033's amendment): t
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 from pathlib import Path
@@ -22,13 +23,33 @@ import pytest
 import headstart.ingest.state_fetch as sf
 
 
+class _EntryNotFound(Exception):
+    """Stand-in for `huggingface_hub.errors.EntryNotFoundError` — the Hub's "no such file"."""
+
+
 @pytest.fixture
 def hub(monkeypatch):
     """A stand-in `huggingface_hub`, since it lives in the [alerts] extra and CI's quality job
     installs only [dev] — the same stubbing `test_space_app.py` uses to keep such tests running
-    in CI rather than silently skipping."""
+    in CI rather than silently skipping.
+
+    `hf_hub_download` defaults to raising "not found", i.e. *no witness published* — which is
+    today's behaviour and what every test written before ADR-0095 assumes. Stubbing it is not
+    optional: `state_witness.published_roots` is a real network call, and the first run of this
+    suite after the witness landed hung on `test_fetch_omits_the_rate_when_nothing_landed_to_divide`
+    reaching the live Hub for a dataset named "repo".
+    """
     module = types.ModuleType("huggingface_hub")
+    errors = types.ModuleType("huggingface_hub.errors")
+    errors.EntryNotFoundError = _EntryNotFound  # type: ignore[attr-defined]
+    module.errors = errors  # type: ignore[attr-defined]
+
+    def _no_witness(*a, **k):
+        raise _EntryNotFound("published_dirs.json")
+
+    module.hf_hub_download = _no_witness  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "huggingface_hub", module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", errors)
     return module
 
 
@@ -323,6 +344,78 @@ def test_fetch_reports_bytes_and_throughput_not_just_seconds(
     # pinned as its own field: a bare "3 MB" also matches the "3 MB/s" of the rate
     assert ", 3 MB in " in line  # what landed, not what was listed
     assert "MB/s" in line
+
+
+def _empty_hub(hub, monkeypatch, tmp_path):
+    """A Hub that lists nothing — the one case the listing cannot rule on (ADR-0095)."""
+    hub.repo_info = lambda *a, **k: type("I", (), {"siblings": []})()
+    hub.snapshot_download = lambda *a, **k: None
+    monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
+
+
+def _witness(hub, tmp_path, dirs):
+    """Point the stub at a witness claiming `dirs`.
+
+    Written outside `data/`, so it can never be matched by the fetch patterns under test.
+    """
+    path = tmp_path / "_witness.json"
+    path.write_text(json.dumps({"dirs": list(dirs)}), encoding="utf-8")
+    hub.hf_hub_download = lambda *a, **k: str(path)
+
+
+def test_no_witness_still_bootstraps_a_genuine_first_run(
+    hub, monkeypatch, tmp_path
+) -> None:
+    """ADR-0030's "needs no bootstrap opt-out" survives ADR-0095 — a dataset that has never been
+    published carries no witness, and an empty listing there is exactly what it looks like."""
+    _empty_hub(hub, monkeypatch, tmp_path)
+    assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+
+
+def test_an_empty_listing_a_witness_contradicts_fails_closed(
+    hub, monkeypatch, tmp_path, caplog
+) -> None:
+    """The hole ADR-0030 left open, now closed: the Hub reports nothing under a root this very
+    pipeline last recorded as published, so this is an emptied or mistyped dataset — not a first
+    run — and publishing state derived from it is the failure the whole module exists to stop."""
+    _empty_hub(hub, monkeypatch, tmp_path)
+    _witness(hub, tmp_path, ["data/state", "data/lancedb"])
+    slept: list[int] = []
+    monkeypatch.setattr(sf.time, "sleep", slept.append)
+
+    with caplog.at_level("ERROR"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
+
+    assert slept == []  # deterministic: re-listing four more times learns nothing
+    assert "published_dirs.json" in caplog.text
+
+
+def test_a_witness_that_claims_nothing_relevant_lets_the_run_proceed(
+    hub, monkeypatch, tmp_path
+) -> None:
+    """`cluster-roles.yml` writes the centroids on its own schedule, so the witness abstains on
+    them and this fetch keeps the behaviour it had before ADR-0095."""
+    _empty_hub(hub, monkeypatch, tmp_path)
+    _witness(hub, tmp_path, ["data/state", "data/lancedb"])
+    assert sf.fetch_state("repo", ["data/state/role_centroids/*"], token=None) == 0
+
+
+def test_a_witness_that_cannot_be_read_is_retried_then_fails_closed(
+    hub, monkeypatch, tmp_path
+) -> None:
+    """Unreadable is not absent. A transient Hub failure on the witness itself must ride the
+    ordinary retry ladder, not be mistaken for "this dataset published nothing"."""
+    _empty_hub(hub, monkeypatch, tmp_path)
+    tries = {"n": 0}
+
+    def unreachable(*a, **k):
+        tries["n"] += 1
+        raise ConnectionError("hub down")
+
+    hub.hf_hub_download = unreachable
+    monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
+    assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
+    assert tries["n"] == sf._ATTEMPTS  # every attempt, not a single shot
 
 
 def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
