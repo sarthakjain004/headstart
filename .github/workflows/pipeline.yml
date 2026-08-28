@@ -53,7 +53,16 @@ on:
     # is why the reclaim moved *into* the merge job below (ADR-0071) rather than staying a
     # separate scheduled workflow that this cadence would have starved. Check
     # `repo_info(...).used_storage` before assuming headroom.
-    - cron: "30 * * * *" # hourly at :30; concurrency turns this into back-to-back
+    #
+    # SINCE 2026-08-28 THIS CRON IS NOT THE CADENCE — the `chain` job at the bottom is (ADR-0093).
+    # GitHub stopped delivering this repo's scheduled events reliably on 2026-08-26. Measured over
+    # the 40 hours after: gaps between scheduled pipeline runs went 55 min -> 145 -> 261 -> 653,
+    # and `bot.yml` — a `*/15` workflow nobody had touched — degraded in lockstep to 679-min gaps,
+    # while all four `workflow_dispatch` runs in the same window started instantly. Everything
+    # above about concurrency parking a successor still holds; the hand-off simply supplies the
+    # successor the cron no longer reliably does. The cron stays as the SEED (only a scheduled run
+    # may start a chain) and as the RECOVERY path if a chain ever breaks.
+    - cron: "30 * * * *" # hourly at :30; seeds and recovers the chain, no longer paces it
   workflow_dispatch:
     inputs:
       max_boards:
@@ -77,6 +86,12 @@ on:
         # Docs/run, ~126 min of embed across 15 shards at the post-pin-fix 2.89 s/Doc. Overshoot
         # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
         default: "20000"
+      chained:
+        # Set by the `chain` job below, never by hand. It marks a run as part of the
+        # self-sustaining hand-off, so an ad-hoc manual dispatch — a one-off `max_boards=100`
+        # probe, say — cannot accidentally seed an endless chain of default-input runs.
+        description: internal - set by the previous run's hand-off; leave false for manual runs
+        default: "false"
 
 permissions:
   contents: read
@@ -158,7 +173,7 @@ jobs:
           if [ "$busy" != "0" ]; then
             # A warning, not an echo: standing down is normal but not free, and a run of them in
             # a row means a compaction is stuck. Silence is what let the mirror bug hide.
-            echo "::warning::cleanup-index is active ($busy) - standing this run down; the next fire picks it up."
+            echo "::warning::cleanup-index is active ($busy) - standing this run down; the hand-off starts a successor."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -816,3 +831,58 @@ jobs:
           HfApi(token=os.environ['HF_TOKEN']).restart_space(os.environ['HF_SPACE'])
           print('space restarted')
           "
+  # ── Stage 6: hand off to the next run. This, not the cron, is what makes the cadence
+  # back-to-back (ADR-0093); the note at `schedule` above has the measurement that forced it.
+  chain:
+    needs: [merge]
+    # `!cancelled()` rather than `always()`. A run that succeeded, FAILED, or was stood down by
+    # the gate must still hand off: a stand-down completes in ~2 min, and without this the chain
+    # would end for as long as a compaction ran. A CANCELLED run must not — cancellation is either
+    # a human stopping the line or the 6h ceiling, and dispatching past either is the runaway.
+    # The event guard keeps chains self-sustaining yet un-startable by accident: only a scheduled
+    # run seeds one, and only a run the chain itself dispatched continues it.
+    if: >-
+      ${{ !cancelled() && (github.event_name == 'schedule'
+      || github.event.inputs.chained == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # the floor below caps its sleep at 20 min; the rest is two API calls
+    permissions:
+      contents: read
+      actions: write # to dispatch the successor
+    steps:
+      - name: Dispatch the successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # A floor on how often the chain may fire, in minutes. A healthy run is ~85 min old by
+          # the time this job starts, so the floor sleeps zero and costs nothing. It bites only
+          # when a run ends early — exactly the shape that would otherwise spin: a gate stand-down
+          # completes in ~2 min, so across one 45-min compaction window an unfloored chain would
+          # dispatch ~30 times.
+          FLOOR_MIN: "20"
+        run: |
+          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          age=$(python3 -c "
+          import datetime as d, sys
+          started = d.datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
+          print(int((d.datetime.now(d.UTC) - started).total_seconds() // 60))
+          " "$started")
+          if [ "$age" -lt "$FLOOR_MIN" ]; then
+            echo "run is ${age}m old; sleeping $((FLOOR_MIN - age))m to hold the chain to one start per ${FLOOR_MIN}m"
+            sleep $(( (FLOOR_MIN - age) * 60 ))
+          fi
+
+          # The other runaway is a pipeline that is simply broken. Three consecutive failures is
+          # not a flake — 2026-08-02 lost 21 of 25 runs to one cause — and a self-sustaining chain
+          # would spend ~22 jobs a cycle rediscovering that. Dropping back to the cron costs a
+          # slower cadence and puts a red run in front of a human, which is the right trade. A
+          # stand-down cannot trip this: it publishes nothing but still concludes `success`.
+          failed=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml --limit 3 \
+                     --status completed --json conclusion \
+                     --jq '[.[] | select(.conclusion == "failure")] | length')
+          if [ "$failed" = "3" ]; then
+            echo "::error::last 3 runs all failed - not handing off. The cron retries; fix the run first."
+            exit 0
+          fi
+
+          gh workflow run pipeline.yml -R "$GITHUB_REPOSITORY" -f chained=true
+          echo "::notice::dispatched the successor - concurrency parks it until this run ends"
