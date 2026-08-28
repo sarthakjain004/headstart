@@ -616,7 +616,7 @@ def sync(args: argparse.Namespace) -> int:
 
 def prune(args: argparse.Namespace) -> int:
     keep = live_keep_set(args.ledger)
-    _log.info(f"keep-set: {len(keep)} live Boards (enabled ATSes)")
+    _log.info(f"keep-set: {len(keep)} Scrapable Boards (enabled ATSes)")
     if len(keep) < _MIN_KEEP_BOARDS:
         _log.error(
             f"ABORT: keep-set has only {len(keep)} Boards (< {_MIN_KEEP_BOARDS}) — the ledger "

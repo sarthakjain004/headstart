@@ -49,9 +49,15 @@ Five defensible answers exist to "how many Boards do we have", they differ by te
 
 Every figure here except the last two is **enforced by `tests/test_board_counts.py`**, which recomputes it from the committed ledger — so those cannot go stale without a red test. **Scraped Board** and **Scored Board** can: they live only on HF and move every run with no commit to hang an assertion on, so they are marked *measured 2026-08-28* and should be re-measured, not quoted:
 ```
-python -c "from huggingface_hub import snapshot_download as d; d('imPoseidon/headstart-index', repo_type='dataset', local_dir='.', allow_patterns=['data/state/board_cost.csv','data/state/board_priority.csv'])"
-wc -l data/state/board_cost.csv data/state/board_priority.csv   # minus one header each
+python -c "
+from huggingface_hub import hf_hub_download as d
+import csv
+for f in ('board_cost', 'board_priority'):
+    p = d('imPoseidon/headstart-index', f'data/state/{f}.csv', repo_type='dataset', local_dir='.')
+    keys = [r['board'].lower() for r in csv.DictReader(open(p))]
+    print(f, len(keys), 'rows ->', len(set(keys)), 'Boards')"
 ```
+Count distinct keys, never lines — both files carry case-variants.
 
 Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,617 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 43 Boards from the raw live rows but only **41** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −43 / −6,615. Both reconcile; neither is quotable without saying which order it used.
 
@@ -77,11 +83,11 @@ The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boar
 
 Two more count Board *history* rather than eligibility, and neither is a denominator for the above:
 
-**Scraped Board** — 85,334 *(measured 2026-08-28; not test-enforced)*:
-A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. 16,299 Scrapable Boards have never been scraped at all — the backlog the Tail exists to drain.
+**Scraped Board** — 83,903 *(measured 2026-08-28; not test-enforced)*:
+A Board with a measured cost row in `data/state/board_cost.csv`, i.e. one we have read at least once. **Distinct Boards, not rows** — that file holds 85,839 lines, 1,936 of them ADR-0023 case-variants of a Board already counted, so a `wc -l` on it reproduces the very conflation this section exists to kill. Some Scrapable Boards have never been scraped at all; that backlog is what the Tail drains.
 
-**Scored Board** — 30,046 *(measured 2026-08-28; not test-enforced)*:
-A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. **74% of Scraped Boards do not currently hold one** — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech long ago and decayed below the floor is in the same 74%.
+**Scored Board** — 28,548 *(measured 2026-08-28; not test-enforced)*:
+A Board currently holding a row in `data/state/board_priority.csv`, i.e. one that has yielded tech Jobs recently enough not to have decayed below the 0.05 floor. Distinct Boards again: that file holds 30,577 lines, 2,029 of them case-variants. **Two Scraped Boards in three hold no score** (28,548 of 83,903) — most Boards are all-non-tech, which is why company selection barely helps (ADR-0017). Read that as *not scored now*, not *never scored*: a Board that yielded tech and then decayed below the floor is in the same two-thirds.
 _Avoid_: reading its absence as a delisting. A Board with no score is not excluded from anything; it competes in the Tail exactly as an unscored Board does, and re-enters the ledger the next time it hires tech.
 
 
@@ -108,7 +114,7 @@ _Avoid_: up/down, valid/invalid.
 A Board still **Unknown** after every Liveness pass — surfaced for review, never silently dropped.
 
 **Active list**:
-The Live Boards — the Companies whose Board answered **Live**, read as the `status == live` rows of the Liveness ledger (`data/validate/liveness/{ats}.csv`, ADR-0012; supersedes the old `active/{ats}.csv`). "Currently hiring" is the further subset whose job count is above zero.
+The **Scrapable Boards** — the Companies whose Board answered **Live**, read as the `status == live` rows of the Liveness ledger, then deduped (§Counting Boards: "Live Boards" names no single number, because 6,617 of those rows are duplicate spellings) (`data/validate/liveness/{ats}.csv`, ADR-0012; supersedes the old `active/{ats}.csv`). "Currently hiring" is the further subset whose job count is above zero.
 
 **Parked**:
 A real, Live Board deliberately withheld from the scrape for now, because scraping it costs more than the run can afford (`config.PARKED_BOARDS`). Distinct from **Excluded** (`config.EXCLUDED_BOARDS`), which names Boards that are not genuine Boards at all — vendor test and sandbox tenants. A Park is temporary and carries the condition that lifts it; an Exclusion is permanent.

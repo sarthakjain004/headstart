@@ -125,7 +125,10 @@ board their scraper cannot fetch while `10xgenomics.eightfold.ai` names one it c
 Eightfold's 109 live ledger boards is stored the second way, and all 138 bare-label rows are dead.
 That is the `host` style, and it is why style is a property of the host rather than of the sweep.
 
-How complete is the table? Replaying every liveness-ledger URL through `extract` reaches all but
+How complete is the table? *(Measured against the ledger as it stood then; `join` is 25,416 live
+rows as of 2026-08-28 and the rest has drifted with it. The counts below are a snapshot of that
+analysis, not live figures — see CONTEXT.md §Counting Boards for the terms.)* Replaying every
+liveness-ledger URL through `extract` reaches all but
 **198 live boards** outside the two known exclusions (`join`, 25,310, deliberately out; and
 SuccessFactors' ~2,100 vanity hosts, unsweepable by design). Ten of the eighteen ATSes have no live
 board out of reach at all: darwinbox, freshteam, keka, lever, personio, ripplehire, rippling,

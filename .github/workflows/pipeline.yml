@@ -71,7 +71,7 @@ on:
   workflow_dispatch:
     inputs:
       max_boards:
-        description: boards to scrape this run (0 = all live boards)
+        description: boards to scrape this run (0 = every Scrapable Board)
         # 20000 of 85,631 **Scrapable Boards** — `scrape_plan` selects with `min_jobs=0`, so that
         # is the count to compare against, not the 53,835 **Hiring Board** subset (CONTEXT.md
         # §Counting Boards; `tests/test_board_counts.py` keeps those two honest). Recount

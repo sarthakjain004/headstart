@@ -253,7 +253,8 @@ def plan_sync(
         # An id whose Board this run did not scrape keeps the state it had: no evidence arrived,
         # so its streak neither advances nor resets. Without this the set would be rebuilt from
         # the slice alone and a Board's ids would silently reset every run it sat out — with
-        # ~20,000 of ~66,000 Boards scraped per run, most ids would never reach a second absence
+        # ~20,000 of 85,631 Scrapable Boards scraped per run, most ids would never reach a
+        # second absence
         # and the grace period would never evict anything.
         #
         # Carried forward only while the Board is *still live*, which bounds the set. A Board
@@ -331,7 +332,7 @@ def live_keep_set(ledger_dir: str | Path) -> set[str]:
     """Board keys that should survive: every live ledger Board on an enabled ATS, each key exactly
     as its scraper's ``board_key()`` builds it — the real keys ids carry, which is what makes
     prefix-matching them exact (ADR-0049). ``load_active_companies`` already drops dead Boards and
-    ``DISABLED_ATS``; ``min_jobs=0`` keeps currently-empty live Boards.
+    ``DISABLED_ATS``; ``min_jobs=0`` keeps Scrapable Boards with no open postings.
 
     Kept in the ledger's **own casing**, not lowercased: :func:`plan_prune` matches Boards
     case-insensitively but needs the exact live casing to pick which duplicate row to keep."""

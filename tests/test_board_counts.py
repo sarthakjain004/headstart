@@ -54,7 +54,7 @@ def _live_companies() -> list[CompanyRef]:
 def counts() -> dict[str, int]:
     """Every git-derivable figure in CONTEXT.md §Counting Boards, from the ledger itself.
 
-    Cached: four tests want it and it re-reads 20 CSVs each time (~1.3s a call).
+    Cached: several tests want it and it re-reads 20 CSVs each time (~1.3s a call).
     """
     # Counted off the raw lines, not `liveness.load()`'s tenant-keyed dict. The glossary defines a
     # Ledger row as one LINE, and CLAUDE.md's own "duplicate boards" section says these ledgers
@@ -74,6 +74,14 @@ def counts() -> dict[str, int]:
     # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 43 there and 41 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
     kept = [c for c in enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS]
+    # the other order, for the README's funnel: exclude on the raw live set, then dedupe
+    live_enabled = [c for c in live if c.ats not in DISABLED_ATS]
+    exclude_first_excluded = [
+        c for c in live_enabled if f"{c.ats}:{c.slug}".lower() in EXCLUDED_BOARDS
+    ]
+    exclude_first_kept = [
+        c for c in live_enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS
+    ]
     return {
         "Ledger row": sum(by_status.values()),
         "Live row": by_status.get("live", 0),
@@ -82,6 +90,11 @@ def counts() -> dict[str, int]:
         "Unique Board": len(unique),
         "disabled": len(unique) - len(enabled),
         "excluded_after_dedupe": len(enabled) - len(kept),
+        # The README excludes first, so its two middle deltas differ from the dedupe-first ones
+        # above. Both are real; each doc must be checked in the order it actually states.
+        "excluded_before_dedupe": len(exclude_first_excluded),
+        "dedupe_after_exclude": len(exclude_first_kept)
+        - len(_dedupe_boards(exclude_first_kept)),
         "parked": sum(1 for c in kept if board_identity(c).lower() in PARKED_BOARDS),
         "Scrapable Board": len(load_active_companies(LEDGER, min_jobs=0)),
         "Hiring Board": len(load_active_companies(LEDGER, min_jobs=1)),
@@ -159,6 +172,34 @@ def test_the_readme_funnel_agrees_with_the_ledger() -> None:
     assert start - sum(deltas) == end, (
         f"README funnel does not sum: {start:,} - {sum(deltas):,} = {start - sum(deltas):,}, not {end:,}"
     )
+    # Summing is not enough: two offsetting wrong deltas pass it. Check each against config, in
+    # the README's own exclude-then-dedupe order.
+    expected = [
+        truth["disabled"],
+        truth["excluded_before_dedupe"],
+        truth["dedupe_after_exclude"],
+        truth["parked"],
+    ]
+    assert deltas == expected, (
+        f"README funnel deltas are {deltas}, ledger says {expected}"
+    )
+
+
+def test_the_derived_figures_quoted_in_prose_are_current() -> None:
+    """The headline counts are parsed and asserted; the figures *derived* from them are not, and
+    that is how a wrong ratio shipped in the Scored Board entry. These are the ones the docs lean
+    on hardest, so they get checked by presence."""
+    truth = counts()
+    context = (ROOT / "CONTEXT.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    dupes = truth["Live row"] - truth["Unique Board"]
+    empty = truth["Scrapable Board"] - truth["Hiring Board"]
+    for figure, where, doc in (
+        (dupes, "CONTEXT.md", context),
+        (dupes, "README.md", readme),
+        (empty, "README.md", readme),
+    ):
+        assert f"{figure:,}" in doc, f"{where} does not mention {figure:,}"
 
 
 def test_both_orders_reach_the_same_scrapable_count() -> None:
