@@ -274,7 +274,7 @@ def main() -> int:
         "--max-boards",
         type=int,
         default=8000,
-        help="boards to scrape this run (0 = all live boards)",
+        help="boards to scrape this run (0 = every Scrapable Board)",
     )
     ap.add_argument(
         "--assignment",
