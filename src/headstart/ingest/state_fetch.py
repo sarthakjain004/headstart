@@ -85,6 +85,40 @@ def _response(exc: Exception) -> Any:
     return getattr(exc, "response", None)
 
 
+def _headers(exc: Exception) -> dict[str, str]:
+    """The error's response headers, keys folded to lower case.
+
+    HF sends these lower-cased. The real response matches case-insensitively, but a plain mapping
+    would not, so fold rather than depend on the caller's header type.
+    """
+    return {
+        str(k).lower(): v
+        for k, v in dict(getattr(_response(exc), "headers", None) or {}).items()
+    }
+
+
+def limiter_note(exc: Exception) -> str:
+    """Whether the Hub's own rate limiter is what refused us — its ABSENCE is the diagnostic.
+
+    HF's documented limiter always sets ``RateLimit`` (measured 2026-08-28: a plain 200 carried
+    ``ratelimit: "api";r=999;t=291`` beside ``ratelimit-policy: "fixed window";"api";q=1000;w=300``).
+    So a 429 **without** that header did not come from the quota we are budgeted against — on
+    2026-08-28 run 33159268268 the 429s carried a CloudFront request id and no ``RateLimit`` at
+    all, while this pipeline spends ~30 API calls a run against a 1,000-per-5-minutes allowance.
+    Reading that as quota exhaustion sends you optimising calls that were never the cost.
+
+    Printed on every retry line because the two cases want opposite responses: a real quota 429
+    is answered by waiting the window out (`reset_after`), an edge refusal by retrying at all.
+    Empty for a non-HTTP failure, which has no headers to tell us either way.
+    """
+    if _response(exc) is None:
+        return ""
+    limit = str(_headers(exc).get("ratelimit", "")).strip()
+    if limit:
+        return f"; limiter said {limit}"
+    return "; no RateLimit header, so not the documented quota limiter"
+
+
 def reason_for(exc: Exception) -> str:
     """Why a fetch attempt failed, on **one line**, leading with the HTTP status when there is one.
 
@@ -97,7 +131,7 @@ def reason_for(exc: Exception) -> str:
     # every whitespace run collapsed to one space — an annotation stops at the first newline
     detail = " ".join(str(exc).split())
     prefix = f"HTTP {status} " if status else ""
-    return f"{type(exc).__name__}: {prefix}{detail}"
+    return f"{type(exc).__name__}: {prefix}{detail}{limiter_note(exc)}"
 
 
 def reset_after(exc: Exception) -> int | None:
@@ -111,12 +145,7 @@ def reset_after(exc: Exception) -> int | None:
     request inside the very window it is waiting on. That is why not one of the 10 retries on
     2026-08-11 recovered. Non-HTTP failures advise nothing and fall back to :func:`wait_before`.
     """
-    # HF sends these lower-cased. The real response matches case-insensitively, but a plain
-    # mapping would not, so fold the keys rather than depend on the caller's header type.
-    headers = {
-        str(k).lower(): v
-        for k, v in dict(getattr(_response(exc), "headers", None) or {}).items()
-    }
+    headers = _headers(exc)
     # One header can carry several policies ('"default";r=50;t=30, "api";r=0;t=137') and it does
     # not say which bucket we blew, so take the longest reset: it is the only one guaranteed to
     # have cleared. Over-waiting is bounded by `retry_delay`'s budget; under-waiting is the bug.
