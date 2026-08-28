@@ -651,8 +651,9 @@ jobs:
     # below (its own cap). Single writer, so it stays generous. Raised 48 -> 58 when the reclaim
     # moved in: the header rule is that the JOB margin covers setup + EVERY step + upload, and a
     # job kill lands after the uploads but before `Restart the Space`, banking the data while the
-    # Space keeps serving the stale index.
-    timeout-minutes: 58
+    # Space keeps serving the stale index. Raised 58 -> 63 for the `_deletions` check below
+    # (ADR-0094), whose own cap is 5 min — the same rule, applied again.
+    timeout-minutes: 63
     outputs:
       compact_due: ${{ steps.compaction.outputs.due }}
     steps:
@@ -828,17 +829,25 @@ jobs:
           print(f"::notice::squashed; live {live2 / 1e9:.2f} GB, usedStorage falls as HF collects "
                 "the orphans", flush=True)
           PY
-      # The compaction that keeps `_deletions/` under HF's 10,000-file directory limit is still
-      # cron-triggered, and on 2026-08-28 that cron did not fire — the same delivery failure that
-      # forced ADR-0093. Compaction is the one thing here that cannot simply be late: its
+      # The compaction that keeps `_deletions/` under HF's 10,000-file **per-directory** limit is
+      # still cron-triggered, and on 2026-08-28 that cron did not fire — the same delivery failure
+      # that forced ADR-0093. Compaction is the one job here that cannot merely be late: its
       # starvation is what rejected every upload on 2026-08-27. So ask for one on a THRESHOLD, the
       # way the reclaim above works on `usedStorage` rather than on a clock.
       #
-      # 3,000 of 10,000. Measured 2026-08-28 across the six runs since the previous compaction
-      # emptied the directory: ~50 files/run, so ~1,000/day at this cadence. Tripping at 3,000
-      # leaves ~7 days of headroom for a compaction that may itself wait up to 4.5 h for its
-      # window. Generous on purpose — growth is quadratic in fragment count, not linear, so the
-      # runway shortens as the directory fills.
+      # 3,000 of 10,000, and the honest reason is *cadence*, not headroom. Growth is linear in
+      # fragment count and therefore QUADRATIC IN RUNS: ADR-0091 measured `ceil(deleted / chunk) x
+      # fragments` with fragments climbing ~10 per run, and ~10,000 files accumulated across ~36
+      # runs. Fitting that gives ~7.7n², under which a daily compaction at ~20 runs/day lands at
+      # ~3,086 files — so 3,000 reproduces the daily cadence the cron intended, rather than
+      # buying a long runway. It does not: margin from 3,000 to the limit is only ~16 runs
+      # (~0.8 days), and dropping the threshold to 500 would buy just 28. The quadratic is why
+      # compacting *often* is the protection and a bigger buffer is not.
+      #
+      # Caveat on the evidence: the one measurement here — 309 files after the six runs since the
+      # previous compaction emptied the directory — fits linear (~51/run) and quadratic (~7.7n²,
+      # predicting 278) equally well. One point cannot separate them, so this is sized against the
+      # pessimistic model. Re-measure at a second point before trusting either.
       - name: Ask for a compaction when _deletions is filling
         id: compaction
         if: always() && needs.scrape-plan.outputs.run == 'true'
@@ -850,17 +859,31 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          python -c "
+          python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
+          import sys
+          from collections import Counter
           from huggingface_hub import HfApi
-          info = HfApi(token=os.environ['HF_TOKEN']).repo_info(
-              os.environ['HF_DATASET'], repo_type='dataset')
-          n = sum(1 for s in info.siblings if '/_deletions/' in s.rfilename)
-          due = n > 3000
-          print(f'_deletions holds {n} files of 10000 - compaction due: {due}', flush=True)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
-              fh.write(f'due={str(due).lower()}\n')
-          "
+
+          info = HfApi(token=os.environ["HF_TOKEN"]).repo_info(
+              os.environ["HF_DATASET"], repo_type="dataset")
+
+          # Per DIRECTORY, not a total. The limit HF enforces is per directory, so two half-full
+          # `_deletions/` dirs are fine and summing them would compact for no reason. Today there
+          # is exactly one (`data/lancedb/jobs.lance/_deletions/`), which is why the distinction
+          # costs nothing to make now and would be invisible to find later.
+          per_dir = Counter(
+              f.rfilename.rsplit("/_deletions/", 1)[0]
+              for f in info.siblings
+              if "/_deletions/" in f.rfilename
+          )
+          worst, n = per_dir.most_common(1)[0] if per_dir else ("none", 0)
+          # stdout is redirected into $GITHUB_OUTPUT, which parses `key=value` and nothing else —
+          # the two steps above keep the same discipline. Diagnostics go to stderr, where they
+          # still reach the log.
+          print(f"_deletions: {n} files of 10000 in {worst}", file=sys.stderr, flush=True)
+          print(f"due={str(n > 3000).lower()}")
+          PY
       - name: Restart the Space to pick up the new index
         if: needs.scrape-plan.outputs.run == 'true'
         env:
@@ -963,7 +986,7 @@ jobs:
   # delivery ADR-0093 measured failing, and on 2026-08-28 it did not fire at all. Compaction is
   # the one job here that cannot merely be late.
   request-compaction:
-    needs: [scrape-plan, merge]
+    needs: [merge]
     if: ${{ !cancelled() && needs.merge.outputs.compact_due == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -978,15 +1001,22 @@ jobs:
           # One already in flight is the answer, not a reason for a second. `cleanup-index` keeps
           # its own concurrency group with a single pending slot, so a duplicate would displace a
           # waiting one — the precise starvation ADR-0091 removed.
-          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 10 \
-                   --json status --jq '[.[] | select(.status != "completed")] | length')
+          #
+          # Age-bounded for the reason the gate in `scrape-plan` is: `!= "completed"` also matches
+          # `queued`, so a compaction wedged waiting for a runner would suppress every later
+          # request forever and let `_deletions/` walk to the limit unwatched — the mirror image
+          # of the starvation this guard prevents. 8 hours matches the gate's own cutoff.
+          cutoff=$(python3 -c "import datetime as d; print((d.datetime.now(d.UTC) - d.timedelta(hours=8)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+          busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=cleanup-index.yml --limit 20 \
+                   --json status,createdAt \
+                   --jq "[.[] | select(.status != \"completed\" and .createdAt > \"$cutoff\")] | length")
           if [ "$busy" != "0" ]; then
             echo "::notice::a compaction is already in flight ($busy) - not asking for another"
             exit 0
           fi
           gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY"
-          # Deliberately NOT confirmed, unlike the hand-off in `chain` and `handback`. Those are
-          # the only thing that restarts a stopped cadence, so a dropped dispatch there is
-          # terminal. This one is re-asked by every subsequent run for as long as the threshold
-          # stays crossed, so it retries itself.
+          # Deliberately NOT confirmed, unlike the hand-offs in `chain` and `handback`. Those are
+          # the only thing that restarts a stopped cadence, so a dropped 202 there is terminal.
+          # This request is re-issued by every later run for as long as the threshold stays
+          # crossed, so it retries itself. The asymmetry is the point, not an oversight.
           echo "::notice::_deletions crossed the threshold - asked for a compaction"
