@@ -25,7 +25,7 @@ What the listing cannot rule on is an empty *match*: a first run and an emptied 
 fetch — see :mod:`headstart.ingest.state_witness` — and it is consulted only in that one case.
 
 Retries wait as long as the Hub says to, within a fixed total budget. HF meters **fixed 5-minute
-windows** and reports the remaining seconds in the ``RateLimit`` header of every 429, so
+windows** and reports the remaining seconds in a ``RateLimit`` header, so
 ``reset_after`` reads it and :func:`wait_before`'s exponential ladder (ADR-0033) is only the
 fallback for failures that advise nothing. When the budget cannot cover the window the Hub named,
 the fetch stops rather than retry early, because an early retry spends another request inside the
@@ -89,6 +89,44 @@ def _response(exc: Exception) -> Any:
     return getattr(exc, "response", None)
 
 
+def _headers(exc: Exception) -> dict[str, str]:
+    """The error's response headers, keys folded to lower case.
+
+    HF sends these lower-cased. The real response matches case-insensitively, but a plain mapping
+    would not, so fold rather than depend on the caller's header type.
+    """
+    return {
+        str(k).lower(): v
+        for k, v in dict(getattr(_response(exc), "headers", None) or {}).items()
+    }
+
+
+def limiter_note(exc: Exception) -> str:
+    """What the ``RateLimit`` header said on a 429 — including that there wasn't one.
+
+    This reports the *fact*, not a verdict, because the inference behind it is weaker than it
+    looks and the log is the wrong place to bury that. What is measured: on 2026-08-28 a plain
+    200 from the datasets API carried ``ratelimit: "api";r=999;t=291`` beside
+    ``ratelimit-policy: "fixed window";"api";q=1000;w=300``, and run 33159268268's five 429s
+    carried a CloudFront request id and no ``RateLimit`` at all — which is why ``reset_after``
+    found nothing and the ladder ran instead of a real window. What is NOT measured: whether a
+    429 the documented limiter *does* send always carries the header. That is one 200 response,
+    not a sample of limiter-sent 429s, so treat a missing header as "look upstream", never as
+    proof the quota was fine.
+
+    Why it earns a line: the two cases want opposite responses — a quota 429 is answered by
+    waiting the window out, an edge refusal by retrying at all — and without it both render
+    identically. Scoped to 429 so a 401 or a 503 does not collect a rate-limit verdict it has no
+    bearing on, and whitespace-collapsed because ``reason_for`` folds the exception text *before*
+    appending this, so a newline in a header value would otherwise split the annotation (ADR-0039).
+    """
+    response = _response(exc)
+    if getattr(response, "status_code", None) != 429:
+        return ""
+    limit = " ".join(str(_headers(exc).get("ratelimit", "")).split())
+    return f"; limiter said {limit}" if limit else "; no RateLimit header on the 429"
+
+
 def reason_for(exc: Exception) -> str:
     """Why a fetch attempt failed, on **one line**, leading with the HTTP status when there is one.
 
@@ -101,7 +139,7 @@ def reason_for(exc: Exception) -> str:
     # every whitespace run collapsed to one space — an annotation stops at the first newline
     detail = " ".join(str(exc).split())
     prefix = f"HTTP {status} " if status else ""
-    return f"{type(exc).__name__}: {prefix}{detail}"
+    return f"{type(exc).__name__}: {prefix}{detail}{limiter_note(exc)}"
 
 
 def reset_after(exc: Exception) -> int | None:
@@ -115,12 +153,7 @@ def reset_after(exc: Exception) -> int | None:
     request inside the very window it is waiting on. That is why not one of the 10 retries on
     2026-08-11 recovered. Non-HTTP failures advise nothing and fall back to :func:`wait_before`.
     """
-    # HF sends these lower-cased. The real response matches case-insensitively, but a plain
-    # mapping would not, so fold the keys rather than depend on the caller's header type.
-    headers = {
-        str(k).lower(): v
-        for k, v in dict(getattr(_response(exc), "headers", None) or {}).items()
-    }
+    headers = _headers(exc)
     # One header can carry several policies ('"default";r=50;t=30, "api";r=0;t=137') and it does
     # not say which bucket we blew, so take the longest reset: it is the only one guaranteed to
     # have cleared. Over-waiting is bounded by `retry_delay`'s budget; under-waiting is the bug.
