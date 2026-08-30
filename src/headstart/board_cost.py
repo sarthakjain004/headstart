@@ -10,8 +10,12 @@ So cost is measured, not proxied. Each scrape shard times every Board (``pipelin
 (``board,seconds,jobs,updated_at``), which rides the same HF state round-trip as the priority
 ledger. The next run's planner packs on those seconds.
 
-Same shape as :mod:`headstart.board_priority` deliberately — an EWMA over a per-Board key, a
-missing file degrading to the old behavior. Two differences, both from cost being noisier than a
+Same shape as :mod:`headstart.board_priority` deliberately, and since ADR-0096 the **same key**:
+both are an EWMA over ``board_identity``. They disagreed until 2026-08-28 — this one written by
+`harvest` under the scraper's raw ``{ats}:{slug}``, the other from Job ids under ``board_key()`` —
+so the two ledgers described the same Boards under names that could never be joined, and a Workday
+tenant migrating between pods orphaned its own cost history. A missing file degrades to the old
+behavior. Two differences, both from cost being noisier than a
 job count: the blend leans harder on history (:data:`CURRENT_WEIGHT`), and a Board with no
 measurement yet falls back to its **ATS's median** rather than one global constant, because
 per-Board scrape time varies by orders of magnitude across ATSes.
@@ -66,19 +70,78 @@ class BoardCost:
     updated_at: str  # ISO date of the last run that measured this Board
 
 
+def _rekeyed(board: str) -> str:
+    """A legacy ``{ats}:{slug}`` row's ``board_key``, or the row's own key if it is one already.
+
+    Transitional, and it is what makes ADR-0096 safe to deploy without an atomic migration.
+    Measured on the live ledger before the shim existed: reading a slug-keyed ledger with
+    ``board_identity`` finds nothing for Workday, so the ADR-0064 value gate stopped gating **7
+    giants totalling 194 min** — dollartree's 3,233 s among them — and ``costs_for`` then priced
+    each at the Workday median of **4.8 s**. That is a packed shard blowing its budget, not
+    "degraded balance", and because nothing prunes this ledger it would have persisted until
+    someone remembered to run a script.
+
+    Idempotent by construction, which is why it can sit on the read path where a write-side
+    migration could not: ``board_key()`` parses a careers URL and **raises** on anything else, so
+    a second pass over an already-converted key keeps it unchanged rather than mangling it. A
+    malformed slug lands in the same branch and also keeps its row.
+
+    Remove once ``update_ledgers cost`` stops reporting ``N legacy key(s) re-keyed`` — see
+    :func:`legacy_key_count`, which exists to make that condition observable rather than a date
+    someone has to remember. One run load-updates-saves the whole file, so the ledger
+    self-migrates on the first run after this ships and the shim is then a no-op on every row.
+
+    Delegates to :func:`headstart.config.board_identity` rather than repeating its cascade.
+    Verified identical across all 85,839 rows of the live ledger, and a second implementation that
+    had to stay in lockstep with the first is precisely what ADR-0049 and ADR-0059 are records of.
+    Imported inside the function, as `board_priority` does, to keep the module import-light.
+    """
+    from headstart.config import CompanyRef, board_identity
+
+    ats, _, slug = board.partition(":")
+    return board_identity(CompanyRef(ats=ats, slug=slug, name=""))
+
+
+def legacy_key_count(path: str | Path) -> int:
+    """How many rows in the file are still keyed the pre-ADR-0096 way.
+
+    The removal trigger for :func:`_rekeyed`, logged by ``update_ledgers cost``. Without it the
+    shim's exit condition is a date nobody will check — and a comment describing a mechanism that
+    is not there is the exact failure ADR-0059 is the record of.
+    """
+    path = Path(path)
+    if not path.exists():
+        return 0
+    with path.open(newline="", encoding="utf-8") as fh:
+        return sum(
+            1 for row in csv.DictReader(fh) if _rekeyed(row["board"]) != row["board"]
+        )
+
+
 def load(path: str | Path) -> dict[str, BoardCost]:
-    """The ledger as {board: BoardCost}; {} when the file doesn't exist yet."""
+    """The ledger as {board: BoardCost}; {} when the file doesn't exist yet.
+
+    Keys are normalised to ``board_key`` on the way in (ADR-0096) — see :func:`_rekeyed`. Where a
+    legacy row and a current one collapse to the same Board, the **newer** measurement wins, since
+    it is the one describing the Board as it is now. On an equal ``updated_at`` the first row in
+    the file wins, which given :func:`save`'s cost-descending order is the more expensive of the
+    two — deterministic, and conservative in the direction that matters for packing.
+    """
     path = Path(path)
     if not path.exists():
         return {}
     rows: dict[str, BoardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardCost(
+            cost = BoardCost(
                 seconds=float(row["seconds"]),
                 jobs=int(row["jobs"]),
                 updated_at=row["updated_at"],
             )
+            key = _rekeyed(row["board"])
+            prior = rows.get(key)
+            if prior is None or cost.updated_at > prior.updated_at:
+                rows[key] = cost
     return rows
 
 
@@ -175,13 +238,13 @@ def update(
 
 
 def _ats_of(cost_key: str) -> str:
-    """The ATS half of a cost key — the **scrape-list** ``{ats}:{slug}`` (ADR-0059).
+    """The ATS half of a cost key.
 
-    Not ``corpus.board_of``'s key space. The two look alike and are not interchangeable:
-    this ledger is keyed the way `harvest` and `scrape_plan` build the scrape list, and
-    ADR-0059 records a stale "matches corpus.board_of" comment of exactly this shape: of the
-    13,402 Boards whose keys could not match, the 4,611 that held a priority row were scored
-    0.0.
+    Since ADR-0096 that key is ``board_identity``, the same one the priority ledger uses, so the
+    two are interchangeable. They were not before, and the cost of getting it wrong is on record:
+    ADR-0059 found a stale "matches corpus.board_of" comment of exactly this shape, and of the
+    13,402 Boards whose keys could not match, the 4,611 holding a priority row were scored 0.0.
+    The ATS half is unaffected either way — it is the part both spellings share.
     """
     return cost_key.split(":", 1)[0]
 
@@ -200,7 +263,7 @@ def costs_for(
     *,
     fallback: float = FALLBACK_SECONDS,
 ) -> list[float]:
-    """Expected seconds for each ``{ats}:{slug}`` key, best available estimate per Board.
+    """Expected seconds for each ``board_identity`` key, best available estimate per Board.
 
     Measured EWMA if we have one, else the ATS's median, else the global median, else
     ``fallback``. The cascade matters: an unmeasured Workday board and an unmeasured Personio

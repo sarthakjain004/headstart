@@ -7,7 +7,9 @@ persisted as ``data/state/board_priority.csv`` (``board,score,last_tech_jobs,upd
 which is *not* ``{ats}:{slug}`` wherever a scraper overrides ``board_key()``: a Workday slug is
 a whole careers URL and a Personio slug the whole host. Every lookup therefore goes through
 :func:`headstart.config.board_identity`, never ``f"{ats}:{slug}"`` — keying it the latter way
-left all 13,714 Workday and Personio boards permanently unscored). The file
+left all 13,714 Workday and Personio boards permanently unscored). Since ADR-0096 the
+**Board-cost ledger** is keyed the same way, so the two are joinable; before that they were not,
+and joining them silently produced nonsense for exactly those two ATSes. The file
 rides the pipeline's HF-dataset state round-trip; it deliberately does NOT live in the
 embedding store dir, which is regenerable and gets wiped by evictions — this history must
 survive them. A missing file degrades every consumer to the old behavior (pure shuffle,
