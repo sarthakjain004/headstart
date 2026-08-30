@@ -82,8 +82,9 @@ draft of ADR-0097 published one anyway** — see the sweep below, which replaced
 
 **The sweep.** 140 random boards from the cost ledger, 102 returning usable listing+detail data,
 27,287 postings: **6 boards (5.9%) and 2,212 postings (8.1%) rename.** Projected over the
-ledger's 10,529 Workday boards / 1,072,959 postings: **~620 boards, ~87,000 raw postings,
-~6,000 served rows** at Workday's ~6.9% tech keep rate.
+7,620 Scrapable Workday Boards / ~1,078,700 postings: **~450 boards, ~87,000 raw postings,
+~6,000 served rows** at Workday's ~6.9% tech keep rate. (Boards projected over the **7,620
+Scrapable Boards** `load_active_companies()` reports, not the ledger's 10,538 raw rows.)
 
 | migrating board | rows | why it migrates |
 |---|---:|---|
@@ -136,7 +137,7 @@ defect one layer up.
 
 A Workday 400 is therefore **neither retried nor does it rotate the egress IP**. It settles
 instantly and silently as a lost detail, first attempt, no recovery path. That is why loss rates
-reach 68–97% on a single board.
+reach 68–97% on a single board — measured in run `33288099045`: `roche` 827/1210 (68%), `analogdevices` 655/920 (71%), `walmart` 729/934 (78%), `dxctechnology` 837/860 (97%).
 
 ## The 400s are transient throttling, not malformed requests
 

@@ -898,8 +898,9 @@ def _posting_key(item: dict[str, Any]) -> str:
     ``bulletFields[0]`` dead last, only when ``externalPath`` is itself empty.
 
     **The detail's own ``jobReqId`` used to outrank all three, and must not** (ADR-0097). It is
-    only present once :meth:`WorkdayScraper.parse` runs, after a detail fetch that fails for
-    68-97% of a board's postings on a bad run — so preferring it made a posting's identity depend
+    only present once :meth:`WorkdayScraper.parse` runs, after a detail fetch that, in one
+    measured run, lost between 68% (`roche`, 827/1210) and 97% (`dxctechnology`, 837/860) of a
+    Board's details — so preferring it made a posting's identity depend
     on whether an optional network call succeeded. A lost detail did not leave a posting
     *missing*; it *renamed* it, and the old id was evicted on its second consecutive absence
     (ADR-0083) and re-added the moment the detail pass recovered. ADR-0088 predicted this exact

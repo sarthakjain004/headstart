@@ -5793,6 +5793,15 @@ def test_workday_posting_key_falls_back_to_external_path_tail_without_bullet_fie
             "/job/Huskvarna/Deputy-Head-of-Airworthiness-Office_REQ_44663",
             "REQ_44663",
         ),
+        # wisconsin/UW_Milwaukee — bulletFields is a closing-date label and the real req id is
+        # nowhere in the listing. Load-bearing alongside saabgroup: on the three cases above the
+        # widening makes both tiers agree, so re-introducing the detail tier would NOT turn them
+        # red. These last two are the cases that actually catch that regression.
+        (
+            ["Application Deadline: 09/13/2026"],
+            "/job/Milwaukee/Research-Associate_JR10014519",
+            "JR10014519",
+        ),
     ],
 )
 def test_workday_posting_key_is_stable_when_the_detail_is_lost(
@@ -5836,6 +5845,15 @@ def test_workday_widened_req_id_shapes_still_avoid_the_measured_collision():
         assert _wd_key(
             shared, external_path="/job/White-Plains/Superintendent_JR102942"
         ) != _wd_key(shared, external_path="/job/Newark-NJ/Project-Accountant_JR102927")
+
+
+def test_workday_posting_key_rejects_a_bare_zip_plus_four():
+    """`^\\d{6,}[-_]\\d{3,}$` takes SIX leading digits, not five, so a bare US ZIP+4 cannot be
+    mistaken for a req id — bulletFields carries addresses (module comment above `_posting_key`).
+    Pinned because loosening it to five keeps every other test green."""
+    assert _wd_key(["12345-6789"]) == "Some-Title_FALLBACK-999"
+    assert _wd_key(["90210-1234"]) == "Some-Title_FALLBACK-999"
+    assert _wd_key(["202607-119609"]) == "202607-119609"  # six digits: still a req id
 
 
 def test_workday_posting_key_rejects_a_ddmmmyyyy_closing_date():

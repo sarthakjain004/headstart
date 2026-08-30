@@ -23,8 +23,8 @@ flapped row, and the twelve worst Boards summed to *exactly* the window total: t
 a broad drift, it was a handful of Boards oscillating.
 
 `_posting_key` preferred the detail response's `jobReqId` over both listing-derived tiers. That
-value exists only after the per-job detail pass — which loses 68–97% of a Board's details on a
-bad run. So a posting whose detail failed was not *missing* from the scrape; it was **renamed**:
+value exists only after the per-job detail pass — which in run `33288099045` lost between 68%
+(`roche`, 827/1210) and 97% (`dxctechnology`, 837/860) of a Board's details. So a posting whose detail failed was not *missing* from the scrape; it was **renamed**:
 
 ```
 detail OK   -> 202607-119609
@@ -79,15 +79,27 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 4. **Derive the req id from the `externalPath` tail's last `_` segment.** Works for roche
    (`202607-119609`) and autodesk, fails for saabgroup (`REQ_40700` → `40700`) and pwc
    (`728635WD-3`). A heuristic that is wrong on half the motivating cases.
-5. **Accept a `bulletFields` entry when it is a suffix of the posting's own `externalPath`.**
-   Self-validating rather than shape-guessing, and measured collision-free on all 9 Boards tried
-   — including `tutorperini` (235/235 distinct) and `nkg` (48/48). Rejected *for now* because it
-   is only a **partial** match where it matters: 2/5 postings on `usbank`, 4/5 on `mercyhealth`,
-   3/5 on `montagehealth`. It would shrink the migration without removing it, at the cost of a
-   second identity rule running beside the first — permanent complexity bought against a one-time
-   cost, in the function whose defect was being too clever. Worth revisiting if the migration
-   proves more expensive in practice than projected.
-5. **Fix the 400s instead.** That is the upstream defect and it is real (see Consequences), but it
+5. **Accept a `bulletFields` entry when it is a suffix of the posting's own `externalPath`**
+   (tolerating Workday's `-N` re-post suffix, i.e. the tail ends `{field}` or `{field}-{digits}`).
+   Self-validating rather than shape-guessing: it needs no req-id shape at all, and rejects a
+   date label or a company name *by construction* rather than by regex tuning.
+
+   **Measured, 25 postings per Board:** `usbank`, `mercyhealth`, `montagehealth`, `aafp` and
+   `roche` all **25/25 (100%)** agreement with `jobReqId`; `wisconsin`, `tutorperini` and `nkg`
+   all **0/25**, correctly. Zero collisions on every Board tried. It would remove four of the six
+   migrating Boards.
+
+   *An earlier draft of this ADR rejected it citing 2/5, 4/5 and 3/5 partial matches. Those
+   numbers came from a broken probe that stripped `-\d+$` from the tail before comparing, which
+   also eats a req id ending in digits (`2026-02608`). They are withdrawn.*
+
+   Rejected here only because it does not come free either: measured against the *current*
+   post-fix key over 73 Boards / 9,095 postings, a suffix-first rule newly disagrees on **2
+   Boards (2.7%) / 152 postings (1.7%)** (`cooley`, `cree`), so it trades ~8.1% of migration for
+   ~1.7% plus a second identity rule. That is a real improvement and a real complexity cost, and
+   it cannot be deferred to a follow-up without migrating the same Boards twice. **Flagged for an
+   explicit call rather than settled here.**
+6. **Fix the 400s instead.** That is the upstream defect and it is real (see Consequences), but it
    is a network-behaviour change whose efficacy cannot be measured locally, and it would leave
    identity fragile against *any* future detail loss. These are separable, and this one is the
    one that can be proven before it ships.
@@ -96,9 +108,11 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 
 - **A one-time id migration, corpus-wide: ~6% of Workday Boards.** Measured by a 140-Board
   random sweep of the cost ledger (102 returned usable listing+detail data, 27,287 postings):
-  **6 Boards (5.9%) and 2,212 postings (8.1%)** rename. Projected across the ledger's 10,529
-  Workday Boards / 1,072,959 postings that is **~620 Boards and ~87,000 raw postings**, or
-  **~6,000 served rows** at Workday's ~6.9% tech keep rate (ADR-0027).
+  **6 Boards (5.9%) and 2,212 postings (8.1%)** rename. Projected over Workday's **7,620
+  Scrapable Boards** — `load_active_companies()`, not the cost ledger's 10,538 raw rows, per
+  CLAUDE.md's rule against counting a ledger CSV directly — that is **~450 Boards**, and over its
+  ~1,078,700 postings, **~87,000 raw postings** or **~6,000 served rows** at Workday's ~6.9% tech
+  keep rate (ADR-0027).
 
   An earlier draft of this ADR said "one Board, 452 rows". That was a 4-Board sample stated as a
   precise figure, and the diagnosis doc had already flagged that "a precise figure needs a sweep,
@@ -106,16 +120,27 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 
   Two causes, in the sweep's proportion: **4 of 6** carry a `YYYY-serial` req id
   (`2026-0026665`, `2026-02608`, `2026-968`) that the widened shape still rejects — the six-digit
-  floor that keeps a bare ZIP+4 out also keeps a four-digit year out; **2 of 6** have no
-  `bulletFields` at all and are irreducible by any shape rule.
+  floor that keeps a bare ZIP+4 out also keeps a four-digit year out. The other **2 of 6** are
+  irreducible by any shape rule, for two different reasons: `hoedlmayr` has no `bulletFields` at
+  all, and `wisconsin/UW_Milwaukee` has one carrying `Application Deadline: 09/13/2026` while its
+  real req id appears nowhere in the listing.
 
   The ADR-0046 collapse guard caps a Board at shedding a quarter of its rows per run, so an
   affected Board drains over ~4 runs and serves both spellings meanwhile — a transitional
   duplicate, not a loss, but a visible one at this scale.
 
 - **A one-time cost is being paid to stop an ongoing one.** That is the trade, stated plainly:
-  ~6,000 rows churn once, so that ~216 rows per 12-run window stop churning forever and the
-  delta signals ADR-0040/0051 depend on stop being corrupted (#142's first stated harm).
+  ~6,000 rows churn once, against ~216 flapped rows per 12-run window. **Not all 216** — the
+  rename channel accounts for the Boards whose tiers disagreed, which is roche (58%) plus the
+  four smaller dual-shape Boards. `saabgroup/Saab_careers` (14%) emits only `externalPath`-tail
+  ids and its churn is *not* explained by this defect; see the evidence doc's "What this does not
+  explain". The payoff is the delta signals ADR-0040/0051 depend on (#142's first stated harm)
+  stopping being corrupted by the part this does fix.
+
+- **The migration costs embed budget, which is #142's second stated harm.** A renamed id is a new
+  row, so it is re-embedded, and its ADR-0050 description-store entry — keyed by full Job id —
+  orphans and must be re-fetched. ~6,000 rows is a bounded, one-off charge against the pipeline's
+  dominant cost, but it is not free and #142 names it explicitly.
 - **The widening is collision-safe, measured, not argued.** 12 Boards / 2,906 live postings, zero
   reduction in distinct ids — including both Boards the module comment names as the hazard
   (`tutorperini` 235/235, `nkg` 48/48), whose shared `bulletFields[0]` is a company name the new
