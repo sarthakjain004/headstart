@@ -80,13 +80,23 @@ A first pass sampled 14 random Workday boards (12 usable, 942 postings): 11 stab
 (`gellerco`, no bulletFields). **That sample was too small to publish a figure from, and an early
 draft of ADR-0097 published one anyway** — see the sweep below, which replaced it.
 
-**The sweep.** 140 random boards from the cost ledger, 102 returning usable listing+detail data,
-27,287 postings: **6 boards (5.9%) and 2,212 postings (8.1%) rename.** Projected over the
-7,620 Scrapable Workday Boards / ~1,078,700 postings: **~450 boards, ~87,000 raw postings,
-~6,000 served rows** at Workday's ~6.9% tech keep rate. (Boards projected over the **7,620
-Scrapable Boards** `load_active_companies()` reports, not the ledger's 10,538 raw rows.)
+**The sweep** (`scripts/eval/workday_id_migration.py --boards 140`; 102 boards returned usable
+listing+detail data). Run twice, once per design:
 
-| migrating board | rows | why it migrates |
+| identity rule | boards migrating | postings migrating | projected served rows |
+|---|---|---|---|
+| shape widening only | 6 / 102 (5.9%) | 2,212 / 27,287 (8.1%) | ~6,000 |
+| **+ URL-vouched tier** | **1 / 102 (1.0%)** | **452 / 27,510 (1.6%)** | **~1,200** |
+
+Boards are projected over the **7,620 Scrapable Workday Boards** `load_active_companies()`
+reports, not the ledger's 10,538 raw rows; served rows apply Workday's ~6.9% tech keep rate. One
+migrating board in 102 is a small numerator — treat the projection as an order of magnitude.
+
+The single board left is `saabgroup/Saab_careers`, which carries no `bulletFields` at all.
+
+Under the shape-only design the six were:
+
+| board | rows | why it migrated |
 |---|---:|---|
 | `usbank/US_Bank_Careers` | 1,479 | `2026-0026665` — YYYY-serial, below the six-digit floor |
 | `mercyhealth/mercyhealthcareers` | 579 | `2026-02608` — same |
@@ -96,7 +106,10 @@ Scrapable Boards** `load_active_companies()` reports, not the ledger's 10,538 ra
 | `hoedlmayr/External` | 34 | **no bulletFields** — irreducible |
 
 Four of six are the year-serial shape the ZIP+4 guard excludes: `^\d{6,}[-_]\d{3,}$` keeps out a
-bare `12345-6789`, and a four-digit year with it. Two are irreducible by any shape rule.
+bare `12345-6789`, and a four-digit year with it. **All four are recovered by the URL-vouched
+tier**, which needs no shape at all — it asks whether the posting's own `externalPath` ends with
+the field. Only `hoedlmayr` (no bulletFields) and `wisconsin` (a date label, real req id absent
+from the listing) survive as irreducible, and of those only one still migrated in the re-run.
 
 ## The reproduction loop
 
@@ -193,11 +206,12 @@ Verified live after the change, on the four motivating boards:
 | roche/roche-ext | 1,208 | **unchanged** |
 | pwc/crm_experienced_careers_site | 1,716 | **unchanged** |
 | autodesk/Ext | 420 | **unchanged** |
-| saabgroup/Saab_careers | 452 | renamed once — no `bulletFields` to widen to |
+| saabgroup/Saab_careers | 452 | renamed once — no `bulletFields` to vouch with |
+| usbank, mercyhealth, cree | 2,198 | **unchanged** — recovered by the URL-vouched tier |
 
-The stability invariant (`key(with detail) == key(without detail)`) held on every posting probed.
-On these four boards the widening cut the churn from 3,796 rows to 452. **Corpus-wide the churn is
-~6,000 served rows across ~620 boards** — see the sweep above, not this table.
+The stability invariant (`key(with detail) == key(without detail)`) held on every posting probed,
+and every board tried kept every id distinct (roche 1,209/1,209, tutorperini 235/235, nkg 48/48).
+**Corpus-wide the churn is ~1,200 served rows across ~75 boards** — see the sweep table above.
 
 **The upstream 400 handling is deliberately still open** — see the section above. This fix makes
 identity correct whether or not that ever lands.

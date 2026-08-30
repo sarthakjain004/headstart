@@ -5847,6 +5847,69 @@ def test_workday_widened_req_id_shapes_still_avoid_the_measured_collision():
         ) != _wd_key(shared, external_path="/job/Newark-NJ/Project-Accountant_JR102927")
 
 
+@pytest.mark.parametrize(
+    ("bullet_fields", "external_path", "expected"),
+    [
+        # roche — the URL vouches for the field, so no req-id shape is needed at all.
+        (
+            ["202607-119609"],
+            "/job/Hyderabad/ERP-Solution-Consultant---EHS_202607-119609",
+            "202607-119609",
+        ),
+        # cree — the req id is at index 1 behind an employment-type tag, and `26-167` is far
+        # below any shape floor. The tail is what tells them apart.
+        (["Regular", "26-167"], "/job/Durham/Senior-Tax-Analyst_26-167", "26-167"),
+        # cree again — Workday's `-N` re-post suffix sits after the req id in the tail.
+        (
+            ["Regular", "26-695"],
+            "/job/Durham/Program-Manager--Defense_26-695-1",
+            "26-695",
+        ),
+        # cooley — the served value carries a space the URL does not; both sides normalise.
+        (["Req 5047"], "/job/London/Accounts-Payable-Coordinator_Req5047", "Req5047"),
+    ],
+)
+def test_workday_posting_key_trusts_a_field_the_url_vouches_for(
+    bullet_fields, external_path, expected
+):
+    """The listing's own URL is the arbiter of which `bulletFields` entry is the req id.
+
+    Shape-matching cannot be made complete — this whole defect began with `_looks_like_req_id`
+    not knowing roche's `202607-119609` — so the first tier asks a question with a definite
+    answer instead: does the posting's own `externalPath` end with this field? Measured live at
+    25/25 agreement with the detail's `jobReqId` on roche, usbank, mercyhealth, montagehealth and
+    aafp, and 0/25 on wisconsin, tutorperini and nkg, whose fields are a date label and two
+    company names."""
+    assert _wd_key(bullet_fields, external_path=external_path) == expected
+
+
+@pytest.mark.parametrize(
+    ("bullet_fields", "external_path"),
+    [
+        # A bare word that merely ENDS the title. Without the `_` boundary this returns
+        # "Engineer" for every engineering posting on the board — the exact collision
+        # `tutorperini` and `nkg` motivated guarding against.
+        (["Engineer"], "/job/Austin/Software-Engineer"),
+        (["Analyst"], "/job/Austin/Senior-Tax-Analyst"),
+        # wisconsin — a closing-date label; the real req id is nowhere in the listing.
+        (
+            ["Application Deadline: 09/13/2026"],
+            "/job/Milwaukee/Research-Associate_JR10014519",
+        ),
+        # tutorperini / nkg — a company name, identical across every posting.
+        (["Tutor Perini Corporation"], "/job/White-Plains/Superintendent_JR102942"),
+        (["NKG Stockler LTDA"], "/job/Sao-Paulo/Trader_JR55"),
+    ],
+)
+def test_workday_posting_key_needs_an_underscore_boundary_not_a_bare_suffix(
+    bullet_fields, external_path
+):
+    """The field must sit where Workday puts the req id — after the title's `_` — not merely at
+    the end of the string. `Software-Engineer` ends with `Engineer`; that is a title, not an id,
+    and keying on it would collapse a whole board onto one row."""
+    assert _wd_key(bullet_fields, external_path=external_path) != bullet_fields[0]
+
+
 def test_workday_posting_key_rejects_a_bare_zip_plus_four():
     """`^\\d{6,}[-_]\\d{3,}$` takes SIX leading digits, not five, so a bare US ZIP+4 cannot be
     mistaken for a req id — bulletFields carries addresses (module comment above `_posting_key`).

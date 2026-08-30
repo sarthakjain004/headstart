@@ -889,12 +889,40 @@ def _looks_like_req_id(field: str) -> bool:
     return bool(_REQ_ID_SHAPE.match(field))
 
 
+def _vouched_by_url(bullet_fields: Any, tail: str) -> str | None:
+    """The ``bulletFields`` entry the posting's own ``externalPath`` tail ends with, or None.
+
+    Shape-matching a requisition id cannot be made complete — this ATS's worst eviction-flap
+    defect began with :func:`_looks_like_req_id` not knowing roche's ``202607-119609``, and every
+    new tenant is a chance to not know another one (ADR-0097). So ask a question that has a
+    definite answer instead: Workday builds the tail as ``{Title}_{req id}``, so the field the URL
+    ends with **is** the req id, whatever it looks like.
+
+    Two details are load-bearing. The match must sit after an underscore — a bare ``endswith``
+    returns ``Engineer`` for every posting on a board whose ``bulletFields`` carries an
+    employment-type tag and whose title ends in it, which is the collision ``tutorperini`` and
+    ``nkg`` already cost us once. And a trailing ``-N`` is tolerated because that is Workday's
+    re-post disambiguator, living in the URL only: ``…_26-695-1`` serves ``jobReqId`` ``26-695``.
+
+    Whitespace is squeezed on the field before comparing, as the shape tier already does — cooley
+    serves ``Req 5047`` for a URL that says ``Req5047``.
+    """
+    for field in bullet_fields or []:
+        if not isinstance(field, str):
+            continue
+        squeezed = re.sub(r"\s+", "", field)
+        if squeezed and re.search(rf"_{re.escape(squeezed)}(?:-\d+)?$", tail):
+            return squeezed
+    return None
+
+
 def _posting_key(item: dict[str, Any]) -> str:
     """Stable per-posting id, computed **only from the listing** — never from the per-job detail
-    response. Prefers, in order: the ``bulletFields`` entry shaped like a requisition id, wherever
-    it falls in the array — never a fixed index, which varies by tenant (index 1 on most affected
-    tenants, index 2 on others); the ``externalPath`` tail — Workday's own URL slug,
-    ``{title}_{req-id-or-similar}``, so specific to one posting by construction;
+    response. Prefers, in order: the ``bulletFields`` entry the posting's own ``externalPath``
+    **vouches for** (see :func:`_vouched_by_url`); failing that, the entry merely *shaped* like a
+    requisition id, wherever it falls in the array — never a fixed index, which varies by tenant
+    (index 1 on most affected tenants, index 2 on others); the ``externalPath`` tail — Workday's
+    own URL slug, ``{title}_{req-id-or-similar}``, so specific to one posting by construction;
     ``bulletFields[0]`` dead last, only when ``externalPath`` is itself empty.
 
     **The detail's own ``jobReqId`` used to outrank all three, and must not** (ADR-0097). It is
@@ -915,6 +943,10 @@ def _posting_key(item: dict[str, Any]) -> str:
     this function exists to fix, since a collision silently drops postings rather than merely
     cycling their id."""
     bullet_fields = item.get("bulletFields") or []
+    tail = (item.get("externalPath") or "").rsplit("/", 1)[-1]
+    vouched = _vouched_by_url(bullet_fields, tail)
+    if vouched:
+        return vouched
     candidates = [
         field
         for field in bullet_fields
@@ -922,7 +954,6 @@ def _posting_key(item: dict[str, Any]) -> str:
     ]
     if candidates:
         return re.sub(r"\s+", "", candidates[0])
-    tail = (item.get("externalPath") or "").rsplit("/", 1)[-1]
     if tail:
         return tail
     bullet = (bullet_fields or [None])[0]
