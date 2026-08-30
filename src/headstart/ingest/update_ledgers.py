@@ -52,7 +52,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart import board_description_gap, log
-from headstart.board_cost import ShardCost, ats_medians, read_shard_rows
+from headstart.board_cost import (
+    ShardCost,
+    ats_medians,
+    legacy_key_count,
+    read_shard_rows,
+)
 from headstart.board_cost import load as load_cost
 from headstart.board_cost import save as save_cost
 from headstart.board_cost import update as update_cost
@@ -111,9 +116,17 @@ def cost(args: argparse.Namespace) -> int:
             measured.update(rows)
             _log.info(f"cost: {path.parent.name}: {len(rows)} timed boards")
 
+    # Counted before the save that removes them: this is the removal trigger for ADR-0096's
+    # read-time shim, and the shim stays until it reports 0.
+    legacy = legacy_key_count(args.ledger)
     prev = load_cost(args.ledger)
     rows = update_cost(prev, measured)
     save_cost(args.ledger, rows)
+    if legacy:
+        _log.info(
+            f"cost: {legacy} legacy key(s) re-keyed to board_key (ADR-0096); "
+            "this save migrates them — remove `board_cost._rekeyed` once this reads 0"
+        )
 
     new = sum(1 for b in measured if b not in prev)
     total = sum(c.seconds for c in rows.values())

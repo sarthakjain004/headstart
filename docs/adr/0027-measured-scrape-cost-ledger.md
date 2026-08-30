@@ -11,6 +11,11 @@
   [ADR-0025](0025-parallelize-nightly-pipeline.md). Changes no eviction or partial-harvest
   semantics (ADR-0014).
 
+> **Amended 2026-08-28 by [ADR-0096](0096-one-key-for-both-board-ledgers.md).** The ledger
+> described below was keyed `{ats}:{slug}`; it is now keyed `board_identity`, the same key the
+> priority ledger uses. Only Workday and Personio change shape, and the two ledgers can now be
+> joined — which they could not before.
+
 ## Context
 
 ADR-0026 costed each Board as `EWMA tech-job count × a per-ATS detail weight` and called it "coarse

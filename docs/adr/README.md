@@ -104,3 +104,4 @@ supersedes it and note the supersession in both.
 | [0093](0093-chain-the-successor-the-cron-is-only-a-seed.md) | Chain the successor; the cron is only a seed | 2026-08-28 |
 | [0094](0094-ask-for-compaction-on-a-threshold-not-a-clock.md) | Ask for compaction on a threshold, not a clock | 2026-08-28 |
 | [0095](0095-a-published-witness-for-unfetched-state.md) | A published witness for unfetched state | 2026-08-28 |
+| [0096](0096-one-key-for-both-board-ledgers.md) | One key for both Board ledgers | 2026-08-28 |

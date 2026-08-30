@@ -113,13 +113,22 @@ def counts() -> dict[str, int]:
 
 
 def _scraped_not_unique(unique: set[str]) -> int | None:
-    """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here."""
-    cost = LEDGER.parent.parent / "state" / "board_cost.csv"
-    if not cost.exists():
+    """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here.
+
+    Read through `board_cost.load()`, never the raw CSV: the loader normalises legacy `{ats}:{slug}`
+    keys to `board_key` (ADR-0096), so this figure is the same before and after the ledger migrates
+    itself. Counted off the file directly it would jump the first time a pipeline run rewrote it,
+    turning this test red against a file nobody edited.
+    """
+    from headstart.board_cost import load as load_cost
+
+    path = LEDGER.parent.parent / "state" / "board_cost.csv"
+    if not path.exists():
         return None
-    with cost.open(encoding="utf-8") as fh:
-        keys = {r["board"].lower() for r in csv.DictReader(fh)}
-    return len(keys - unique)
+    # Case-folded on both sides. `board_key()` preserves case, so the ledger carries ADR-0023
+    # variants of one Board; counting them as separate Boards is the conflation this file exists
+    # to catch, and it inflated this figure from 600 to 2,552.
+    return len({k.lower() for k in load_cost(path)} - unique)
 
 
 def _abs_int(text: str) -> int:

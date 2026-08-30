@@ -7,6 +7,10 @@
 [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md),
 [ADR-0054](0054-learned-fan-out-speedup.md)
 
+> **Amended 2026-08-28 by [ADR-0096](0096-one-key-for-both-board-ledgers.md).** `_gated_boards` took a `(cost_key, priority_key)` pair because the two ledgers were keyed
+> differently; they now share `board_identity` and it takes one key. The gate's behaviour is
+> unchanged — measured at 15 Boards gated either way.
+
 ## Context
 
 Scrape shards began hitting their 60-minute CI budget. Three of the last four runs ended with a

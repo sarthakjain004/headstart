@@ -2,6 +2,11 @@
 
 **Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0023, ADR-0014
 
+> **Amended 2026-08-28 by [ADR-0096](0096-one-key-for-both-board-ledgers.md).** The *pairing* this ADR introduced is retired: both ledgers now key on
+> `board_identity`, so there is no second keyspace to pair against. The lesson stands — reading
+> one ledger with the other's key scored 4,611 Boards 0.0 — and is why the change moved the
+> writer rather than only the reader.
+
 ## Context
 
 The prune sweep evicts the same rows every run and sync puts them straight back. The logs prove the

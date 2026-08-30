@@ -11,6 +11,7 @@ from __future__ import annotations
 from headstart.board_cost import (
     BoardCost,
     ShardCost,
+    _rekeyed,
     ats_medians,
     costs_for,
     load,
@@ -138,3 +139,82 @@ def test_a_floor_row_torn_mid_write_is_dropped_not_read_as_measured(tmp_path):
         encoding="utf-8",
     )
     assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}
+
+
+# --- ADR-0096: one keyspace, and the shim that makes it safe to deploy ---
+
+
+def test_a_legacy_workday_row_is_rekeyed_to_its_board_key():
+    """The cost ledger used to key on the scraper's raw slug, which for Workday is the whole
+    careers URL — pod included."""
+    assert (
+        _rekeyed("workday:https://accenture.wd3.myworkdayjobs.com/careers")
+        == "workday:accenture/careers"
+    )
+    assert _rekeyed("personio:croftstone.jobs.personio.com") == "personio:croftstone"
+
+
+def test_rekeying_an_already_converted_key_leaves_it_alone():
+    """Idempotent, which is what lets this sit on the read path. `board_key()` parses a careers
+    URL and raises on anything else, so a second pass keeps the key rather than mangling it."""
+    assert _rekeyed("workday:accenture/careers") == "workday:accenture/careers"
+    assert _rekeyed("greenhouse:stripe") == "greenhouse:stripe"
+
+
+def test_a_key_no_scraper_can_read_keeps_its_row():
+    """Losing a measurement is worse than carrying an odd key."""
+    assert _rekeyed("notanats:whatever") == "notanats:whatever"
+    assert _rekeyed("noslug:") == "noslug:"
+
+
+def test_load_normalises_legacy_keys_so_the_planner_finds_them(tmp_path):
+    """The regression this shim exists for.
+
+    Measured on the live ledger before it existed: reading a slug-keyed ledger with
+    `board_identity` found nothing for Workday, so the ADR-0064 value gate stopped gating 7 giants
+    totalling 194 min and `costs_for` priced each at the Workday median of 4.8 s. Nothing prunes
+    this ledger, so that would have persisted until someone ran a script.
+    """
+    path = tmp_path / "board_cost.csv"
+    save(
+        path,
+        {
+            "workday:https://dollartree.wd5.myworkdayjobs.com/dollartreeus": BoardCost(
+                3233.0, 24017, "2026-08-27"
+            )
+        },
+    )
+    assert set(load(path)) == {"workday:dollartree/dollartreeus"}
+
+
+def test_when_both_spellings_are_present_the_newer_measurement_wins(tmp_path):
+    """A ledger written across the change carries a Board under both names for one run."""
+    path = tmp_path / "board_cost.csv"
+    save(
+        path,
+        {
+            "workday:https://x.wd5.myworkdayjobs.com/s": BoardCost(
+                900.0, 5, "2026-08-01"
+            ),
+            "workday:x/s": BoardCost(12.0, 5, "2026-08-27"),
+        },
+    )
+    rows = load(path)
+    assert set(rows) == {"workday:x/s"}
+    assert rows["workday:x/s"].seconds == 12.0
+
+
+def test_one_update_run_migrates_the_whole_ledger(tmp_path):
+    """`update_ledgers cost` does load -> update -> save, so the file self-migrates on the first
+    run after ADR-0096 ships — no manual step, and the shim is then a no-op on every row."""
+    path = tmp_path / "board_cost.csv"
+    save(
+        path,
+        {
+            "workday:https://x.wd5.myworkdayjobs.com/s": BoardCost(
+                900.0, 5, "2026-08-01"
+            )
+        },
+    )
+    save(path, load(path))
+    assert path.read_text().splitlines()[1].startswith("workday:x/s,")
