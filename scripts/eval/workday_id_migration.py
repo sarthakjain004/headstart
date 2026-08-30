@@ -10,10 +10,13 @@ For each sampled Board it fetches the listing, then for a few postings compares 
 (listing-only, post-ADR-0097) against the detail's `jobReqId` (the id served today). A Board
 where they disagree is a Board that migrates.
 
-Result 2026-08-30, `--boards 140` (102 returned usable listing+detail data, 27,287 postings):
-6 Boards (5.9%) and 2,212 postings (8.1%) migrate. Projected over the 7,620 Scrapable Workday
-Boards `load_active_companies()` reports — not the cost ledger's raw rows — that is ~450 Boards
-and ~87,000 raw postings, or ~6,000 served rows at Workday's ~6.9% tech keep rate.
+Result 2026-08-30 against the code as shipped, `--boards 140` (102 returned usable
+listing+detail data, 27,510 postings): **1 Board (1.0%) and 452 postings (1.6%)** migrate —
+`saabgroup/Saab_careers`, which carries no `bulletFields` for its URL to vouch for. Projected
+over the 7,620 Scrapable Workday Boards `load_active_companies()` reports — not the cost ledger's
+raw rows — that is ~75 Boards and ~17,000 raw postings, or ~1,200 served rows at Workday's ~6.9%
+tech keep rate. One migrating Board in 102 is a small numerator; the projection is an order of
+magnitude, not a forecast.
 
 Run:
   .venv/bin/python -u scripts/eval/workday_id_migration.py --boards 140
@@ -96,7 +99,11 @@ def main() -> int:
 
     boards = migrating = rows = rows_migrating = 0
     with cf.ThreadPoolExecutor(max_workers=10) as pool:
-        for result in pool.map(lambda u: _probe(u, args.per_board), sample):
+        # `as_completed`, not `pool.map`: map yields in submission order, so one slow Board
+        # holds back every result behind it (CLAUDE.md, Repo Conventions).
+        futures = [pool.submit(_probe, url, args.per_board) for url in sample]
+        for future in cf.as_completed(futures):
+            result = future.result()
             if result is None:
                 continue
             url, count, share = result

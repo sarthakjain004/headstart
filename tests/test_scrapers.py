@@ -5827,17 +5827,42 @@ def test_workday_posting_key_is_stable_when_the_detail_is_lost(
     )
 
 
-def test_workday_posting_key_keeps_the_req_id_shapes_the_detail_used_to_supply():
-    """Widening `_looks_like_req_id` is what makes the tiers *agree* rather than merely stop
-    disagreeing, so dropping the detail tier renames nothing on these boards. Measured live
-    across roche/pwc/autodesk: 3,796 rows would have been renamed without the widening, 452
-    with it (saab alone, which has no bulletFields to widen to)."""
-    assert _wd_key(["202607-119609"]) == "202607-119609"  # roche
-    assert _wd_key(["726071WD"]) == "726071WD"  # pwc/crm
-    assert _wd_key(["26WD100347"]) == "26WD100347"  # autodesk
+def test_workday_posting_key_keeps_the_ids_the_detail_used_to_supply():
+    """The three Boards this defect was found on keep byte-identical ids, because their own URL
+    vouches for the `bulletFields` value the detail used to supply. Verified live: roche, pwc/crm
+    and autodesk each 400/400 postings unchanged, so none of them migrates.
+
+    Note the real `externalPath` is load-bearing here. An earlier version of this test passed a
+    synthetic path and credited a widened `_REQ_ID_SHAPE` for the result; measured across 2,161
+    live postings that shape tier never fired once, and the widening was reverted (ADR-0097 §5)."""
+    assert (
+        _wd_key(
+            ["202607-119609"],
+            external_path="/job/Hyderabad/ERP-Solution-Consultant---EHS_202607-119609",
+        )
+        == "202607-119609"
+    )
+    assert (
+        _wd_key(["741671WD"], external_path="/job/AC-Manila/Cyber-Associate_741671WD")
+        == "741671WD"
+    )
+    assert (
+        _wd_key(["26WD97184"], external_path="/job/Toronto/ML-Engineer_26WD97184-2")
+        == "26WD97184"
+    )
 
 
-def test_workday_widened_req_id_shapes_still_avoid_the_measured_collision():
+def test_workday_posting_key_prefers_the_longest_field_the_url_vouches_for():
+    """`-N` tolerance plus array order would otherwise let a field that is only a PREFIX of the
+    real req id win: `2026` and `2026-02608` both match `Nurse_2026-02608`, and `2026` is the
+    same string on every posting the board has. Longest-first settles it."""
+    assert (
+        _wd_key(["2026", "2026-02608"], external_path="/job/Rockford/Nurse_2026-02608")
+        == "2026-02608"
+    )
+
+
+def test_workday_posting_key_still_avoids_the_measured_collision():
     """The widening must not re-open what the externalPath ranking closed. Verified live against
     both boards the module comment names: tutorperini (235 postings) and nkg (48) keep every id
     distinct, because their shared bulletFields[0] is a company name the widened shapes reject."""
@@ -5910,19 +5935,20 @@ def test_workday_posting_key_needs_an_underscore_boundary_not_a_bare_suffix(
     assert _wd_key(bullet_fields, external_path=external_path) != bullet_fields[0]
 
 
-def test_workday_posting_key_rejects_a_bare_zip_plus_four():
-    """`^\\d{6,}[-_]\\d{3,}$` takes SIX leading digits, not five, so a bare US ZIP+4 cannot be
-    mistaken for a req id — bulletFields carries addresses (module comment above `_posting_key`).
-    Pinned because loosening it to five keeps every other test green."""
+def test_workday_posting_key_rejects_values_no_url_vouches_for():
+    """A `bulletFields` value the posting's URL does not end with never becomes the id, whatever
+    it looks like — a bare US ZIP+4 and a `DDMMMYYYY` closing-date label both being real shapes
+    the module comment records living there. This is the property that lets the shape tier stay
+    narrow instead of growing an alternative per tenant."""
     assert _wd_key(["12345-6789"]) == "Some-Title_FALLBACK-999"
-    assert _wd_key(["90210-1234"]) == "Some-Title_FALLBACK-999"
-    assert _wd_key(["202607-119609"]) == "202607-119609"  # six digits: still a req id
+    assert _wd_key(["10JAN2026"]) == "Some-Title_FALLBACK-999"
+    assert _wd_key(["202607-119609"]) == "Some-Title_FALLBACK-999"
 
 
 def test_workday_posting_key_rejects_a_ddmmmyyyy_closing_date():
-    """The `26WD100347` shape must not stretch to `10JAN2026`. bulletFields carries closing-date
-    labels (module comment above `_posting_key`), and a date is the SAME string across a tenant's
-    postings — precisely the collision the externalPath ranking exists to prevent."""
+    """A date is the SAME string across many of a tenant's postings, so keying on one collapses
+    them onto a single row — the collision `tutorperini` and `nkg` already cost us once. The
+    shape tier must not admit `10JAN2026`, and a real req id beside it must still win."""
     assert _wd_key(["10JAN2026"]) == "Some-Title_FALLBACK-999"
     assert _wd_key(["31DEC2026"]) == "Some-Title_FALLBACK-999"
     assert _wd_key(["10JAN2026", "JR00004545"]) == "JR00004545"

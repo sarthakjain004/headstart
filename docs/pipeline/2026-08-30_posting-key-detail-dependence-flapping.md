@@ -85,8 +85,12 @@ listing+detail data). Run twice, once per design:
 
 | identity rule | boards migrating | postings migrating | projected served rows |
 |---|---|---|---|
-| shape widening only | 6 / 102 (5.9%) | 2,212 / 27,287 (8.1%) | ~6,000 |
+| shape tier alone | 6 / 102 (5.9%) | 2,212 / 27,287 (8.1%) | ~6,000 |
 | **+ URL-vouched tier** | **1 / 102 (1.0%)** | **452 / 27,510 (1.6%)** | **~1,200** |
+
+A reviewer's re-run of the first row at the same seed got 8 / 102 and 1,740 postings — a Board
+that fails its detail fetch drops out of the sample, so the counterfactual moves between runs.
+The ~5× reduction survives both; the exact first-row figures should be read as a range.
 
 Boards are projected over the **7,620 Scrapable Workday Boards** `load_active_companies()`
 reports, not the ledger's 10,538 raw rows; served rows apply Workday's ~6.9% tech keep rate. One

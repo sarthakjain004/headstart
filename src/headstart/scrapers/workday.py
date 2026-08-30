@@ -862,18 +862,6 @@ _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{1,2}$")
 _REQ_ID_SHAPE = re.compile(
     r"^(?:[A-Za-z]{1,5}[-_ ]?){1,2}\d[\dA-Za-z]*(?:[-_ ]+\d[\dA-Za-z]*)*$"
     r"|^\d[\dA-Za-z]*[-_][A-Za-z]{1,3}$"
-    # Three digit-leading shapes the 129-tenant sample above did not contain, each measured live
-    # on the board that needed it. They matter more than their rarity suggests: while these were
-    # rejected, `_posting_key`'s listing tier disagreed with the detail's `jobReqId`, so a lost
-    # detail *renamed* the posting rather than merely under-filling it — 58% of all index
-    # flapping across 12 runs (ADR-0097).
-    r"|^\d{6,}[-_]\d{3,}$"  # roche: `202607-119609` (YYYYMM-serial). Six digits, not five,
-    # so a bare US ZIP+4 (`12345-6789`) cannot reach this — bulletFields carries addresses.
-    r"|^\d{4,}[A-Za-z]{1,3}$"  # pwc/crm: `726071WD`
-    # Exactly two letters, not two-or-three: `\d{2,}[A-Za-z]{3}\d{4,}` also admits a `10JAN2026`
-    # closing-date label, which the module comment above records living in bulletFields and which
-    # is shared across a tenant's postings — the collision this ordering exists to avoid.
-    r"|^\d{2,}[A-Za-z]{2}\d{4,}$"  # autodesk: `26WD100347`
 )
 _BARE_NUMERIC = re.compile(r"^\d+$")
 
@@ -905,14 +893,21 @@ def _vouched_by_url(bullet_fields: Any, tail: str) -> str | None:
     re-post disambiguator, living in the URL only: ``…_26-695-1`` serves ``jobReqId`` ``26-695``.
 
     Whitespace is squeezed on the field before comparing, as the shape tier already does — cooley
-    serves ``Req 5047`` for a URL that says ``Req5047``.
+    serves ``Req 5047`` for a URL that says ``Req5047`` (so cooley's ids do change once, by that
+    space). Fields are tried longest-first rather than in array order, so one that is merely a
+    *prefix* of the real req id cannot win on position.
     """
-    for field in bullet_fields or []:
-        if not isinstance(field, str):
-            continue
-        squeezed = re.sub(r"\s+", "", field)
-        if squeezed and re.search(rf"_{re.escape(squeezed)}(?:-\d+)?$", tail):
-            return squeezed
+    squeezed = [
+        re.sub(r"\s+", "", field)
+        for field in bullet_fields or []
+        if isinstance(field, str)
+    ]
+    # Longest first, so a field that is a *prefix* of the real one cannot win on position.
+    # `["2026", "2026-02608"]` against `Nurse_2026-02608` matches both once `-N` is tolerated,
+    # and `2026` is a board-wide constant — the collision the `_` boundary exists to stop.
+    for field in sorted((f for f in squeezed if f), key=len, reverse=True):
+        if re.search(rf"_{re.escape(field)}(?:-\d+)?$", tail):
+            return field
     return None
 
 

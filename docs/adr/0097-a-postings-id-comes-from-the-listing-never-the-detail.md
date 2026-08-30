@@ -9,10 +9,12 @@
   defeats), [ADR-0023](0023-canonical-board-identity.md) (Board identity; this is *Job* identity),
   [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (the exclusion channel ADR-0088 refused,
   and this ADR still refuses).
-- Addresses **#219** ("workday: a new eviction-flap pattern, different boards than #142's
-  original evidence"), the Workday half split out of **#142**. Neither is closed by this: #219's
-  own worst-12 overlaps this evidence only at `pwc/crm`, and #142's remaining scope is
-  successfactors.
+- Filed against **#219** ("workday: a new eviction-flap pattern") and **#142**, and **closes
+  neither**. Be precise about the overlap: #219's own worst-12 Boards meet this evidence only at
+  `pwc/crm`, and 8 of its 10 named Boards were sampled live — all already have a listing tier
+  equal to their served id, so they were never renameable by this defect. **#219's reported
+  symptom stays unexplained**; this ADR fixes a different, larger rename channel found while
+  looking at it.
 - Evidence: `docs/pipeline/2026-08-30_posting-key-detail-dependence-flapping.md`
 
 ## Context
@@ -65,27 +67,29 @@ This is the same property `fetch_raw` already relied on: its dedup pass runs *be
 fetch, so the listing-derived key was already the de-facto within-run identity. Identity and
 dedup now agree instead of disagreeing by one network call.
 
-**Paired with it, and in the same change on purpose:** `_REQ_ID_SHAPE` gains the three
-digit-leading shapes above. This is not a second fix — it is what makes the change **free**.
-
 On the four Boards that motivated this change — **not** a corpus total, see Consequences:
 
-| board | rows | id after, if only the detail tier is dropped | with the widening too |
+| board | rows | id, detail tier dropped, shape tier alone | with the URL tier |
 |---|---:|---|---|
 | roche | 1,208 | renamed | **unchanged** |
 | pwc/crm | 1,716 | renamed | **unchanged** |
 | autodesk | 420 | renamed | **unchanged** |
-| saabgroup | 452 | renamed | renamed (no bulletFields) |
-| **these four** | | **3,796** | **452** |
+| saabgroup | 452 | renamed | renamed — nothing for the URL to vouch for |
 
-Shipping them separately would have renamed roche, pwc and autodesk **twice** — once onto the
-`externalPath` tail, then back onto `bulletFields` — so the ordering is load-bearing, not tidiness.
+**An intermediate version of this change widened `_REQ_ID_SHAPE` with three digit-leading
+alternatives instead, and it is not in the final one.** With the URL tier in place the shape tier
+fired **0 times across 2,161 live postings on 149 Boards** (URL tier 2,119, `externalPath` tail
+42), and adding the widened alternatives changed **0** ids across 718 postings. Unreached code
+that only widens what can be mistaken for a req id is collision surface bought for nothing, so it
+was reverted; `_looks_like_req_id` is unchanged from `main`. That measurement is the reason the
+first tier asks the URL a question rather than guessing harder at the shape.
 
 ## Why not the alternatives
 
-1. **Widen the regex only.** Zero migration, fixes ~78% of the flapped rows, leaves saabgroup and
-   every no-`bulletFields` Board broken and the class open: the next tenant with an unrecognised
-   req-id shape reintroduces it silently. Rejected — it treats the symptom's biggest instance.
+1. **Widen the regex only.** Fixes ~78% of the flapped rows, leaves saabgroup and every
+   no-`bulletFields` Board broken, and leaves the class open: the next tenant with an
+   unrecognised req-id shape reintroduces it silently. *Built, measured, reverted* — see the
+   Decision. Shape-matching is the approach this whole defect is an argument against.
 2. **`mark_truncated` on a heavy detail loss.** ADR-0088 refused this and its reasoning is
    undiminished: the listing was *complete*, so the Board is not Unauthoritative, and ADR-0053's
    exclusion has no bound and no drain (measured: 105 dead rows on `careers.qualcomm.com`, oldest
@@ -111,7 +115,7 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 ## Consequences
 
 - **A one-time id migration, corpus-wide: ~6% of Workday Boards.** Measured by a 140-Board
-  random sweep of the cost ledger (102 returned usable listing+detail data, 27,287 postings):
+  random sweep of the cost ledger (102 returned usable listing+detail data, 27,510 postings):
   **1 Board (1.0%) and 452 postings (1.6%)** rename — `saabgroup/Saab_careers`, which carries no
   `bulletFields` at all and is irreducible by any rule. Projected over Workday's **7,620 Scrapable
   Boards** — `load_active_companies()`, not the cost ledger's 10,538 raw rows, per CLAUDE.md's
@@ -120,10 +124,13 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
   (ADR-0027). *One migrating Board in 102 is a small numerator; treat the projection as an order
   of magnitude, not a forecast.*
 
-  **Without the URL-vouched tier the same sweep found 6 Boards (5.9%) / 2,212 postings (8.1%)**,
-  i.e. ~450 Boards and ~6,000 served rows. Asking the URL rather than guessing the shape is worth
-  a 5× reduction in one-time churn, and it is why that tier is in this ADR rather than a later
-  one — deferring it would migrate the same Boards twice.
+  **Without the URL-vouched tier the shape tier alone leaves roughly 6-8% of postings
+  migrating** — 6 Boards / 2,212 postings on one sample, 8 Boards / 1,740 on a reviewer's re-run
+  at the same seed. The two disagree on which Boards and by how much, because a Board that fails
+  its detail fetch drops out of the sample entirely; the ~5× reduction survives both, the precise
+  counterfactual does not, and it is quoted here as a range for that reason. Asking the URL
+  rather than guessing the shape is why that tier is in this ADR rather than a later one —
+  deferring it would migrate the same Boards twice.
 
   An earlier draft of this ADR said "one Board, 452 rows". That was a 4-Board sample stated as a
   precise figure, and the diagnosis doc had already flagged that "a precise figure needs a sweep,
@@ -131,10 +138,11 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 
   What the URL-vouched tier recovered: the four Boards carrying a `YYYY-serial` req id
   (`usbank` 2026-0026665, `mercyhealth` 2026-02608, `montagehealth` 2026-968, `aafp` 37-26) that
-  no shape floor admits without also admitting a bare ZIP+4 — plus `cree` (`26-167`) and `cooley`
-  (`Req 5047`, whose served value carries a space the URL does not). What it cannot recover: a
-  Board with no `bulletFields` (`saabgroup`, `hoedlmayr`) and one whose field is a closing-date
-  label with the real req id nowhere in the listing (`wisconsin/UW_Milwaukee`).
+  no shape rule admits without also admitting a bare ZIP+4, plus `cree` (`26-167`). What it
+  cannot recover: a Board with no `bulletFields` (`saabgroup`, `hoedlmayr`), and one whose field
+  is a closing-date label with the real req id nowhere in the listing (`wisconsin/UW_Milwaukee`).
+  `cooley` migrates either way — its served id is `Req 5047`, with a space its own URL omits, and
+  whitespace is squeezed on both sides of the comparison.
 
   The ADR-0046 collapse guard caps a Board at shedding a quarter of its rows per run, so an
   affected Board drains over ~4 runs and serves both spellings meanwhile — a transitional
