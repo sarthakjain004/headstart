@@ -459,7 +459,6 @@ class WorkdayScraper(BaseScraper):
             "additionalLocations": info.get("additionalLocations"),
             "country": country.get("descriptor") if isinstance(country, dict) else None,
             "remoteType": info.get("remoteType"),
-            "jobReqId": info.get("jobReqId"),
         }
 
     def _job_detail(
@@ -563,9 +562,10 @@ class WorkdayScraper(BaseScraper):
         narrow: it says only that *this* pass does not mark the Board truncated — unconditionally
         true — and points at the pass that would. It claims neither that the listing was whole
         (`_paginate` can `mark_truncated` and return, so one Board can lose pages *and* details in
-        a run) nor that the loss is harmless (:func:`_posting_key` prefers the detail's
-        ``jobReqId``, so losing it *renames* Jobs on some tenants). ADR-0088 has both arguments and
-        why neither widens this line's claim.
+        a run) nor that the loss is harmless — it still costs ADR-0021's null fields and an
+        ADR-0050 gap entry. It no longer costs *identity*: :func:`_posting_key` read the detail's
+        ``jobReqId`` until ADR-0097, so a lost detail used to *rename* the Job rather than merely
+        under-fill it. ADR-0088 has both arguments and why neither widens this line's claim.
         """
         missing = sum(1 for detail in details if detail is None)
         if not missing:
@@ -877,15 +877,57 @@ def _looks_like_req_id(field: str) -> bool:
     return bool(_REQ_ID_SHAPE.match(field))
 
 
+def _vouched_by_url(bullet_fields: Any, tail: str) -> str | None:
+    """The ``bulletFields`` entry the posting's own ``externalPath`` tail ends with, or None.
+
+    Shape-matching a requisition id cannot be made complete — this ATS's worst eviction-flap
+    defect began with :func:`_looks_like_req_id` not knowing roche's ``202607-119609``, and every
+    new tenant is a chance to not know another one (ADR-0097). So ask a question that has a
+    definite answer instead: Workday builds the tail as ``{Title}_{req id}``, so the field the URL
+    ends with **is** the req id, whatever it looks like.
+
+    Two details are load-bearing. The match must sit after an underscore — a bare ``endswith``
+    returns ``Engineer`` for every posting on a board whose ``bulletFields`` carries an
+    employment-type tag and whose title ends in it, which is the collision ``tutorperini`` and
+    ``nkg`` already cost us once. And a trailing ``-N`` is tolerated because that is Workday's
+    re-post disambiguator, living in the URL only: ``…_26-695-1`` serves ``jobReqId`` ``26-695``.
+
+    Whitespace is squeezed on the field before comparing, as the shape tier already does — cooley
+    serves ``Req 5047`` for a URL that says ``Req5047`` (so cooley's ids do change once, by that
+    space). Fields are tried longest-first rather than in array order, so one that is merely a
+    *prefix* of the real req id cannot win on position.
+    """
+    squeezed = [
+        re.sub(r"\s+", "", field)
+        for field in bullet_fields or []
+        if isinstance(field, str)
+    ]
+    # Longest first, so a field that is a *prefix* of the real one cannot win on position.
+    # `["2026", "2026-02608"]` against `Nurse_2026-02608` matches both once `-N` is tolerated,
+    # and `2026` is a board-wide constant — the collision the `_` boundary exists to stop.
+    for field in sorted((f for f in squeezed if f), key=len, reverse=True):
+        if re.search(rf"_{re.escape(field)}(?:-\d+)?$", tail):
+            return field
+    return None
+
+
 def _posting_key(item: dict[str, Any]) -> str:
-    """Stable per-posting id. Prefers, in order: the detail response's own ``jobReqId`` (only
-    present once :meth:`WorkdayScraper.parse` runs, after the per-job detail fetch has attached
-    ``item["_detail"]`` — absent during :meth:`WorkdayScraper.fetch_raw`'s earlier, pre-detail
-    dedup pass, which falls through to the next tier); the ``bulletFields`` entry shaped like a
+    """Stable per-posting id, computed **only from the listing** — never from the per-job detail
+    response. Prefers, in order: the ``bulletFields`` entry the posting's own ``externalPath``
+    **vouches for** (see :func:`_vouched_by_url`); failing that, the entry merely *shaped* like a
     requisition id, wherever it falls in the array — never a fixed index, which varies by tenant
     (index 1 on most affected tenants, index 2 on others); the ``externalPath`` tail — Workday's
     own URL slug, ``{title}_{req-id-or-similar}``, so specific to one posting by construction;
     ``bulletFields[0]`` dead last, only when ``externalPath`` is itself empty.
+
+    **The detail's own ``jobReqId`` used to outrank all three, and must not** (ADR-0097). It is
+    only present once :meth:`WorkdayScraper.parse` runs, after a detail fetch that, in one
+    measured run, lost between 68% (`roche`, 827/1210) and 97% (`dxctechnology`, 837/860) of a
+    Board's details — so preferring it made a posting's identity depend
+    on whether an optional network call succeeded. A lost detail did not leave a posting
+    *missing*; it *renamed* it, and the old id was evicted on its second consecutive absence
+    (ADR-0083) and re-added the moment the detail pass recovered. ADR-0088 predicted this exact
+    failure here and deferred the fix to this function.
 
     ``externalPath`` outranks ``bulletFields[0]`` here — tempting to reach for first since it at
     least came from the same array the real req id sometimes lives in — because live tenants
@@ -895,10 +937,11 @@ def _posting_key(item: dict[str, Any]) -> str:
     the bulletFields[0]-preferred order — an id *collision*, actively worse than the instability
     this function exists to fix, since a collision silently drops postings rather than merely
     cycling their id."""
-    detail_req_id = (item.get("_detail") or {}).get("jobReqId")
-    if detail_req_id:
-        return str(detail_req_id)
     bullet_fields = item.get("bulletFields") or []
+    tail = (item.get("externalPath") or "").rsplit("/", 1)[-1]
+    vouched = _vouched_by_url(bullet_fields, tail)
+    if vouched:
+        return vouched
     candidates = [
         field
         for field in bullet_fields
@@ -906,7 +949,6 @@ def _posting_key(item: dict[str, Any]) -> str:
     ]
     if candidates:
         return re.sub(r"\s+", "", candidates[0])
-    tail = (item.get("externalPath") or "").rsplit("/", 1)[-1]
     if tail:
         return tail
     bullet = (bullet_fields or [None])[0]

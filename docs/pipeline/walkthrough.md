@@ -235,9 +235,10 @@ reads as unheld, and `compact` drops those 8 on its next pass.
 an id for every description the store holds — 417,765 on 2026-08-26 — and only eightfold reads
 it. Making
 the other seven scrapers consult `have_details` would save a lot of fetching — but Workday's detail
-carries `startDate` (the only `posted_at` source) and `jobReqId` (which `_posting_key` needs,
-measured: skipping it renames 10/10 postings on `roche`), so it is a real design problem, not a
-switch. ADR-0089 deliberately does not foreclose it.
+carries `startDate`, the only `posted_at` source, so it is a real design problem, not a switch.
+ADR-0089 deliberately does not foreclose it. (It used to carry a second blocker — `_posting_key`
+read the detail's `jobReqId`, so skipping a detail renamed the posting. ADR-0097 removed that one:
+identity now comes from the listing alone.)
 
 ## Files to read, in order
 

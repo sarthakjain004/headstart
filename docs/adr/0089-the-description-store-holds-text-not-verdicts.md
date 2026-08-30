@@ -8,6 +8,11 @@ re-derivation now) · **Relates to:**
 state fed), [ADR-0088](0088-a-lost-detail-is-not-a-truncation.md) (the same week's finding that
 a lost detail is a fetch failure, not an absence)
 
+> **Amended 2026-08-30 by [ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md).**
+> The paragraph below names two blockers to extending `have_details` to Workday. One is gone:
+> `_posting_key` no longer reads the detail's `jobReqId`, so skipping a detail no longer renames a
+> posting. `startDate` remains the only `posted_at` source, so the change is still not a switch.
+
 ## Context
 
 ADR-0050 gave the description store three states, because "this Job has no description" has two

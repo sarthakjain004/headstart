@@ -7,6 +7,13 @@ equivalent reporting, whose shape this mirrors),
 [ADR-0021](0021-re-embed-on-content-change.md) (the null fields a lost detail leaves),
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the store that survives one)
 
+> **Amended 2026-08-30 by [ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md).**
+> The "Scope of the claim" section below predicted that a lost detail *renames* the Job and called
+> it "a defect in `_posting_key`'s detail-dependence — to be fixed there". It was, on 2026-08-30.
+> Measured cost of the interval: that rename was **58% of all index flapping** across the 12 runs
+> `33283745755`→`33303633939`. This ADR's own decision — classify a detail loss, never
+> `mark_truncated` on it — is unchanged and was re-affirmed by ADR-0097.
+
 ## Context
 
 `workday:ngc/Northrop_Grumman_External_Site` reported `3536/3691 details missing` (95.8%) in run

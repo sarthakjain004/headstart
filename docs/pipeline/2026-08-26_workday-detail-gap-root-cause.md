@@ -85,9 +85,10 @@ Each of these was a live hypothesis and each was killed by measurement:
   Good and catastrophic boards interleave second by second through the same proxy.
 - **Not board size.** `>50%`-gap boards are 7–24% of boards in *every* size band from <100 to
   >2,000 details.
-- **Not Job-id churn.** `_posting_key` prefers the detail's `jobReqId` and falls back when the
-  detail is missing, so a lost detail could in principle rename a posting. Measured on NGC:
-  **10/10 stable**. (But see §6 — `roche` renames 10/10.)
+- **Not Job-id churn.** `_posting_key` preferred the detail's `jobReqId` and fell back when the
+  detail was missing, so a lost detail could rename a posting. Measured on NGC: **10/10 stable**.
+  (But see §6 — `roche` renames 10/10.) **Fixed 2026-08-30 by ADR-0097**: identity now comes from
+  the listing alone, so a lost detail cannot rename anything. Past tense throughout this bullet.
 - **Not one uniform Workday problem.** `iheartmedia/ihm_technology_site` (42/42 missing) is a
   genuinely *different* bug: every one of its detail URLs returns a real
   `{"errorCode":"HTTP_404",...}` from any IP.
