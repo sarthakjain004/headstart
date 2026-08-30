@@ -123,6 +123,48 @@ def test_reason_survives_an_error_carrying_no_response() -> None:
     )
 
 
+def _with_headers(exc: Exception, headers: dict[str, str]) -> Exception:
+    exc.response.headers = headers  # type: ignore[attr-defined]
+    return exc
+
+
+def test_limiter_note_quotes_the_window_the_hub_reported() -> None:
+    exc = _with_headers(_hub_error(_HF_429, 429), {"RateLimit": '"api";r=0;t=137'})
+    assert sf.limiter_note(exc) == '; limiter said "api";r=0;t=137'
+
+
+def test_limiter_note_records_a_429_that_carried_no_header() -> None:
+    """The header's absence is the finding, and it is why this exists.
+
+    Run 33159268268's 429s carried a CloudFront id and no `RateLimit`, so `reset_after` found
+    nothing and the ladder ran instead of a real window. Without this clause that log line is
+    indistinguishable from real quota exhaustion — and the obvious remedy, spending fewer API
+    calls, is then aimed at a cost the measurements say was never there.
+    """
+    assert (
+        sf.limiter_note(_hub_error(_HF_429, 429)) == "; no RateLimit header on the 429"
+    )
+
+
+def test_limiter_note_stays_silent_on_statuses_it_cannot_speak_to() -> None:
+    """A 401 or a 503 has no bearing on the rate limiter, so it must not collect a verdict."""
+    assert sf.limiter_note(_hub_error("unauthorized", 401)) == ""
+    assert sf.limiter_note(_hub_error("bad gateway", 503)) == ""
+    assert sf.limiter_note(_hub_error("connection reset", None)) == ""
+
+
+def test_limiter_note_treats_a_blank_header_as_absent() -> None:
+    exc = _with_headers(_hub_error(_HF_429, 429), {"RateLimit": "   "})
+    assert sf.limiter_note(exc) == "; no RateLimit header on the 429"
+
+
+def test_reason_stays_one_line_even_when_a_header_carries_a_newline() -> None:
+    """`reason_for` folds the exception text *before* appending the note, so the note has to
+    fold itself — ADR-0039 renders only the first line of an annotation."""
+    exc = _with_headers(_hub_error(_HF_429, 429), {"RateLimit": '"api";r=0;\n t=137'})
+    assert "\n" not in sf.reason_for(exc)
+
+
 def test_reset_after_reads_the_hubs_own_window() -> None:
     """HF answers a 429 with `RateLimit: "api";r=<left>;t=<seconds to reset>`. Quotas are fixed
     5-minute windows, so `t` is the only wait that actually clears one — guessing at it is what
