@@ -5766,7 +5766,8 @@ def test_workday_posting_key_falls_back_to_external_path_tail_without_bullet_fie
     ("bullet_fields", "external_path", "req_id"),
     [
         # roche — `_looks_like_req_id` rejected NNNNNN-NNNNNN, so a lost detail renamed
-        # 68-76% of the board every run: 58% of all index flapping across 12 runs
+        # roche's own two measured runs, 827/1210 and 918/1210 of details lost: 58% of all
+        # index flapping across 12 runs
         # (docs/pipeline/2026-08-30_posting-key-detail-dependence-flapping.md).
         (
             ["202607-119609"],
@@ -5835,6 +5836,15 @@ def test_workday_widened_req_id_shapes_still_avoid_the_measured_collision():
         assert _wd_key(
             shared, external_path="/job/White-Plains/Superintendent_JR102942"
         ) != _wd_key(shared, external_path="/job/Newark-NJ/Project-Accountant_JR102927")
+
+
+def test_workday_posting_key_rejects_a_ddmmmyyyy_closing_date():
+    """The `26WD100347` shape must not stretch to `10JAN2026`. bulletFields carries closing-date
+    labels (module comment above `_posting_key`), and a date is the SAME string across a tenant's
+    postings — precisely the collision the externalPath ranking exists to prevent."""
+    assert _wd_key(["10JAN2026"]) == "Some-Title_FALLBACK-999"
+    assert _wd_key(["31DEC2026"]) == "Some-Title_FALLBACK-999"
+    assert _wd_key(["10JAN2026", "JR00004545"]) == "JR00004545"
 
 
 def test_workday_posting_key_rejects_a_year_month_as_a_req_id():

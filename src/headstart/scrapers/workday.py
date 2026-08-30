@@ -562,9 +562,10 @@ class WorkdayScraper(BaseScraper):
         narrow: it says only that *this* pass does not mark the Board truncated — unconditionally
         true — and points at the pass that would. It claims neither that the listing was whole
         (`_paginate` can `mark_truncated` and return, so one Board can lose pages *and* details in
-        a run) nor that the loss is harmless (:func:`_posting_key` prefers the detail's
-        ``jobReqId``, so losing it *renames* Jobs on some tenants). ADR-0088 has both arguments and
-        why neither widens this line's claim.
+        a run) nor that the loss is harmless — it still costs ADR-0021's null fields and an
+        ADR-0050 gap entry. It no longer costs *identity*: :func:`_posting_key` read the detail's
+        ``jobReqId`` until ADR-0097, so a lost detail used to *rename* the Job rather than merely
+        under-fill it. ADR-0088 has both arguments and why neither widens this line's claim.
         """
         missing = sum(1 for detail in details if detail is None)
         if not missing:
@@ -869,7 +870,10 @@ _REQ_ID_SHAPE = re.compile(
     r"|^\d{6,}[-_]\d{3,}$"  # roche: `202607-119609` (YYYYMM-serial). Six digits, not five,
     # so a bare US ZIP+4 (`12345-6789`) cannot reach this — bulletFields carries addresses.
     r"|^\d{4,}[A-Za-z]{1,3}$"  # pwc/crm: `726071WD`
-    r"|^\d{2,}[A-Za-z]{2,3}\d{4,}$"  # autodesk: `26WD100347`
+    # Exactly two letters, not two-or-three: `\d{2,}[A-Za-z]{3}\d{4,}` also admits a `10JAN2026`
+    # closing-date label, which the module comment above records living in bulletFields and which
+    # is shared across a tenant's postings — the collision this ordering exists to avoid.
+    r"|^\d{2,}[A-Za-z]{2}\d{4,}$"  # autodesk: `26WD100347`
 )
 _BARE_NUMERIC = re.compile(r"^\d+$")
 

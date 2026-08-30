@@ -9,6 +9,10 @@
   defeats), [ADR-0023](0023-canonical-board-identity.md) (Board identity; this is *Job* identity),
   [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (the exclusion channel ADR-0088 refused,
   and this ADR still refuses).
+- Addresses **#219** ("workday: a new eviction-flap pattern, different boards than #142's
+  original evidence"), the Workday half split out of **#142**. Neither is closed by this: #219's
+  own worst-12 overlaps this evidence only at `pwc/crm`, and #142's remaining scope is
+  successfactors.
 - Evidence: `docs/pipeline/2026-08-30_posting-key-detail-dependence-flapping.md`
 
 ## Context
@@ -48,13 +52,15 @@ dedup now agree instead of disagreeing by one network call.
 **Paired with it, and in the same change on purpose:** `_REQ_ID_SHAPE` gains the three
 digit-leading shapes above. This is not a second fix — it is what makes the change **free**.
 
+On the four Boards that motivated this change — **not** a corpus total, see Consequences:
+
 | board | rows | id after, if only the detail tier is dropped | with the widening too |
 |---|---:|---|---|
 | roche | 1,208 | renamed | **unchanged** |
 | pwc/crm | 1,716 | renamed | **unchanged** |
 | autodesk | 420 | renamed | **unchanged** |
 | saabgroup | 452 | renamed | renamed (no bulletFields) |
-| **total renamed** | | **3,796** | **452** |
+| **these four** | | **3,796** | **452** |
 
 Shipping them separately would have renamed roche, pwc and autodesk **twice** — once onto the
 `externalPath` tail, then back onto `bulletFields` — so the ordering is load-bearing, not tidiness.
@@ -73,6 +79,14 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 4. **Derive the req id from the `externalPath` tail's last `_` segment.** Works for roche
    (`202607-119609`) and autodesk, fails for saabgroup (`REQ_40700` → `40700`) and pwc
    (`728635WD-3`). A heuristic that is wrong on half the motivating cases.
+5. **Accept a `bulletFields` entry when it is a suffix of the posting's own `externalPath`.**
+   Self-validating rather than shape-guessing, and measured collision-free on all 9 Boards tried
+   — including `tutorperini` (235/235 distinct) and `nkg` (48/48). Rejected *for now* because it
+   is only a **partial** match where it matters: 2/5 postings on `usbank`, 4/5 on `mercyhealth`,
+   3/5 on `montagehealth`. It would shrink the migration without removing it, at the cost of a
+   second identity rule running beside the first — permanent complexity bought against a one-time
+   cost, in the function whose defect was being too clever. Worth revisiting if the migration
+   proves more expensive in practice than projected.
 5. **Fix the 400s instead.** That is the upstream defect and it is real (see Consequences), but it
    is a network-behaviour change whose efficacy cannot be measured locally, and it would leave
    identity fragile against *any* future detail loss. These are separable, and this one is the
@@ -80,10 +94,28 @@ Shipping them separately would have renamed roche, pwc and autodesk **twice** �
 
 ## Consequences
 
-- **One Board migrates: 452 rows on `saabgroup/Saab_careers`**, once. Verified live — roche,
-  pwc/crm and autodesk keep byte-identical ids. The ADR-0046 collapse guard caps a Board at
-  shedding a quarter of its rows per run, so saabgroup drains over ~4 runs and serves both
-  spellings meanwhile. That is a transitional duplicate, not a loss.
+- **A one-time id migration, corpus-wide: ~6% of Workday Boards.** Measured by a 140-Board
+  random sweep of the cost ledger (102 returned usable listing+detail data, 27,287 postings):
+  **6 Boards (5.9%) and 2,212 postings (8.1%)** rename. Projected across the ledger's 10,529
+  Workday Boards / 1,072,959 postings that is **~620 Boards and ~87,000 raw postings**, or
+  **~6,000 served rows** at Workday's ~6.9% tech keep rate (ADR-0027).
+
+  An earlier draft of this ADR said "one Board, 452 rows". That was a 4-Board sample stated as a
+  precise figure, and the diagnosis doc had already flagged that "a precise figure needs a sweep,
+  not this sample". The sweep says otherwise; the number above is the sweep.
+
+  Two causes, in the sweep's proportion: **4 of 6** carry a `YYYY-serial` req id
+  (`2026-0026665`, `2026-02608`, `2026-968`) that the widened shape still rejects — the six-digit
+  floor that keeps a bare ZIP+4 out also keeps a four-digit year out; **2 of 6** have no
+  `bulletFields` at all and are irreducible by any shape rule.
+
+  The ADR-0046 collapse guard caps a Board at shedding a quarter of its rows per run, so an
+  affected Board drains over ~4 runs and serves both spellings meanwhile — a transitional
+  duplicate, not a loss, but a visible one at this scale.
+
+- **A one-time cost is being paid to stop an ongoing one.** That is the trade, stated plainly:
+  ~6,000 rows churn once, so that ~216 rows per 12-run window stop churning forever and the
+  delta signals ADR-0040/0051 depend on stop being corrupted (#142's first stated harm).
 - **The widening is collision-safe, measured, not argued.** 12 Boards / 2,906 live postings, zero
   reduction in distinct ids — including both Boards the module comment names as the hazard
   (`tutorperini` 235/235, `nkg` 48/48), whose shared `bulletFields[0]` is a company name the new

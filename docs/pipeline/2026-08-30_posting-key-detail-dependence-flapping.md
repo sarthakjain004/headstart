@@ -76,15 +76,26 @@ All 216 flapped rows took the `evict` (sync) path; **zero** took either prune pa
 
 ## Migration cost of fixing it in `_posting_key`
 
-Sampled 14 random Workday boards live (listing + 3 details each, 942 postings):
+A first pass sampled 14 random Workday boards (12 usable, 942 postings): 11 stable, 1 migrating
+(`gellerco`, no bulletFields). **That sample was too small to publish a figure from, and an early
+draft of ADR-0097 published one anyway** — see the sweep below, which replaced it.
 
-- **12 boards stable** — `bulletFields` accepted *and* equal to `jobReqId`, so dropping the
-  detail tier changes nothing.
-- **1 board migrates** (`gellerco`, no bulletFields). 1 empty, 1 HTTP error.
+**The sweep.** 140 random boards from the cost ledger, 102 returning usable listing+detail data,
+27,287 postings: **6 boards (5.9%) and 2,212 postings (8.1%) rename.** Projected over the
+ledger's 10,529 Workday boards / 1,072,959 postings: **~620 boards, ~87,000 raw postings,
+~6,000 served rows** at Workday's ~6.9% tech keep rate.
 
-So the fix is a **targeted** id migration, not a corpus-wide one — but the affected boards are
-disproportionately large (roche 1,208 postings, saab 452), so the row count is not proportional
-to the board count. A precise figure needs a sweep, not this sample.
+| migrating board | rows | why it migrates |
+|---|---:|---|
+| `usbank/US_Bank_Careers` | 1,479 | `2026-0026665` — YYYY-serial, below the six-digit floor |
+| `mercyhealth/mercyhealthcareers` | 579 | `2026-02608` — same |
+| `montagehealth/montage_health` | 84 | `2026-968` — same |
+| `aafp/aafp_careers` | 6 | `37-26` — same |
+| `wisconsin/UW_Milwaukee` | 30 | bulletFields is `Application Deadline: 09/13/2026`; the real req id is nowhere in the listing |
+| `hoedlmayr/External` | 34 | **no bulletFields** — irreducible |
+
+Four of six are the year-serial shape the ZIP+4 guard excludes: `^\d{6,}[-_]\d{3,}$` keeps out a
+bare `12345-6789`, and a four-digit year with it. Two are irreducible by any shape rule.
 
 ## The reproduction loop
 
@@ -184,7 +195,8 @@ Verified live after the change, on the four motivating boards:
 | saabgroup/Saab_careers | 452 | renamed once — no `bulletFields` to widen to |
 
 The stability invariant (`key(with detail) == key(without detail)`) held on every posting probed.
-Total one-time churn: **452 rows**, against 3,796 had the regex not been widened in the same change.
+On these four boards the widening cut the churn from 3,796 rows to 452. **Corpus-wide the churn is
+~6,000 served rows across ~620 boards** — see the sweep above, not this table.
 
 **The upstream 400 handling is deliberately still open** — see the section above. This fix makes
 identity correct whether or not that ever lands.
