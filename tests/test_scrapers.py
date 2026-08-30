@@ -1820,7 +1820,6 @@ def test_workday_extract_detail_carries_the_location_fields():
     assert got["location"] == "London"
     assert got["additionalLocations"] == ["Dublin"]
     assert got["remoteType"] == "Remote Available"
-    assert got["jobReqId"] == "JR00258"  # _posting_key's preferred source (option A2)
 
 
 def test_workday_extract_detail_carries_the_country_field():
@@ -5763,13 +5762,87 @@ def test_workday_posting_key_falls_back_to_external_path_tail_without_bullet_fie
     assert _wd_key(None) == "Some-Title_FALLBACK-999"
 
 
-def test_workday_posting_key_prefers_the_detail_response_req_id():
-    """Only available once `parse()` runs, after the detail fetch has attached `_detail` —
-    absent during `fetch_raw()`'s earlier, pre-detail dedup pass (covered by the fixture-less
-    fallback cases above, which never pass a `_detail` key)."""
-    assert _wd_key(
-        ["Some Location", "JR00258"], detail={"jobReqId": "JR00258-CANONICAL"}
-    ) == ("JR00258-CANONICAL")
+@pytest.mark.parametrize(
+    ("bullet_fields", "external_path", "req_id"),
+    [
+        # roche — `_looks_like_req_id` rejected NNNNNN-NNNNNN, so a lost detail renamed
+        # 68-76% of the board every run: 58% of all index flapping across 12 runs
+        # (docs/pipeline/2026-08-30_posting-key-detail-dependence-flapping.md).
+        (
+            ["202607-119609"],
+            "/job/Hyderabad/ERP-Solution-Consultant---EHS_202607-119609",
+            "202607-119609",
+        ),
+        # pwc/crm — digits-then-letters.
+        (
+            ["726071WD"],
+            "/job/AC-Manila/Cybersecurity-Platform-Associate_726071WD",
+            "726071WD",
+        ),
+        # autodesk — digits, letters, digits.
+        (
+            ["26WD100347"],
+            "/job/Toronto/Full-Stack-Software-Development-Engineer_26WD100347",
+            "26WD100347",
+        ),
+        # saabgroup — the listing carries NO bulletFields at all, so no regex can help;
+        # the externalPath tail has to hold the identity on both sides.
+        (
+            None,
+            "/job/Huskvarna/Deputy-Head-of-Airworthiness-Office_REQ_44663",
+            "REQ_44663",
+        ),
+    ],
+)
+def test_workday_posting_key_is_stable_when_the_detail_is_lost(
+    bullet_fields, external_path, req_id
+):
+    """A posting's id must not depend on whether an OPTIONAL network fetch succeeded.
+
+    It used to: `_posting_key` preferred `_detail["jobReqId"]`, which only exists after the
+    per-job detail pass. A failed detail therefore did not make a posting *missing* — it
+    *renamed* it, so the old id went Unconfirmed (ADR-0083), evicted on the second consecutive
+    absence, and was re-added the moment the detail pass recovered. Measured: 75 of the 77 roche
+    postings evicted in run 33288099045 were re-added by 33289938377, the same postings.
+
+    ADR-0088 named this defect and deferred it here: "a defect in `_posting_key`'s
+    detail-dependence — to be fixed there".
+    """
+    got_with = _wd_key(
+        bullet_fields, detail={"jobReqId": req_id}, external_path=external_path
+    )
+    got_without = _wd_key(bullet_fields, detail={}, external_path=external_path)
+    assert got_with == got_without, (
+        f"a lost detail renamed the posting: {got_with!r} -> {got_without!r}"
+    )
+
+
+def test_workday_posting_key_keeps_the_req_id_shapes_the_detail_used_to_supply():
+    """Widening `_looks_like_req_id` is what makes the tiers *agree* rather than merely stop
+    disagreeing, so dropping the detail tier renames nothing on these boards. Measured live
+    across roche/pwc/autodesk: 3,796 rows would have been renamed without the widening, 452
+    with it (saab alone, which has no bulletFields to widen to)."""
+    assert _wd_key(["202607-119609"]) == "202607-119609"  # roche
+    assert _wd_key(["726071WD"]) == "726071WD"  # pwc/crm
+    assert _wd_key(["26WD100347"]) == "26WD100347"  # autodesk
+
+
+def test_workday_widened_req_id_shapes_still_avoid_the_measured_collision():
+    """The widening must not re-open what the externalPath ranking closed. Verified live against
+    both boards the module comment names: tutorperini (235 postings) and nkg (48) keep every id
+    distinct, because their shared bulletFields[0] is a company name the widened shapes reject."""
+    for shared in (["Tutor Perini Corporation"], ["NKG Stockler LTDA"]):
+        assert _wd_key(
+            shared, external_path="/job/White-Plains/Superintendent_JR102942"
+        ) != _wd_key(shared, external_path="/job/Newark-NJ/Project-Accountant_JR102927")
+
+
+def test_workday_posting_key_rejects_a_year_month_as_a_req_id():
+    """The widened digits-hyphen-digits shape must not swallow a bare year-month, which
+    `_ISO_DATE` (three groups) does not cover — the closing-date labels the module comment
+    records living in bulletFields make this a live risk, not a hypothetical."""
+    assert _wd_key(["2026-07", "JR00004545"]) == "JR00004545"
+    assert _wd_key(["2026-07"]) == "Some-Title_FALLBACK-999"
 
 
 def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):

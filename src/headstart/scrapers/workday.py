@@ -459,7 +459,6 @@ class WorkdayScraper(BaseScraper):
             "additionalLocations": info.get("additionalLocations"),
             "country": country.get("descriptor") if isinstance(country, dict) else None,
             "remoteType": info.get("remoteType"),
-            "jobReqId": info.get("jobReqId"),
         }
 
     def _job_detail(
@@ -862,6 +861,15 @@ _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{1,2}$")
 _REQ_ID_SHAPE = re.compile(
     r"^(?:[A-Za-z]{1,5}[-_ ]?){1,2}\d[\dA-Za-z]*(?:[-_ ]+\d[\dA-Za-z]*)*$"
     r"|^\d[\dA-Za-z]*[-_][A-Za-z]{1,3}$"
+    # Three digit-leading shapes the 129-tenant sample above did not contain, each measured live
+    # on the board that needed it. They matter more than their rarity suggests: while these were
+    # rejected, `_posting_key`'s listing tier disagreed with the detail's `jobReqId`, so a lost
+    # detail *renamed* the posting rather than merely under-filling it — 58% of all index
+    # flapping across 12 runs (ADR-0097).
+    r"|^\d{6,}[-_]\d{3,}$"  # roche: `202607-119609` (YYYYMM-serial). Six digits, not five,
+    # so a bare US ZIP+4 (`12345-6789`) cannot reach this — bulletFields carries addresses.
+    r"|^\d{4,}[A-Za-z]{1,3}$"  # pwc/crm: `726071WD`
+    r"|^\d{2,}[A-Za-z]{2,3}\d{4,}$"  # autodesk: `26WD100347`
 )
 _BARE_NUMERIC = re.compile(r"^\d+$")
 
@@ -878,14 +886,20 @@ def _looks_like_req_id(field: str) -> bool:
 
 
 def _posting_key(item: dict[str, Any]) -> str:
-    """Stable per-posting id. Prefers, in order: the detail response's own ``jobReqId`` (only
-    present once :meth:`WorkdayScraper.parse` runs, after the per-job detail fetch has attached
-    ``item["_detail"]`` — absent during :meth:`WorkdayScraper.fetch_raw`'s earlier, pre-detail
-    dedup pass, which falls through to the next tier); the ``bulletFields`` entry shaped like a
-    requisition id, wherever it falls in the array — never a fixed index, which varies by tenant
-    (index 1 on most affected tenants, index 2 on others); the ``externalPath`` tail — Workday's
-    own URL slug, ``{title}_{req-id-or-similar}``, so specific to one posting by construction;
+    """Stable per-posting id, computed **only from the listing** — never from the per-job detail
+    response. Prefers, in order: the ``bulletFields`` entry shaped like a requisition id, wherever
+    it falls in the array — never a fixed index, which varies by tenant (index 1 on most affected
+    tenants, index 2 on others); the ``externalPath`` tail — Workday's own URL slug,
+    ``{title}_{req-id-or-similar}``, so specific to one posting by construction;
     ``bulletFields[0]`` dead last, only when ``externalPath`` is itself empty.
+
+    **The detail's own ``jobReqId`` used to outrank all three, and must not** (ADR-0097). It is
+    only present once :meth:`WorkdayScraper.parse` runs, after a detail fetch that fails for
+    68-97% of a board's postings on a bad run — so preferring it made a posting's identity depend
+    on whether an optional network call succeeded. A lost detail did not leave a posting
+    *missing*; it *renamed* it, and the old id was evicted on its second consecutive absence
+    (ADR-0083) and re-added the moment the detail pass recovered. ADR-0088 predicted this exact
+    failure here and deferred the fix to this function.
 
     ``externalPath`` outranks ``bulletFields[0]`` here — tempting to reach for first since it at
     least came from the same array the real req id sometimes lives in — because live tenants
@@ -895,9 +909,6 @@ def _posting_key(item: dict[str, Any]) -> str:
     the bulletFields[0]-preferred order — an id *collision*, actively worse than the instability
     this function exists to fix, since a collision silently drops postings rather than merely
     cycling their id."""
-    detail_req_id = (item.get("_detail") or {}).get("jobReqId")
-    if detail_req_id:
-        return str(detail_req_id)
     bullet_fields = item.get("bulletFields") or []
     candidates = [
         field
