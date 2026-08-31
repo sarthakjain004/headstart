@@ -5962,6 +5962,59 @@ def test_workday_posting_key_rejects_a_year_month_as_a_req_id():
     assert _wd_key(["2026-07"]) == "Some-Title_FALLBACK-999"
 
 
+def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
+    """Workday answers Actions traffic with 400 where it answers a residential IP with 429
+    (ADR-0098). Measured in run 33288099045: 58 Boards lost details to 400, `kohls` 99%,
+    `roche` 68%, and 75 of the 77 roche postings evicted for it succeeded on the very next run —
+    a throttle wearing the wrong number. Because 400 is in neither `http.TRANSIENT` nor
+    `egress_fallback_on` it was retried nowhere, settling first-attempt.
+
+    Both listing and detail calls opt in: the same run shows 5 Boards losing *pages* to 400 as
+    well. `_resolve_instance`'s probe deliberately does not — a 400 there means that data centre
+    does not serve this tenant, which is an answer, not a throttle."""
+    import asyncio
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    seen: list[tuple[str, frozenset]] = []
+
+    class _R:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"jobPostingInfo": {}, "total": 0, "jobPostings": []}
+
+    def fake_fetch(method, url, *, retry_on=http.TRANSIENT, **kw):
+        seen.append((method, retry_on))
+        return _R()
+
+    async def fake_fetch_async(session, method, url, *, retry_on=http.TRANSIENT, **kw):
+        seen.append((method, retry_on))
+        return _R()
+
+    monkeypatch.setattr(http, "fetch", fake_fetch)
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    scraper._job_detail("/job/x/Some-Title_JR1")
+    asyncio.run(scraper._job_detail_async(object(), "/job/x/Some-Title_JR1"))
+    scraper._post({}, 0)
+
+    assert seen, "no fetch was made"
+    for method, retry_on in seen:
+        assert 400 in retry_on, f"{method} call did not opt into retrying a 400"
+        assert http.TRANSIENT <= retry_on, (
+            "the opt-in must EXTEND the shared set, not replace it"
+        )
+
+
 def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):
     """The detail pass is the traffic that spends the Origin budget — workday.py's own header
     documents 3.02M 429-retries and 51.7% of descriptions lost to it — yet only the *listing*

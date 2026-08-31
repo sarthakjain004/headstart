@@ -217,5 +217,8 @@ The stability invariant (`key(with detail) == key(without detail)`) held on ever
 and every board tried kept every id distinct (roche 1,209/1,209, tutorperini 235/235, nkg 48/48).
 **Corpus-wide the churn is ~1,200 served rows across ~75 boards** — see the sweep table above.
 
-**The upstream 400 handling is deliberately still open** — see the section above. This fix makes
-identity correct whether or not that ever lands.
+**The upstream 400 handling was deliberately left out of that change** and is addressed
+separately by [ADR-0098](../adr/0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md):
+Workday's 400 is a throttle, so the scraper now extends its own retry set to cover it, and counts
+the retries under `400-throttle` so the next run says whether that was right. The identity fix
+stands on its own either way.

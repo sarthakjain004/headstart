@@ -42,15 +42,12 @@ __all__ = ["RequestsError", "fetch", "fetch_async", "session"]
 _log = log.get(__name__)
 
 _local = threading.local()
-_TRANSIENT = {
-    403,
-    405,
-    429,
-    500,
-    502,
-    503,
-    504,
-}  # retryable HTTP statuses (403/405 = bot-wall blips, see ADR-0047)
+#: Statuses worth another attempt for *any* caller: a bot-wall blip (403/405, ADR-0047), an
+#: explicit rate limit, or a server-side failure. Public because a caller may need to *extend* it
+#: for one host — workday answers Actions traffic with 400 where it answers elsewhere with 429
+#: (ADR-0098) — and extending beats widening: a 400 is a malformed request nearly everywhere
+#: else, and retrying one there would spend the ladder against a host that keeps saying no.
+TRANSIENT: frozenset[int] = frozenset({403, 405, 429, 500, 502, 503, 504})
 _ATTEMPTS = 3
 
 #: Extra attempts a request may earn back after a rotation wait cost it one. `spare_egress.rotate`
@@ -130,6 +127,11 @@ def _retry_reason(why: str) -> str:
         return "405-wall"  # kept apart from 403: this is the shape Eightfold's edge returns
     if "429" in why:
         return "429-ratelimit"
+    if "400" in why:
+        # Its own class, not folded into 429-ratelimit: this counter is the evidence for whether
+        # treating workday's 400 as a throttle was right (ADR-0098), so it has to be separable
+        # from the 429s the same run also retried.
+        return "400-throttle"
     if any(code in why for code in ("500", "502", "503", "504")):
         return "5xx"
     return "network"
@@ -234,6 +236,7 @@ def fetch(
     egress_group: str | None = None,
     egress_on: frozenset[int] = frozenset(),
     egress_board: str | None = None,
+    retry_on: frozenset[int] = TRANSIENT,
     **kwargs: Any,
 ):
     """Make a request over the pooled session, retrying transient failures with backoff.
@@ -250,7 +253,12 @@ def fetch(
     ``egress_on`` is *not* the same thing: that request still rides the spare egress once something
     else has walled the group, it just can never do the walling itself.
 
-    ``egress_on`` is expected to be a subset of :data:`_TRANSIENT`. A status outside it would be
+    ``retry_on`` overrides which statuses earn another attempt, defaulting to :data:`TRANSIENT`.
+    Pass a *superset* to opt one host into retrying a status nobody else should — the only live
+    case is workday's 400, which is a throttle there and a malformed request almost everywhere
+    else (ADR-0098). Retries are counted by class, so `retry_stats()` says whether it paid.
+
+    ``egress_on`` is expected to be a subset of ``retry_on``. A status outside it would be
     marked but never retried, so this request would settle on the wall it just reported — the mark
     would still help the *next* Board, but the caller should not expect a second attempt.
 
@@ -286,7 +294,7 @@ def fetch(
             spare_egress.note_routed(egress_group)
         if egress_group is not None and response.status_code in egress_on:
             spare_egress.mark_walled(egress_group, response.status_code)
-        if response.status_code in _TRANSIENT and attempt < budget - 1:
+        if response.status_code in retry_on and attempt < budget - 1:
             # Already riding the spare egress and still walled: the second IP is spent too, so the
             # last rung moves again rather than spending a third attempt on a known-bad route.
             if proxy and egress_group is not None and response.status_code in egress_on:
@@ -320,6 +328,7 @@ async def fetch_async(
     egress_group: str | None = None,
     egress_on: frozenset[int] = frozenset(),
     egress_board: str | None = None,
+    retry_on: frozenset[int] = TRANSIENT,
     **kwargs: Any,
 ):
     """Async counterpart to :func:`fetch`: the same retry policy over a caller-supplied
@@ -327,6 +336,9 @@ async def fetch_async(
     connection. Returns the settled response for the caller to classify; retries 403/405/429/5xx
     and transient network errors with backoff (honouring ``Retry-After``); raises
     ``RequestsError`` on DNS or if it never settles.
+
+    ``retry_on`` behaves exactly as it does on :func:`fetch`, and matters more here: workday's
+    400s land overwhelmingly on the detail pass, which is this path (ADR-0098).
 
     ``egress_group``/``egress_on`` carry the spare-egress fallback (ADR-0063) with :func:`fetch`'s
     exact semantics — one shared wall registry, so a wall the sync listing pass marks routes the
@@ -370,7 +382,7 @@ async def fetch_async(
             spare_egress.note_routed(egress_group)
         if egress_group is not None and response.status_code in egress_on:
             spare_egress.mark_walled(egress_group, response.status_code)
-        if response.status_code in _TRANSIENT and attempt < budget - 1:
+        if response.status_code in retry_on and attempt < budget - 1:
             # Same last rung as the sync path: walled *through* the spare egress means this IP is
             # spent too, so move again rather than spend the final attempt on a known-bad route.
             if proxy and egress_group is not None and response.status_code in egress_on:

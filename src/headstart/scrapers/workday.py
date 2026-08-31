@@ -90,6 +90,17 @@ _PAGE_LIMIT = 20  # Workday hard-caps `limit` at 20 (higher returns 400).
 _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide.
 _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceiling.
 _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit one host
+
+# Workday answers GitHub Actions traffic with **400** where it answers a residential IP with 429.
+# Measured 2026-08-30 (ADR-0098): the identical 1,208-detail pass returns `{200: 1124, 429: 84}`
+# from a laptop and could not be made to 400 there at any concurrency tried, direct or through
+# WARP, while run 33288099045 lost 68-97% of a Board's details to 400 inside CI — `kohls` 99%,
+# `roche` 68%. It is a throttle, not a malformed request: 75 of the 77 roche postings evicted
+# for it fetched fine on the very next run. Because 400 sits in neither `http.TRANSIENT` nor
+# `egress_fallback_on`, every one of them settled on the first attempt, unretried.
+# Extends the shared set rather than widening it — 400 really does mean "bad request" on the
+# other seventeen ATSes, and none of them has shown this.
+_RETRY_ON = http.TRANSIENT | {400}
 # The async path's multiplexing width. It had been inheriting the shared 100-stream default while
 # the sync path above deliberately held to 6 against the same host — measured cost of that
 # divergence over 19 pipeline runs: 3,023,846 429-retries and 1,254,130 of 2,426,147 descriptions
@@ -351,7 +362,13 @@ class WorkdayScraper(BaseScraper):
             "Accept": "application/json",
         }
         response = http.fetch(
-            "POST", self.url(), json=body, headers=headers, timeout=30, **self._egress()
+            "POST",
+            self.url(),
+            json=body,
+            headers=headers,
+            timeout=30,
+            retry_on=_RETRY_ON,
+            **self._egress(),
         )
         if response.status_code == 404 and not raise_gone:
             return None  # one page of a live board — the caller reports the gap
@@ -380,6 +397,7 @@ class WorkdayScraper(BaseScraper):
             session,
             "POST",
             self.url(),
+            retry_on=_RETRY_ON,
             json=body,
             headers=headers,
             timeout=30,
@@ -476,6 +494,7 @@ class WorkdayScraper(BaseScraper):
                 self._detail_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                retry_on=_RETRY_ON,
                 **self._egress(),
             )
         except http.RequestsError as exc:
@@ -500,6 +519,7 @@ class WorkdayScraper(BaseScraper):
                 session,
                 "GET",
                 self._detail_url(external_path),
+                retry_on=_RETRY_ON,
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 **self._egress(),
