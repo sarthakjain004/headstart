@@ -99,7 +99,13 @@ _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit on
 # for it fetched fine on the very next run. Because 400 sits in neither `http.TRANSIENT` nor
 # `egress_fallback_on`, every one of them settled on the first attempt, unretried.
 # Extends the shared set rather than widening it — 400 really does mean "bad request" on the
-# other seventeen ATSes, and none of them has shown this.
+# other twenty active ATSes, and none of them has shown this.
+#
+# Workday itself has exactly one *genuine* 400, and we never provoke it: `_PAGE_LIMIT`'s own
+# comment records that a `limit` above 20 returns 400, and that value is a constant here. Detail
+# URLs are built from `externalPath` values the listing just handed us, so a malformed path would
+# be the listing's, not ours. Every 400 this retries is therefore one the origin chose to send a
+# well-formed request — which is the whole basis for reading it as a throttle.
 _RETRY_ON = http.TRANSIENT | {400}
 # The async path's multiplexing width. It had been inheriting the shared 100-stream default while
 # the sync path above deliberately held to 6 against the same host — measured cost of that

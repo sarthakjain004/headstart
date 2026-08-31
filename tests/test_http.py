@@ -81,6 +81,30 @@ def test_405_is_counted_apart_from_403(monkeypatch):
     assert stats["403-wall"] == 1
 
 
+def test_a_network_error_is_never_classified_by_digits_in_its_message(monkeypatch):
+    """Retry classes come from the status, never from the message text.
+
+    They used to come from a substring test, and libcurl puts numbers in its errors: `port 40000`
+    — which is literally `spare_egress._PORT` — read as a 400, `HTTP/2 stream 1400` read as a 400,
+    `port 40500` read as a 405 bot-wall. Every WARP connect failure therefore landed in a status
+    bucket. That matters most for `400-throttle`, which ADR-0098 uses as its keep-or-revert
+    evidence: contamination inflates it and biases the answer toward keep."""
+    http.reset_retry_stats()
+    for message in (
+        "Failed to connect to 127.0.0.1 port 40000: Connection refused",
+        "curl: (92) HTTP/2 stream 1400 was not closed cleanly",
+        "Operation timed out after 4001 milliseconds",
+        "Recv failure on port 40500",
+    ):
+        calls = _stub(monkeypatch, [http.RequestsError(message), 200])
+        http.fetch("GET", "u")
+        assert len(calls) == 2
+    stats = http.retry_stats()
+    assert stats["network"] == 4, stats
+    assert "400-throttle" not in stats
+    assert "405-wall" not in stats
+
+
 def test_does_not_retry_400_by_default(monkeypatch):
     """A 400 stays settled for every caller that does not ask otherwise. It usually *is* a
     malformed request, and retrying one wastes the ladder against a host that will keep saying

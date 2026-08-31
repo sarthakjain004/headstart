@@ -169,7 +169,7 @@ first tier asks the URL a question rather than guessing harder at the shape.
   no longer costs *identity*, which is the part that was eviction-shaped.
 - **The upstream defect was separate, and is now addressed by
   [ADR-0098](0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md).** Workday expresses
-  CI throttling as HTTP **400**, which was in neither `http._TRANSIENT` nor
+  CI throttling as HTTP **400**, which was in neither `http.TRANSIENT` nor
   `workday.egress_fallback_on` — never retried, never rotating the egress, settling as a lost
   detail on the first attempt. Deliberately not bundled here, because its efficacy cannot be
   measured off-CI while this fix could be verified before shipping; the two are independent, and

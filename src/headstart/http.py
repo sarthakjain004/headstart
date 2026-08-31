@@ -37,7 +37,7 @@ from curl_cffi.requests import RequestsError  # re-exported for callers' except 
 
 from headstart import log, spare_egress
 
-__all__ = ["RequestsError", "fetch", "fetch_async", "session"]
+__all__ = ["TRANSIENT", "RequestsError", "fetch", "fetch_async", "session"]
 
 _log = log.get(__name__)
 
@@ -119,22 +119,33 @@ def reset_retry_stats() -> None:
 # and it also buys each new IP a fair trial before we give up on it.
 
 
-def _retry_reason(why: str) -> str:
-    """The coarse class a retry belongs to: what you would act on, not the exact message."""
-    if "403" in why:
-        return "403-wall"
-    if "405" in why:
-        return "405-wall"  # kept apart from 403: this is the shape Eightfold's edge returns
-    if "429" in why:
-        return "429-ratelimit"
-    if "400" in why:
-        # Its own class, not folded into 429-ratelimit: this counter is the evidence for whether
-        # treating workday's 400 as a throttle was right (ADR-0098), so it has to be separable
-        # from the 429s the same run also retried.
-        return "400-throttle"
-    if any(code in why for code in ("500", "502", "503", "504")):
+_RETRY_CLASS = {
+    403: "403-wall",
+    405: "405-wall",  # kept apart from 403: this is the shape Eightfold's edge returns
+    429: "429-ratelimit",
+    # Its own class, not folded into 429-ratelimit: this counter is the evidence for whether
+    # treating workday's 400 as a throttle was right (ADR-0098), so it has to be separable from
+    # the 429s the same run also retried.
+    400: "400-throttle",
+}
+
+
+def _retry_reason(status: int | None) -> str:
+    """The coarse class a retry belongs to: what you would act on, not the exact message.
+
+    Keyed on the **status**, never on the log text. It was a substring test until 2026-08-31, and
+    libcurl writes numbers into its errors: `Failed to connect to 127.0.0.1 port 40000` — which is
+    `spare_egress._PORT` — counted as a 400, `HTTP/2 stream 1400` as a 400, `port 40500` as a 405
+    bot-wall. So every WARP connect failure landed in a status bucket, and the buckets are what
+    tell us whether an ATS is degrading.
+    """
+    if status is None:
+        return "network"
+    if status in _RETRY_CLASS:
+        return _RETRY_CLASS[status]
+    if 500 <= status < 600:
         return "5xx"
-    return "network"
+    return f"http-{status}"  # only reachable via a caller's own `retry_on`'"'"'s extra statuses
 
 
 def _rotate_for(board: str | None, earned: int, deadline: float | None = None) -> int:
@@ -182,6 +193,7 @@ def _note_retry(
     attempts: int,
     why: str,
     retry_after: float | None,
+    status: int | None = None,
 ) -> float:
     """Count one retry, log it at DEBUG, and return the backoff delay for the caller to sleep.
 
@@ -189,7 +201,7 @@ def _note_retry(
     knows its own window, and guessing shorter just burns another attempt against the wall.
     """
     with _retries_lock:
-        _retries[_retry_reason(why)] += 1
+        _retries[_retry_reason(status)] += 1
     delay = retry_after if retry_after is not None else 1.5 * (attempt + 1)
     _log.debug(
         f"{method} {url} attempt {attempt + 1}/{attempts} {why}; "
@@ -307,6 +319,7 @@ def fetch(
                     budget,
                     f"-> {response.status_code}",
                     _retry_after(response),
+                    response.status_code,
                 )
             )
             attempt += 1
@@ -402,6 +415,7 @@ async def fetch_async(
                     budget,
                     f"-> {response.status_code}",
                     _retry_after(response),
+                    response.status_code,
                 )
             )
             attempt += 1

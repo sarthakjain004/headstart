@@ -6006,6 +6006,7 @@ def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
     scraper._job_detail("/job/x/Some-Title_JR1")
     asyncio.run(scraper._job_detail_async(object(), "/job/x/Some-Title_JR1"))
     scraper._post({}, 0)
+    asyncio.run(scraper._post_async(object(), {}, 0))
 
     assert seen, "no fetch was made"
     for method, retry_on in seen:
