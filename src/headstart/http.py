@@ -134,10 +134,15 @@ def _retry_reason(status: int | None) -> str:
     """The coarse class a retry belongs to: what you would act on, not the exact message.
 
     Keyed on the **status**, never on the log text. It was a substring test until 2026-08-31, and
-    libcurl writes numbers into its errors: `Failed to connect to 127.0.0.1 port 40000` — which is
-    `spare_egress._PORT` — counted as a 400, `HTTP/2 stream 1400` as a 400, `port 40500` as a 405
-    bot-wall. So every WARP connect failure landed in a status bucket, and the buckets are what
-    tell us whether an ATS is degrading.
+    libcurl writes numbers into its errors, so a *network* failure could land in a status bucket:
+    verified by replaying the old classifier, `Operation timed out after 30405 milliseconds` was
+    counted as a 405 bot-wall and `...30502...` as a 5xx. Small, but these buckets are the signal
+    for "is this ATS degrading", and ADR-0098 now reads one of them as evidence — so it has to
+    count the thing it names.
+
+    (The 400 class arrived with ADR-0098 and would have been the worst of them: `retry_on` is
+    per-caller, but a substring test is not, so any ATS's `port 40000` or `stream 1400` error
+    would have been filed under workday's throttle counter. It never shipped that way.)
     """
     if status is None:
         return "network"
@@ -145,7 +150,10 @@ def _retry_reason(status: int | None) -> str:
         return _RETRY_CLASS[status]
     if 500 <= status < 600:
         return "5xx"
-    return f"http-{status}"  # only reachable via a caller's own `retry_on`'"'"'s extra statuses
+    # Unreachable today - the classes above cover `TRANSIENT` plus workday's 400 -
+    # but a future `retry_on` extension must show up as its own line rather than being
+    # filed under someone else's, which is the failure this function was just fixed for.
+    return f"http-{status}"
 
 
 def _rotate_for(board: str | None, earned: int, deadline: float | None = None) -> int:
@@ -193,7 +201,7 @@ def _note_retry(
     attempts: int,
     why: str,
     retry_after: float | None,
-    status: int | None = None,
+    status: int | None,
 ) -> float:
     """Count one retry, log it at DEBUG, and return the backoff delay for the caller to sleep.
 
@@ -298,7 +306,7 @@ def fetch(
                     spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             time.sleep(
-                _note_retry(method, url, attempt, budget, f"failed ({exc})", None)
+                _note_retry(method, url, attempt, budget, f"failed ({exc})", None, None)
             )
             attempt += 1
             continue
@@ -387,7 +395,7 @@ async def fetch_async(
                     spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             await asyncio.sleep(
-                _note_retry(method, url, attempt, budget, f"failed ({exc})", None)
+                _note_retry(method, url, attempt, budget, f"failed ({exc})", None, None)
             )
             attempt += 1
             continue

@@ -148,6 +148,22 @@ def test_async_retries_400_when_the_caller_opts_in(monkeypatch):
     assert len(calls) == 2
 
 
+def test_async_retries_are_classified_by_status_too(monkeypatch):
+    """The async path has to thread the status into the counter as well.
+
+    Mutation-tested: dropping the status argument from `fetch_async`'s `_note_retry` call left
+    every other test green, on the path where Workday's 400s actually land — so the counter
+    ADR-0098 reads would have silently reported `network` for all of them."""
+    _warp(monkeypatch)
+    http.reset_retry_stats()
+    session, _ = _astub(monkeypatch, [400, 429, 200])
+    asyncio.run(http.fetch_async(session, "GET", "u", retry_on=http.TRANSIENT | {400}))
+    stats = http.retry_stats()
+    assert stats["400-throttle"] == 1, stats
+    assert stats["429-ratelimit"] == 1, stats
+    assert "network" not in stats
+
+
 def test_async_does_not_retry_400_by_default(monkeypatch):
     _warp(monkeypatch)
     session, calls = _astub(monkeypatch, [400, 200])

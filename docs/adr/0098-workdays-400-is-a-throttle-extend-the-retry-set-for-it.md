@@ -5,9 +5,9 @@
 - Follows [ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md), which closed
   the *consequence* of these lost details (a lost detail renamed a Job) and explicitly left this,
   the cause, open.
-- Relates to [ADR-0063](0063-spend-a-spare-egress-when-an-origin-walls-us.md) (the egress fallback
+- Relates to [ADR-0063](0063-spare-egress-for-a-spent-origin-budget.md) (the egress fallback
   this deliberately does **not** extend), [ADR-0088](0088-a-lost-detail-is-not-a-truncation.md)
-  (a detail gap is classified, never scope-excluded), [ADR-0047](0047-bounded-detail-streams.md)
+  (a detail gap is classified, never scope-excluded), [ADR-0047](0047-pace-against-the-origin.md)
   (403/405 as bot-wall blips, the precedent for retrying a status that usually means something else)
 
 ## Context
@@ -56,17 +56,26 @@ other twenty active ATSes, and none of them has shown this behaviour. Widening `
 two extra attempts, everywhere, against hosts that will keep saying no. This is the same shape as
 ADR-0047's 403/405: a status that means one thing in general and another on one origin.
 
-Four call sites opt in — `_post`, `_post_async`, `_job_detail`, `_job_detail_async`.
-**`_resolve_instance`'s probe deliberately does not:** a 400 there is the answer *"this data centre
-does not serve this tenant"*, which is information, not a throttle, and retrying it would slow
-every migrated Board's cold start.
+**All five fetching call sites opt in** — `_post`, `_post_async`, `_job_detail`,
+`_job_detail_async`, and `_resolve_instance`'s data-centre probe.
+
+An earlier draft excluded the probe, reasoning that a 400 there is the answer *"this data centre
+does not serve this tenant"*. **Measured, that is false:** a wrong centre answers **422** (roche
+wd1/wd5/wd12/wd103/wd105 all 422; wd3, the live one, 200), and `_resolve_instance`'s own docstring
+said so all along — *"its host 500s, the CXS API 422s"*. Since `serves()` accepts only a 200, an
+unretried 400 would make a throttled Board sweep all of `INSTANCES` on an answer that was never
+about the data centre, and a genuinely migrated Board whose *correct* centre 400'd would resolve
+nowhere and read empty. 422 stays out of `retry_on`, so the real wrong-centre answer still fails
+fast on the first attempt.
 
 ### This change measures itself, because one thing could not be measured before shipping
 
 **Unknown at merge time: whether an *immediate* retry recovers a CI 400.** The 97% recovery
 evidence above is *next-run* — hours later — and the 400 could not be reproduced from outside CI
 by any route tried, so retry efficacy could not be established locally. If a throttle episode
-outlasts the ladder (3 attempts, 30 s cap) then retries will not recover it and only a different
+outlasts the ladder — 3 attempts, and for a bare 400 that is about 4.5 s of backoff, not the
+30 s `_MAX_RETRY_AFTER` ceiling a `Retry-After` header could buy — then retries will not
+recover it and only a different
 egress would.
 
 Rather than guess, the change is instrumented to answer it. A retried 400 is counted under its own
@@ -79,7 +88,13 @@ shard. Read it against the settled 400s in the same shard's `N of M detail(s) fa
   alone (400 is not in `egress_fallback_on`, so `_rotate_for` never fires for one) but can on a
   request that met a 429 first;
 - **`400-throttle` ≈ 2S means nothing recovered — revert this;**
-- **`400-throttle` >> 2S means retries are recovering details**, and the gap is roughly how many.
+- **`400-throttle` >> 2S means retries are recovering details.** The gap is not a clean count of
+  them: a recovered 400 cost 1 retry if the second attempt worked and 2 if the third did, so the
+  gap over-states recoveries by up to 2x. Direction is reliable; magnitude is a bound.
+- Two known biases, both toward *keep*, so treat a marginal result as a revert: listing-pass 400s
+  are counted in `400-throttle` but their settled counterparts are not in the detail lines `S`
+  reads, and `_report_detail_losses` prints only its four largest classes, so a small `HTTP 400 xS`
+  can be elided entirely.
 
 Both numbers come from the same run, so the ratio measures the retry rather than the ATS's mood
 that night — the flaw that makes a bare "rescued" rate uninterpretable.
@@ -87,21 +102,25 @@ that night — the flaw that makes a bare "rescued" rate uninterpretable.
 ## Why not the alternatives
 
 1. **Add 400 to `TRANSIENT` globally.** One line instead of a parameter. Rejected: it changes
-   behaviour for seventeen ATSes on evidence from one, and the failure mode is silent — two wasted
-   attempts per genuinely-bad request, everywhere, forever. Note `_retry_reason` was keyed on the
-   log *text* until this change, so `Failed to connect to 127.0.0.1 port 40000` — WARP's own port —
-   counted as a 400 and `port 40500` as a 405; it is keyed on the status now, because a
-   self-measuring change has to measure the thing it claims.
+   behaviour for twenty other active ATSes on evidence from one, and the failure mode is silent — two wasted
+   attempts per genuinely-bad request, everywhere, forever.
 2. **Rotate the spare egress on 400 too** (add it to `egress_fallback_on`). Tempting, and it is
    what one would try for an IP-reputation problem. Rejected because **both routes get 400s**, so
-   changing route has no reason to help: in 14 of run `33288099045`'s 15 shards the first 400
-   arrives *after* `spare egress: connected`, i.e. served to the WARP egress — and in the
-   fifteenth it arrives ~10 s *before* any proxy existed, i.e. served to the direct Actions IP.
-   An earlier draft of this ADR said 15 of 15 and drew the weaker conclusion "already on the
-   spare egress"; that was measured against the `walled — rotating` line rather than the
-   `connected` one, which is up to a second earlier and not the same event. Rotation also spends
-   a bounded IP supply. If the counter above shows retries alone are not enough, this is still
-   the next thing to try — but on better evidence than the draft had.
+   changing route has no reason to help.
+
+   The evidence, and its limits. In run `33288099045`, one shard's first 400 line lands ~10 s
+   *before* `spare egress: connected`, so those 400s were served to the direct Actions IP. The
+   other 14 land after it, two of them by more than three minutes — long enough that the traffic
+   was certainly proxied. **The close ones prove less than they look:** the line is a per-Board
+   aggregate printed when that Board's detail pass *ends*, so a pass finishing 6 s after connect
+   may have done its 400ing before it. Three shards are inside that window. What survives is the
+   pair of unambiguous cases at each end — direct 400s in one shard, proxied 400s in two — and
+   that pair is enough for "both routes", which is the claim being made.
+
+   An earlier draft said 15 of 15 and concluded "already on the spare egress". It was measured
+   against the `walled — rotating` line rather than `connected`, which is not the same event, and
+   it drew a stronger conclusion from weaker data. Rotation also spends a bounded IP supply. If
+   the counter above shows retries alone are not enough, this is still the next thing to try.
 3. **`mark_truncated` on a heavy 400 rate.** ADR-0088 refused this for detail gaps and its
    reasoning is undiminished: the listing is complete, so the Board is not Unauthoritative, and
    ADR-0053's exclusion has no bound and no drain.
@@ -126,5 +145,15 @@ that night — the flaw that makes a bare "rescued" rate uninterpretable.
 - **A lost detail still costs ADR-0021 null fields and an ADR-0050 gap entry** when the retry
   does not save it. It no longer costs identity — ADR-0097 saw to that independently, which is
   why this change can be judged on data quality alone.
-- **Nothing else changes.** Every other caller passes no `retry_on` and gets byte-identical
-  behaviour; `TRANSIENT`'s membership is unchanged from `_TRANSIENT`'s.
+- **No other caller's *requests* change.** Everyone else passes no `retry_on` and retries exactly
+  what they retried before; `TRANSIENT`'s membership is unchanged from `_TRANSIENT`'s.
+
+- **Every caller's retry *telemetry* does change, deliberately.** `_retry_reason` keyed on the log
+  text until this change, and libcurl writes numbers into its errors, so a transport failure could
+  be filed as a status: replaying the old classifier, `Operation timed out after 30405
+  milliseconds` counted as a `405-wall` and `...30502...` as a `5xx`. It is keyed on the status
+  now. The correction is small against `network`'s own volume (run `33288099045`: 108,762 network
+  retries against 215 `405-wall`) but it is the same order as the `405-wall` bucket itself, so a
+  before/after comparison of *those* series across this commit is not like-for-like. It had to be
+  fixed here regardless: a change that asks to be judged by a counter cannot ship with the counter
+  mis-attributing.

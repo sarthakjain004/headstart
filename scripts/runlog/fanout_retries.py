@@ -49,13 +49,16 @@ from typing import NamedTuple
 from run_logs import Run, common_args, runs_from
 
 RETRIES = re.compile(r"\[scrape_run\] retries: ([^(]+)\(total (\d+)\)")
-# `http._retry_reason` is a closed classifier — these six and no others, with `network` as its
-# fallback. `400-throttle` joined in 2026-08-31: workday alone opts 400 into its `retry_on`,
-# because there it is a throttle rather than a malformed request (ADR-0098). Watch it against
-# the settled `HTTP 400 xN` in the same run's detail-loss lines — that ratio, not the raw
-# count, is what says whether the opt-in is earning its extra attempts.
-# fallback. Naming them here rather than deriving columns from the rows is what lets this table
-# print its header up front and stream each shard as it lands, per the repo's streaming rule.
+# `http._retry_reason` emits these six for the statuses anyone currently retries, with `network`
+# as its fallback for a transport failure. It is no longer strictly closed: a caller that extends
+# its own `retry_on` past `http.TRANSIENT | {400}` gets an `http-{status}` line, which shows up in
+# the NB below rather than being folded into one of these.
+# `400-throttle` joined on 2026-08-31 — workday alone opts 400 into its `retry_on`, because there
+# it is a throttle rather than a malformed request (ADR-0098). Read it against the settled
+# `HTTP 400 xN` in the same run's detail-loss lines: that ratio, not the raw count, says whether
+# the opt-in is earning its extra attempts.
+# Naming them here rather than deriving columns from the rows is what lets this table print
+# its header up front and stream each shard as it lands, per the repo's streaming rule.
 CLASSES = ("network", "429-ratelimit", "5xx", "403-wall", "405-wall", "400-throttle")
 DEGRADED = "degrading to direct"
 ROTATED = re.compile(r"spare egress: rotated to a fresh egress IP")

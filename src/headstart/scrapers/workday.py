@@ -92,12 +92,12 @@ _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceil
 _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit one host
 
 # Workday answers GitHub Actions traffic with **400** where it answers a residential IP with 429.
-# Measured 2026-08-30 (ADR-0098): the identical 1,208-detail pass returns `{200: 1124, 429: 84}`
-# from a laptop and could not be made to 400 there at any concurrency tried, direct or through
-# WARP, while run 33288099045 lost 68-97% of a Board's details to 400 inside CI — `kohls` 99%,
-# `roche` 68%. It is a throttle, not a malformed request: 75 of the 77 roche postings evicted
-# for it fetched fine on the very next run. Because 400 sits in neither `http.TRANSIENT` nor
-# `egress_fallback_on`, every one of them settled on the first attempt, unretried.
+# Measured 2026-08-30 (ADR-0098): a full 1,208-detail pass from a laptop could not be made to 400
+# at any concurrency tried, direct or through WARP, while inside CI run 33288099045 lost 68-97%
+# of a Board's details to 400 (`dxctechnology` 837/860, `roche` 827/1210) and the neighbouring
+# 33286160766 reached 99% (`kohls` 2147/2170). It is a throttle, not a malformed request: 75 of
+# the 77 roche postings evicted for it were re-added 48 minutes later. Because 400 sits in
+# neither `http.TRANSIENT` nor `egress_fallback_on`, every one settled first-attempt, unretried.
 # Extends the shared set rather than widening it — 400 really does mean "bad request" on the
 # other twenty active ATSes, and none of them has shown this.
 #
@@ -298,7 +298,14 @@ class WorkdayScraper(BaseScraper):
         """Point this scrape at the data center currently serving the tenant.
 
         Workday tenants migrate between data centers; when one does, the URL's ``wdN`` goes stale
-        (its host 500s, the CXS API 422s) and the board would read as empty. Probe the URL's instance
+        (its host 500s, the CXS API 422s) and the board would read as empty.
+
+        The probe carries ``_RETRY_ON`` like every other call here, and the 422 above is why: a
+        wrong data centre answers 422, never 400 (measured 5/5 on roche), so a 400 during the
+        probe is the same throttle it is everywhere else. Leaving it out would make a throttled
+        Board sweep all of :data:`INSTANCES` on an answer that was never about the data centre —
+        and a genuinely migrated Board whose *correct* centre 400'd would resolve nowhere and read
+        empty. 422 is not in ``_RETRY_ON``, so the real wrong-centre answer still fails fast. Probe the URL's instance
         first, then sweep the known data centers, caching the first that answers so :meth:`url` and
         :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none serves the board —
         the crawl then yields no jobs, as before."""
@@ -315,6 +322,7 @@ class WorkdayScraper(BaseScraper):
                 response = http.fetch(
                     "POST",
                     probe_url,
+                    retry_on=_RETRY_ON,
                     **self._egress(),
                     json={
                         "appliedFacets": {},

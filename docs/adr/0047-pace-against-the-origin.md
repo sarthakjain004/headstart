@@ -28,7 +28,7 @@ theory:
 3. **Sustained volume against one origin.** 1,500 details at width 100 reproduced production
    almost exactly — **1179/1500 missing (78.6%)**, settling `{200: 321, 429: 204, 405: 975}`.
    After roughly 320 successes the edge switches from 429 to **405**, and 405 was not in
-   `http._TRANSIENT`, so those 975 requests were never retried at all: they settled instantly as
+   `http._TRANSIENT` (renamed `http.TRANSIENT` by ADR-0098), so those 975 requests were never retried at all: they settled instantly as
    non-200 and became `None`. A follow-up arm showed the block then applied to *every*
    `*.eightfold.ai` tenant, not just the one being fetched, which is why five Boards flap together.
 
@@ -41,7 +41,7 @@ unspent while a few shards absorb the whole limit.
 
 Three changes, plus one deliberate non-change:
 
-1. **405 joins `_TRANSIENT`** and is counted as its own `405-wall` retry reason, so the dominant
+1. **405 joins `_TRANSIENT`** (today `http.TRANSIENT`) and is counted as its own `405-wall` retry reason, so the dominant
    failure mode is both retried and visible in the per-shard retry line.
 2. **`Retry-After` is honoured** over the local backoff curve when a host sends one as a delta,
    capped at 30 s — a host that states its own window knows it better than our curve does.

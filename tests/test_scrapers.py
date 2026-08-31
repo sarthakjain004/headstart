@@ -5964,14 +5964,19 @@ def test_workday_posting_key_rejects_a_year_month_as_a_req_id():
 
 def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
     """Workday answers Actions traffic with 400 where it answers a residential IP with 429
-    (ADR-0098). Measured in run 33288099045: 58 Boards lost details to 400, `kohls` 99%,
-    `roche` 68%, and 75 of the 77 roche postings evicted for it succeeded on the very next run —
-    a throttle wearing the wrong number. Because 400 is in neither `http.TRANSIENT` nor
+    (ADR-0098). Measured in run 33288099045: 58 Boards lost details to 400 — `dxctechnology`
+    837/860, `roche` 827/1210 — and 75 of the 77 roche postings evicted for it were re-added 48
+    minutes later. A throttle wearing the wrong number. Because 400 is in neither `http.TRANSIENT` nor
     `egress_fallback_on` it was retried nowhere, settling first-attempt.
 
-    Both listing and detail calls opt in: the same run shows 5 Boards losing *pages* to 400 as
-    well. `_resolve_instance`'s probe deliberately does not — a 400 there means that data centre
-    does not serve this tenant, which is an answer, not a throttle."""
+    Every fetching call opts in, `_resolve_instance`'s data-centre probe included. An earlier
+    version of this change excluded the probe, on the theory that a 400 there means "this data
+    centre does not serve the tenant". Measured live, that is false: a wrong data centre answers
+    **422** (roche wd1/wd5/wd12/wd103/wd105 all 422, wd3 200). Since `serves()` accepts only a
+    200, an unretried 400 would make a throttled Board sweep all of `INSTANCES` for nothing — and
+    a genuinely migrated Board whose correct data centre happened to 400 would resolve nowhere and
+    read as empty. 422 stays out of `retry_on`, so the real wrong-data-centre answer still fails
+    fast."""
     import asyncio
 
     from headstart import http
@@ -6007,6 +6012,7 @@ def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
     asyncio.run(scraper._job_detail_async(object(), "/job/x/Some-Title_JR1"))
     scraper._post({}, 0)
     asyncio.run(scraper._post_async(object(), {}, 0))
+    WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")._resolve_instance()
 
     assert seen, "no fetch was made"
     for method, retry_on in seen:
