@@ -56,17 +56,22 @@ other twenty active ATSes, and none of them has shown this behaviour. Widening `
 two extra attempts, everywhere, against hosts that will keep saying no. This is the same shape as
 ADR-0047's 403/405: a status that means one thing in general and another on one origin.
 
-**All five fetching call sites opt in** — `_post`, `_post_async`, `_job_detail`,
-`_job_detail_async`, and `_resolve_instance`'s data-centre probe.
+**The four crawling call sites opt in** — `_post`, `_post_async`, `_job_detail`,
+`_job_detail_async` — **and so does the first of `_resolve_instance`'s probes, but not its sweep.**
 
-An earlier draft excluded the probe, reasoning that a 400 there is the answer *"this data centre
-does not serve this tenant"*. **Measured, that is false:** a wrong centre answers **422** (roche
-wd1/wd5/wd12/wd103/wd105 all 422; wd3, the live one, 200), and `_resolve_instance`'s own docstring
-said so all along — *"its host 500s, the CXS API 422s"*. Since `serves()` accepts only a 200, an
-unretried 400 would make a throttled Board sweep all of `INSTANCES` on an answer that was never
-about the data centre, and a genuinely migrated Board whose *correct* centre 400'd would resolve
-nowhere and read empty. 422 stays out of `retry_on`, so the real wrong-centre answer still fails
-fast on the first attempt.
+A wrong data centre answers **422**, never 400: measured 54/54 across five tenants, and
+`_resolve_instance`'s own docstring said so all along (*"its host 500s, the CXS API 422s"*). So a
+400 on the **hinted** instance is a throttle rejecting the centre that was right, and since
+`serves()` accepts only a 200 it would send that Board on a full sweep for nothing. Three attempts
+are worth spending to avoid that.
+
+**The sweep behind it stays unretried, and that is a cost decision.** It runs serially over all 18
+`INSTANCES`; simulated with every probe returning 400, retrying there costs **54 requests and
+~81 s of backoff** before the Board fetches a single job — and still resolves nothing, because a
+throttle rejecting one centre rejects them all. An earlier draft of this ADR opted the whole
+function in and did not account for that. The residue is a Board that has *both* migrated and been
+throttled: it resolves nowhere and reads empty. Narrow, and the ADR-0046 collapse guard already
+holds its rows against exactly that.
 
 ### This change measures itself, because one thing could not be measured before shipping
 
@@ -138,7 +143,8 @@ that night — the flaw that makes a bare "rescued" rate uninterpretable.
   cost of finding out; it is bounded by the existing ladder, and the current alternative is losing
   68–97% of the Board's descriptions outright.
 - **Slower shards in the worst case.** Backoff on a heavily-throttled Board adds real seconds to
-  the scrape's critical path. Watch the `scrape` stage's max against `scrape_plan`'s predicted
+  the scrape's critical path — bounded, because the one place the cost would have compounded (the
+  serial 18-instance sweep) is deliberately left unretried; see the Decision. Watch the `scrape` stage's max against `scrape_plan`'s predicted
   makespan; if the two diverge after this, this is the first suspect.
 - **`retry_stats()` gains a `400-throttle` line** in every shard summary — the evidence for
   keeping or reverting this, per the reading above.

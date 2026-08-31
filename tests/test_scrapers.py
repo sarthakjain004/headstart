@@ -6022,6 +6022,49 @@ def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
         )
 
 
+def test_workday_instance_sweep_does_not_retry_a_400(monkeypatch):
+    """Only the *hinted* instance probe is patient; the sweep behind it is not.
+
+    The sweep runs serially over all of `INSTANCES`, so retrying a 400 there would cost a
+    throttled Board 54 requests and ~81 s of backoff before it fetched a single job — and still
+    resolve nothing, because a throttle that rejects one data centre rejects them all. Retrying
+    the hinted probe is what actually pays: a 400 there is a throttle rejecting the centre that
+    was right, and three attempts stop it triggering the sweep at all."""
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    seen: list[frozenset] = []
+
+    class _R:
+        status_code = (
+            422  # the real wrong-data-centre answer, so every probe fails over
+        )
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {}
+
+    monkeypatch.setattr(
+        http,
+        "fetch",
+        lambda method, url, *, retry_on=http.TRANSIENT, **kw: (
+            seen.append(retry_on),
+            _R(),
+        )[1],
+    )
+    WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")._resolve_instance()
+
+    assert len(seen) > 1, "the sweep did not run"
+    assert 400 in seen[0], "the hinted probe must be patient"
+    assert all(400 not in r for r in seen[1:]), (
+        "the sweep must not retry a 400 — it would cost ~81s per throttled Board"
+    )
+
+
 def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):
     """The detail pass is the traffic that spends the Origin budget — workday.py's own header
     documents 3.02M 429-retries and 51.7% of descriptions lost to it — yet only the *listing*

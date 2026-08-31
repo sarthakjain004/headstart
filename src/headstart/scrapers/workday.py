@@ -298,22 +298,25 @@ class WorkdayScraper(BaseScraper):
         """Point this scrape at the data center currently serving the tenant.
 
         Workday tenants migrate between data centers; when one does, the URL's ``wdN`` goes stale
-        (its host 500s, the CXS API 422s) and the board would read as empty.
+        (its host 500s, the CXS API 422s) and the board would read as empty. Probe the URL's
+        instance first, then sweep the known data centers, caching the first that answers so
+        :meth:`url` and :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none
+        serves the board — the crawl then yields no jobs, as before.
 
-        The probe carries ``_RETRY_ON`` like every other call here, and the 422 above is why: a
-        wrong data centre answers 422, never 400 (measured 5/5 on roche), so a 400 during the
-        probe is the same throttle it is everywhere else. Leaving it out would make a throttled
-        Board sweep all of :data:`INSTANCES` on an answer that was never about the data centre —
-        and a genuinely migrated Board whose *correct* centre 400'd would resolve nowhere and read
-        empty. 422 is not in ``_RETRY_ON``, so the real wrong-centre answer still fails fast. Probe the URL's instance
-        first, then sweep the known data centers, caching the first that answers so :meth:`url` and
-        :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none serves the board —
-        the crawl then yields no jobs, as before."""
+        **Only the first probe retries a 400** (ADR-0098). A wrong data centre answers 422, never
+        400 — measured 54/54 across five tenants — so a 400 on the *hinted* instance is a throttle
+        rejecting the centre that was right all along, and sending that Board on a pointless sweep
+        is worth three attempts to avoid. The sweep itself stays unretried: it runs serially over
+        all of :data:`INSTANCES`, so retrying there would cost a throttled Board 54 requests and
+        ~81 s of backoff before it fetched a single job, and still resolve nothing. A Board that
+        has *both* migrated and been throttled therefore still reads empty — narrow, and the
+        ADR-0046 collapse guard already holds its rows against that.
+        """
         company, hinted, site = (
             self._parts()
         )  # self._instance is None here -> the URL's instance
 
-        def serves(instance: str) -> bool:
+        def serves(instance: str, *, patient: bool = False) -> bool:
             probe_url = (
                 f"https://{company}.{instance}.myworkdayjobs.com"
                 f"/wday/cxs/{company}/{site}/jobs"
@@ -322,7 +325,7 @@ class WorkdayScraper(BaseScraper):
                 response = http.fetch(
                     "POST",
                     probe_url,
-                    retry_on=_RETRY_ON,
+                    retry_on=_RETRY_ON if patient else http.TRANSIENT,
                     **self._egress(),
                     json={
                         "appliedFacets": {},
@@ -341,7 +344,7 @@ class WorkdayScraper(BaseScraper):
                 return False
             return response.status_code == 200
 
-        if serves(hinted):
+        if serves(hinted, patient=True):
             return  # fast path: the URL's data center is current
         for instance in INSTANCES:
             if instance != hinted and serves(instance):
