@@ -49,6 +49,29 @@ period and ADR-0053's scope exclusion are the two remaining mechanisms.
 and `index.py` loses `_ids_and_stamps` with it — the sync path reads `_all_ids` again, one column
 instead of two.
 
+## Alternatives considered
+
+**Keep the guard as it is.** The honest case for it: what the measurement below shows is an
+insurance policy that has not had to pay out in 13 runs, not one that cannot. Its cost is small
+and bounded — 5 runs in 13, at most 178 rows, drained within a few runs by ADR-0055 — and the
+event it covers is low-probability and high-impact. Rejected because the cover is thinner than it
+looks: it protects only against a truncation that is silent *and* repeats, and in that case it
+delays the mass eviction by a handful of runs rather than preventing it, while ADR-0053 already
+takes every self-describing truncation out of scope first.
+
+**Narrow it: keep a cap, raise the trigger.** Fire only on a catastrophic loss — a much higher
+ratio, or a large absolute row count as well as a ratio — so it stops slow-walking ordinary
+shrinkage like `eworgmbh` while still bounding a full-Board collapse. This is the option with the
+best risk-per-line, and it was put forward as the recommendation. Rejected by the person making
+the call, deliberately and with the tradeoff stated: a threshold nobody can calibrate against a
+real incident is a number chosen to feel safe, and the measurement offers no incident to
+calibrate against.
+
+**Make the eviction scope per-Job rather than per-Board.** Exclude only the ids a scrape could not
+confirm and leave the rest of the Board in scope. Architecturally the right shape, and it would
+subsume both ADR-0053 and this decision. Not attempted here: it rewrites the mechanism this ADR
+is removing a piece of, and doing both in one change would leave neither measurable.
+
 ## Consequences
 
 **A Board short the same way on two consecutive scrapes now evicts every missing row at once.**
@@ -77,11 +100,15 @@ wording hid: `index sync` subtracts an Unauthoritative Board from the scope befo
 Board that sat out the slice entirely. At 63–126 Boards per run
 (`docs/pipeline/2026-09-01_twelve-run-log-review.md`) it is not a rounding error, and unlike the
 slice cause it has no drain. The log line and `grace_period_counts`'s docstring are corrected to
-name that pair; reading the old wording against new logs would attribute accretion to a mechanism
+name that set; reading the old wording against new logs would attribute accretion to a mechanism
 that no longer exists.
 
-This correction came out of the code review on this change, not the analysis that preceded it —
-the first draft of this ADR asserted a single cause and was wrong.
+There is a third, pre-existing cause the old wording also hid: a Board scraped that emits *zero*
+jobs of any kind writes no ids, so `_scraped_boards` never sees it either. It is rarer than the
+other two and belongs to ADR-0023's prune rather than to sync, but it is a Board that *was* read —
+so the count must not be described as "Boards we did not get to". Both corrections came out of the
+review on this change rather than the analysis before it; the first draft claimed one cause and
+the second claimed two.
 
 **Watch the eviction volume for two or three runs.** The signal that this was wrong is a Board
 shedding a large block of rows and re-adding them within the window — exactly what

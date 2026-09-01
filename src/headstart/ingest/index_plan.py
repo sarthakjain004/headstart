@@ -15,10 +15,10 @@ ids are added; re-seen ids are left untouched (id-only, v1). Crucially the delet
 the Boards actually scraped*, so a partial harvest never evicts Boards it didn't touch — and a
 dead Board (scraped, yields nothing) has all its rows drop out for free. That scope is per-Board
 but all-or-nothing, so a Board whose scrape came back *truncated* still looks fully covered.
-Two mechanisms answer that, both upstream of this planner's arithmetic: the scrape reports its own
-outcome and ``index sync`` drops Unauthoritative Boards from the scope entirely (ADR-0053), and a
-truncation that reports nothing at all is caught by the grace period above, which a *transient*
-short scrape cannot survive. A Board short the same way twice running evicts in full (ADR-0101).
+Two mechanisms answer that. Upstream of here, the scrape reports its own outcome and ``index sync``
+drops Unauthoritative Boards from the scope entirely (ADR-0053); here, a truncation that reports
+nothing at all still has to survive the grace period above, which a *transient* short scrape
+cannot. A Board short the same way twice running evicts in full (ADR-0101).
 
 
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
@@ -83,9 +83,10 @@ def grace_period_counts(
 
     ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
     neither came back nor were evicted. **This is the accretion signal**, and it still has two
-    distinct causes after ADR-0101 removed the collapse guard — but the second one changed, so a
-    log line or a review written against the old pair will misattribute it. Both reach the same
-    branch here, because both mean the Board is absent from ``scraped_boards``:
+    distinct causes after ADR-0101 removed the collapse guard. They are worth separating only
+    because a log line or a review written against the old set will misattribute them; all three
+    reach the same branch here, because all three mean the Board is absent from ``scraped_boards``
+    and this function cannot tell them apart:
 
     - The id's Board was not in this run's slice at all. Only ~20,000 are — under a quarter of the
       Scrapable Boards — so this dominates a healthy set and is entirely benign; the streak simply
@@ -94,6 +95,10 @@ def grace_period_counts(
       the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
       unlike the first cause it has no drain, which is what makes the total worth watching.
+    - The Board was scraped and emitted *zero jobs of any kind*, so it wrote no ids and
+      ``_scraped_boards`` never saw it (its own docstring says so; those rows are ADR-0023
+      prune's, not sync's). Rarer than the other two and pre-existing, but it is a Board that was
+      read — so reading this number as "Boards we did not get to" overstates that case.
 
     What is *no longer* a cause is the ADR-0046 collapse guard capping a Board still in scope: an
     id whose Board was scraped, was in scope, and was absent again is now evicted, not carried.
