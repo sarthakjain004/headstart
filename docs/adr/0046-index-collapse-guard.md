@@ -37,7 +37,7 @@ width  100: 1179/1500 missing (78.6%) | settled={200: 321, 429: 204, 405: 975}
 ```
 
 against 75.8% missing in production. After roughly 320 successes the edge returns 429 and then
-405 — and 405 is not in `http._TRANSIENT`, so it is never retried, settling instantly as a non-200.
+405 — and 405 was not in `http._TRANSIENT` (now `http.TRANSIENT`) at the time, so it is never retried, settling instantly as a non-200.
 A follow-up arm showed the block applies across *all* of `*.eightfold.ai`, not per tenant, which is
 why five Boards flap together in the same run. `scrapers/eightfold.py:130-139` breaks out of
 pagination on any non-200 and returns what it has, even though page 1 carried `data.count` and the

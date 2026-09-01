@@ -167,9 +167,10 @@ first tier asks the URL a question rather than guessing harder at the shape.
   ZIP+4 cannot reach it.
 - **A lost detail still costs real data** — ADR-0021's null fields and an ADR-0050 gap entry. It
   no longer costs *identity*, which is the part that was eviction-shaped.
-- **The upstream defect is untouched and still live.** Workday expresses CI throttling as HTTP
-  **400**, which is in neither `http._TRANSIENT` nor `workday.egress_fallback_on` — so it is
-  never retried and never rotates the egress, and settles as a lost detail on the first attempt.
-  The same load from a residential IP returns `{200: 1124, 429: 84}`. That is a separate change,
-  deliberately not bundled here: its efficacy cannot be measured off-CI, and this fix makes the
-  system correct regardless of whether it lands.
+- **The upstream defect was separate, and is now addressed by
+  [ADR-0098](0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md).** Workday expresses
+  CI throttling as HTTP **400**, which was in neither `http.TRANSIENT` nor
+  `workday.egress_fallback_on` — never retried, never rotating the egress, settling as a lost
+  detail on the first attempt. Deliberately not bundled here, because its efficacy cannot be
+  measured off-CI while this fix could be verified before shipping; the two are independent, and
+  this one makes identity correct whether or not that one works.

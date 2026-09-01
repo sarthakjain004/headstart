@@ -90,6 +90,23 @@ _PAGE_LIMIT = 20  # Workday hard-caps `limit` at 20 (higher returns 400).
 _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide.
 _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceiling.
 _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit one host
+
+# Workday answers GitHub Actions traffic with **400** where it answers a residential IP with 429.
+# Measured 2026-08-30 (ADR-0098): a full 1,208-detail pass from a laptop could not be made to 400
+# at any concurrency tried, direct or through WARP, while inside CI run 33288099045 lost 68-97%
+# of a Board's details to 400 (`dxctechnology` 837/860, `roche` 827/1210) and the neighbouring
+# 33286160766 reached 99% (`kohls` 2147/2170). It is a throttle, not a malformed request: 75 of
+# the 77 roche postings evicted for it were re-added 48 minutes later. Because 400 sits in
+# neither `http.TRANSIENT` nor `egress_fallback_on`, every one settled first-attempt, unretried.
+# Extends the shared set rather than widening it — 400 really does mean "bad request" on the
+# other twenty active ATSes, and none of them has shown this.
+#
+# Workday itself has exactly one *genuine* 400, and we never provoke it: `_PAGE_LIMIT`'s own
+# comment records that a `limit` above 20 returns 400, and that value is a constant here. Detail
+# URLs are built from `externalPath` values the listing just handed us, so a malformed path would
+# be the listing's, not ours. Every 400 this retries is therefore one the origin chose to send a
+# well-formed request — which is the whole basis for reading it as a throttle.
+_RETRY_ON = http.TRANSIENT | {400}
 # The async path's multiplexing width. It had been inheriting the shared 100-stream default while
 # the sync path above deliberately held to 6 against the same host — measured cost of that
 # divergence over 19 pipeline runs: 3,023,846 429-retries and 1,254,130 of 2,426,147 descriptions
@@ -281,15 +298,25 @@ class WorkdayScraper(BaseScraper):
         """Point this scrape at the data center currently serving the tenant.
 
         Workday tenants migrate between data centers; when one does, the URL's ``wdN`` goes stale
-        (its host 500s, the CXS API 422s) and the board would read as empty. Probe the URL's instance
-        first, then sweep the known data centers, caching the first that answers so :meth:`url` and
-        :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none serves the board —
-        the crawl then yields no jobs, as before."""
+        (its host 500s, the CXS API 422s) and the board would read as empty. Probe the URL's
+        instance first, then sweep the known data centers, caching the first that answers so
+        :meth:`url` and :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none
+        serves the board — the crawl then yields no jobs, as before.
+
+        **Only the first probe retries a 400** (ADR-0098). A wrong data centre answers 422, never
+        400 — measured 54/54 across five tenants — so a 400 on the *hinted* instance is a throttle
+        rejecting the centre that was right all along, and sending that Board on a pointless sweep
+        is worth three attempts to avoid. The sweep itself stays unretried: it runs serially over
+        all of :data:`INSTANCES`, so retrying there would cost a throttled Board 54 requests and
+        ~81 s of backoff before it fetched a single job, and still resolve nothing. A Board that
+        has *both* migrated and been throttled therefore still reads empty — narrow, and the
+        ADR-0046 collapse guard already holds its rows against that.
+        """
         company, hinted, site = (
             self._parts()
         )  # self._instance is None here -> the URL's instance
 
-        def serves(instance: str) -> bool:
+        def serves(instance: str, *, patient: bool = False) -> bool:
             probe_url = (
                 f"https://{company}.{instance}.myworkdayjobs.com"
                 f"/wday/cxs/{company}/{site}/jobs"
@@ -298,6 +325,7 @@ class WorkdayScraper(BaseScraper):
                 response = http.fetch(
                     "POST",
                     probe_url,
+                    retry_on=_RETRY_ON if patient else http.TRANSIENT,
                     **self._egress(),
                     json={
                         "appliedFacets": {},
@@ -316,7 +344,7 @@ class WorkdayScraper(BaseScraper):
                 return False
             return response.status_code == 200
 
-        if serves(hinted):
+        if serves(hinted, patient=True):
             return  # fast path: the URL's data center is current
         for instance in INSTANCES:
             if instance != hinted and serves(instance):
@@ -351,7 +379,13 @@ class WorkdayScraper(BaseScraper):
             "Accept": "application/json",
         }
         response = http.fetch(
-            "POST", self.url(), json=body, headers=headers, timeout=30, **self._egress()
+            "POST",
+            self.url(),
+            json=body,
+            headers=headers,
+            timeout=30,
+            retry_on=_RETRY_ON,
+            **self._egress(),
         )
         if response.status_code == 404 and not raise_gone:
             return None  # one page of a live board — the caller reports the gap
@@ -380,6 +414,7 @@ class WorkdayScraper(BaseScraper):
             session,
             "POST",
             self.url(),
+            retry_on=_RETRY_ON,
             json=body,
             headers=headers,
             timeout=30,
@@ -476,6 +511,7 @@ class WorkdayScraper(BaseScraper):
                 self._detail_url(external_path),
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                retry_on=_RETRY_ON,
                 **self._egress(),
             )
         except http.RequestsError as exc:
@@ -500,6 +536,7 @@ class WorkdayScraper(BaseScraper):
                 session,
                 "GET",
                 self._detail_url(external_path),
+                retry_on=_RETRY_ON,
                 timeout=30,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 **self._egress(),

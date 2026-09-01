@@ -147,13 +147,18 @@ defect one layer up.
 
 ## Workday throttles CI as HTTP 400, and we handle 400 nowhere
 
-| | `_TRANSIENT` (retried) | `workday.egress_fallback_on` (rotates egress) |
+| | retried | rotates egress (`workday.egress_fallback_on`) |
 |---|---|---|
-| 403, 405, 429, 5xx | ✅ | 429 only |
-| **400** | **❌** | **❌** |
+| 403, 405, 429, 5xx | ✅ `http.TRANSIENT` | 429 only |
+| **400** | **❌ when this was written** | **❌** |
 
-A Workday 400 is therefore **neither retried nor does it rotate the egress IP**. It settles
-instantly and silently as a lost detail, first attempt, no recovery path. That is why loss rates
+A Workday 400 was therefore **neither retried nor did it rotate the egress IP**. It settled
+instantly and silently as a lost detail, first attempt, no recovery path.
+
+**Fixed 2026-08-31 by [ADR-0098](../adr/0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md)**:
+`http.fetch` gained a `retry_on` parameter and workday passes `TRANSIENT | {400}`. Rotation is
+still deliberately not extended to 400 — both the direct Actions IP and the WARP egress are
+observed serving them, so changing route has no reason to help. That is why loss rates
 reach 68–97% on a single board — measured in run `33288099045`: `roche` 827/1210 (68%), `analogdevices` 655/920 (71%), `walmart` 729/934 (78%), `dxctechnology` 837/860 (97%).
 
 ## The 400s are transient throttling, not malformed requests
@@ -217,5 +222,8 @@ The stability invariant (`key(with detail) == key(without detail)`) held on ever
 and every board tried kept every id distinct (roche 1,209/1,209, tutorperini 235/235, nkg 48/48).
 **Corpus-wide the churn is ~1,200 served rows across ~75 boards** — see the sweep table above.
 
-**The upstream 400 handling is deliberately still open** — see the section above. This fix makes
-identity correct whether or not that ever lands.
+**The upstream 400 handling was deliberately left out of that change** and is addressed
+separately by [ADR-0098](../adr/0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md):
+Workday's 400 is a throttle, so the scraper now extends its own retry set to cover it, and counts
+the retries under `400-throttle` so the next run says whether that was right. The identity fix
+stands on its own either way.

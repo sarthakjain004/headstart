@@ -81,6 +81,96 @@ def test_405_is_counted_apart_from_403(monkeypatch):
     assert stats["403-wall"] == 1
 
 
+def test_a_network_error_is_never_classified_by_digits_in_its_message(monkeypatch):
+    """Retry classes come from the status, never from the message text.
+
+    They used to come from a substring test, and libcurl puts numbers in its errors: `port 40000`
+    — which is literally `spare_egress._PORT` — read as a 400, `HTTP/2 stream 1400` read as a 400,
+    `port 40500` read as a 405 bot-wall. Every WARP connect failure therefore landed in a status
+    bucket. That matters most for `400-throttle`, which ADR-0098 uses as its keep-or-revert
+    evidence: contamination inflates it and biases the answer toward keep."""
+    http.reset_retry_stats()
+    for message in (
+        "Failed to connect to 127.0.0.1 port 40000: Connection refused",
+        "curl: (92) HTTP/2 stream 1400 was not closed cleanly",
+        "Operation timed out after 4001 milliseconds",
+        "Recv failure on port 40500",
+    ):
+        calls = _stub(monkeypatch, [http.RequestsError(message), 200])
+        http.fetch("GET", "u")
+        assert len(calls) == 2
+    stats = http.retry_stats()
+    assert stats["network"] == 4, stats
+    assert "400-throttle" not in stats
+    assert "405-wall" not in stats
+
+
+def test_does_not_retry_400_by_default(monkeypatch):
+    """A 400 stays settled for every caller that does not ask otherwise. It usually *is* a
+    malformed request, and retrying one wastes the ladder against a host that will keep saying
+    no — which is why `TRANSIENT` does not carry it."""
+    calls = _stub(monkeypatch, [400, 200])
+    assert http.fetch("GET", "u").status_code == 400
+    assert len(calls) == 1
+
+
+def test_retries_400_when_the_caller_opts_in(monkeypatch):
+    """Workday expresses CI throttling as 400 rather than 429 (ADR-0098): measured, the same
+    load that returns `{200: 1124, 429: 84}` from a residential IP loses 68-97% of a Board's
+    details to 400 inside Actions, and 75 of 77 such postings succeed on the next run. That is a
+    throttle wearing the wrong number, so the scraper that meets it opts in — per caller, never
+    globally."""
+    calls = _stub(monkeypatch, [400, 200])
+    got = http.fetch("GET", "u", retry_on=http.TRANSIENT | {400})
+    assert got.status_code == 200
+    assert len(calls) == 2
+
+
+def test_400_retries_are_counted_apart_so_the_opt_in_can_be_judged(monkeypatch):
+    """The counter is how we find out whether opting in was right. `retry_stats()["400-throttle"]`
+    is how many 400s were retried; `_report_detail_losses`' own `HTTP 400 xN` is how many still
+    settled. Both come from the same run, so the ratio measures the retry — not the ATS's mood
+    that night, which is the trap a bare rescue-rate falls into."""
+    http.reset_retry_stats()
+    _stub(monkeypatch, [400, 400, 200])
+    http.fetch("GET", "u", retry_on=http.TRANSIENT | {400})
+    assert http.retry_stats()["400-throttle"] == 2
+
+
+def test_async_retries_400_when_the_caller_opts_in(monkeypatch):
+    """The detail pass — where Workday's 400s actually land — is the async path."""
+    _warp(monkeypatch)
+    session, calls = _astub(monkeypatch, [400, 200])
+    got = asyncio.run(
+        http.fetch_async(session, "GET", "u", retry_on=http.TRANSIENT | {400})
+    )
+    assert got.status_code == 200
+    assert len(calls) == 2
+
+
+def test_async_retries_are_classified_by_status_too(monkeypatch):
+    """The async path has to thread the status into the counter as well.
+
+    Mutation-tested: dropping the status argument from `fetch_async`'s `_note_retry` call left
+    every other test green, on the path where Workday's 400s actually land — so the counter
+    ADR-0098 reads would have silently reported `network` for all of them."""
+    _warp(monkeypatch)
+    http.reset_retry_stats()
+    session, _ = _astub(monkeypatch, [400, 429, 200])
+    asyncio.run(http.fetch_async(session, "GET", "u", retry_on=http.TRANSIENT | {400}))
+    stats = http.retry_stats()
+    assert stats["400-throttle"] == 1, stats
+    assert stats["429-ratelimit"] == 1, stats
+    assert "network" not in stats
+
+
+def test_async_does_not_retry_400_by_default(monkeypatch):
+    _warp(monkeypatch)
+    session, calls = _astub(monkeypatch, [400, 200])
+    assert asyncio.run(http.fetch_async(session, "GET", "u")).status_code == 400
+    assert len(calls) == 1
+
+
 def test_honours_retry_after_over_the_local_backoff(monkeypatch):
     slept: list[float] = []
     _stub(monkeypatch, [(429, {"Retry-After": "7"}), 200])
