@@ -56,15 +56,38 @@ def _failure_class(exc: Exception) -> str:
     return f"HTTP {status}" if status else type(exc).__name__
 
 
-def _jobposting_from_page(response: Any) -> dict[str, Any] | None:
-    """``{"description": ...}`` from a public job page's server-rendered JSON-LD, or None.
+# schema.org's closed ``employmentType`` vocabulary, in the wording Workday's own ``timeType``
+# uses where the two overlap ("Full time" on every CXS detail measured) so a recovered posting is
+# indistinguishable from a CXS one downstream. Values beyond the enum pass through: the filter
+# vocabulary matches by substring (`search.ETYPE_CLAUSES`), so an unmapped-but-real value still
+# beats the None it replaces, while OTHER maps to None because it carries nothing.
+_SCHEMA_EMPLOYMENT = {
+    "FULL_TIME": "Full time",
+    "PART_TIME": "Part time",
+    "CONTRACTOR": "Contract",
+    "TEMPORARY": "Temporary",
+    "INTERN": "Internship",
+    "VOLUNTEER": "Volunteer",
+    "PER_DIEM": "Per diem",
+    "OTHER": None,
+}
 
-    Only the description: it is what the detail pass exists to supply (ADR-0050), and it is the
-    one field the JSON-LD carries in the CXS detail's own currency — measured on a healthy board
+
+def _detail_from_page(response: Any) -> dict[str, Any] | None:
+    """A detail-shaped dict from a public job page's server-rendered JSON-LD, or None.
+
+    The description is the gate — it is what the detail pass exists to supply (ADR-0050), and
+    a JSON-LD block without one recovers nothing worth having. Measured on a healthy board
     (citi/2), the JSON-LD description is the CXS ``jobDescription``'s text content, tag-stripped
     and entity-escaped, which :func:`~headstart.models.html_to_text` already normalises at
-    :meth:`WorkdayScraper.parse`. The other detail fields (startDate, timeType, locations) map
-    loosely or not at all, and guessing them would be worse than the None they are today."""
+    :meth:`WorkdayScraper.parse`.
+
+    Three more fields ride along because their currency is exact, not guessed (ADR-0099):
+    ``datePosted`` is the same ISO date ``jobPostingInfo.startDate`` carries; ``jobLocationType``
+    ("TELECOMMUTE") already maps through `_remote_from`'s existing patterns verbatim; and
+    ``employmentType`` is schema.org's closed enum, mapped to Workday's own ``timeType`` wording
+    by ``_SCHEMA_EMPLOYMENT``. Locations stay out: the listing's ``locationsText`` already fills
+    them, and reformatting the JSON-LD address would be guesswork on top of it."""
     if response.status_code != 200:
         return None
     for block in _JSON_LD.findall(response.text):
@@ -73,10 +96,24 @@ def _jobposting_from_page(response: Any) -> dict[str, Any] | None:
         except ValueError:
             continue
         for node in data if isinstance(data, list) else [data]:
-            if isinstance(node, dict) and node.get("@type") == "JobPosting":
+            if not isinstance(node, dict):
+                continue
+            kind = node.get("@type")  # JSON-LD allows a list of types
+            if kind == "JobPosting" or (
+                isinstance(kind, list) and "JobPosting" in kind
+            ):
                 description = node.get("description")
-                if description:
-                    return {"description": description}
+                if not description:
+                    continue
+                employment = node.get("employmentType")
+                if isinstance(employment, list):  # the spec allows a list here too
+                    employment = employment[0] if employment else None
+                return {
+                    "description": description,
+                    "startDate": node.get("datePosted"),
+                    "remoteType": node.get("jobLocationType"),
+                    "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
+                }
     return None
 
 
@@ -517,8 +554,11 @@ class WorkdayScraper(BaseScraper):
         )
 
     def _page_url(self, external_path: str) -> str:
-        """The posting's public job page — the same URL :meth:`parse` hands users as ``Job.url``,
-        server-rendered with a JSON-LD ``JobPosting`` even on sub-sites the CXS API won't serve."""
+        """The posting's public job page, server-rendered with a JSON-LD ``JobPosting`` even on
+        sub-sites the CXS API won't serve. The page :meth:`parse`'s ``Job.url`` names, with one
+        deliberate difference: this builds on the *resolved* instance (``_resolve_instance``),
+        where ``Job.url`` keeps the slug's own — for a migrated tenant the slug's stale ``wdN``
+        host 500s, and the resolved one is the host that answers."""
         company, instance, site = self._parts()
         return f"https://{company}.{instance}.myworkdayjobs.com/{site}{external_path}"
 
@@ -590,7 +630,7 @@ class WorkdayScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return _jobposting_from_page(response)
+        return _detail_from_page(response)
 
     async def _job_detail_async(
         self,
@@ -641,7 +681,7 @@ class WorkdayScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return _jobposting_from_page(response)
+        return _detail_from_page(response)
 
     @staticmethod
     def _note_detail(classes: Counter[str] | None, label: str) -> None:

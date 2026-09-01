@@ -39,11 +39,18 @@ Measured before building (the CLAUDE.md live-verification rule):
 
 ## Decision
 
-When a detail GET **settles at 404** (after the ladder), fetch the posting's public job page —
-the same URL `parse()` already hands users as `Job.url` — and take the description from its
-JSON-LD `JobPosting`, sync and async paths alike. A recovered detail carries only
-`description`: the other detail fields (startDate, timeType, locations) map loosely or not at
-all from JSON-LD, and guessing them would be worse than the None they are today.
+When a detail GET **returns 404** — a status the retry ladder never touches, so it is final on
+first sight — fetch the posting's public job page (the page `Job.url` names, built on the
+resolved instance) and take the description from its
+JSON-LD `JobPosting`, sync and async paths alike. A recovered detail carries the description
+(the gate — a block without one recovers nothing worth having) plus the three fields whose
+currency is exact rather than guessed: `datePosted` is the same ISO date `startDate` carries;
+`jobLocationType` ("TELECOMMUTE") already maps through `_remote_from`'s existing patterns
+verbatim; and `employmentType` is schema.org's closed enum, mapped onto Workday's own
+`timeType` wording (`_SCHEMA_EMPLOYMENT`) — the substring-matching filter vocabulary
+(`search.ETYPE_CLAUSES`) accepts either form, so the map is for display consistency, not
+correctness. Locations stay out: the listing's `locationsText` already fills them, and
+reformatting the JSON-LD address would be guesswork on top of it.
 
 Only 404 triggers it. 400 is ADR-0098's throttle and already retried — a second URL mid-throttle
 is extra load, not recovery; 5xx/429 are transient and retried; a page fetch on those would

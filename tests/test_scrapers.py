@@ -7051,6 +7051,9 @@ def test_workday_detail_404_falls_back_to_the_public_page(monkeypatch):
     ):
         assert detail is not None, "the page fallback must save the detail"
         assert detail["description"] == "Payroll &amp; tax operations role"
+        assert (
+            detail["startDate"] is None
+        )  # absent from this page's JSON-LD — stays None
         assert classes[_PAGE_RECOVERED] == 1
         assert "HTTP 404" not in classes, "a recovered detail is not a loss"
     assert (
@@ -7131,3 +7134,42 @@ def test_workday_recovered_details_report_once_and_stay_out_of_the_loss_tally(ca
         )
     assert "2 detail(s) recovered from the public page" in caplog.text
     assert "failed mid-crawl" not in caplog.text
+
+
+def test_workday_detail_from_page_reads_both_type_shapes_and_the_exact_fields():
+    """JSON-LD allows ``@type`` to be a string or a list; Workday's own template serves the
+    string form (measured n=2 tenants), so the full-path test uses that shape and this one
+    keeps the list form and the not-a-JobPosting rejection covered. The three ride-along
+    fields carry exact currency (ADR-0099): datePosted IS startDate's ISO form, TELECOMMUTE
+    already maps through `_remote_from`, and schema.org's enum maps onto timeType's wording."""
+    from headstart.scrapers.workday import _detail_from_page, _remote_from
+
+    def _page(block):
+        class _R:
+            status_code = 200
+            text = f'<script type="application/ld+json">{block}</script>'
+
+        return _R()
+
+    detail = _detail_from_page(
+        _page(
+            '{"@type": ["JobPosting"], "description": "d", "datePosted": "2026-08-31",'
+            ' "employmentType": "FULL_TIME", "jobLocationType": "TELECOMMUTE"}'
+        )
+    )
+    assert detail == {
+        "description": "d",
+        "startDate": "2026-08-31",
+        "remoteType": "TELECOMMUTE",
+        "timeType": "Full time",
+    }
+    assert _remote_from(detail["remoteType"]) is True
+    # a page whose JobPosting has no description recovers nothing — the gate field
+    assert (
+        _detail_from_page(_page('{"@type": "JobPosting", "datePosted": "2026-08-31"}'))
+        is None
+    )
+    assert (
+        _detail_from_page(_page('{"@type": "Organization", "description": "d"}'))
+        is None
+    )
