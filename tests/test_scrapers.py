@@ -7175,3 +7175,149 @@ def test_workday_extract_page_detail_reads_both_type_shapes_and_the_exact_fields
         _extract_page_detail(_page('{"@type": "Organization", "description": "d"}'))
         is None
     )
+
+
+def _breaker_scraper():
+    from headstart.scrapers.workday import WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers")
+    s._instance = "wd1"
+    return s
+
+
+def test_workday_detail_pass_breaks_off_after_consecutive_settled_5xx(
+    monkeypatch, caplog
+):
+    """An origin-side 500-episode is minutes long, IP-independent, and refuses everything —
+    measured on massgeneralbrigham (run 33448251066): 2,324 of 2,420 details settled at 500
+    across 10+ fresh egress IPs over a 1,153s pass. Nothing recovers in-run; the store heals
+    next scrape. So after `_DETAIL_BREAK_STREAK` consecutive settled 5xx the pass stops paying:
+    no further detail is fetched, the tail is counted under its own label, and one warning
+    names the break-off (ADR-0100)."""
+    import logging
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import _BROKEN_OFF, _DETAIL_BREAK_STREAK
+
+    calls = []
+
+    class _R:
+        status_code = 500
+        text = ""
+
+        @staticmethod
+        def json():
+            return {}
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (calls.append(url), _R())[1]
+    )
+    s = _breaker_scraper()
+    classes: Counter = Counter()
+    caplog.set_level(logging.WARNING, logger="headstart.scrapers.workday")
+    for i in range(_DETAIL_BREAK_STREAK + 10):
+        assert s._job_detail(f"/job/x/J_{i}", classes) is None
+    assert len(calls) == _DETAIL_BREAK_STREAK, "fetching must stop at the streak"
+    assert classes["HTTP 500"] == _DETAIL_BREAK_STREAK
+    assert classes[_BROKEN_OFF] == 10
+    breaks = [r for r in caplog.records if "breaking off the detail pass" in r.message]
+    assert len(breaks) == 1, "the break-off is logged exactly once"
+
+
+def test_workday_a_recovered_detail_resets_the_5xx_streak(monkeypatch):
+    """A streak is *consecutive*: one successful detail proves the origin is answering, so the
+    counter starts over — a board with interleaved successes is a lossy pass, not an episode."""
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import _DETAIL_BREAK_STREAK
+
+    n = {"i": 0}
+
+    def fake_fetch(method, url, **kw):
+        n["i"] += 1
+        ok = n["i"] == _DETAIL_BREAK_STREAK  # one success right before the threshold
+
+        class _R:
+            status_code = 200 if ok else 500
+            text = ""
+
+            @staticmethod
+            def json():
+                return {"jobPostingInfo": {"jobDescription": "<p>d</p>"}}
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch", fake_fetch)
+    s = _breaker_scraper()
+    classes: Counter = Counter()
+    for i in range(2 * _DETAIL_BREAK_STREAK - 2):
+        s._job_detail(f"/job/x/J_{i}", classes)
+    assert n["i"] == 2 * _DETAIL_BREAK_STREAK - 2, (
+        "no break: every detail was attempted"
+    )
+
+
+def test_workday_400s_do_not_trip_the_5xx_breaker(monkeypatch):
+    """A pwc-style 400-storm is ADR-0098's territory and its recovery counter is still being
+    measured — the breaker counts settled 5xx only, so a pure 400 storm never trips it."""
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import _DETAIL_BREAK_STREAK
+
+    calls = []
+
+    class _R:
+        status_code = 400
+        text = ""
+
+        @staticmethod
+        def json():
+            return {}
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (calls.append(url), _R())[1]
+    )
+    s = _breaker_scraper()
+    classes: Counter = Counter()
+    for i in range(_DETAIL_BREAK_STREAK + 5):
+        s._job_detail(f"/job/x/J_{i}", classes)
+    assert len(calls) == _DETAIL_BREAK_STREAK + 5, "400s must not stop the pass"
+
+
+def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
+    """One episode, one board, either fan-out — the async path shares the same streak."""
+    import asyncio
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import _BROKEN_OFF, _DETAIL_BREAK_STREAK
+
+    calls = []
+
+    async def fake_fetch_async(session, method, url, **kw):
+        calls.append(url)
+
+        class _R:
+            status_code = 500
+            text = ""
+
+            @staticmethod
+            def json():
+                return {}
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+    s = _breaker_scraper()
+    classes: Counter = Counter()
+
+    async def drive():
+        for i in range(_DETAIL_BREAK_STREAK + 4):
+            await s._job_detail_async(object(), f"/job/x/J_{i}", classes)
+
+    asyncio.run(drive())
+    assert len(calls) == _DETAIL_BREAK_STREAK
+    assert classes[_BROKEN_OFF] == 4

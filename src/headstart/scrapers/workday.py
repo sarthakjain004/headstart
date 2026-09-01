@@ -22,8 +22,10 @@ The list endpoint carries no description; a second pass fetches each posting's d
 (GET .../wday/cxs/{company}/{site}{externalPath} -> jobPostingInfo.jobDescription) in a
 bounded thread pool to fill it in. A detail that settles at 404 falls back to the posting's
 public job page, whose server-rendered JSON-LD carries the description even on sub-sites the
-CXS API refuses wholesale (ADR-0099, ``_PAGE_RECOVERED``). A failed detail fetch leaves
-description None — the job is still kept.
+CXS API refuses wholesale (ADR-0099, ``_PAGE_RECOVERED``). A pass that hits a sustained
+origin-side 5xx episode breaks off rather than grinding through it (ADR-0100,
+``_DETAIL_BREAK_STREAK``). A failed detail fetch leaves description None — the job is still
+kept.
 
 Adapted from jobhive (kalil0321/ats-scrapers) to this project's shared pooled ``http`` client,
 mapped onto our leaner Job. The listing crawl (``_paginate``) and the per-job detail pass both fan
@@ -218,6 +220,23 @@ _JSON_LD = re.compile(
     r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
 )
 
+# A 500-episode is the origin refusing a Board's details wholesale for minutes, and nothing
+# in-run beats it (ADR-0100): massgeneralbrigham lost 2,324 of 2,420 details to settled 500s
+# ACROSS 10+ fresh egress IPs in a 1,153s pass (run 33448251066), the same Board that other days
+# was hit as listing-400s or ConnectionErrors — Workday's defense wears interchangeable statuses
+# (ADR-0098's lesson generalised). Every probed episode Board served the same details cleanly the
+# next day, so the loss is a delay, not a loss: the pass breaks off after this many CONSECUTIVE
+# settled 5xx and lets the next scrape heal the text via the store (ADR-0050). Consecutive is the
+# guard against false trips — the steady background 5xx mostly recovers inside the retry ladder,
+# so a run of 30 that all settled is an episode, not noise. 5xx only, deliberately: a pure
+# 400-storm never trips it, because ADR-0098's 400-retry recovery counter is still being measured
+# and an early break-off would muddy it. On the threaded fan_out fallback the streak increments
+# race (same caveat as the loss classes) — the trip point is approximate there and the break-off
+# warning can double-fire; both are exact on the async path. Tripping stops new details from
+# STARTING — items already in flight complete, retry ladders included.
+_DETAIL_BREAK_STREAK = 30
+_BROKEN_OFF = "skipped after the 5xx break-off"
+
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
 _REMOTE_TYPE_PATTERNS = {
@@ -338,6 +357,11 @@ class WorkdayScraper(BaseScraper):
     #: rate. But do not read a high recovered rate as confirmation; only a per-Board outcome is.
     egress_fallback_on = frozenset({429})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
+    # The ADR-0100 episode breaker's per-pass state (see _DETAIL_BREAK_STREAK). Class-level
+    # defaults so a directly-driven detail call (tests, salary_sample.py) works on a fresh
+    # instance; fetch_raw re-zeros them before each pass.
+    _settled_5xx_streak = 0
+    _detail_pass_broken = False
 
     def __init__(self, slug: str, company: str | None = None) -> None:
         super().__init__(slug, company)
@@ -528,6 +552,8 @@ class WorkdayScraper(BaseScraper):
         # increments race across `fan_out`'s worker threads, so treat that path's breakdown as
         # a shape rather than an exact tally.
         classes: Counter[str] = Counter()
+        self._settled_5xx_streak = 0  # ADR-0100, per pass
+        self._detail_pass_broken = False
         if self.async_fanout_enabled():
             details = self.fan_out_async(
                 postings,
@@ -589,6 +615,11 @@ class WorkdayScraper(BaseScraper):
         """GET one posting's detail fields (None on failure). Sync path.
 
         ``classes`` records *what* a lost detail was lost to — see :meth:`_note_detail`."""
+        if (
+            self._detail_pass_broken
+        ):  # the ADR-0100 episode breaker tripped — spend nothing
+            self._note_detail(classes, _BROKEN_OFF)
+            return None
         if not external_path:
             self._note_detail(classes, "no externalPath")
             return None
@@ -609,11 +640,10 @@ class WorkdayScraper(BaseScraper):
         ):  # sub-sites without CXS details — see _PAGE_RECOVERED
             fallback = self._page_detail(external_path)
             if fallback is not None:
+                self._settled_5xx_streak = 0  # the origin answered; not an episode
                 self._note_detail(classes, _PAGE_RECOVERED)
                 return fallback
-        if response.status_code != 200:
-            self._note_detail(classes, f"HTTP {response.status_code}")
-        return self._parsed_detail(response, classes)
+        return self._settled_detail(response, classes)
 
     def _page_detail(self, external_path: str) -> dict[str, Any] | None:
         """The public page's JSON-LD description, or None. Sync path.
@@ -639,6 +669,11 @@ class WorkdayScraper(BaseScraper):
         classes: Counter[str] | None = None,
     ) -> dict[str, Any] | None:
         """Same as :meth:`_job_detail` but over the shared multiplexed ``AsyncSession``."""
+        if (
+            self._detail_pass_broken
+        ):  # the ADR-0100 episode breaker tripped — spend nothing
+            self._note_detail(classes, _BROKEN_OFF)
+            return None
         if not external_path:
             self._note_detail(classes, "no externalPath")
             return None
@@ -660,11 +695,41 @@ class WorkdayScraper(BaseScraper):
         ):  # sub-sites without CXS details — see _PAGE_RECOVERED
             fallback = await self._page_detail_async(session, external_path)
             if fallback is not None:
+                self._settled_5xx_streak = 0  # the origin answered; not an episode
                 self._note_detail(classes, _PAGE_RECOVERED)
                 return fallback
+        return self._settled_detail(response, classes)
+
+    def _settled_detail(
+        self, response: Any, classes: Counter[str] | None
+    ) -> dict[str, Any] | None:
+        """Classify one settled detail response and keep the ADR-0100 episode streak.
+
+        A settled 5xx — the retry ladder already spent — advances the streak and trips the
+        breaker at `_DETAIL_BREAK_STREAK`; any successfully parsed detail resets it. Other
+        losses (400s, 404s whose page fallback failed) neither advance nor reset: the breaker
+        is scoped to the one class the episode diagnosis measured.
+        """
         if response.status_code != 200:
             self._note_detail(classes, f"HTTP {response.status_code}")
-        return self._parsed_detail(response, classes)
+            if response.status_code >= 500:
+                self._settled_5xx_streak += 1
+                if (
+                    self._settled_5xx_streak >= _DETAIL_BREAK_STREAK
+                    and not self._detail_pass_broken
+                ):
+                    self._detail_pass_broken = True
+                    _log.warning(
+                        f"{self.board_key()}: breaking off the detail pass after "
+                        f"{self._settled_5xx_streak} consecutive details lost to settled 5xx "
+                        "— the origin is refusing this Board's details this run; the rest "
+                        "ship unfetched and heal on the next scrape (ADR-0100)"
+                    )
+            return self._parsed_detail(response, classes)
+        detail = self._parsed_detail(response, classes)
+        if detail is not None:
+            self._settled_5xx_streak = 0
+        return detail
 
     async def _page_detail_async(
         self, session: Any, external_path: str
