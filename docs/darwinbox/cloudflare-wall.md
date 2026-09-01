@@ -200,7 +200,8 @@ only page 1, so a real scrape must paginate.
    over-engineering unless volume proves the browser path cannot hold.
 3. **Park it** — `config.PARKED_BOARDS` until one of the above lands. Darwinbox currently spends
    ~155 Boards of scrape budget and its share of the run's retries every two hours for near-zero
-   yield, and its truncated scrapes feed the ADR-0046 collapse guard. Note the cost: a parked
+   yield, and its truncated scrapes left it Unauthoritative (ADR-0053; the ADR-0046 collapse
+   guard this once named was removed by ADR-0101). Note the cost: a parked
    Board leaves `index_plan.live_keep_set`, so the darwinbox rows still in the index are evicted
    as off-Board. Against a Board yielding ~0–5% that is a small loss, but it is not free, and
    `PARKED_BOARDS` is keyed on the lowercased `board_key`, not on `ats:slug`.

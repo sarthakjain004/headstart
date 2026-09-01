@@ -1,6 +1,6 @@
 # ADR-0055: Bound the collapse guard's hold
 
-**Status:** accepted · **Date:** 2026-08-14 · **Amends:**
+**Status:** superseded · **Date:** 2026-08-14 · **Superseded by:** [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) — the guard is removed; the ADR-0083 grace period, which ran before it, is the line · **Amends:**
 [ADR-0046](0046-index-collapse-guard.md) — the guard's threshold and intent stand; what it *does*
 on a trip changes from refusing to rate-limiting
 

@@ -1,6 +1,6 @@
 # ADR-0046: A collapse guard on index eviction
 
-**Status:** accepted · **Date:** 2026-08-13 · **Amends:** ADR-0014 · **Amended by:**
+**Status:** superseded · **Date:** 2026-08-13 · **Amends:** ADR-0014 · **Superseded by:** [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) — the guard is removed; the ADR-0083 grace period, which ran before it, is the line · **Amended by:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) — the deferred fix landed: a Board whose
 scrape errored now leaves the eviction scope outright, and this ratio guard becomes the
 backstop for truncations that report no error at all · **Amended by:**

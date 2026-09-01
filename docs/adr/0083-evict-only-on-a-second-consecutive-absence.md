@@ -1,6 +1,9 @@
 # ADR-0083: Evict only on a second consecutive absence
 
-**Status:** Accepted · **Date:** 2026-08-23 · **Supersedes nothing; amends ADR-0014's sync rule**
+**Status:** Accepted · **Date:** 2026-08-23 · **Supersedes nothing; amends ADR-0014's sync rule** ·
+**Amended by:** [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) — the
+collapse guard this ADR composes with was removed, so the Consequences below describing how the
+two compose are historical; the decision here is unchanged and is now the only per-Job line
 
 ## Context
 

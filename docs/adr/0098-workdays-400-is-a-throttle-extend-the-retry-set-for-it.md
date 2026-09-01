@@ -70,7 +70,10 @@ are worth spending to avoid that.
 ~81 s of backoff** before the Board fetches a single job — and still resolves nothing, because a
 throttle rejecting one centre rejects them all. An earlier draft of this ADR opted the whole
 function in and did not account for that. The residue is a Board that has *both* migrated and been
-throttled: it resolves nowhere and reads empty. Narrow, and the ADR-0046 collapse guard already
+throttled: it resolves nowhere and reads empty. (Corrected by
+[ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md): a Board that emits no
+ids never enters the eviction scope at all, so the guard was never what protected it.) Narrow, and
+the ADR-0046 collapse guard already
 holds its rows against exactly that.
 
 ### This change measures itself, because one thing could not be measured before shipping

@@ -249,8 +249,8 @@ jobs:
               "data/state/unauthoritative_boards.json and does it name this Board; did the key "
               "translation land it in `board_key()` space (a Workday slug is a URL and must become "
               "`ats:company/site`); and did the shard write a `_shard_report.json` at all — a shard "
-              "hard-killed by the step timeout writes none, and only ADR-0046's ratio guard covers "
-              "that, which exempts Boards under COLLAPSE_FLOOR rows like this one.")
+              "hard-killed by the step timeout writes none, and since ADR-0101 removed the ratio "
+              "guard only the ADR-0083 grace period covers that, for one scrape.")
 
           expected = {hid(n) for n in range(10)} | {fid(n) for n in range(6)}
           assert ids == expected, f"unexpected table contents: {ids ^ expected}"

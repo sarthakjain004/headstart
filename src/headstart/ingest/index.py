@@ -79,7 +79,6 @@ from headstart.ingest import (
 )
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
-    COLLAPSE_RATIO,
     apply_sync,
     boards_by_canon,
     grace_period_counts,
@@ -199,24 +198,6 @@ def _scan(table: Any, columns: list[str]) -> list[dict]:
 def _all_ids(table: Any) -> list[str]:
     """Every id in the table."""
     return [r["id"] for r in _scan(table, ["id"])]
-
-
-def _ids_and_stamps(table: Any) -> tuple[list[str], dict[str, str]]:
-    """Every id, and the ``first_seen`` stamps that order the collapse guard's drain (ADR-0055).
-
-    One scan yielding both, not two — they are columns of the same row and the planner needs them
-    together. A row predating the ``first_seen`` column carries null and is simply absent from the
-    mapping, which is what sorts it first in the drain: those are the oldest rows there are.
-    """
-    if _FIRST_SEEN_FIELD.name not in table.schema.names:
-        return _all_ids(table), {}
-    rows = _scan(table, ["id", _FIRST_SEEN_FIELD.name])
-    stamps = {
-        r["id"]: r[_FIRST_SEEN_FIELD.name]
-        for r in rows
-        if r.get(_FIRST_SEEN_FIELD.name)
-    }
-    return [r["id"] for r in rows], stamps
 
 
 def _scraped_boards(
@@ -385,10 +366,10 @@ def sync(args: argparse.Namespace) -> int:
     boards = _scraped_boards(args.scraped, corpus_ids, live)
     # A Board whose scrape came back short emitted the pages it did get, so it looks scraped and
     # its missing rows look delisted. Drop it from the scope entirely: eviction should follow a
-    # Board's scrape *outcome*, not the presence of a line (ADR-0053). The collapse guard in
-    # `plan_sync` stays as the backstop for a truncation that reported nothing at all.
-    # `excluded`, not "held": `SyncPlan.held` already names what the collapse guard withheld, and
-    # these are two different mechanisms.
+    # Board's scrape *outcome*, not the presence of a line (ADR-0053). Since ADR-0101 removed the
+    # collapse guard, this and the ADR-0083 grace period are the only two mechanisms left, and a
+    # truncation that reports nothing at all is caught only by the second — and only while it
+    # stays transient.
     unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
     excluded = {b for b in boards if b.lower() in unauthoritative}
     if excluded:
@@ -416,17 +397,17 @@ def sync(args: argparse.Namespace) -> int:
     db = lancedb.connect(args.db)
     if PROD_TABLE in db.list_tables().tables:
         table = db.open_table(PROD_TABLE)
-        index_ids, stamps = _ids_and_stamps(table)
+        index_ids = _all_ids(table)
     else:
         table = db.create_table(PROD_TABLE, schema=_schema(dim))
-        index_ids, stamps = [], {}
+        index_ids = []
     _log.info(f"index: {len(index_ids)} rows in table '{PROD_TABLE}'")
     if excluded:
         # How many rows the ADR-0053 exclusion actually withholds — deliberately a second line
         # here rather than folded into the warning above, because `index_ids` is only read from
         # the table further down and the exclusion has to be decided before that.
         #
-        # Why it is worth a line at all: the sibling ADR-0046 collapse guard reports a *row* count
+        # Why it is worth a line at all: the ADR-0046 collapse guard reported a *row* count
         # (`withheld N evictions on {board}`), and that is the only reason its ratchet was ever
         # caught — someone could watch the number climb 267 -> 953 and ADR-0055 followed. This
         # mechanism reports only a Board count, has no bound, and has no drain (`boards -=
@@ -505,7 +486,7 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
-    plan = plan_sync(index_ids, fresh, boards, live, stamps, was_unconfirmed)
+    plan = plan_sync(index_ids, fresh, boards, live, was_unconfirmed)
     # `add` counts every row written, and an upgrade is a delete-then-re-add of a Job that never
     # left — so reading `add - evict` as growth overstates it by exactly the upgrade count. Over
     # 19 runs that read as +4,376 while the table actually fell by 388 rows. Spell out the split
@@ -519,18 +500,6 @@ def sync(args: argparse.Namespace) -> int:
         f"plan: add {len(plan.add)} ({listings} new listings + {len(taken)} re-embedded), "
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
-    withheld = sum(count for _, count in plan.held)
-    if plan.held:
-        # Loud on purpose: every held Board is a scrape that came back short, and the guard only
-        # hides the symptom. Silence here would turn a broken scrape into a quiet no-op.
-        _log.warning(
-            f"collapse guard: withheld {withheld} evictions across {len(plan.held)} Boards that "
-            f"each lost >{COLLAPSE_RATIO:.0%} of their rows in one run — that is a truncated "
-            f"scrape, not a delisting (ADR-0046); each drained up to {COLLAPSE_RATIO:.0%} of its "
-            "rows this run and will drain the rest over later runs (ADR-0055)"
-        )
-        for board, count in plan.held:
-            _log.warning(f"  withheld {count} evictions on {board}")
     # Written before the delete rather than after, and the reason is not crash-replay: `delete`
     # and `unconfirmed` are disjoint by construction, so a crash here loses no eviction — those
     # ids simply read as a first absence again next run, costing one extra cycle and nothing else.
@@ -546,7 +515,8 @@ def sync(args: argparse.Namespace) -> int:
             f"grace period: {len(plan.unconfirmed)} id(s) unconfirmed, awaiting a second look "
             f"before eviction; of the {len(was_unconfirmed)} carried in, {reappeared} reappeared "
             f"in this scrape and {still_waiting} are unconfirmed again (their Board sat out this "
-            "run's slice, or the collapse guard capped its evictions first) (ADR-0083)"
+            "run's slice, was Unauthoritative, or emitted nothing at all — all three leave the "
+            "eviction scope) (ADR-0083)"
         )
         # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
         # is ordinary churn; one concentrated on a handful is a scrape that keeps coming back
@@ -597,16 +567,6 @@ def sync(args: argparse.Namespace) -> int:
         + (
             [f"- refreshed metadata on **{refreshed:,}** rows (ADR-0061)"]
             if refreshed
-            else []
-        )
-        + (
-            [
-                (
-                    f"- collapse guard withheld **{withheld:,}** evictions across "
-                    f"**{len(plan.held)}** Boards that came back short"
-                )
-            ]
-            if plan.held
             else []
         ),
     )
