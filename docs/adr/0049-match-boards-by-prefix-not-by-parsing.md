@@ -129,7 +129,9 @@ keep-set it did not previously build: 0.26 s to read the ledger into 60,691 Boar
 index them by canonical key. Both are noise beside the store download and the table write.
 
 Colon-bearing rows now group onto a **real** Board rather than a phantom, which changes how
-ADR-0046's collapse guard sees them: they join their Board's full row count instead of forming
+ADR-0046's collapse guard sees them (that guard was removed by
+[ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md); this paragraph
+describes how it behaved): they join their Board's full row count instead of forming
 their own small group. The observed phantoms were below the guard's `COLLAPSE_FLOOR` of 20 — the
 four `dmainc` rows shared one `…/DMA:REQ` phantom, the `otis` ones were singletons — so those were
 exempt and are now protected. It is not a blanket "protected for the first time": a Board with 20
