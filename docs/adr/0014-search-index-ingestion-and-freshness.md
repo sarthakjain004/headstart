@@ -2,9 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-07-03
-- Amended by: [ADR-0046](0046-index-collapse-guard.md) — a collapse guard withholds a Board's
+- Amended by: [ADR-0046](0046-index-collapse-guard.md) — a collapse guard withheld a Board's
   evictions when it would lose more than a quarter of its rows in one run, so scrape-diff eviction
-  is no longer unconditional
+  was no longer unconditional; **reverted by**
+  [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md), which removed that
+  guard and restored this ADR's outcome for a Board in scope
 - Amended by: [ADR-0049](0049-match-boards-by-prefix-not-by-parsing.md) — sync resolves ids to
   live Boards by prefix, so a colon-bearing native id is scoped to its real Board
 

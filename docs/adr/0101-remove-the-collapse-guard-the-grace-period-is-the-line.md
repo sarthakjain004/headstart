@@ -69,11 +69,19 @@ regressed this: such a Board is in scope with zero fresh ids, indistinguishable 
 from a scrape truncated to nothing, so its stale rows were held. They now fall out in one run,
 which is what ADR-0014 specified.
 
-**`still_waiting` in the grace-period log line has one cause again, not two.** An id whose Board
-was scraped and was absent again is now evicted rather than capped, so a carried-in id can only
-still be waiting because its Board sat out this run's slice. The line's wording and
-`grace_period_counts`'s docstring are corrected to say so; reading the old two-cause wording
-against new logs would attribute accretion to a mechanism that no longer exists.
+**`still_waiting` in the grace-period log line keeps two causes, but the second one changes.**
+An id whose Board was scraped *and was in scope* is now evicted rather than capped, so the
+collapse guard is no longer a cause. It is replaced by one that was always there and that the old
+wording hid: `index sync` subtracts an Unauthoritative Board from the scope before calling
+`plan_sync` (ADR-0053), so that Board's carried-in ids take the same carry-forward branch as a
+Board that sat out the slice entirely. At 63–126 Boards per run
+(`docs/pipeline/2026-09-01_twelve-run-log-review.md`) it is not a rounding error, and unlike the
+slice cause it has no drain. The log line and `grace_period_counts`'s docstring are corrected to
+name that pair; reading the old wording against new logs would attribute accretion to a mechanism
+that no longer exists.
+
+This correction came out of the code review on this change, not the analysis that preceded it —
+the first draft of this ADR asserted a single cause and was wrong.
 
 **Watch the eviction volume for two or three runs.** The signal that this was wrong is a Board
 shedding a large block of rows and re-adding them within the window — exactly what

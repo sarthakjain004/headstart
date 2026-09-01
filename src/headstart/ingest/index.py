@@ -515,7 +515,7 @@ def sync(args: argparse.Namespace) -> int:
             f"grace period: {len(plan.unconfirmed)} id(s) unconfirmed, awaiting a second look "
             f"before eviction; of the {len(was_unconfirmed)} carried in, {reappeared} reappeared "
             f"in this scrape and {still_waiting} are unconfirmed again (their Board sat out this "
-            "run's slice, or the collapse guard capped its evictions first) (ADR-0083)"
+            "run's slice, or was Unauthoritative and left the eviction scope) (ADR-0083)"
         )
         # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
         # is ordinary churn; one concentrated on a handful is a scrape that keeps coming back

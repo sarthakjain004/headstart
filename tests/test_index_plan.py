@@ -619,15 +619,23 @@ def test_grace_period_counts_exclude_an_id_whose_board_left_the_ledger():
     assert grace_period_counts(was_unconfirmed, fresh, plan) == (0, 0)
 
 
-def test_grace_period_still_waiting_counts_an_unscraped_board():
-    """Since ADR-0101 this is the *only* cause of `still_waiting`: carried-in ids whose Board this
-    run did not read. An id whose Board was scraped and was absent again is evicted, not carried —
-    the ADR-0046 collapse guard used to be a second cause and no longer exists."""
-    was_unconfirmed = frozenset({"ats:SKIPPED:x1"})
+def test_grace_period_still_waiting_counts_a_board_absent_from_the_scope():
+    """`still_waiting` counts carried-in ids whose Board is absent from `scraped_boards`.
+
+    Two different situations reach this one branch, and `plan_sync` cannot tell them apart because
+    its caller has already merged them: the Board sat out the run's slice, or it was scraped,
+    came back Unauthoritative, and `index sync` subtracted it from the scope (ADR-0053,
+    `boards -= excluded`). The ADR-0046 collapse guard was a third, distinguishable cause until
+    ADR-0101 removed it — an id whose Board is *in* scope and absent again is now evicted, never
+    carried, which is what the assertion on `ats:LIVE` below pins."""
+    # Both ids were absent last run. `ats:SKIPPED` is out of scope this run; `ats:LIVE` is in it
+    # and `ats:LIVE:y2` is absent again, so the two take opposite paths.
+    was_unconfirmed = frozenset({"ats:SKIPPED:x1", "ats:LIVE:y2"})
+    fresh = {"ats:LIVE:y1"}
     plan = plan_sync(
-        index_ids=["ats:SKIPPED:x1", "ats:LIVE:y1"],
-        fresh_ids={"ats:LIVE:y1"},
-        scraped_boards=["ats:LIVE"],  # ats:SKIPPED sat out this run's slice...
+        index_ids=["ats:SKIPPED:x1", "ats:LIVE:y1", "ats:LIVE:y2"],
+        fresh_ids=fresh,
+        scraped_boards=["ats:LIVE"],  # ats:SKIPPED is absent from the scope...
         live={
             "ats:skipped": "ats:SKIPPED",
             "ats:live": "ats:LIVE",
@@ -635,7 +643,11 @@ def test_grace_period_still_waiting_counts_an_unscraped_board():
         was_unconfirmed=was_unconfirmed,
     )
     assert "ats:SKIPPED:x1" in plan.unconfirmed  # streak neither advanced nor reset
-    assert grace_period_counts(was_unconfirmed, {"ats:LIVE:y1"}, plan) == (0, 1)
+    # In scope and absent a second time: evicted outright. Under ADR-0046 a Board this small was
+    # under COLLAPSE_FLOOR and evicted anyway, but a large one would have been capped and carried.
+    assert plan.delete == frozenset({"ats:LIVE:y2"})
+    assert "ats:LIVE:y2" not in plan.unconfirmed
+    assert grace_period_counts(was_unconfirmed, fresh, plan) == (0, 1)
 
 
 def test_grace_period_buckets_are_disjoint_for_a_scope_excluded_board():

@@ -82,13 +82,21 @@ def grace_period_counts(
     and folding them in would report churn that never happened.
 
     ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
-    neither came back nor were evicted. **This is the accretion signal**, and it has two distinct
-    cause since ADR-0101 removed the collapse guard: the id's Board was not in this run's slice at
-    all (only ~20,000 are — under a quarter of the Scrapable Boards, so this dominates a healthy
-    set and is entirely benign — the streak simply did not advance). Watch it across runs anyway:
-    a number that only ever grows is a queue nothing looks at, the shape ADR-0055 had to unwind
-    for the guard this replaces. Do not read it as "waiting for their Board's next turn" — an id
-    whose Board *was* scraped and was absent again is evicted, not carried.
+    neither came back nor were evicted. **This is the accretion signal**, and it still has two
+    distinct causes after ADR-0101 removed the collapse guard — but the second one changed, so a
+    log line or a review written against the old pair will misattribute it. Both reach the same
+    branch here, because both mean the Board is absent from ``scraped_boards``:
+
+    - The id's Board was not in this run's slice at all. Only ~20,000 are — under a quarter of the
+      Scrapable Boards — so this dominates a healthy set and is entirely benign; the streak simply
+      did not advance.
+    - The Board *was* scraped but came back Unauthoritative, so ``index sync`` subtracted it from
+      the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
+      (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
+      unlike the first cause it has no drain, which is what makes the total worth watching.
+
+    What is *no longer* a cause is the ADR-0046 collapse guard capping a Board still in scope: an
+    id whose Board was scraped, was in scope, and was absent again is now evicted, not carried.
 
     Deliberately does *not* return an evicted count. With the grace period on, ``plan.delete`` is
     a subset of ``was_unconfirmed`` by construction (``eligible = absent & previously``), so such
@@ -188,9 +196,8 @@ def plan_sync(
         # both is how this reads as "missing" twice and means two things.
         eligible = absent & previously if grace_on else absent
         delete |= eligible
-        # A first absence is unconfirmed; a second evicts. Subtracting `eligible` rather than
-        # writing `absent - previously` keeps the two branches of `eligible` in one expression —
-        # with the grace period off, everything absent is evicted and nothing is carried.
+        # A first absence is unconfirmed; a second evicts. Inside this branch `eligible` is
+        # `absent & previously`, so this carries exactly the ids seen missing for the first time.
         if grace_on:
             unconfirmed |= absent - eligible
 
