@@ -20,8 +20,10 @@ carries each value's true ``count`` so we can plan the split without probing.
 
 The list endpoint carries no description; a second pass fetches each posting's detail
 (GET .../wday/cxs/{company}/{site}{externalPath} -> jobPostingInfo.jobDescription) in a
-bounded thread pool to fill it in. A failed detail fetch leaves description None — the job
-is still kept.
+bounded thread pool to fill it in. A detail that settles at 404 falls back to the posting's
+public job page, whose server-rendered JSON-LD carries the description even on sub-sites the
+CXS API refuses wholesale (ADR-0099, ``_PAGE_RECOVERED``). A failed detail fetch leaves
+description None — the job is still kept.
 
 Adapted from jobhive (kalil0321/ats-scrapers) to this project's shared pooled ``http`` client,
 mapped onto our leaner Job. The listing crawl (``_paginate``) and the per-job detail pass both fan
@@ -32,6 +34,7 @@ and ``_DETAIL_STREAMS``.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections import Counter
 from collections.abc import Sequence
@@ -51,6 +54,30 @@ def _failure_class(exc: Exception) -> str:
     distinct strings."""
     status = getattr(getattr(exc, "response", None), "status_code", None)
     return f"HTTP {status}" if status else type(exc).__name__
+
+
+def _jobposting_from_page(response: Any) -> dict[str, Any] | None:
+    """``{"description": ...}`` from a public job page's server-rendered JSON-LD, or None.
+
+    Only the description: it is what the detail pass exists to supply (ADR-0050), and it is the
+    one field the JSON-LD carries in the CXS detail's own currency — measured on a healthy board
+    (citi/2), the JSON-LD description is the CXS ``jobDescription``'s text content, tag-stripped
+    and entity-escaped, which :func:`~headstart.models.html_to_text` already normalises at
+    :meth:`WorkdayScraper.parse`. The other detail fields (startDate, timeType, locations) map
+    loosely or not at all, and guessing them would be worse than the None they are today."""
+    if response.status_code != 200:
+        return None
+    for block in _JSON_LD.findall(response.text):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        for node in data if isinstance(data, list) else [data]:
+            if isinstance(node, dict) and node.get("@type") == "JobPosting":
+                description = node.get("description")
+                if description:
+                    return {"description": description}
+    return None
 
 
 _URL_PATTERN = re.compile(
@@ -139,6 +166,20 @@ _MAX_LOST_PAGE_SHARE = 0.5
 # ADR-0088 has the reasoning for both halves of that; re-set the number from real
 # `failed mid-crawl` lines rather than defending 0.5 on principle.
 _MAX_LOST_DETAIL_SHARE = 0.5
+
+# A whole sub-site can list live postings whose CXS details ALL 404 (ADR-0099): iheartmedia's
+# eight sub-sites ran 12/12 pipeline runs at 100% detail loss (2,900+ details), reproduced from a
+# residential IP, while every public job page returned 200 with the full description in
+# server-rendered JSON-LD and the page's embedded config named the exact tenant/site this scraper
+# uses — the tenant's own SPA would 404 on the same URL. A settled 404 therefore tries the public
+# page before the loss is counted. 404 only: 400 is a throttle (ADR-0098) already on the retry
+# ladder, and a second URL mid-throttle is extra load, not recovery. Recovered details ride this
+# label in the loss-class Counter so the pass can report them, and `_report_detail_losses` pops it
+# back out — its loss tally must only ever fall short of `missing`, never overshoot it.
+_PAGE_RECOVERED = "recovered from the public page"
+_JSON_LD = re.compile(
+    r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
+)
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
 # stay None — neither purely remote nor onsite.
@@ -475,6 +516,12 @@ class WorkdayScraper(BaseScraper):
             f"/wday/cxs/{company}/{site}{external_path}"
         )
 
+    def _page_url(self, external_path: str) -> str:
+        """The posting's public job page — the same URL :meth:`parse` hands users as ``Job.url``,
+        server-rendered with a JSON-LD ``JobPosting`` even on sub-sites the CXS API won't serve."""
+        company, instance, site = self._parts()
+        return f"https://{company}.{instance}.myworkdayjobs.com/{site}{external_path}"
+
     @staticmethod
     def _extract_detail(response: Any) -> dict[str, Any] | None:
         """The useful jobPostingInfo fields from a posting-detail response (None on non-200):
@@ -517,9 +564,33 @@ class WorkdayScraper(BaseScraper):
         except http.RequestsError as exc:
             self._note_detail(classes, _failure_class(exc))
             return None  # a missing detail must not drop the job
+        if (
+            response.status_code == 404
+        ):  # sub-sites without CXS details — see _PAGE_RECOVERED
+            fallback = self._page_detail(external_path)
+            if fallback is not None:
+                self._note_detail(classes, _PAGE_RECOVERED)
+                return fallback
         if response.status_code != 200:
             self._note_detail(classes, f"HTTP {response.status_code}")
         return self._parsed_detail(response, classes)
+
+    def _page_detail(self, external_path: str) -> dict[str, Any] | None:
+        """The public page's JSON-LD description, or None. Sync path.
+
+        Fires only after a settled CXS 404, so its own failure adds no class — the 404 that
+        triggered it is the loss that gets counted."""
+        try:
+            response = http.fetch(
+                "GET",
+                self._page_url(external_path),
+                timeout=30,
+                headers={"User-Agent": USER_AGENT},
+                **self._egress(),
+            )
+        except http.RequestsError:
+            return None
+        return _jobposting_from_page(response)
 
     async def _job_detail_async(
         self,
@@ -544,9 +615,33 @@ class WorkdayScraper(BaseScraper):
         except http.RequestsError as exc:
             self._note_detail(classes, _failure_class(exc))
             return None
+        if (
+            response.status_code == 404
+        ):  # sub-sites without CXS details — see _PAGE_RECOVERED
+            fallback = await self._page_detail_async(session, external_path)
+            if fallback is not None:
+                self._note_detail(classes, _PAGE_RECOVERED)
+                return fallback
         if response.status_code != 200:
             self._note_detail(classes, f"HTTP {response.status_code}")
         return self._parsed_detail(response, classes)
+
+    async def _page_detail_async(
+        self, session: Any, external_path: str
+    ) -> dict[str, Any] | None:
+        """Same as :meth:`_page_detail` but over the shared multiplexed ``AsyncSession``."""
+        try:
+            response = await http.fetch_async(
+                session,
+                "GET",
+                self._page_url(external_path),
+                timeout=30,
+                headers={"User-Agent": USER_AGENT},
+                **self._egress(),
+            )
+        except http.RequestsError:
+            return None
+        return _jobposting_from_page(response)
 
     @staticmethod
     def _note_detail(classes: Counter[str] | None, label: str) -> None:
@@ -603,7 +698,18 @@ class WorkdayScraper(BaseScraper):
         ADR-0050 gap entry. It no longer costs *identity*: :func:`_posting_key` read the detail's
         ``jobReqId`` until ADR-0097, so a lost detail used to *rename* the Job rather than merely
         under-fill it. ADR-0088 has both arguments and why neither widens this line's claim.
+
+        ``_PAGE_RECOVERED`` is popped out before the tally: a recovered detail is non-None, so
+        leaving it in would overshoot ``missing`` — the one direction the invariant below says
+        the tally can never move. It gets its own INFO line instead, so the fallback's work is
+        visible per Board without reading as a loss (ADR-0099).
         """
+        recovered = classes.pop(_PAGE_RECOVERED, 0)
+        if recovered:
+            _log.info(
+                f"{self.board_key()}: {recovered} detail(s) recovered from the public page's "
+                "JSON-LD after the CXS detail 404'd (ADR-0099)"
+            )
         missing = sum(1 for detail in details if detail is None)
         if not missing:
             return

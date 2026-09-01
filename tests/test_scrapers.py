@@ -1977,13 +1977,16 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
     from headstart import http
     from headstart.scrapers.workday import WorkdayScraper
 
-    outcomes = iter([429, 503, 503, 404, 200])
+    # The 404 detail now costs a second fetch — its public-page fallback (ADR-0099). That page
+    # answers 200 with no JSON-LD here, so the 404 still settles as the loss this test names.
+    outcomes = iter([429, 503, 503, 404, 200, 200])
 
     async def fake_fetch_async(session, method, url, **kw):
         status = next(outcomes)
 
         class _R:
             status_code = status
+            text = "<html>no structured data</html>"
 
             @staticmethod
             def json():
@@ -6992,3 +6995,139 @@ def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text():
         "1": "possibly truncated listing",
         "2": None,
     }
+
+
+def test_workday_detail_404_falls_back_to_the_public_page(monkeypatch):
+    """A whole sub-site can list live postings whose CXS details all 404 — measured on
+    iheartmedia: 12/12 pipeline runs at 100% detail loss (2,900+ details), reproduced from a
+    residential IP, while every public job page returned 200 with the full description in
+    server-rendered JSON-LD and `postedOn: Posted Yesterday`. The page's own embedded config
+    names the exact tenant/site the scraper uses, so the tenant's own SPA would 404 on the same
+    URL — the CXS detail simply does not exist for these sites, and the public page is the only
+    source (ADR-0099). A settled 404 therefore tries the page before counting the loss."""
+    import asyncio
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import _PAGE_RECOVERED, WorkdayScraper
+
+    page_html = (
+        '<html><head><script type="application/ld+json">'
+        '{"@type": "JobPosting", "title": "Payroll Specialist",'
+        ' "description": "Payroll &amp; tax operations role"}'
+        "</script></head><body></body></html>"
+    )
+    urls: list[str] = []
+
+    def _respond(url):
+        urls.append(url)
+
+        class _R:
+            status_code = 404 if "/wday/cxs/" in url else 200
+            text = page_html
+
+            @staticmethod
+            def json():
+                raise AssertionError("a 404 body must not be parsed")
+
+        return _R()
+
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: _respond(url))
+
+    async def fake_fetch_async(session, method, url, **kw):
+        return _respond(url)
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/sub_site")
+    s._instance = "wd1"
+    for detail in (
+        s._job_detail("/job/x/Payroll-Specialist_R1", (classes := Counter())),
+        asyncio.run(
+            s._job_detail_async(
+                object(), "/job/x/Payroll-Specialist_R1", (classes := Counter())
+            )
+        ),
+    ):
+        assert detail is not None, "the page fallback must save the detail"
+        assert detail["description"] == "Payroll &amp; tax operations role"
+        assert classes[_PAGE_RECOVERED] == 1
+        assert "HTTP 404" not in classes, "a recovered detail is not a loss"
+    assert (
+        "https://acme.wd1.myworkdayjobs.com/sub_site/job/x/Payroll-Specialist_R1"
+        in urls
+    ), "the fallback must hit the public page, not the CXS API again"
+
+
+def test_workday_detail_404_with_a_dead_page_still_counts_the_loss(monkeypatch):
+    """When the public page 404s too (a genuinely delisted posting), the detail is lost
+    exactly as before this fallback existed: None, counted under HTTP 404."""
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    class _R:
+        status_code = 404
+        text = "not found"
+
+        @staticmethod
+        def json():
+            raise AssertionError("a 404 body must not be parsed")
+
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: _R())
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/sub_site")
+    s._instance = "wd1"
+    classes: Counter = Counter()
+    assert s._job_detail("/job/x/Gone_R2", classes) is None
+    assert classes["HTTP 404"] == 1
+
+
+def test_workday_detail_400_does_not_touch_the_public_page(monkeypatch):
+    """400 is a throttle (ADR-0098) and already retried; adding a page fetch on top would
+    hand a throttled Board extra load at the worst moment. Only a settled 404 — permanent by
+    meaning — earns the second request."""
+    from collections import Counter
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    urls: list[str] = []
+
+    class _R:
+        status_code = 400
+        text = ""
+
+        @staticmethod
+        def json():
+            return {}
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (urls.append(url), _R())[1]
+    )
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/sub_site")
+    s._instance = "wd1"
+    classes: Counter = Counter()
+    assert s._job_detail("/job/x/Throttled_R3", classes) is None
+    assert classes["HTTP 400"] == 1
+    assert all("/wday/cxs/" in u for u in urls), "a 400 must never reach the page"
+
+
+def test_workday_recovered_details_report_once_and_stay_out_of_the_loss_tally(caplog):
+    """`_report_detail_losses`'s invariant is that every class label rides a path that also
+    yields None, so the tally can only fall short of `missing`. A recovered detail is non-None,
+    so its label must be popped out before the tally — and still surface, once per Board."""
+    import logging
+    from collections import Counter
+
+    from headstart.scrapers.workday import _PAGE_RECOVERED, WorkdayScraper
+
+    s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/sub_site")
+    s._instance = "wd1"
+    with caplog.at_level(logging.INFO):
+        s._report_detail_losses(
+            [{"description": "x"}, {"description": "y"}],
+            Counter({_PAGE_RECOVERED: 2}),
+        )
+    assert "2 detail(s) recovered from the public page" in caplog.text
+    assert "failed mid-crawl" not in caplog.text
