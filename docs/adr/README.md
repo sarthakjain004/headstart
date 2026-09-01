@@ -106,3 +106,4 @@ supersedes it and note the supersession in both.
 | [0095](0095-a-published-witness-for-unfetched-state.md) | A published witness for unfetched state | 2026-08-28 |
 | [0096](0096-one-key-for-both-board-ledgers.md) | One key for both Board ledgers | 2026-08-28 |
 | [0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md) | A posting's id comes from the listing, never from the detail | 2026-08-30 |
+| [0098](0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md) | Workday's 400 is a throttle — extend the retry set for it, don't widen it | 2026-08-31 |

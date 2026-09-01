@@ -60,7 +60,8 @@ The retry counters agree. That shard spent `429-ratelimit 1968, network 3930` in
 have been 429-failures — against 5,769 detail misses on that shard's Workday boards alone
 (ngc 3,536 + hpe 1,107 + lonza 641 + thomsonreuters 415 + relx 70). **The overwhelming majority
 of the misses consumed no retries at all**, which means they settled on the first attempt with
-something that is neither 200 nor in `_TRANSIENT` — or raised immediately.
+something that is neither 200 nor in `http.TRANSIENT` (named `_TRANSIENT` until
+2026-08-31) — or raised immediately.
 
 This also answers the 134s-vs-1,658s question. They are not the same failure:
 

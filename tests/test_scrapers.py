@@ -5962,6 +5962,109 @@ def test_workday_posting_key_rejects_a_year_month_as_a_req_id():
     assert _wd_key(["2026-07"]) == "Some-Title_FALLBACK-999"
 
 
+def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
+    """Workday answers Actions traffic with 400 where it answers a residential IP with 429
+    (ADR-0098). Measured in run 33288099045: 58 Boards lost details to 400 — `dxctechnology`
+    837/860, `roche` 827/1210 — and 75 of the 77 roche postings evicted for it were re-added 48
+    minutes later. A throttle wearing the wrong number. Because 400 is in neither `http.TRANSIENT` nor
+    `egress_fallback_on` it was retried nowhere, settling first-attempt.
+
+    Every fetching call opts in, `_resolve_instance`'s data-centre probe included. An earlier
+    version of this change excluded the probe, on the theory that a 400 there means "this data
+    centre does not serve the tenant". Measured live, that is false: a wrong data centre answers
+    **422** (roche wd1/wd5/wd12/wd103/wd105 all 422, wd3 200). Since `serves()` accepts only a
+    200, an unretried 400 would make a throttled Board sweep all of `INSTANCES` for nothing — and
+    a genuinely migrated Board whose correct data centre happened to 400 would resolve nowhere and
+    read as empty. 422 stays out of `retry_on`, so the real wrong-data-centre answer still fails
+    fast."""
+    import asyncio
+
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    seen: list[tuple[str, frozenset]] = []
+
+    class _R:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"jobPostingInfo": {}, "total": 0, "jobPostings": []}
+
+    def fake_fetch(method, url, *, retry_on=http.TRANSIENT, **kw):
+        seen.append((method, retry_on))
+        return _R()
+
+    async def fake_fetch_async(session, method, url, *, retry_on=http.TRANSIENT, **kw):
+        seen.append((method, retry_on))
+        return _R()
+
+    monkeypatch.setattr(http, "fetch", fake_fetch)
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    scraper._job_detail("/job/x/Some-Title_JR1")
+    asyncio.run(scraper._job_detail_async(object(), "/job/x/Some-Title_JR1"))
+    scraper._post({}, 0)
+    asyncio.run(scraper._post_async(object(), {}, 0))
+    WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")._resolve_instance()
+
+    assert seen, "no fetch was made"
+    for method, retry_on in seen:
+        assert 400 in retry_on, f"{method} call did not opt into retrying a 400"
+        assert http.TRANSIENT <= retry_on, (
+            "the opt-in must EXTEND the shared set, not replace it"
+        )
+
+
+def test_workday_instance_sweep_does_not_retry_a_400(monkeypatch):
+    """Only the *hinted* instance probe is patient; the sweep behind it is not.
+
+    The sweep runs serially over all of `INSTANCES`, so retrying a 400 there would cost a
+    throttled Board 54 requests and ~81 s of backoff before it fetched a single job — and still
+    resolve nothing, because a throttle that rejects one data centre rejects them all. Retrying
+    the hinted probe is what actually pays: a 400 there is a throttle rejecting the centre that
+    was right, and three attempts stop it triggering the sweep at all."""
+    from headstart import http
+    from headstart.scrapers.workday import WorkdayScraper
+
+    seen: list[frozenset] = []
+
+    class _R:
+        status_code = (
+            422  # the real wrong-data-centre answer, so every probe fails over
+        )
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {}
+
+    monkeypatch.setattr(
+        http,
+        "fetch",
+        lambda method, url, *, retry_on=http.TRANSIENT, **kw: (
+            seen.append(retry_on),
+            _R(),
+        )[1],
+    )
+    WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")._resolve_instance()
+
+    assert len(seen) > 1, "the sweep did not run"
+    assert 400 in seen[0], "the hinted probe must be patient"
+    assert all(400 not in r for r in seen[1:]), (
+        "the sweep must not retry a 400 — it would cost ~81s per throttled Board"
+    )
+
+
 def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):
     """The detail pass is the traffic that spends the Origin budget — workday.py's own header
     documents 3.02M 429-retries and 51.7% of descriptions lost to it — yet only the *listing*
