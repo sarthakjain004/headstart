@@ -73,7 +73,7 @@ _SCHEMA_EMPLOYMENT = {
 }
 
 
-def _detail_from_page(response: Any) -> dict[str, Any] | None:
+def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     """A detail-shaped dict from a public job page's server-rendered JSON-LD, or None.
 
     The description is the gate — it is what the detail pass exists to supply (ADR-0050), and
@@ -630,7 +630,7 @@ class WorkdayScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return _detail_from_page(response)
+        return _extract_page_detail(response)
 
     async def _job_detail_async(
         self,
@@ -681,7 +681,7 @@ class WorkdayScraper(BaseScraper):
             )
         except http.RequestsError:
             return None
-        return _detail_from_page(response)
+        return _extract_page_detail(response)
 
     @staticmethod
     def _note_detail(classes: Counter[str] | None, label: str) -> None:
