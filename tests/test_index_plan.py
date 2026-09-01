@@ -10,7 +10,6 @@ import pytest
 
 from headstart.config import load_active_companies
 from headstart.ingest.index_plan import (
-    COLLAPSE_FLOOR,
     _live_board_end,
     apply_sync,
     boards_by_canon,
@@ -62,10 +61,9 @@ def test_plan_id_only_leaves_reseen_ids():
     assert plan.delete == frozenset()
 
 
-def test_plan_dead_board_below_the_floor_evicts_all_its_rows():
-    # a scraped board that yields nothing (dead) -> every one of its rows drops out. Only below
-    # COLLAPSE_FLOOR: above it the collapse guard holds them
-    # (test_collapse_guard_holds_a_board_that_lost_every_tech_job).
+def test_plan_dead_board_evicts_all_its_rows():
+    # a scraped board that yields nothing (dead) -> every one of its rows drops out, whatever its
+    # size. ADR-0046 used to cap this above a 20-row floor; ADR-0101 removed the cap.
     plan = plan_sync(
         index_ids=["greenhouse:a:1", "greenhouse:a:2"],
         fresh_ids=[],
@@ -79,86 +77,8 @@ def _board(name: str, n: int) -> list[str]:
     return [f"{name}:{i}" for i in range(n)]
 
 
-def test_collapse_guard_caps_what_a_board_can_lose_in_one_run():
-    # the flap: a throttled scrape re-emits 60 of 200 rows, so 140 live postings look delisted.
-    # The Board may shed at most COLLAPSE_RATIO of its rows (50), and the other 90 are withheld —
-    # bounded, not refused outright (ADR-0055).
-    indexed = _board("eightfold:nvidia.eightfold.ai", 200)
-    plan = plan_sync(
-        index_ids=indexed,
-        fresh_ids=indexed[:60],
-        scraped_boards=["eightfold:nvidia.eightfold.ai"],
-        live={},
-    )
-    assert len(plan.delete) == 50
-    assert plan.held == (("eightfold:nvidia.eightfold.ai", 90),)
-    # never a re-emitted row: the cap chooses among the missing only
-    assert plan.delete.isdisjoint(set(indexed[:60]))
-
-
-def test_a_persistently_truncated_board_drains_instead_of_ratcheting():
-    """The ADR-0055 bug: held rows were unreachable by every other path, so they accrued forever.
-
-    `prune` only evicts ids whose Board is absent from the ledger and a held Board is still Live,
-    so nothing else could ever take them. Production went 267 -> 953 withheld in 22 hours with
-    three Boards withholding an identical count every run. Re-running the same truncated scrape
-    must now converge, not plateau.
-    """
-    board = "ashby:clera"
-    indexed = _board(board, 200)
-    fresh = indexed[:60]  # the scrape can only ever reach these 60
-    live_rows, withheld_each_run = list(indexed), []
-    for _ in range(12):
-        plan = plan_sync(
-            index_ids=live_rows,
-            fresh_ids=fresh,
-            scraped_boards=[board],
-            live={},
-        )
-        withheld_each_run.append(dict(plan.held).get(board, 0))
-        live_rows = [i for i in live_rows if i not in plan.delete]
-    assert withheld_each_run[0] > withheld_each_run[-1], "the hold never drained"
-    assert withheld_each_run[-1] == 0
-    # and it converges on exactly the rows the scrape can still see — nothing more
-    assert sorted(live_rows) == sorted(fresh)
-
-
-def test_the_drain_takes_the_oldest_rows_first():
-    # a row unconfirmed for longest is the likeliest genuinely closed; a missing stamp sorts
-    # first because those rows predate the first_seen column
-    board = "zoho:dataeconomy.zohorecruit.in"
-    indexed = _board(board, 20)
-    missing = indexed[5:]  # 15 of 20 missing -> cap is int(0.25*20) = 5
-    stamps = {job_id: f"2026-08-{i + 10:02d}" for i, job_id in enumerate(missing)}
-    del stamps[missing[7]]  # one row predates the column entirely
-    plan = plan_sync(
-        index_ids=indexed,
-        fresh_ids=indexed[:5],
-        scraped_boards=[board],
-        live={},
-        first_seen=stamps,
-    )
-    assert len(plan.delete) == 5
-    assert missing[7] in plan.delete  # the unstamped row goes first
-    # the rest are the four oldest stamps
-    oldest = sorted((s, i) for i, s in stamps.items())[:4]
-    assert {i for _, i in oldest} < plan.delete
-
-
-def test_the_drain_is_deterministic_without_stamps():
-    board = "greenhouse:x"
-    indexed = _board(board, 40)
-    kwargs = {
-        "index_ids": indexed,
-        "fresh_ids": indexed[:5],
-        "scraped_boards": [board],
-        "live": {},
-    }
-    assert plan_sync(**kwargs).delete == plan_sync(**kwargs).delete
-
-
-def test_collapse_guard_allows_ordinary_delisting():
-    # 10% churn is normal posting turnover and must still evict
+def test_ordinary_delisting_evicts():
+    # 10% churn is normal posting turnover and must evict
     indexed = _board("greenhouse:a", 200)
     plan = plan_sync(
         index_ids=indexed,
@@ -167,24 +87,29 @@ def test_collapse_guard_allows_ordinary_delisting():
         live={},
     )
     assert plan.delete == frozenset(indexed[180:])
-    assert plan.held == ()
 
 
-def test_collapse_guard_ignores_small_boards():
-    # below the floor a large *ratio* is a handful of rows — genuine churn, not a collapse
-    indexed = _board("lever:tiny", 8)
+def test_a_heavily_truncated_board_now_evicts_in_full():
+    """What ADR-0101 trades away, pinned so the trade stays deliberate.
+
+    ADR-0046 capped this Board at a quarter of its rows and withheld the other 90. With the cap
+    gone, a scrape that re-emits 60 of 200 rows evicts all 140 missing ones at once — the grace
+    period below is what a truncation now has to survive, and it only catches a *transient* one.
+    """
+    indexed = _board("eightfold:nvidia.eightfold.ai", 200)
     plan = plan_sync(
         index_ids=indexed,
-        fresh_ids=indexed[:2],
-        scraped_boards=["lever:tiny"],
+        fresh_ids=indexed[:60],
+        scraped_boards=["eightfold:nvidia.eightfold.ai"],
         live={},
     )
-    assert plan.delete == frozenset(indexed[2:])
-    assert plan.held == ()
+    assert plan.delete == frozenset(indexed[60:])
+    # never a re-emitted row
+    assert plan.delete.isdisjoint(set(indexed[:60]))
 
 
-def test_collapse_guard_is_per_board():
-    # one truncated board must not stop a healthy board's evictions in the same run
+def test_eviction_is_still_per_board():
+    # one truncated board must not affect a healthy board's evictions in the same run
     good, bad = _board("greenhouse:good", 100), _board("eightfold:bad", 100)
     plan = plan_sync(
         index_ids=good + bad,
@@ -192,23 +117,15 @@ def test_collapse_guard_is_per_board():
         scraped_boards=["greenhouse:good", "eightfold:bad"],
         live={},
     )
-    # the healthy Board evicts in full; the truncated one is capped at a quarter of its rows
-    # (25 of the 90 missing), so 65 stay withheld — the cap is per Board, like the guard
-    assert set(good[95:]) < plan.delete
-    assert len(plan.delete) == 5 + 25
-    assert plan.held == (("eightfold:bad", 65),)
+    assert plan.delete == frozenset(good[95:]) | frozenset(bad[10:])
 
 
-def test_collapse_guard_holds_a_board_that_lost_every_tech_job():
-    """The knowing regression against ADR-0014 (see ADR-0046 Consequences).
+def test_a_board_that_lost_every_tech_job_sheds_its_rows():
+    """ADR-0014's outcome, restored by ADR-0101.
 
-    A live Board whose jobs are all non-tech now is in scope with *zero* fresh ids — ADR-0014 had
-    its stale rows fall out for free. Above the floor that is indistinguishable from a scrape
-    truncated to nothing, so the guard holds them instead. Pinned so the trade is deliberate.
-
-    ADR-0055 bounds the hold rather than removing it: such a Board sheds a quarter of its rows
-    per run (12 of 50 here) and so returns to ADR-0014's outcome over several runs instead of
-    one, without a single truncated scrape ever collapsing it.
+    A live Board whose jobs are all non-tech now is in scope with *zero* fresh ids. ADR-0014 had
+    its stale rows fall out for free; ADR-0046 held them because that is indistinguishable from a
+    scrape truncated to nothing. With the cap gone they fall out again, in one run.
     """
     indexed = _board("greenhouse:went-non-tech", 50)
     plan = plan_sync(
@@ -217,12 +134,11 @@ def test_collapse_guard_holds_a_board_that_lost_every_tech_job():
         scraped_boards=["greenhouse:went-non-tech"],
         live={},
     )
-    assert len(plan.delete) == 12
-    assert plan.held == (("greenhouse:went-non-tech", 38),)
+    assert plan.delete == frozenset(indexed)
 
 
-def test_collapse_guard_still_adds_the_rows_that_did_arrive():
-    # holding evictions must not hold additions — new postings from a truncated board still land
+def test_a_truncated_board_still_adds_the_rows_that_did_arrive():
+    # evicting must not hold additions — new postings from a truncated board still land
     indexed = _board("eightfold:bad", 100)
     plan = plan_sync(
         index_ids=indexed,
@@ -231,8 +147,7 @@ def test_collapse_guard_still_adds_the_rows_that_did_arrive():
         live={},
     )
     assert plan.add == frozenset({"eightfold:bad:new"})
-    # the eviction cap never touches adds: 80 rows look missing, 25 drain, the rest are withheld
-    assert len(plan.delete) == 25
+    assert plan.delete == frozenset(indexed[20:])
     assert plan.delete.isdisjoint(plan.add)
 
 
@@ -503,25 +418,6 @@ def test_read_unauthoritative_boards_keeps_the_reason(tmp_path):
     }
 
 
-def test_the_drain_always_takes_at_least_one_row():
-    """The cap must never round to zero, or the hold is a ratchet again (ADR-0055).
-
-    Safe today only because COLLAPSE_FLOOR (20) keeps `int(0.25 * len(ids))` at 5 or more, and
-    those two constants are declared far apart with nothing coupling them. Pinned at the smallest
-    Board the guard can reach, and against a hypothetical tiny one.
-    """
-    board = "greenhouse:at-the-floor"
-    indexed = _board(board, COLLAPSE_FLOOR)
-    plan = plan_sync(
-        index_ids=indexed,
-        fresh_ids=[],  # everything missing: the worst case for the guard
-        scraped_boards=[board],
-        live={},
-    )
-    assert len(plan.delete) >= 1
-    assert dict(plan.held)[board] == COLLAPSE_FLOOR - len(plan.delete)
-
-
 # --- the ADR-0083 eviction grace period ------------------------------------------------------
 # `was_unconfirmed` is the `unconfirmed` set the previous run returned. An absence only becomes
 # an eviction on the *second consecutive scrape of that Board* that misses it.
@@ -604,22 +500,25 @@ def test_ids_on_a_board_that_left_the_ledger_are_not_carried_forever():
     assert plan.unconfirmed == frozenset(), "dropped, not carried"
 
 
-def test_the_collapse_guard_measures_the_eligible_set_not_the_raw_absences():
-    """The two guards compose rather than duplicate. On the first run of a mass truncation the
-    grace period holds everything, so the ratio has nothing to cap and never fires."""
+def test_a_mass_truncation_survives_one_scrape_and_evicts_on_the_second():
+    """The grace period is the only thing standing between a truncation and a mass eviction.
+
+    ADR-0046's ratio used to cap the second run's drain at a quarter of the Board. ADR-0101
+    removed it, so a Board short the same way twice running sheds every missing row at once —
+    the trade that ADR records.
+    """
     indexed = _board("eightfold:nvidia.eightfold.ai", 200)
     first = plan_sync(
         index_ids=indexed,
-        fresh_ids=indexed[:60],  # 140 absent — far over COLLAPSE_RATIO
+        fresh_ids=indexed[:60],  # 140 absent
         scraped_boards=["eightfold:nvidia.eightfold.ai"],
         live={},
         was_unconfirmed=set(),
     )
-    assert first.delete == frozenset(), "grace period holds them all"
-    assert first.held == (), "so the collapse guard has nothing to withhold"
+    assert first.delete == frozenset(), "a first absence never evicts"
     assert len(first.unconfirmed) == 140
 
-    # Still short on the next scrape: now they are eligible, and the ratio caps the drain.
+    # Still short on the next scrape of the same Board: now they go, all of them.
     second = plan_sync(
         index_ids=indexed,
         fresh_ids=indexed[:60],
@@ -627,8 +526,7 @@ def test_the_collapse_guard_measures_the_eligible_set_not_the_raw_absences():
         live={},
         was_unconfirmed=first.unconfirmed,
     )
-    assert len(second.delete) == 50
-    assert second.held == (("eightfold:nvidia.eightfold.ai", 90),)
+    assert second.delete == frozenset(indexed[60:])
 
 
 def test_none_disables_the_grace_period_entirely():
@@ -657,41 +555,6 @@ def test_the_grace_period_is_off_by_default():
         live={},
     )
     assert plan.delete == frozenset(indexed[28:])
-
-
-def test_a_collapse_held_id_stays_unconfirmed_and_keeps_draining():
-    """Regression: a held id must remain eligible, not fall back to a first absence.
-
-    The collapse guard withholds ids that are already *past* the grace period. If they were left
-    out of `unconfirmed`, each would read as a fresh first absence next run, the streak would
-    reset, and the Board would evict only every other run — halving ADR-0055's drain, the exact
-    ratchet it exists to prevent. Measured before the fix: 0, 50, 0, 37, 0, 28.
-    """
-    board = "eightfold:nvidia.eightfold.ai"
-    indexed = _board(board, 200)
-    fresh = indexed[:60]  # 140 absent every scrape — a persistently truncated Board
-
-    owed: frozenset[str] = frozenset()
-    drained = []
-    for _ in range(4):
-        plan = plan_sync(
-            index_ids=indexed,
-            fresh_ids=fresh,
-            scraped_boards=[board],
-            live={},
-            was_unconfirmed=owed,
-        )
-        drained.append(len(plan.delete))
-        # the guard's own withheld ids must still be owed a look, or the next run resets them
-        assert plan.unconfirmed >= frozenset(plan.held and indexed[60:]) - plan.delete
-        owed = plan.unconfirmed
-        indexed = [i for i in indexed if i not in plan.delete]
-
-    # run 1 withholds (first absence); every run after it drains — never an alternating 0
-    assert drained[0] == 0, "first absence is always withheld"
-    assert all(n > 0 for n in drained[1:]), (
-        f"drain stalled on alternate runs: {drained}"
-    )
 
 
 def test_grace_period_counts_measure_reappearance_against_the_scrape():
@@ -756,36 +619,10 @@ def test_grace_period_counts_exclude_an_id_whose_board_left_the_ledger():
     assert grace_period_counts(was_unconfirmed, fresh, plan) == (0, 0)
 
 
-def test_grace_period_still_waiting_counts_a_collapse_guard_cap_too():
-    """`still_waiting` has TWO causes, and the log line must not claim only one.
-
-    An earlier wording said these ids' "Board was not scraped this run". That is wrong for the
-    second cause: a Board that *was* scraped, whose id was absent again, but whose evictions the
-    ADR-0046 collapse guard capped before reaching it. Both land in
-    `was_unconfirmed & plan.unconfirmed`, and this is the one worth watching — it is the shape
-    ADR-0055 had to unwind for the guard's own `held`.
-    """
-    board = "ats:BIG"
-    indexed = _board(board, 200)
-    was_unconfirmed = frozenset(indexed[60:])  # 140 carried in, all absent again
-    fresh = set(indexed[:60])
-
-    plan = plan_sync(
-        index_ids=indexed,
-        fresh_ids=fresh,
-        scraped_boards=[board],  # the Board WAS scraped
-        live={},
-        was_unconfirmed=was_unconfirmed,
-    )
-    assert plan.held, "the guard must cap this Board for the test to mean anything"
-    reappeared, still_waiting = grace_period_counts(was_unconfirmed, fresh, plan)
-    assert reappeared == 0
-    # every one of them is on a scraped Board — so "not scraped this run" would be a false claim
-    assert still_waiting == len(was_unconfirmed & plan.unconfirmed) == 90
-
-
 def test_grace_period_still_waiting_counts_an_unscraped_board():
-    """The other cause of `still_waiting`: carried-in ids whose Board this run did not read."""
+    """Since ADR-0101 this is the *only* cause of `still_waiting`: carried-in ids whose Board this
+    run did not read. An id whose Board was scraped and was absent again is evicted, not carried —
+    the ADR-0046 collapse guard used to be a second cause and no longer exists."""
     was_unconfirmed = frozenset({"ats:SKIPPED:x1"})
     plan = plan_sync(
         index_ids=["ats:SKIPPED:x1", "ats:LIVE:y1"],

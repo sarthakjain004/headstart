@@ -14,11 +14,11 @@ scraped **twice running** without re-emitting its id (ADR-0083; a single absence
 ids are added; re-seen ids are left untouched (id-only, v1). Crucially the delete is *scoped to
 the Boards actually scraped*, so a partial harvest never evicts Boards it didn't touch — and a
 dead Board (scraped, yields nothing) has all its rows drop out for free. That scope is per-Board
-but all-or-nothing, so a Board whose scrape came back *truncated* still looks fully covered; the
-**collapse guard** (ADR-0046, bounded by ADR-0055) caps what a Board may lose in one run at a
-quarter of its rows, so a truncation cannot collapse it and a persistently missing row still
-drains.
-
+but all-or-nothing, so a Board whose scrape came back *truncated* still looks fully covered.
+Two mechanisms answer that, both upstream of this planner's arithmetic: the scrape reports its own
+outcome and ``index sync`` drops Unauthoritative Boards from the scope entirely (ADR-0053), and a
+truncation that reports nothing at all is caught by the grace period above, which a *transient*
+short scrape cannot survive. A Board short the same way twice running evicts in full (ADR-0101).
 
 
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,31 +47,21 @@ from headstart.scrapers.registry import get_scraper
 _log = log.get(__name__, __spec__)
 
 
-# A Board losing more than this share of its indexed rows in one run is presumed truncated, not
-# delisted; below the floor a large ratio is a handful of rows, which is ordinary churn.
-COLLAPSE_RATIO = 0.25
-COLLAPSE_FLOOR = 20
-
-
 @dataclass(frozen=True, slots=True)
 class SyncPlan:
-    """Ids to add to the index and ids to evict from it, plus what was withheld and why.
+    """Ids to add to the index and ids to evict from it, plus what was withheld for a second look.
 
-    ``held`` pairs a Board key with the number of evictions withheld from it — not its row count.
-
-    ``unconfirmed`` is the grace period's own output (ADR-0083) and is deliberately a *separate*
-    field from ``held``: they withhold evictions for unrelated reasons and at different
-    granularities. ``held`` is a **Board**-level cap — "this Board may not shed more than a
-    quarter of its rows in one run". ``unconfirmed`` is **per-id** evidence — "this id has been
-    absent for one scrape of its Board, and needs a second before it is believed". Folding them
-    into one number would answer neither question when a Board is being diagnosed.
+    ``unconfirmed`` is the grace period's own output (ADR-0083): **per-id** evidence that this id
+    has been absent for one scrape of its Board and needs a second before it is believed. It is
+    the only withholding this planner does — the ADR-0046 Board-level cap that used to sit beside
+    it was removed by ADR-0101, which records why the two were never the redundant pair they
+    looked like.
 
     The caller persists ``unconfirmed`` and hands it back next run as ``was_unconfirmed``.
     """
 
     add: frozenset[str]
     delete: frozenset[str]
-    held: tuple[tuple[str, int], ...] = ()
     unconfirmed: frozenset[str] = frozenset()
 
 
@@ -93,15 +83,12 @@ def grace_period_counts(
 
     ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
     neither came back nor were evicted. **This is the accretion signal**, and it has two distinct
-    causes that this single number deliberately does not separate: the id's Board was not in this
-    run's slice at all (only ~20,000 are — under a quarter of the Scrapable Boards, so this
-    dominates a healthy set
-    and is entirely benign — the streak simply did not advance), or its Board *was* scraped, the
-    id was absent again, and the ADR-0046 collapse guard capped its Board's evictions before
-    reaching it. The second is the one worth watching: a number that only ever grows is a queue
-    nothing looks at, the shape ADR-0055 had to unwind for the guard's own ``held``. Read it
-    against the ``collapse guard:`` line in the same log, which names the capped Boards — do not
-    read this number alone as "waiting for their Board's next turn".
+    cause since ADR-0101 removed the collapse guard: the id's Board was not in this run's slice at
+    all (only ~20,000 are — under a quarter of the Scrapable Boards, so this dominates a healthy
+    set and is entirely benign — the streak simply did not advance). Watch it across runs anyway:
+    a number that only ever grows is a queue nothing looks at, the shape ADR-0055 had to unwind
+    for the guard this replaces. Do not read it as "waiting for their Board's next turn" — an id
+    whose Board *was* scraped and was absent again is evicted, not carried.
 
     Deliberately does *not* return an evicted count. With the grace period on, ``plan.delete`` is
     a subset of ``was_unconfirmed`` by construction (``eligible = absent & previously``), so such
@@ -123,7 +110,6 @@ def plan_sync(
     fresh_ids: Iterable[str],
     scraped_boards: Iterable[str],
     live: dict[str, str],
-    first_seen: Mapping[str, str] | None = None,
     was_unconfirmed: Iterable[str] | None = None,
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
@@ -138,33 +124,15 @@ def plan_sync(
     rather than defaulted: omitting it silently restores the scoping ADR-0049 records as *worse*
     than the bug it fixes.
 
-    **Collapse guard (ADR-0046).** The board-scope check above is all-or-nothing at the *line*
+    **No Board-level cap (ADR-0101).** The board-scope check above is all-or-nothing at the *line*
     level: a Board that emitted one job line is fully in scope, so a scrape truncated by a
-    rate-limit looks exactly like a Board that delisted everything it didn't re-emit. When a Board
-    would lose more than :data:`COLLAPSE_RATIO` of its indexed rows in a single run, this caps what
-    it may lose and reports the remainder in ``held`` for the caller to log. Measured over
-    five production runs, ordinary turnover is under 10% for 754 of 817 board-runs, while the
-    Boards that flapped sat at 35–82% — so the threshold separates them with room to spare.
-    Boards under :data:`COLLAPSE_FLOOR` rows are exempt: there a large ratio is a handful of rows.
-
-    The guard is now the **backstop**, not the only line: the scrape reports its per-Board outcomes
-    and ``index sync`` keeps the Boards :func:`read_unauthoritative_boards` names out of
-    ``scraped_boards`` altogether (ADR-0053). What is left to the ratio is a scraper that cannot
-    detect its own truncation and a shard killed before it writes a report. It stays deliberately
-    blunt: a Board that genuinely sheds more than a quarter of its postings at once sheds them
-    over several runs instead of one.
-
-    **The hold is bounded (ADR-0055).** Refusing a tripped Board's evictions outright made the
-    guard a ratchet: nothing else can reach those rows — ``prune`` only evicts ids whose Board is
-    absent from the ledger, and a held Board is still Live — so a Board the scrape can never fully
-    re-fetch accreted rows forever (production went 267 to 953 withheld across 22 hours, with
-    three Boards withholding an identical count every run). A tripped Board now drains its oldest
-    missing rows up to :data:`COLLAPSE_RATIO` of its size, so it still cannot collapse in one run
-    but the backlog is not permanent. ``held`` reports what was *withheld*, not what was missing.
-
-    ``first_seen`` maps id to its ISO stamp and orders that drain; pass ``None`` and the drain
-    falls back to id order, which is stable but carries no age signal. It is a plain mapping so
-    this module stays free of any table dependency.
+    rate-limit looks exactly like a Board that delisted everything it didn't re-emit. ADR-0046
+    capped what a Board could lose in one run for exactly that reason, and ADR-0101 removed the
+    cap: a truncation now has to survive **two consecutive scrapes of the same Board** to evict
+    anything, because the grace period below is applied first, and the Boards that can describe
+    their own truncation already leave the scope entirely (ADR-0053). What that trades away is
+    recorded in ADR-0101 — a Board short the same way twice running sheds every missing row at
+    once, where the cap would have spread it over several runs.
 
     **The grace period (ADR-0083).** ``was_unconfirmed`` is the ``unconfirmed`` set this function
     returned on the previous run. An id missing from ``fresh_ids`` is only *eligible* for deletion
@@ -210,9 +178,7 @@ def plan_sync(
         if board in boards:
             indexed_by_board[board].add(job_id)
 
-    stamps = first_seen or {}
     delete: set[str] = set()
-    held: list[tuple[str, int]] = []
     unconfirmed: set[str] = set()
     for board, ids in indexed_by_board.items():
         absent = {i for i in ids if i not in fresh}
@@ -221,35 +187,12 @@ def plan_sync(
         # `absent` on purpose — they differ by exactly the grace period, and reusing one word for
         # both is how this reads as "missing" twice and means two things.
         eligible = absent & previously if grace_on else absent
-        evicted_here: set[str] = set()
-        if len(ids) >= COLLAPSE_FLOOR and len(eligible) > COLLAPSE_RATIO * len(ids):
-            # Drain at the guard's own threshold rather than refusing outright (ADR-0055). A
-            # Board still cannot collapse in one run — which is all ADR-0046 set out to stop —
-            # but a row that stays missing does eventually leave, so a Board the scrape can
-            # never fully re-fetch stops accreting rows nothing will ever evict.
-            # Oldest first, by the `first_seen` the table already carries: a row we have not
-            # been able to confirm for longest is the likeliest to be genuinely closed. A
-            # missing stamp sorts first — those rows predate the column, so they are the oldest
-            # of all — and the id breaks ties so the plan is deterministic.
-            # max(1, ...) binds the invariant rather than leaving it to arithmetic: the drain
-            # must always take at least one row, or a Board would hold forever again — the exact
-            # ratchet this replaces. Unreachable while COLLAPSE_FLOOR is 20 (cap >= 5), but the
-            # two constants are declared far apart and nothing else couples them.
-            cap = max(1, int(COLLAPSE_RATIO * len(ids)))
-            drain = sorted(eligible, key=lambda i: (stamps.get(i) or "", i))[:cap]
-            evicted_here = set(drain)
-            held.append((board, len(eligible) - len(drain)))
-        else:
-            evicted_here = eligible
-        delete |= evicted_here
-        # Everything still absent and still in the table is unconfirmed — first absences *and*
-        # the ids the collapse guard just withheld. Carrying the withheld ones matters: they are
-        # already past the grace period, and dropping them here would make each read as a fresh
-        # first absence next run, resetting the streak so the Board evicts only every other run.
-        # Measured on a 200-row Board short by 140 every scrape, that alternated 0, 50, 0, 37 —
-        # halving ADR-0055's drain, the ratchet it exists to prevent.
+        delete |= eligible
+        # A first absence is unconfirmed; a second evicts. Subtracting `eligible` rather than
+        # writing `absent - previously` keeps the two branches of `eligible` in one expression —
+        # with the grace period off, everything absent is evicted and nothing is carried.
         if grace_on:
-            unconfirmed |= absent - evicted_here
+            unconfirmed |= absent - eligible
 
     if grace_on:
         # An id whose Board this run did not scrape keeps the state it had: no evidence arrived,
@@ -261,7 +204,8 @@ def plan_sync(
         #
         # Carried forward only while the Board is *still live*, which bounds the set. A Board
         # that leaves the ledger is never scraped again, so its entries would otherwise persist
-        # for good — the same slow accretion ADR-0055 had to unwind for `held`. Those rows leave
+        # for good — the same slow accretion ADR-0055 had to unwind for the collapse guard's
+        # own hold, before ADR-0101 removed that guard. Those rows leave
         # the index through `plan_prune`'s off-Board sweep, and their entries leave here with
         # them. The check is per-Board, not per-id, so it costs a handful of lookups rather than
         # an intersection against the whole index.
@@ -273,7 +217,6 @@ def plan_sync(
     return SyncPlan(
         add=frozenset(add),
         delete=frozenset(delete),
-        held=tuple(sorted(held)),
         unconfirmed=frozenset(unconfirmed),
     )
 

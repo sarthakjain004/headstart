@@ -109,3 +109,4 @@ supersedes it and note the supersession in both.
 | [0098](0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md) | Workday's 400 is a throttle — extend the retry set for it, don't widen it | 2026-08-31 |
 | [0099](0099-a-404d-workday-detail-falls-back-to-the-public-pages-json-ld.md) | A 404'd Workday detail falls back to the public page's JSON-LD | 2026-09-01 |
 | [0100](0100-break-off-a-detail-pass-the-origin-is-refusing.md) | Break off a detail pass the origin is refusing | 2026-09-01 |
+| [0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) | Remove the collapse guard; the grace period is the line | 2026-09-01 |

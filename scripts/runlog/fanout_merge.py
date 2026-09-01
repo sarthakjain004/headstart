@@ -20,11 +20,13 @@ derivations bump is not a regression, check this line before calling it one.
 (`docs/pipeline/2026-08-13_five-run-log-review.md`) had to reconstruct BY HAND, counting `[index]
 add`/`evict` id-batch lines per board prefix across five runs to prove whole Eightfold boards were
 flapping out and back in every run. That mechanism (ADR-0053's `unauthoritative` scope-exclusion vs
-ADR-0046's collapse guard are two DIFFERENT protections — conflating them is the same mistake
+ADR-0046's collapse guard were two DIFFERENT protections — conflating them is the same mistake
 CLAUDE.md's "duplicate boards" section warns about for the liveness ledger) is fully logged:
 `scrape outcome: N Board(s) ... not authoritative ... excluded from the eviction scope` names each
-excluded Board and why; `collapse guard: withheld W evictions across B Boards` is the *other*
-guard, for a Board that scraped short without going unauthoritative. This file parses both, plus
+excluded Board and why; `collapse guard: withheld W evictions across B Boards` was the *other*
+guard, for a Board that scraped short without going unauthoritative, until ADR-0101 removed it —
+still parsed because runs before 2026-09-01 carry the line, and absent from newer ones because
+nothing withholds that way any more, never because a run was clean. This file parses both, plus
 `plan: add A (L new + R re-embedded), evict E -> net D rows` (the one line that says whether the
 served index actually grew), and buckets the `add`/`evict` id batches by ATS (not by full board —
 `ats:tenant:id` is ambiguous past the first `:`, per CLAUDE.md, and splitting further is how a past
@@ -97,15 +99,16 @@ COLLAPSE_GUARD = re.compile(
     r"collapse guard: withheld (\d+) evictions across (\d+) Boards"
 )
 WITHHELD_BOARD = re.compile(r"withheld (\d+) evictions on (\S+)")
-# ADR-0083's per-Job grace period — the THIRD withholding mechanism, distinct from the two
-# above (ADR-0053 scope exclusion is per-Board, ADR-0046's collapse guard is a per-Board cap).
+# ADR-0083's per-Job grace period — distinct from the two above (ADR-0053 scope exclusion is
+# per-Board; ADR-0046's collapse guard was a per-Board cap, removed by ADR-0101). Since that
+# removal it is the only mechanism that withholds an eviction on a Board still in scope.
 GRACE = re.compile(
     r"grace period: (\d+) id\(s\) unconfirmed.*?of the (\d+) carried in, (\d+) reappeared "
     r"in this scrape and (\d+) are unconfirmed again"
 )
-# What ADR-0053 exclusion withholds, in ROWS. The collapse guard has always reported rows,
-# which is the only reason its 267 -> 953 ratchet was ever caught; this one reported only a
-# Board count until PR #280.
+# What ADR-0053 exclusion withholds, in ROWS. The collapse guard always reported rows, which is
+# the only reason its 267 -> 953 ratchet was ever caught; this one reported only a Board count
+# until PR #280.
 SCOPE_ROWS = re.compile(
     r"scope exclusion keeps (\d+) eviction-candidate row\(s\) out of scope across (\d+) Board"
 )

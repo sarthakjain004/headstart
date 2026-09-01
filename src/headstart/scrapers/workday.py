@@ -412,7 +412,7 @@ class WorkdayScraper(BaseScraper):
         all of :data:`INSTANCES`, so retrying there would cost a throttled Board 54 requests and
         ~81 s of backoff before it fetched a single job, and still resolve nothing. A Board that
         has *both* migrated and been throttled therefore still reads empty — narrow, and the
-        ADR-0046 collapse guard already holds its rows against that.
+        ADR-0083 grace period holds its rows for one more scrape against that.
         """
         company, hinted, site = (
             self._parts()
