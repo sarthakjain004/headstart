@@ -100,5 +100,6 @@ simply carry a wrong number forever. Patterns are curated content, reviewed like
 **Still not addressed**, and worth naming so it is not rediscovered: trends are global, not scoped
 to the reader's filters (remote, location, experience), so they cannot answer "is *my* slice
 growing"; there is no per-company dimension ("who is hiring in AI/ML"); and pipeline artifacts —
-notably ADR-0046's collapse guard freezing a Board's rows after a truncated scrape — still read as
+notably ADR-0046's collapse guard freezing a Board's rows after a truncated scrape, removed by
+ADR-0101 — still read as
 market movement with nothing marking them.

@@ -82,7 +82,7 @@ def grace_period_counts(
     and folding them in would report churn that never happened.
 
     ``still_waiting`` is the carried-in ids that are unconfirmed *again* after this run — they
-    neither came back nor were evicted. **This is the accretion signal**, and it still has two
+    neither came back nor were evicted. **This is the accretion signal**, and it has three
     distinct causes after ADR-0101 removed the collapse guard. They are worth separating only
     because a log line or a review written against the old set will misattribute them; all three
     reach the same branch here, because all three mean the Board is absent from ``scraped_boards``

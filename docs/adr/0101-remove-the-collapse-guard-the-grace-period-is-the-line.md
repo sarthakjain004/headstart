@@ -51,7 +51,7 @@ instead of two.
 
 ## Alternatives considered
 
-**Keep the guard as it is.** The honest case for it: what the measurement below shows is an
+**Keep the guard as it is.** The honest case for it: what the measurement in Context shows is an
 insurance policy that has not had to pay out in 13 runs, not one that cannot. Its cost is small
 and bounded — 5 runs in 13, at most 178 rows, drained within a few runs by ADR-0055 — and the
 event it covers is low-probability and high-impact. Rejected because the cover is thinner than it
@@ -92,10 +92,10 @@ regressed this: such a Board is in scope with zero fresh ids, indistinguishable 
 from a scrape truncated to nothing, so its stale rows were held. They now fall out in one run,
 which is what ADR-0014 specified.
 
-**`still_waiting` in the grace-period log line keeps two causes, but the second one changes.**
-An id whose Board was scraped *and was in scope* is now evicted rather than capped, so the
-collapse guard is no longer a cause. It is replaced by one that was always there and that the old
-wording hid: `index sync` subtracts an Unauthoritative Board from the scope before calling
+**`still_waiting` in the grace-period log line has three causes, and the collapse guard was never
+one of the two that remain.** An id whose Board was scraped *and was in scope* is now evicted
+rather than capped, so the guard drops out. What replaces it was always there and the old wording
+hid it: `index sync` subtracts an Unauthoritative Board from the scope before calling
 `plan_sync` (ADR-0053), so that Board's carried-in ids take the same carry-forward branch as a
 Board that sat out the slice entirely. At 63–126 Boards per run
 (`docs/pipeline/2026-09-01_twelve-run-log-review.md`) it is not a rounding error, and unlike the

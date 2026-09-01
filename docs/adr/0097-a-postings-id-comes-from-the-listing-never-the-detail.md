@@ -144,6 +144,9 @@ first tier asks the URL a question rather than guessing harder at the shape.
   `cooley` migrates either way — its served id is `Req 5047`, with a space its own URL omits, and
   whitespace is squeezed on both sides of the comparison.
 
+  (Superseded by [ADR-0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md),
+  which removed the guard — the drain described here no longer happens; a Board short twice
+  running sheds every missing row at once.)
   The ADR-0046 collapse guard caps a Board at shedding a quarter of its rows per run, so an
   affected Board drains over ~4 runs and serves both spellings meanwhile — a transitional
   duplicate, not a loss, but a visible one at this scale.
