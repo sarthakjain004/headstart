@@ -41,9 +41,10 @@ conflated):
 - `{n} eviction-candidate row(s) kept out of scope on {board}` — the row cost of the same
   exclusion, but **only the top 10 Boards** (`index._TOP_OUT_OF_SCOPE_BOARDS`), so a Board can be
   excluded with no row line. Absent from runs built before PR #280 (`960d991`, 2026-08-24).
-- `collapse guard: withheld ...` (ADR-0046 `held`) and `Unconfirmed` (ADR-0083) are the *other*
-  two withholding mechanisms. Neither is parsed here on purpose; inferring which one fired from an
-  outcome is the exact error CLAUDE.md warns against.
+- `Unconfirmed` (ADR-0083) is the *other* withholding mechanism (a third, ADR-0046's collapse
+  guard, existed until ADR-0101 removed it and still appears in runs before 2026-09-01). Neither
+  is parsed here on purpose; inferring which one fired from an outcome is the exact error
+  CLAUDE.md warns against.
 
 `--latest` takes the newest runs whatever they concluded, so a window that must be
 **successful** runs only (a cancelled run's merge job never reaches `index sync` and would
