@@ -93,3 +93,4 @@ deploy/hf-space/role_watchlist.json
 deploy/hf-space/alerts/
 deploy/hf-space/templates/
 deploy/hf-space/static/
+.DS_Store
