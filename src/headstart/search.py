@@ -112,17 +112,28 @@ SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
 
 
 # The Keyword filter's scopes (ADR-0104): which served text columns a keyword is matched in.
-# One map is the whole extension point — `build_filter` compiles whatever it says, `filter_kwargs`
-# whitelists `kw_in` against its keys, and the rail's <select> mirrors them — so a new scope
-# (company, location, department…) is one entry here and nothing else. `description` is nullable
-# and exists only once ADR-0104's column migration has run, so any scope naming it is compiled
-# only while `has_description` says the column is there, exactly like `has_first_seen`.
+# The map is the extension point: `build_filter` compiles whatever it says, `filter_kwargs`
+# whitelists `kw_in` against its keys, and the rail's <select>, its disabled-until-migrated rule
+# and the disclaimer all derive from `keyword_scope_options()` below — so a new scope (company,
+# location, department…) is one entry here plus its label in `KEYWORD_SCOPE_LABELS`, and nothing
+# in the template or the JS. `description` is nullable and exists only once ADR-0104's column
+# migration has run, so any scope naming it is compiled only while `has_description` says the
+# column is there, exactly like `has_first_seen`.
 KEYWORD_SCOPES: dict[str, tuple[str, ...]] = {
     "title": ("title",),
     "description": ("description",),
     "both": ("title", "description"),
 }
+KEYWORD_SCOPE_LABELS: dict[str, str] = {
+    "title": "Title",
+    "description": "Description",
+    "both": "Title or description",
+}
+assert KEYWORD_SCOPE_LABELS.keys() == KEYWORD_SCOPES.keys(), "a scope without a label"
 KEYWORD_DEFAULT_SCOPE = "title"
+# The one optional column a scope can name today. A further optional column would be listed here
+# too; the guard in `_keyword_columns` reads this set rather than naming columns itself.
+_OPTIONAL_KEYWORD_COLUMNS = frozenset({"description"})
 # Enough for "senior backend kubernetes aws remote"; a bound because every term is one more LIKE
 # per scoped column on every count the facet strip issues.
 _KEYWORD_MAX_TERMS = 5
@@ -161,9 +172,28 @@ def _keyword_terms(kw: str) -> list[str]:
 
 
 def _keyword_columns(scope: str | None, has_description: bool) -> tuple[str, ...]:
-    """The columns a scope compiles to on *this* table — `description` only once it exists."""
+    """The columns a scope compiles to on *this* table — an optional column only once it exists."""
     columns = KEYWORD_SCOPES.get(scope or KEYWORD_DEFAULT_SCOPE, ())
-    return tuple(c for c in columns if c != "description" or has_description)
+    return tuple(
+        c for c in columns if c not in _OPTIONAL_KEYWORD_COLUMNS or has_description
+    )
+
+
+def keyword_scope_options() -> list[tuple[str, str, bool]]:
+    """``(value, label, needs_description)`` per scope, in map order — what the rail renders.
+
+    The single place the template and the JS learn the scopes from, so the <select>, which
+    options are disabled before the column exists, and which scopes carry the coverage disclaimer
+    all follow the map rather than restating it.
+    """
+    return [
+        (
+            scope,
+            KEYWORD_SCOPE_LABELS[scope],
+            bool(set(cols) & _OPTIONAL_KEYWORD_COLUMNS),
+        )
+        for scope, cols in KEYWORD_SCOPES.items()
+    ]
 
 
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the

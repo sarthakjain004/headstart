@@ -292,7 +292,7 @@ fails if this table drifts from it.
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
 | `company` | string | the ATS slug, not a display name |
 | `title` | string | embedded, with the description |
-| `description` | string | the posting's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so keyword search over it covers only part of the table and the UI reports the share. Stored, not served: the API omits it |
+| `description` | string | the posting's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so the Keyword filter's description scope reaches only part of the table, and the UI reports the share. Stored, not served: the API omits it |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `remote` | bool | |
 | `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), normalised at query time |

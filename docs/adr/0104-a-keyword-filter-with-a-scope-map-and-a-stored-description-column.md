@@ -1,6 +1,6 @@
 # ADR-0104: A Keyword filter with a scope map, backed by a stored `description` column
 
-**Status:** accepted · **Date:** 2026-09-02 · **Extends:** [ADR-0031](0031-search-filters-and-first-seen.md)'s Search-filter vocabulary, [ADR-0084](0084-facet-counts-are-filter-shaped-not-query-shaped.md)'s counting rule; **changes** `index._schema()` (README §"The served table" updated in lockstep)
+**Status:** Accepted · **Date:** 2026-09-02 · **Extends ADR-0031's Search-filter vocabulary and ADR-0084's counting rule; changes `index._schema()`, with README §"The served table" updated in lockstep**
 
 ## Context
 
@@ -31,14 +31,21 @@ KEYWORD_SCOPES = {"title": ("title",), "description": ("description",), "both": 
 ```
 
 `build_filter` compiles whatever the map says; `filter_kwargs` whitelists `kw_in` against its keys
-(an unknown scope falls back to `title`, never interpolated); the rail's `<select>` mirrors it.
-Adding a scope — company, location, department — is one entry. The scope is a **modifier** of the
-keyword, not a filter of its own: without a keyword it is nulled, so it can never be named as the
-Blocking filter (the salary currency's rule, ADR-0084 §3).
+(an unknown scope falls back to `title`, never interpolated); and `keyword_scope_options()` hands
+the template and the JS `(value, label, needs_description)` per scope, so the rail's `<select>`,
+which options are disabled before the column exists, and which scopes carry the coverage
+disclaimer are all *rendered from* the map rather than restating it. Adding a scope — company,
+location, department — is one map entry plus its label, and nothing in the template or the JS.
+(The first draft of this ADR claimed "one entry and nothing else" while the `<select>` was
+hand-written; review caught it, and the rendering was moved onto the map so the claim is true.)
+The scope is a **modifier** of the keyword, not a filter of its own: without a keyword it is
+nulled, so it can never be named as the Blocking filter (the salary currency's rule, ADR-0084 §3),
+and the browser omits it from a request when it is the default.
 
 ### 2. Substring, not whole-word — measured, then chosen
 
-LanceDB 0.33 accepts `regexp_like(col, '(?i)\bjava\b')` and it behaves. It was rejected anyway:
+LanceDB 0.33.0 accepts `regexp_like(col, '(?i)\bjava\b')` and it behaves — measured 2026-09-02 on
+an in-memory table: `(?i)` honoured, `\b` honoured, null column safe, two terms AND. It was rejected anyway:
 DataFusion's regex engine is Rust's, which has **no lookarounds**, so `\b` can only be a
 word/non-word transition — and `c++`, `.net`, `c#` end in non-word characters, so `\bc\+\+\b`
 never matches "c++ developer". A keyword box that cannot find "c++" is a worse failure than "java"
@@ -49,11 +56,20 @@ terms because each is one more `LIKE` on every count the facet strip issues.
 
 ### 3. `description` becomes a column of the served table
 
-The only shape that keeps the description scope a first-class filter (§Context). Measured on the
-local store before deciding: 329,314 descriptions, median 4,447 chars, 1,534 MB raw; Lance stores
-the text at **0.47×**, so the column costs **≈ 690 MB across ~287k served rows** against today's
-1,155 MB table. That is a real cost against the storage budget this pipeline names as its binding
-constraint, so it is taken **in stages**, not at once:
+The only shape that keeps the description scope a first-class filter (§Context). Its cost was
+measured before deciding, on 2026-09-02, against the **local** `data/descriptions/` snapshot —
+stale by construction (whenever this machine last pulled it) but shape-representative:
+
+- 329,314 records carry a description; median 4,447 chars, p90 7,690; **1,534 MB** of raw text.
+- A 20,000-record sample written to a LanceDB 0.33.0 table occupied **48.1 MB on disk for
+  101.5 MB of text — 0.47×**.
+- Scaled by row count to the ~287k rows the served table held, that is **≈ 690 MB**. It is an
+  estimate, and an upper one: not every served row has text to store.
+- The served table itself measured **1,155 MB** the same day, read from the HF dataset's file
+  metadata (`HfApi().repo_info(files_metadata=True)`), so the column is roughly +60%.
+
+That is a real cost against the storage budget this pipeline names as its binding constraint, so
+it is taken **in stages**, not at once:
 
 - The column is added by the same idempotent `add_columns` migration `first_seen` and the salary
   columns use. Existing rows get null.
@@ -62,10 +78,15 @@ constraint, so it is taken **in stages**, not at once:
   450 MB download. A targeted pass over exactly the added ids keeps memory to the run's adds.
 - A row `_refresh_metadata` rewrites *anyway* (its meta moved) has a null description filled at no
   extra write cost.
-- **The full backfill is a flag**, `index sync --backfill-descriptions`, off by default. It marks a
-  row stale when its description is null and the store's `has_description` bit says one exists,
-  and fills it from the corpus. It rewrites every row it fills, so turning it on is the deliberate
-  step that spends the ≈690 MB; the disclaimer below reports honestly-low coverage until it runs.
+- **The full backfill is a flag**, `index sync --backfill-descriptions`, off by default. A row is a
+  candidate when its description is null and the store's `has_description` bit says one exists —
+  and it is rewritten **only if this run's corpus actually carries its text**. That qualifier
+  matters: the merge job's corpus is the run's *slice*, not the whole table, so without it one
+  flagged run would delete-and-re-add every null-description row (~25 KB of vector each) while
+  filling only the slice's share. (Review caught exactly that in the first draft.) Candidates the
+  corpus lacks are logged and left for a later run. So it rewrites every row it fills and only
+  those; turning it on is the deliberate step that spends the ≈690 MB, tracked as a GitHub issue
+  (see Consequences); the disclaimer below reports honestly-low coverage until it runs.
 
 One trap the column introduces, fixed in the same change: `_refresh_metadata` compares every schema
 column against the embedding store's `meta.jsonl` and rewrites rows that differ. Meta carries only a
@@ -111,5 +132,8 @@ backfill runs; a static sentence would have said the same thing on both days.
 - `facets.counts` returns one more key; `has_description` and `kw_in` join the never-droppable set.
 - `CONTEXT.md` gains **Keyword filter**, with the vocabulary to avoid.
 - The next `index sync` adds the column and starts filling new rows. `--backfill-descriptions` is
-  the switch for the rest, to be run once from `pipeline.yml` (or `cleanup-index`) when the storage
-  cost is accepted; watch the dataset's *live* size line across the runs that follow.
+  the switch for the rest — a decision, not a default, tracked in GitHub issue **#346**
+  ("Decide and run the one-time description backfill"): add the flag to `pipeline.yml`'s `index
+  sync` step for one run (or run it from `cleanup-index`) when the storage cost is accepted, then
+  remove it; watch the dataset's *live* size line across the runs that follow and the
+  `N of them to backfill a description` log line for how many rows each run touched.

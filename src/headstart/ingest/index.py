@@ -61,7 +61,7 @@ import shutil
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import lancedb
 import numpy as np
@@ -127,6 +127,14 @@ _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 # like `first_seen`, never compare it against meta, or every row would read stale and be clobbered
 # to null on every run.
 _DESCRIPTION_FIELD = pa.field("description", pa.string())
+
+
+class _Stale(NamedTuple):
+    """A row `_refresh_metadata` will rewrite, with the two columns it carries across unchanged."""
+
+    job_id: str
+    first_seen: str | None
+    description: str | None
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
@@ -319,46 +327,58 @@ def _refresh_metadata(
     ``description`` (ADR-0104) is carried across too, and is **never compared**: the store's meta
     holds no text, only a ``has_description`` bit, so comparing it would read every row as stale
     and rewrite it to null each run. A row being rewritten anyway has its null description filled
-    from the corpus at no extra write cost. With ``backfill_descriptions`` a null description on a
-    row the store says *has* one is itself a reason to rewrite — that is the deliberate one-time
-    backfill, off by default because it rewrites every row it fills.
+    from the corpus at no extra write cost. With ``backfill_descriptions`` a null description is
+    itself a reason to rewrite — **but only when this run's corpus actually carries the text**.
+    The corpus in the merge job is this run's *slice*, not the whole table, so a candidate whose
+    Board sat out the slice is left exactly as it is for a later run; rewriting it now would pay
+    the ~25 KB vector rewrite and fill nothing. That is what makes "rewrites every row it fills"
+    true, and why the backfill is the deliberate one-time step it is documented as.
     """
     carried = ("vector", _FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name)
     columns = [f for f in table.schema.names if f not in carried]
     indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name])
 
-    # Only ids and their stamps are held across the scan; a row's replacement is materialised one
-    # batch at a time. Carrying a vector per stale row would be ~25 KB each — a first sweep of
-    # ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so an OOM there
-    # would leave those rows deleted with nothing put back.
-    stale: list[tuple[str, str | None, str | None]] = []
-    backfilled = 0
+    # Only ids and their carried columns are held across the scan; a row's replacement is
+    # materialised one batch at a time. Carrying a vector per stale row would be ~25 KB each — a
+    # first sweep of ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so
+    # an OOM there would leave those rows deleted with nothing put back.
+    stale: list[_Stale] = []
+    candidates: dict[
+        str, _Stale
+    ] = {}  # backfill: null description, store says one exists
     for row in indexed:
         job_id = row["id"]
         index = row_of.get(job_id)
         if index is None or job_id in just_added:
             continue
         stored = metas[index]
-        meta_moved = not all(row.get(field) == stored.get(field) for field in columns)
-        wants_text = (
-            backfill_descriptions
-            and row.get(_DESCRIPTION_FIELD.name) is None
-            and bool(stored.get("has_description"))
+        at = _Stale(
+            job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
         )
-        if not meta_moved and not wants_text:
-            continue
-        backfilled += wants_text
-        stale.append(
-            (job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name))
+        if not all(row.get(field) == stored.get(field) for field in columns):
+            stale.append(at)
+        elif (
+            backfill_descriptions
+            and at.description is None
+            and bool(stored.get("has_description"))
+        ):
+            candidates[job_id] = at
+
+    # One targeted corpus pass for both: text for the rows being rewritten anyway (filled free),
+    # and for the backfill candidates — which become stale only if the text is actually here.
+    texts = _corpus_descriptions(source, {r.job_id for r in stale} | candidates.keys())
+    backfilled = [at for job_id, at in candidates.items() if job_id in texts]
+    stale.extend(backfilled)
+    if candidates and len(backfilled) < len(candidates):
+        _log.info(
+            f"metadata refresh: {len(candidates) - len(backfilled)} backfill candidate(s) left "
+            "for a later run — their Board is not in this run's corpus, so there is no text to "
+            "fill them with yet (ADR-0104)"
         )
 
     if not stale:
         _log.info("metadata refresh: table already matches the store")
         return 0
-
-    # Text only for the rows about to be rewritten — a targeted corpus pass, never the whole
-    # corpus in memory (the runner is already the pipeline's memory ceiling).
-    texts = _corpus_descriptions(source, {job_id for job_id, _, _ in stale})
 
     # Delete-then-add per batch, the same shape and bound as the add loop below: LanceDB has no
     # partial-row update, and a merge-insert would rewrite the vector column for every touched row
@@ -367,21 +387,21 @@ def _refresh_metadata(
     for start in range(0, len(stale), _ADD_CHUNK):
         batch = stale[start : start + _ADD_CHUNK]
         rows = []
-        for job_id, first_seen, description in batch:
-            index = row_of[job_id]
+        for at in batch:
+            index = row_of[at.job_id]
             fresh = {field: metas[index].get(field) for field in columns}
-            fresh[_FIRST_SEEN_FIELD.name] = first_seen
-            fresh[_DESCRIPTION_FIELD.name] = description or texts.get(job_id)
+            fresh[_FIRST_SEEN_FIELD.name] = at.first_seen
+            fresh[_DESCRIPTION_FIELD.name] = at.description or texts.get(at.job_id)
             fresh["vector"] = vectors[index].tolist()
             rows.append(fresh)
-        apply_sync(table, rows, [job_id for job_id, _, _ in batch])
+        apply_sync(table, rows, [at.job_id for at in batch])
         _log.info(
             f"metadata refresh: {min(start + _ADD_CHUNK, len(stale))}/{len(stale)}"
         )
     _log.info(
         f"metadata refresh: rewrote {len(stale)} rows to match the store (ADR-0061)"
         + (
-            f", {backfilled} of them to backfill a description (ADR-0104)"
+            f", {len(backfilled)} of them to backfill a description (ADR-0104)"
             if backfilled
             else ""
         )
@@ -623,7 +643,7 @@ def sync(args: argparse.Namespace) -> int:
         row_of,
         plan.add,
         source=args.source,
-        backfill_descriptions=getattr(args, "backfill_descriptions", False),
+        backfill_descriptions=args.backfill_descriptions,
     )
 
     final = table.count_rows()

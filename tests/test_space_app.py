@@ -694,6 +694,18 @@ def test_keyword_filter_controls_render_in_the_rail(app):
     assert b'id="kw"' in page and b'id="kwin"' in page and b'id="kwnote"' in page
     assert b'<option value="description" disabled>' in page
     assert b'<option value="both" disabled>' in page
+    # the JS learns the scopes from the same map, through CFG
+    assert b'"keyword_scopes"' in page and b'"keyword_default_scope": "title"' in page
+
+
+def test_description_scopes_are_enabled_once_the_table_has_the_column(app, monkeypatch):
+    """The disabled rule is a runtime fact of the served table, read per request — so a Space that
+    has restarted onto a migrated table lights the options up with no template change."""
+    monkeypatch.setattr(app._searcher, "has_description", True)
+    page = app.app.test_client().get("/").data
+    assert b'<option value="description">' in page
+    assert b'<option value="both">' in page
+    assert b"disabled" not in page.split(b'id="kwin"')[1].split(b"</select>")[0]
 
 
 # ---- Saved jobs (ADR-0044) ----

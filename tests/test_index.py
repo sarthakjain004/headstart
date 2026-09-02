@@ -458,6 +458,33 @@ def test_a_null_description_alone_is_not_a_reason_to_rewrite_unless_backfilling(
     )
 
 
+def test_backfill_leaves_a_row_the_corpus_cannot_fill_untouched(
+    tmp_path, monkeypatch, caplog
+):
+    """The merge job's corpus is this run's SLICE. A backfill candidate whose text is not in it must
+    not be rewritten — that would pay the ~25 KB vector rewrite and fill nothing, and one flagged
+    run would churn every null-description row table-wide. It waits, and the log says so."""
+    ids = ["greenhouse:a:1", "greenhouse:a:2"]
+    _sync(
+        tmp_path, monkeypatch, ids
+    )  # both indexed without text; meta says both HAVE one
+    caplog.set_level("INFO")
+    # Backfill ON, but the corpus carries text for :2 only.
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ids,
+        descriptions={"greenhouse:a:2": "text"},
+        backfill=True,
+    )
+    got = _descriptions(tmp_path)
+    assert got["greenhouse:a:2"] == "text"
+    assert got["greenhouse:a:1"] is None  # left alone, not rewritten to null
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("rewrote 1 rows" in m and "1 of them to backfill" in m for m in msgs)
+    assert any("1 backfill candidate(s) left for a later run" in m for m in msgs)
+
+
 def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):
     """End-to-end at the `sync` seam (ADR-0083): a posting that vanishes from one scrape survives
     that run and is only evicted if it is still absent from the next one. The planner tests pin

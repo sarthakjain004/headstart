@@ -7,7 +7,7 @@ const el = s => document.getElementById(s);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-if (el('kw')) el('kw').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+el('kw').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
    search, so a stale link never strands anyone on a blank page. Trends data loads the
@@ -119,8 +119,13 @@ function currentFilters(){
   if (el('location').value.trim()) f.location = el('location').value.trim();
   if (el('company').value.trim()) f.company = el('company').value.trim();
   // The Keyword filter (ADR-0104). Its scope is a modifier, sent only beside a keyword — on its
-  // own it filters nothing, and the server nulls it anyway (matches filter_kwargs).
-  if (el('kw') && el('kw').value.trim()){ f.kw = el('kw').value.trim(); f.kw_in = el('kwin').value; }
+  // own it filters nothing, and the server nulls it anyway (matches filter_kwargs) — and only
+  // when it is not the default, which the server already assumes: that keeps a "Look in: Title"
+  // pill off every plain keyword search.
+  if (el('kw').value.trim()){
+    f.kw = el('kw').value.trim();
+    if (el('kwin').value !== (CFG.keyword_default_scope || 'title')) f.kw_in = el('kwin').value;
+  }
   if (el('posted').value) f.posted_within = el('posted').value;
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
   if (el('salmin') && el('salmin').value) f.salary_min = el('salmin').value;
@@ -208,6 +213,7 @@ async function fetchPage(){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     el('n').textContent = ''; return; }
   const facets = await facetsPromise;
+  drawKeywordNote(facets);
   if(!rows.length){
     el('results').innerHTML = page === 1
       ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
@@ -300,7 +306,6 @@ function applyFacets(facets){
   countSwitch('remote', f.remote);
   countSwitch('hassalary', f.has_salary);
   countYears(f.max_years);
-  drawKeywordNote(facets);
 }
 
 // The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
@@ -308,20 +313,27 @@ function applyFacets(facets){
 // in descriptions can only ever match the share that has one. Quantified rather than static:
 // `description_coverage` is the count of rows matching the current filters that carry a
 // description, from the same where-clause the total was counted with, so the two numbers can be
-// read against each other. `null` means the column does not exist yet (the scope is disabled),
-// distinct from a real zero.
+// read against each other. Which scopes carry it comes from CFG.keyword_scopes (the server's
+// scope map), never from a scope name hard-coded here.
+//
+// Written on EVERY fetch, like drawSortNote: a note left over from the previous search is worse
+// than none. Three states, kept distinct — /facets failed (no numbers to show, say the fact
+// plainly), the column does not exist yet (`null`), and a real count.
 function drawKeywordNote(facets){
-  const note = el('kwnote'), scope = el('kwin'); if (!note || !scope) return;
-  if (scope.value === 'title'){ note.textContent = ''; return; }
-  const cov = facets ? facets.description_coverage : undefined;
-  if (cov === null || cov === undefined){
-    note.textContent = 'Description search isn\'t available yet — descriptions are still being added to the index.';
+  const note = el('kwnote'), scope = el('kwin');
+  const needs = (CFG.keyword_scopes || {})[scope.value];
+  if (!needs){ note.textContent = ''; return; }
+  if (!facets){
+    note.textContent = 'Only jobs with a stored description can match a keyword here — not every job has one.';
     return; }
-  const total = typeof facets.total === 'number' ? facets.total : null;
-  note.textContent = total === null
-    ? 'Only jobs with a stored description can match — not every job has one.'
-    : `Description search covers ${cov.toLocaleString()} of ${total.toLocaleString()} jobs matching your filters — ` +
-      'the rest have no stored description and can\'t be matched this way.';
+  if (facets.description_coverage === null || facets.description_coverage === undefined){
+    note.textContent = 'Matching inside descriptions isn\'t available yet — descriptions are still being added to the index.';
+    return; }
+  const cov = facets.description_coverage, total = facets.total;
+  note.textContent = typeof total === 'number'
+    ? `Descriptions are stored for ${cov.toLocaleString()} of ${total.toLocaleString()} jobs matching your filters — ` +
+      'a keyword can only match inside those; the rest have no stored description.'
+    : 'Only jobs with a stored description can match a keyword here — not every job has one.';
 }
 
 // The two checkboxes are labels, not option lists — their single count goes on the text.

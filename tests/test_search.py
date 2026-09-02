@@ -177,6 +177,20 @@ def test_a_scope_without_a_keyword_filters_nothing():
     assert _clause(kw_in="description", has_description=True) is None
 
 
+def test_keyword_scope_options_come_from_the_map_in_order_with_labels_and_needs():
+    from headstart.search import KEYWORD_SCOPES, keyword_scope_options
+
+    options = keyword_scope_options()
+    assert [v for v, _, _ in options] == list(KEYWORD_SCOPES)  # same order as the map
+    assert all(label for _, label, _ in options)  # every scope has a label
+    # only scopes that name the optional column carry the disclaimer / disabled rule
+    assert {v: needs for v, _, needs in options} == {
+        "title": False,
+        "description": True,
+        "both": True,
+    }
+
+
 # ---- JobSearch: through its interface, with fakes ----
 
 

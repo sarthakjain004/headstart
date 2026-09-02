@@ -27,10 +27,12 @@ const job = (id, extra) => ({
   url: 'https://example.test/' + id, score: 0.8, ...extra,
 });
 
-/** A fresh evaluation of app.js per test. `respond(url)` decides what `/search` answers —
+/** A fresh evaluation of app.js per test. `cfg` is what index() puts on window.CFG — it must
+ * be in place BEFORE the context is built: vm contextifies the object, so mutating it afterwards
+ * from outside is not seen inside. `respond(url)` decides what `/search` answers —
  * tests set it per case, so a page's content can depend on what was actually requested
  * (page, q) the same way the real server's pagination does. */
-function loadApp(respond) {
+function loadApp(respond, cfg = {}) {
   const nodes = {};
   const fetches = [];
   const ctx = {
@@ -39,9 +41,11 @@ function loadApp(respond) {
       addEventListener() {},
       querySelectorAll: () => [],
     },
-    window: { addEventListener() {}, location: { hash: '' } },
+    // app.js reads the page's config off `window.CFG` (the template sets it), so the stub
+    // window carries it; the bare `CFG` global below is kept for any direct reference.
+    window: { addEventListener() {}, location: { hash: '' }, CFG: cfg },
     location: { hash: '' },
-    console, CFG: {}, URLSearchParams, Date, Math, isNaN, Number, Array,
+    console, CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
     fetch: url => {
       fetches.push(String(url));
       return Promise.resolve({ json: () => Promise.resolve(respond(String(url))) });
@@ -51,8 +55,17 @@ function loadApp(respond) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, page: () => page };';
   vm.runInNewContext(src, ctx);
-  return { nodes, fetches, t: ctx.__t };
+  return { nodes, fetches, t: ctx.__t, ctx };
 }
+
+/** The server's Keyword-filter scope map as index() puts it on CFG (ADR-0104). */
+const SCOPES = { keyword_scopes: { title: false, description: true, both: true },
+                 keyword_default_scope: 'title' };
+
+/** Set a control's value BEFORE go() runs. The stub DOM creates a node on first lookup, and
+ * `kwin` is first looked up inside go() — so assigning `.value` on the not-yet-created node would
+ * write to undefined. This materialises the fake the way the page would already have. */
+const set = (nodes, id, value) => { (nodes[id] ||= fakeEl()).value = value; };
 
 function qs(url) {
   return Object.fromEntries(new URL(url, 'http://x').searchParams);
@@ -153,4 +166,66 @@ test('a row with no salary signal at all renders no pay tag', async () => {
   const { t, nodes } = loadApp(() => [job('a', { salary: null })]);
   await t.go();
   assert.ok(!nodes.results.innerHTML.includes('class="tag pay"'));
+});
+
+
+// ── The Keyword filter and its disclaimer (ADR-0104) ─────────────────────────────────────────
+
+test('a keyword is sent, and its scope only when it is not the default', async () => {
+  const { nodes, fetches, t } = loadApp(() => [], SCOPES);
+  set(nodes, 'kw', 'kubernetes'); set(nodes, 'kwin', 'title');
+  await t.go();
+  const lastSearch = () => qs(fetches.filter(u => u.startsWith('/search?')).at(-1));
+  let q = lastSearch();                      // app.js also browses on load; read OUR request
+  assert.equal(q.kw, 'kubernetes');
+  assert.equal(q.kw_in, undefined);           // default scope: omitted, the server assumes it
+  fetches.length = 0;
+  set(nodes, 'kwin', 'description');
+  await t.go();
+  q = lastSearch();
+  assert.equal(q.kw_in, 'description');
+});
+
+test('the disclaimer is silent for the title scope', async () => {
+  const { nodes, t } = loadApp(url => url.startsWith('/facets')
+    ? { total: 100, facets: {}, blocking: null, description_coverage: 42 } : [], SCOPES);
+  set(nodes, 'kwin', 'title');
+  await t.go();
+  assert.equal(nodes.kwnote.textContent, '');
+});
+
+test('a description-bearing scope shows the measured coverage against the total', async () => {
+  const { nodes, t } = loadApp(url => url.startsWith('/facets')
+    ? { total: 100, facets: {}, blocking: null, description_coverage: 42 } : [], SCOPES);
+  for (const scope of ['description', 'both']){       // both come from the map, not a name
+    set(nodes, 'kwin', scope);
+    await t.go();
+    assert.match(nodes.kwnote.textContent, /42 of 100 jobs matching your filters/);
+    assert.match(nodes.kwnote.textContent, /no stored description/);
+  }
+});
+
+test('a null coverage means the column does not exist yet, not zero', async () => {
+  const { nodes, t } = loadApp(url => url.startsWith('/facets')
+    ? { total: 100, facets: {}, blocking: null, description_coverage: null } : [], SCOPES);
+  set(nodes, 'kwin', 'description');
+  await t.go();
+  assert.match(nodes.kwnote.textContent, /isn't available yet/);
+  assert.doesNotMatch(nodes.kwnote.textContent, /0 of/);
+});
+
+test('a failed /facets replaces a stale note with the plain fact, never leaves the old numbers', async () => {
+  let facetsOk = true;
+  const { nodes, t } = loadApp(url => {
+    if (!url.startsWith('/facets')) return [];
+    if (!facetsOk) throw new Error('down');       // .catch(() => null) in fetchPage
+    return { total: 100, facets: {}, blocking: null, description_coverage: 42 };
+  }, SCOPES);
+  set(nodes, 'kwin', 'description');
+  await t.go();
+  assert.match(nodes.kwnote.textContent, /42 of 100/);
+  facetsOk = false;
+  await t.go();
+  assert.doesNotMatch(nodes.kwnote.textContent, /42 of 100/);   // not stale
+  assert.match(nodes.kwnote.textContent, /not every job has one/);
 });
