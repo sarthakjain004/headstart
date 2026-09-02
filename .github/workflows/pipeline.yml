@@ -262,14 +262,15 @@ jobs:
         # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
         # 2 attempts x (32s curl + 45s update + 60s install) + 20s sleep + 15s systemctl
         # + 75s daemon wait (15 probes x a 5s ceiling) + 30s registration + 15s status = 429s,
-        # plus 60s for the dependency stubs (raised from 30s: 4/4 degraded shards sampled in
-        # docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md landed within 2s of the
-        # old 30s cap, which was a coin flip, not a margin) and 20s for the dpkg self-heal that
-        # now follows a failed stub — both counted once, same as before, since stub_gui_deps and
-        # the recovery each run once regardless of how many install_warp attempts follow: 509s,
-        # under a 10 min cap. Every call in the step now carries a ceiling, so that sum is a
-        # real bound rather than an assumption that local IPC always answers promptly — and the
-        # cap keeps ~1.5 min over it, because a bound with six seconds of headroom is a coin flip.
+        # plus 30s for the dependency stubs (was 60s, when they were built by an `apt-get install
+        # equivs` that reached an Ubuntu mirror; they are built locally now, so only the `dpkg -i`
+        # that takes the dpkg lock still needs a ceiling) and 20s each for the two dpkg self-heals
+        # — one after a failed stub, one between the install attempts. Each is counted once:
+        # stub_gui_deps and its recovery run once regardless of how many install_warp attempts
+        # follow, and the retry self-heal runs at most once by construction. 499s, under a 10 min
+        # cap. Every call in the step still carries a ceiling, so that sum is a real bound rather
+        # than an assumption that local IPC always answers promptly — and the cap keeps ~1.5 min
+        # over it, because a bound with six seconds of headroom is a coin flip.
         # p50 install is 24 s (run 32146017194's 15 shards); the cap only bites when a host wedges.
         continue-on-error: true
         timeout-minutes: 10
@@ -293,33 +294,37 @@ jobs:
           # 4/15 is exactly the production rate this was chasing (run 32249345870). The stubs are
           # what make the ceiling reachable rather than a coin flip.
           #
-          # `equivs` over `dpkg --force-depends`: force-depends leaves the package system in a
+          # A stub over `dpkg --force-depends`: force-depends leaves the package system in a
           # broken state, and the xvfb install further down this job then fails. A stub is a real
           # package that really Provides the name, so `apt-get check` stays clean.
+          #
+          # Built with `dpkg-deb` from a hand-written control file, NOT with `equivs`. A stub
+          # package ships no files, so `equivs` contributed nothing but its own `apt-get install`
+          # — which pulls debhelper, reaches an Ubuntu mirror, and spends most of its time in
+          # dpkg's trigger processing. That install was the whole failure mode: on run
+          # 33633903535 it hit its 60s ceiling on 2 of 15 shards, and stub success paired with
+          # WARP success 15/15 that run, so it is the single point of failure behind every shard
+          # that ends up with no spare egress. Losing it costs a shard real coverage, not just
+          # the fallback: shard 5 there lost 2,517 detail fetches to HTTP 429, 8.0% of its detail
+          # attempts, against a median of 5 across the other fourteen. `dpkg-deb --build` is
+          # local and offline and needs no package the runner image lacks, so this helper has no
+          # network failure mode left at all.
           stub_gui_deps() {
-            # Ceilinged like every other apt call here: this one reaches an Ubuntu mirror, which
-            # is exactly the wedge the narrowed `update` below was fixed for, and an uncapped call
-            # would make this step's timing budget fiction.
-            #
-            # 30s -> 60s (docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md): the
-            # probe above measured max 27s on 15 idle runners, but every degraded shard sampled
-            # from real runs (4/4) landed within 2s of the 30s cap under production contention —
-            # that's not a safety margin, it's a coin flip. The 30s was going mostly to dpkg's own
-            # database read and trigger processing (man-db, install-info), not the network fetch,
-            # so `--no-install-recommends` was considered and dropped: equivs -> debhelper and
-            # debhelper's own pulls are hard Depends, not Recommends, so it would not have shrunk
-            # the part that actually burns the budget. Widening the cap is the fix.
-            sudo DEBIAN_FRONTEND=noninteractive timeout 60 apt-get install -y -qq \
-              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
-              equivs || return 1
-            local d
-            d=$(mktemp -d)
+            local d p
+            d=$(mktemp -d) || return 1
             for p in libwebkit2gtk-4.1-0 libayatana-appindicator3-1; do
-              printf 'Section: misc\nPriority: optional\nStandards-Version: 3.9.2\nPackage: %s-headless-stub\nProvides: %s\nDescription: stub for headless warp-svc\n A no-op package satisfying a GUI dependency warp-svc never calls.\n' \
-                "$p" "$p" > "$d/$p.ctl"
-              (cd "$d" && equivs-build "$p.ctl" >/dev/null) || return 1
+              mkdir -p "$d/$p/DEBIAN" || return 1
+              # The fields dpkg requires of a binary package, plus the `Provides` that is the
+              # entire point. `--root-owner-group` keeps the members root-owned without needing
+              # sudo, which is what stops dpkg warning about ownership on install.
+              printf 'Package: %s-headless-stub\nVersion: 1.0\nArchitecture: all\nMaintainer: headstart pipeline <noreply@github.com>\nSection: misc\nPriority: optional\nProvides: %s\nDescription: stub for headless warp-svc\n A no-op package satisfying a GUI dependency warp-svc never calls.\n' \
+                "$p" "$p" > "$d/$p/DEBIAN/control" || return 1
+              dpkg-deb --root-owner-group --build "$d/$p" "$d/$p-headless-stub.deb" >/dev/null \
+                || return 1
             done
-            sudo dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
+            # The one call here that can block: it takes the dpkg lock and reads the package
+            # database. Ceilinged so the step's timing budget above stays a real bound.
+            sudo timeout 30 dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
           }
           # Best-effort: if the stubs cannot be built the install still works, just fat and slow.
           if ! stub_gui_deps; then
@@ -370,6 +375,13 @@ jobs:
           }
           if ! install_warp; then
             echo "warp install attempt 1 failed — retrying" >&2
+            # The same dpkg self-heal the failed-stub path already runs, for the same reason and
+            # a different trigger: `timeout 60` can kill the install above mid-transaction, and
+            # then attempt 2 fails in ~10 ms with "dpkg was interrupted" having made no network
+            # call at all. Measured on run 33633903535 shard 0, which is exactly the case this
+            # retry exists for — so without this line the retry was worthless precisely when it
+            # was needed. Best-effort and silent: harmless if dpkg was never interrupted.
+            sudo timeout 20 dpkg --configure -a >/dev/null 2>&1 || true
             # 5 s was too soon to be a retry of anything: the measured failure is a slow or
             # contended mirror, and both attempts landed inside the same bad window every time.
             sleep 20
