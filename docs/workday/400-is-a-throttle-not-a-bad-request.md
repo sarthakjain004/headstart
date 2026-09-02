@@ -12,7 +12,7 @@ spent **479,165 attempts against a 2S ceiling of 513,868, a ratio of 0.93**, wit
 run between 0.92 and 0.94. It recovers essentially nothing.
 
 In run `33590621111` the 400s land on 81 boards and are highly concentrated: the top ten are 51%
-of the total, at loss rates of 83–97% (`ghr/us-emplsv` 3,029 of 3,196; `td/TD_Bank_Careers` 1,621
+of the total, at loss rates of 83–97% (`ghr/us-emplsv` 3,029 of 3,196, 95%; `td/TD_Bank_Careers` 1,621
 of 1,667; `prismahealth` 1,569 of 1,630).
 
 ## What it is not
@@ -34,17 +34,24 @@ Each of these was tested against the live endpoint, not reasoned about.
 **A per-tenant request-rate limit.** Walking one board's real paths at production's own width of
 25 streams, on one session, with the retry ladder off:
 
-| board | trips at | steady state after |
-|---|---|---|
-| `ghr/us-emplsv`, direct | ~430 requests | 364 of 800 rejected |
-| `ghr/us-emplsv`, via WARP | ~492 requests | 404 of 900 rejected |
-| `thermofisher` | ~1,100 requests | ~75% rejected through request 3,200 |
+| board / walk | trips at request | rejected over the whole walk | rejected *after* the trip |
+|---|---|---|---|
+| `ghr/us-emplsv`, direct, n=800 | 431 | 364 (46%) | **98%** |
+| `ghr/us-emplsv`, via WARP, n=900 | 492 | 404 (45%) | ~99% |
+| `thermofisher`, n=700 | never | 0 (0%) | — |
+| `thermofisher`, n=3,144 (first) | 656 | 2,010 (64%) | **81%** |
+| `thermofisher`, n=3,144 (second) | 1,135 | 1,454 (46%) | **72%** |
+
+The two columns answer different questions and an earlier draft of this doc conflated them: the
+whole-walk figure is diluted by everything fetched before the trip, so only the post-trip column
+is comparable to a production board that is throttled for most of its pass.
 
 The rejection carries a Cloudflare HTML block page; these tenants are Cloudflare-fronted
 (`server: cloudflare`, `cf-ray`, and a `PLAY_SESSION` cookie pinned to a backend instance). The
-**steady-state rejection rate of 70–90% is the same magnitude as the 83–95% per-board loss
-production records**, and thermofisher explains why short probes read healthy: it is clean for 700
-straight requests and only trips at ~1,100.
+**post-trip rejection rate of 72–98% brackets the 83–97% per-board loss production records**.
+Two further details matter: thermofisher is clean for 700 straight requests, which is why a short
+probe reads healthy; and its trip point moved from 1,135 to 656 between two walks an hour apart,
+so the limit is a rolling window shaped by recent history, not a fixed per-run quota.
 
 ## The one thing still unexplained
 

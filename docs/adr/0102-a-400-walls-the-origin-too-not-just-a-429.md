@@ -29,8 +29,9 @@ full measurement is tracked at
   `ghr/us-emplsv` (3,196) is at 95%.
 
 And it reproduced the mechanism positively: at production's own width of 25 streams, a sustained
-walk trips a per-tenant limit at ~430 requests (`ghr`) and ~1,100 (`thermofisher`), then sustains
-**70–90% refusal** — which is the same magnitude as the 83–95% per-Board loss production records.
+walk trips a per-tenant limit at request 431 (`ghr`) and at 656–1,135 (`thermofisher`, moving
+between walks an hour apart), and refuses **72–98%** of everything after the trip — which brackets
+the 83–97% per-Board loss production records.
 From that vantage the refusal is a 429 with a Cloudflare block page; production settles 400. Why
 the status differs is **not** established, and needs a probe from inside Actions.
 
@@ -98,19 +99,22 @@ over the ten runs `33548262185`..`33590621111`:
 | rotations actually performed (`succeeded`) | 14,774 | ~1,477 |
 | of those calls, cooldown-`throttled` | 142,540 | **91%** |
 
-**That 91% is the finding that defuses the risk.** Rotations are *cooldown-bound*, not
-demand-bound: nine of every ten callers already find the gate shut, wait out
-`_ROTATION_WAIT_CAP`, and ride the current IP. Adding the 479,165 retried 400s multiplies the
-call volume by about **4x**, but it cannot multiply the rotations, which are pinned by the 5s
-cooldown — the extra callers land in the `throttled` bucket. `warp-svc` restarts should stay near
-1,477 per run.
+**That 91% is what keeps this from being a 4x restart storm**, though the mechanism is subtler
+than "the gate is shut". Reading `spare_egress.rotate`: a `throttled` caller waits out only the
+*remaining* cooldown, and then either a peer's rotation lands it on a fresh IP or it rotates
+itself. It is the `abandoned` path — 12,134 calls, **7.7%** — that gives up and rides the spent
+IP. So `throttled` is "queued behind the cooldown", not "refused", and `attempted + throttled`
+approximates the call count rather than counting it exactly.
 
-**So the cost to watch is waiting, not restarting.** Four times the callers queueing on a gate
-that is already shut 91% of the time is aggregate wait, bounded per caller at 10s but concurrent
-within a shard. Read **scrape wall-clock** and the `throttled` counter, not `succeeded`. Revert
-this, or take the split below, if scrape wall-clock rises materially against the 51–73 min the
-same ten runs recorded, or if `succeeded` climbs anywhere near its call volume — that last would
-mean the cooldown stopped binding and the demand model applies after all.
+What follows is still that **`succeeded` cannot scale with demand the way calls do**: rotations
+are serialised behind a 5s cooldown, and the ten runs already sit well inside that ceiling. So
+admitting ~4x the callers should raise restarts by a small factor, not fourfold, and the larger
+cost is aggregate *waiting* on the cooldown — bounded per caller but concurrent within a shard.
+
+Read **scrape wall-clock** against the 51–73 min these ten runs recorded, and watch `succeeded`
+(~1,477/run today). Revert this, or take the split below, if wall-clock rises materially or
+`succeeded` climbs toward its call volume — that last would mean the cooldown stopped binding and
+the demand model applies after all.
 
 **Three call sites are now "marked but not retried".** The unpatient arm of `_resolve_instance`'s
 sweep takes `http.TRANSIENT` (ADR-0098 deliberately leaves the sweep unretried), as do

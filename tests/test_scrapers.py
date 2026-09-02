@@ -5496,7 +5496,7 @@ def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
     monkeypatch.setattr(http.time, "sleep", lambda *a: None)
 
     # `mark_walled` is process-global, so bracket it the way the other egress tests do (see
-    # test_workday_page_streams_narrow_once_walled). Leaving "workday" walled leaks into whatever
+    # test_workday_paginate_narrows_its_fan_out_once_the_origin_has_walled). Leaving "workday" walled leaks into whatever
     # runs next: its `_egress()` calls would then try to dial WARP on a dev box.
     spare_egress.reset()
     try:

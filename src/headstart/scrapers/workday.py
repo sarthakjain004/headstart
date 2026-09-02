@@ -372,14 +372,13 @@ class WorkdayScraper(BaseScraper):
     #: `spare egress rotations: attempted A, succeeded S, throttled T` line rather than off a
     #: retry count (which is process-wide across every ATS, so it is not what reaches
     #: `_rotate_for`). Over the ten runs `33548262185`..`33590621111`: 157,314 `rotate()` calls,
-    #: of which only 14,774 actually rotated — **91% were cooldown-throttled**. Rotations are
-    #: therefore cooldown-bound, not demand-bound, so the ~4x more callers this admits should
-    #: land in the `throttled` bucket rather than restarting `warp-svc` ~4x more often.
+    #: of which only 14,774 actually rotated — **91% queued behind the 5s cooldown**. Rotations
+    #: are serialised by that gate, so admitting ~4x the callers cannot restart `warp-svc` ~4x
+    #: more often; what it mostly buys is aggregate *waiting*, concurrent within a shard.
     #:
-    #: What that 4x does buy is aggregate *waiting*, bounded per caller at `_ROTATION_WAIT_CAP`
-    #: but concurrent within a shard. So watch scrape wall-clock against the 51-73 min those ten
-    #: runs recorded, and watch `succeeded` — if it climbs toward its call volume the cooldown
-    #: has stopped binding and the demand model applies after all. Revert this, or split
+    #: Watch scrape wall-clock against the 51-73 min those ten runs recorded, and watch
+    #: `succeeded` (~1,477/run today) — if it climbs toward its call volume the cooldown has
+    #: stopped binding and the demand model applies after all. Revert this, or split
     #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), on either signal.
     #:
     #: Three call sites now carry a 400 in `egress_on` that their own `retry_on` omits — the
