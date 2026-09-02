@@ -5479,11 +5479,10 @@ def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
     running. Driven through `http.fetch` with Workday's own two sets rather than by asserting the
     constant, so it fails if the wiring stops matching the declaration.
     """
+    from headstart import spare_egress
     from headstart.scrapers.workday import _RETRY_ON, WorkdayScraper
 
-    monkeypatch.setattr(
-        http.spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000"
-    )
+    monkeypatch.setattr(spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000")
     calls: list[dict] = []
 
     class _Session:
@@ -5496,17 +5495,24 @@ def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
     monkeypatch.setattr(http, "session", lambda: _Session())
     monkeypatch.setattr(http.time, "sleep", lambda *a: None)
 
-    response = http.fetch(
-        "GET",
-        "detail",
-        egress_group="workday",
-        egress_on=WorkdayScraper.egress_fallback_on,
-        retry_on=_RETRY_ON,
-    )
-    assert response.status_code == 200
-    assert "workday" in http.spare_egress.walled_groups()
-    # the first attempt goes direct (nothing known yet); the retry is the one that moves
-    assert [bool(c.get("proxies")) for c in calls] == [False, True]
+    # `mark_walled` is process-global, so bracket it the way the other egress tests do (see
+    # test_workday_page_streams_narrow_once_walled). Leaving "workday" walled leaks into whatever
+    # runs next: its `_egress()` calls would then try to dial WARP on a dev box.
+    spare_egress.reset()
+    try:
+        response = http.fetch(
+            "GET",
+            "detail",
+            egress_group="workday",
+            egress_on=WorkdayScraper.egress_fallback_on,
+            retry_on=_RETRY_ON,
+        )
+        assert response.status_code == 200
+        assert "workday" in spare_egress.walled_groups()
+        # first attempt goes direct (nothing known yet); the retry is the one that moves
+        assert [bool(c.get("proxies")) for c in calls] == [False, True]
+    finally:
+        spare_egress.reset()
 
 
 def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():

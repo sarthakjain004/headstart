@@ -42,7 +42,8 @@ TECH_TOTAL = re.compile(r"\[filter_tech\] TOTAL\s+(\d+)\s+(\d+)\s+([\d.]+)%")
 # No `settled N as having none` clause: ADR-0089 removed that fact (the `detail_fetched` flag it
 # was gated on is wrong on live data), and this pattern kept requiring it — so it matched nothing
 # and every ATS printed filled/learned/queued as 0 while the log said `workday: filled 6,012`.
-# Silent zeros, for every run built after that ADR. `_require` below is the guard against a repeat.
+# Silent zeros, for every run built after that ADR. `run_logs.warn_if_unparsed` is the guard
+# against a repeat.
 DESC = re.compile(
     r"\[update_descriptions\] (\w+): filled ([\d,]+) from the store, learned ([\d,]+), "
     r"queued ([\d,]+) to re-derive"

@@ -50,7 +50,7 @@ COST_HEADER = re.compile(
 COST_MEDIAN = re.compile(r"\[update_ledgers\]\s+([\d.]+)s median\s+(\S+)")
 # `held`, not `settled`: the emitter's wording moved and this pattern did not, so every run
 # printed "no gap summary line found" while the line was right there. That reads as "the stage
-# emitted nothing", which is the opposite of the truth — see `_require` in fanout_corpus.py.
+# emitted nothing", which is the opposite of the truth — see `run_logs.warn_if_unparsed`.
 GAP_HEADER = re.compile(
     r"\[update_ledgers\] gap: ([\d,]+) stored rows \| ([\d,]+) held \| "
     r"([\d,]+) unsettled across ([\d,]+) boards \(([\d,]+) on a disabled ATS, "
@@ -115,9 +115,9 @@ def report(run: Run) -> None:
             "not that the store is genuinely empty; the ledger was left as-is",
             flush=True,
         )
-    elif not warn_if_unparsed(
-        text, "[update_ledgers] gap:", None, "update_ledgers gap"
-    ):
+    # `gh` is falsy on this branch by construction; passing it rather than a literal keeps the
+    # guard reading the same parse result the branch above tested.
+    elif not warn_if_unparsed(text, "[update_ledgers] gap:", gh, "update_ledgers gap"):
         print(
             "  gap did not run this run — no `[update_ledgers] gap:` line at all",
             flush=True,

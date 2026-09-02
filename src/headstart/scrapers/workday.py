@@ -362,14 +362,19 @@ class WorkdayScraper(BaseScraper):
     #: spent two extra attempts against the same penalised IP. That is the whole reason its
     #: measured recovery is nil (`400-throttle` at 0.93 of its 2S ceiling, 10 runs of 10).
     #:
-    #: **Watch the rotation count on the first runs, and revert on it.** `http.fetch` uses this
-    #: one set for two jobs: `mark_walled` (once per process, cheap) and `_rotate_for`, which
-    #: fires on *every* refusal already riding the proxy. Settled 400s outrun settled 429s by
-    #: roughly 400:1, so this feeds a far larger stream into a rotation path that today produces
-    #: 1,340-1,508 rotations per run behind a 5s cooldown. If that figure climbs by an order of
-    #: magnitude, or scrape wall-clock does, this comes back out — a rotation storm would cost
-    #: more than the 400s do. The estimate is a projection from the 429 damping ratio, not a
-    #: measurement; the run is the measurement.
+    #: **Watch the rotation count on the first runs, and revert on it.** This one set has three
+    #: consumers: `mark_walled` (once per process, cheap), `_rotate_for` (every refusal already
+    #: riding the proxy), and `spare_egress.stream_width`, which narrows a walled group's fan-out
+    #: to 12. The last changes nothing in practice — Workday already walls on a 429 in all 15
+    #: shards of every run, so the width is 12 today; this only moves *when* the wall lands.
+    #:
+    #: The rotation path is the one to watch. Sized retry-to-retry, which is what reaches
+    #: `_rotate_for`: over the ten runs `33548262185`..`33590621111`, 283,991 retried 429s against
+    #: 479,165 retried 400s, so this multiplies the rotation-eligible stream by **2.7x**. Those
+    #: runs produce 1,343-1,726 rotations each behind a 5s cooldown (~18:1 damping), so expect
+    #: roughly 4,000-4,500. That is a projection, not a measurement. Revert this, or split
+    #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), if rotations pass
+    #: ~5,000 per run or scrape wall-clock rises.
     #:
     #: Three call sites now carry a 400 in `egress_on` that their own `retry_on` omits — the
     #: unpatient arm of `_resolve_instance`'s sweep, which ADR-0098 deliberately leaves unretried,

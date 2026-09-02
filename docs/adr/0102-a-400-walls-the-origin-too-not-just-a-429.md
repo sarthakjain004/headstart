@@ -1,7 +1,7 @@
 # ADR-0102: A 400 walls the origin too, not just a 429
 
 **Status:** accepted · **Date:** 2026-09-02 · **Amends:**
-[ADR-0063](0063-a-spare-egress-for-a-spent-origin-budget.md) (which statuses open the spare
+[ADR-0063](0063-spare-egress-for-a-spent-origin-budget.md) (which statuses open the spare
 egress) and [ADR-0098](0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md) (whose
 retry this explains the failure of)
 
@@ -14,8 +14,10 @@ measured over those same ten runs and **recovers nothing**: the `400-throttle` c
 479,165 retries against a 2S ceiling of 513,868, a ratio of **0.93**, with every individual run
 between 0.92 and 0.94.
 
-A live investigation (`experiment/workday-400-root-cause/LOG.md`, 2026-09-02) then falsified every
-"the request is malformed" reading of that 400:
+A live investigation then falsified every "the request is malformed" reading of that 400. The
+full measurement is tracked at
+[`docs/workday/400-is-a-throttle-not-a-bad-request.md`](../workday/400-is-a-throttle-not-a-bad-request.md)
+(the probes themselves live under the gitignored `experiment/workday-400-root-cause/`):
 
 - The exact detail URLs production builds return **200 with full job JSON** from a laptop.
 - 4,000 `externalPath` values across the two worst Boards contain **no** character outside
@@ -46,10 +48,20 @@ same penalised IP, which is a complete explanation for a recovery ratio of 0.93.
 
 ## Decision
 
-**Add 400 to Workday's `egress_fallback_on`**, making it `frozenset({400, 429})`.
+**Add 400 to Workday's `egress_fallback_on`**, making it `frozenset({400, 429})`. Offered the
+choice between this and the `egress_rotate_on` split below, the maintainer chose this shape
+deliberately, with the rotation risk stated — so the split is a follow-up, not an oversight.
 
-Nothing else changes. 400 is already in `_RETRY_ON`, so `http.fetch`'s stated invariant
-(`egress_on` a subset of `retry_on`) still holds on every call site that passes `_RETRY_ON`.
+400 is already in `_RETRY_ON`, so `http.fetch`'s stated invariant (`egress_on` a subset of
+`retry_on`) holds on every call site that passes it.
+
+**That set has three consumers, not one**, and an earlier draft of this ADR wrongly said nothing
+else changed. Beyond `mark_walled` and `_rotate_for`, a walled group also narrows its fan-out:
+`spare_egress.stream_width` returns `min(ceiling, _WALLED_STREAM_WIDTH = 12)`, which Workday reads
+for both `_PAGE_STREAMS` and `detail_streams` (25 each). In practice this changes nothing, and the
+reason is measured rather than assumed: **Workday already walls on a 429 in all 15 shards of every
+run** (`spare_egress` "spending this shard's spare egress" appears 15 times in run `33590621111`),
+so the width is already 12 today. What this ADR changes is *when* the wall lands, not whether.
 
 ## Alternatives considered
 
@@ -71,18 +83,30 @@ could and spends half a million pointless requests doing it. Rejected.
 ## Consequences
 
 **The risk is a rotation storm, and it is the thing to watch.** Because `egress_on` also gates
-`_rotate_for`, every 400 taken while already proxied now asks for a fresh egress IP. Settled 400s
-outrun settled 429s by roughly 400:1 in a run. Today's ~25,000 retried 429s produce 1,340–1,508
-rotations behind a 5s cooldown — about 18:1 damping — so the same damping applied to the 400
-stream projects an order of magnitude more. **That is a projection from a ratio, not a
-measurement.** If the rotation count climbs about tenfold, or scrape wall-clock rises, revert this
-or take the split above; a `warp-svc` restart storm would cost more than the 400s do.
+`_rotate_for`, every 400 taken while already proxied now asks for a fresh egress IP.
+
+Sized against the right quantity, which an earlier draft of this ADR got wrong by an order of
+magnitude. Rotation is driven by *retry events on a walled status*, not by settled ones, so the
+comparison is retry-to-retry. Over the ten runs `33548262185`..`33590621111`: **283,991 retried
+429s against 479,165 retried 400s**, so this multiplies the rotation-eligible stream by **2.7x**,
+not the ~10x the first draft claimed from a settled-count ratio. (Settled 400s do outrun settled
+429s heavily — 36,550 to 907 in run `33590621111`, about 40:1 — but settled counts are not what
+reaches `_rotate_for`.)
+
+Those same ten runs produce **1,343–1,726 rotations each** against ~26,000–33,000 retried 429s,
+about 18:1 damping from the 5s cooldown and peers sharing a rotation. Carried forward at 2.7x,
+that projects roughly 4,000–4,500 rotations per run. **It is still a projection, not a
+measurement.** Revert this, or take the split below, if the rotation count exceeds ~5,000 per run
+or scrape wall-clock rises — a `warp-svc` restart storm would cost more than the 400s do.
 
 **Three call sites are now "marked but not retried".** The unpatient arm of `_resolve_instance`'s
 sweep takes `http.TRANSIENT` (ADR-0098 deliberately leaves the sweep unretried), as do
 `_page_detail` and `_page_detail_async`. `http.fetch` names and permits this case: such a request
 settles on the wall it just reported while still sparing every later Board the same three
-attempts. That is wanted here — a 400 on the sweep is exactly the throttle ADR-0098 identified.
+attempts. That is wanted at all three: a 400 on the sweep is exactly the throttle ADR-0098
+identified, and `_page_detail`'s two are the ADR-0099 public-page fallback — a different host path
+on the same tenant, so a 400 there is the same origin refusing us and is worth recording as such
+even though that one request cannot be retried into success.
 
 **What success looks like.** The `400-throttle` ratio should fall below 0.93 as retries start
 landing on a fresh IP, and Workday's share of detail loss should fall from 85–95%. Read the ratio
