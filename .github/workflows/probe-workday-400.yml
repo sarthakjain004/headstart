@@ -18,6 +18,9 @@ on:
       n:
         description: details per walk (the laptop tripped ghr's throttle at ~430)
         default: "800"
+      browser_n:
+        description: paired api/Chrome fetches over the walk's tail (the `browser` arm)
+        default: "40"
       arms:
         description: "comma-separated subset; fixed order: where,control,direct,browser,warp"
         default: "where,control,direct,browser,warp"
@@ -114,6 +117,7 @@ jobs:
             --suspect "${{ github.event.inputs.suspect }}" \
             --control "${{ github.event.inputs.control }}" \
             --n "${{ github.event.inputs.n }}" \
+            --browser-n "${{ github.event.inputs.browser_n }}" \
             --arms "${{ github.event.inputs.arms }}" \
             --out "$out.json" 2>&1 | tee "$out.log"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
