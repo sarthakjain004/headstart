@@ -21,6 +21,9 @@ on:
       browser_n:
         description: paired api/Chrome fetches over the walk's tail (the `browser` arm)
         default: "40"
+      width:
+        description: fan-out width — 25 matches the laptop baseline, 12 matches production's walled pass
+        default: "25"
       arms:
         description: "comma-separated subset; fixed order: where,control,direct,browser,warp"
         default: "where,control,direct,browser,warp"
@@ -109,16 +112,31 @@ jobs:
       - name: Probe
         # xvfb-run for the same reason the scrape uses it: the browser arm must be HEADFUL, and
         # `browser_http` degrades to a recorded error rather than failing the run if Chrome dies.
+        #
+        # The dispatch inputs arrive through `env:` rather than being interpolated into the script.
+        # `${{ }}` is substituted into the shell source before bash sees it, so a value containing
+        # shell metacharacters would run as code; an env var is only ever data. These inputs come
+        # from someone with write access, so this is hygiene rather than a live hole — but it costs
+        # one line, and the alternative is a workflow that reads as though the question was never
+        # asked.
+        env:
+          SUSPECT: ${{ github.event.inputs.suspect }}
+          CONTROL: ${{ github.event.inputs.control }}
+          N: ${{ github.event.inputs.n }}
+          BROWSER_N: ${{ github.event.inputs.browser_n }}
+          WIDTH: ${{ github.event.inputs.width }}
+          ARMS: ${{ github.event.inputs.arms }}
         run: |
           command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
           out="probe-workday-400_${{ github.run_id }}_replica-${{ matrix.replica }}"
           echo "OUT=$out" >> "$GITHUB_ENV"
           xvfb-run -a python -u scripts/bench/probe_workday_throttle_status.py \
-            --suspect "${{ github.event.inputs.suspect }}" \
-            --control "${{ github.event.inputs.control }}" \
-            --n "${{ github.event.inputs.n }}" \
-            --browser-n "${{ github.event.inputs.browser_n }}" \
-            --arms "${{ github.event.inputs.arms }}" \
+            --suspect "$SUSPECT" \
+            --control "$CONTROL" \
+            --n "$N" \
+            --browser-n "$BROWSER_N" \
+            --width "$WIDTH" \
+            --arms "$ARMS" \
             --out "$out.json" 2>&1 | tee "$out.log"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
