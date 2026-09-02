@@ -2,6 +2,7 @@ import json
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
@@ -5432,15 +5433,19 @@ def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkey
     assert wall_surface["egress_on"] == frozenset({403, 405})
 
 
-def test_workday_opts_into_the_spare_egress_on_429(monkeypatch):
+def test_workday_opts_into_the_spare_egress_on_400_and_429(monkeypatch):
     """Provisional experiment (ADR-0063, amended): Workday's metering was measured to be per
     (source IP x instance host), so a second egress is a second allocation rather than a way of
     ignoring a rate limit. Only the sync listing POST can lose a Board — a detail failure returns
     None — so that is the call that must carry the opt-in.
+
+    400 is in the set as of ADR-0102. It has been read as a throttle since ADR-0098, yet only the
+    429 could reach the escape hatch, so the status behind 85-95% of all detail loss was the one
+    that could never turn the spare egress on.
     """
     from headstart.scrapers.workday import WorkdayScraper
 
-    assert WorkdayScraper.egress_fallback_on == frozenset({429})
+    assert WorkdayScraper.egress_fallback_on == frozenset({400, 429})
 
     seen: list[dict] = []
 
@@ -5462,7 +5467,46 @@ def test_workday_opts_into_the_spare_egress_on_429(monkeypatch):
     scraper = WorkdayScraper("https://micron.wd1.myworkdayjobs.com/External")
     scraper._post({}, 0)
     assert seen[-1]["egress_group"] == "workday"
-    assert seen[-1]["egress_on"] == frozenset({429})
+    assert seen[-1]["egress_on"] == frozenset({400, 429})
+
+
+def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
+    """The behaviour ADR-0102 buys: a settled 400 now turns the spare egress on.
+
+    Before it, `egress_fallback_on` held only 429, so the status behind 85-95% of Workday's
+    detail loss retried twice against the same penalised IP and never reached the escape hatch —
+    which is why ADR-0098's `400-throttle` counter sat at 0.93 of its 2S ceiling for ten runs
+    running. Driven through `http.fetch` with Workday's own two sets rather than by asserting the
+    constant, so it fails if the wiring stops matching the declaration.
+    """
+    from headstart.scrapers.workday import _RETRY_ON, WorkdayScraper
+
+    monkeypatch.setattr(
+        http.spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000"
+    )
+    calls: list[dict] = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                status_code=400 if len(calls) == 1 else 200, headers={}
+            )
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(http.time, "sleep", lambda *a: None)
+
+    response = http.fetch(
+        "GET",
+        "detail",
+        egress_group="workday",
+        egress_on=WorkdayScraper.egress_fallback_on,
+        retry_on=_RETRY_ON,
+    )
+    assert response.status_code == 200
+    assert "workday" in http.spare_egress.walled_groups()
+    # the first attempt goes direct (nothing known yet); the retry is the one that moves
+    assert [bool(c.get("proxies")) for c in calls] == [False, True]
 
 
 def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():

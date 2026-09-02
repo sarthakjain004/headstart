@@ -355,7 +355,30 @@ class WorkdayScraper(BaseScraper):
     #: that were never refused — it cannot fall, whether or not the fallback is working. This
     #: opt-in **stands**: it rests on the per-(source IP x instance host) table above, not on that
     #: rate. But do not read a high recovered rate as confirmation; only a per-Board outcome is.
-    egress_fallback_on = frozenset({429})
+    #:
+    #: **400 joins it (ADR-0102).** The 400 has been read as a throttle since ADR-0098, but only
+    #: the 429 could ever reach the escape hatch — so the status behind 85-95% of all detail loss
+    #: was the one status that could not turn the spare egress on, and ADR-0098's retry instead
+    #: spent two extra attempts against the same penalised IP. That is the whole reason its
+    #: measured recovery is nil (`400-throttle` at 0.93 of its 2S ceiling, 10 runs of 10).
+    #:
+    #: **Watch the rotation count on the first runs, and revert on it.** `http.fetch` uses this
+    #: one set for two jobs: `mark_walled` (once per process, cheap) and `_rotate_for`, which
+    #: fires on *every* refusal already riding the proxy. Settled 400s outrun settled 429s by
+    #: roughly 400:1, so this feeds a far larger stream into a rotation path that today produces
+    #: 1,340-1,508 rotations per run behind a 5s cooldown. If that figure climbs by an order of
+    #: magnitude, or scrape wall-clock does, this comes back out — a rotation storm would cost
+    #: more than the 400s do. The estimate is a projection from the 429 damping ratio, not a
+    #: measurement; the run is the measurement.
+    #:
+    #: Three call sites now carry a 400 in `egress_on` that their own `retry_on` omits — the
+    #: unpatient arm of `_resolve_instance`'s sweep, which ADR-0098 deliberately leaves unretried,
+    #: and `_page_detail`/`_page_detail_async`, which take `http.TRANSIENT`. `http.fetch` names
+    #: that case and allows it: such a request is *marked but not retried*, so it settles on the
+    #: wall it just reported while still sparing every later Board the same three attempts. That
+    #: is the wanted behaviour here — a 400 on the sweep is the throttle ADR-0098 identified, and
+    #: walling on it is the point — so the asymmetry is deliberate, not an oversight to tidy.
+    egress_fallback_on = frozenset({400, 429})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     # The ADR-0100 episode breaker's per-pass state (see _DETAIL_BREAK_STREAK). Class-level
     # defaults so a directly-driven detail call (tests, salary_sample.py) works on a fresh
