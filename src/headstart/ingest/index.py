@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Maintain the production ``jobs`` LanceDB table — the merge stage's three table steps.
+"""Maintain the production ``jobs`` LanceDB table — the merge stage's table steps.
 
 Stage 5 runs these back-to-back against the same table, so they live in one module (ADR-0028)::
 
     python -m headstart.ingest.index sync              # ADR-0014, ADR-0019
     python -m headstart.ingest.index prune [--apply]   # ADR-0023
     python -m headstart.ingest.index compact           # ADR-0020, ADR-0023
+    python -m headstart.ingest.index backfill-from-store [--apply]   # ADR-0104
+
+The first three are the merge stage's; **backfill-from-store** is not — like ``compact`` it is a
+whole-table rewrite the per-run storage budget cannot afford, so it runs from ``cleanup-index``.
 
 **sync** reconciles the table against the embedding store incrementally: fresh ids are the corpus
 ids that have a vector, and the scraped-Board set is taken from the *full* scrape
@@ -19,8 +23,9 @@ without a vector (non-English, or not yet embedded) are reported and skipped —
 --resume`` first to close that gap. Each row added is stamped ``first_seen`` with the run's time,
 which is when *we* indexed it rather than the company's ``posted_at``; sync adds the column to a
 table that predates it before writing (ADR-0031), and adds ``description`` (ADR-0104) the same
-way — filled for the rows it adds from the run's corpus; ``--backfill-descriptions`` fills the
-rows that predate it, off by default because it rewrites every row it fills. Sync reads the
+way — filled for the rows it adds from the run's corpus; ``--backfill-descriptions`` additionally
+fills rows that predate it, but only those this run's corpus carries text for, so it can never
+cover the table — ``backfill-from-store`` is what does that. Sync reads the
 liveness ledger too
 (``--ledger``), but only to name Boards the same way prune does (ADR-0049). It needs no keep-set
 guard of its own: a broken ledger degrades resolution on both sides of its scope comparison at
@@ -92,6 +97,7 @@ from headstart.ingest.index_plan import (
     read_unauthoritative_boards,
     resolve_board,
 )
+from headstart.ingest.update_descriptions import read_store
 from headstart.search import PROD_TABLE
 
 _log = log.get(__name__, __spec__)
@@ -102,6 +108,9 @@ _SCRAPED = (
     REPO_ROOT / "data" / "jobs"
 )  # full (pre-tech-filter) scrape — the true scraped-Board set
 _DB = REPO_ROOT / "data" / "lancedb"
+# The ADR-0050 description store: the only source that holds text for Jobs outside a single run's
+# corpus slice, and so the only one a whole-table backfill can read (ADR-0104).
+_DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 # Written by embed_plan, consumed here and by embed_merge (ADR-0050).
 _UPGRADES = PENDING_UPGRADES_PATH
@@ -548,7 +557,7 @@ def sync(args: argparse.Namespace) -> int:
 
     # And for the description text (ADR-0104). Existing rows get null — honest, and the shape the
     # Keyword filter's coverage disclaimer is built to report; `--backfill-descriptions` fills
-    # them from the corpus as a deliberate step, because it rewrites every row it fills.
+    # the ones this run's corpus reaches, and `backfill-from-store` the rest (ADR-0104).
     if _DESCRIPTION_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
         table.add_columns(_DESCRIPTION_FIELD)
@@ -748,6 +757,110 @@ def compact(args: argparse.Namespace) -> int:
     return 0
 
 
+def backfill_from_store(args: argparse.Namespace) -> int:
+    """Fill every null ``description`` in the served table from the ADR-0050 store (ADR-0104).
+
+    ``sync --backfill-descriptions`` cannot do this. It reads its text from the run's *corpus*,
+    which is that run's ~20,000-Board slice, so it fills only the slice's share and a row whose
+    Board sits out every run is never reached. This reads the store instead — every Job whose
+    description we hold, regardless of which run last scraped it — so one pass covers the table.
+
+    Deliberately **not** a stage of the 6-hourly run (ADR-0028), and shaped like :func:`compact`:
+    a whole-table rewrite is what the storage budget cannot afford per-run, so it lives here as a
+    subcommand and is invoked from ``cleanup-index``.
+
+    Two economies make it affordable at all. The store is read **one ATS at a time**, so only that
+    ATS's text is ever resident rather than all ~615k descriptions at once. And each row's vector
+    is taken from **the row itself**, not from the embedding store — which is what lets this run
+    without the ~1.5 GB embeddings download that :func:`_refresh_metadata` needs.
+
+    Dry-run by default, like :func:`prune`: it reports what it would fill and writes nothing until
+    ``--apply``. Rewriting a row costs its ~25 KB vector, so a full pass is a real, one-time spend.
+    """
+    table = lancedb.connect(args.db).open_table(PROD_TABLE)
+    if _DESCRIPTION_FIELD.name not in table.schema.names:
+        log.fail(
+            _log,
+            f"table '{PROD_TABLE}' has no `{_DESCRIPTION_FIELD.name}` column — run "
+            "`python -m headstart.ingest.index sync` once to add it first (ADR-0104)",
+        )
+    # `IS NULL` rather than scanning the column: selecting `description` to test it would pull
+    # every stored description into memory to learn which rows have none.
+    empty = f"{_DESCRIPTION_FIELD.name} IS NULL"
+    missing: dict[str, set[str]] = {}
+    for row in (
+        table.search()
+        .where(empty)
+        .select(["id"])
+        .limit(max(table.count_rows(filter=empty), 1))
+        .to_list()
+    ):
+        missing.setdefault(row["id"].split(":", 1)[0], set()).add(row["id"])
+    total = sum(len(ids) for ids in missing.values())
+    _log.info(
+        f"{total:,} row(s) of {table.count_rows():,} carry no description, "
+        f"across {len(missing)} ATS(es)"
+    )
+    if not total:
+        return 0
+
+    store = Path(args.store)
+    columns = list(table.schema.names)
+    filled = unheld = 0
+    for ats in sorted(missing):
+        ats_dir = store / ats
+        if not ats_dir.is_dir():
+            unheld += len(missing[ats])
+            _log.info(
+                f"{ats}: no store directory — {len(missing[ats]):,} row(s) left alone"
+            )
+            continue
+        # Filtered as it is read: `read_store` returns the whole ATS, and only the ids this table
+        # is actually missing are worth keeping resident.
+        texts = {
+            job_id: text
+            for job_id, text in read_store(ats_dir).items()
+            if job_id in missing[ats]
+        }
+        unheld += len(missing[ats]) - len(texts)
+        if not texts:
+            _log.info(
+                f"{ats}: store holds none of its {len(missing[ats]):,} missing row(s)"
+            )
+            continue
+        if not args.apply:
+            filled += len(texts)
+            _log.info(
+                f"{ats}: would fill {len(texts):,} of {len(missing[ats]):,} row(s) — dry run"
+            )
+            continue
+        ids = sorted(texts)
+        for start in range(0, len(ids), _ADD_CHUNK):
+            batch = ids[start : start + _ADD_CHUNK]
+            rows = (
+                table.search()
+                .where(in_predicate("id", batch))
+                .select(columns)
+                .limit(len(batch))
+                .to_list()
+            )
+            for row in rows:
+                row[_DESCRIPTION_FIELD.name] = texts[row["id"]]
+            apply_sync(table, rows, [row["id"] for row in rows], chunk=_ADD_CHUNK)
+            filled += len(rows)
+            # Per batch, not at the end: a whole-table pass is long, and a crash halfway through
+            # must leave a record of how far it got.
+            _log.info(
+                f"{ats}: filled {min(start + _ADD_CHUNK, len(ids)):,}/{len(ids):,}"
+            )
+
+    verb = "filled" if args.apply else "would fill"
+    _log.info(
+        f"done: {verb} {filled:,} row(s); {unheld:,} left null — the store holds no text for them"
+    )
+    return 0
+
+
 def main() -> int:
     log.setup()
     observability.context("index")
@@ -805,8 +918,9 @@ def main() -> int:
         "--backfill-descriptions",
         action="store_true",
         help="also rewrite rows whose description column is null but whose store meta says a "
-        "description exists, filling it from the corpus (ADR-0104). Off by default: it rewrites "
-        "every row it fills, ~690 MB across the table once, so it is a deliberate step",
+        "description exists, filling it from THIS RUN'S CORPUS (ADR-0104) — so it reaches only "
+        "the run's slice, never the whole table; `backfill-from-store` is the whole-table pass. "
+        "Off by default: it rewrites every row it fills",
     )
     p_sync.set_defaults(fn=sync)
 
@@ -827,6 +941,22 @@ def main() -> int:
     )
     _add_db(p_compact)
     p_compact.set_defaults(fn=compact)
+
+    p_backfill = sub.add_parser(
+        "backfill-from-store",
+        # NOT `backfill-descriptions`: `sync --backfill-descriptions` is a different mechanism
+        # reading a different source, and one name for both is the near-homograph CLAUDE.md §3
+        # names. The source is what separates them, so the source is in the name.
+        help="fill null descriptions from the ADR-0050 store (whole table, one-time)",
+    )
+    _add_db(p_backfill)
+    p_backfill.add_argument(
+        "--store", default=str(_DESCRIPTIONS), help="ADR-0050 description store dir"
+    )
+    p_backfill.add_argument(
+        "--apply", action="store_true", help="write; without it the pass is a dry run"
+    )
+    p_backfill.set_defaults(fn=backfill_from_store)
 
     args = ap.parse_args()
     return args.fn(args)

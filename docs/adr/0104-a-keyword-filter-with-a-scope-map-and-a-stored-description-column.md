@@ -88,8 +88,19 @@ it is taken **in stages**, not at once:
   flagged run would delete-and-re-add every null-description row (~25 KB of vector each) while
   filling only the slice's share. Candidates the corpus lacks are logged and left for a later
   run. So it rewrites every row it fills and only
-  those; turning it on is the deliberate step that spends the ≈690 MB, tracked as a GitHub issue
-  (see Consequences); the disclaimer below reports honestly-low coverage until it runs.
+  those; the disclaimer below reports honestly-low coverage until the whole table is covered.
+- **The whole-table pass is a separate subcommand**, `index backfill-from-store`. The flag above
+  cannot do that job and never could: it reads its text from the *corpus*, which is the run's
+  ~20,000-Board slice, so a row whose Board sits out every run is permanently unreachable from it.
+  The subcommand reads the ADR-0050 store instead — every Job whose description we hold, whichever
+  run last scraped it — so one pass covers the table. It is dry-run by default like `prune`, takes
+  each row's vector from **the row itself** rather than the embedding store (so it needs no ~1.5 GB
+  download), and reads the store one ATS at a time to bound memory. Like `compact` it is not a
+  stage of the 6-hourly run: it is invoked from `cleanup-index`, whose `backfill_from_store` input
+  gates it (and which the retry chain carries, or a re-dispatch would silently drop it). That job
+  already holds `data/lancedb` on disk; the step fetches `data/descriptions` itself. It is named
+  for its *source*, not `backfill-descriptions`, because `sync --backfill-descriptions` is a
+  different mechanism and one name for both is the near-homograph CLAUDE.md warns about.
 
 One trap the column introduces, fixed in the same change: `_refresh_metadata` compares every schema
 column against the embedding store's `meta.jsonl` and rewrites rows that differ. Meta carries only a
@@ -148,9 +159,9 @@ backfill runs; a static sentence would have said the same thing on both days.
   bracket, so saving or subscribing from a keyword search drops it. The request scoped the filter
   to the Search tab; carrying it into alerts is a separate decision.
 - `CONTEXT.md` gains **Keyword filter**, with the vocabulary to avoid.
-- The next `index sync` adds the column and starts filling new rows. `--backfill-descriptions` is
-  the switch for the rest — a decision, not a default, tracked in GitHub issue **#346**
-  ("Decide and run the one-time description backfill"): add the flag to `pipeline.yml`'s `index
-  sync` step for one run (or run it from `cleanup-index`) when the storage cost is accepted, then
-  remove it; watch the dataset's *live* size line across the runs that follow and the
-  `N of them to backfill a description` log line for how many rows each run touched.
+- The next `index sync` adds the column and starts filling new rows. The rest are covered by
+  `index backfill-from-store`, run once from `cleanup-index` with its `backfill_from_store`
+  input set — a decision, not a default, tracked in GitHub issue **#346**. Watch the dataset's
+  *live* size line across the runs that follow. The step is placed before `compact` deliberately:
+  the rewrite is delete-then-add and leaves a deletion file per touched fragment, and `compact` is
+  what reclaims them.
