@@ -15,6 +15,16 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
 
 
+def _raises(exc):
+    """A ``raise_for_status`` stand-in that raises ``exc`` — for faking a non-2xx response whose
+    ``raise_for_status()`` would raise, which a lambda cannot express."""
+
+    def _fn():
+        raise exc
+
+    return _fn
+
+
 def _load(name):
     with open(FIXTURES / name, encoding="utf-8") as f:
         return json.load(f)
@@ -5592,6 +5602,89 @@ def test_workday_detail_400_that_survives_the_cookie_reset_is_a_loss(monkeypatch
     assert session.cookies.cleared == 1  # cleared once — not a loop
     assert classes["HTTP 400"] == 1
     assert _COOKIE_RECOVERED not in classes
+
+
+def test_workday_listing_400_clears_the_session_cookie_and_recovers(monkeypatch):
+    """ADR-0103 extended to the listing pass: a long pagination outlives its session's cookie and
+    every page after 400s, marking the whole Board unauthoritative (measured 188 such 400s in the
+    first post-fix run, on ghr/verisure/umiami/...). `_post`/`_post_async` clear the jar and
+    refetch once, exactly as the detail pass does. Runs the async mid-crawl path with a fake
+    session whose jar, once cleared, makes the page answer 200."""
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    page = {"jobPostings": [{"externalPath": "/job/x/A_1"}], "total": 20}
+
+    class _Cookies:
+        def __init__(self):
+            self.cleared = 0
+
+        def clear(self):
+            self.cleared += 1
+
+    class _Session:
+        def __init__(self):
+            self.cookies = _Cookies()
+
+    session = _Session()
+
+    async def fake_fetch_async(sess, method, url, **kw):
+        if sess.cookies.cleared == 0:  # poisoned until the jar is cleared
+            return SimpleNamespace(
+                status_code=400,
+                json=dict,
+                raise_for_status=_raises(http.RequestsError("400")),
+            )
+        return SimpleNamespace(
+            status_code=200, json=lambda: page, raise_for_status=lambda: None
+        )
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    out = asyncio.run(scraper._post_async(session, {}, 20))
+
+    assert out == page  # the page was recovered, not raised as a board error
+    assert session.cookies.cleared == 1  # cleared once
+
+
+def test_workday_listing_400_that_persists_still_raises(monkeypatch):
+    """One refetch, not a loop: a listing 400 that survives the cookie clear raises like any other
+    page error (the caller records it, `_paginate` marks the Board unauthoritative) — the reset
+    only ever adds one attempt."""
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    class _Cookies:
+        def __init__(self):
+            self.cleared = 0
+
+        def clear(self):
+            self.cleared += 1
+
+    class _Session:
+        def __init__(self):
+            self.cookies = _Cookies()
+
+    session = _Session()
+
+    async def always_400(sess, method, url, **kw):
+        return SimpleNamespace(
+            status_code=400,
+            json=dict,
+            raise_for_status=_raises(http.RequestsError("400")),
+        )
+
+    monkeypatch.setattr(http, "fetch_async", always_400)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    with pytest.raises(http.RequestsError):
+        asyncio.run(scraper._post_async(session, {}, 20))
+    assert session.cookies.cleared == 1  # cleared once — not a loop
 
 
 def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():

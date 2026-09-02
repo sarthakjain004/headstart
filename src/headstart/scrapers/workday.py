@@ -495,6 +495,22 @@ class WorkdayScraper(BaseScraper):
             timeout=30,
             **self._egress(),
         )
+        if response.status_code == 400:
+            # The same stale session cookie the detail pass hits (ADR-0103), on the listing:
+            # a long pagination outlives the cookie its pooled session picked up, and every page
+            # after 400s. Clear the jar and refetch once — where the pre-ADR-0103 retry re-sent
+            # the dead cookie. No recovery counter here: a recovered page simply succeeds, so the
+            # measure is the drop in `_paginate`'s "page(s) failed mid-crawl (HTTP 400)" line, and
+            # a page that 400s again after the clear raises below exactly as it did before.
+            http.session().cookies.clear()
+            response = http.fetch(
+                "POST",
+                self.url(),
+                json=body,
+                headers=headers,
+                timeout=30,
+                **self._egress(),
+            )
         if response.status_code == 404 and not raise_gone:
             return None  # one page of a live board — the caller reports the gap
         response.raise_for_status()
@@ -527,6 +543,20 @@ class WorkdayScraper(BaseScraper):
             timeout=30,
             **self._egress(),
         )
+        if response.status_code == 400:
+            # A stale session cookie (ADR-0103), same as the sync `_post` — cleared and refetched
+            # once. The synchronous clear cannot interleave with another page on this loop, and
+            # concurrent 400s each clear then converge (the first clear heals the shared jar).
+            session.cookies.clear()
+            response = await http.fetch_async(
+                session,
+                "POST",
+                self.url(),
+                json=body,
+                headers=headers,
+                timeout=30,
+                **self._egress(),
+            )
         if response.status_code == 404:
             return None  # one page of a live board — the caller reports the gap
         response.raise_for_status()
