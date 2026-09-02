@@ -355,7 +355,42 @@ class WorkdayScraper(BaseScraper):
     #: that were never refused — it cannot fall, whether or not the fallback is working. This
     #: opt-in **stands**: it rests on the per-(source IP x instance host) table above, not on that
     #: rate. But do not read a high recovered rate as confirmation; only a per-Board outcome is.
-    egress_fallback_on = frozenset({429})
+    #:
+    #: **400 joins it (ADR-0102).** The 400 has been read as a throttle since ADR-0098, but only
+    #: the 429 could ever reach the escape hatch — so the status behind 83-95% of all detail loss
+    #: was the one status that could not turn the spare egress on, and ADR-0098's retry instead
+    #: spent two extra attempts against the same penalised IP. That is the whole reason its
+    #: measured recovery is nil (`400-throttle` at 0.93 of its 2S ceiling, 10 runs of 10).
+    #:
+    #: **Watch the rotation count on the first runs, and revert on it.** This one set has three
+    #: consumers: `mark_walled` (once per process, cheap), `_rotate_for` (every refusal already
+    #: riding the proxy), and `spare_egress.stream_width`, which narrows a walled group's fan-out
+    #: to 12. The last changes nothing in practice — Workday already walls on a 429 in all 15
+    #: shards of every run, so the width is 12 today; this only moves *when* the wall lands.
+    #:
+    #: The rotation path is the one to watch, sized off the shard logs' own
+    #: `spare egress rotations: attempted A, succeeded S, throttled T` line rather than off a
+    #: retry count (which is process-wide across every ATS, so it is not what reaches
+    #: `_rotate_for`). Over the ten runs `33548262185`..`33590621111`: 159,449 `rotate()` calls,
+    #: of which only 15,182 actually rotated — **90% queued behind the 5s cooldown**. Rotations
+    #: are serialised by that gate, so admitting ~4x the callers cannot restart `warp-svc` ~4x
+    #: more often; what it mostly buys is aggregate *waiting*, concurrent within a shard.
+    #:
+    #: Watch run wall-clock against the 51-73 min those ten runs recorded, and the scrape stage
+    #: against its own 22.0-36.8 min (the run figure covers every stage; the scrape one is what
+    #: this can actually move). And watch
+    #: `succeeded` (~1,518/run today) — if it climbs toward its call volume the cooldown has
+    #: stopped binding and the demand model applies after all. Revert this, or split
+    #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), on either signal.
+    #:
+    #: Three call sites now carry a 400 in `egress_on` that their own `retry_on` omits — the
+    #: unpatient arm of `_resolve_instance`'s sweep, which ADR-0098 deliberately leaves unretried,
+    #: and `_page_detail`/`_page_detail_async`, which take `http.TRANSIENT`. `http.fetch` names
+    #: that case and allows it: such a request is *marked but not retried*, so it settles on the
+    #: wall it just reported while still sparing every later Board the same three attempts. That
+    #: is the wanted behaviour here — a 400 on the sweep is the throttle ADR-0098 identified, and
+    #: walling on it is the point — so the asymmetry is deliberate, not an oversight to tidy.
+    egress_fallback_on = frozenset({400, 429})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     # The ADR-0100 episode breaker's per-pass state (see _DETAIL_BREAK_STREAK). Class-level
     # defaults so a directly-driven detail call (tests, salary_sample.py) works on a fresh

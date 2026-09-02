@@ -17,7 +17,7 @@ falls back to for any board it hasn't measured yet (ADR-0026) — an ATS whose m
 every unmeasured board of that ATS's predicted cost on the next plan, not just the boards actually
 re-timed this run.
 
-**`gap`** — `R stored rows | S settled | U unsettled across B boards (D on a disabled ATS, X gone
+**`gap`** — `R stored rows | H held | U unsettled across B boards (D on a disabled ATS, X gone
 from a Board this run scraped in full — both unreachable)`, then the top-10 boards by backlog. This
 is the ADR-0050 description-store backlog: `unreachable` ids can never settle (wrong ATS, or the
 Board's own authoritative scrape already re-emitted a shorter list that dropped them, #185) and are
@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 
-from run_logs import Run, common_args, runs_from
+from run_logs import Run, common_args, runs_from, warn_if_unparsed
 
 PRIORITY_HEADER = re.compile(
     r"\[update_ledgers\] priority: (\d+) boards in snapshot \| (\d+) ledger rows "
@@ -48,8 +48,11 @@ COST_HEADER = re.compile(
     r"(\d+) ledger rows \((\d+) new\) \| Σ (\d+) board-minutes"
 )
 COST_MEDIAN = re.compile(r"\[update_ledgers\]\s+([\d.]+)s median\s+(\S+)")
+# `held`, not `settled`: the emitter's wording moved and this pattern did not, so every run
+# printed "no gap summary line found" while the line was right there. That reads as "the stage
+# emitted nothing", which is the opposite of the truth — see `run_logs.warn_if_unparsed`.
 GAP_HEADER = re.compile(
-    r"\[update_ledgers\] gap: ([\d,]+) stored rows \| ([\d,]+) settled \| "
+    r"\[update_ledgers\] gap: ([\d,]+) stored rows \| ([\d,]+) held \| "
     r"([\d,]+) unsettled across ([\d,]+) boards \(([\d,]+) on a disabled ATS, "
     r"([\d,]+) gone from a Board this run scraped in full"
 )
@@ -95,9 +98,9 @@ def report(run: Run) -> None:
     print("-- gap (description-store backlog, ADR-0050) --", flush=True)
     gh = GAP_HEADER.search(text)
     if gh:
-        stored, settled, unsettled, boards, disabled, expired = gh.groups()
+        stored, held, unsettled, boards, disabled, expired = gh.groups()
         print(
-            f"  {stored} stored | {settled} settled | {unsettled} unsettled across "
+            f"  {stored} stored | {held} held | {unsettled} unsettled across "
             f"{boards} boards ({disabled} on a disabled ATS, {expired} expired-unreachable "
             "— both excluded from the unsettled count)",
             flush=True,
@@ -112,8 +115,13 @@ def report(run: Run) -> None:
             "not that the store is genuinely empty; the ledger was left as-is",
             flush=True,
         )
-    else:
-        print("  no gap summary line found", flush=True)
+    # `gh` is falsy on this branch by construction; passing it rather than a literal keeps the
+    # guard reading the same parse result the branch above tested.
+    elif not warn_if_unparsed(text, "[update_ledgers] gap:", gh, "update_ledgers gap"):
+        print(
+            "  gap did not run this run — no `[update_ledgers] gap:` line at all",
+            flush=True,
+        )
 
 
 def main() -> None:

@@ -200,6 +200,31 @@ class Run:
         return seen
 
 
+def warn_if_unparsed(text: str, marker: str, parsed: object, what: str) -> bool:
+    """Say so loudly when a stage plainly ran but its detail lines parsed to nothing.
+
+    Returns True when it warned. These analysers exist so an investigation reads one number
+    instead of reconstructing it from fifteen shard logs, which makes a silently-empty result the
+    worst thing they can do: a table of zeros reads as "the stage did nothing", and a run has
+    already been reported on that way. Two patterns drifted out from under their emitters and
+    neither said a word — `update_descriptions` lost the ``settled N as having none`` clause to
+    ADR-0089, and `update_ledgers gap` renamed ``settled`` to ``held``.
+
+    ``marker`` is a string that appears whenever the stage ran at all, so its presence separates
+    "the emitter changed its wording" from "this run genuinely had none" — which is why the check
+    cannot just be ``if not parsed``.
+    """
+    if parsed or marker not in text:
+        return False
+    print(
+        f"  !! {what}: the stage logged lines but none matched this tool's pattern — the "
+        f"emitter's wording has moved. Treat the numbers above as MISSING, not as zero; "
+        f"grep {marker!r} in the raw log and fix the pattern.",
+        flush=True,
+    )
+    return True
+
+
 def common_args(description: str) -> argparse.ArgumentParser:
     """The argument surface every analyser in this package shares."""
     ap = argparse.ArgumentParser(description=description)
