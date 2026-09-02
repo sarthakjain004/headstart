@@ -48,6 +48,23 @@ Three consequences follow directly, and the first two are the important ones:
 
       poisoned=400   retry-with-same-cookie=400   after-cookies-cleared=200
 
+## The listing pass has it too — measured, not inferred
+
+The first post-fix run (`33619175438`) left 188 residual 400s, every one on the **listing**
+pagination (`page(s) failed mid-crawl`), which the detail-pass fix did not touch. Rather than
+assume the same mechanism from the status alone, the tamper test above was repeated against the
+listing `POST .../jobs` endpoint on `ghr/us-emplsv`:
+
+| listing POST | result |
+|---|---|
+| warm session | 200 |
+| `PLAY_SESSION` tampered | **400**, no `cf-mitigated`, body `"Session cookie is invalid. Please clear your cookies and try again."` |
+| cookies cleared | 200 |
+
+Same actor, same body, same recovery. The listing reset (`_post`/`_post_async`) is the same fix
+on the other pass; its measure is the drop in the two places a persisting listing 400 still
+surfaces — `_paginate`'s mid-crawl page-failure line, and a first-page raise out of `_exhaust`.
+
 ## What this explains
 
 - **ADR-0098's retry recovers nothing** — measured at ratio 0.93 of its 2S ceiling across ten
