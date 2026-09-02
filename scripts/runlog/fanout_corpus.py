@@ -14,8 +14,8 @@ is not automatically good news — it can mean the gate is admitting more non-te
 issue #186 tracks. Compare kept% per ATS against its own history, not against other ATSes, whose
 board mixes differ wildly.
 
-**`update_descriptions`** — `filled N from the store, learned N, settled N as having none, queued N
-to re-derive` per ATS (ADR-0050). `filled` is the store paying off: descriptions recovered without
+**`update_descriptions`** — `filled N from the store, learned N, queued N to re-derive` per ATS
+(ADR-0050; the `settled N as having none` clause this once also read was removed by ADR-0089). `filled` is the store paying off: descriptions recovered without
 refetching. `learned` is new text banked this run. `queued` is the re-derive backlog. A large
 `queued` against a small `learned` means the store is losing ground.
 
@@ -33,15 +33,19 @@ from __future__ import annotations
 
 import re
 
-from run_logs import Run, common_args, runs_from
+from run_logs import Run, common_args, runs_from, warn_if_unparsed
 
 ATS_LINES = re.compile(r"\[scrape_join\] (\w+)\.jsonl: (\d+) lines from (\d+) shard")
 JOIN_TOTAL = re.compile(r"\[scrape_join\] wrote (\d+) lines across (\d+) ATS files")
 TECH = re.compile(r"\[filter_tech\] (\w+)\s+(\d+)\s+(\d+)\s+([\d.]+)%")
 TECH_TOTAL = re.compile(r"\[filter_tech\] TOTAL\s+(\d+)\s+(\d+)\s+([\d.]+)%")
+# No `settled N as having none` clause: ADR-0089 removed that fact (the `detail_fetched` flag it
+# was gated on is wrong on live data), and this pattern kept requiring it — so it matched nothing
+# and every ATS printed filled/learned/queued as 0 while the log said `workday: filled 6,012`.
+# Silent zeros, for every run built after that ADR. `_require` below is the guard against a repeat.
 DESC = re.compile(
     r"\[update_descriptions\] (\w+): filled ([\d,]+) from the store, learned ([\d,]+), "
-    r"settled ([\d,]+) as having none, queued ([\d,]+) to re-derive"
+    r"queued ([\d,]+) to re-derive"
 )
 STORE = re.compile(
     r"\[update_descriptions\] prior store: ([\d,]+) already-embedded ids"
@@ -108,12 +112,16 @@ def report(run: Run) -> None:
     )
     for a in names:
         kept, _total, pct = tech.get(a, (0, 0, 0.0))
-        filled, learned, _settled, queued = desc.get(a, (0, 0, 0, 0))
+        filled, learned, queued = desc.get(a, (0, 0, 0))
         print(
             f"{a:18}{scraped.get(a, 0):>10,}{kept:>9,}{pct:>7.1f}"
             f"{filled:>10,}{learned:>9,}{queued:>8,}",
             flush=True,
         )
+
+    warn_if_unparsed(
+        text, "[update_descriptions] ", desc, "update_descriptions per-ATS"
+    )
 
     jt = JOIN_TOTAL.search(text)
     tt = TECH_TOTAL.search(text)
@@ -121,7 +129,7 @@ def report(run: Run) -> None:
         print(
             f"{'TOTAL':18}{int(jt.group(1)):>10,}{int(tt.group(1)):>9,}{float(tt.group(3)):>7.1f}"
             f"{sum(d[0] for d in desc.values()):>10,}{sum(d[1] for d in desc.values()):>9,}"
-            f"{sum(d[3] for d in desc.values()):>8,}",
+            f"{sum(d[2] for d in desc.values()):>8,}",
             flush=True,
         )
     store, skip = STORE.search(text), SKIP.search(text)
