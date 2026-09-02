@@ -65,10 +65,19 @@ def _write_store(store: Path, ids: list[str]) -> None:
     (store / "manifest.json").write_text(json.dumps({"dim": _DIM}), encoding="utf-8")
 
 
-def _write_corpus(source: Path, ids: list[str]) -> None:
+def _write_corpus(
+    source: Path, ids: list[str], descriptions: dict[str, str] | None = None
+) -> None:
+    """The corpus rows sync reads — with, since ADR-0104, the description text
+    `update_descriptions` filled into them, which is where the served column is sourced from."""
     source.mkdir(parents=True, exist_ok=True)
     (source / "greenhouse.jsonl").write_text(
-        "".join(json.dumps({"id": job_id}) + "\n" for job_id in ids), encoding="utf-8"
+        "".join(
+            json.dumps({"id": job_id, "description": (descriptions or {}).get(job_id)})
+            + "\n"
+            for job_id in ids
+        ),
+        encoding="utf-8",
     )
 
 
@@ -86,6 +95,8 @@ def _sync(
     ids: list[str],
     upgrades: list[str] | None = None,
     meta_over: dict | None = None,
+    descriptions: dict[str, str] | None = None,
+    backfill: bool = False,
 ) -> int:
     """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree.
 
@@ -102,7 +113,7 @@ def _sync(
         for row in rows:
             row.update(meta_over)
         path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-    _write_corpus(source, ids)
+    _write_corpus(source, ids, descriptions)
     monkeypatch.setattr(idx, "_STORE", store)
     # An empty ledger dir: no live Boards, so board resolution falls back to `board_of` — the
     # rule these tests were written against, and what a first run genuinely sees.
@@ -125,6 +136,7 @@ def _sync(
             # reads as an empty set — so a first absence is withheld here exactly as it would be
             # in a real cold start. Tests that need an eviction to land run sync twice.
             unconfirmed=str(tmp_path / "unconfirmed_ids.txt"),
+            backfill_descriptions=backfill,
         )
     )
 
@@ -347,6 +359,103 @@ def test_sync_refresh_writes_nothing_when_the_table_already_matches(
     caplog.set_level("INFO")
     _sync(tmp_path, monkeypatch, ids)
     assert any("already matches the store" in r.getMessage() for r in caplog.records)
+
+
+# ---- the description column (ADR-0104) ----
+
+
+def _descriptions(tmp_path: Path) -> dict[str, str | None]:
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    return {r["id"]: r["description"] for r in table.search().limit(100).to_list()}
+
+
+def test_an_added_row_carries_its_corpus_description(tmp_path, monkeypatch):
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ["greenhouse:a:1", "greenhouse:a:2"],
+        descriptions={"greenhouse:a:1": "We run Kubernetes on AWS."},
+    )
+    got = _descriptions(tmp_path)
+    assert got["greenhouse:a:1"] == "We run Kubernetes on AWS."
+    assert got["greenhouse:a:2"] is None  # no text in the corpus -> null, never ""
+
+
+def test_sync_adds_the_description_column_to_a_table_that_predates_it(
+    tmp_path, monkeypatch
+):
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    db = lancedb.connect(str(tmp_path / "db"))
+    table = db.open_table(idx.PROD_TABLE)
+    table.drop_columns(["description"])  # a table frozen before ADR-0104
+    assert "description" not in db.open_table(idx.PROD_TABLE).schema.names
+    assert (
+        _sync(
+            tmp_path,
+            monkeypatch,
+            ["greenhouse:a:1", "greenhouse:a:2"],
+            descriptions={"greenhouse:a:2": "Rust services."},
+        )
+        == 0
+    )
+    got = _descriptions(tmp_path)
+    assert got["greenhouse:a:1"] is None  # pre-existing row: null, honest
+    assert got["greenhouse:a:2"] == "Rust services."
+
+
+def test_refresh_carries_the_description_across_and_never_clobbers_it(
+    tmp_path, monkeypatch
+):
+    """The trap the ADR names: meta holds no text, so a compared column would read stale on every
+    row and be rewritten to null each run. A metadata refresh must keep what the row had."""
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "Go and gRPC."})
+    # The store's meta moves (an update_meta correction); the corpus this run carries NO text.
+    _sync(tmp_path, monkeypatch, ids, meta_over={"min_years": 3})
+    assert _descriptions(tmp_path)["greenhouse:a:1"] == "Go and gRPC."
+
+
+def test_refresh_fills_a_null_description_on_a_row_it_rewrites_anyway(
+    tmp_path, monkeypatch
+):
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids)  # indexed without text
+    assert _descriptions(tmp_path)["greenhouse:a:1"] is None
+    # Meta moved AND the corpus now carries text: the rewrite that was happening anyway fills it.
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ids,
+        meta_over={"min_years": 3},
+        descriptions={"greenhouse:a:1": "Now with a description."},
+    )
+    assert _descriptions(tmp_path)["greenhouse:a:1"] == "Now with a description."
+
+
+def test_a_null_description_alone_is_not_a_reason_to_rewrite_unless_backfilling(
+    tmp_path, monkeypatch, caplog
+):
+    ids = ["greenhouse:a:1"]
+    _sync(tmp_path, monkeypatch, ids)
+    caplog.set_level("INFO")
+    # Text available, meta unchanged, backfill OFF: nothing is rewritten — the +690 MB is a
+    # deliberate step, not a side effect of an ordinary run.
+    _sync(tmp_path, monkeypatch, ids, descriptions={"greenhouse:a:1": "text"})
+    assert any("already matches the store" in r.getMessage() for r in caplog.records)
+    assert _descriptions(tmp_path)["greenhouse:a:1"] is None
+    # Backfill ON: filled, and the log says how many rows were rewritten for that reason.
+    caplog.clear()
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ids,
+        descriptions={"greenhouse:a:1": "text"},
+        backfill=True,
+    )
+    assert _descriptions(tmp_path)["greenhouse:a:1"] == "text"
+    assert any(
+        "1 of them to backfill a description" in r.getMessage() for r in caplog.records
+    )
 
 
 def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):

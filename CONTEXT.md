@@ -200,6 +200,10 @@ _Avoid_: offset, cursor — `offset` is the mechanism `page` compiles to, not th
 **Search filter**:
 A structured constraint the user sets themselves on the **Search index** — remote, employment type, `min_years`, recency — compiled into a deterministic where-clause that runs *before* ranking. A **Subscription** carries a set of these, and they are the only kind of filter left: the retired keyword bot's per-Subscriber `Filter` over the **Feed** went with it (ADR-0038).
 
+**Keyword filter** (ADR-0104):
+A **Search filter** that requires a typed keyword to appear, as a case-insensitive substring, in one of the served text columns its *scope* names — `title`, `description`, or both (`headstart.search.KEYWORD_SCOPES`; a new scope is one map entry). Several words are AND'd: each must appear somewhere in the scope. It narrows, the **Query** ranks — the two are independent controls. The description scope reaches only Jobs whose description is *stored* in the served table, which none indexed before the column existed are, so the UI carries a quantified disclaimer (rows with a description ÷ rows matching the filters, both decided by the where-clause like every **Facet**).
+_Avoid_: keyword search, keyword query — it is a filter and compiles to a deterministic where-clause; calling it a search or a Query suggests it ranks, which it never does. _Avoid_: whole-word or exact match — it is substring, deliberately (ADR-0104 records why).
+
 **Résumé**:
 Text a user pastes or uploads to have their **Profile** extracted from it. The document itself is never stored or logged — it is read once by the extraction call and discarded; the **Profile** is the only thing that survives, and contact details are never part of it (ADR-0041, which superseded the earlier "nothing survives at all" rule).
 _Avoid_: CV. And keep it apart from **Profile** — the Résumé is the transient input, the Profile is the stored extraction.

@@ -56,6 +56,9 @@ def _kwargs(**overrides):
         "seen_after": None,
         "seen_before": None,
         "first_seen_after": None,
+        "kw": None,
+        "kw_in": None,
+        "has_description": True,
         "atses": ["greenhouse", "lever"],
         "currencies": ["USD"],
         "has_first_seen": True,
@@ -185,6 +188,41 @@ def test_the_runtime_facts_of_the_index_are_never_offered_as_droppable():
 def test_the_salary_facet_stays_dark_without_the_salary_columns():
     out = facets.counts(_CountingTable(), _kwargs(has_min_salary_annual=False))
     assert "has_salary" not in out["facets"]
+
+
+# ---- the Keyword filter's disclaimer (ADR-0104) ----
+
+
+def test_description_coverage_is_counted_from_the_same_filters_as_the_total():
+    table = _CountingTable()
+    out = facets.counts(table, _kwargs(remote=True, kw="rust", kw_in="description"))
+    # the total's own clause, narrowed to rows with a description — nothing else lifted
+    expected = build_filter(**_kwargs(remote=True, kw="rust", kw_in="description"))
+    assert f"({expected}) AND description IS NOT NULL" in table.seen
+    assert out["description_coverage"] == 42
+
+
+def test_description_coverage_is_null_not_zero_without_the_column():
+    table = _CountingTable()
+    out = facets.counts(table, _kwargs(has_description=False))
+    assert out["description_coverage"] is None
+    assert not any(w and "description IS NOT NULL" in w for w in table.seen)
+
+
+def test_description_coverage_with_no_filters_is_a_bare_not_null_count():
+    table = _CountingTable()
+    facets.counts(table, _kwargs())
+    assert "description IS NOT NULL" in table.seen
+
+
+def test_a_keyword_can_be_named_as_the_blocker_but_its_scope_never_can():
+    # Everything matches until the keyword is applied; dropping it recovers 100.
+    def rule(where):
+        return 0 if where and "LIKE '%rust%'" in where else 100
+
+    out = facets.counts(_CountingTable(rule), _kwargs(kw="rust", kw_in="title"))
+    assert out["total"] == 0
+    assert out["blocking"] == "kw"
 
 
 def test_every_option_carries_what_the_ui_needs_to_draw_it():

@@ -145,6 +145,16 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     counted = [(d, v, lbl, where_for(**ov)) for d, v, lbl, ov in plan]
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         totals = pool.submit(_count, table, where_for())
+        # The Keyword filter's disclaimer (ADR-0104): how many of the rows matching these filters
+        # carry a description at all. Not a facet — there is no option to pick — but the same
+        # rule applies: it is decided by the where-clause alone, so it rides this pool. None
+        # while the column does not exist yet, which the UI reads as "not available", distinct
+        # from a genuine zero.
+        coverage = (
+            pool.submit(_count, table, _with_description(where_for()))
+            if base.get("has_description")
+            else None
+        )
         results = list(pool.map(lambda c: _count(table, c[3]), counted))
 
     facets: dict[str, list[dict[str, Any]]] = {}
@@ -154,7 +164,19 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     total = totals.result()
-    return {"total": total, "facets": facets, "blocking": _blocking(table, base, total)}
+    return {
+        "total": total,
+        "facets": facets,
+        "blocking": _blocking(table, base, total),
+        "description_coverage": coverage.result() if coverage else None,
+    }
+
+
+def _with_description(where: str | None) -> str:
+    """The current filters, narrowed to rows whose description is stored."""
+    return (
+        f"({where}) AND description IS NOT NULL" if where else "description IS NOT NULL"
+    )
 
 
 def _count(table: Any, where: str | None) -> int:
@@ -184,7 +206,11 @@ def _blocking(table: Any, base: Mapping[str, Any], total: int) -> str | None:
             "currencies",
             "has_first_seen",
             "has_min_salary_annual",
+            "has_description",
             "posted_sortable",
+            # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a
+            # keyword, and with one it is the `kw` entry that would be named.
+            "kw_in",
         )
         # `is`, not `in (None, False, "")`: `max_years=0` is the Entry-level filter and a real
         # constraint, but `0 == False` in Python, so a membership test silently calls it unset

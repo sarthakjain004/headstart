@@ -858,6 +858,8 @@ def index():
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
+        # the Keyword filter's description scope (ADR-0104) — disabled until the column exists
+        has_description=_searcher.has_description,
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
         currencies=_searcher.currencies,
