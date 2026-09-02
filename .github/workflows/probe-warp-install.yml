@@ -44,7 +44,20 @@ permissions:
   contents: read
 
 jobs:
+  # The boundary every replica waits for, computed ONCE. Computing it per job (as the first
+  # revision did) anchors it to that job's own start minute, and runners do not start together:
+  # run 33655685771 spread its 30 jobs over FIVE boundaries, so the arms never shared the
+  # contention window the comparison claims. One output, read by all 30.
+  anchor:
+    runs-on: ubuntu-24.04
+    outputs:
+      release_at: ${{ steps.t.outputs.release_at }}
+    steps:
+      - id: t
+        run: echo "release_at=$(( $(date +%s) + 180 ))" >> "$GITHUB_OUTPUT"
+
   probe:
+    needs: anchor
     runs-on: ubuntu-24.04          # pinned: production's runner, not a moving `latest`
     timeout-minutes: 20
     strategy:
@@ -58,9 +71,10 @@ jobs:
         # only appears under contention, and runners do not start simultaneously. Without this the
         # arms trickle and measure an idle host. Both arms release on the same boundary, so they
         # share one contention window rather than two.
+        env:
+          RELEASE_AT: ${{ needs.anchor.outputs.release_at }}
         run: |
-          target=$(( $(date +%s) / 60 * 60 + 120 ))
-          while [ "$(date +%s)" -lt "$target" ]; do sleep 1; done
+          while [ "$(date +%s)" -lt "$RELEASE_AT" ]; do sleep 1; done
           echo "released at $(date -u +%T)"
 
       - name: Build the GUI dependency stubs (${{ matrix.arm }})
@@ -102,9 +116,14 @@ jobs:
           # `$SECONDS`, not `date` arithmetic: `bc` is not installed on the runner image, and a
           # `$(... | bc)` that silently yields "" would print a well-formed `0.0` and quietly
           # destroy the only timing this probe collects.
+          # `|| rc=$?`, never a bare call: GitHub runs `run:` under `bash -e`, so a stub failure
+          # would abort the step before the PROBE line — losing the measurement in exactly the
+          # case this probe exists to measure. Seen on the first dispatch (run 33655685771,
+          # replica 5 of the equivs arm): the control reproduced the 60.0 s ceiling and reported
+          # nothing but a red step.
+          rc=0
           start=$SECONDS
-          if [ "$ARM" = dpkgdeb ]; then stub_dpkgdeb; else stub_equivs; fi
-          rc=$?
+          if [ "$ARM" = dpkgdeb ]; then stub_dpkgdeb || rc=$?; else stub_equivs || rc=$?; fi
           secs=$(( SECONDS - start ))
           # Parity with production, which runs this after a failed stub for a measured reason: a
           # `timeout`-killed apt-get leaves dpkg mid-transaction and fails every later apt-get in
@@ -116,6 +135,7 @@ jobs:
       - name: What the install would fetch, then install it
         run: |
           set -x
+          set -o pipefail
           curl -fsSL --max-time 15 --retry 1 --retry-delay 2 \
             https://pkg.cloudflareclient.com/pubkey.gpg \
             | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
@@ -127,8 +147,14 @@ jobs:
             -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
           # The deterministic verdict, from 0b3e96b: what the install would fetch, before it does.
           uris=$(apt-get install --print-uris -y -qq cloudflare-warp 2>/dev/null || true)
-          bytes=$(printf '%s\n' "$uris" | grep -oE '[0-9]+ (MD5|SHA)' | grep -oE '^[0-9]+' | awk '{s+=$1} END {print s+0}')
-          files=$(printf '%s\n' "$uris" | grep -cE '^.https?://' || true)
+          # `|| bytes=0`: with `pipefail` under GitHub's `bash -e`, an empty `$uris` makes the
+          # first `grep` exit 1 and the assignment abort the whole step — losing every column
+          # below it in precisely the run where the install found nothing to fetch.
+          bytes=$(printf '%s\n' "$uris" | grep -oE '[0-9]+ (MD5|SHA)' | grep -oE '^[0-9]+' | awk '{s+=$1} END {print s+0}') || bytes=0
+          # One line per package. NOT a URL-scheme match: this runner resolves Ubuntu packages
+          # through `mirror+file:/etc/apt/apt-mirrors.txt/...`, which has no scheme, so matching on
+          # the scheme counted 1 of 5 in run 33655685771. The checksum tag is on every line.
+          files=$(printf '%s\n' "$uris" | grep -cE '(MD5Sum|SHA256|SHA512):' || true)
           echo "PROBE arm=${{ matrix.arm }} replica=${{ matrix.replica }} fetch_mb=$(( bytes / 1048576 )) files=$files"
           # Unbounded on purpose, exactly as 0b3e96b had it: the point is to measure how long the
           # install really takes, not to reproduce production's truncation of it.
@@ -137,7 +163,9 @@ jobs:
             -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
             cloudflare-warp && rc=0 || rc=$?
           echo "PROBE arm=${{ matrix.arm }} replica=${{ matrix.replica }} install_secs=$(( SECONDS - start )) install_rc=$rc"
-          apt-get check >/dev/null 2>&1 \
+          # `sudo`: unprivileged `apt-get check` reported NO on all 30 replicas of run
+          # 33655685771, on the shipped control arm too, so it was measuring permissions.
+          sudo apt-get check >/dev/null 2>&1 \
             && echo "PROBE arm=${{ matrix.arm }} replica=${{ matrix.replica }} apt_consistent=yes" \
             || echo "PROBE arm=${{ matrix.arm }} replica=${{ matrix.replica }} apt_consistent=NO"
 
