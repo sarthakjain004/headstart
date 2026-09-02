@@ -11,6 +11,7 @@ column must reach a table created before it existed, because `_schema()` only ap
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -517,3 +518,114 @@ def test_a_posting_that_reappears_is_never_evicted(tmp_path, monkeypatch):
 
     assert set(_rows(tmp_path)) == {"greenhouse:a:1", "greenhouse:a:2"}
     assert (tmp_path / "unconfirmed_ids.txt").read_text().split() == []
+
+
+# ---- `index backfill-descriptions` (ADR-0104): the whole-table pass `sync` cannot do ----
+
+
+def _write_description_store(root: Path, texts: dict[str, str]) -> Path:
+    """The ADR-0050 store as `read_store` reads it: one gzipped fragment per ATS directory."""
+    for job_id, text in texts.items():
+        ats_dir = root / job_id.split(":", 1)[0]
+        ats_dir.mkdir(parents=True, exist_ok=True)
+        with gzip.open(ats_dir / "base.jsonl.gz", "at", encoding="utf-8") as fh:
+            fh.write(json.dumps({"id": job_id, "description": text}) + "\n")
+    return root
+
+
+def _backfill(tmp_path: Path, store: Path, apply: bool = True) -> int:
+    return idx.backfill_descriptions(
+        argparse.Namespace(
+            db=str(tmp_path / "db"), store=str(store), chunk=2048, apply=apply
+        )
+    )
+
+
+def test_backfill_reaches_a_row_no_run_corpus_ever_carried(tmp_path, monkeypatch):
+    """The reason this subcommand exists. `sync --backfill-descriptions` reads the run's corpus,
+    so a row whose Board sat out the slice is unreachable; the store holds it regardless."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    assert _descriptions(tmp_path) == {"greenhouse:a:1": None, "greenhouse:a:2": None}
+
+    store = _write_description_store(
+        tmp_path / "descriptions",
+        {"greenhouse:a:1": "Rust services.", "greenhouse:a:2": "Go and gRPC."},
+    )
+    assert _backfill(tmp_path, store) == 0
+    assert _descriptions(tmp_path) == {
+        "greenhouse:a:1": "Rust services.",
+        "greenhouse:a:2": "Go and gRPC.",
+    }
+
+
+def test_backfill_writes_nothing_without_apply(tmp_path, monkeypatch):
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    store = _write_description_store(
+        tmp_path / "descriptions", {"greenhouse:a:1": "Rust services."}
+    )
+    assert _backfill(tmp_path, store, apply=False) == 0
+    assert _descriptions(tmp_path) == {"greenhouse:a:1": None}
+
+
+def test_backfill_leaves_a_row_the_store_has_no_text_for(tmp_path, monkeypatch):
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    store = _write_description_store(
+        tmp_path / "descriptions", {"greenhouse:a:1": "Rust services."}
+    )
+    _backfill(tmp_path, store)
+    got = _descriptions(tmp_path)
+    assert got["greenhouse:a:1"] == "Rust services."
+    assert got["greenhouse:a:2"] is None  # null, not an empty string
+
+
+def test_backfill_never_touches_a_description_the_row_already_had(
+    tmp_path, monkeypatch
+):
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ["greenhouse:a:1"],
+        descriptions={"greenhouse:a:1": "What the scrape found."},
+    )
+    store = _write_description_store(
+        tmp_path / "descriptions", {"greenhouse:a:1": "Something staler."}
+    )
+    _backfill(tmp_path, store)
+    assert _descriptions(tmp_path)["greenhouse:a:1"] == "What the scrape found."
+
+
+def test_backfill_preserves_every_other_column_of_a_rewritten_row(
+    tmp_path, monkeypatch
+):
+    """The rewrite is delete-then-add, so a dropped column would silently destroy served data.
+    The vector matters most: it is taken from the row itself, not re-embedded."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    before = table.search().limit(10).to_list()[0]
+
+    store = _write_description_store(
+        tmp_path / "descriptions", {"greenhouse:a:1": "Rust services."}
+    )
+    _backfill(tmp_path, store)
+
+    after = (
+        lancedb.connect(str(tmp_path / "db"))
+        .open_table(idx.PROD_TABLE)
+        .search()
+        .limit(10)
+        .to_list()[0]
+    )
+    assert after["description"] == "Rust services."
+    assert list(after["vector"]) == list(before["vector"])
+    for column in set(before) - {"description", "vector"}:
+        assert after[column] == before[column], column
+
+
+def test_backfill_refuses_a_table_that_predates_the_column(tmp_path, monkeypatch):
+    """Fail loudly rather than silently backfilling nothing: the migration runs in `sync`."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE).drop_columns(
+        ["description"]
+    )
+    with pytest.raises(SystemExit):
+        _backfill(tmp_path, tmp_path / "descriptions")

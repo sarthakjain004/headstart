@@ -30,6 +30,10 @@ on:
         description: "Retry counter — set by this workflow re-dispatching itself. Leave blank."
         required: false
         default: "1"
+      backfill_descriptions:
+        description: "ADR-0104 one-time backfill: fill every null description from the store (~690 MB)."
+        required: false
+        default: "false"
 
 permissions:
   contents: read # `window` and `handback` widen this for themselves; `cleanup` must not
@@ -155,6 +159,23 @@ jobs:
           du -sh data/lancedb
       - name: Prune stale + duplicate rows
         run: python -m headstart.ingest.index prune --apply
+      - name: Backfill descriptions into rows that predate the column (ADR-0104)
+        # Opt-in, and off by default, because it is a whole-table rewrite: every row it fills
+        # costs that row's ~25 KB vector to rewrite, and the column itself is ~690 MB against a
+        # 1,155 MB table. `sync --backfill-descriptions` cannot do this job — it reads the run's
+        # ~20,000-Board corpus slice, so a row whose Board sat out the slice is unreachable from
+        # there. This reads the ADR-0050 store instead, which holds text regardless of slice.
+        #
+        # Placed BEFORE `compact` on purpose: the rewrite is delete-then-add, so it leaves a
+        # deletion file per touched fragment, and compact is what reclaims them. Running it after
+        # would leave the whole pass's churn on disk until the next cleanup a day later.
+        if: inputs.backfill_descriptions == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m headstart.ingest.state_fetch 'data/descriptions/*'
+          python -m headstart.ingest.index backfill-descriptions --apply
+          du -sh data/lancedb
       - name: Rebuild fresh (reclaim orphan fragments)
         run: python -m headstart.ingest.index compact
       - name: Compact the description store (ADR-0050)
