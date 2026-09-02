@@ -15,9 +15,10 @@ issue #186 tracks. Compare kept% per ATS against its own history, not against ot
 board mixes differ wildly.
 
 **`update_descriptions`** — `filled N from the store, learned N, queued N to re-derive` per ATS
-(ADR-0050; the `settled N as having none` clause this once also read was removed by ADR-0089). `filled` is the store paying off: descriptions recovered without
-refetching. `learned` is new text banked this run. `queued` is the re-derive backlog. A large
-`queued` against a small `learned` means the store is losing ground.
+(ADR-0050; the `settled N as having none` clause this once also read was removed by ADR-0089).
+`filled` is the store paying off: descriptions recovered without refetching. `learned` is new
+text banked this run. `queued` is the re-derive backlog. A large `queued` against a small
+`learned` means the store is losing ground.
 
 **The one number that is not what it looks like.** `filled` is dominated by whichever ATSes keep
 their descriptions on the listing endpoint (eightfold, workday) — measured at ~22,000 of ~24,000
@@ -120,10 +121,6 @@ def report(run: Run) -> None:
             flush=True,
         )
 
-    warn_if_unparsed(
-        text, "[update_descriptions] ", desc, "update_descriptions per-ATS"
-    )
-
     jt = JOIN_TOTAL.search(text)
     tt = TECH_TOTAL.search(text)
     if jt and tt:
@@ -133,6 +130,11 @@ def report(run: Run) -> None:
             f"{sum(d[2] for d in desc.values()):>8,}",
             flush=True,
         )
+    # After the TOTAL row, not before it: the total is summed from the same parse, so a drift
+    # zeroes that line too and the warning has to sit below everything it invalidates.
+    warn_if_unparsed(
+        text, "[update_descriptions] ", desc, "update_descriptions per-ATS"
+    )
     store, skip = STORE.search(text), SKIP.search(text)
     if store:
         print(f"  description store: {store.group(1)} already-embedded ids", flush=True)

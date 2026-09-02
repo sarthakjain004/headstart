@@ -368,13 +368,19 @@ class WorkdayScraper(BaseScraper):
     #: to 12. The last changes nothing in practice — Workday already walls on a 429 in all 15
     #: shards of every run, so the width is 12 today; this only moves *when* the wall lands.
     #:
-    #: The rotation path is the one to watch. Sized retry-to-retry, which is what reaches
-    #: `_rotate_for`: over the ten runs `33548262185`..`33590621111`, 283,991 retried 429s against
-    #: 479,165 retried 400s, so this multiplies the rotation-eligible stream by **2.7x**. Those
-    #: runs produce 1,343-1,726 rotations each behind a 5s cooldown (~18:1 damping), so expect
-    #: roughly 4,000-4,500. That is a projection, not a measurement. Revert this, or split
-    #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), if rotations pass
-    #: ~5,000 per run or scrape wall-clock rises.
+    #: The rotation path is the one to watch, sized off the shard logs' own
+    #: `spare egress rotations: attempted A, succeeded S, throttled T` line rather than off a
+    #: retry count (which is process-wide across every ATS, so it is not what reaches
+    #: `_rotate_for`). Over the ten runs `33548262185`..`33590621111`: 157,314 `rotate()` calls,
+    #: of which only 14,774 actually rotated — **91% were cooldown-throttled**. Rotations are
+    #: therefore cooldown-bound, not demand-bound, so the ~4x more callers this admits should
+    #: land in the `throttled` bucket rather than restarting `warp-svc` ~4x more often.
+    #:
+    #: What that 4x does buy is aggregate *waiting*, bounded per caller at `_ROTATION_WAIT_CAP`
+    #: but concurrent within a shard. So watch scrape wall-clock against the 51-73 min those ten
+    #: runs recorded, and watch `succeeded` — if it climbs toward its call volume the cooldown
+    #: has stopped binding and the demand model applies after all. Revert this, or split
+    #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), on either signal.
     #:
     #: Three call sites now carry a 400 in `egress_on` that their own `retry_on` omits — the
     #: unpatient arm of `_resolve_instance`'s sweep, which ADR-0098 deliberately leaves unretried,

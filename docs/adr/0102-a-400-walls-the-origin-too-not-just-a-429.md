@@ -77,27 +77,40 @@ is the fix to reach for rather than reverting outright.
 save ~48,000 requests per run. Rejected only because doing both at once makes the next run's
 wall-clock uninterpretable — neither change could be attributed. It remains the obvious follow-up.
 
-**Leave it and accept the loss.** The status quo serves ~250k fewer descriptions per run than it
-could and spends half a million pointless requests doing it. Rejected.
+**Leave it and accept the loss.** The status quo loses ~25,000 descriptions per run to this
+status and spends ~48,000 retries per run failing to recover them (256,934 and 479,165
+respectively across the ten-run window). Rejected.
 
 ## Consequences
 
 **The risk is a rotation storm, and it is the thing to watch.** Because `egress_on` also gates
 `_rotate_for`, every 400 taken while already proxied now asks for a fresh egress IP.
 
-Sized against the right quantity, which an earlier draft of this ADR got wrong by an order of
-magnitude. Rotation is driven by *retry events on a walled status*, not by settled ones, so the
-comparison is retry-to-retry. Over the ten runs `33548262185`..`33590621111`: **283,991 retried
-429s against 479,165 retried 400s**, so this multiplies the rotation-eligible stream by **2.7x**,
-not the ~10x the first draft claimed from a settled-count ratio. (Settled 400s do outrun settled
-429s heavily — 36,550 to 907 in run `33590621111`, about 40:1 — but settled counts are not what
-reaches `_rotate_for`.)
+Sized against the direct measurement, after two earlier drafts of this ADR sized it against the
+wrong quantity — first a settled-count ratio (~10x), then a retry count that is process-wide
+across every ATS (2.7x). Neither is what reaches `_rotate_for`. The shard logs report the calls
+themselves: `spare egress rotations: attempted A, succeeded S, throttled T, abandoned B`. Summed
+over the ten runs `33548262185`..`33590621111`:
 
-Those same ten runs produce **1,343–1,726 rotations each** against ~26,000–33,000 retried 429s,
-about 18:1 damping from the 5s cooldown and peers sharing a rotation. Carried forward at 2.7x,
-that projects roughly 4,000–4,500 rotations per run. **It is still a projection, not a
-measurement.** Revert this, or take the split below, if the rotation count exceeds ~5,000 per run
-or scrape wall-clock rises — a `warp-svc` restart storm would cost more than the 400s do.
+| quantity | window | per run |
+|---|---|---|
+| `rotate()` calls (`attempted + throttled`) | 157,314 | ~15,700 |
+| rotations actually performed (`succeeded`) | 14,774 | ~1,477 |
+| of those calls, cooldown-`throttled` | 142,540 | **91%** |
+
+**That 91% is the finding that defuses the risk.** Rotations are *cooldown-bound*, not
+demand-bound: nine of every ten callers already find the gate shut, wait out
+`_ROTATION_WAIT_CAP`, and ride the current IP. Adding the 479,165 retried 400s multiplies the
+call volume by about **4x**, but it cannot multiply the rotations, which are pinned by the 5s
+cooldown — the extra callers land in the `throttled` bucket. `warp-svc` restarts should stay near
+1,477 per run.
+
+**So the cost to watch is waiting, not restarting.** Four times the callers queueing on a gate
+that is already shut 91% of the time is aggregate wait, bounded per caller at 10s but concurrent
+within a shard. Read **scrape wall-clock** and the `throttled` counter, not `succeeded`. Revert
+this, or take the split below, if scrape wall-clock rises materially against the 51–73 min the
+same ten runs recorded, or if `succeeded` climbs anywhere near its call volume — that last would
+mean the cooldown stopped binding and the demand model applies after all.
 
 **Three call sites are now "marked but not retried".** The unpatient arm of `_resolve_instance`'s
 sweep takes `http.TRANSIENT` (ADR-0098 deliberately leaves the sweep unretried), as do
