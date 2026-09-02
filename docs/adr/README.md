@@ -110,3 +110,4 @@ supersedes it and note the supersession in both.
 | [0099](0099-a-404d-workday-detail-falls-back-to-the-public-pages-json-ld.md) | A 404'd Workday detail falls back to the public page's JSON-LD | 2026-09-01 |
 | [0100](0100-break-off-a-detail-pass-the-origin-is-refusing.md) | Break off a detail pass the origin is refusing | 2026-09-01 |
 | [0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) | Remove the collapse guard; the grace period is the line | 2026-09-01 |
+| [0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) | A 400 walls the origin too, not just a 429 | 2026-09-02 |

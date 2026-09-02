@@ -1,6 +1,7 @@
 # ADR-0063: A shard that spends an origin's budget picks up a spare egress IP
 
 **Status:** accepted · **Amended by:**
+[ADR-0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) (Workday now walls on 400 as well as 429, so the status behind most of its detail loss can open the spare egress) · **Amended by:**
 [ADR-0067](0067-the-spare-egress-buys-a-different-ip-not-a-fresh-budget.md) (measured: the spare
 egress yields a *different* IP, not an unspent origin budget; its pool-size figure — a 1–3 address
 pool, worse diversity than the direct route — was itself corrected by

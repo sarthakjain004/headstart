@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-08-31
+- Amended by: [ADR-0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) — the retry this ADR
+  added recovers nothing (ratio 0.93 over ten runs) because a 400 could not open the spare
+  egress; ADR-0102 lets it, and records why the retry alone could never have paid
 - Follows [ADR-0097](0097-a-postings-id-comes-from-the-listing-never-the-detail.md), which closed
   the *consequence* of these lost details (a lost detail renamed a Job) and explicitly left this,
   the cause, open.
