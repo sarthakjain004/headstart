@@ -12,14 +12,17 @@ Four arms, each printed as it finishes:
 ``where``    the vantage: exit IP, Cloudflare colo and ``warp=on/off``, direct and via the spare
              egress, so a status difference can be attributed to a route rather than guessed at.
 ``control``  the walk over a Board production loses *zero* details on, run first while this
-             address is still clean. The discriminator between "this vantage is penalised" and
-             "this tenant is configured differently": a 400-free control on a runner that 400s
-             elsewhere rules the vantage out.
+             address is still clean. It is a one-directional signal, and only the clean direction
+             is strong: a control that stays 400-free while the suspect 400s rules out a globally
+             penalised vantage. A control that *also* refuses proves less than it looks — it is
+             taking the same trip-provoking load the suspect gets, so "the vantage is penalised"
+             and "we tripped this tenant ourselves" both explain it.
 ``direct``   the same sustained walk over the 400-heavy Board — the arm that reproduces the
              throttle.
 ``browser``  Chrome and curl_cffi asking the same origin for the same path at the same moment,
-             while a background walk holds the tenant under production-width load. See
-             :func:`paired_browser_walk` for why the load and the pairing are both load-bearing.
+             while a background walk holds the tenant under load for exactly as long as the arm
+             runs. See :func:`paired_browser_walk` for why the load and the pairing are both
+             load-bearing.
 ``warp``     the same walk through the spare egress (ADR-0063) — the route production's traffic
              takes once a Board has walled, and the one ADR-0102 newly opens for a 400.
 
@@ -43,12 +46,26 @@ Two deliberate choices about what is measured:
   itself as a width-25 walk. That is precisely what would make this run incomparable to the
   laptop's, which is the entire point of the exercise, so the width is pinned here instead.
 
-**Known limitation, because naming it is cheaper than being misled by it.** These parameters match
-the *laptop's* (width 25, one static route), so that the vantage is the only variable against the
-doc's baseline. They do **not** reproduce production, which runs the detail pass at width 12 on a
-*rotating* WARP address once a Board has walled (ADR-0102). So a runner that also answers 429 here
-does not exonerate the vantage — it moves the question to whether width and rotation are what turn
-a 429 into a 400, which ``--width 12 --arms warp`` on a second dispatch is the way to ask.
+**Three limitations, named because being misled by them is more expensive than admitting them.**
+
+*Width.* Width 25 matches the laptop baseline, which is what makes the vantage the only variable
+against the doc — but production observes its 400s at width **12**, the width its detail pass drops
+to once a Board has walled (ADR-0102). Neither width alone can answer the question, so the workflow
+runs both: two replicas at the scraper's own ``detail_streams`` and two at 12. ``--width 0`` means
+"whatever ``WorkdayScraper.detail_streams`` is", so that number is never restated anywhere.
+
+*Rotation.* Production's walled traffic rides a **rotating** WARP address; the ``warp`` arm rides
+one static tunnel. This probe cannot reproduce rotation.
+
+*History.* The doc's own leading hypothesis — WARP exit IPs "that have been hitting these tenants
+hourly for weeks" — is **not testable here at all**, and no rerun fixes it: the workflow runs
+``warp-cli registration new`` per replica, so every replica draws a fresh address with no history.
+A clean ``warp`` arm therefore cannot exonerate that hypothesis; it can only fail to support it.
+
+**There is deliberately no cooldown between arms.** It would be the obvious thing to add, and the
+evidence says it would not work: the doc measured thermofisher still tripping on a walk started two
+minutes after the previous one. The arms also run against two different tenants, and ``warp`` from
+a different address, so there is no shared per-(tenant, IP) budget for a pause to drain.
 
 Reported figures, and what each is for:
 
@@ -98,7 +115,8 @@ SUSPECT = "https://ghr.wd1.myworkdayjobs.com/us-emplsv"
 CONTROL = "https://aah.wd5.myworkdayjobs.com/External"
 
 #: Production's own detail fan-out, read off the scraper rather than restated, so the claim that
-#: this matches it cannot drift.
+#: this matches it cannot drift. ``--width 0`` resolves to this, which is how the workflow asks for
+#: it without naming 25 a second place it could go stale.
 WIDTH = WorkdayScraper.detail_streams
 _BLOCK = 100  # the status mix is reported per this many settled requests
 _HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
@@ -112,11 +130,20 @@ def _proxies(proxy: str | None) -> dict:
     return {"proxies": {"http": proxy, "https": proxy}} if proxy else {}
 
 
+def _evidence(index: int, headers: dict, body: str) -> dict:
+    """One kept response. ``headers`` is empty for a browser answer — ``browser_http`` surfaces a
+    failed in-page fetch as ``BrowserHTTPError(status, body)`` and never carries headers out."""
+    return {"at_request": index, "headers": headers, "body": body[:_BODY_SAMPLE]}
+
+
 def _trace(proxy: str | None) -> dict[str, str]:
     """What this route looks like from outside: exit IP, Cloudflare colo, ``warp=on/off``.
 
     ``warp`` is the one that matters for the spare-egress arm — it is Cloudflare's own answer to
     "is this request really riding WARP", which no amount of reading ``warp-cli status`` proves.
+    ``ip``/``colo``/``org`` matter for a different reason: replicas of this probe are only four
+    samples if they are four *networks*, and nothing but these fields can tell you whether two
+    runners came up in the same colo or /16.
     """
     out: dict[str, str] = {}
     try:
@@ -174,7 +201,7 @@ def collect_paths(scraper: WorkdayScraper, want: int) -> tuple[list[str], int | 
                 flush=True,
             )
             break
-        total = (page or {}).get("total", total)
+        total = page.get("total", total)
         paths += [p["externalPath"] for p in postings if p.get("externalPath")]
         offset += len(postings)
         print(
@@ -182,6 +209,25 @@ def collect_paths(scraper: WorkdayScraper, want: int) -> tuple[list[str], int | 
             flush=True,
         )
     return paths[:want], total
+
+
+async def _settle(
+    session, scraper: WorkdayScraper, path: str, proxy: str | None
+) -> tuple[str, dict, str]:
+    """One detail request's settled answer as ``(status-or-exception, headers, body)``."""
+    try:
+        response = await http.fetch_async(
+            session,
+            "GET",
+            scraper._detail_url(path),
+            timeout=30,
+            retry_on=frozenset(),  # the origin's FIRST answer, not its third
+            headers=_HEADERS,
+            **_proxies(proxy),
+        )
+    except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
+        return type(exc).__name__, {}, str(exc)
+    return str(response.status_code), dict(response.headers), response.text
 
 
 def walk(
@@ -199,6 +245,11 @@ def walk(
     the end, so a cancelled job (the workflow's 45-minute cap, or a runner reclaimed mid-arm)
     still leaves the measurement it had reached — CLAUDE.md forbids buffering output to the end,
     and an arm that prints nothing for ten minutes and then dies has produced nothing at all.
+
+    The checkpoint is taken *outside* the fan-out's lock: a file write inside it would stall every
+    other stream and slow the very request rate this arm is measuring. The cost is that a
+    checkpoint can catch the counters mid-update, which is acceptable for a progress artifact and
+    never for the final one — that is taken after the gather has drained.
     """
     statuses: collections.Counter[str] = collections.Counter()
     after_trip: collections.Counter[str] = collections.Counter()
@@ -249,20 +300,30 @@ def walk(
                         blocks[(index - 1) // _BLOCK][code] += 1
                         if first_refusal is not None:
                             after_trip[code] += 1
-                        if code != "200" and code not in samples:
+                        new_status = code != "200" and code not in samples
+                        if new_status:
                             samples[code] = _evidence(index, headers, body)
-                            _announce(code, index, headers, body)
                         if first_non_200 is None and code != "200":
                             first_non_200 = {"at_request": index, "status": code}
                         if first_refusal is None and code in _REFUSALS:
                             first_refusal = {"at_request": index, "status": code}
-                        if index % _BLOCK == 0:
-                            print(
-                                f"    ...{index}/{len(paths)} {dict(statuses)}",
-                                flush=True,
-                            )
-                            snapshot()
-                            save()
+                        due = index % _BLOCK == 0
+                    if new_status:
+                        print(
+                            f"    first {code} at request #{index}\n"
+                            f"      server={headers.get('server')!r} "
+                            f"cf-ray={headers.get('cf-ray')!r} "
+                            f"cf-mitigated={headers.get('cf-mitigated')!r} "
+                            f"retry-after={headers.get('retry-after')!r}\n"
+                            f"      body: {body[:200]!r}",
+                            flush=True,
+                        )
+                    if due:
+                        print(
+                            f"    ...{index}/{len(paths)} {dict(statuses)}", flush=True
+                        )
+                        snapshot()
+                        save()
 
             await asyncio.gather(*(one(p) for p in paths))
 
@@ -291,41 +352,6 @@ def walk(
         print(f"      {key:>9} {mix}", flush=True)
 
 
-async def _settle(
-    session, scraper: WorkdayScraper, path: str, proxy: str | None
-) -> tuple[str, dict, str]:
-    """One detail request's settled answer as ``(status-or-exception, headers, body)``."""
-    try:
-        response = await http.fetch_async(
-            session,
-            "GET",
-            scraper._detail_url(path),
-            timeout=30,
-            retry_on=frozenset(),  # the origin's FIRST answer, not its third
-            headers=_HEADERS,
-            **_proxies(proxy),
-        )
-    except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
-        return type(exc).__name__, {}, str(exc)
-    return str(response.status_code), dict(response.headers), response.text
-
-
-def _evidence(index: int, headers: dict, body: str) -> dict:
-    return {"at_request": index, "headers": headers, "body": body[:_BODY_SAMPLE]}
-
-
-def _announce(code: str, index: int, headers: dict, body: str) -> None:
-    print(
-        f"    first {code} at request #{index}\n"
-        f"      server={headers.get('server')!r} "
-        f"cf-ray={headers.get('cf-ray')!r} "
-        f"cf-mitigated={headers.get('cf-mitigated')!r} "
-        f"retry-after={headers.get('retry-after')!r}\n"
-        f"      body: {body[:200]!r}",
-        flush=True,
-    )
-
-
 def paired_browser_walk(
     scraper: WorkdayScraper,
     pressure_paths: list[str],
@@ -345,23 +371,32 @@ def paired_browser_walk(
     browser 400`` says it is IP-shaped, and ``api 200 -> ...`` says the origin was not refusing
     anyone at that moment and the pair is simply uninformative.
 
-    **The pressure.** The throttle is rate-shaped, so a sequential pair at ~1 req/s would let the
-    API half recover to 200 and every pair would land in that last, useless category. So a
-    background walk keeps the tenant under production-width load for as long as this arm runs, and
-    the arm stops when that walk does — which bounds its cost and guarantees every recorded pair
-    was taken while the origin was actually under the load that provokes a refusal.
+    **The pressure.** The throttle is rate-shaped, so a sequential pair at well under 1 req/s
+    would let the API half recover to 200 and every pair would land in that last, useless
+    category. So a background thread replays ``pressure_paths`` at ``width`` for exactly as long
+    as the pairing runs, and is stopped the moment it ends.
+
+    Two ordering details are load-bearing rather than incidental. The loader starts *after* the
+    tab is open, because a cold Chrome can take up to 200s to launch (three 60s attempts plus a
+    20s navigation) — longer than a whole pressure walk, which would have left the arm recording
+    nothing under load at all. And the loader is asked to stop before this returns, so it cannot
+    go on hammering the tenant underneath the next arm.
     """
     from headstart import browser_http
 
     company, instance, site = scraper._parts()
     pressure: collections.Counter[str] = collections.Counter()
+    pressure_lock = (
+        threading.Lock()
+    )  # the loader writes it; this thread reads it every pair
+    stop = threading.Event()
     pairs: collections.Counter[str] = collections.Counter()
     sequence: list[str] = []  # per-pair, in order, so a decay back to 200 is visible
     samples: dict[str, dict] = {}
     started = time.monotonic()
 
     def hold_under_load() -> None:
-        """Walk `pressure_paths` once at production width. Ends on its own; nothing cancels it."""
+        """Replay `pressure_paths` at `width` until `stop` is set."""
 
         async def run() -> None:
             from curl_cffi.requests import AsyncSession
@@ -371,84 +406,99 @@ def paired_browser_walk(
 
                 async def one(path: str) -> None:
                     async with gate:
+                        if stop.is_set():
+                            return
                         code, _, _ = await _settle(session, scraper, path, None)
-                        pressure[code] += 1
+                        with pressure_lock:
+                            pressure[code] += 1
 
-                await asyncio.gather(*(one(p) for p in pressure_paths))
+                while not stop.is_set():
+                    await asyncio.gather(*(one(p) for p in pressure_paths))
 
         asyncio.run(run())
 
-    loader = threading.Thread(target=hold_under_load, name="pressure", daemon=True)
-    loader.start()
-    print(
-        f"  browser: {len(pressure_paths)} details holding the tenant at width {width}; "
-        f"pairing while that runs",
-        flush=True,
-    )
+    def pressure_now() -> dict:
+        with pressure_lock:
+            return dict(pressure)
 
-    with browser_http.origin(
-        f"https://{company}.{instance}.myworkdayjobs.com/{site}"
-    ) as page:
-        for index, path in enumerate(probe_paths, 1):
-            if not loader.is_alive():
+    loader: threading.Thread | None = None
+    try:
+        with browser_http.origin(
+            f"https://{company}.{instance}.myworkdayjobs.com/{site}"
+        ) as page:
+            loader = threading.Thread(
+                target=hold_under_load, name="pressure", daemon=True
+            )
+            loader.start()
+            print(
+                f"  browser: tab open; {len(pressure_paths)} details now holding the tenant at "
+                f"width {width} for as long as the pairing runs",
+                flush=True,
+            )
+            for index, path in enumerate(probe_paths, 1):
+                try:
+                    response = http.fetch(
+                        "GET",
+                        scraper._detail_url(path),
+                        timeout=30,
+                        retry_on=frozenset(),
+                        headers=_HEADERS,
+                    )
+                    api = str(response.status_code)
+                    if api != "200":
+                        samples.setdefault(
+                            f"api {api}",
+                            _evidence(index, dict(response.headers), response.text),
+                        )
+                except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
+                    api = type(exc).__name__
+                    samples.setdefault(f"api {api}", _evidence(index, {}, str(exc)))
+                try:
+                    page.get_json(f"/wday/cxs/{company}/{site}{path}")
+                    browser = "200"
+                except browser_http.BrowserHTTPError as exc:
+                    browser = str(exc.status_code)
+                    samples.setdefault(
+                        f"browser {browser}", _evidence(index, {}, exc.body)
+                    )
+                except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
+                    browser = type(exc).__name__
+                    samples.setdefault(
+                        f"browser {browser}", _evidence(index, {}, str(exc))
+                    )
+                pair = f"api {api} -> browser {browser}"
+                pairs[pair] += 1
+                sequence.append(pair)
+                slot.update(
+                    requested=len(probe_paths),
+                    walked=index,
+                    width=width,
+                    pairs=dict(pairs),
+                    sequence=sequence,
+                    pressure=pressure_now(),
+                    samples=samples,
+                    seconds=round(time.monotonic() - started, 1),
+                )
+                save()
+                if index % 5 == 0:
+                    print(f"    ...{index} pairs {dict(pairs)}", flush=True)
+    finally:
+        stop.set()
+        if loader is not None:
+            loader.join(timeout=60)
+            if loader.is_alive():
+                # Say so rather than leaving it silent: a loader still in flight is still loading
+                # the tenant the next arm is about to measure.
                 print(
-                    "    pressure walk finished — stopping while pairs stay valid",
+                    "    WARNING: pressure thread did not stop within 60s — the next arm's "
+                    "measurement is not on an idle tenant",
                     flush=True,
                 )
-                break
-            try:
-                response = http.fetch(
-                    "GET",
-                    scraper._detail_url(path),
-                    timeout=30,
-                    retry_on=frozenset(),
-                    headers=_HEADERS,
-                )
-                api = str(response.status_code)
-                if api != "200" and f"api {api}" not in samples:
-                    samples[f"api {api}"] = _evidence(
-                        index, dict(response.headers), response.text
-                    )
-            except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
-                api = type(exc).__name__
-            try:
-                page.get_json(f"/wday/cxs/{company}/{site}{path}")
-                browser = "200"
-            except browser_http.BrowserHTTPError as exc:
-                browser = str(exc.status_code)
-                # No headers: `browser_http` carries only status and body out of the tab.
-                samples.setdefault(
-                    f"browser {browser}",
-                    {"at_request": index, "body": exc.body[:_BODY_SAMPLE]},
-                )
-            except Exception as exc:  # noqa: BLE001 - classifying the failure is the point
-                browser = type(exc).__name__
-                samples.setdefault(
-                    f"browser {browser}",
-                    {"at_request": index, "body": str(exc)[:_BODY_SAMPLE]},
-                )
-            pair = f"api {api} -> browser {browser}"
-            pairs[pair] += 1
-            sequence.append(pair)
-            slot.update(
-                requested=len(probe_paths),
-                walked=index,
-                width=width,
-                pairs=dict(pairs),
-                sequence=sequence,
-                pressure=dict(pressure),
-                samples=samples,
-                seconds=round(time.monotonic() - started, 1),
-            )
-            save()
-            if index % 5 == 0:
-                print(f"    ...{index} pairs {dict(pairs)}", flush=True)
-
-    loader.join(timeout=180)
-    slot.update(pressure=dict(pressure), seconds=round(time.monotonic() - started, 1))
+                slot.update(pressure_still_running=True)
+    slot.update(pressure=pressure_now(), seconds=round(time.monotonic() - started, 1))
     save()
     print(f"  browser: {dict(pairs)}", flush=True)
-    print(f"    pressure over the same window: {dict(pressure)}", flush=True)
+    print(f"    pressure over the same window: {pressure_now()}", flush=True)
 
 
 def resolved_scraper(slug: str) -> WorkdayScraper:
@@ -460,9 +510,9 @@ def resolved_scraper(slug: str) -> WorkdayScraper:
 
 
 def prepare(
-    slug: str, want: int, slot: dict
+    slug: str, want: int, record: dict
 ) -> tuple[WorkdayScraper | None, list[str]]:
-    """Resolve a Board and harvest its paths, recording *why* into ``slot`` if either fails.
+    """Resolve a Board and harvest its paths, recording *why* into ``record`` if either fails.
 
     Guarded because the arms are not independent otherwise: ``control`` runs first, and an
     unhandled raise there would take ``direct`` — the primary measurement — down with it.
@@ -471,21 +521,22 @@ def prepare(
         scraper = resolved_scraper(slug)
     except Exception as exc:  # noqa: BLE001 - one Board's failure must not sink the probe
         print(f"  cannot resolve {slug}: {type(exc).__name__}: {exc}", flush=True)
-        slot.update(error=f"resolve failed: {type(exc).__name__}: {exc}")
+        record.update(error=f"resolve failed: {type(exc).__name__}: {exc}")
         return None, []
     print(f"\n== {scraper.board_key()} ==", flush=True)
+    record.update(board=scraper.board_key(), url=scraper.url())
     try:
         paths, total = collect_paths(scraper, want)
     except Exception as exc:  # noqa: BLE001 - one Board's failure must not sink the probe
         print(f"  listing failed: {type(exc).__name__}: {exc}", flush=True)
-        slot.update(error=f"listing failed: {type(exc).__name__}: {exc}")
+        record.update(error=f"listing failed: {type(exc).__name__}: {exc}")
         return scraper, []
     print(
         f"  harvested {len(paths)} externalPaths (listing reports {total})", flush=True
     )
-    slot.update(listing_total=total, harvested=len(paths))
+    record.update(listing_total=total, harvested=len(paths))
     if not paths:
-        slot.update(error="listing returned nothing — cannot walk")
+        record.update(error="listing returned nothing — cannot walk")
     return scraper, paths
 
 
@@ -507,15 +558,9 @@ def main() -> int:
     parser.add_argument(
         "--width",
         type=int,
-        default=WIDTH,
-        help=f"fan-out width (default {WIDTH}, matching the laptop baseline; production's "
-        "walled detail pass runs 12)",
-    )
-    parser.add_argument(
-        "--cooldown",
-        type=float,
-        default=60.0,
-        help="seconds idle between arms, so one arm's refusals decay before the next (default 60)",
+        default=0,
+        help=f"fan-out width; 0 means the scraper's own detail_streams ({WIDTH}), which is the "
+        "laptop baseline. Production's walled detail pass runs 12.",
     )
     parser.add_argument(
         "--arms",
@@ -525,14 +570,13 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="write the full result JSON here")
     args = parser.parse_args()
     arms = {a.strip() for a in args.arms.split(",") if a.strip()}
+    width = args.width or WIDTH
 
     result: dict = {
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "suspect": args.suspect,
-        "control": args.control,
         "n": args.n,
-        "width": args.width,
-        "cooldown": args.cooldown,
+        "width": width,
+        "boards": {},
         "arms": {},
     }
 
@@ -544,10 +588,8 @@ def main() -> int:
     def slot(name: str) -> dict:
         return result["arms"].setdefault(name, {})
 
-    def cool(before: str) -> None:
-        if args.cooldown > 0:
-            print(f"\n  ...{args.cooldown:.0f}s cooldown before {before}", flush=True)
-            time.sleep(args.cooldown)
+    def board(name: str) -> dict:
+        return result["boards"].setdefault(name, {})
 
     if "where" in arms:
         print("== where ==", flush=True)
@@ -563,30 +605,24 @@ def main() -> int:
     # from this address would inherit whatever reputation those earned, which is the confound it
     # exists to remove.
     if "control" in arms:
-        control, control_paths = prepare(args.control, args.n, slot("control"))
+        control, control_paths = prepare(args.control, args.n, board("control"))
         if control and control_paths:
-            walk(
-                "control",
-                control,
-                control_paths,
-                None,
-                args.width,
-                slot("control"),
-                save,
-            )
+            walk("control", control, control_paths, None, width, slot("control"), save)
+        else:
+            slot("control").update(error="no paths — see boards.control for why")
         save()
-        cool("the suspect")
 
     scraper: WorkdayScraper | None = None
     paths: list[str] = []
     if arms & {"direct", "warp", "browser"}:
-        scraper, paths = prepare(args.suspect, args.n, slot("suspect"))
+        scraper, paths = prepare(args.suspect, args.n, board("suspect"))
+    ready = bool(scraper and paths)
 
     if "direct" in arms:
-        if scraper and paths:
-            walk("direct", scraper, paths, None, args.width, slot("direct"), save)
+        if ready:
+            walk("direct", scraper, paths, None, width, slot("direct"), save)
         else:
-            slot("direct").update(error="no paths — see the `suspect` arm for why")
+            slot("direct").update(error="no paths — see boards.suspect for why")
         save()
 
     # Straight after `direct`, so it asks its question of an origin already refusing us, and over
@@ -594,13 +630,13 @@ def main() -> int:
     # was still being served.
     if "browser" in arms and args.browser_n > 0:
         print("\n== browser, paired against the API under load ==", flush=True)
-        if scraper and paths:
+        if ready:
             try:
                 paired_browser_walk(
                     scraper,
                     paths,
-                    paths[len(paths) - args.browser_n :],
-                    args.width,
+                    paths[-args.browser_n :],
+                    width,
                     slot("browser"),
                     save,
                 )
@@ -608,7 +644,7 @@ def main() -> int:
                 print(f"  browser unavailable: {type(exc).__name__}: {exc}", flush=True)
                 slot("browser").update(error=f"{type(exc).__name__}: {exc}")
         else:
-            slot("browser").update(error="no paths — see the `suspect` arm for why")
+            slot("browser").update(error="no paths — see boards.suspect for why")
         save()
 
     if "warp" in arms:
@@ -617,11 +653,10 @@ def main() -> int:
         if proxy is None:
             print("  no spare egress on this host — skipped", flush=True)
             slot("warp").update(error="no spare egress")
-        elif scraper and paths:
-            cool("the spare-egress walk")
-            walk("warp", scraper, paths, proxy, args.width, slot("warp"), save)
+        elif ready:
+            walk("warp", scraper, paths, proxy, width, slot("warp"), save)
         else:
-            slot("warp").update(error="no paths — see the `suspect` arm for why")
+            slot("warp").update(error="no paths — see boards.suspect for why")
         save()
 
     if args.out:

@@ -9,7 +9,14 @@
 #
 # Four replicas, because one runner is one egress IP and the whole question is whether the status
 # is a property of the vantage. A single sample cannot tell "runners get 400" from "this runner
-# got 400"; four parallel ones cost no extra wall-clock and report a spread.
+# got 400"; four parallel ones cost no extra wall-clock and report a spread. (Whether they really
+# are four networks is not assumed — the `where` arm records each one's IP, colo and ASN, and the
+# writeup has to check them before treating four runners as four samples.)
+#
+# They split across the two widths that matter, because neither alone can answer the question and
+# sequencing a second dispatch would just defer it: 25 is the laptop baseline the open question is
+# stated against, 12 is what production's detail pass actually runs at once a Board has walled,
+# which is where its 400s are observed (ADR-0102).
 name: probe-workday-400
 
 on:
@@ -21,9 +28,6 @@ on:
       browser_n:
         description: paired api/Chrome fetches over the walk's tail (the `browser` arm)
         default: "40"
-      width:
-        description: fan-out width — 25 matches the laptop baseline, 12 matches production's walled pass
-        default: "25"
       arms:
         description: "comma-separated subset; fixed order: where,control,direct,browser,warp"
         default: "where,control,direct,browser,warp"
@@ -44,7 +48,13 @@ jobs:
     strategy:
       fail-fast: false # one replica's bad luck must not cancel the other three samples
       matrix:
-        replica: [1, 2, 3, 4]
+        include:
+          # width 0 = "whatever `WorkdayScraper.detail_streams` is", so 25 is never restated here
+          # to go stale against the scraper.
+          - { replica: 1, width: 0 }
+          - { replica: 2, width: 0 }
+          - { replica: 3, width: 12 }
+          - { replica: 4, width: 12 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -124,11 +134,11 @@ jobs:
           CONTROL: ${{ github.event.inputs.control }}
           N: ${{ github.event.inputs.n }}
           BROWSER_N: ${{ github.event.inputs.browser_n }}
-          WIDTH: ${{ github.event.inputs.width }}
+          WIDTH: ${{ matrix.width }}
           ARMS: ${{ github.event.inputs.arms }}
         run: |
           command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
-          out="probe-workday-400_${{ github.run_id }}_replica-${{ matrix.replica }}"
+          out="probe-workday-400_${{ github.run_id }}_replica-${{ matrix.replica }}_width-${{ matrix.width }}"
           echo "OUT=$out" >> "$GITHUB_ENV"
           xvfb-run -a python -u scripts/bench/probe_workday_throttle_status.py \
             --suspect "$SUSPECT" \
@@ -141,6 +151,6 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: probe-workday-400-replica-${{ matrix.replica }}
+          name: probe-workday-400-replica-${{ matrix.replica }}-width-${{ matrix.width }}
           path: ${{ env.OUT }}.*
           retention-days: 30
