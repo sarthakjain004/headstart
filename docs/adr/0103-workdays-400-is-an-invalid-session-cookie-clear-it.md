@@ -67,10 +67,14 @@ run stay clean.
   goes with it; a wrong data centre answers 422, never 400, so the sweep never needed it.
 - **Revert ADR-0102.** `egress_fallback_on` is back to `frozenset({429})`. A 429 is the real
   Cloudflare rate limit and still earns a reroute; a 400 no longer does.
-- **Add the cookie reset.** When a detail fetch settles 400, clear the pass's session jar and
-  refetch the same URL once. A recovered 200 is served and counted `cookie-reset (recovered)`
-  (popped from the loss tally like ADR-0099's page recovery); a second non-200 is a real loss,
-  counted as before. One retry only — no loop.
+- **Add the cookie reset, to both passes.** When a **detail** fetch settles 400, clear the pass's
+  session jar and refetch once; a recovered 200 is served and counted `cookie-reset (recovered)`
+  (popped from the loss tally like ADR-0099's page recovery). The **listing** pagination
+  (`_post`/`_post_async`) does the same — a long crawl outlives its session's cookie and every
+  page after 400s, marking the whole Board unauthoritative (ADR-0053), so it clears and refetches
+  once too; a recovered page simply succeeds, so its measure is the drop in `_paginate`'s
+  "page(s) failed mid-crawl (HTTP 400)" line rather than a counter. Either way a second non-200 is
+  a real loss (a detail dropped, a page raised), counted as before. One retry only — no loop.
 
 A detail-endpoint 400 is *unconditionally* the cookie one: Workday's single genuine 400 (`limit`
 above 20) is a listing concern we never send on a detail URL, and detail URLs are built from
@@ -80,8 +84,12 @@ would cost one wasted refetch and then count as a loss — no worse than today.
 ## Consequences
 
 - The 400s that dominated detail loss become recoverable in-pass rather than retried-in-vain or
-  rerouted-in-vain. The `cookie-reset (recovered)` count is the measure; watch it against the
-  residual `HTTP 400` losses the same way ADR-0099's page-recovery line is read.
+  rerouted-in-vain. **Measured on the first post-fix run** (`33619175438` vs the pre-fix control
+  `33610148010`, counted the same way): detail-pass settled HTTP 400 fell **10,044 → 0**, with 227
+  details recovered across 58 Boards — the drop is larger than the recovered count because the
+  first cleared 400 heals the session for every later detail on it, so the cascade never forms.
+  That run's 188 residual 400s were all on the **listing** pass, which is what this ADR's listing
+  reset (added the same day) then covers.
 - The reset clears the jar of a session shared by up to `_DETAIL_STREAMS` concurrent coroutines.
   Clearing is synchronous between awaits, so it cannot interleave with another coroutine's
   request on the same loop; concurrent 400s each clear and refetch, which is redundant but

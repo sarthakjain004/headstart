@@ -5594,6 +5594,121 @@ def test_workday_detail_400_that_survives_the_cookie_reset_is_a_loss(monkeypatch
     assert _COOKIE_RECOVERED not in classes
 
 
+class _CookieJar:
+    """A fake session jar that only counts `clear()` calls — all the ADR-0103 tests need."""
+
+    def __init__(self):
+        self.cleared = 0
+
+    def clear(self):
+        self.cleared += 1
+
+
+def _poisoned_until_cleared(jar, good_payload):
+    """A listing POST that answers 400 while `jar` is un-cleared and 200 with `good_payload`
+    after — the stale-cookie shape ADR-0103 recovers from. Used by both the sync and async
+    listing tests, whose only difference is which jar the reset clears."""
+
+    def respond():
+        if jar.cleared == 0:
+            return _Status(400, payload={})
+        return _Status(200, payload=good_payload)
+
+    return respond
+
+
+def test_workday_listing_400_clears_the_session_cookie_and_recovers(monkeypatch):
+    """ADR-0103 extended to the listing pass: a long pagination outlives its session's cookie and
+    every page after 400s, marking the whole Board unauthoritative (measured 188 such 400s in the
+    first post-fix run, on ghr/verisure/umiami/...). `_post`/`_post_async` clear the jar and
+    refetch once, exactly as the detail pass does. Runs the async mid-crawl path."""
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    page = {"jobPostings": [{"externalPath": "/job/x/A_1"}], "total": 20}
+    session = SimpleNamespace(cookies=_CookieJar())
+    respond = _poisoned_until_cleared(session.cookies, page)
+
+    async def fake_fetch_async(sess, method, url, **kw):
+        return respond()
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    out = asyncio.run(scraper._post_async(session, {}, 20))
+
+    assert out == page  # the page was recovered, not raised as a board error
+    assert session.cookies.cleared == 1  # cleared once
+
+
+def test_workday_listing_400_that_persists_still_raises(monkeypatch):
+    """One refetch, not a loop: a listing 400 that survives the cookie clear raises like any other
+    page error (the caller records it, `_paginate` marks the Board unauthoritative) — the reset
+    only ever adds one attempt."""
+    import asyncio
+
+    from headstart.scrapers.workday import WorkdayScraper
+
+    session = SimpleNamespace(cookies=_CookieJar())
+
+    async def always_400(sess, method, url, **kw):
+        return _Status(400, payload={})
+
+    monkeypatch.setattr(http, "fetch_async", always_400)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    with pytest.raises(http.RequestsError):
+        asyncio.run(scraper._post_async(session, {}, 20))
+    assert session.cookies.cleared == 1  # cleared once — not a loop
+
+
+def test_workday_listing_400_recovers_on_the_sync_first_page(monkeypatch):
+    """The sync `_post` — the first page of every slice, via `_exhaust` — rides the pooled
+    thread-local session, so its jar is `http.session().cookies`, not an `AsyncSession`'s. Same
+    contract as the async path: a 400 clears that jar and refetches once, and the page comes
+    back instead of raising as a board error."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    page = {"jobPostings": [{"externalPath": "/job/x/A_1"}], "total": 20}
+    pooled = SimpleNamespace(cookies=_CookieJar())
+    respond = _poisoned_until_cleared(pooled.cookies, page)
+    monkeypatch.setattr(http, "session", lambda: pooled)
+    monkeypatch.setattr(http, "fetch", lambda method, url, **kw: respond())
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    assert scraper._post({}, 0) == page
+    assert pooled.cookies.cleared == 1
+
+
+def test_workday_listing_400_reset_leaves_raise_gone_intact(monkeypatch):
+    """The reset sits *before* the 404 branch and must not alter its contract: a 400 that clears
+    into a 404 is still "one page of a live board" (None) mid-crawl, and still the raised
+    gone-verdict the ADR-0058 quarantine needs on the very first page (`raise_gone=True`)."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    pooled = SimpleNamespace(cookies=_CookieJar())
+    monkeypatch.setattr(http, "session", lambda: pooled)
+
+    def four_hundred_then_gone(method, url, **kw):
+        return _Status(400, payload={}) if pooled.cookies.cleared == 0 else _Status(404)
+
+    monkeypatch.setattr(http, "fetch", four_hundred_then_gone)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+
+    assert scraper._post({}, 20) is None  # mid-crawl: the caller reports the gap
+    pooled.cookies.cleared = 0  # re-poison for the first-page case
+    with pytest.raises(http.RequestsError):
+        scraper._post(
+            {}, 0, raise_gone=True
+        )  # first page: the gone-verdict still raises
+
+
 def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
     """The opt-in is per scraper; an ATS that never walled us must stay on its direct route."""
     from headstart.scrapers.greenhouse import GreenhouseScraper

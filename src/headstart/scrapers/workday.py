@@ -495,6 +495,26 @@ class WorkdayScraper(BaseScraper):
             timeout=30,
             **self._egress(),
         )
+        if response.status_code == 400:
+            # The same stale session cookie the detail pass hits (ADR-0103), measured on the
+            # listing POST itself, not inferred from the status: a tampered PLAY_SESSION returns
+            # this 400 with Workday's own "Session cookie is invalid" body and no `cf-mitigated`,
+            # and clearing the jar returns 200 (docs/workday/the-400-is-an-invalid-session-
+            # cookie.md). A long pagination outlives the cookie its pooled session picked up, and
+            # every page after 400s. Clear the jar and refetch once — where the pre-ADR-0103 retry
+            # re-sent the dead cookie. No recovery counter: a recovered page simply succeeds. The
+            # measure is what a *persisting* 400 still does below, exactly as before the reset —
+            # mid-crawl it raises into `_paginate`'s "page(s) failed mid-crawl (HTTP 400)" line;
+            # on a slice's first page it raises out of `_exhaust` as a Board error. Both drop.
+            http.session().cookies.clear()
+            response = http.fetch(
+                "POST",
+                self.url(),
+                json=body,
+                headers=headers,
+                timeout=30,
+                **self._egress(),
+            )
         if response.status_code == 404 and not raise_gone:
             return None  # one page of a live board — the caller reports the gap
         response.raise_for_status()
@@ -527,6 +547,22 @@ class WorkdayScraper(BaseScraper):
             timeout=30,
             **self._egress(),
         )
+        if response.status_code == 400:
+            # A stale session cookie (ADR-0103), same as the sync `_post` — cleared and refetched
+            # once. Safe on a shared `AsyncSession` for the reason `_job_detail_async` spells out:
+            # the synchronous clear cannot interleave with another page on this loop, and
+            # concurrent 400s converge — the first clear fixes the jar, a later one only drops a
+            # fresh good cookie, whose absence is itself a 200.
+            session.cookies.clear()
+            response = await http.fetch_async(
+                session,
+                "POST",
+                self.url(),
+                json=body,
+                headers=headers,
+                timeout=30,
+                **self._egress(),
+            )
         if response.status_code == 404:
             return None  # one page of a live board — the caller reports the gap
         response.raise_for_status()
