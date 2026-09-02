@@ -292,6 +292,7 @@ fails if this table drifts from it.
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
 | `company` | string | the ATS slug, not a display name |
 | `title` | string | embedded, with the description |
+| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so the Keyword filter's description scope reaches only part of the table, and the UI reports the share. Stored, not served: the API omits it |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `remote` | bool | |
 | `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), normalised at query time |
@@ -323,6 +324,7 @@ actually carries salary data once the pipeline has run against it.
   "id": "ashby:level:538c0fe2-504d-45e9-8ae6-2b44de217418",
   "ats": "ashby", "company": "level",
   "title": "Backend Engineer (senior or above)",
+  "description": null,                               // indexed before ADR-0104 added the column
   "location": "Austin", "remote": false, "employment_type": "FullTime",
   "min_years": 5, "salary": null,
   "url": "https://jobs.ashbyhq.com/level/538c0fe2-504d-45e9-8ae6-2b44de217418",
@@ -333,6 +335,7 @@ actually carries salary data once the pipeline has run against it.
   "id": "darwinbox:jslhrms:a65a11b3d9c70e",
   "ats": "darwinbox", "company": "jslhrms",
   "title": "Junior Engineer (Central QA)",
+  "description": null,                               // likewise
   "location": "Jajpur, Odisha , India",              // raw ATS text, stray spacing and all
   "remote": false, "employment_type": "Full Time",
   "min_years": 1, "salary": null,
@@ -347,9 +350,9 @@ The second row is the reason `posted_at` and `first_seen` are separate columns r
 `posted_at >= '2026-07-01'` would let it into every window — hence the `LIKE '____-__-__%'` shape
 guard on that filter, and none on `first_seen`, which we write ourselves.
 
-Note the corpus files under `data/jobs/` carry a few fields the table does not, e.g. `scraped_at`
-and the full `description`. The description is embedded, not stored — the vector is what survives
-into the table.
+Note the corpus files under `data/jobs/` carry a few fields the table does not, e.g. `scraped_at`.
+The description is embedded into the vector **and**, since ADR-0104, stored in its own column so the
+Keyword filter can match inside it — but it is not served: the API projection omits it.
 
 ### Retrieval eval
 

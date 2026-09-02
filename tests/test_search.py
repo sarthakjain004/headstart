@@ -125,6 +125,72 @@ def test_india_expands_via_geo():
     assert clause is not None and "lower(location) LIKE" in clause
 
 
+# ---- the Keyword filter (ADR-0104) ----
+
+
+def test_keyword_defaults_to_the_title_scope():
+    assert _clause(kw="kubernetes") == "(lower(title) LIKE '%kubernetes%')"
+
+
+def test_keyword_terms_are_anded_and_each_may_land_in_any_scoped_column():
+    clause = _clause(kw="Senior Kubernetes", kw_in="both", has_description=True)
+    assert clause == (
+        "(lower(title) LIKE '%senior%' OR lower(description) LIKE '%senior%') AND "
+        "(lower(title) LIKE '%kubernetes%' OR lower(description) LIKE '%kubernetes%')"
+    )
+
+
+def test_keyword_description_scope_stays_dark_without_the_column():
+    # Same dark-until-migrated rule as first_seen and the salary columns: a table that predates
+    # the ADR-0104 column must not 500 on kw_in=description — it simply filters nothing.
+    assert _clause(kw="rust", kw_in="description", has_description=False) is None
+    # ...and `both` degrades to the column that IS there rather than to nothing.
+    assert _clause(kw="rust", kw_in="both", has_description=False) == (
+        "(lower(title) LIKE '%rust%')"
+    )
+
+
+def test_keyword_description_scope_compiles_once_the_column_exists():
+    assert _clause(kw="rust", kw_in="description", has_description=True) == (
+        "(lower(description) LIKE '%rust%')"
+    )
+
+
+def test_keyword_quotes_are_doubled_like_every_other_term():
+    assert _clause(kw="O'Reilly") == "(lower(title) LIKE '%o''reilly%')"
+
+
+def test_keyword_unknown_scope_compiles_to_nothing_at_the_builder():
+    # Two layers, on purpose. The builder never interpolates a scope: an unknown one names no
+    # columns and so compiles to no clause at all. The fall-back to `title` is the *parser's* job
+    # (filter_kwargs whitelists `kw_in` against KEYWORD_SCOPES), pinned in the JobSearch tests
+    # below — so garbage that somehow bypassed the parser still cannot reach the where-clause.
+    assert _clause(kw="go", kw_in="'; DROP TABLE jobs; --") is None
+
+
+def test_keyword_terms_are_capped():
+    clause = _clause(kw="a b c d e f g")
+    assert clause is not None and clause.count(" AND ") == 4  # five terms, not seven
+
+
+def test_a_scope_without_a_keyword_filters_nothing():
+    assert _clause(kw_in="description", has_description=True) is None
+
+
+def test_keyword_scope_options_come_from_the_map_in_order_with_labels_and_needs():
+    from headstart.search import KEYWORD_SCOPES, keyword_scope_options
+
+    options = keyword_scope_options()
+    assert [v for v, _, _ in options] == list(KEYWORD_SCOPES)  # same order as the map
+    assert all(label for _, label, _ in options)  # every scope has a label
+    # only scopes that name the optional column carry the disclaimer / disabled rule
+    assert {v: needs for v, _, needs in options} == {
+        "title": False,
+        "description": True,
+        "both": True,
+    }
+
+
 # ---- JobSearch: through its interface, with fakes ----
 
 
@@ -316,6 +382,29 @@ def test_filters_reach_the_where_clause():
     searcher.run({"q": "x", "remote": "true", "ats": "darwinbox"})
     assert "remote = true" in table.last_where
     assert "ats = 'darwinbox'" in table.last_where
+
+
+def test_keyword_filter_reaches_the_where_clause_and_its_scope_is_whitelisted():
+    searcher, table = _searcher()
+    searcher.run({"q": "x", "kw": "kubernetes", "kw_in": "nonsense"})
+    assert (
+        "(lower(title) LIKE '%kubernetes%')" in table.last_where
+    )  # unknown scope -> title
+
+
+def test_keyword_scope_alone_is_nulled_so_it_can_never_be_the_blocking_filter():
+    searcher, _ = _searcher()
+    parsed = searcher.filter_kwargs({"kw_in": "description"})
+    assert parsed["kw"] is None and parsed["kw_in"] is None
+
+
+def test_keyword_description_scope_is_learned_from_the_schema():
+    searcher, table = _searcher()
+    assert searcher.has_description == ("description" in table.schema.names)
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title"]
+    )  # no description column
+    assert JobSearch(_Model(), table).has_description is False
 
 
 def test_has_salary_matches_a_description_only_derived_value():

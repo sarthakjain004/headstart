@@ -6,7 +6,7 @@ const el = s => document.getElementById(s);
 // allow http(s) hrefs (no javascript: URLs).
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
-el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
    search, so a stale link never strands anyone on a blank page. Trends data loads the
@@ -117,6 +117,14 @@ function currentFilters(){
   if (el('india').value) f.india = el('india').value;
   if (el('location').value.trim()) f.location = el('location').value.trim();
   if (el('company').value.trim()) f.company = el('company').value.trim();
+  // The Keyword filter (ADR-0104). Its scope is a modifier, sent only beside a keyword — on its
+  // own it filters nothing, and the server nulls it anyway (matches filter_kwargs) — and only
+  // when it is not the default, which the server already assumes: that keeps a "Look in: Title"
+  // pill off every plain keyword search.
+  if (el('kw').value.trim()){
+    f.kw = el('kw').value.trim();
+    if (el('kwin').value !== CFG.keyword_default_scope) f.kw_in = el('kwin').value;
+  }
   if (el('posted').value) f.posted_within = el('posted').value;
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
   if (el('salmin') && el('salmin').value) f.salary_min = el('salmin').value;
@@ -127,13 +135,16 @@ function currentFilters(){
   return f;
 }
 const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
+  kw:'Keyword', kw_in:'Look in',
   ats:'ATS provider', etype:'Type', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤',
   salary_min:'Salary from', salary_max:'Salary to', salary_currency:'Currency' };
 // `salary_currency` is deliberately absent: it has a default (USD) rather than an empty
 // state, so clearAll() blanking it would leave the picker showing nothing. Clearing the two
 // bounds already switches the bracket off, which is what "clear" has to mean here.
-const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats',
+// `kw_in` is likewise absent: it has a default (Title), not an empty state — dropping the
+// keyword is what switches the scope off, so dropFilter maps it onto `kw` below.
+const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats', kw:'kw',
   etype:'etype', india:'india', location:'location', company:'company',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
@@ -148,7 +159,7 @@ function dropFilter(key){
   // The currency picker has a default, not an empty state, so there is nothing to blank on it.
   // Dropping any part of the bracket therefore means clearing the two bounds it scopes — which
   // is also what switches the bracket off server-side.
-  const keys = BRACKET.includes(key) ? ['salary_min', 'salary_max'] : [key];
+  const keys = BRACKET.includes(key) ? ['salary_min', 'salary_max'] : (key === 'kw_in' ? ['kw'] : [key]);
   let cleared = false;
   for (const k of keys){
     const c = el(CONTROL[k]); if (!c) continue;
@@ -201,6 +212,7 @@ async function fetchPage(){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     el('n').textContent = ''; return; }
   const facets = await facetsPromise;
+  drawKeywordNote(facets);
   if(!rows.length){
     el('results').innerHTML = page === 1
       ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
@@ -293,6 +305,36 @@ function applyFacets(facets){
   countSwitch('remote', f.remote);
   countSwitch('hassalary', f.has_salary);
   countYears(f.max_years);
+}
+
+// The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
+// before the column existed do, nor any whose detail pass found nothing — so a keyword looked for
+// in descriptions can only ever match the share that has one. Quantified rather than static:
+// `description_coverage` is `{covered, total}` — the rows the OTHER filters match that carry a
+// description, and all the rows they match — counted with the keyword lifted, so the share stays
+// meaningful while a keyword is applied (with it intact, a description-scoped keyword matches only
+// rows that have one, and the note would read "N of N"). Its `total` is therefore not the header's.
+// Which scopes carry it comes from CFG.keyword_scopes (the server's scope map), never from a scope
+// name hard-coded here.
+//
+// Written on EVERY fetch, like drawSortNote: a note left over from the previous search is worse
+// than none. Three states, kept distinct — /facets failed (no numbers to show, say the fact
+// plainly), the column does not exist yet (`null`), and a real count.
+function drawKeywordNote(facets){
+  const note = el('kwnote'), scope = el('kwin');
+  const needs = (CFG.keyword_scopes || {})[scope.value];
+  if (!needs){ note.textContent = ''; return; }
+  if (!facets){
+    note.textContent = 'Only jobs with a stored description can match a keyword here — not every job has one.';
+    return; }
+  if (facets.description_coverage === null || facets.description_coverage === undefined){
+    note.textContent = 'Matching inside descriptions isn\'t available yet — descriptions are still being added to the index.';
+    return; }
+  const { covered, total } = facets.description_coverage;
+  note.textContent = typeof covered === 'number' && typeof total === 'number'
+    ? `Descriptions are stored for ${covered.toLocaleString()} of the ${total.toLocaleString()} jobs your other filters match — ` +
+      'a keyword looked for here can only match inside those; the rest have no stored description.'
+    : 'Only jobs with a stored description can match a keyword here — not every job has one.';
 }
 
 // The two checkboxes are labels, not option lists — their single count goes on the text.

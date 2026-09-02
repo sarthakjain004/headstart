@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
@@ -111,6 +111,36 @@ ETYPE_CLAUSES = {
 SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
 
 
+class KeywordScope(NamedTuple):
+    """One entry of :data:`KEYWORD_SCOPES`: the columns a keyword is matched in, and the rail's label."""
+
+    columns: tuple[str, ...]
+    label: str
+
+
+# The Keyword filter's scopes (ADR-0104): which served text columns a keyword is matched in.
+# The map is the extension point: `build_filter` compiles whatever it says, `filter_kwargs`
+# whitelists `kw_in` against its keys, and the rail's <select>, its disabled-until-migrated rule
+# and the disclaimer all derive from `keyword_scope_options()` below — so a new scope (company,
+# location, department…) is one entry here, its columns and its label, and nothing in the
+# template or the JS. `description` is nullable and exists only once ADR-0104's column migration
+# has run, so any scope naming it is compiled only while `has_description` says the column is
+# there, exactly like `has_first_seen`.
+KEYWORD_SCOPES: dict[str, KeywordScope] = {
+    "title": KeywordScope(("title",), "Title"),
+    "description": KeywordScope(("description",), "Description"),
+    "both": KeywordScope(("title", "description"), "Title or description"),
+}
+KEYWORD_DEFAULT_SCOPE = "title"
+# The one column a scope can name that a table may not have yet; `build_filter`'s
+# `has_description` says whether it does. A name rather than a set: a second such column would
+# need its own runtime fact, so it could not simply be listed here.
+_OPTIONAL_KEYWORD_COLUMN = "description"
+# Enough for "senior backend kubernetes aws remote"; a bound because every term is one more LIKE
+# per scoped column on every count the facet strip issues.
+_KEYWORD_MAX_TERMS = 5
+
+
 def _int_arg(args: Mapping[str, str]):
     """Read an int out of a query string, or None when it isn't there.
 
@@ -129,6 +159,38 @@ def _int_arg(args: Mapping[str, str]):
 def _like(term: str) -> str:
     """A user term made safe for a quoted LIKE pattern: quotes doubled, length-capped."""
     return term[:60].replace("'", "''").lower()
+
+
+def _keyword_terms(kw: str) -> list[str]:
+    """The Keyword filter's terms: whitespace-split, each escaped by :func:`_like`, capped.
+
+    Substring, not whole-word, and deliberately so (ADR-0104): a word-boundary regex has no
+    lookarounds in DataFusion's Rust engine, so `\\b` silently never matches `c++`, `.net` or
+    `c#` — and a keyword box that cannot find "c++" is a worse failure than "java" also matching
+    "javascript". Substring is also exactly how `location` and `company` already match, so this
+    adds no second escaping path to reason about.
+    """
+    return [_like(t) for t in kw.split() if t][:_KEYWORD_MAX_TERMS]
+
+
+def _keyword_columns(scope: str | None, has_description: bool) -> tuple[str, ...]:
+    """The columns a scope compiles to on *this* table — an optional column only once it exists."""
+    found = KEYWORD_SCOPES.get(scope or KEYWORD_DEFAULT_SCOPE)
+    columns = found.columns if found else ()
+    return tuple(c for c in columns if c != _OPTIONAL_KEYWORD_COLUMN or has_description)
+
+
+def keyword_scope_options() -> list[tuple[str, str, bool]]:
+    """``(value, label, needs_description)`` per scope, in map order — what the rail renders.
+
+    The single place the template and the JS learn the scopes from, so the <select>, which
+    options are disabled before the column exists, and which scopes carry the coverage disclaimer
+    all follow the map rather than restating it.
+    """
+    return [
+        (value, scope.label, _OPTIONAL_KEYWORD_COLUMN in scope.columns)
+        for value, scope in KEYWORD_SCOPES.items()
+    ]
 
 
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
@@ -207,6 +269,9 @@ def build_filter(
     seen_after: str | None = None,
     seen_before: str | None = None,
     first_seen_after: str | None = None,
+    kw: str | None = None,
+    kw_in: str | None = None,
+    has_description: bool = False,
     atses: Collection[str],
     currencies: Collection[str] = (),
     has_first_seen: bool,
@@ -221,6 +286,12 @@ def build_filter(
     defaulted: a caller that forgot them would silently drop the ATS whitelist and turn the
     alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
     ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
+
+    ``has_description`` (ADR-0104) is the one runtime fact that *is* defaulted, and the asymmetry
+    is deliberate: forgetting it can only leave the Keyword filter's description scope dark —
+    the safe direction — where forgetting ``has_first_seen`` would turn a cutoff into no clause.
+    ``kw``/``kw_in`` are the Keyword filter: every term must appear (AND) in at least one of the
+    scope's columns (OR); see :data:`KEYWORD_SCOPES`.
     """
     filters: list[str] = []
     if remote:
@@ -239,6 +310,15 @@ def build_filter(
         filters.append(f"lower(location) LIKE '%{_like(location)}%'")
     if company:
         filters.append(f"lower(company) LIKE '%{_like(company)}%'")
+    if kw:
+        # Per term, OR across the scope's columns; AND across terms. A scope whose only column is
+        # absent compiles to nothing at all — dark, never an error — like every optional-column
+        # filter above.
+        columns = _keyword_columns(kw_in, has_description)
+        for term in _keyword_terms(kw) if columns else ():
+            filters.append(
+                "(" + " OR ".join(f"lower({c}) LIKE '%{term}%'" for c in columns) + ")"
+            )
     if has_salary and has_min_salary_annual:
         # `min_salary_annual` (ADR-0082), not the raw `salary` string: `salary` is only ever
         # populated from a scraper's own structured field, so gating on it silently excluded
@@ -382,6 +462,10 @@ class JobSearch:
         # idempotent migration (`index.py`'s `_salary_fields`) — a table that hasn't synced
         # since would error on `has_salary=true` rather than just not supporting it yet.
         self.has_min_salary_annual = "min_salary_annual" in table.schema.names
+        # The Keyword filter's description scope (ADR-0104), same dark-until-migrated rule: the
+        # column arrives with the first `index sync` after that ADR, and the UI disables the
+        # scope until it does rather than 500ing on it.
+        self.has_description = "description" in table.schema.names
         # The currency whitelist for the ADR-0082 salary bracket, learned the same way and for
         # the same reason as `atses`: it lands in a where-clause, so it is matched against what
         # the table holds rather than interpolated from the query string.
@@ -411,6 +495,8 @@ class JobSearch:
         """
 
         _int = _int_arg(args)
+        kw = (args.get("kw") or "").strip() or None
+        kw_in = (args.get("kw_in") or "").strip().lower()
         return {
             "remote": args.get("remote") == "true",
             "max_years": _int("max_years"),
@@ -435,6 +521,15 @@ class JobSearch:
             "seen_after": (args.get("seen_after") or "").strip() or None,
             "seen_before": (args.get("seen_before") or "").strip() or None,
             "first_seen_after": (args.get("first_seen_after") or "").strip() or None,
+            "kw": kw,
+            # A scope is a modifier of the keyword, not a filter of its own (the salary
+            # currency's rule): without a keyword it is None, so it can never be named as the
+            # Blocking filter, and an unknown value falls back to the default rather than being
+            # interpolated.
+            "kw_in": (kw_in if kw_in in KEYWORD_SCOPES else KEYWORD_DEFAULT_SCOPE)
+            if kw
+            else None,
+            "has_description": self.has_description,
             "atses": self.atses,
             "currencies": self.currencies,
             "has_first_seen": self.has_first_seen,
