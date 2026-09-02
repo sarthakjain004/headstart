@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
@@ -111,29 +111,31 @@ ETYPE_CLAUSES = {
 SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
 
 
+class KeywordScope(NamedTuple):
+    """One entry of :data:`KEYWORD_SCOPES`: the columns a keyword is matched in, and the rail's label."""
+
+    columns: tuple[str, ...]
+    label: str
+
+
 # The Keyword filter's scopes (ADR-0104): which served text columns a keyword is matched in.
 # The map is the extension point: `build_filter` compiles whatever it says, `filter_kwargs`
 # whitelists `kw_in` against its keys, and the rail's <select>, its disabled-until-migrated rule
 # and the disclaimer all derive from `keyword_scope_options()` below — so a new scope (company,
-# location, department…) is one entry here plus its label in `KEYWORD_SCOPE_LABELS`, and nothing
-# in the template or the JS. `description` is nullable and exists only once ADR-0104's column
-# migration has run, so any scope naming it is compiled only while `has_description` says the
-# column is there, exactly like `has_first_seen`.
-KEYWORD_SCOPES: dict[str, tuple[str, ...]] = {
-    "title": ("title",),
-    "description": ("description",),
-    "both": ("title", "description"),
+# location, department…) is one entry here, its columns and its label, and nothing in the
+# template or the JS. `description` is nullable and exists only once ADR-0104's column migration
+# has run, so any scope naming it is compiled only while `has_description` says the column is
+# there, exactly like `has_first_seen`.
+KEYWORD_SCOPES: dict[str, KeywordScope] = {
+    "title": KeywordScope(("title",), "Title"),
+    "description": KeywordScope(("description",), "Description"),
+    "both": KeywordScope(("title", "description"), "Title or description"),
 }
-KEYWORD_SCOPE_LABELS: dict[str, str] = {
-    "title": "Title",
-    "description": "Description",
-    "both": "Title or description",
-}
-assert KEYWORD_SCOPE_LABELS.keys() == KEYWORD_SCOPES.keys(), "a scope without a label"
 KEYWORD_DEFAULT_SCOPE = "title"
-# The one optional column a scope can name today. A further optional column would be listed here
-# too; the guard in `_keyword_columns` reads this set rather than naming columns itself.
-_OPTIONAL_KEYWORD_COLUMNS = frozenset({"description"})
+# The one column a scope can name that a table may not have yet; `build_filter`'s
+# `has_description` says whether it does. A name rather than a set: a second such column would
+# need its own runtime fact, so it could not simply be listed here.
+_OPTIONAL_KEYWORD_COLUMN = "description"
 # Enough for "senior backend kubernetes aws remote"; a bound because every term is one more LIKE
 # per scoped column on every count the facet strip issues.
 _KEYWORD_MAX_TERMS = 5
@@ -173,10 +175,9 @@ def _keyword_terms(kw: str) -> list[str]:
 
 def _keyword_columns(scope: str | None, has_description: bool) -> tuple[str, ...]:
     """The columns a scope compiles to on *this* table — an optional column only once it exists."""
-    columns = KEYWORD_SCOPES.get(scope or KEYWORD_DEFAULT_SCOPE, ())
-    return tuple(
-        c for c in columns if c not in _OPTIONAL_KEYWORD_COLUMNS or has_description
-    )
+    found = KEYWORD_SCOPES.get(scope or KEYWORD_DEFAULT_SCOPE)
+    columns = found.columns if found else ()
+    return tuple(c for c in columns if c != _OPTIONAL_KEYWORD_COLUMN or has_description)
 
 
 def keyword_scope_options() -> list[tuple[str, str, bool]]:
@@ -187,12 +188,8 @@ def keyword_scope_options() -> list[tuple[str, str, bool]]:
     all follow the map rather than restating it.
     """
     return [
-        (
-            scope,
-            KEYWORD_SCOPE_LABELS[scope],
-            bool(set(cols) & _OPTIONAL_KEYWORD_COLUMNS),
-        )
-        for scope, cols in KEYWORD_SCOPES.items()
+        (value, scope.label, _OPTIONAL_KEYWORD_COLUMN in scope.columns)
+        for value, scope in KEYWORD_SCOPES.items()
     ]
 
 

@@ -1,6 +1,6 @@
 # ADR-0104: A Keyword filter with a scope map, backed by a stored `description` column
 
-**Status:** Accepted · **Date:** 2026-09-02 · **Extends ADR-0031's Search-filter vocabulary and ADR-0084's counting rule; changes `index._schema()`, with README §"The served table" updated in lockstep**
+**Status:** accepted · **Date:** 2026-09-02 · **Extends ADR-0031's Search-filter vocabulary and ADR-0084's counting rule; changes `index._schema()`, with README §"The served table" updated in lockstep**
 
 ## Context
 
@@ -27,7 +27,11 @@ Two facts about the served table decided the shape:
 ### 1. One scope map is the extension point
 
 ```python
-KEYWORD_SCOPES = {"title": ("title",), "description": ("description",), "both": ("title", "description")}
+KEYWORD_SCOPES = {
+    "title": KeywordScope(("title",), "Title"),
+    "description": KeywordScope(("description",), "Description"),
+    "both": KeywordScope(("title", "description"), "Title or description"),
+}
 ```
 
 `build_filter` compiles whatever the map says; `filter_kwargs` whitelists `kw_in` against its keys
@@ -35,9 +39,8 @@ KEYWORD_SCOPES = {"title": ("title",), "description": ("description",), "both": 
 the template and the JS `(value, label, needs_description)` per scope, so the rail's `<select>`,
 which options are disabled before the column exists, and which scopes carry the coverage
 disclaimer are all *rendered from* the map rather than restating it. Adding a scope — company,
-location, department — is one map entry plus its label, and nothing in the template or the JS.
-(The first draft of this ADR claimed "one entry and nothing else" while the `<select>` was
-hand-written; review caught it, and the rendering was moved onto the map so the claim is true.)
+location, department — is one map entry, its columns and its label, and nothing in the template
+or the JS.
 The scope is a **modifier** of the keyword, not a filter of its own: without a keyword it is
 nulled, so it can never be named as the Blocking filter (the salary currency's rule, ADR-0084 §3),
 and the browser omits it from a request when it is the default.
@@ -83,8 +86,8 @@ it is taken **in stages**, not at once:
   and it is rewritten **only if this run's corpus actually carries its text**. That qualifier
   matters: the merge job's corpus is the run's *slice*, not the whole table, so without it one
   flagged run would delete-and-re-add every null-description row (~25 KB of vector each) while
-  filling only the slice's share. (Review caught exactly that in the first draft.) Candidates the
-  corpus lacks are logged and left for a later run. So it rewrites every row it fills and only
+  filling only the slice's share. Candidates the corpus lacks are logged and left for a later
+  run. So it rewrites every row it fills and only
   those; turning it on is the deliberate step that spends the ≈690 MB, tracked as a GitHub issue
   (see Consequences); the disclaimer below reports honestly-low coverage until it runs.
 
@@ -96,11 +99,16 @@ exactly as `first_seen` is, and never compared.
 
 ### 4. The disclaimer is a number, not a sentence
 
-`/facets` returns `description_coverage`: the count of rows matching the current filters that carry
-a description, counted from the same where-clause as the total and on the same thread pool (ADR-0084
-§1). Whenever the scope includes description the rail reads *"Description search covers 12,304 of
-40,807 jobs matching your filters — the rest have no stored description and can't be matched this
-way."* It is `null` while the column does not exist, which the UI renders as "not available yet"
+`/facets` returns `description_coverage`: `{"covered", "total"}` — of the rows the *other* filters
+match, how many carry a description, and how many there are — counted on the same thread pool as
+every facet (ADR-0084 §1) and **with the keyword lifted**, the way a dimension's "Any" row lifts its
+own dimension. Lifting it is what keeps the number meaningful while description searching is in
+use: counted with the keyword intact, a description-scoped keyword makes the covered set and the
+total the same clause — every row it matched has a description by construction — and the rail
+would read "N of N" on a table where almost nothing has text, the one state the disclaimer exists
+for. Whenever the scope includes description the rail reads *"Descriptions are stored for 12,304 of
+the 40,807 jobs your other filters match — a keyword looked for here can only match inside those;
+the rest have no stored description."* It is `null` while the column does not exist, which the UI renders as "not available yet"
 with the scope options disabled — the `has_first_seen` dark-until-migrated rule — distinct from a
 genuine zero. The number is honestly low on the day this ships and rises as rows land and when the
 backfill runs; a static sentence would have said the same thing on both days.
@@ -117,6 +125,10 @@ backfill runs; a static sentence would have said the same thing on both days.
 - **Full-text (tantivy) index on the description column.** Better tokenisation than substring, but
   it needs the column first — this ADR — plus an index to build and keep current in `sync`. A
   refinement to layer on later, not a reason to skip the column.
+- **Two boxes, one per column** — "*X* in the title and *Y* in the description" at once. The
+  request reads as two *options* for one keyword, not two simultaneous constraints, so one box
+  with a scope picker was built; a second box would be one more map-driven control if that
+  reading turns out to be wanted.
 - **Backfill immediately in this change.** Rewrites the whole table and adds ≈690 MB in one merge
   run, into a dataset whose history is compacted on a budget. That is the user's call, made
   reversible by shipping it as an off-by-default flag rather than a silent side effect.
@@ -129,7 +141,12 @@ backfill runs; a static sentence would have said the same thing on both days.
   the alerts cutoff into no clause. Existing callers are untouched.
 - `index._schema()` gains `description` after `title`; README §"The served table" documents it and
   `tests/test_readme_schema.py` pins the two together. The API projection does **not** serve it.
-- `facets.counts` returns one more key; `has_description` and `kw_in` join the never-droppable set.
+- `facets.counts` returns one more key, `description_coverage` (`{"covered", "total"}`, or `null`
+  without the column); `has_description` and `kw_in` join the never-droppable set.
+- Saved sets and Subscriptions do **not** carry the keyword: `ALLOWED_SEARCH_FILTERS` and
+  `SET_SEARCH_FILTERS` (`alerts/store.py`) omit `kw`/`kw_in`, as they already omit the salary
+  bracket, so saving or subscribing from a keyword search drops it. The request scoped the filter
+  to the Search tab; carrying it into alerts is a separate decision.
 - `CONTEXT.md` gains **Keyword filter**, with the vocabulary to avoid.
 - The next `index sync` adds the column and starts filling new rows. `--backfill-descriptions` is
   the switch for the rest — a decision, not a default, tracked in GitHub issue **#346**

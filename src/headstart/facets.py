@@ -89,7 +89,9 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     Returns ``{"total": int, "facets": {dimension: [{value,label,count}, ...]}, "blocking":
     str|None}``. ``blocking`` names the single filter whose removal recovers the most results
     when the total is zero, and is ``None`` otherwise — the "why did I get nothing" answer that
-    the same counting machinery already pays for.
+    the same counting machinery already pays for. ``description_coverage`` is the Keyword
+    filter's disclaimer (ADR-0104): ``{"covered": int, "total": int}`` counted with the keyword
+    lifted, or ``None`` while the served table has no ``description`` column.
     """
     base = dict(filter_kwargs)
 
@@ -145,13 +147,20 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     counted = [(d, v, lbl, where_for(**ov)) for d, v, lbl, ov in plan]
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         totals = pool.submit(_count, table, where_for())
-        # The Keyword filter's disclaimer (ADR-0104): how many of the rows matching these filters
-        # carry a description at all. Not a facet — there is no option to pick — but the same
-        # rule applies: it is decided by the where-clause alone, so it rides this pool. None
-        # while the column does not exist yet, which the UI reads as "not available", distinct
-        # from a genuine zero.
+        # The Keyword filter's disclaimer (ADR-0104): of the rows the *other* filters match, how
+        # many carry a description at all. Not a facet — there is no option to pick — but the
+        # same rules apply: decided by the where-clause alone, so it rides this pool, and counted
+        # with the keyword LIFTED, as every dimension's "Any" row is above. Counted with it
+        # intact, a description-scoped keyword makes the two clauses one — every row it matched
+        # has a description by construction — and the rail would read "N of N" on a table where
+        # almost nothing has text. None while the column does not exist yet, which the UI reads
+        # as "not available", distinct from a genuine zero.
+        unkeyed = where_for(kw=None, kw_in=None)
         coverage = (
-            pool.submit(_count, table, _with_description(where_for()))
+            (
+                pool.submit(_count, table, _with_description(unkeyed)),
+                pool.submit(_count, table, unkeyed),
+            )
             if base.get("has_description")
             else None
         )
@@ -168,12 +177,16 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         "total": total,
         "facets": facets,
         "blocking": _blocking(table, base, total),
-        "description_coverage": coverage.result() if coverage else None,
+        "description_coverage": (
+            {"covered": coverage[0].result(), "total": coverage[1].result()}
+            if coverage
+            else None
+        ),
     }
 
 
 def _with_description(where: str | None) -> str:
-    """The current filters, narrowed to rows whose description is stored."""
+    """A where-clause narrowed to rows whose description is stored."""
     return (
         f"({where}) AND description IS NOT NULL" if where else "description IS NOT NULL"
     )

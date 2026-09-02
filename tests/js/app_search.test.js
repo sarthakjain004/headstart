@@ -188,26 +188,27 @@ test('a keyword is sent, and its scope only when it is not the default', async (
 
 test('the disclaimer is silent for the title scope', async () => {
   const { nodes, t } = loadApp(url => url.startsWith('/facets')
-    ? { total: 100, facets: {}, blocking: null, description_coverage: 42 } : [], SCOPES);
+    ? { total: 12, facets: {}, blocking: null, description_coverage: { covered: 42, total: 100 } } : [], SCOPES);
   set(nodes, 'kwin', 'title');
   await t.go();
   assert.equal(nodes.kwnote.textContent, '');
 });
 
-test('a description-bearing scope shows the measured coverage against the total', async () => {
+test('a description-bearing scope shows the coverage against the other filters\' total, not the header\'s', async () => {
   const { nodes, t } = loadApp(url => url.startsWith('/facets')
-    ? { total: 100, facets: {}, blocking: null, description_coverage: 42 } : [], SCOPES);
+    ? { total: 12, facets: {}, blocking: null, description_coverage: { covered: 42, total: 100 } } : [], SCOPES);
   for (const scope of ['description', 'both']){       // both come from the map, not a name
     set(nodes, 'kwin', scope);
     await t.go();
-    assert.match(nodes.kwnote.textContent, /42 of 100 jobs matching your filters/);
+    assert.match(nodes.kwnote.textContent, /42 of the 100 jobs your other filters match/);
+    assert.doesNotMatch(nodes.kwnote.textContent, /of the 12/);   // the keyword-lifted total, not the header's
     assert.match(nodes.kwnote.textContent, /no stored description/);
   }
 });
 
 test('a null coverage means the column does not exist yet, not zero', async () => {
   const { nodes, t } = loadApp(url => url.startsWith('/facets')
-    ? { total: 100, facets: {}, blocking: null, description_coverage: null } : [], SCOPES);
+    ? { total: 12, facets: {}, blocking: null, description_coverage: null } : [], SCOPES);
   set(nodes, 'kwin', 'description');
   await t.go();
   assert.match(nodes.kwnote.textContent, /isn't available yet/);
@@ -219,13 +220,13 @@ test('a failed /facets replaces a stale note with the plain fact, never leaves t
   const { nodes, t } = loadApp(url => {
     if (!url.startsWith('/facets')) return [];
     if (!facetsOk) throw new Error('down');       // .catch(() => null) in fetchPage
-    return { total: 100, facets: {}, blocking: null, description_coverage: 42 };
+    return { total: 12, facets: {}, blocking: null, description_coverage: { covered: 42, total: 100 } };
   }, SCOPES);
   set(nodes, 'kwin', 'description');
   await t.go();
-  assert.match(nodes.kwnote.textContent, /42 of 100/);
+  assert.match(nodes.kwnote.textContent, /42 of the 100/);
   facetsOk = false;
   await t.go();
-  assert.doesNotMatch(nodes.kwnote.textContent, /42 of 100/);   // not stale
+  assert.doesNotMatch(nodes.kwnote.textContent, /42 of the 100/);   // not stale
   assert.match(nodes.kwnote.textContent, /not every job has one/);
 });

@@ -18,7 +18,10 @@ does true incremental add/evict on every later run — no overwrite-rebuild (ADR
 without a vector (non-English, or not yet embedded) are reported and skipped — run ``embed_run
 --resume`` first to close that gap. Each row added is stamped ``first_seen`` with the run's time,
 which is when *we* indexed it rather than the company's ``posted_at``; sync adds the column to a
-table that predates it before writing (ADR-0031). Sync reads the liveness ledger too
+table that predates it before writing (ADR-0031), and adds ``description`` (ADR-0104) the same
+way — filled for the rows it adds from the run's corpus; ``--backfill-descriptions`` fills the
+rows that predate it, off by default because it rewrites every row it fills. Sync reads the
+liveness ledger too
 (``--ledger``), but only to name Boards the same way prune does (ADR-0049). It needs no keep-set
 guard of its own: a broken ledger degrades resolution on both sides of its scope comparison at
 once, which narrows nothing and widens nothing.
@@ -120,7 +123,7 @@ _MIN_KEEP_BOARDS = 1000
 # company's posting date and says nothing about when we found it (ADR-0031). Held as a module
 # constant because both `_schema` (new tables) and `sync`'s migration (the live table) need it.
 _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
-# The posting's description text, so the Keyword filter can match inside it (ADR-0104). Nullable:
+# The Job's description text, so the Keyword filter can match inside it (ADR-0104). Nullable:
 # null on rows indexed before the column existed and on Jobs whose detail pass found nothing. NOT
 # sourced from the embedding store's meta (which carries only a `has_description` bit) but from the
 # corpus rows `update_descriptions` filled — so `_refresh_metadata` must carry it across a rewrite
@@ -341,7 +344,10 @@ def _refresh_metadata(
     # Only ids and their carried columns are held across the scan; a row's replacement is
     # materialised one batch at a time. Carrying a vector per stale row would be ~25 KB each — a
     # first sweep of ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so
-    # an OOM there would leave those rows deleted with nothing put back.
+    # an OOM there would leave those rows deleted with nothing put back. The description text is
+    # carried too — ~4.4 KB median (ADR-0104), so once the backfill has run a full sweep holds a
+    # few hundred MB of text: real, an order of magnitude under the vector case, and bounded by
+    # the table rather than the corpus.
     stale: list[_Stale] = []
     candidates: dict[
         str, _Stale
@@ -352,22 +358,22 @@ def _refresh_metadata(
         if index is None or job_id in just_added:
             continue
         stored = metas[index]
-        at = _Stale(
+        kept = _Stale(
             job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
         )
         if not all(row.get(field) == stored.get(field) for field in columns):
-            stale.append(at)
+            stale.append(kept)
         elif (
             backfill_descriptions
-            and at.description is None
+            and kept.description is None
             and bool(stored.get("has_description"))
         ):
-            candidates[job_id] = at
+            candidates[job_id] = kept
 
     # One targeted corpus pass for both: text for the rows being rewritten anyway (filled free),
     # and for the backfill candidates — which become stale only if the text is actually here.
     texts = _corpus_descriptions(source, {r.job_id for r in stale} | candidates.keys())
-    backfilled = [at for job_id, at in candidates.items() if job_id in texts]
+    backfilled = [kept for job_id, kept in candidates.items() if job_id in texts]
     stale.extend(backfilled)
     if candidates and len(backfilled) < len(candidates):
         _log.info(
@@ -387,14 +393,14 @@ def _refresh_metadata(
     for start in range(0, len(stale), _ADD_CHUNK):
         batch = stale[start : start + _ADD_CHUNK]
         rows = []
-        for at in batch:
-            index = row_of[at.job_id]
+        for kept in batch:
+            index = row_of[kept.job_id]
             fresh = {field: metas[index].get(field) for field in columns}
-            fresh[_FIRST_SEEN_FIELD.name] = at.first_seen
-            fresh[_DESCRIPTION_FIELD.name] = at.description or texts.get(at.job_id)
+            fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
+            fresh[_DESCRIPTION_FIELD.name] = kept.description or texts.get(kept.job_id)
             fresh["vector"] = vectors[index].tolist()
             rows.append(fresh)
-        apply_sync(table, rows, [at.job_id for at in batch])
+        apply_sync(table, rows, [kept.job_id for kept in batch])
         _log.info(
             f"metadata refresh: {min(start + _ADD_CHUNK, len(stale))}/{len(stale)}"
         )

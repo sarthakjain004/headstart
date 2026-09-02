@@ -193,13 +193,21 @@ def test_the_salary_facet_stays_dark_without_the_salary_columns():
 # ---- the Keyword filter's disclaimer (ADR-0104) ----
 
 
-def test_description_coverage_is_counted_from_the_same_filters_as_the_total():
+def test_description_coverage_is_counted_with_the_keyword_lifted():
     table = _CountingTable()
     out = facets.counts(table, _kwargs(remote=True, kw="rust", kw_in="description"))
-    # the total's own clause, narrowed to rows with a description — nothing else lifted
-    expected = build_filter(**_kwargs(remote=True, kw="rust", kw_in="description"))
-    assert f"({expected}) AND description IS NOT NULL" in table.seen
-    assert out["description_coverage"] == 42
+    # Both numbers come from the other filters alone — the keyword lifted, as a dimension's "Any"
+    # row lifts its own. Counted with it intact, a description-scoped keyword makes the covered
+    # set and the total the same clause, and the disclaimer reads "N of N".
+    unkeyed = build_filter(**_kwargs(remote=True))
+    assert unkeyed in table.seen
+    assert f"({unkeyed}) AND description IS NOT NULL" in table.seen
+    # ...and no coverage count carries the keyword. Only `description IS NOT NULL`: the salary
+    # facet's own `min_salary_annual IS NOT NULL` option keeps the keyword, as every facet does.
+    assert not any(
+        w and "rust" in w and "description IS NOT NULL" in w for w in table.seen
+    )
+    assert out["description_coverage"] == {"covered": 42, "total": 42}
 
 
 def test_description_coverage_is_null_not_zero_without_the_column():

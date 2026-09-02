@@ -6,8 +6,7 @@ const el = s => document.getElementById(s);
 // allow http(s) hrefs (no javascript: URLs).
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
-el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-el('kw').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
    search, so a stale link never strands anyone on a blank page. Trends data loads the
@@ -124,7 +123,7 @@ function currentFilters(){
   // pill off every plain keyword search.
   if (el('kw').value.trim()){
     f.kw = el('kw').value.trim();
-    if (el('kwin').value !== (CFG.keyword_default_scope || 'title')) f.kw_in = el('kwin').value;
+    if (el('kwin').value !== CFG.keyword_default_scope) f.kw_in = el('kwin').value;
   }
   if (el('posted').value) f.posted_within = el('posted').value;
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
@@ -311,10 +310,12 @@ function applyFacets(facets){
 // The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
 // before the column existed do, nor any whose detail pass found nothing — so a keyword looked for
 // in descriptions can only ever match the share that has one. Quantified rather than static:
-// `description_coverage` is the count of rows matching the current filters that carry a
-// description, from the same where-clause the total was counted with, so the two numbers can be
-// read against each other. Which scopes carry it comes from CFG.keyword_scopes (the server's
-// scope map), never from a scope name hard-coded here.
+// `description_coverage` is `{covered, total}` — the rows the OTHER filters match that carry a
+// description, and all the rows they match — counted with the keyword lifted, so the share stays
+// meaningful while a keyword is applied (with it intact, a description-scoped keyword matches only
+// rows that have one, and the note would read "N of N"). Its `total` is therefore not the header's.
+// Which scopes carry it comes from CFG.keyword_scopes (the server's scope map), never from a scope
+// name hard-coded here.
 //
 // Written on EVERY fetch, like drawSortNote: a note left over from the previous search is worse
 // than none. Three states, kept distinct — /facets failed (no numbers to show, say the fact
@@ -329,10 +330,10 @@ function drawKeywordNote(facets){
   if (facets.description_coverage === null || facets.description_coverage === undefined){
     note.textContent = 'Matching inside descriptions isn\'t available yet — descriptions are still being added to the index.';
     return; }
-  const cov = facets.description_coverage, total = facets.total;
-  note.textContent = typeof total === 'number'
-    ? `Descriptions are stored for ${cov.toLocaleString()} of ${total.toLocaleString()} jobs matching your filters — ` +
-      'a keyword can only match inside those; the rest have no stored description.'
+  const { covered, total } = facets.description_coverage;
+  note.textContent = typeof covered === 'number' && typeof total === 'number'
+    ? `Descriptions are stored for ${covered.toLocaleString()} of the ${total.toLocaleString()} jobs your other filters match — ` +
+      'a keyword looked for here can only match inside those; the rest have no stored description.'
     : 'Only jobs with a stored description can match a keyword here — not every job has one.';
 }
 
