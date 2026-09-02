@@ -18,7 +18,10 @@ does true incremental add/evict on every later run — no overwrite-rebuild (ADR
 without a vector (non-English, or not yet embedded) are reported and skipped — run ``embed_run
 --resume`` first to close that gap. Each row added is stamped ``first_seen`` with the run's time,
 which is when *we* indexed it rather than the company's ``posted_at``; sync adds the column to a
-table that predates it before writing (ADR-0031). Sync reads the liveness ledger too
+table that predates it before writing (ADR-0031), and adds ``description`` (ADR-0104) the same
+way — filled for the rows it adds from the run's corpus; ``--backfill-descriptions`` fills the
+rows that predate it, off by default because it rewrites every row it fills. Sync reads the
+liveness ledger too
 (``--ledger``), but only to name Boards the same way prune does (ADR-0049). It needs no keep-set
 guard of its own: a broken ledger degrades resolution on both sides of its scope comparison at
 once, which narrows nothing and widens nothing.
@@ -61,7 +64,7 @@ import shutil
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import lancedb
 import numpy as np
@@ -120,6 +123,21 @@ _MIN_KEEP_BOARDS = 1000
 # company's posting date and says nothing about when we found it (ADR-0031). Held as a module
 # constant because both `_schema` (new tables) and `sync`'s migration (the live table) need it.
 _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
+# The Job's description text, so the Keyword filter can match inside it (ADR-0104). Nullable:
+# null on rows indexed before the column existed and on Jobs whose detail pass found nothing. NOT
+# sourced from the embedding store's meta (which carries only a `has_description` bit) but from the
+# corpus rows `update_descriptions` filled — so `_refresh_metadata` must carry it across a rewrite
+# like `first_seen`, never compare it against meta, or every row would read stale and be clobbered
+# to null on every run.
+_DESCRIPTION_FIELD = pa.field("description", pa.string())
+
+
+class _Stale(NamedTuple):
+    """A row `_refresh_metadata` will rewrite, with the two columns it carries across unchanged."""
+
+    job_id: str
+    first_seen: str | None
+    description: str | None
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
@@ -133,6 +151,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("ats", pa.string()),
             pa.field("company", pa.string()),
             pa.field("title", pa.string()),
+            _DESCRIPTION_FIELD,
             pa.field("location", pa.string()),
             pa.field("remote", pa.bool_()),
             pa.field("employment_type", pa.string()),
@@ -289,6 +308,9 @@ def _refresh_metadata(
     vectors: Any,
     row_of: dict[str, int],
     just_added: set[str],
+    *,
+    source: str | Path,
+    backfill_descriptions: bool = False,
 ) -> int:
     """Bring the table's metadata back in line with the store's, for rows already indexed (ADR-0061).
 
@@ -304,26 +326,61 @@ def _refresh_metadata(
     ``first_seen`` is carried across (re-stamping would resurface every refreshed Job as a new
     listing to the alerts watermark, ADR-0031), and the vector is taken from the store, which is
     where the row's own vector came from.
-    """
-    columns = [
-        f for f in table.schema.names if f not in ("vector", _FIRST_SEEN_FIELD.name)
-    ]
-    indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name])
 
-    # Only ids and their stamps are held across the scan; a row's replacement is materialised one
-    # batch at a time. Carrying a vector per stale row would be ~25 KB each — a first sweep of
-    # ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so an OOM there
-    # would leave those rows deleted with nothing put back.
-    stale: list[tuple[str, str | None]] = []
+    ``description`` (ADR-0104) is carried across too, and is **never compared**: the store's meta
+    holds no text, only a ``has_description`` bit, so comparing it would read every row as stale
+    and rewrite it to null each run. A row being rewritten anyway has its null description filled
+    from the corpus at no extra write cost. With ``backfill_descriptions`` a null description is
+    itself a reason to rewrite — **but only when this run's corpus actually carries the text**.
+    The corpus in the merge job is this run's *slice*, not the whole table, so a candidate whose
+    Board sat out the slice is left exactly as it is for a later run; rewriting it now would pay
+    the ~25 KB vector rewrite and fill nothing. That is what makes "rewrites every row it fills"
+    true, and why the backfill is the deliberate one-time step it is documented as.
+    """
+    carried = ("vector", _FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name)
+    columns = [f for f in table.schema.names if f not in carried]
+    indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name])
+
+    # Only ids and their carried columns are held across the scan; a row's replacement is
+    # materialised one batch at a time. Carrying a vector per stale row would be ~25 KB each — a
+    # first sweep of ~130k rows is 3.5 GB in one list, and `apply_sync` deletes before it adds, so
+    # an OOM there would leave those rows deleted with nothing put back. The description text is
+    # carried too — ~4.4 KB median (ADR-0104), so once the backfill has run a full sweep holds a
+    # few hundred MB of text: real, an order of magnitude under the vector case, and bounded by
+    # the table rather than the corpus.
+    stale: list[_Stale] = []
+    candidates: dict[
+        str, _Stale
+    ] = {}  # backfill: null description, store says one exists
     for row in indexed:
         job_id = row["id"]
         index = row_of.get(job_id)
         if index is None or job_id in just_added:
             continue
         stored = metas[index]
-        if all(row.get(field) == stored.get(field) for field in columns):
-            continue
-        stale.append((job_id, row[_FIRST_SEEN_FIELD.name]))
+        kept = _Stale(
+            job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
+        )
+        if not all(row.get(field) == stored.get(field) for field in columns):
+            stale.append(kept)
+        elif (
+            backfill_descriptions
+            and kept.description is None
+            and bool(stored.get("has_description"))
+        ):
+            candidates[job_id] = kept
+
+    # One targeted corpus pass for both: text for the rows being rewritten anyway (filled free),
+    # and for the backfill candidates — which become stale only if the text is actually here.
+    texts = _corpus_descriptions(source, {r.job_id for r in stale} | candidates.keys())
+    backfilled = [kept for job_id, kept in candidates.items() if job_id in texts]
+    stale.extend(backfilled)
+    if candidates and len(backfilled) < len(candidates):
+        _log.info(
+            f"metadata refresh: {len(candidates) - len(backfilled)} backfill candidate(s) left "
+            "for a later run — their Board is not in this run's corpus, so there is no text to "
+            "fill them with yet (ADR-0104)"
+        )
 
     if not stale:
         _log.info("metadata refresh: table already matches the store")
@@ -336,20 +393,38 @@ def _refresh_metadata(
     for start in range(0, len(stale), _ADD_CHUNK):
         batch = stale[start : start + _ADD_CHUNK]
         rows = []
-        for job_id, first_seen in batch:
-            index = row_of[job_id]
+        for kept in batch:
+            index = row_of[kept.job_id]
             fresh = {field: metas[index].get(field) for field in columns}
-            fresh[_FIRST_SEEN_FIELD.name] = first_seen
+            fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
+            fresh[_DESCRIPTION_FIELD.name] = kept.description or texts.get(kept.job_id)
             fresh["vector"] = vectors[index].tolist()
             rows.append(fresh)
-        apply_sync(table, rows, [job_id for job_id, _ in batch])
+        apply_sync(table, rows, [kept.job_id for kept in batch])
         _log.info(
             f"metadata refresh: {min(start + _ADD_CHUNK, len(stale))}/{len(stale)}"
         )
     _log.info(
         f"metadata refresh: rewrote {len(stale)} rows to match the store (ADR-0061)"
+        + (
+            f", {len(backfilled)} of them to backfill a description (ADR-0104)"
+            if backfilled
+            else ""
+        )
     )
     return len(stale)
+
+
+def _corpus_descriptions(source: str | Path, wanted: set[str]) -> dict[str, str]:
+    """Description text for exactly ``wanted`` ids, off the corpus rows `update_descriptions`
+    filled. Empty strings are absent, not "" — a null column is the honest shape for no text."""
+    if not wanted:
+        return {}
+    return {
+        job["id"]: text
+        for job in iter_jobs(source)
+        if job["id"] in wanted and (text := (job.get("description") or "").strip())
+    }
 
 
 def sync(args: argparse.Namespace) -> int:
@@ -471,6 +546,13 @@ def sync(args: argparse.Namespace) -> int:
         _log.info(f"adding {[f.name for f in _salary_fields]} to the existing table")
         table.add_columns(_salary_fields)
 
+    # And for the description text (ADR-0104). Existing rows get null — honest, and the shape the
+    # Keyword filter's coverage disclaimer is built to report; `--backfill-descriptions` fills
+    # them from the corpus as a deliberate step, because it rewrites every row it fills.
+    if _DESCRIPTION_FIELD.name not in table.schema.names:
+        _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
+        table.add_columns(_DESCRIPTION_FIELD)
+
     # Replace the rows of Jobs being re-embedded with a description they previously lacked
     # (ADR-0050) — before planning, not after. `plan_sync` computes add = fresh - index, so an id
     # still listed in `index_ids` is excluded from the adds; deleting its row afterwards would take
@@ -539,6 +621,11 @@ def sync(args: argparse.Namespace) -> int:
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
     add_ids = sorted(plan.add)
     _log_ids("add", add_ids)
+    # The text comes from the corpus, not the store: `update_descriptions` has already filled it
+    # into these rows in the join job, and the corpus travels to this job as an artifact — so no
+    # separate download of the 450 MB description store is needed. A targeted pass over exactly
+    # these ids keeps memory bounded to the run's adds rather than the whole corpus.
+    texts = _corpus_descriptions(args.source, set(add_ids))
     for start in range(0, len(add_ids), _ADD_CHUNK):
         chunk = add_ids[start : start + _ADD_CHUNK]
         rows = []
@@ -550,11 +637,20 @@ def sync(args: argparse.Namespace) -> int:
                 )  # store-only meta; the table's schema has no column for it
             row["vector"] = vectors[row_of[job_id]].tolist()
             row[_FIRST_SEEN_FIELD.name] = taken.get(job_id) or stamp
+            row[_DESCRIPTION_FIELD.name] = texts.get(job_id)
             rows.append(row)
         apply_sync(table, rows, ())
         _log.info(f"added {min(start + _ADD_CHUNK, len(add_ids))}/{len(add_ids)}")
 
-    refreshed = _refresh_metadata(table, metas, vectors, row_of, plan.add)
+    refreshed = _refresh_metadata(
+        table,
+        metas,
+        vectors,
+        row_of,
+        plan.add,
+        source=args.source,
+        backfill_descriptions=args.backfill_descriptions,
+    )
 
     final = table.count_rows()
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
@@ -704,6 +800,13 @@ def main() -> int:
         "--ledger",
         default=str(_LEDGER),
         help="liveness ledger dir, for resolving ids to live Boards (default: data/validate/liveness)",
+    )
+    p_sync.add_argument(
+        "--backfill-descriptions",
+        action="store_true",
+        help="also rewrite rows whose description column is null but whose store meta says a "
+        "description exists, filling it from the corpus (ADR-0104). Off by default: it rewrites "
+        "every row it fills, ~690 MB across the table once, so it is a deliberate step",
     )
     p_sync.set_defaults(fn=sync)
 

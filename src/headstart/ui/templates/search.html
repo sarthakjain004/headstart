@@ -36,6 +36,26 @@
 
 <div class="grid">
   <aside class="rail" id="rail">
+    {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
+       Query ranks. The options are rendered from headstart.search.keyword_scope_options(), never
+       written here by hand, so a new scope is a map entry and nothing in this file. A scope that
+       needs the description column is DISABLED (not hidden, unlike the first-seen control) until
+       that column exists: the option and the reason it is off stay visible. #}
+    <div class="set">
+      <h2>Keywords</h2>
+      <div class="f"><label for="kw">Must contain</label>
+        <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
+        <span class="tip">Every word (up to five) must appear. Matches inside words too — "java"
+          also finds JavaScript.</span></div>
+      <div class="f"><label for="kwin">Look in</label>
+        <select id="kwin" onchange="go()">
+          {% for value, label, needs_description in keyword_scopes %}
+          <option value="{{ value }}"{% if value == keyword_default_scope %} selected{% endif %}{% if needs_description and not has_description %} disabled{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span class="tip" id="kwnote" role="status"></span></div>
+    </div>
+
     <div class="set">
       <h2>Role</h2>
       <div class="f"><label for="etype">Employment type</label>

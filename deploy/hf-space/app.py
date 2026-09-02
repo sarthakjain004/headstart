@@ -850,14 +850,28 @@ def me():
 def index():
     if _AUTH_ON and not session.get("email"):
         return render_template("signin.html", google_client_id=_GOOGLE_CLIENT_ID)
+    scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
         # the one blob the static JS reads (window.CFG); everything else is template-side
-        cfg={"google_client_id": _GOOGLE_CLIENT_ID},
+        cfg={
+            "google_client_id": _GOOGLE_CLIENT_ID,
+            # The Keyword filter's scopes (ADR-0104), scope -> "carries the description
+            # disclaimer", plus the default the JS omits from a request — both read off the
+            # same map the <select> below is rendered from, so the three cannot drift apart.
+            "keyword_scopes": {value: needs for value, _, needs in scopes},
+            "keyword_default_scope": search.KEYWORD_DEFAULT_SCOPE,
+        },
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
+        # the Keyword filter (ADR-0104): its scopes from the one map, and whether the served
+        # table carries the description column yet — description-bearing scopes are disabled
+        # until it does
+        keyword_scopes=scopes,
+        keyword_default_scope=search.KEYWORD_DEFAULT_SCOPE,
+        has_description=_searcher.has_description,
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
         currencies=_searcher.currencies,

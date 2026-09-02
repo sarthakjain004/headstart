@@ -686,6 +686,28 @@ def test_profile_tab_appears_when_configured(sets_app, hub, monkeypatch):
     assert b'data-tab="profile"' in client.get("/", base_url=_HTTPS).data
 
 
+def test_keyword_filter_controls_render_in_the_rail(app):
+    """The Keyword filter (ADR-0104): the box, its scope picker and the disclaimer slot ship in
+    the Search rail. The description scopes are disabled until the served table carries the
+    column, which the app fixture's fake table does not."""
+    page = app.app.test_client().get("/").data
+    assert b'id="kw"' in page and b'id="kwin"' in page and b'id="kwnote"' in page
+    assert b'<option value="description" disabled>' in page
+    assert b'<option value="both" disabled>' in page
+    # the JS learns the scopes from the same map, through CFG
+    assert b'"keyword_scopes"' in page and b'"keyword_default_scope": "title"' in page
+
+
+def test_description_scopes_are_enabled_once_the_table_has_the_column(app, monkeypatch):
+    """The disabled rule is a runtime fact of the served table, read per request — so a Space that
+    has restarted onto a migrated table lights the options up with no template change."""
+    monkeypatch.setattr(app._searcher, "has_description", True)
+    page = app.app.test_client().get("/").data
+    assert b'<option value="description">' in page
+    assert b'<option value="both">' in page
+    assert b"disabled" not in page.split(b'id="kwin"')[1].split(b"</select>")[0]
+
+
 # ---- Saved jobs (ADR-0044) ----
 
 
