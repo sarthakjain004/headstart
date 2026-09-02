@@ -43,10 +43,11 @@ _log = log.get(__name__)
 
 _local = threading.local()
 #: Statuses worth another attempt for *any* caller: a bot-wall blip (403/405, ADR-0047), an
-#: explicit rate limit, or a server-side failure. Public because a caller may need to *extend* it
-#: for one host — workday answers Actions traffic with 400 where it answers elsewhere with 429
-#: (ADR-0098) — and extending beats widening: a 400 is a malformed request nearly everywhere
-#: else, and retrying one there would spend the ladder against a host that keeps saying no.
+#: explicit rate limit, or a server-side failure. Public and overridable per caller via
+#: ``retry_on``: a host that needs a different status retried extends this set rather than
+#: replacing it. (Workday's 400 was the one live extension, ADR-0098; ADR-0103 reverted it once
+#: the 400 turned out to be a stale session cookie, not a throttle — so the seam has no live
+#: extender today, but stays because it is not host-specific.)
 TRANSIENT: frozenset[int] = frozenset({403, 405, 429, 500, 502, 503, 504})
 _ATTEMPTS = 3
 
@@ -123,10 +124,6 @@ _RETRY_CLASS = {
     403: "403-wall",
     405: "405-wall",  # kept apart from 403: this is the shape Eightfold's edge returns
     429: "429-ratelimit",
-    # Its own class, not folded into 429-ratelimit: this counter is the evidence for whether
-    # treating workday's 400 as a throttle was right (ADR-0098), so it has to be separable from
-    # the 429s the same run also retried.
-    400: "400-throttle",
 }
 
 
@@ -137,12 +134,8 @@ def _retry_reason(status: int | None) -> str:
     libcurl writes numbers into its errors, so a *network* failure could land in a status bucket:
     verified by replaying the old classifier, `Operation timed out after 30405 milliseconds` was
     counted as a 405 bot-wall and `...30502...` as a 5xx. Small, but these buckets are the signal
-    for "is this ATS degrading", and ADR-0098 now reads one of them as evidence — so it has to
-    count the thing it names.
-
-    (The 400 class arrived with ADR-0098 and would have been the worst of them: `retry_on` is
-    per-caller, but a substring test is not, so any ATS's `port 40000` or `stream 1400` error
-    would have been filed under workday's throttle counter. It never shipped that way.)
+    for "is this ATS degrading", so it has to count the thing it names — and a caller that extends
+    ``retry_on`` past `TRANSIENT` gets an honest `http-{status}` line rather than someone else's.
     """
     if status is None:
         return "network"
@@ -150,8 +143,8 @@ def _retry_reason(status: int | None) -> str:
         return _RETRY_CLASS[status]
     if 500 <= status < 600:
         return "5xx"
-    # Unreachable today - the classes above cover `TRANSIENT` plus workday's 400 -
-    # but a future `retry_on` extension must show up as its own line rather than being
+    # Unreachable today - the classes above cover `TRANSIENT`, which is all any caller now retries
+    # - but a future `retry_on` extension must show up as its own line rather than being
     # filed under someone else's, which is the failure this function was just fixed for.
     return f"http-{status}"
 
@@ -274,9 +267,10 @@ def fetch(
     else has walled the group, it just can never do the walling itself.
 
     ``retry_on`` overrides which statuses earn another attempt, defaulting to :data:`TRANSIENT`.
-    Pass a *superset* to opt one host into retrying a status nobody else should — the only live
-    case is workday's 400, which is a throttle there and a malformed request almost everywhere
-    else (ADR-0098). Retries are counted by class, so `retry_stats()` says whether it paid.
+    Pass a *superset* to opt one host into retrying a status nobody else should. No live caller
+    does today — Workday's 400 was the one, reverted in ADR-0103 once it turned out to be a stale
+    session cookie rather than a throttle — but the seam stays because it is not host-specific.
+    Retries are counted by class, so `retry_stats()` says whether it paid.
 
     ``egress_on`` is expected to be a subset of ``retry_on``. A status outside it would be
     marked but never retried, so this request would settle on the wall it just reported — the mark
@@ -358,8 +352,9 @@ async def fetch_async(
     and transient network errors with backoff (honouring ``Retry-After``); raises
     ``RequestsError`` on DNS or if it never settles.
 
-    ``retry_on`` behaves exactly as it does on :func:`fetch`, and matters more here: workday's
-    400s land overwhelmingly on the detail pass, which is this path (ADR-0098).
+    ``retry_on`` behaves exactly as it does on :func:`fetch` (no live caller overrides it now —
+    see there). This is the detail-pass path, where Workday's 400s land; ADR-0103 handles those
+    in the scraper by clearing the session cookie, not by retrying here.
 
     ``egress_group``/``egress_on`` carry the spare-egress fallback (ADR-0063) with :func:`fetch`'s
     exact semantics — one shared wall registry, so a wall the sync listing pass marks routes the
