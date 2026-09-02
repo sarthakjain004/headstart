@@ -1,0 +1,159 @@
+# Settle, from the vantage production actually uses, which status Workday's throttle returns.
+#
+# `docs/workday/400-is-a-throttle-not-a-bad-request.md` reproduced the throttle from a laptop and
+# falsified every malformed-request reading of the 400 — but from there the throttle answers 429,
+# while production settles 400 (run 33590621111: 36,550 x 400 against ~600 x 429). The remaining
+# untested variable is the egress, so the probe has to run from inside Actions. Manual only: a
+# full pass is ~3x one production run's detail volume against these two tenants, which is fine as
+# a one-off diagnostic and is not something to leave on a schedule.
+#
+# Four replicas, because one runner is one egress IP and the whole question is whether the status
+# is a property of the vantage. A single sample cannot tell "runners get 400" from "this runner
+# got 400"; four parallel ones cost no extra wall-clock and report a spread. (Whether they really
+# are four networks is not assumed — the `where` arm records each one's IP, colo and ASN, and the
+# writeup has to check them before treating four runners as four samples.)
+#
+# They split across the two widths that matter, because neither alone can answer the question and
+# sequencing a second dispatch would just defer it: 25 is the laptop baseline the open question is
+# stated against, 12 is what production's detail pass actually runs at once a Board has walled,
+# which is where its 400s are observed (ADR-0102).
+name: probe-workday-400
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: details per walk (the laptop tripped ghr's throttle at ~430)
+        default: "800"
+      browser_n:
+        description: paired api/Chrome fetches over the walk's tail (the `browser` arm)
+        default: "40"
+      arms:
+        description: "comma-separated subset; fixed order: where,control,direct,browser,warp"
+        default: "where,control,direct,browser,warp"
+      suspect:
+        description: the 400-heavy Board
+        default: "https://ghr.wd1.myworkdayjobs.com/us-emplsv"
+      control:
+        description: a Board production never 400s — walked first, while the IP is clean
+        default: "https://aah.wd5.myworkdayjobs.com/External"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45 # hang detector; the walks themselves are minutes
+    strategy:
+      fail-fast: false # one replica's bad luck must not cancel the other three samples
+      matrix:
+        include:
+          # width 0 = "whatever `WorkdayScraper.detail_streams` is", so 25 is never restated here
+          # to go stale against the scraper.
+          - { replica: 1, width: 0 }
+          - { replica: 2, width: 0 }
+          - { replica: 3, width: 12 }
+          - { replica: 4, width: 12 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      # [scrape] for pydoll — the `browser` arm needs a real Chrome, same as darwinbox's
+      # escalation (ADR-0056).
+      - run: pip install -e ".[scrape]"
+      - name: Install Cloudflare WARP (spare egress, ADR-0063)
+        # The executable half of pipeline.yml's step of the same name, condensed: the GUI-dependency
+        # stubs and every ceiling are load-bearing and measured, so they are copied rather than
+        # simplified, but the rationale lives there and is not repeated here. Same contract — never
+        # fatal, `spare_egress.proxy_url()` returns None on a runner without it and the `warp` arm
+        # reports that it was skipped rather than failing the probe.
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          set -x
+          stub_gui_deps() {
+            sudo DEBIAN_FRONTEND=noninteractive timeout 60 apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
+              equivs || return 1
+            local d
+            d=$(mktemp -d)
+            for p in libwebkit2gtk-4.1-0 libayatana-appindicator3-1; do
+              printf 'Section: misc\nPriority: optional\nStandards-Version: 3.9.2\nPackage: %s-headless-stub\nProvides: %s\nDescription: stub for headless warp-svc\n A no-op package satisfying a GUI dependency warp-svc never calls.\n' \
+                "$p" "$p" > "$d/$p.ctl"
+              (cd "$d" && equivs-build "$p.ctl" >/dev/null) || return 1
+            done
+            sudo dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
+          }
+          if ! stub_gui_deps; then
+            echo "warp: GUI dependency stubs unavailable — full install" >&2
+            sudo timeout 20 dpkg --configure -a >/dev/null 2>&1 || true
+          fi
+          install_warp() {
+            curl -fsSL --max-time 15 --retry 1 --retry-delay 2 \
+              https://pkg.cloudflareclient.com/pubkey.gpg \
+              | sudo gpg --yes --dearmor \
+                -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg || return 1
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
+              | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+            sudo timeout 45 apt-get update -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+              -o Acquire::Retries=2 \
+              -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/cloudflare-client.list \
+              -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
+            sudo timeout 60 apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+              -o Acquire::Retries=2 cloudflare-warp || return 1
+          }
+          if ! install_warp; then
+            echo "warp install attempt 1 failed — retrying" >&2
+            sleep 20
+            install_warp || echo "warp install attempt 2 failed — degrading to direct" >&2
+          fi
+          sudo timeout 15 systemctl start warp-svc || true
+          for _ in $(seq 1 15); do
+            timeout 5 warp-cli --accept-tos status >/dev/null 2>&1 && break
+            sleep 1
+          done
+          timeout 30 warp-cli --accept-tos registration new || true
+          timeout 15 warp-cli --accept-tos status || true
+      - name: Probe
+        # xvfb-run for the same reason the scrape uses it: the browser arm must be HEADFUL, and
+        # `browser_http` degrades to a recorded error rather than failing the run if Chrome dies.
+        #
+        # The dispatch inputs arrive through `env:` rather than being interpolated into the script.
+        # `${{ }}` is substituted into the shell source before bash sees it, so a value containing
+        # shell metacharacters would run as code; an env var is only ever data. These inputs come
+        # from someone with write access, so this is hygiene rather than a live hole — but it costs
+        # one line, and the alternative is a workflow that reads as though the question was never
+        # asked.
+        env:
+          SUSPECT: ${{ github.event.inputs.suspect }}
+          CONTROL: ${{ github.event.inputs.control }}
+          N: ${{ github.event.inputs.n }}
+          BROWSER_N: ${{ github.event.inputs.browser_n }}
+          WIDTH: ${{ matrix.width }}
+          ARMS: ${{ github.event.inputs.arms }}
+        run: |
+          # OUT first, before anything that can fail: the upload step below globs `$OUT.*`, and
+          # an unset OUT would make that `.*` — every dotfile in the workspace, uploaded in place
+          # of the result nobody would notice was missing.
+          out="probe-workday-400_${{ github.run_id }}_replica-${{ matrix.replica }}_width-${{ matrix.width }}"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+          command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
+          xvfb-run -a python -u scripts/bench/probe_workday_throttle_status.py \
+            --suspect "$SUSPECT" \
+            --control "$CONTROL" \
+            --n "$N" \
+            --browser-n "$BROWSER_N" \
+            --width "$WIDTH" \
+            --arms "$ARMS" \
+            --out "$out.json" 2>&1 | tee "$out.log"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: probe-workday-400-replica-${{ matrix.replica }}-width-${{ matrix.width }}
+          path: ${{ env.OUT }}.*
+          retention-days: 30
