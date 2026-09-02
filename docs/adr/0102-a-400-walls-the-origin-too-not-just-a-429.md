@@ -118,7 +118,9 @@ are serialised behind a 5s cooldown, and the ten runs already sit well inside th
 admitting ~4x the callers should raise restarts by a small factor, not fourfold, and the larger
 cost is aggregate *waiting* on the cooldown — bounded per caller but concurrent within a shard.
 
-Read **scrape wall-clock** against the 51–73 min these ten runs recorded, and watch `succeeded`
+Read **run wall-clock** against the 51–73 min these ten runs recorded — and the scrape stage's
+own critical-path share against its 22.0–36.8 min, which is the half this change can move — and
+watch `succeeded`
 (~1,518/run today). Revert this, or take the split below, if wall-clock rises materially or
 `succeeded` climbs toward its call volume — that last would mean the cooldown stopped binding and
 the demand model applies after all.

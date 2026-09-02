@@ -376,7 +376,9 @@ class WorkdayScraper(BaseScraper):
     #: are serialised by that gate, so admitting ~4x the callers cannot restart `warp-svc` ~4x
     #: more often; what it mostly buys is aggregate *waiting*, concurrent within a shard.
     #:
-    #: Watch scrape wall-clock against the 51-73 min those ten runs recorded, and watch
+    #: Watch run wall-clock against the 51-73 min those ten runs recorded, and the scrape stage
+    #: against its own 22.0-36.8 min (the run figure covers every stage; the scrape one is what
+    #: this can actually move). And watch
     #: `succeeded` (~1,518/run today) — if it climbs toward its call volume the cooldown has
     #: stopped binding and the demand model applies after all. Revert this, or split
     #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), on either signal.
