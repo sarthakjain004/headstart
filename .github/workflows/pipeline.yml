@@ -261,13 +261,14 @@ jobs:
         # bounded slice of the budget and the shard scrapes regardless. The layers are budgeted
         # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
         # 2 attempts x (32s curl + 45s update + 60s install) + 20s sleep + 15s systemctl
-        # + 75s daemon wait (15 probes x a 5s ceiling) + 30s registration + 15s status = 429s,
+        # + 90s daemon wait (15 probes x a 5s ceiling, each followed by a 1s sleep) + 30s
+        # registration + 15s status = 444s,
         # plus 30s for the dependency stubs (was 60s, when they were built by an `apt-get install
         # equivs` that reached an Ubuntu mirror; they are built locally now, so only the `dpkg -i`
         # that takes the dpkg lock still needs a ceiling) and 20s each for the two dpkg self-heals
         # — one after a failed stub, one between the install attempts. Each is counted once:
         # stub_gui_deps and its recovery run once regardless of how many install_warp attempts
-        # follow, and the retry self-heal runs at most once by construction. 499s, under a 10 min
+        # follow, and the retry self-heal runs at most once by construction. 514s, under a 10 min
         # cap. Every call in the step still carries a ceiling, so that sum is a real bound rather
         # than an assumption that local IPC always answers promptly — and the cap keeps ~1.5 min
         # over it, because a bound with six seconds of headroom is a coin flip.
@@ -282,7 +283,7 @@ jobs:
           # `cloudflare-warp` Depends on libwebkit2gtk-4.1-0 and libayatana-appindicator3-1 — a
           # browser engine and a tray-icon library, for the GUI client. This runner only ever calls
           # `warp-cli` and `warp-svc`, neither of which loads them, but apt cannot know that and a
-          # hard Depends is not negotiable. Two equivs stubs satisfy them so the resolver stops
+          # hard Depends is not negotiable. Two stub packages satisfy them so the resolver stops
           # there.
           #
           # Measured on 15 parallel runners released together (`warp-install-probe`, run
@@ -326,16 +327,17 @@ jobs:
             # database. Ceilinged so the step's timing budget above stays a real bound.
             sudo timeout 30 dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
           }
+          # Any `timeout`-killed dpkg or apt-get can leave dpkg mid-transaction ("dpkg was
+          # interrupted, you must manually run 'sudo dpkg --configure -a'"), and every later
+          # apt-get in the job then fails in ~10ms with no network attempt at all — run 32337598985
+          # shard 7 for the stub trigger, run 33633903535 shard 0 for the install trigger. Both
+          # call sites below are a killed `timeout`, so both need this. Best-effort and silent:
+          # harmless if dpkg was never actually interrupted.
+          dpkg_self_heal() { sudo timeout 20 dpkg --configure -a >/dev/null 2>&1 || true; }
           # Best-effort: if the stubs cannot be built the install still works, just fat and slow.
           if ! stub_gui_deps; then
             echo "warp: GUI dependency stubs unavailable — full install" >&2
-            # A `timeout`-killed apt-get can leave dpkg mid-transaction ("dpkg was interrupted,
-            # you must manually run 'sudo dpkg --configure -a'"), which then fails every later
-            # apt-get in this job — measured in run 32337598985 shard 7, where both `install_warp`
-            # retries below failed in under 10ms with no network attempt at all, rather than the
-            # ordinary "install ran and lost" case this fallback is meant to degrade into.
-            # Best-effort and silent: harmless if dpkg was never actually interrupted.
-            sudo timeout 20 dpkg --configure -a >/dev/null 2>&1 || true
+            dpkg_self_heal
           fi
           install_warp() {
             curl -fsSL --max-time 15 --retry 1 --retry-delay 2 \
@@ -375,13 +377,10 @@ jobs:
           }
           if ! install_warp; then
             echo "warp install attempt 1 failed — retrying" >&2
-            # The same dpkg self-heal the failed-stub path already runs, for the same reason and
-            # a different trigger: `timeout 60` can kill the install above mid-transaction, and
-            # then attempt 2 fails in ~10 ms with "dpkg was interrupted" having made no network
-            # call at all. Measured on run 33633903535 shard 0, which is exactly the case this
-            # retry exists for — so without this line the retry was worthless precisely when it
-            # was needed. Best-effort and silent: harmless if dpkg was never interrupted.
-            sudo timeout 20 dpkg --configure -a >/dev/null 2>&1 || true
+            # Without this the retry was worthless in exactly the case it exists for: `timeout 60`
+            # kills the install above mid-transaction, and attempt 2 then fails in ~10 ms having
+            # made no network call (run 33633903535 shard 0).
+            dpkg_self_heal
             # 5 s was too soon to be a retry of anything: the measured failure is a slow or
             # contended mirror, and both attempts landed inside the same bad window every time.
             sleep 20

@@ -44,7 +44,20 @@ permissions:
   contents: read
 
 jobs:
+  # The boundary every replica waits for, computed ONCE. Computing it per job (as the first
+  # revision did) anchors it to that job's own start minute, and runners do not start together:
+  # run 33655685771 spread its 30 jobs over FIVE boundaries, so the arms never shared the
+  # contention window the comparison claims. One output, read by all 30.
+  anchor:
+    runs-on: ubuntu-24.04
+    outputs:
+      release_at: ${{ steps.t.outputs.release_at }}
+    steps:
+      - id: t
+        run: echo "release_at=$(( $(date +%s) + 180 ))" >> "$GITHUB_OUTPUT"
+
   probe:
+    needs: anchor
     runs-on: ubuntu-24.04          # pinned: production's runner, not a moving `latest`
     timeout-minutes: 20
     strategy:
@@ -58,9 +71,10 @@ jobs:
         # only appears under contention, and runners do not start simultaneously. Without this the
         # arms trickle and measure an idle host. Both arms release on the same boundary, so they
         # share one contention window rather than two.
+        env:
+          RELEASE_AT: ${{ needs.anchor.outputs.release_at }}
         run: |
-          target=$(( $(date +%s) / 60 * 60 + 120 ))
-          while [ "$(date +%s)" -lt "$target" ]; do sleep 1; done
+          while [ "$(date +%s)" -lt "$RELEASE_AT" ]; do sleep 1; done
           echo "released at $(date -u +%T)"
 
       - name: Build the GUI dependency stubs (${{ matrix.arm }})
@@ -68,8 +82,6 @@ jobs:
           ARM: ${{ matrix.arm }}
         run: |
           set -x
-          # A failing `curl` in a pipe must not be masked by `gpg` exiting 0 on empty input.
-          set -o pipefail
           PKGS="libwebkit2gtk-4.1-0 libayatana-appindicator3-1"
 
           # The arm under test, character-for-character what pipeline.yml would run.
@@ -135,7 +147,10 @@ jobs:
             -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
           # The deterministic verdict, from 0b3e96b: what the install would fetch, before it does.
           uris=$(apt-get install --print-uris -y -qq cloudflare-warp 2>/dev/null || true)
-          bytes=$(printf '%s\n' "$uris" | grep -oE '[0-9]+ (MD5|SHA)' | grep -oE '^[0-9]+' | awk '{s+=$1} END {print s+0}')
+          # `|| bytes=0`: with `pipefail` under GitHub's `bash -e`, an empty `$uris` makes the
+          # first `grep` exit 1 and the assignment abort the whole step — losing every column
+          # below it in precisely the run where the install found nothing to fetch.
+          bytes=$(printf '%s\n' "$uris" | grep -oE '[0-9]+ (MD5|SHA)' | grep -oE '^[0-9]+' | awk '{s+=$1} END {print s+0}') || bytes=0
           # One line per package. NOT a URL-scheme match: this runner resolves Ubuntu packages
           # through `mirror+file:/etc/apt/apt-mirrors.txt/...`, which has no scheme, so matching on
           # the scheme counted 1 of 5 in run 33655685771. The checksum tag is on every line.
