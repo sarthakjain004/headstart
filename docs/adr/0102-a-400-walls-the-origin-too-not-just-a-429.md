@@ -106,10 +106,10 @@ line's trailing `, abandoned B` clause, which `spare_egress.report` omits when t
 failure the analyser half of this change fixes, committed by the same hand on the same day. Every
 field after `attempted` is optional and must be matched as such.)
 
-**That 91% is what keeps this from being a 4x restart storm**, though the mechanism is subtler
+**That 90% is what keeps this from being a 4x restart storm**, though the mechanism is subtler
 than "the gate is shut". Reading `spare_egress.rotate`: a `throttled` caller waits out only the
 *remaining* cooldown, and then either a peer's rotation lands it on a fresh IP or it rotates
-itself. It is the `abandoned` path — 12,134 calls, **7.7%** — that gives up and rides the spent
+itself. It is the `abandoned` path — 12,134 calls, **7.6%** — that gives up and rides the spent
 IP. So `throttled` is "queued behind the cooldown", not "refused", and `attempted + throttled`
 approximates the call count rather than counting it exactly.
 
