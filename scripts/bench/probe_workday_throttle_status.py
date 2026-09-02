@@ -7,7 +7,7 @@ against ~600 x 429, both statuses on the same Boards). The untested variable is 
 so this probe is built to run from inside GitHub Actions — the vantage production actually uses —
 and its whole job is to name the status each route settles on.
 
-Four arms, each printed as it finishes:
+Five arms, each printed as it finishes:
 
 ``where``    the vantage: exit IP, Cloudflare colo and ``warp=on/off``, direct and via the spare
              egress, so a status difference can be attributed to a route rather than guessed at.
@@ -52,7 +52,8 @@ Two deliberate choices about what is measured:
 against the doc — but production observes its 400s at width **12**, the width its detail pass drops
 to once a Board has walled (ADR-0102). Neither width alone can answer the question, so the workflow
 runs both: two replicas at the scraper's own ``detail_streams`` and two at 12. ``--width 0`` means
-"whatever ``WorkdayScraper.detail_streams`` is", so that number is never restated anywhere.
+"whatever ``WorkdayScraper.detail_streams`` is", so neither the workflow nor this module has to
+name 25 in a second place that could go stale against the scraper.
 
 *Rotation.* Production's walled traffic rides a **rotating** WARP address; the ``warp`` arm rides
 one static tunnel. This probe cannot reproduce rotation.
@@ -77,8 +78,9 @@ Reported figures, and what each is for:
 - ``after_trip`` — the status mix settled *after* that first refusal. This is the column the doc
   calls comparable across vantages; the whole-walk mix is not, since it dilutes with however long
   the walk ran clean. It necessarily includes the up-to-``width``-1 requests already in flight when
-  the trip landed, which is a ceiling of 24 requests on an 800-request walk.
-- Indices are **completion order**, not launch order: at width 25 the two differ by up to a window.
+  the trip landed — a ceiling of ``width - 1``, so 24 on the width-25 legs and 11 on the
+  width-12 ones.
+- Indices are **completion order**, not launch order: the two differ by up to one window.
 
 Arms run against two different tenants and, for ``warp``, from a different address, so one arm's
 spent budget is not another's — the throttle the doc measured is per (tenant, source IP). What does
@@ -121,6 +123,10 @@ WIDTH = WorkdayScraper.detail_streams
 _BLOCK = 100  # the status mix is reported per this many settled requests
 _HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
 _BODY_SAMPLE = 800  # chars of a non-200 body kept as evidence
+#: Every arm needing the suspect's paths reports the same thing when the harvest came back empty,
+#: and points at the one record that says why rather than restating the reason.
+_NO_PATHS = "no paths — see boards.suspect for why"
+
 #: Statuses that mean "this origin is refusing us" rather than "this posting is gone". Only these
 #: mark the trip, so a stray 404 mid-walk cannot masquerade as the throttle engaging.
 _REFUSALS = frozenset({"400", "403", "429"})
@@ -246,10 +252,12 @@ def walk(
     still leaves the measurement it had reached — CLAUDE.md forbids buffering output to the end,
     and an arm that prints nothing for ten minutes and then dies has produced nothing at all.
 
-    The checkpoint is taken *outside* the fan-out's lock: a file write inside it would stall every
-    other stream and slow the very request rate this arm is measuring. The cost is that a
-    checkpoint can catch the counters mid-update, which is acceptable for a progress artifact and
-    never for the final one — that is taken after the gather has drained.
+    The checkpoint is a synchronous write on the event loop, so it briefly stalls the fan-out once
+    per :data:`_BLOCK` completions and very slightly depresses the request rate this arm reports.
+    That is accepted rather than engineered around: moving it off the lock would not help, since
+    nothing yields between the locked mutation and the write and so no other stream could run
+    during it either way — and what the checkpoint buys, an arm that survives a cancelled job, is
+    worth far more than a stall every hundredth request.
     """
     statuses: collections.Counter[str] = collections.Counter()
     after_trip: collections.Counter[str] = collections.Counter()
@@ -307,23 +315,23 @@ def walk(
                             first_non_200 = {"at_request": index, "status": code}
                         if first_refusal is None and code in _REFUSALS:
                             first_refusal = {"at_request": index, "status": code}
-                        due = index % _BLOCK == 0
-                    if new_status:
-                        print(
-                            f"    first {code} at request #{index}\n"
-                            f"      server={headers.get('server')!r} "
-                            f"cf-ray={headers.get('cf-ray')!r} "
-                            f"cf-mitigated={headers.get('cf-mitigated')!r} "
-                            f"retry-after={headers.get('retry-after')!r}\n"
-                            f"      body: {body[:200]!r}",
-                            flush=True,
-                        )
-                    if due:
-                        print(
-                            f"    ...{index}/{len(paths)} {dict(statuses)}", flush=True
-                        )
-                        snapshot()
-                        save()
+                        if new_status:
+                            print(
+                                f"    first {code} at request #{index}\n"
+                                f"      server={headers.get('server')!r} "
+                                f"cf-ray={headers.get('cf-ray')!r} "
+                                f"cf-mitigated={headers.get('cf-mitigated')!r} "
+                                f"retry-after={headers.get('retry-after')!r}\n"
+                                f"      body: {body[:200]!r}",
+                                flush=True,
+                            )
+                        if index % _BLOCK == 0:
+                            print(
+                                f"    ...{index}/{len(paths)} {dict(statuses)}",
+                                flush=True,
+                            )
+                            snapshot()
+                            save()
 
             await asyncio.gather(*(one(p) for p in paths))
 
@@ -412,7 +420,9 @@ def paired_browser_walk(
                         with pressure_lock:
                             pressure[code] += 1
 
-                while not stop.is_set():
+                # `gather()` of nothing returns without yielding, so an empty list here would
+                # spin a core rather than idle. Unreachable via `main`; one line to make safe.
+                while pressure_paths and not stop.is_set():
                     await asyncio.gather(*(one(p) for p in pressure_paths))
 
         asyncio.run(run())
@@ -509,7 +519,7 @@ def resolved_scraper(slug: str) -> WorkdayScraper:
     return scraper
 
 
-def prepare(
+def resolve_and_collect(
     slug: str, want: int, record: dict
 ) -> tuple[WorkdayScraper | None, list[str]]:
     """Resolve a Board and harvest its paths, recording *why* into ``record`` if either fails.
@@ -605,24 +615,26 @@ def main() -> int:
     # from this address would inherit whatever reputation those earned, which is the confound it
     # exists to remove.
     if "control" in arms:
-        control, control_paths = prepare(args.control, args.n, board("control"))
+        control, control_paths = resolve_and_collect(
+            args.control, args.n, board("control")
+        )
         if control and control_paths:
             walk("control", control, control_paths, None, width, slot("control"), save)
         else:
-            slot("control").update(error="no paths — see boards.control for why")
+            slot("control").update(error=_NO_PATHS.replace("suspect", "control"))
         save()
 
     scraper: WorkdayScraper | None = None
     paths: list[str] = []
     if arms & {"direct", "warp", "browser"}:
-        scraper, paths = prepare(args.suspect, args.n, board("suspect"))
+        scraper, paths = resolve_and_collect(args.suspect, args.n, board("suspect"))
     ready = bool(scraper and paths)
 
     if "direct" in arms:
         if ready:
             walk("direct", scraper, paths, None, width, slot("direct"), save)
         else:
-            slot("direct").update(error="no paths — see boards.suspect for why")
+            slot("direct").update(error=_NO_PATHS)
         save()
 
     # Straight after `direct`, so it asks its question of an origin already refusing us, and over
@@ -644,7 +656,7 @@ def main() -> int:
                 print(f"  browser unavailable: {type(exc).__name__}: {exc}", flush=True)
                 slot("browser").update(error=f"{type(exc).__name__}: {exc}")
         else:
-            slot("browser").update(error="no paths — see boards.suspect for why")
+            slot("browser").update(error=_NO_PATHS)
         save()
 
     if "warp" in arms:
@@ -656,7 +668,7 @@ def main() -> int:
         elif ready:
             walk("warp", scraper, paths, proxy, width, slot("warp"), save)
         else:
-            slot("warp").update(error="no paths — see boards.suspect for why")
+            slot("warp").update(error=_NO_PATHS)
         save()
 
     if args.out:

@@ -137,9 +137,12 @@ jobs:
           WIDTH: ${{ matrix.width }}
           ARMS: ${{ github.event.inputs.arms }}
         run: |
-          command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
+          # OUT first, before anything that can fail: the upload step below globs `$OUT.*`, and
+          # an unset OUT would make that `.*` — every dotfile in the workspace, uploaded in place
+          # of the result nobody would notice was missing.
           out="probe-workday-400_${{ github.run_id }}_replica-${{ matrix.replica }}_width-${{ matrix.width }}"
           echo "OUT=$out" >> "$GITHUB_ENV"
+          command -v xvfb-run >/dev/null || (sudo apt-get update -qq && sudo apt-get install -qq -y xvfb)
           xvfb-run -a python -u scripts/bench/probe_workday_throttle_status.py \
             --suspect "$SUSPECT" \
             --control "$CONTROL" \
