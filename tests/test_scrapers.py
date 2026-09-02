@@ -5433,19 +5433,18 @@ def test_eightfold_api_probe_routes_over_the_spare_egress_but_never_marks(monkey
     assert wall_surface["egress_on"] == frozenset({403, 405})
 
 
-def test_workday_opts_into_the_spare_egress_on_400_and_429(monkeypatch):
+def test_workday_opts_into_the_spare_egress_on_429(monkeypatch):
     """Provisional experiment (ADR-0063, amended): Workday's metering was measured to be per
     (source IP x instance host), so a second egress is a second allocation rather than a way of
     ignoring a rate limit. Only the sync listing POST can lose a Board — a detail failure returns
     None — so that is the call that must carry the opt-in.
 
-    400 is in the set as of ADR-0102. It has been read as a throttle since ADR-0098, yet only the
-    429 could reach the escape hatch, so the status behind 83-95% of all detail loss was the one
-    that could never turn the spare egress on.
+    429 only, as of ADR-0103 reverting ADR-0102: the 400 ADR-0102 added is a stale session cookie,
+    which a route change neither causes nor cures, so it is cleared in-pass rather than rerouted.
     """
     from headstart.scrapers.workday import WorkdayScraper
 
-    assert WorkdayScraper.egress_fallback_on == frozenset({400, 429})
+    assert WorkdayScraper.egress_fallback_on == frozenset({429})
 
     seen: list[dict] = []
 
@@ -5467,20 +5466,19 @@ def test_workday_opts_into_the_spare_egress_on_400_and_429(monkeypatch):
     scraper = WorkdayScraper("https://micron.wd1.myworkdayjobs.com/External")
     scraper._post({}, 0)
     assert seen[-1]["egress_group"] == "workday"
-    assert seen[-1]["egress_on"] == frozenset({400, 429})
+    assert seen[-1]["egress_on"] == frozenset({429})
 
 
-def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
-    """The behaviour ADR-0102 buys: a settled 400 now turns the spare egress on.
+def test_workday_400_does_not_wall_the_group(monkeypatch):
+    """ADR-0103 reverts ADR-0102: a settled 400 no longer opens the spare egress.
 
-    Before it, `egress_fallback_on` held only 429, so the status behind 83-95% of Workday's
-    detail loss retried twice against the same penalised IP and never reached the escape hatch —
-    which is why ADR-0098's `400-throttle` counter sat at 0.93 of its 2S ceiling for ten runs
-    running. Driven through `http.fetch` with Workday's own two sets rather than by asserting the
-    constant, so it fails if the wiring stops matching the declaration.
+    The 400 is a stale session cookie, and the rerouted probe arm showed a route change does
+    nothing for it, so rotating on it would spend the escape hatch for no gain while the genuine
+    429 in the same walk still needs it. Driven through `http.fetch` with Workday's own opt-in
+    set rather than by asserting the constant, so it fails if the wiring stops matching.
     """
     from headstart import spare_egress
-    from headstart.scrapers.workday import _RETRY_ON, WorkdayScraper
+    from headstart.scrapers.workday import WorkdayScraper
 
     monkeypatch.setattr(spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000")
     calls: list[dict] = []
@@ -5488,31 +5486,112 @@ def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
     class _Session:
         def request(self, method, url, **kwargs):
             calls.append(kwargs)
-            return SimpleNamespace(
-                status_code=400 if len(calls) == 1 else 200, headers={}
-            )
+            return SimpleNamespace(status_code=400, headers={})
 
     monkeypatch.setattr(http, "session", lambda: _Session())
     monkeypatch.setattr(http.time, "sleep", lambda *a: None)
 
-    # `mark_walled` is process-global, so bracket it the way the other egress tests do (see
-    # test_workday_paginate_narrows_its_fan_out_once_the_origin_has_walled). Leaving "workday" walled leaks into whatever
-    # runs next: its `_egress()` calls would then try to dial WARP on a dev box.
     spare_egress.reset()
     try:
         response = http.fetch(
             "GET",
             "detail",
             egress_group="workday",
-            egress_on=WorkdayScraper.egress_fallback_on,
-            retry_on=_RETRY_ON,
+            egress_on=WorkdayScraper.egress_fallback_on,  # 429 only now
         )
-        assert response.status_code == 200
-        assert "workday" in spare_egress.walled_groups()
-        # first attempt goes direct (nothing known yet); the retry is the one that moves
-        assert [bool(c.get("proxies")) for c in calls] == [False, True]
+        assert response.status_code == 400
+        assert "workday" not in spare_egress.walled_groups()  # a 400 does not wall
+        assert len(calls) == 1  # not retried, not rerouted
     finally:
         spare_egress.reset()
+
+
+def test_workday_detail_400_clears_the_session_cookie_and_recovers(monkeypatch):
+    """ADR-0103: a detail 400 is Workday's own 'session cookie is invalid'. The scraper clears the
+    shared session's jar and refetches once — where the old retry re-sent the dead cookie and 400d
+    again (measured). The recovered detail is served and counted `_COOKIE_RECOVERED`, not lost.
+    Runs the real async path (where the 400s land) with a fake session whose jar, once cleared,
+    makes the origin answer 200 — the measured shape.
+    """
+    import asyncio
+    from collections import Counter
+
+    from headstart.scrapers.workday import _COOKIE_RECOVERED, WorkdayScraper
+
+    detail = {
+        "jobPostingInfo": {"id": "1", "title": "Eng", "jobDescription": "<p>d</p>"}
+    }
+
+    class _Cookies:
+        def __init__(self):
+            self.cleared = 0
+
+        def clear(self):
+            self.cleared += 1
+
+    class _Session:
+        def __init__(self):
+            self.cookies = _Cookies()
+
+    session = _Session()
+
+    async def fake_fetch_async(sess, method, url, **kw):
+        # poisoned until the jar is cleared, then 200 — exactly the recovery arm's 3/3 result
+        if sess.cookies.cleared == 0:
+            return SimpleNamespace(status_code=400, headers={}, text="", json=dict)
+        return SimpleNamespace(
+            status_code=200, headers={}, text="{}", json=lambda: detail
+        )
+
+    monkeypatch.setattr(http, "fetch_async", fake_fetch_async)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    classes: Counter[str] = Counter()
+    out = asyncio.run(scraper._job_detail_async(session, "/job/x/Eng_JR1", classes))
+
+    assert out is not None  # the detail was recovered, not dropped
+    assert session.cookies.cleared == 1  # the jar was cleared exactly once
+    assert classes[_COOKIE_RECOVERED] == 1  # counted as a recovery
+    assert "HTTP 400" not in classes  # and not as a loss
+
+
+def test_workday_detail_400_that_survives_the_cookie_reset_is_a_loss(monkeypatch):
+    """The reset is one refetch, not a loop. A 400 that persists after clearing the jar settles as
+    an ordinary `HTTP 400` loss, with no recovery label — the invariant `_report_detail_losses`
+    depends on (a recovered detail is non-None; a loss is None)."""
+    import asyncio
+    from collections import Counter
+
+    from headstart.scrapers.workday import _COOKIE_RECOVERED, WorkdayScraper
+
+    class _Cookies:
+        def __init__(self):
+            self.cleared = 0
+
+        def clear(self):
+            self.cleared += 1
+
+    class _Session:
+        def __init__(self):
+            self.cookies = _Cookies()
+
+    session = _Session()
+
+    async def always_400(sess, method, url, **kw):
+        return SimpleNamespace(status_code=400, headers={}, text="", json=dict)
+
+    monkeypatch.setattr(http, "fetch_async", always_400)
+
+    scraper = WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")
+    scraper._instance = "wd1"
+    classes: Counter[str] = Counter()
+    out = asyncio.run(scraper._job_detail_async(session, "/job/x/Eng_JR1", classes))
+
+    assert out is None  # a genuine loss
+    assert session.cookies.cleared == 1  # cleared once — not a loop
+    assert classes["HTTP 400"] == 1
+    assert _COOKIE_RECOVERED not in classes
 
 
 def test_workday_429_does_not_leak_the_opt_in_to_other_scrapers():
@@ -6015,21 +6094,12 @@ def test_workday_posting_key_rejects_a_year_month_as_a_req_id():
     assert _wd_key(["2026-07"]) == "Some-Title_FALLBACK-999"
 
 
-def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
-    """Workday answers Actions traffic with 400 where it answers a residential IP with 429
-    (ADR-0098). Measured in run 33288099045: 58 Boards lost details to 400 — `dxctechnology`
-    837/860, `roche` 827/1210 — and 75 of the 77 roche postings evicted for it were re-added 48
-    minutes later. A throttle wearing the wrong number. Because 400 is in neither `http.TRANSIENT` nor
-    `egress_fallback_on` it was retried nowhere, settling first-attempt.
-
-    Every fetching call opts in, `_resolve_instance`'s data-centre probe included. An earlier
-    version of this change excluded the probe, on the theory that a 400 there means "this data
-    centre does not serve the tenant". Measured live, that is false: a wrong data centre answers
-    **422** (roche wd1/wd5/wd12/wd103/wd105 all 422, wd3 200). Since `serves()` accepts only a
-    200, an unretried 400 would make a throttled Board sweep all of `INSTANCES` for nothing — and
-    a genuinely migrated Board whose correct data centre happened to 400 would resolve nowhere and
-    read as empty. 422 stays out of `retry_on`, so the real wrong-data-centre answer still fails
-    fast."""
+def test_workday_no_longer_retries_a_400_anywhere(monkeypatch):
+    """ADR-0103 reverts ADR-0098: a 400 leaves the retry ladder everywhere. Retrying it re-sends
+    the stale session cookie that caused it, so no Workday call opts a 400 into `retry_on` — every
+    fetching call takes the shared `http.TRANSIENT`, `_resolve_instance`'s data-centre probe
+    included (its `patient` arm, which existed only to retry a 400, is gone; a wrong data centre
+    answers 422, which `TRANSIENT` already excludes, so the sweep still fails fast)."""
     import asyncio
 
     from headstart import http
@@ -6069,20 +6139,21 @@ def test_workday_opts_every_fetching_call_into_retrying_a_400(monkeypatch):
 
     assert seen, "no fetch was made"
     for method, retry_on in seen:
-        assert 400 in retry_on, f"{method} call did not opt into retrying a 400"
-        assert http.TRANSIENT <= retry_on, (
-            "the opt-in must EXTEND the shared set, not replace it"
+        assert 400 not in retry_on, (
+            f"{method} call still retries a 400 (ADR-0103 reverted that)"
+        )
+        assert retry_on == http.TRANSIENT, (
+            "every Workday call takes the shared set now, not a Workday-specific one"
         )
 
 
-def test_workday_instance_sweep_does_not_retry_a_400(monkeypatch):
-    """Only the *hinted* instance probe is patient; the sweep behind it is not.
+def test_workday_instance_resolution_never_retries_a_400(monkeypatch):
+    """No instance probe retries a 400 — hinted or swept (ADR-0103 removed the `patient` arm).
 
-    The sweep runs serially over all of `INSTANCES`, so retrying a 400 there would cost a
-    throttled Board 54 requests and ~81 s of backoff before it fetched a single job — and still
-    resolve nothing, because a throttle that rejects one data centre rejects them all. Retrying
-    the hinted probe is what actually pays: a 400 there is a throttle rejecting the centre that
-    was right, and three attempts stop it triggering the sweep at all."""
+    A wrong data centre answers 422, which `TRANSIENT` already excludes, so every probe fails over
+    fast on the real wrong-centre answer. A 400 there would be a stale session cookie, and
+    retrying one re-sends it; the fix belongs in the detail pass (`_detail_from_cookie_retry`),
+    not in a data-centre probe that would spend 54 requests learning nothing."""
     from headstart import http
     from headstart.scrapers.workday import WorkdayScraper
 
@@ -6112,9 +6183,8 @@ def test_workday_instance_sweep_does_not_retry_a_400(monkeypatch):
     WorkdayScraper("https://x.wd1.myworkdayjobs.com/ext")._resolve_instance()
 
     assert len(seen) > 1, "the sweep did not run"
-    assert 400 in seen[0], "the hinted probe must be patient"
-    assert all(400 not in r for r in seen[1:]), (
-        "the sweep must not retry a 400 — it would cost ~81s per throttled Board"
+    assert all(r == http.TRANSIENT for r in seen), (
+        "every probe takes the shared set now — no 400-retrying `patient` arm"
     )
 
 
@@ -7310,8 +7380,9 @@ def test_workday_a_recovered_detail_resets_the_5xx_streak(monkeypatch):
 
 
 def test_workday_400s_do_not_trip_the_5xx_breaker(monkeypatch):
-    """A pwc-style 400-storm is ADR-0098's territory and its recovery counter is still being
-    measured — the breaker counts settled 5xx only, so a pure 400 storm never trips it."""
+    """A 400-storm is a stale session cookie (ADR-0103), recovered in-pass by clearing the jar —
+    not the wholesale 5xx refusal the breaker is for. The breaker counts settled 5xx only, so a
+    pure 400 storm never trips it, and the pass keeps attempting every detail."""
     from collections import Counter
 
     from headstart import http
@@ -7320,7 +7391,9 @@ def test_workday_400s_do_not_trip_the_5xx_breaker(monkeypatch):
     calls = []
 
     class _R:
-        status_code = 400
+        status_code = (
+            400  # persists through the cookie reset — a genuine loss, not a recovery
+        )
         text = ""
 
         @staticmethod
@@ -7334,7 +7407,13 @@ def test_workday_400s_do_not_trip_the_5xx_breaker(monkeypatch):
     classes: Counter = Counter()
     for i in range(_DETAIL_BREAK_STREAK + 5):
         s._job_detail(f"/job/x/J_{i}", classes)
-    assert len(calls) == _DETAIL_BREAK_STREAK + 5, "400s must not stop the pass"
+    assert not s._detail_pass_broken, "400s must not trip the 5xx breaker"
+    # Each detail is attempted once, then refetched once after the cookie reset (ADR-0103): a 400
+    # that persists is a real loss, but the pass runs to the end rather than breaking off.
+    assert len(calls) == 2 * (_DETAIL_BREAK_STREAK + 5), (
+        "every detail attempted, plus its reset"
+    )
+    assert classes["HTTP 400"] == _DETAIL_BREAK_STREAK + 5
 
 
 def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):

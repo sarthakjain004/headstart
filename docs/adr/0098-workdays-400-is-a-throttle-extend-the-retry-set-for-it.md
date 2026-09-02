@@ -1,6 +1,6 @@
 # ADR-0098: Workday's 400 is a throttle — extend the retry set for it, don't widen it
 
-- Status: Accepted
+- Status: Superseded by [ADR-0103](0103-workdays-400-is-an-invalid-session-cookie-clear-it.md) — the 400 is a stale session cookie, not a throttle; retrying it re-sends the dead cookie, which is why this ADR's retry recovered nothing
 - Date: 2026-08-31
 - Amended by: [ADR-0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) — the retry this ADR
   added recovers nothing (ratio 0.93 over ten runs) because a 400 could not open the spare

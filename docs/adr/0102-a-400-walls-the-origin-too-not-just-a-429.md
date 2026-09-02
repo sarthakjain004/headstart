@@ -1,6 +1,6 @@
 # ADR-0102: A 400 walls the origin too, not just a 429
 
-**Status:** accepted · **Date:** 2026-09-02 · **Amends:**
+**Status:** superseded by [ADR-0103](0103-workdays-400-is-an-invalid-session-cookie-clear-it.md) (the 400 is a stale session cookie a route change cannot fix; reverted) · **Date:** 2026-09-02 · **Amends:**
 [ADR-0063](0063-spare-egress-for-a-spent-origin-budget.md) (which statuses open the spare
 egress) and [ADR-0098](0098-workdays-400-is-a-throttle-extend-the-retry-set-for-it.md) (whose
 retry this explains the failure of)

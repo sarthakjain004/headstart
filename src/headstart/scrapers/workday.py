@@ -157,22 +157,14 @@ _QUERY_TOTAL_CAP = 2000  # total reported as exactly 2000 => capped => subdivide
 _MAX_DEPTH = 4  # recursion bound; Accenture needs depth 3, 4 is a paranoid ceiling.
 _DETAIL_WORKERS = 6  # concurrent description fetches; bounded since they hit one host
 
-# Workday answers GitHub Actions traffic with **400** where it answers a residential IP with 429.
-# Measured 2026-08-30 (ADR-0098): a full 1,208-detail pass from a laptop could not be made to 400
-# at any concurrency tried, direct or through WARP, while inside CI run 33288099045 lost 68-97%
-# of a Board's details to 400 (`dxctechnology` 837/860, `roche` 827/1210) and the neighbouring
-# 33286160766 reached 99% (`kohls` 2147/2170). It is a throttle, not a malformed request: 75 of
-# the 77 roche postings evicted for it were re-added 48 minutes later. Because 400 sits in
-# neither `http.TRANSIENT` nor `egress_fallback_on`, every one settled first-attempt, unretried.
-# Extends the shared set rather than widening it — 400 really does mean "bad request" on the
-# other twenty active ATSes, and none of them has shown this.
-#
-# Workday itself has exactly one *genuine* 400, and we never provoke it: `_PAGE_LIMIT`'s own
-# comment records that a `limit` above 20 returns 400, and that value is a constant here. Detail
-# URLs are built from `externalPath` values the listing just handed us, so a malformed path would
-# be the listing's, not ours. Every 400 this retries is therefore one the origin chose to send a
-# well-formed request — which is the whole basis for reading it as a throttle.
-_RETRY_ON = http.TRANSIENT | {400}
+# A detail 400 is Workday's own "session cookie is invalid", not a throttle and not a malformed
+# request (ADR-0103, superseding ADR-0098's throttle reading): the session's jar goes stale
+# mid-pass and every remaining detail 400s until it is cleared. It is NOT on the retry ladder —
+# retrying re-sends the dead cookie and 400s again (measured), which is why ADR-0098's retry
+# recovered nothing. It is handled instead by clearing the jar and refetching once
+# (`_detail_from_cookie_retry`). So every Workday call takes the shared `http.TRANSIENT`; there
+# is no Workday-specific retry set any more.
+_DETAIL_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
 # The async path's multiplexing width. It had been inheriting the shared 100-stream default while
 # the sync path above deliberately held to 6 against the same host — measured cost of that
 # divergence over 19 pipeline runs: 3,023,846 429-retries and 1,254,130 of 2,426,147 descriptions
@@ -211,11 +203,23 @@ _MAX_LOST_DETAIL_SHARE = 0.5
 # residential IP, while every public job page returned 200 with the full description in
 # server-rendered JSON-LD and the page's embedded config named the exact tenant/site this scraper
 # uses — the tenant's own SPA would 404 on the same URL. A settled 404 therefore tries the public
-# page before the loss is counted. 404 only: 400 is a throttle (ADR-0098) already on the retry
-# ladder, and a second URL mid-throttle is extra load, not recovery. Recovered details ride this
-# label in the loss-class Counter so the pass can report them, and `_report_detail_losses` pops it
-# back out — its loss tally must only ever fall short of `missing`, never overshoot it.
+# page before the loss is counted. 404 only: a 400 has its own in-pass recovery — the session
+# cookie is cleared and the same URL refetched (ADR-0103) — so it never reaches here. Recovered
+# details ride this label in the loss-class Counter so the pass can report them, and
+# `_report_detail_losses` pops it back out — its loss tally must only ever fall short of
+# `missing`, never overshoot it.
 _PAGE_RECOVERED = "recovered from the public page"
+
+# A detail 400 is Workday's own "session cookie is invalid" (ADR-0103). The AsyncSession one
+# detail pass shares picks up a PLAY_SESSION the origin later rejects, and from then on every
+# remaining detail of THAT Board 400s. Measured 2026-09-02: a request with no cookie returns 200,
+# a corrupted cookie 400s with that exact message, retrying the same cookie 400s again (which is
+# why ADR-0098's retry recovered nothing), and clearing the jar then refetching once recovers a
+# 200 (3/3). This is the only 400 the detail endpoint produces — Workday's one genuine 400
+# (`_PAGE_LIMIT` above 20) is a listing concern we never send here — so a detail 400 is
+# unconditionally the cookie one. Recovered details ride this label and are popped from the loss
+# tally exactly as `_PAGE_RECOVERED` is.
+_COOKIE_RECOVERED = "cookie-reset (recovered)"
 _JSON_LD = re.compile(
     r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
 )
@@ -228,9 +232,9 @@ _JSON_LD = re.compile(
 # next day, so the loss is a delay, not a loss: the pass breaks off after this many CONSECUTIVE
 # settled 5xx and lets the next scrape heal the text via the store (ADR-0050). Consecutive is the
 # guard against false trips — the steady background 5xx mostly recovers inside the retry ladder,
-# so a run of 30 that all settled is an episode, not noise. 5xx only, deliberately: a pure
-# 400-storm never trips it, because ADR-0098's 400-retry recovery counter is still being measured
-# and an early break-off would muddy it. On the threaded fan_out fallback the streak increments
+# so a run of 30 that all settled is an episode, not noise. 5xx only, deliberately: a 400-storm
+# is a stale session cookie the cookie reset recovers in-pass (ADR-0103), not an origin refusing
+# the Board wholesale, so it is not what this breaker is for. On the threaded fan_out fallback the streak increments
 # race (same caveat as the loss classes) — the trip point is approximate there and the break-off
 # warning can double-fire; both are exact on the async path. Tripping stops new details from
 # STARTING — items already in flight complete, retry ladders included.
@@ -356,41 +360,13 @@ class WorkdayScraper(BaseScraper):
     #: opt-in **stands**: it rests on the per-(source IP x instance host) table above, not on that
     #: rate. But do not read a high recovered rate as confirmation; only a per-Board outcome is.
     #:
-    #: **400 joins it (ADR-0102).** The 400 has been read as a throttle since ADR-0098, but only
-    #: the 429 could ever reach the escape hatch — so the status behind 83-95% of all detail loss
-    #: was the one status that could not turn the spare egress on, and ADR-0098's retry instead
-    #: spent two extra attempts against the same penalised IP. That is the whole reason its
-    #: measured recovery is nil (`400-throttle` at 0.93 of its 2S ceiling, 10 runs of 10).
-    #:
-    #: **Watch the rotation count on the first runs, and revert on it.** This one set has three
-    #: consumers: `mark_walled` (once per process, cheap), `_rotate_for` (every refusal already
-    #: riding the proxy), and `spare_egress.stream_width`, which narrows a walled group's fan-out
-    #: to 12. The last changes nothing in practice — Workday already walls on a 429 in all 15
-    #: shards of every run, so the width is 12 today; this only moves *when* the wall lands.
-    #:
-    #: The rotation path is the one to watch, sized off the shard logs' own
-    #: `spare egress rotations: attempted A, succeeded S, throttled T` line rather than off a
-    #: retry count (which is process-wide across every ATS, so it is not what reaches
-    #: `_rotate_for`). Over the ten runs `33548262185`..`33590621111`: 159,449 `rotate()` calls,
-    #: of which only 15,182 actually rotated — **90% queued behind the 5s cooldown**. Rotations
-    #: are serialised by that gate, so admitting ~4x the callers cannot restart `warp-svc` ~4x
-    #: more often; what it mostly buys is aggregate *waiting*, concurrent within a shard.
-    #:
-    #: Watch run wall-clock against the 51-73 min those ten runs recorded, and the scrape stage
-    #: against its own 22.0-36.8 min (the run figure covers every stage; the scrape one is what
-    #: this can actually move). And watch
-    #: `succeeded` (~1,518/run today) — if it climbs toward its call volume the cooldown has
-    #: stopped binding and the demand model applies after all. Revert this, or split
-    #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), on either signal.
-    #:
-    #: Three call sites now carry a 400 in `egress_on` that their own `retry_on` omits — the
-    #: unpatient arm of `_resolve_instance`'s sweep, which ADR-0098 deliberately leaves unretried,
-    #: and `_page_detail`/`_page_detail_async`, which take `http.TRANSIENT`. `http.fetch` names
-    #: that case and allows it: such a request is *marked but not retried*, so it settles on the
-    #: wall it just reported while still sparing every later Board the same three attempts. That
-    #: is the wanted behaviour here — a 400 on the sweep is the throttle ADR-0098 identified, and
-    #: walling on it is the point — so the asymmetry is deliberate, not an oversight to tidy.
-    egress_fallback_on = frozenset({400, 429})
+    #: **429 only again (ADR-0103, reverting ADR-0102).** ADR-0102 added 400 here on the throttle
+    #: reading, so a 400 would rotate the egress IP. A probe from inside Actions then showed the
+    #: 400 is a stale session cookie, and that rerouting a valid cookie over WARP still returns
+    #: 200 while a poisoned one still 400s — a route change neither causes nor cures it. So the
+    #: 400 is handled by clearing the cookie (`_detail_from_cookie_retry`), not by rotating, and
+    #: only the genuine Cloudflare 429 opens the spare egress.
+    egress_fallback_on = frozenset({429})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     # The ADR-0100 episode breaker's per-pass state (see _DETAIL_BREAK_STREAK). Class-level
     # defaults so a directly-driven detail call (tests, salary_sample.py) works on a fresh
@@ -440,20 +416,17 @@ class WorkdayScraper(BaseScraper):
         :meth:`url` and :meth:`_detail_url` follow it. Leaves the URL's instance untouched if none
         serves the board — the crawl then yields no jobs, as before.
 
-        **Only the first probe retries a 400** (ADR-0098). A wrong data centre answers 422, never
-        400 — measured 54/54 across five tenants — so a 400 on the *hinted* instance is a throttle
-        rejecting the centre that was right all along, and sending that Board on a pointless sweep
-        is worth three attempts to avoid. The sweep itself stays unretried: it runs serially over
-        all of :data:`INSTANCES`, so retrying there would cost a throttled Board 54 requests and
-        ~81 s of backoff before it fetched a single job, and still resolve nothing. A Board that
-        has *both* migrated and been throttled therefore still reads empty — narrow, and a Board
-        that emits no ids at all never enters the eviction scope, so nothing of its is evicted.
+        A wrong data centre answers **422**, never 400 (measured 54/54 across five tenants), and
+        422 is outside ``http.TRANSIENT``, so a stale instance fails fast on both the hinted probe
+        and the sweep rather than spending the retry ladder. (Before ADR-0103 the hinted probe
+        retried a 400 on the theory it was a throttle; the 400 is a session-cookie fault the sweep
+        never provokes, so that special case is gone.)
         """
         company, hinted, site = (
             self._parts()
         )  # self._instance is None here -> the URL's instance
 
-        def serves(instance: str, *, patient: bool = False) -> bool:
+        def serves(instance: str) -> bool:
             probe_url = (
                 f"https://{company}.{instance}.myworkdayjobs.com"
                 f"/wday/cxs/{company}/{site}/jobs"
@@ -462,7 +435,6 @@ class WorkdayScraper(BaseScraper):
                 response = http.fetch(
                     "POST",
                     probe_url,
-                    retry_on=_RETRY_ON if patient else http.TRANSIENT,
                     **self._egress(),
                     json={
                         "appliedFacets": {},
@@ -481,7 +453,7 @@ class WorkdayScraper(BaseScraper):
                 return False
             return response.status_code == 200
 
-        if serves(hinted, patient=True):
+        if serves(hinted):
             return  # fast path: the URL's data center is current
         for instance in INSTANCES:
             if instance != hinted and serves(instance):
@@ -521,7 +493,6 @@ class WorkdayScraper(BaseScraper):
             json=body,
             headers=headers,
             timeout=30,
-            retry_on=_RETRY_ON,
             **self._egress(),
         )
         if response.status_code == 404 and not raise_gone:
@@ -551,7 +522,6 @@ class WorkdayScraper(BaseScraper):
             session,
             "POST",
             self.url(),
-            retry_on=_RETRY_ON,
             json=body,
             headers=headers,
             timeout=30,
@@ -663,8 +633,7 @@ class WorkdayScraper(BaseScraper):
                 "GET",
                 self._detail_url(external_path),
                 timeout=30,
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-                retry_on=_RETRY_ON,
+                headers=_DETAIL_HEADERS,
                 **self._egress(),
             )
         except http.RequestsError as exc:
@@ -678,6 +647,22 @@ class WorkdayScraper(BaseScraper):
                 self._settled_5xx_streak = 0  # the origin answered; not an episode
                 self._note_detail(classes, _PAGE_RECOVERED)
                 return fallback
+        if (
+            response.status_code == 400
+        ):  # a stale session cookie — see _COOKIE_RECOVERED
+            http.session().cookies.clear()
+            try:
+                response = http.fetch(
+                    "GET",
+                    self._detail_url(external_path),
+                    timeout=30,
+                    headers=_DETAIL_HEADERS,
+                    **self._egress(),
+                )
+            except http.RequestsError as exc:
+                self._note_detail(classes, _failure_class(exc))
+                return None
+            return self._detail_from_cookie_retry(response, classes)
         return self._settled_detail(response, classes)
 
     def _page_detail(self, external_path: str) -> dict[str, Any] | None:
@@ -717,9 +702,8 @@ class WorkdayScraper(BaseScraper):
                 session,
                 "GET",
                 self._detail_url(external_path),
-                retry_on=_RETRY_ON,
                 timeout=30,
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                headers=_DETAIL_HEADERS,
                 **self._egress(),
             )
         except http.RequestsError as exc:
@@ -733,6 +717,27 @@ class WorkdayScraper(BaseScraper):
                 self._settled_5xx_streak = 0  # the origin answered; not an episode
                 self._note_detail(classes, _PAGE_RECOVERED)
                 return fallback
+        if (
+            response.status_code == 400
+        ):  # a stale session cookie — see _COOKIE_RECOVERED
+            # Synchronous clear between awaits: it cannot interleave with another stream on this
+            # loop. Concurrent 400s each clear and refetch — redundant but convergent, since the
+            # first clear fixes the shared jar and a later clear only drops a fresh good cookie,
+            # whose absence is itself a 200.
+            session.cookies.clear()
+            try:
+                response = await http.fetch_async(
+                    session,
+                    "GET",
+                    self._detail_url(external_path),
+                    timeout=30,
+                    headers=_DETAIL_HEADERS,
+                    **self._egress(),
+                )
+            except http.RequestsError as exc:
+                self._note_detail(classes, _failure_class(exc))
+                return None
+            return self._detail_from_cookie_retry(response, classes)
         return self._settled_detail(response, classes)
 
     def _settled_detail(
@@ -765,6 +770,26 @@ class WorkdayScraper(BaseScraper):
         if detail is not None:
             self._settled_5xx_streak = 0
         return detail
+
+    def _detail_from_cookie_retry(
+        self, response: Any, classes: Counter[str] | None
+    ) -> dict[str, Any] | None:
+        """Classify a detail refetch made after clearing a stale session cookie (ADR-0103).
+
+        A recovered 200 is parsed, resets the ADR-0100 streak, and is counted `_COOKIE_RECOVERED`
+        — a label `_report_detail_losses` pops out, so a recovery never reads as a loss (the same
+        discipline as `_PAGE_RECOVERED`). Only a genuinely parsed detail earns the label; a 200
+        whose body will not parse is the ordinary `unparseable` loss. Anything still non-200 is a
+        real loss, classified exactly as a first-attempt settle would be — including a fresh 5xx
+        advancing the episode streak.
+        """
+        if response.status_code == 200:
+            detail = self._parsed_detail(response, classes)
+            if detail is not None:
+                self._settled_5xx_streak = 0
+                self._note_detail(classes, _COOKIE_RECOVERED)
+            return detail
+        return self._settled_detail(response, classes)
 
     async def _page_detail_async(
         self, session: Any, external_path: str
@@ -839,16 +864,22 @@ class WorkdayScraper(BaseScraper):
         ``jobReqId`` until ADR-0097, so a lost detail used to *rename* the Job rather than merely
         under-fill it. ADR-0088 has both arguments and why neither widens this line's claim.
 
-        ``_PAGE_RECOVERED`` is popped out before the tally: a recovered detail is non-None, so
-        leaving it in would overshoot ``missing`` — the one direction the invariant below says
-        the tally can never move. It gets its own INFO line instead, so the fallback's work is
-        visible per Board without reading as a loss (ADR-0099).
+        ``_PAGE_RECOVERED`` and ``_COOKIE_RECOVERED`` are popped out before the tally: a recovered
+        detail is non-None, so leaving either in would overshoot ``missing`` — the one direction
+        the invariant below says the tally can never move. Each gets its own INFO line instead, so
+        the recovery is visible per Board without reading as a loss (ADR-0099, ADR-0103).
         """
         recovered = classes.pop(_PAGE_RECOVERED, 0)
         if recovered:
             _log.info(
                 f"{self.board_key()}: {recovered} detail(s) recovered from the public page's "
                 "JSON-LD after the CXS detail 404'd (ADR-0099)"
+            )
+        cookie_recovered = classes.pop(_COOKIE_RECOVERED, 0)
+        if cookie_recovered:
+            _log.info(
+                f"{self.board_key()}: {cookie_recovered} detail(s) recovered by clearing a stale "
+                "session cookie after a 400 (ADR-0103)"
             )
         missing = sum(1 for detail in details if detail is None)
         if not missing:

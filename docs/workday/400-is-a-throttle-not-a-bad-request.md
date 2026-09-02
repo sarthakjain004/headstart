@@ -1,5 +1,14 @@
 # Workday's detail 400: what it is, and what it is not
 
+> **Superseded in part, 2026-09-02 — see `the-400-is-an-invalid-session-cookie.md`.** A probe from
+> inside Actions (run 33609933482) captured the 400's actual body: Workday's own JSON,
+> `"Session cookie is invalid. Please clear your cookies and try again."`, with no `cf-mitigated`
+> header. The 400 is a rejected session cookie, not a throttle, and clearing the cookie recovers
+> it where retrying cannot. What stands below: the 400 is not a malformed request, and the **429**
+> beside it really is a Cloudflare rate limit at ~420 requests per (tenant, source IP). What does
+> not: every sentence treating the 400 as that same throttle, this title included.
+
+
 **Measured 2026-09-02, live against the real API.** Backs [ADR-0102](../adr/0102-a-400-walls-the-origin-too-not-just-a-429.md);
 tracked here because `experiment/` is gitignored and an ADR must not rest on evidence nobody else
 can read.

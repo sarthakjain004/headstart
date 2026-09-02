@@ -111,3 +111,4 @@ supersedes it and note the supersession in both.
 | [0100](0100-break-off-a-detail-pass-the-origin-is-refusing.md) | Break off a detail pass the origin is refusing | 2026-09-01 |
 | [0101](0101-remove-the-collapse-guard-the-grace-period-is-the-line.md) | Remove the collapse guard; the grace period is the line | 2026-09-01 |
 | [0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) | A 400 walls the origin too, not just a 429 | 2026-09-02 |
+| [0103](0103-workdays-400-is-an-invalid-session-cookie-clear-it.md) | Workday's 400 is an invalid session cookie — clear it, don't retry or reroute | 2026-09-02 |
