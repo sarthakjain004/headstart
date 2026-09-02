@@ -5440,7 +5440,7 @@ def test_workday_opts_into_the_spare_egress_on_400_and_429(monkeypatch):
     None — so that is the call that must carry the opt-in.
 
     400 is in the set as of ADR-0102. It has been read as a throttle since ADR-0098, yet only the
-    429 could reach the escape hatch, so the status behind 85-95% of all detail loss was the one
+    429 could reach the escape hatch, so the status behind 83-95% of all detail loss was the one
     that could never turn the spare egress on.
     """
     from headstart.scrapers.workday import WorkdayScraper
@@ -5473,7 +5473,7 @@ def test_workday_opts_into_the_spare_egress_on_400_and_429(monkeypatch):
 def test_workday_400_walls_the_group_and_routes_the_retry(monkeypatch):
     """The behaviour ADR-0102 buys: a settled 400 now turns the spare egress on.
 
-    Before it, `egress_fallback_on` held only 429, so the status behind 85-95% of Workday's
+    Before it, `egress_fallback_on` held only 429, so the status behind 83-95% of Workday's
     detail loss retried twice against the same penalised IP and never reached the escape hatch —
     which is why ADR-0098's `400-throttle` counter sat at 0.93 of its 2S ceiling for ten runs
     running. Driven through `http.fetch` with Workday's own two sets rather than by asserting the
