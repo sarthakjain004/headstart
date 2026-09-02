@@ -143,8 +143,8 @@ def _retry_reason(status: int | None) -> str:
         return _RETRY_CLASS[status]
     if 500 <= status < 600:
         return "5xx"
-    # Unreachable today - the classes above cover `TRANSIENT` plus workday's 400 -
-    # but a future `retry_on` extension must show up as its own line rather than being
+    # Unreachable today - the classes above cover `TRANSIENT`, which is all any caller now retries
+    # - but a future `retry_on` extension must show up as its own line rather than being
     # filed under someone else's, which is the failure this function was just fixed for.
     return f"http-{status}"
 
@@ -267,9 +267,10 @@ def fetch(
     else has walled the group, it just can never do the walling itself.
 
     ``retry_on`` overrides which statuses earn another attempt, defaulting to :data:`TRANSIENT`.
-    Pass a *superset* to opt one host into retrying a status nobody else should — the only live
-    case is workday's 400, which is a throttle there and a malformed request almost everywhere
-    else (ADR-0098). Retries are counted by class, so `retry_stats()` says whether it paid.
+    Pass a *superset* to opt one host into retrying a status nobody else should. No live caller
+    does today — Workday's 400 was the one, reverted in ADR-0103 once it turned out to be a stale
+    session cookie rather than a throttle — but the seam stays because it is not host-specific.
+    Retries are counted by class, so `retry_stats()` says whether it paid.
 
     ``egress_on`` is expected to be a subset of ``retry_on``. A status outside it would be
     marked but never retried, so this request would settle on the wall it just reported — the mark
@@ -351,8 +352,9 @@ async def fetch_async(
     and transient network errors with backoff (honouring ``Retry-After``); raises
     ``RequestsError`` on DNS or if it never settles.
 
-    ``retry_on`` behaves exactly as it does on :func:`fetch`, and matters more here: workday's
-    400s land overwhelmingly on the detail pass, which is this path (ADR-0098).
+    ``retry_on`` behaves exactly as it does on :func:`fetch` (no live caller overrides it now —
+    see there). This is the detail-pass path, where Workday's 400s land; ADR-0103 handles those
+    in the scraper by clearing the session cookie, not by retrying here.
 
     ``egress_group``/``egress_on`` carry the spare-egress fallback (ADR-0063) with :func:`fetch`'s
     exact semantics — one shared wall registry, so a wall the sync listing pass marks routes the
