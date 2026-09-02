@@ -1,0 +1,118 @@
+# Measure the two ways of building the WARP GUI-dependency stubs, side by side on real runners.
+#
+# `pipeline.yml`'s WARP step needs two stub packages so apt never fetches the real
+# `libwebkit2gtk-4.1-0` that `cloudflare-warp` hard-Depends on. Those stubs used to be built by
+# `equivs`, which meant an `apt-get install equivs` — a mirror fetch plus dpkg trigger processing,
+# under a 60s ceiling. That call is the single point of failure behind a shard losing its spare
+# egress: on run 33633903535 it hit the ceiling on 2 of 15 shards, and stub success paired with
+# WARP success 15 times out of 15. A stub package ships no files, so `dpkg-deb --build` from a
+# hand-written control file produces the same thing locally, offline, with nothing to fetch.
+#
+# The arms exist because "the new path worked" is not evidence on its own — a run of the old path
+# on an idle afternoon also works. Both arms run in the same dispatch so they share the day's
+# runner contention, which is the variable that actually produces the failure. Eight replicas each:
+# one runner is one sample of a contended host, and the failure rate being chased is a few percent.
+#
+# Manual only. It installs nothing that outlives the runner and touches no ATS host, but it has no
+# reason to run on a schedule.
+name: probe-warp-install
+
+on:
+  workflow_dispatch:
+    inputs:
+      ceiling:
+        description: seconds to allow the stub build, matching pipeline.yml's own ceiling
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false          # one arm failing must not cancel the control
+      matrix:
+        arm: [equivs, dpkgdeb]
+        replica: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Build the stubs, then install cloudflare-warp
+        env:
+          ARM: ${{ matrix.arm }}
+          CEILING: ${{ github.event.inputs.ceiling || '60' }}
+        run: |
+          # No `set -x`: the one thing this job produces is the PROBE line at the end, and the
+          # echoed source would bury it (and mislead a later grep — see run_logs.py's own note).
+          set -u
+          PKGS="libwebkit2gtk-4.1-0 libayatana-appindicator3-1"
+
+          # The arm under test. Identical to pipeline.yml's helper, minus the comments.
+          stub_dpkgdeb() {
+            local d p
+            d=$(mktemp -d) || return 1
+            for p in $PKGS; do
+              mkdir -p "$d/$p/DEBIAN" || return 1
+              printf 'Package: %s-headless-stub\nVersion: 1.0\nArchitecture: all\nMaintainer: headstart pipeline <noreply@github.com>\nSection: misc\nPriority: optional\nProvides: %s\nDescription: stub for headless warp-svc\n A no-op package satisfying a GUI dependency warp-svc never calls.\n' \
+                "$p" "$p" > "$d/$p/DEBIAN/control" || return 1
+              dpkg-deb --root-owner-group --build "$d/$p" "$d/$p-headless-stub.deb" >/dev/null || return 1
+            done
+            sudo timeout 30 dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
+          }
+
+          # The control: exactly what pipeline.yml ran before this change.
+          stub_equivs() {
+            sudo DEBIAN_FRONTEND=noninteractive timeout "$CEILING" apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
+              equivs || return 1
+            local d p
+            d=$(mktemp -d)
+            for p in $PKGS; do
+              printf 'Section: misc\nPriority: optional\nStandards-Version: 3.9.2\nPackage: %s-headless-stub\nProvides: %s\nDescription: stub for headless warp-svc\n A no-op package satisfying a GUI dependency warp-svc never calls.\n' \
+                "$p" "$p" > "$d/$p.ctl"
+              (cd "$d" && equivs-build "$p.ctl" >/dev/null) || return 1
+            done
+            sudo dpkg -i "$d"/*headless-stub*.deb >/dev/null || return 1
+          }
+
+          # Unchanged between arms, so any difference in the warp_* columns is the stubs' doing.
+          install_warp() {
+            curl -fsSL --max-time 15 --retry 1 --retry-delay 2 \
+              https://pkg.cloudflareclient.com/pubkey.gpg \
+              | sudo gpg --yes --dearmor \
+                -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg || return 1
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
+              | sudo tee /etc/apt/sources.list.d/cloudflare-client.list >/dev/null
+            sudo timeout 45 apt-get update -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
+              -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/cloudflare-client.list \
+              -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || true
+            sudo timeout 60 apt-get install -y -qq \
+              -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=2 \
+              cloudflare-warp || return 1
+          }
+
+          now() { date +%s.%N; }
+
+          t0=$(now)
+          if [ "$ARM" = dpkgdeb ]; then stub_dpkgdeb; else stub_equivs; fi
+          stub_ok=$?
+          t1=$(now)
+
+          # `provides` is the mechanical check that the stub did its job, independent of whether
+          # the Cloudflare mirror happened to be reachable: does apt now believe the dependency
+          # is satisfiable without fetching the real 113 MB package?
+          provides=$(apt-cache showpkg libwebkit2gtk-4.1-0 2>/dev/null \
+            | grep -c 'headless-stub' || true)
+
+          install_warp
+          warp_ok=$?
+          t2=$(now)
+          # Whether the real dependency was pulled anyway — the thing the stubs exist to avoid.
+          fat=$(dpkg -l libwebkit2gtk-4.1-0 2>/dev/null | grep -c '^ii' || true)
+          cli=0; command -v warp-cli >/dev/null 2>&1 && cli=1
+
+          printf 'PROBE arm=%s replica=%s stub_ok=%s stub_s=%.1f provides=%s warp_ok=%s warp_s=%.1f real_webkit=%s warp_cli=%s\n' \
+            "$ARM" "${{ matrix.replica }}" "$stub_ok" \
+            "$(echo "$t1 - $t0" | bc)" "$provides" "$warp_ok" \
+            "$(echo "$t2 - $t1" | bc)" "$fat" "$cli"
