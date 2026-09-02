@@ -7,7 +7,7 @@ retry this explains the failure of)
 
 ## Context
 
-Workday's detail pass loses 10.0–17.9% of every run's detail fetches, and **85–95% of that loss
+Workday's detail pass loses 10.0–17.9% of every run's detail fetches, and **83–95% of that loss
 is a settled HTTP 400** — 256,934 of them across the ten runs `33548262185`..`33590621111`.
 ADR-0098 read the 400 as a throttle and extended `_RETRY_ON` to cover it. That retry has now been
 measured over those same ten runs and **recovers nothing**: the `400-throttle` counter spent
@@ -29,9 +29,10 @@ full measurement is tracked at
   `ghr/us-emplsv` (3,196) is at 95%.
 
 And it reproduced the mechanism positively: at production's own width of 25 streams, a sustained
-walk trips a per-tenant limit at request 431 (`ghr`) and at 656–1,135 (`thermofisher`, moving
-between walks an hour apart), and refuses **72–98%** of everything after the trip — which brackets
-the 83–97% per-Board loss production records.
+walk trips a per-tenant limit at request 431 (`ghr`) and at 656 or 1,135 (`thermofisher`, on two
+walks two minutes apart — so the threshold is not a fixed quota), and refuses **72–98%** of
+everything after the trip. That is the same band as the **68–97%** loss production records on the
+ten boards contributing most of its 400s.
 From that vantage the refusal is a 429 with a Cloudflare block page; production settles 400. Why
 the status differs is **not** established, and needs a probe from inside Actions.
 
@@ -43,7 +44,7 @@ egress_fallback_on = frozenset({429})
 
 `http.fetch` marks a group walled — which routes every later request for that ATS through the
 spare egress — only on a status in that set. So a **429 could reach the escape hatch and a 400
-could not**, and the status responsible for 85–95% of all detail loss was the one status that
+could not**, and the status responsible for 83–95% of all detail loss was the one status that
 could never turn the spare egress on. ADR-0098's retry then spent two extra attempts against the
 same penalised IP, which is a complete explanation for a recovery ratio of 0.93.
 
@@ -95,9 +96,15 @@ over the ten runs `33548262185`..`33590621111`:
 
 | quantity | window | per run |
 |---|---|---|
-| `rotate()` calls (`attempted + throttled`) | 157,314 | ~15,700 |
-| rotations actually performed (`succeeded`) | 14,774 | ~1,477 |
-| of those calls, cooldown-`throttled` | 142,540 | **91%** |
+| `rotate()` calls (`attempted + throttled`) | 159,449 | ~15,900 |
+| rotations actually performed (`succeeded`) | 15,182 | ~1,518 |
+| of those calls, cooldown-`throttled` | 144,267 | **90%** |
+
+(An earlier count here read 157,314 / 14,774 because the pattern that gathered it required the
+line's trailing `, abandoned B` clause, which `spare_egress.report` omits when that count is zero
+— so seven of the 150 shard lines were silently skipped. That is precisely the silence-as-zero
+failure the analyser half of this change fixes, committed by the same hand on the same day. Every
+field after `attempted` is optional and must be matched as such.)
 
 **That 91% is what keeps this from being a 4x restart storm**, though the mechanism is subtler
 than "the gate is shut". Reading `spare_egress.rotate`: a `throttled` caller waits out only the
@@ -112,7 +119,7 @@ admitting ~4x the callers should raise restarts by a small factor, not fourfold,
 cost is aggregate *waiting* on the cooldown — bounded per caller but concurrent within a shard.
 
 Read **scrape wall-clock** against the 51–73 min these ten runs recorded, and watch `succeeded`
-(~1,477/run today). Revert this, or take the split below, if wall-clock rises materially or
+(~1,518/run today). Revert this, or take the split below, if wall-clock rises materially or
 `succeeded` climbs toward its call volume — that last would mean the cooldown stopped binding and
 the demand model applies after all.
 
@@ -126,6 +133,6 @@ on the same tenant, so a 400 there is the same origin refusing us and is worth r
 even though that one request cannot be retried into success.
 
 **What success looks like.** The `400-throttle` ratio should fall below 0.93 as retries start
-landing on a fresh IP, and Workday's share of detail loss should fall from 85–95%. Read the ratio
+landing on a fresh IP, and Workday's share of detail loss should fall from 83–95%. Read the ratio
 against that baseline, per ADR-0098's own rule — not the spare egress's "recovered" rate, which
 ADR-0063's 2026-08-26 amendment already records as blind.

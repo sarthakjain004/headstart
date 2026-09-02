@@ -357,7 +357,7 @@ class WorkdayScraper(BaseScraper):
     #: rate. But do not read a high recovered rate as confirmation; only a per-Board outcome is.
     #:
     #: **400 joins it (ADR-0102).** The 400 has been read as a throttle since ADR-0098, but only
-    #: the 429 could ever reach the escape hatch — so the status behind 85-95% of all detail loss
+    #: the 429 could ever reach the escape hatch — so the status behind 83-95% of all detail loss
     #: was the one status that could not turn the spare egress on, and ADR-0098's retry instead
     #: spent two extra attempts against the same penalised IP. That is the whole reason its
     #: measured recovery is nil (`400-throttle` at 0.93 of its 2S ceiling, 10 runs of 10).
@@ -371,13 +371,13 @@ class WorkdayScraper(BaseScraper):
     #: The rotation path is the one to watch, sized off the shard logs' own
     #: `spare egress rotations: attempted A, succeeded S, throttled T` line rather than off a
     #: retry count (which is process-wide across every ATS, so it is not what reaches
-    #: `_rotate_for`). Over the ten runs `33548262185`..`33590621111`: 157,314 `rotate()` calls,
-    #: of which only 14,774 actually rotated — **91% queued behind the 5s cooldown**. Rotations
+    #: `_rotate_for`). Over the ten runs `33548262185`..`33590621111`: 159,449 `rotate()` calls,
+    #: of which only 15,182 actually rotated — **90% queued behind the 5s cooldown**. Rotations
     #: are serialised by that gate, so admitting ~4x the callers cannot restart `warp-svc` ~4x
     #: more often; what it mostly buys is aggregate *waiting*, concurrent within a shard.
     #:
     #: Watch scrape wall-clock against the 51-73 min those ten runs recorded, and watch
-    #: `succeeded` (~1,477/run today) — if it climbs toward its call volume the cooldown has
+    #: `succeeded` (~1,518/run today) — if it climbs toward its call volume the cooldown has
     #: stopped binding and the demand model applies after all. Revert this, or split
     #: `egress_rotate_on` out of `egress_on` (ADR-0102's recorded alternative), on either signal.
     #:

@@ -7,13 +7,13 @@ can read.
 ## The size of it
 
 Across the ten runs `33548262185`..`33590621111`, Workday's detail pass lost 10.0–17.9% of its
-fetches and **85–95% of that loss was a settled HTTP 400** — 256,934 of them. ADR-0098's retry
+fetches and **83–95% of that loss was a settled HTTP 400** — 256,934 of them. ADR-0098's retry
 spent **479,165 attempts against a 2S ceiling of 513,868, a ratio of 0.93**, with every individual
 run between 0.92 and 0.94. It recovers essentially nothing.
 
 In run `33590621111` the 400s land on 81 boards and are highly concentrated: the top ten are 51%
-of the total, at loss rates of 83–97% (`ghr/us-emplsv` 3,029 of 3,196, 95%; `td/TD_Bank_Careers` 1,621
-of 1,667; `prismahealth` 1,569 of 1,630).
+of the total, at loss rates of 68–97% (`td/TD_Bank_Careers` 1,621 of 1,667 = 97%;
+`ghr/us-emplsv` 3,029 of 3,196 = 95%; `pae/Amentum_Careers` 1,832 of 2,684 = 68%).
 
 ## What it is not
 
@@ -48,10 +48,14 @@ is comparable to a production board that is throttled for most of its pass.
 
 The rejection carries a Cloudflare HTML block page; these tenants are Cloudflare-fronted
 (`server: cloudflare`, `cf-ray`, and a `PLAY_SESSION` cookie pinned to a backend instance). The
-**post-trip rejection rate of 72–98% brackets the 83–97% per-board loss production records**.
-Two further details matter: thermofisher is clean for 700 straight requests, which is why a short
-probe reads healthy; and its trip point moved from 1,135 to 656 between two walks an hour apart,
-so the limit is a rolling window shaped by recent history, not a fixed per-run quota.
+**post-trip rejection rate of 72–98% sits in the same band as the 68–97% loss production records
+across the ten boards contributing most of the 400s**.
+Two further details matter. Thermofisher is clean for 700 straight requests, which is why a short
+probe reads healthy. And its trip point differs between two otherwise identical walks taken about
+two minutes apart — 656 on the first, 1,135 on the second — so the limit is not a fixed per-session
+quota. It is *only* that: the later walk tripped later, so this says nothing about which direction
+recent traffic pushes the threshold, and an earlier draft of this doc claimed the reverse order,
+an hour's gap, and a rolling-window inference none of the three artifacts support.
 
 ## The one thing still unexplained
 
