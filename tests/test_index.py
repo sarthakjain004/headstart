@@ -534,10 +534,8 @@ def _write_description_store(root: Path, texts: dict[str, str]) -> Path:
 
 
 def _backfill(tmp_path: Path, store: Path, apply: bool = True) -> int:
-    return idx.backfill_descriptions(
-        argparse.Namespace(
-            db=str(tmp_path / "db"), store=str(store), chunk=2048, apply=apply
-        )
+    return idx.backfill_from_store(
+        argparse.Namespace(db=str(tmp_path / "db"), store=str(store), apply=apply)
     )
 
 

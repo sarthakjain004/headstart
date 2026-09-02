@@ -30,7 +30,7 @@ on:
         description: "Retry counter — set by this workflow re-dispatching itself. Leave blank."
         required: false
         default: "1"
-      backfill_descriptions:
+      backfill_from_store:
         description: "ADR-0104 one-time backfill: fill every null description from the store (~690 MB)."
         required: false
         default: "false"
@@ -99,6 +99,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ATTEMPT: ${{ github.event.inputs.attempt || '1' }}
+          # Carried so the re-dispatch below can hand it on; 'false' on a scheduled run, where
+          # `inputs` is empty and no backfill was ever asked for.
+          BACKFILL: ${{ github.event.inputs.backfill_from_store || 'false' }}
         run: |
           for _ in $(seq 1 45); do
             n=$(gh run list -R "$GITHUB_REPOSITORY" --workflow=pipeline.yml \
@@ -120,7 +123,12 @@ jobs:
             exit 1
           fi
           next=$((ATTEMPT + 1))
-          gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY" -f "attempt=$next"
+          # `backfill_from_store` rides along, or a dispatch that does not win the window on its
+          # first attempt hands off to a successor that defaults it back to `false`, skips the
+          # step, and ends **green** having done nothing that was asked — the same silent
+          # starvation the attempt counter itself exists to prevent.
+          gh workflow run cleanup-index.yml -R "$GITHUB_REPOSITORY" \
+            -f "attempt=$next" -f "backfill_from_store=$BACKFILL"
           # `gh workflow run` is fire-and-forget: it returns on a 202, not on a run existing. If
           # the dispatch were dropped this job would still exit 0 and the retry chain would end
           # **green**, which is the silent-starvation failure this whole change exists to remove —
@@ -165,16 +173,22 @@ jobs:
         # 1,155 MB table. `sync --backfill-descriptions` cannot do this job — it reads the run's
         # ~20,000-Board corpus slice, so a row whose Board sat out the slice is unreachable from
         # there. This reads the ADR-0050 store instead, which holds text regardless of slice.
+        # Measured on synthetic tables at 0.11 s per 1,000 rows, so ~330k rows is well inside this
+        # job's budget; the cost is storage, not time.
         #
         # Placed BEFORE `compact` on purpose: the rewrite is delete-then-add, so it leaves a
         # deletion file per touched fragment, and compact is what reclaims them. Running it after
         # would leave the whole pass's churn on disk until the next cleanup a day later.
-        if: inputs.backfill_descriptions == 'true'
+        if: inputs.backfill_from_store == 'true'
+        # Never fatal, for the reason the description-store step below carries the same flag:
+        # `prune --apply` has already rewritten the table by this point, and a backfill that dies
+        # must not strand that work unuploaded or skip the compaction the daily run exists for.
+        continue-on-error: true
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python -m headstart.ingest.state_fetch 'data/descriptions/*'
-          python -m headstart.ingest.index backfill-descriptions --apply
+          python -m headstart.ingest.index backfill-from-store --apply
           du -sh data/lancedb
       - name: Rebuild fresh (reclaim orphan fragments)
         run: python -m headstart.ingest.index compact

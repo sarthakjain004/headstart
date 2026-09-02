@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Maintain the production ``jobs`` LanceDB table — the merge stage's three table steps.
+"""Maintain the production ``jobs`` LanceDB table — the merge stage's table steps.
 
 Stage 5 runs these back-to-back against the same table, so they live in one module (ADR-0028)::
 
     python -m headstart.ingest.index sync              # ADR-0014, ADR-0019
     python -m headstart.ingest.index prune [--apply]   # ADR-0023
     python -m headstart.ingest.index compact           # ADR-0020, ADR-0023
+    python -m headstart.ingest.index backfill-from-store [--apply]   # ADR-0104
+
+The first three are the merge stage's; **backfill-from-store** is not — like ``compact`` it is a
+whole-table rewrite the per-run storage budget cannot afford, so it runs from ``cleanup-index``.
 
 **sync** reconciles the table against the embedding store incrementally: fresh ids are the corpus
 ids that have a vector, and the scraped-Board set is taken from the *full* scrape
@@ -19,8 +23,9 @@ without a vector (non-English, or not yet embedded) are reported and skipped —
 --resume`` first to close that gap. Each row added is stamped ``first_seen`` with the run's time,
 which is when *we* indexed it rather than the company's ``posted_at``; sync adds the column to a
 table that predates it before writing (ADR-0031), and adds ``description`` (ADR-0104) the same
-way — filled for the rows it adds from the run's corpus; ``--backfill-descriptions`` fills the
-rows that predate it, off by default because it rewrites every row it fills. Sync reads the
+way — filled for the rows it adds from the run's corpus; ``--backfill-descriptions`` additionally
+fills rows that predate it, but only those this run's corpus carries text for, so it can never
+cover the table — ``backfill-from-store`` is what does that. Sync reads the
 liveness ledger too
 (``--ledger``), but only to name Boards the same way prune does (ADR-0049). It needs no keep-set
 guard of its own: a broken ledger degrades resolution on both sides of its scope comparison at
@@ -552,7 +557,7 @@ def sync(args: argparse.Namespace) -> int:
 
     # And for the description text (ADR-0104). Existing rows get null — honest, and the shape the
     # Keyword filter's coverage disclaimer is built to report; `--backfill-descriptions` fills
-    # them from the corpus as a deliberate step, because it rewrites every row it fills.
+    # the ones this run's corpus reaches, and `backfill-from-store` the rest (ADR-0104).
     if _DESCRIPTION_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
         table.add_columns(_DESCRIPTION_FIELD)
@@ -752,7 +757,7 @@ def compact(args: argparse.Namespace) -> int:
     return 0
 
 
-def backfill_descriptions(args: argparse.Namespace) -> int:
+def backfill_from_store(args: argparse.Namespace) -> int:
     """Fill every null ``description`` in the served table from the ADR-0050 store (ADR-0104).
 
     ``sync --backfill-descriptions`` cannot do this. It reads its text from the run's *corpus*,
@@ -830,8 +835,8 @@ def backfill_descriptions(args: argparse.Namespace) -> int:
             )
             continue
         ids = sorted(texts)
-        for start in range(0, len(ids), args.chunk):
-            batch = ids[start : start + args.chunk]
+        for start in range(0, len(ids), _ADD_CHUNK):
+            batch = ids[start : start + _ADD_CHUNK]
             rows = (
                 table.search()
                 .where(in_predicate("id", batch))
@@ -841,12 +846,12 @@ def backfill_descriptions(args: argparse.Namespace) -> int:
             )
             for row in rows:
                 row[_DESCRIPTION_FIELD.name] = texts[row["id"]]
-            apply_sync(table, rows, [row["id"] for row in rows], chunk=args.chunk)
+            apply_sync(table, rows, [row["id"] for row in rows], chunk=_ADD_CHUNK)
             filled += len(rows)
             # Per batch, not at the end: a whole-table pass is long, and a crash halfway through
             # must leave a record of how far it got.
             _log.info(
-                f"{ats}: filled {min(start + args.chunk, len(ids)):,}/{len(ids):,}"
+                f"{ats}: filled {min(start + _ADD_CHUNK, len(ids)):,}/{len(ids):,}"
             )
 
     verb = "filled" if args.apply else "would fill"
@@ -913,8 +918,9 @@ def main() -> int:
         "--backfill-descriptions",
         action="store_true",
         help="also rewrite rows whose description column is null but whose store meta says a "
-        "description exists, filling it from the corpus (ADR-0104). Off by default: it rewrites "
-        "every row it fills, ~690 MB across the table once, so it is a deliberate step",
+        "description exists, filling it from THIS RUN'S CORPUS (ADR-0104) — so it reaches only "
+        "the run's slice, never the whole table; `backfill-from-store` is the whole-table pass. "
+        "Off by default: it rewrites every row it fills",
     )
     p_sync.set_defaults(fn=sync)
 
@@ -937,18 +943,20 @@ def main() -> int:
     p_compact.set_defaults(fn=compact)
 
     p_backfill = sub.add_parser(
-        "backfill-descriptions",
+        "backfill-from-store",
+        # NOT `backfill-descriptions`: `sync --backfill-descriptions` is a different mechanism
+        # reading a different source, and one name for both is the near-homograph CLAUDE.md §3
+        # names. The source is what separates them, so the source is in the name.
         help="fill null descriptions from the ADR-0050 store (whole table, one-time)",
     )
     _add_db(p_backfill)
     p_backfill.add_argument(
         "--store", default=str(_DESCRIPTIONS), help="ADR-0050 description store dir"
     )
-    p_backfill.add_argument("--chunk", type=int, default=_ADD_CHUNK)
     p_backfill.add_argument(
         "--apply", action="store_true", help="write; without it the pass is a dry run"
     )
-    p_backfill.set_defaults(fn=backfill_descriptions)
+    p_backfill.set_defaults(fn=backfill_from_store)
 
     args = ap.parse_args()
     return args.fn(args)
