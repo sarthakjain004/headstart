@@ -27,6 +27,7 @@ fallback** (``egress_group``), which escalates from "try again" to "try from som
 from __future__ import annotations
 
 import asyncio
+import random
 import threading
 import time
 from collections import Counter
@@ -58,6 +59,18 @@ _ATTEMPTS = 3
 #: waits. A request may wait more often than this and earn nothing, which is the intended shape —
 #: a Board that every IP refuses must run out of budget rather than retry forever.
 _MAX_EARNED_ATTEMPTS = 2
+
+#: The local backoff curve, and the spread applied to it. The spread is not politeness — it is
+#: decorrelation. A tunnel restart severs every request riding it at the same instant (12 of them
+#: per rotation, the walled stream width, measured in
+#: `experiment/workday-rotation-severed-pages/`), and an unjittered `step * (attempt + 1)` then
+#: sent that whole cohort back onto the wire at the same instant, where the next restart caught it
+#: again. Symmetric about 1.0, so the mean curve is unchanged and only the lockstep is broken.
+#:
+#: Applied to this curve only. An honoured ``Retry-After`` is taken literally: the host named its
+#: own window and guessing around it is what honouring the header exists to prevent.
+_BACKOFF_STEP = 1.5
+_BACKOFF_JITTER = (0.5, 1.5)
 # Cap on an honoured Retry-After: past this, waiting costs more than the request buys, and a
 # shard's whole budget is 60 minutes.
 _MAX_RETRY_AFTER = 30.0
@@ -203,7 +216,11 @@ def _note_retry(
     """
     with _retries_lock:
         _retries[_retry_reason(status)] += 1
-    delay = retry_after if retry_after is not None else 1.5 * (attempt + 1)
+    delay = (
+        retry_after
+        if retry_after is not None
+        else _BACKOFF_STEP * (attempt + 1) * random.uniform(*_BACKOFF_JITTER)
+    )
     _log.debug(
         f"{method} {url} attempt {attempt + 1}/{attempts} {why}; "
         f"retrying in {delay:.1f}s"
@@ -290,7 +307,9 @@ def fetch(
         )
         generation = spare_egress.generation()
         try:
-            response = session().request(method, url, **routed)
+            # Only a proxied request is on the tunnel, so only that one makes a rotation wait.
+            with spare_egress.riding_the_tunnel(proxy):
+                response = session().request(method, url, **routed)
         except RequestsError as exc:
             budget += _severed_by_our_rotation(
                 proxy is not None, generation, budget - attempts
@@ -380,7 +399,8 @@ async def fetch_async(
         )
         generation = spare_egress.generation()
         try:
-            response = await session.request(method, url, **routed)
+            with spare_egress.riding_the_tunnel(proxy):
+                response = await session.request(method, url, **routed)
         except RequestsError as exc:
             budget += _severed_by_our_rotation(
                 proxy is not None, generation, budget - attempts

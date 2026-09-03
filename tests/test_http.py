@@ -182,7 +182,8 @@ def test_zero_retry_after_falls_back_to_the_backoff_curve(monkeypatch):
     _stub(monkeypatch, [(429, {"Retry-After": "0"}), 200])
     monkeypatch.setattr(http.time, "sleep", slept.append)
     http.fetch("GET", "u")
-    assert slept == [1.5]
+    # The curve, not the header: its first step jittered into [0.75, 2.25], never the 0 asked for.
+    assert len(slept) == 1 and 0.75 <= slept[0] <= 2.25, slept
 
 
 def test_http_date_retry_after_falls_back_to_the_backoff_curve(monkeypatch):
@@ -190,7 +191,7 @@ def test_http_date_retry_after_falls_back_to_the_backoff_curve(monkeypatch):
     _stub(monkeypatch, [(503, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), 200])
     monkeypatch.setattr(http.time, "sleep", slept.append)
     http.fetch("GET", "u")
-    assert slept == [1.5]
+    assert len(slept) == 1 and 0.75 <= slept[0] <= 2.25, slept
 
 
 def test_async_path_retries_405_and_honours_retry_after(monkeypatch):
@@ -831,3 +832,87 @@ def test_the_async_path_refunds_a_severed_connection_too(monkeypatch):
 
     assert resp.status_code == 200
     assert len(calls) == http._ATTEMPTS + 1
+
+
+def test_a_proxied_request_is_counted_as_riding_the_tunnel(monkeypatch):
+    """The drain in `spare_egress.rotate` is inert unless the request marks itself in flight.
+
+    Without this the counter is always zero, every rotation reads an empty tunnel and restarts
+    straight through the requests it is about to sever — which is the bug the drain exists for
+    (`experiment/workday-rotation-severed-pages/`).
+    """
+    from headstart import spare_egress
+
+    seen: list[int] = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            seen.append(spare_egress.in_flight_count())
+            return _Resp(200)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(
+        spare_egress, "proxy_for", lambda g: "socks5h://127.0.0.1:40000"
+    )
+
+    http.fetch("GET", "u", egress_group="workday")
+    assert seen == [1], "a proxied request must be counted while it is on the wire"
+    assert spare_egress.in_flight_count() == 0, "and released once it lands"
+
+
+def test_a_direct_request_is_not_counted_as_riding_the_tunnel(monkeypatch):
+    """A restart cannot sever a connection that never went through the proxy, so counting one
+    would make every rotation wait on traffic it is not about to break."""
+    from headstart import spare_egress
+
+    seen: list[int] = []
+
+    class _Session:
+        def request(self, method, url, **kwargs):
+            seen.append(spare_egress.in_flight_count())
+            return _Resp(200)
+
+    monkeypatch.setattr(http, "session", lambda: _Session())
+    monkeypatch.setattr(spare_egress, "proxy_for", lambda g: None)
+
+    http.fetch("GET", "u", egress_group="workday")
+    assert seen == [0]
+
+
+def test_the_async_path_also_rides_the_tunnel(monkeypatch):
+    """Workday's detail pass and its fanned-out listing pages both run on `fetch_async`; that is
+    the larger share of the traffic a restart severs, so it cannot be left out."""
+    from headstart import spare_egress
+
+    seen: list[int] = []
+
+    class _Session:
+        async def request(self, method, url, **kwargs):
+            seen.append(spare_egress.in_flight_count())
+            return _Resp(200)
+
+    monkeypatch.setattr(
+        spare_egress, "proxy_for", lambda g: "socks5h://127.0.0.1:40000"
+    )
+    asyncio.run(http.fetch_async(_Session(), "GET", "u", egress_group="workday"))
+    assert seen == [1]
+    assert spare_egress.in_flight_count() == 0
+
+
+def test_the_backoff_curve_is_jittered_so_a_severed_cohort_does_not_retry_in_lockstep(
+    monkeypatch,
+):
+    """Every stream on the tunnel dies at the same instant when it restarts. With a bare
+    `1.5 * (attempt + 1)` curve they then retried at the same instant too, so the next restart
+    caught the whole cohort again — measured as 12 severed per rotation, the exact walled stream
+    width. Jitter spreads them.
+
+    An honoured `Retry-After` is never jittered: the host named a window and guessing around it is
+    what the header exists to stop.
+    """
+    delays = {http._note_retry("GET", "u", 0, 3, "why", None, 429) for _ in range(40)}
+    assert len(delays) > 1, "a fixed curve retries a severed cohort in lockstep"
+    assert all(0.75 <= d <= 2.25 for d in delays), sorted(delays)[:3]
+
+    honoured = {http._note_retry("GET", "u", 0, 3, "why", 7.0, 429) for _ in range(10)}
+    assert honoured == {7.0}, "a host-supplied window must be taken literally"

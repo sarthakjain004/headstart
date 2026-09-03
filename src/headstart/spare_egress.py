@@ -50,6 +50,7 @@ negotiation on the critical path. An unregistered client simply fails to connect
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import subprocess
 import sys
@@ -465,6 +466,38 @@ _rotation_lock = threading.Lock()
 #: a failed attempt is worth less than the seconds waiting costs.
 _rotated = threading.Condition(_rotation_lock)
 _rotation_generation = 0
+
+#: Requests currently riding the tunnel. A rotation is a `systemctl restart`, which kills every
+#: one of them, so :func:`rotate` waits for this to reach zero before restarting rather than
+#: severing them. Counted only for proxied requests: a direct one is not on the tunnel and a
+#: restart cannot touch it.
+_inflight = 0
+_inflight_cv = threading.Condition()
+
+#: How long a rotation waits for the tunnel to empty before restarting anyway.
+#:
+#: Sized from the measurement in `experiment/workday-rotation-severed-pages/`: `_ROTATION_COOLDOWN`
+#: is 5.0s and the median real gap between rotations was exactly 5.0s — the floor — while a Workday
+#: listing page measured **through the tunnel** at the walled stream width takes p50 6.2s, p95
+#: 10.3s, max 12.7s. The tunnel was restarting faster than a page could cross it, so during a burst
+#: (a median 89 rotations in 11 minutes) a page was severed, retried and severed again until its
+#: attempt budget ran out.
+#:
+#: Sized over that measured max, not over the p50, because the failure is a cliff rather than a
+#: gradient: a cap *under* the page latency makes this whole mechanism inert. The harness measured
+#: 0% page loss with the cap above the latency and **87.9%** with it just below, at the same
+#: cadence. The first draft of this constant was 12.0s — sized on a *direct* measurement, and
+#: under the real proxied max of 12.7s.
+#:
+#: Still bounded, and deliberately under the 30s request timeout its callers use: waiting forever
+#: would strand the shard on a spent IP behind one wedged request, which is worse than severing.
+#: A rotation that times out here severs exactly as it did before this existed.
+#:
+#: One consequence to know: this widens how long `_gate` stays closed, by up to this cap on top of
+#: the restart. `proxy_for` bounds only its own *wait* (`_CONNECT_TIMEOUT`), not the gate's closed
+#: duration, so a waiter that times out can still proceed mid-drain. Everything stays bounded, but
+#: the quiescent window is best-effort rather than a guarantee.
+_DRAIN_CAP = 20.0
 _rotations: Counter[str] = Counter()
 #: Which Board each rotation request came from. Every caller of :func:`rotate` has just been
 #: refused *through* the spare egress, so this is the set of Boards actually consuming the IP
@@ -530,6 +563,67 @@ _RESTART_SETTLE = 2.0
 #: coalescing alone does not cover.
 _gate = threading.Event()
 _gate.set()
+
+
+@contextlib.contextmanager
+def riding_the_tunnel(proxy: str | None):
+    """Count this request as in flight through the tunnel for the duration of the block.
+
+    ``proxy`` is the route the caller resolved: ``None`` means the direct route, and this is then
+    a no-op, because a daemon restart cannot reach a connection that never went through it —
+    counting one would make every rotation wait on traffic it was never going to break. Taking the
+    route rather than a bool keeps the decision at the one place that already knows it.
+
+    :func:`rotate` drains on this before restarting the daemon, so a request that is already on
+    the wire finishes instead of dying as ``curl: (56) Connection closed abruptly``. The decrement
+    is in a ``finally`` because the common exit *is* an exception: a severed request raises, and
+    leaking the count would wedge every later drain against a rider that no longer exists.
+    """
+    global _inflight
+    if proxy is None:
+        yield
+        return
+    with _inflight_cv:
+        _inflight += 1
+    try:
+        yield
+    finally:
+        with _inflight_cv:
+            _inflight -= 1
+            if not _inflight:
+                _inflight_cv.notify_all()
+
+
+def in_flight_count() -> int:
+    """How many requests are riding the tunnel right now. For tests and the measuring harness;
+    :func:`_drain` reads the counter directly under its own condition."""
+    with _inflight_cv:
+        return _inflight
+
+
+def _drain(cap: float) -> None:
+    """Wait for the tunnel to empty, bounded by ``cap`` seconds.
+
+    The caller must have cleared :data:`_gate` first, or this can livelock: the gate is what stops
+    *new* proxied requests from starting, and without it the count need never reach zero.
+
+    **A known, bounded gap, left open deliberately.** `_gate` stops a request *entering*
+    `proxy_for`; one already past it holds a proxy but has not yet joined, so this can read an
+    empty tunnel and restart underneath it. Closing that window needs a second piece of shared
+    state read atomically with `_inflight`. A build of exactly that was made and measured, because
+    the harness showed intermittent losses that looked like this race — and they were not: they
+    were a rotator thread leaking from one trial into the next. With the harness corrected the
+    simple form loses nothing over five 48-page crawls at production cadence, so the atomic
+    version was reverted. Unproven concurrency machinery on the scrape's critical path is a worse
+    trade than a race that is real in principle and unobserved in practice; it stays written down.
+    """
+    deadline = time.monotonic() + cap
+    with _inflight_cv:
+        while _inflight:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            _inflight_cv.wait(remaining)
 
 
 def generation() -> int:
@@ -625,6 +719,9 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
             "spare egress: rotating egress IP "
             f"({' '.join(_RESTART_COMMAND.get(sys.platform, ['unsupported']))})"
         )
+        # The ones already on the wire are allowed to land first. Restarting under them is what
+        # turned Workday's fanned-out listing pages into `curl: (56)` losses (see `_DRAIN_CAP`).
+        _drain(_DRAIN_CAP)
         try:
             if not _restart_daemon():
                 _rotations["failed"] += 1
@@ -844,12 +941,20 @@ def rotation_causes() -> Counter[str]:
 
 def reset() -> None:
     """Forget the cached proxy *and* the walled groups, so the next call probes again (tests)."""
-    global _resolved, _proxy, _last_rotation, _rotation_generation, _last_egress_ip
+    global \
+        _resolved, \
+        _proxy, \
+        _last_rotation, \
+        _rotation_generation, \
+        _last_egress_ip, \
+        _inflight
     with _lock:
         _resolved = False
         _proxy = None
     with _walled_lock:
         _walled.clear()
+    with _inflight_cv:
+        _inflight = 0
     with _traffic_lock:
         _traffic.clear()
     with _rotation_lock:
