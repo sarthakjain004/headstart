@@ -376,3 +376,57 @@ not be reached for by an ATS whose 429 has not been traced to its actual origin*
 is where the investigation starts, not where it ends. Both ATSes that have now failed that test
 (freshteam in #311, whose 429s turned out to be 502s from a down origin; personio here) failed it
 the same way: an aggregate count of a symptom was read as evidence of a mechanism.
+
+## Amendment, 2026-09-03: Workable opts in on 429 — and clears the bar the paragraph above sets
+
+`WorkableScraper.egress_fallback_on = frozenset({429})`. This is the first opt-in added *after*
+the two reversions, so it is the first one that had to pass the test they failed, and it is
+recorded here because the sentence above — that a 429 must be traced to its origin before this
+attribute is reached for — is what made the measurement mandatory rather than optional.
+
+**What it cost to not have it.** Run `33725210468` lost **149 of one shard's 241 workable Boards**
+to `HTTP Error 429` in 126 seconds, each after 3 attempts and ~5s, while the other **14 shards
+lost none**. With the attribute unset a 429 was not a wall in any sense: nothing marked the group,
+nothing rerouted, nothing rotated, and the ladder spent itself against a challenge page.
+
+**The measurement**, live 2026-09-03 over `socks5h://` against those same 149 slugs
+(`docs/workable/2026-08-27_the-managed-challenge-is-a-spent-budget.md` has the full table):
+
+- the same Board answers **429 on the walled address and 200 over WARP in the same second**, twice
+  each way — the wall moves with the client IP, which is precisely what this ADR demands;
+- **five other tenants** answer 429 from that address while **three** of them answer 200 over WARP
+  — so the wall spans the origin, which is why grouping on `ats` rather than the Board is right;
+- **all 149** lost Boards serve 200 from a rested address at up to 65 req/s, which rules out
+  personio's departed-tenant shape directly rather than by argument;
+- the response is a 429 with `server: cloudflare` and a 378 KB `cf-mitigated: challenge` page, not
+  freshteam's 502-from-a-down-origin;
+- the wall clears in **15–31s** and carries **no `Retry-After`**, so the ~5s ladder cannot outlast
+  it and there is no polite signal being ignored — the objection the Workday amendment had to
+  argue past does not arise here.
+
+**Why this one is easier than Workday's.** That amendment called itself provisional on three
+counts, and workable answers all three differently. A Managed Challenge is a wall, not a courteous
+signal. The blast radius is small: of the nine full runs on 2026-09-03, this shard is the only one
+in any of them that lost a Board to workable, so the group is marked rarely rather than within the
+first minutes of every shard.
+And workable is one request per Board with no detail pass, so the rescued traffic *is* the traffic
+that can lose a Board — where Workday's fallback catches the symptom while ~95% of its volume
+stays direct.
+
+That blast-radius claim is bounded by what the logs can show, which is narrower than it sounds: a
+429 a retry settles leaves no board error behind, and a shard's `429-ratelimit` retry column
+aggregates every ATS at once, so it cannot separate workable's share. What is measured is Boards
+*lost*, not walls *met*.
+
+**What is not claimed.** The rescuing address had spent no workable budget, so it was rested by
+construction; a shard driving all ~241 Boards through one spare address can spend that too and
+start rotating, as Workday already does. Opting a third ATS in also inherits the transport-error
+gap the Personio amendment names above — `fetch` neither rotates nor re-dials on a `ProxyError`,
+so a Board riding the tunnel when it restarts dies with it, and that gap is still unaddressed.
+It stays *latent* here for a measured reason rather than an assumed one: personio turned it into a
+tight loop because its wall cleared on no address at all, where workable's clears on a rested one
+in 15-31s, so rotation has somewhere to go. ADR-0081's deep-pool measurement is what makes rotation
+worth reaching for, not a guarantee it always wins. And the exit criterion this ADR already calls
+blind stays blind — `recovered` cannot adjudicate workable either, so a future re-test must be a
+per-Board outcome: terminal 429s per 1,000 workable Boards attempted, which was 618 on the walled
+shard and 0 on the other fourteen.

@@ -16,6 +16,20 @@ from headstart.scrapers.base import BaseScraper
 class WorkableScraper(BaseScraper):
     ats = "workable"
 
+    #: A 429 here is Cloudflare's Managed Challenge standing in for a spent per-IP request
+    #: budget, so a second egress address is a second budget (ADR-0063). Traced to its origin
+    #: before opting in, which is the bar ADR-0063 sets and the bar freshteam (#311) and personio
+    #: (#312) each failed: measured live 2026-09-03 against the wall from run 33725210468, the
+    #: same Board answers 429 on the walled address and 200 over WARP in the same second (twice
+    #: each way); five *other* tenants also answer 429 from that address while three of them
+    #: answer 200 over WARP, so the wall is per client IP across the whole origin and never a
+    #: property of the tenant; and all 149 Boards the run lost serve 200 from a rested address,
+    #: which is what rules out personio's departed-tenant shape. The wall clears in 15-31s and
+    #: carries no ``Retry-After``, so the three-attempt ladder (~5s) can never outlast it —
+    #: rotating is the only lever that reaches it. See
+    #: ``docs/workable/2026-08-27_the-managed-challenge-is-a-spent-budget.md``.
+    egress_fallback_on = frozenset({429})
+
     def url(self) -> str:
         return f"https://apply.workable.com/api/v1/widget/accounts/{self.slug}?details=true"
 
