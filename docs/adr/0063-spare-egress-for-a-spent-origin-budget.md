@@ -430,3 +430,87 @@ worth reaching for, not a guarantee it always wins. And the exit criterion this 
 blind stays blind — `recovered` cannot adjudicate workable either, so a future re-test must be a
 per-Board outcome: terminal 429s per 1,000 workable Boards attempted, which was 618 on the walled
 shard and 0 on the other fourteen.
+
+## Amendment, 2026-09-03: a rotation drains the tunnel before restarting it
+
+The "Amendment, 2026-08-18: the spare egress rotates" above established that a spent IP is escaped
+by restarting `warp-svc`. What it did not settle is what happens to the requests riding that tunnel
+when it goes. `_severed_by_our_rotation` in `http` acknowledged the problem — it refunds an attempt
+to a request our own rotation killed — but a refund only helps if a *later* attempt can succeed.
+
+**It could not.** Two measured numbers collide (`experiment/workday-rotation-severed-pages/`):
+
+| quantity | measured |
+| --- | --- |
+| `_ROTATION_COOLDOWN` | 5.0s |
+| median real gap between rotations, 80,094 gaps over 758 shard-runs (the 760 below, less the 2 with under two rotations to form a gap) | **5.0s** — the floor |
+| Workday CXS page through the tunnel at the walled width | p50 **6.2s**, p95 10.3s, max 12.7s |
+
+The tunnel was restarting faster than a page could cross it. A median shard-run rotates **89 times
+in 11 minutes**, and 85% of gaps are under 7s, so during a burst a page was severed, retried,
+severed again, until its 5-attempt budget was gone. Each restart took the whole in-flight cohort —
+exactly 12, the walled `stream_width` — so the losses arrived in blocks, and the unjittered
+`1.5 * (attempt + 1)` curve sent that block back onto the wire together to be caught again.
+
+This is what produced **roughly half of** the 105-170 `ConnectionError` listing pages a run seen
+against 0-12 HTTP 429s, and with them a share of the 28-52 Boards a run entering ADR-0053 scope
+exclusion. Only half: across 760 shard-runs the mean is 5.3 such pages per shard against a 2.9
+baseline measured at *zero* rotations, so 45% of the mean is rotation-attributable, rising to 60%
+on the shards that rotate more than 120 times. The rest is not claimed here and is not fixed by
+this change — see "What this does not fix" below.
+
+**Decision.** `rotate` now clears `_gate` (as before, so no *new* proxied request starts) and then
+**waits for the requests already on the wire**, bounded by `_DRAIN_CAP`, before restarting.
+`http.fetch`/`fetch_async` mark a proxied request with `spare_egress.riding_the_tunnel(proxy)` for
+exactly as long as it is on the wire; a direct request is never counted, since a restart cannot
+reach it. The backoff curve is additionally multiplied by `uniform(0.5, 1.5)` so a severed cohort
+does not retry in lockstep — never applied to an honoured `Retry-After`.
+
+Gate-before-drain is load-bearing: without the gate, new requests keep arriving and the in-flight
+count need never reach zero.
+
+**This partly closes a gap the Workable amendment above left open.** That entry noted that "a Board
+riding the tunnel when it restarts dies with it, and that gap is still unaddressed". A rotation no
+longer restarts *under* an in-flight request, which removes the cause; what remains open is the
+narrower thing that amendment also named — `fetch`'s transport-error path still neither rotates nor
+re-dials on a `ProxyError`, so a request that dies for some other reason still spends its remaining
+attempts on a route that cannot answer.
+
+**Measured, at production's own cadence.** The harness drives the real `rotate` — gate, drain,
+cooldown and coalescing are all the production ones — and stubs only the daemon restart itself. It
+lives under `experiment/workday-rotation-severed-pages/`, which like every `experiment/` directory
+is **gitignored and local to whoever ran it**; the numbers below and the drain tests in
+`tests/test_spare_egress.py` are the durable record.
+
+| | pages lost | severed | served | rotations | wall | trials |
+| --- | --- | --- | --- | --- | --- | --- |
+| pre-fix (`--drain-cap 0`) | **48/48** | 240 | 0 | 39-40 | ~190s | 3 of 3 |
+| with the drain | **0/48** | 0 | 48 | 5 | 24.8s | 5 of 5 |
+
+Also 7x faster, because the pre-fix run spent everything on retries that were severed before they
+could land, and rotations fall ~40 → 5: paced by the traffic rather than by the cooldown floor.
+
+**One measurement trap on the way, recorded because it nearly shipped machinery.** Early harness
+runs showed an intermittent mode — one trial in three or so losing 5-9 pages with 13-21 rotations —
+that looked exactly like the residual race `_drain`'s docstring names (a request past `proxy_for`
+but not yet joined). A version that closes that race atomically was built. It did not help: the
+bad mode kept appearing with it too. The cause was the harness — its rotator thread was never
+joined, so one trial's rotator kept firing into the next. With that fixed, both arms are exactly
+reproducible (five identical clean trials), and the atomic version was reverted as unproven
+concurrency on the critical path. The race is real in principle, unobserved in practice, and is
+written down in `_drain` rather than closed.
+
+**The cap is a cliff, and it nearly shipped mis-sized.** The first draft was 12.0s, taken from a
+*direct* latency measurement; the real proxied max is 12.7s. At a cap just under the page latency
+the whole mechanism is inert — 87.9% of pages still lost — while just above it, 0%. `_DRAIN_CAP` is
+20.0s: over the measured max with margin, under the 30s request timeout its callers use, so a
+wedged request cannot hold rotation for its full timeout.
+
+**What this does not fix, and what it costs.** A baseline of ~2.9 `ConnectionError` pages per shard
+persists at *zero* rotations (57 shard-runs), so roughly half the page losses are not rotation-caused
+and are not claimed here. A rotation can now take up to `_DRAIN_CAP` longer, which is the intended
+trade — 89 restarts in 11 minutes was pathological — but the scrape has a wall-clock budget, so the
+signal to watch after this ships is the shard's `time budget reached` line alongside the
+`ConnectionError` counts. And the drain is shard-wide, not per-ATS: one tunnel, one daemon, so
+rotating for Workday now waits on Eightfold's in-flight requests too. That is correct — they would
+otherwise be severed — but it is real coupling between ATSes that did not exist before.

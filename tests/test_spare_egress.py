@@ -682,3 +682,99 @@ def test_restart_declines_an_unknown_platform_rather_than_guessing(monkeypatch):
 
     assert spare_egress._restart_daemon() is False
     assert calls == []
+
+
+def test_rotation_drains_in_flight_requests_before_restarting_the_daemon(monkeypatch):
+    """A restart kills every request riding the tunnel, so it must wait for them first.
+
+    Measured 2026-09-03 (`experiment/workday-rotation-severed-pages/`): `_ROTATION_COOLDOWN` is
+    5.0s and the median real gap between rotations is exactly 5.0s, while a Workday listing page
+    measured *through the tunnel* at the walled stream width takes p50 6.2s. The tunnel was
+    therefore restarting faster than a page could cross it — one rotation severed the whole
+    in-flight cohort, and during a burst (89 rotations in 11 minutes) a page could never complete
+    before its attempt budget ran out.
+    """
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    seen_at_restart: list[int] = []
+    real_restart = spare_egress._restart_daemon
+
+    def _watch():
+        seen_at_restart.append(spare_egress.in_flight_count())
+        return real_restart()
+
+    calls = _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_restart_daemon", _watch)
+
+    released = threading.Event()
+    entered = threading.Event()
+
+    def rider():
+        with spare_egress.riding_the_tunnel("socks5h://127.0.0.1:40000"):
+            entered.set()
+            released.wait(5)
+
+    t = threading.Thread(target=rider, daemon=True)
+    t.start()
+    assert entered.wait(2)
+
+    rotator = threading.Thread(target=spare_egress.rotate, daemon=True)
+    rotator.start()
+    # The restart must not have happened yet: one request is still riding the tunnel.
+    time.sleep(0.2)
+    assert not seen_at_restart, "restarted while a request was still in flight"
+    released.set()
+    t.join(5)
+    rotator.join(5)
+    assert seen_at_restart == [0], "the drain must leave nothing riding the tunnel"
+    assert ["sudo", "-n", "systemctl", "restart", "warp-svc"] in calls
+
+
+def test_the_drain_is_bounded_so_a_stuck_request_cannot_block_rotation(monkeypatch):
+    """Waiting forever would be worse than severing: a wedged request would strand the shard on a
+    spent IP. The cap turns the guarantee into "usually drains", which is what the measurement
+    needs — a page through the tunnel is p50 6.2s and max 12.7s against a 20s cap."""
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_DRAIN_CAP", 0.05)
+
+    stuck = threading.Event()
+    entered = threading.Event()
+
+    def rider():
+        with spare_egress.riding_the_tunnel("socks5h://127.0.0.1:40000"):
+            entered.set()
+            stuck.wait(5)
+
+    t = threading.Thread(target=rider, daemon=True)
+    t.start()
+    assert entered.wait(2)
+    assert spare_egress.rotate() is True, "a stuck rider must not veto the rotation"
+    assert spare_egress.in_flight_count() == 1, (
+        "the rider is still there; we gave up waiting"
+    )
+    stuck.set()
+    t.join(5)
+
+
+def test_riding_the_tunnel_decrements_even_when_the_request_raises():
+    """A severed request raises out of the `with`; leaking the count would wedge every later
+    drain against a rider that no longer exists."""
+    assert spare_egress.in_flight_count() == 0
+    with (
+        pytest.raises(ValueError),
+        spare_egress.riding_the_tunnel("socks5h://127.0.0.1:40000"),
+    ):
+        assert spare_egress.in_flight_count() == 1
+        raise ValueError("severed")
+    assert spare_egress.in_flight_count() == 0
+
+
+def test_the_direct_route_is_never_counted_as_riding_the_tunnel():
+    """`riding_the_tunnel(None)` is the direct route, which a daemon restart cannot reach.
+    Counting it would make every rotation wait out traffic it was never going to break."""
+    assert spare_egress.in_flight_count() == 0
+    with spare_egress.riding_the_tunnel(None):
+        assert spare_egress.in_flight_count() == 0
+    assert spare_egress.in_flight_count() == 0
