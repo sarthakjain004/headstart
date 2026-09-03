@@ -5759,6 +5759,49 @@ def test_personio_stays_on_its_direct_route_on_429(monkeypatch):
     assert "egress_on" not in seen[-1], "a 429 must not mark personio walled"
 
 
+def test_workable_429_walls_the_origin_and_moves_to_the_spare_egress(monkeypatch):
+    """workable's 429 IS a per-IP origin budget, so it opts in where personio must not.
+
+    Measured live 2026-09-03 against the wall run 33725210468 hit, which cost one shard 149 of
+    its 241 workable Boards in 126s while the other 14 shards lost none: the same board answers
+    429 on the walled address and 200 over WARP in the same second, twice each way; five other
+    tenants answer 429 from that address while three answer 200 over WARP; and all 149 lost
+    boards serve 200 from a rested address, so none of them is a departed tenant. That is the
+    per-client-IP evidence ADR-0063 demands, and the discriminator both reverted opt-ins lacked.
+
+    Asserted through an actual 429 rather than off the constant, for the reason the personio test
+    gives in reverse: what has to hold is that the fetch **carries** the group, since
+    `http.fetch` walls a group only when it is handed an `egress_group`. Reading the constant
+    alone would still pass if `_egress()` stopped being threaded onto the request.
+    """
+    from headstart.scrapers.workable import WorkableScraper
+
+    assert WorkableScraper.egress_fallback_on == frozenset({429})
+
+    seen: list[dict] = []
+
+    class _Walled:
+        status_code = 429
+        headers: ClassVar[dict] = {"cf-mitigated": "challenge"}
+        text = ""
+
+        @staticmethod
+        def raise_for_status():
+            raise http.RequestsError("HTTP Error 429: Too Many Requests")
+
+    monkeypatch.setattr(
+        http, "fetch", lambda method, url, **kw: (seen.append(kw), _Walled())[1]
+    )
+    with pytest.raises(http.RequestsError):
+        WorkableScraper("acme", "Acme").fetch_raw()
+
+    assert seen[-1]["egress_group"] == "workable", (
+        "a 429 must route workable off the spent IP"
+    )
+    assert 429 in seen[-1]["egress_on"], "a 429 must mark workable walled"
+    assert seen[-1]["egress_board"] == "workable:acme"
+
+
 @pytest.mark.parametrize(
     "location",
     [

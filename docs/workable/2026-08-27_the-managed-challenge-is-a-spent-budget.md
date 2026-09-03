@@ -148,3 +148,48 @@ cooldown to free the IP for a rotation measurement).
 retry-after)". The conclusion it draws — a browser is the same IP making more requests — holds and
 is confirmed above. The mechanism does not: there is no `Retry-After` on this response at all, and
 the wall decays in under a minute rather than ~20 hours.
+
+## The scrape path never used any of this (2026-09-03)
+
+Everything above changed the **liveness prober** — `_HostGate`, `rest()`, `wait_turn`, the pacing
+ladder. `WorkableScraper` got nothing. It left `egress_fallback_on` unset, which is the default,
+so a 429 on the scrape path was never a wall at all: no marking, no reroute, no rotation. The
+three-attempt `http.fetch` ladder simply spent itself against the challenge and the Board was lost.
+
+Run `33725210468` is what that costs. One shard lost **149 of its 241 workable Boards** to
+`HTTP Error 429` in 126 seconds, each after 3 attempts and ~5s, at a steady ~1.2 Boards/s — the
+signature of a wall that is up for the whole window rather than a burst. The other **14 shards
+lost none**, which is the per-IP shape stated plainly: fifteen addresses read the same origin in
+the same run and one of them was over budget.
+
+### Re-measured, because the earlier rotation evidence was confounded
+
+The IPv4 confound above (superseded by ADR-0092) means the 2026-08-27 sweeps could not answer
+whether rotation buys a fresh budget. Re-run 2026-09-03 over `socks5h://`, against the same 149
+slugs the run lost:
+
+| probe | result |
+| --- | --- |
+| all 149 lost slugs, direct, at 16 then 32 then 64 concurrent (peak 65 req/s) | **200 × 149** every time — none is a dead tenant |
+| ~180 requests to one slug at 48 req/s | trips the wall: 429, `server: cloudflare`, 378,156-byte HTML, no `Retry-After` |
+| that slug, walled address, twice | **429**, **429** |
+| that slug, WARP, same moment, twice | **200**, **200** |
+| five *other* tenants, walled address | **429 × 5** |
+| three of those, WARP, same moment | **200 × 3** |
+| the walled slug, direct, every 15s | 429 at t+0, 429 at t+15, **200 at t+31** |
+
+So the wall is keyed on the client IP, spans the whole origin rather than the tenant, and clears
+in 15–31 seconds with no `Retry-After` to honour. Three attempts inside ~5s cannot outlast it;
+a different address clears it immediately. That is the measurement ADR-0063 requires of an opt-in,
+in both directions, and it is the discriminator freshteam (#311, really 502s) and personio (#312,
+really departed tenants) each turned out to lack — here the departed-tenant reading is ruled out
+by the first row, where every lost Board serves 200 from a rested address.
+
+`WorkableScraper.egress_fallback_on = frozenset({429})` follows. It is the whole change: workable
+reaches the network through `BaseScraper._get`, which already threads `**self._egress()`.
+
+**What this does not claim.** The rescuing WARP address had spent no workable budget, so it was
+rested by construction. A shard that drives all ~241 of its workable Boards through one spare
+address can spend that too and start rotating, exactly as workday already does — the supply
+caution in this log still stands, and ADR-0081's deep-pool measurement is what makes rotation
+worth reaching for rather than a guarantee that it always wins.
