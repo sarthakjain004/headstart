@@ -274,7 +274,7 @@ def test_lever_location_country_recognizes_usa_short_form():
 
 
 def test_ashby_location_keeps_every_place_the_record_names():
-    """The served location IS the filter substrate — `geo.where()` is a raw substring LIKE
+    """The served location IS the filter substrate — `geo.where()` matches substrings of it
     (ADR-0024) — so a place absent from this string is unfilterable however well the record
     knows it. Measured 2026-08-25 over 884 live Boards / 16,138 Jobs: 69.55% shipped no country
     at all, 79.43% omitted some populated component of their own address, and 17.5% had a

@@ -23,7 +23,7 @@ a `missing` and a `country-only` have completely different fixes:
   placeless    a whole-string marker naming no place ("Remote", "Poste a distance") — shares its
                vocabulary with `location_filter_audit.is_placeless`, imported rather than copied
   country-only a bare 2-3 letter tag ("SA", "IND") — a real place, but `geo.where()` is an
-               OR-chain of place *names*, so it matches none of them
+               set of place *names*, so it matches none of them
   dirty        embedded control characters, doubled/empty comma segments, a leaked URL scheme, or
                untrimmed edges — every one of these was a real defect in some scraper
   place        anything else

@@ -121,8 +121,19 @@ def test_location_quotes_are_doubled():
 
 
 def test_india_expands_via_geo():
+    """The India control expands through the gazetteer rather than matching its value literally.
+
+    Asserted as delegation to `geo.where` rather than by looking for a substring of the compiled
+    clause: how that clause is built is `geo`'s business — it moved from 267 `LIKE`s to 10
+    `regexp_like`s without changing a single matched row — and a test that reads its internals
+    fails on that kind of change while catching none of what it is here to catch.
+    """
+    from headstart import geo
+
     clause = _clause(india="bengaluru")
-    assert clause is not None and "lower(location) LIKE" in clause
+    assert clause is not None
+    assert clause == geo.where("bengaluru")
+    assert _clause(india="not-a-place") is None
 
 
 # ---- the Keyword filter (ADR-0104) ----
