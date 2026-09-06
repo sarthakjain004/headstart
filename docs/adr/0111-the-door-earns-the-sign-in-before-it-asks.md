@@ -79,9 +79,18 @@ What it has instead is verifiability, which is stronger and costs nothing to kee
   same single count the signed-in header already makes, so the door is no more expensive than the
   page behind it — but it is not free, and the signed-out path is the one with no auth in front of
   it.
-- The employer count is of distinct `company` values, which are ATS slugs rather than display
-  names (README §"The served table"). Two boards for one firm count twice, so the figure is a
-  **floor** on the real number — the safe direction for a claim made on this page.
+- **The second tile counts Boards, not employers, and the first attempt at it was wrong in the
+  dangerous direction.** It began as distinct `company` values labelled "employers", argued in
+  this ADR to be a conservative *floor*. That is backwards: `company` is an ATS slug, not a
+  display name (README §"The served table"), so one firm spelt two ways — or hosting on two
+  ATSes — counts twice, which makes distinct-slug an *over*-count of employers. A trust surface
+  can absorb understating itself; overstating is the one thing it cannot. What the pair
+  `(ats, company)` names exactly is ADR-0023's Board key, so the tile counts Boards and says
+  "company boards indexed", which is true without qualification.
+- **A claim the door makes to earn the sign-in cannot be evidenced only behind the sign-in.**
+  The eviction point originally ended "the Data tab inside says how, and for how long", which
+  puts the proof on the far side of the decision it is meant to inform. The measured figure now
+  appears on the door itself.
 - The door still cannot fetch `/static` (the wall gates it, and `signin.html` is deliberately
   self-contained), so its styles stay inline. That constraint is now load-bearing on a much larger
   page; the inline block is kept to the tokens the door actually uses.

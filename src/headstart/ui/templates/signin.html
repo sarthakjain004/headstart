@@ -113,7 +113,7 @@
 
   <div class="proof">
     <div class="stat"><div class="v">{{ njobs }}</div><div class="k">tech jobs indexed right now</div></div>
-    <div class="stat"><div class="v">{{ n_companies }}</div><div class="k">employers hiring on them</div></div>
+    <div class="stat"><div class="v">{{ n_boards }}</div><div class="k">company boards indexed</div></div>
     <div class="stat"><div class="v">{{ n_atses }}</div><div class="k">ATS providers read directly</div></div>
   </div>
 
@@ -129,13 +129,14 @@
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span><b>Closed roles get removed, and the exception is published.</b> A job missing
         from its board twice running comes out of the index — but a board we cannot read
-        properly is skipped rather than emptied, so some dead entries do persist. The Data tab
-        inside says how, and for how long.</span>
+        properly is skipped rather than emptied, so some dead entries do persist — one such
+        board was measured serving closed jobs for 22 days. The Data tab inside shows the
+        mechanism.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span><b>The gaps are published too.</b> Inside, a Data tab reports what share of jobs
-        carry a salary, a posting date or a stated experience level — counted off the live index
+        carry a salary, a posting date or an experience level — counted off the live index
         each time, not written down once.</span>
       </li>
       <li>

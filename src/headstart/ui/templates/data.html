@@ -24,8 +24,10 @@
     <h3>Where the jobs come from</h3>
     <p>Companies run their hiring on an <b>applicant tracking system</b> — the software that owns
        their careers page and their application form. HeadStart reads those boards directly, one
-       scraper per provider, and keeps what it finds. The result is the employer's own posting,
-       not a copy of it, and the link on every card opens on the employer's own domain.</p>
+       scraper per provider, and keeps what it finds. What you get is the employer's own entry
+       on their own hiring system, not a copy of it, and every card links straight there. That
+       link usually lives on the ATS provider's domain rather than the company's — that is where
+       the company's board is hosted, and it is where their application form is.</p>
     <p class="ats-line"><span class="lbl">Read from {{ atses|length }} providers:</span>
       {% for a in atses %}<span class="ats-pill">{{ a }}</span>{% endfor %}</p>
     <p class="aside">This is the whole reason the index catches roles that never reach the big
@@ -36,7 +38,7 @@
     <h3>What is deliberately left out</h3>
     <ul class="doc-list">
       <li><b>Anything that is not a tech role.</b> Only software-engineering and adjacent
-        openings are indexed. The filter that decides is tuned to keep borderline roles rather
+        jobs are indexed. The filter that decides is tuned to keep borderline roles rather
         than drop them, so a little non-tech gets through — that direction is on purpose.
         <a href="{{ adr }}/0017-tech-role-filter.md" target="_blank" rel="noopener">ADR-0017</a></li>
       <li><b>Jobs not written in English.</b> The matching model is English-only, and it would
@@ -82,7 +84,7 @@
   <section class="doc-sec">
     <h3>How a closed job leaves — and when it doesn't</h3>
     <p>Boards are re-read on a rolling schedule, a slice at a time rather than all of them. When
-       a job is missing from a board we read successfully, it is marked unconfirmed rather than
+       a job is gone from a board we read successfully, it is marked unconfirmed rather than
        deleted; it is removed only if the <b>next</b> read of that same board misses it too. One
        failed fetch therefore cannot delete a live job, and a genuinely closed one goes after two
        passes.
@@ -91,8 +93,12 @@
        that board leaves the removal pass entirely for that run — removing jobs on the strength of
        a bad read would delete live ones. A board that reads badly <i>every</i> time therefore
        never re-enters it, and its closed jobs can be served indefinitely. This is measured, not
-       hypothetical: one board was found serving 105 closed jobs, the oldest 22 days old.
-       <a href="{{ adr }}/0053-scope-eviction-on-scrape-outcome.md" target="_blank" rel="noopener">ADR-0053</a></p>
+       hypothetical: on 2026-08-23 one board was found serving 105 closed jobs, the oldest 22
+       days old. That figure is the one number on this page not counted live, so here is exactly
+       where it came from —
+       <a href="{{ repo }}/blob/main/docs/eightfold/no-client-side-fix-for-replica-instability.md" target="_blank" rel="noopener">the measurement</a>,
+       and <a href="{{ adr }}/0053-scope-eviction-on-scrape-outcome.md" target="_blank" rel="noopener">ADR-0053</a>
+       for the mechanism.</p>
     <p class="aside">So: a dead link is possible here, and on an unhealthy board it can persist for
        weeks. Every card links to the employer's own page, which is always the authority on
        whether a role is still open.</p>

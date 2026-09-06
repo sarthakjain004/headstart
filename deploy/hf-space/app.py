@@ -876,7 +876,7 @@ def index():
             google_client_id=_GOOGLE_CLIENT_ID,
             njobs=f"{_table.count_rows():,}",
             n_atses=len(_searcher.atses),
-            n_companies=f"{_searcher.n_companies:,}",
+            n_boards=f"{_searcher.n_boards:,}",
             repo=_REPO,
         )
     scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
@@ -890,6 +890,10 @@ def index():
             # same map the <select> below is rendered from, so the three cannot drift apart.
             "keyword_scopes": {value: needs for value, _, needs in scopes},
             "keyword_default_scope": search.KEYWORD_DEFAULT_SCOPE,
+            # A no-query browse orders by `first_seen` only when the column exists; without
+            # it the fallback is `id`, which is not a date at all. The line naming what the
+            # user is looking at must not claim "newest first" on the second one.
+            "has_first_seen": _searcher.has_first_seen,
         },
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,

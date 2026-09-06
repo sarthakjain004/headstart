@@ -62,6 +62,24 @@ Cached per process after the first call. The table is immutable between deploys,
 only when a new index is synced and the Space restarts onto it, and paying ~6 counts once per boot
 rather than once per visitor keeps a free-tier dyno honest.
 
+### A number that cannot be counted needs its source, not just an ADR
+
+One figure on the tab is historical rather than live: the 105 closed jobs, oldest 22 days, that
+measured ADR-0053's undrained scope exclusion. It cannot be recomputed at request time — nothing
+in the served table records how long a dead row has been dead. Review caught it cited to ADR-0053,
+which argues the mechanism but contains neither number. So the standing rule is: **an uncounted
+number carries its measurement date and links the document that measured it**, not merely the ADR
+for the mechanism it illustrates. If a second such number ever appears, that is a signal the tab
+is drifting back toward prose.
+
+### `min_years` is coverage of a derived figure, not of a stated requirement
+
+`min_years` is written by ADR-0018's three tiers, and the third *estimates* years from a seniority
+word in the title. CONTEXT.md §Required experience is explicit that seniority must not be conflated
+with a requirement, so the row says what is actually counted — a figure we could derive — and names
+the estimate in its caveat. The first draft called it "state an experience requirement", which was
+the same false-provenance mistake as `remote`, one layer subtler.
+
 ### The prose states mechanism, and links to the decision behind it
 
 Each claim on the tab names the mechanism and links the ADR that argues for it, so a sceptical

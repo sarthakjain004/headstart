@@ -1082,7 +1082,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
     assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
-    assert '<div class="v">2</div><div class="k">employers hiring on them' in page
+    assert '<div class="v">2</div><div class="k">company boards indexed' in page
     assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
     # Every tile is a counted number. A typed-in cadence figure ("~6h") shipped here once,
     # ~5x off the measured run duration and contradicting the footer — ADR-0111 now forbids
@@ -1091,6 +1091,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The provenance claim, the removal policy, and the no-paid-placement claim.
     assert "employer's own board" in page
     assert "Closed roles get removed, and the exception is published." in page
+    assert "22 days" in page  # checkable at the door, not only behind the wall
     assert "paid placement" in page
     # What signing in costs, stated before the button rather than in a policy page behind it.
     assert "stores your email address" in page
@@ -1168,9 +1169,15 @@ def test_the_data_tab_states_scope_gaps_and_provenance(app):
     # measured serving one board's closed jobs for 22 days.
     assert "0083-evict-only-on-a-second-consecutive-absence.md" in page
     assert "0053-scope-eviction-on-scrape-outcome.md" in page
-    assert "22 days old" in page
-    assert "hours, not minutes" not in page
+    # Whitespace-normalised: the template wraps these sentences, and HTML collapses the
+    # newlines anyway, so asserting on the raw source would only pin the line breaks.
+    flat = " ".join(page.split())
+    assert "105 closed jobs, the oldest 22 days old" in flat
+    assert "no-client-side-fix-for-replica-instability.md" in page
+    assert "2026-08-23" in page  # the one uncounted number carries its date
+    assert "hours, not minutes" not in flat
     # CONTEXT.md reserves "listing"/"posting"/"opening" for the raw ATS record; the user-facing
     # noun is "job". The word may still appear in this file's own explanation of that rule.
-    body = page.split('id="panel-data"', 1)[1]
-    assert "listings" not in body
+    body = page.split('id="panel-data"', 1)[1].split("</section>", 1)[0]
+    for banned in ("listings", "openings", "postings"):
+        assert banned not in body, banned

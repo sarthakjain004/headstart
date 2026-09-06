@@ -44,7 +44,7 @@ let coverage = null;
 const COV_ROWS = [
   ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
   ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],
-  ['min_years', 'state an experience requirement', 'The years filter keeps jobs that state none, rather than guessing.'],
+  ['min_years', 'have a years figure we could derive', 'Read from the posting where it states one \u2014 otherwise estimated from a seniority word like \u201cSenior\u201d in the title, which is a guess rather than the employer\u2019s stated requirement.'],
   ['first_seen', 'record when HeadStart first saw them', 'Stamped on arrival, so older rows predate the field and cannot show a \u201cnew\u201d tag.'],
   ['description', 'have their full text stored', 'Keyword search inside descriptions reaches only these.'],
 ];
@@ -75,9 +75,13 @@ async function loadCoverage(){
         <div class="cov-txt"><b>${pct}%</b> ${esc(what)}
           <span class="aside">${esc(why)}</span></div>
       </div>`; }).join('');
-  box.innerHTML = rows
-    ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> jobs in the index right now:</p>${rows}`
-    : '<p class="aside">The index carries none of these fields yet.</p>';
+  // An empty table would otherwise render "Of 0 jobs \u2026 0% state a salary" \u2014 exactly the
+  // "measured, and none have it" reading the unknown-is-not-zero rule exists to prevent.
+  box.innerHTML = !total
+    ? '<p class="aside">The index is empty right now, so there is nothing to measure.</p>'
+    : rows
+      ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> jobs in the index right now:</p>${rows}`
+      : '<p class="aside">The index carries none of these fields yet.</p>';
 }
 
 function flipTheme(){
@@ -291,11 +295,24 @@ async function fetchPage(){
 function drawResultKind(q, shown){
   const node = el('kind');
   if (!node || !shown) { if (node) node.textContent = ''; return; }
-  node.innerHTML = q
-    ? 'Ranked by how close each job is to what you described. ' +
-      '<a href="#data" data-tab="data">How the match score works →</a>'
-    : 'The newest jobs across every board, most recently added first — no search yet, ' +
-      'so nothing is ranked. Describe a role above to rank by meaning.';
+  const explain = ' <a href="#data">How the match score works \u2192</a>';
+  // Three states, not two. A date sort re-orders the best matches, so claiming similarity
+  // order there would contradict #sortnote, which sits two lines above this in the same
+  // column and already says exactly that.
+  if (q && el('sort').value !== 'rel'){
+    node.innerHTML = 'Your best matches for what you described, re-ordered by date rather ' +
+      'than by closeness.' + explain;
+  } else if (q){
+    node.innerHTML = 'Ranked by how close each job is to what you described.' + explain;
+  } else {
+    // A no-query browse orders by `first_seen` only where the table has that column;
+    // otherwise the fallback is `id`, which is not a date, so "newest first" would be untrue.
+    node.textContent = CFG.has_first_seen
+      ? 'The newest jobs across every board, most recently added first \u2014 no search yet, ' +
+        'so nothing is ranked. Describe a role above to rank by meaning.'
+      : 'Jobs from across every board, in no particular order \u2014 no search yet, so nothing ' +
+        'is ranked. Describe a role above to rank by meaning.';
+  }
 }
 
 function drawCount(shown, facets){

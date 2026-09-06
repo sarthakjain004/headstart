@@ -562,7 +562,9 @@ def test_run_carries_the_job_id_for_starring():
 def test_indexed_answers_which_ids_survive_and_escapes_quotes():
     # The Saved tab's "closed" check: ids come from stored records, so a quote must be
     # doubled before the where-clause, like every other filter term.
-    table = _Table([{"ats": "darwinbox", "id": "a:b:1"}])
+    # `company` is in the base `_schema()`, so a row without it is a fake the real table can
+    # never produce — and the constructor's Board count reads it unguarded on purpose.
+    table = _Table([{"ats": "darwinbox", "company": "acme", "id": "a:b:1"}])
     searcher = JobSearch(_Model(), table)
     assert searcher.indexed(["a:b:1", "gone:x:9", "o'brien:x:1"]) == {"a:b:1"}
     assert "'o''brien:x:1'" in table.last_where

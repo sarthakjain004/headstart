@@ -681,14 +681,18 @@ class JobSearch:
         self.max_page = max_page
         # the ATSes actually present in the index — feeds the dropdown and the whitelist.
         # `company` rides the same scan rather than a second one: the door states how many
-        # employers are in the index (ADR-0111), and one extra column on a pass already being
-        # paid for is the cheapest honest way to know.
-        _boards = table.search().select(["ats", "company"]).limit(1_000_000).to_list()
-        self.atses = sorted({r["ats"] for r in _boards})
-        # Employers, not Boards: `company` is the ATS slug (README §"The served table"), so two
-        # ATSes hosting the same firm count twice and a slug is not a display name. It is a
-        # floor on the real number, which is the safe direction for a claim on the door.
-        self.n_companies = len({r["company"] for r in _boards if r.get("company")})
+        # company boards are in the index (ADR-0111), and one extra string column on a pass
+        # already being paid for is the cheapest honest way to know.
+        _rows = table.search().select(["ats", "company"]).limit(1_000_000).to_list()
+        self.atses = sorted({r["ats"] for r in _rows})
+        # Boards, and deliberately NOT "employers". `company` is the ATS slug, not a display
+        # name (README §"The served table"), so distinct slugs count one firm twice whenever it
+        # is spelt two ways or hosts on two ATSes — which makes the number an over-count of
+        # employers, not an under-count. An earlier draft shipped it on the door labelled
+        # "employers" and argued it was a conservative floor; that was backwards, and an
+        # overstatement is the one direction a trust surface cannot afford. The pair
+        # (ats, company) is exactly ADR-0023's Board key, which this counts precisely.
+        self.n_boards = len({(r["ats"], r["company"]) for r in _rows if r["company"]})
         # `first_seen` only appears on the first pipeline run after ADR-0031; filtering on
         # a column the table lacks errors every query, so the feature stays dark until then.
         self.has_first_seen = "first_seen" in table.schema.names
@@ -957,10 +961,10 @@ class JobSearch:
         .is_remote`` infers it from the location string on 19 of the scrapers — so reporting it
         as coverage stated a gap that does not exist and a provenance that is not true.
 
-        Costs one :meth:`count_rows` per field. ADR-0084's facet counts measured that at 4–6 ms
-        against a 316,606-row table, so the whole panel is cheaper than a single ranked search
-        — but it is cached per process anyway: the table cannot change under a running Space
-        (a new index arrives with a restart), so every call after the first is free.
+        Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
+        ADR-0084's facet counts measured that primitive at 4–6 ms against a 316,606-row table,
+        so the whole panel is cheaper than a single ranked search — and it is cached per
+        process anyway: a new index arrives with a Space restart, never under a running one.
 
         A field whose column arrives with a migration (``first_seen``, the salary columns,
         ``description``) is reported as ``None`` on a table that predates it — never as zero,
