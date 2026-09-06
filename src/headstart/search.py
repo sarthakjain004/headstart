@@ -101,7 +101,16 @@ ETYPE_CLAUSES = {
     "part-time": "lower(employment_type) LIKE '%part%'",
     "contract": "(lower(employment_type) LIKE '%contract%'"
     " OR lower(employment_type) LIKE '%freelance%')",
-    "internship": "lower(employment_type) LIKE '%intern%'",
+    # Guarded like the gazetteer's collision traps, and for the same reason: the substring
+    # `intern` is inside `international`, which on the served table claimed 47 of the 794 rows
+    # this option returned (5.9%) — "International EOR", "International Full Time Employee",
+    # "International Office Entity". Every distinct value carrying both words is one of those,
+    # so nothing genuine is excluded; a real "International Internship" would be, and is the
+    # cost of a substring match without word boundaries (DataFusion's regex has no lookaround).
+    "internship": (
+        "(lower(employment_type) LIKE '%intern%'"
+        " AND lower(employment_type) NOT LIKE '%international%')"
+    ),
 }
 
 

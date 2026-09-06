@@ -956,3 +956,20 @@ def test_the_two_sort_paths_break_ties_in_opposite_directions():
     src = inspect.getsource(JobSearch.run)
     assert 'key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True' in src
     assert '{"column_name": "id", "ascending": True}' in src
+
+
+def test_internship_does_not_claim_international():
+    """`intern` is a substring of `international`, which is not an employment type at all.
+
+    On the served table the unguarded clause claimed 47 of the 794 rows it returned (5.9%) —
+    "International EOR", "International Full Time Employee", "International Office Entity".
+    Every distinct value carrying both words was one of those, so the guard costs nothing real.
+    Asserted on the compiled clause rather than through a table, the way
+    `test_ind_is_never_a_bare_substring` guards the gazetteer's identical trap: the failure is
+    silent and the table can only catch strings someone thought to add.
+    """
+    from headstart.search import ETYPE_CLAUSES
+
+    clause = ETYPE_CLAUSES["internship"]
+    assert "LIKE '%intern%'" in clause
+    assert "NOT LIKE '%international%'" in clause

@@ -17,7 +17,13 @@ import lancedb
 from flask import Flask, jsonify, render_template, request
 
 from headstart import facets, geo
-from headstart.search import PROD_TABLE, JobSearch, load_encoder
+from headstart.search import (
+    KEYWORD_DEFAULT_SCOPE,
+    PROD_TABLE,
+    JobSearch,
+    keyword_scope_options,
+    load_encoder,
+)
 
 _REPO = Path(__file__).resolve().parents[2]
 _UI = _REPO / "src" / "headstart" / "ui"
@@ -48,6 +54,12 @@ def index():
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
+        # ADR-0104's scope map, as the Space passes it. Without these three the rail still
+        # renders — Jinja's default Undefined yields nothing rather than raising — but the
+        # Keyword scope <select> comes out with zero options, silently.
+        keyword_scopes=keyword_scope_options(),
+        keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
+        has_description=_searcher.has_description,
         trends_on=False,
         alerts_on=False,
         sets_on=False,
