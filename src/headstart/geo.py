@@ -1,14 +1,16 @@
-"""India place gazetteer for the location filter (query-time LIKE expansion, ADR-0024).
+"""India place gazetteer for the location filter (query-time alias expansion, ADR-0024).
 
 Why this exists: the location filter is a raw ``lower(location) LIKE '%term%'``, and the
 live-index inventory (``experiment/india-location-filter/``, 2026-07-20: 24,964 India rows)
 showed **47% of India jobs never contain the word "india"** — zoho/keka/ripplehire write
 city-only strings ("Bangalore North", "Pune City"), and Bengaluru/Bangalore is a ~50/50
-spelling split. This module expands a canonical place ("india" or a city) into the OR-chain
-of every observed alias, so the filter stops lying.
+spelling split. This module expands a canonical place ("india" or a city) into a match over
+every observed alias, so the filter stops lying.
 
-Aliases are lowercase substrings matched with ``LIKE '%alias%'`` — every alias must be
-unambiguous *as a substring of any world location string*. Traps vetted OUT of the
+Aliases are lowercase substrings — every alias must be unambiguous *as a substring of any world
+location string*. They are matched by one ``regexp_like`` alternation rather than one ``LIKE
+'%alias%'`` per alias: same substring semantics, same rows, one pass instead of 267 (see
+:func:`_any`, and ADR-0024's 2026-09-06 amendment). Traps vetted OUT of the
 inventory's raw map (do not re-add without a guard): "salt lake" (Salt Lake City, UT — it
 contaminated the raw inventory), "wai" (inside taiwan/kuwait/hawaii), "salem" (US city),
 "punjab" (Pakistan has one), "verna" (inside Governador Valadares), "whitefield"
@@ -21,6 +23,9 @@ app.py), so it must stay dependency-free. Regenerate the inventory before extend
 """
 
 from __future__ import annotations
+
+import re
+from collections.abc import Iterable
 
 # Canonical city -> observed alias substrings (spelling variants, real typos seen in the
 # data, and metro localities that appear WITHOUT the metro's name). Ordered by observed
@@ -181,7 +186,7 @@ CITIES: dict[str, tuple[str, ...]] = {
     "baddi": ("baddi",),
 }
 
-# Per-city NOT-LIKE guards for aliases that collide with a specific other place.
+# Per-city exclusion guards for aliases that collide with a specific other place.
 EXCLUDE: dict[str, tuple[str, ...]] = {
     "surat": ("surat thani",),  # Thailand
     "thane": ("kalyani",),  # 'kalyan' is inside Pune's Kalyani Nagar
@@ -345,40 +350,96 @@ def dropdown_options() -> list[tuple[str, str]]:
     return [(c, c.title().replace("Ncr", "NCR")) for c in DROPDOWN]
 
 
-def _like_any(aliases: tuple[str, ...]) -> str:
-    return " OR ".join(f"lower(location) LIKE '%{a}%'" for a in aliases)
+#: The column every clause here matches on, lowercased once per predicate rather than per alias.
+_LOC = "lower(location)"
 
 
-def _not_like_all(terms: tuple[str, ...]) -> str:
-    """The ``AND NOT LIKE`` chain that guards a clause against its known collisions."""
-    return "".join(f" AND lower(location) NOT LIKE '%{t}%'" for t in terms)
+def _rx(literal: str) -> str:
+    """One alias as a regex fragment: regex-escaped, then made safe for a SQL string literal.
+
+    Both escapes are needed and they are not the same escape. ``re.escape`` stops an alias's own
+    punctuation being read as regex syntax — ``(ind)``'s parentheses would otherwise be a capture
+    group — and doubling the quote is what keeps the literal closed. Neither is dormant:
+    ``test_alias_hygiene`` vets the aliases for case, quotes and ``%`` but says nothing about
+    regex metacharacters, and 28 of the constants already change under ``re.escape`` (every one
+    containing a space).
+    """
+    return re.escape(literal).replace("'", "''")
+
+
+def _matches(alternation: str) -> str:
+    """One ``regexp_like`` over ``alternation`` — the only place this module emits a predicate.
+
+    Guards the empty case here rather than at each caller, because an empty alternation matches
+    *every* row: exactly backwards from the empty set it reads as. Unreachable today, since every
+    caller builds from a non-empty constant, and cheap to make impossible rather than to rely on
+    that staying true — a branch that silently returns the whole table is the wrong one to leave
+    to convention.
+    """
+    if not alternation.strip("|"):
+        raise ValueError("refusing to build a match on no aliases")
+    return f"regexp_like({_LOC}, '{alternation}')"
+
+
+def _any(aliases: Iterable[str]) -> str:
+    """One ``regexp_like`` matching any of ``aliases`` as a substring.
+
+    **This is the whole optimisation.** These were one ``lower(location) LIKE '%alias%'`` per
+    alias, OR'd — 267 predicates and a 10,307-character clause for "india", each one its own pass
+    over the column. One alternation is a single pass over a single automaton: measured on the
+    served table (318,003 rows), a count went from 2,669 ms to 357 ms and `/facets` with All India
+    from 8,670 ms to 1,279 ms (medians, n=7 on this code). Those two ratios differ because
+    ADR-0084 runs its ~46 counts in a thread pool, so the strip costs roughly its slowest count
+    rather than their sum — the clause is inside all of them, but not 46 times over. The rows are identical, verified by set equality
+    of matched ids across all 70 places the filter accepts rather than by count.
+    """
+    return _matches("|".join(_rx(a) for a in aliases))
+
+
+def _none(terms: tuple[str, ...]) -> str:
+    """The ``AND NOT`` guard that protects a clause from its known collisions, or nothing."""
+    return f" AND NOT {_any(terms)}" if terms else ""
+
+
+def _anchored(pattern: str) -> str:
+    """A LIKE pattern from :data:`IND_FORMS` as an equivalent regex fragment.
+
+    Only these patterns need it, and only because their anchoring *is* the rule: ``'ind-%'``
+    means "starts with", ``'%(ind)%'`` means "contains", and the difference between them is what
+    stops ``ind`` claiming Indore and every "Industrial Area" (``test_ind_is_never_a_bare_substring``
+    asserts that shape on the constants). A leading or trailing ``%`` becomes "unanchored at that
+    end"; its absence becomes a ``^`` or ``$``.
+
+    Two assumptions about :data:`IND_FORMS`, both asserted by
+    ``test_ind_forms_carry_no_interior_wildcard``: no pattern contains ``_``, so ``%`` is the only
+    wildcard to read, and no ``%`` appears anywhere but the ends — an interior one would be
+    stripped by neither branch and pass through as a literal ``%``.
+    """
+    starts, ends = pattern.startswith("%"), pattern.endswith("%")
+    return ("" if starts else "^") + _rx(pattern.strip("%")) + ("" if ends else "$")
 
 
 def _city_where(city: str) -> str | None:
     aliases = CITIES.get(city)
     if not aliases:
         return None
-    return f"(({_like_any(aliases)}){_not_like_all(EXCLUDE.get(city, ()))})"
+    return f"({_any(aliases)}{_none(EXCLUDE.get(city, ()))})"
 
 
 def _country_where() -> str:
     """The word "india" itself, minus the US places whose names contain it."""
-    return f"(lower(location) LIKE '%india%'{_not_like_all(INDIA_EXCLUDE)})"
+    return f"({_any(('india',))}{_none(INDIA_EXCLUDE)})"
 
 
 def _ind_where() -> str:
     """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
-    forms = " OR ".join(f"lower(location) LIKE '{f}'" for f in IND_FORMS)
-    return f"((lower(location) = 'ind' OR {forms}){_not_like_all(IND_EXCLUDE)})"
+    forms = _matches("|".join(_anchored(f) for f in IND_FORMS))
+    return f"(({_LOC} = 'ind' OR {forms}){_none(IND_EXCLUDE)})"
 
 
 def _subdivision_where() -> str:
     """Workday's "City, KA, IN" tail - the subdivision code plus the country, anchored to the end."""
-    return (
-        "("
-        + " OR ".join(f"lower(location) LIKE '%, {c}, in'" for c in SUBDIVISIONS)
-        + ")"
-    )
+    return _matches("|".join(_rx(f", {c}, in") + "$" for c in SUBDIVISIONS))
 
 
 def where(place: str) -> str | None:
@@ -386,18 +447,29 @@ def where(place: str) -> str | None:
 
     ``place`` is "india", a :data:`REGIONS` key, or a :data:`CITIES` key.
 
-    The country-level "india" clause is five things OR'd together (ADR-0024, extended by
+    The country-level "india" rule is five things OR'd together (ADR-0024, extended by
     ADR-0086): the substring "india" minus :data:`INDIA_EXCLUDE`; ISO alpha-3 "IND" in its
     :data:`IND_FORMS` positions minus :data:`IND_EXCLUDE`; the ", {code}, in" subdivision tail;
-    every city alias; and every state name.
+    every city alias; and every state name. That is how the rule is *written*; the clause it
+    compiles to has fewer parts, because every city without an :data:`EXCLUDE` guard shares one
+    alternation with the states.
 
     Aliases are trusted constants — callers must never pass free text through this into SQL
     beyond the dict lookups here.
     """
     if place == "india":
         parts = [_country_where(), _ind_where(), _subdivision_where()]
-        parts += [_city_where(c) for c in CITIES]  # keys exist: no Nones
-        parts.append(f"({_like_any(STATES)})")
+        # Every city whose aliases carry no collision guard shares ONE alternation with the
+        # states, because a guard is the only reason an alias needs a term of its own — and only
+        # two of 68 cities have one. That is where the predicate count actually falls: 267 LIKEs
+        # become 10 `regexp_like`s, of which this is the largest by far.
+        plain: list[str] = []
+        for city, aliases in CITIES.items():
+            if EXCLUDE.get(city):
+                parts.append(_city_where(city))
+            else:
+                plain.extend(aliases)
+        parts.append(_any([*plain, *STATES]))
         return "(" + " OR ".join(p for p in parts if p) + ")"
     if place in REGIONS:
         return "(" + " OR ".join(_city_where(c) for c in REGIONS[place]) + ")"
