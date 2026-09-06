@@ -28,7 +28,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from headstart import http, log, spare_egress
+from headstart import fanout_stats, http, log, spare_egress
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef, board_identity, load_active_companies
 from headstart.harvest import scrape_all
@@ -224,6 +224,14 @@ def _report(
     # "did the fallback work?" is the only question this feature has.
     for line in spare_egress.report():
         _log.warning(line)
+    # What each fan-out width actually bought. The ADR-0078 clamp already runs some Boards at the
+    # ceiling and some at 12, so this is the only place the two are comparable — and
+    # `stream_width`'s own docstring says 12 has never been re-measured.
+    # WARNING, like `spare_egress.report()` beside it and unlike `retries:`: only WARNING+ becomes
+    # a GitHub annotation, and this is the one line here whose whole purpose is to be read by a
+    # person deciding a number. An INFO line means digging through fifteen raw shard logs for it.
+    for line in fanout_stats.report():
+        _log.warning(line)
     ratio = (
         f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
         if predicted
@@ -322,6 +330,7 @@ def main() -> int:
 
     progress = _Progress(len(companies))
     http.reset_retry_stats()
+    fanout_stats.reset()
     # `timeout` sends SIGTERM, whose default disposition kills the process outright — which is
     # why a budget-killed shard has never reported anything. Turning it into SystemExit lets
     # the `finally` below run, so the shard still says what it did and what it left.

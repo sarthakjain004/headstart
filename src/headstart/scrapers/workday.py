@@ -38,11 +38,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
-from headstart import http, log, spare_egress
+from headstart import fanout_stats, http, log, spare_egress
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -1100,30 +1101,39 @@ class WorkdayScraper(BaseScraper):
         # site rather than through it: this gather exists precisely because that method's
         # exception contract is not the one `_paginate` needs (above), so the width policy is
         # shared as a function and the two fan-outs stay apart (#195).
-        sem = asyncio.Semaphore(
-            spare_egress.stream_width(self._egress().get("egress_group"), _PAGE_STREAMS)
+        width = spare_egress.stream_width(
+            self._egress().get("egress_group"), _PAGE_STREAMS
         )
+        sem = asyncio.Semaphore(width)
         missing = 0
         error: http.RequestsError | None = None
 
-        async with AsyncSession(impersonate="chrome") as session:
+        # Recorded against the width in force. Listing pages are the widest, longest-lived fan-out
+        # in the run and the one the clamp actually moves, so this is the site whose two operating
+        # points are worth comparing (`headstart.fanout_stats`).
+        with fanout_stats.batch("workday pages", width) as item_done:
+            async with AsyncSession(impersonate="chrome") as session:
 
-            async def one(offset: int) -> None:
-                nonlocal missing, error
-                async with sem:
-                    try:
-                        payload = await self._post_async(session, applied, offset)
-                    except http.RequestsError as exc:
-                        missing += 1
-                        classes[_failure_class(exc)] += 1
-                        error = error or exc
-                        return
-                    if payload is None:
-                        missing += 1
-                        classes["404 mid-crawl"] += 1
-                    absorb((payload or {}).get("jobPostings") or [])
+                async def one(offset: int) -> None:
+                    nonlocal missing, error
+                    async with sem:
+                        # Inside the semaphore: waiting for a slot is queueing, not stream time.
+                        started = time.monotonic()
+                        try:
+                            payload = await self._post_async(session, applied, offset)
+                        except http.RequestsError as exc:
+                            missing += 1
+                            classes[_failure_class(exc)] += 1
+                            error = error or exc
+                            return
+                        finally:
+                            item_done(time.monotonic() - started)
+                        if payload is None:
+                            missing += 1
+                            classes["404 mid-crawl"] += 1
+                        absorb((payload or {}).get("jobPostings") or [])
 
-            await asyncio.gather(*(one(offset) for offset in offsets))
+                await asyncio.gather(*(one(offset) for offset in offsets))
         return missing, error
 
     def _paginate_sync(

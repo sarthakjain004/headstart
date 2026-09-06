@@ -802,9 +802,11 @@ def test_the_async_path_refunds_a_severed_connection_too(monkeypatch):
     _warp(monkeypatch)
     state = {"n": 0}
     monkeypatch.setattr(http.spare_egress, "generation", lambda: state["n"])
-    monkeypatch.setattr(
-        http.spare_egress, "proxy_for", lambda g: "socks5://127.0.0.1:40000"
-    )
+
+    async def _route(_g):
+        return "socks5://127.0.0.1:40000"
+
+    monkeypatch.setattr(http.spare_egress, "proxy_for_async", _route)
     calls = []
 
     class _AsyncSession:
@@ -891,9 +893,10 @@ def test_the_async_path_also_rides_the_tunnel(monkeypatch):
             seen.append(spare_egress.in_flight_count())
             return _Resp(200)
 
-    monkeypatch.setattr(
-        spare_egress, "proxy_for", lambda g: "socks5h://127.0.0.1:40000"
-    )
+    async def _route(_g):
+        return "socks5h://127.0.0.1:40000"
+
+    monkeypatch.setattr(spare_egress, "proxy_for_async", _route)
     asyncio.run(http.fetch_async(_Session(), "GET", "u", egress_group="workday"))
     assert seen == [1]
     assert spare_egress.in_flight_count() == 0
@@ -916,3 +919,60 @@ def test_the_backoff_curve_is_jittered_so_a_severed_cohort_does_not_retry_in_loc
 
     honoured = {http._note_retry("GET", "u", 0, 3, "why", 7.0, 429) for _ in range(10)}
     assert honoured == {7.0}, "a host-supplied window must be taken literally"
+
+
+def test_resolving_a_route_never_stalls_the_event_loop_during_a_rotation(monkeypatch):
+    """A closed rotation gate must not freeze the loop, or the drain can never finish.
+
+    `fetch_async` used to call the blocking `proxy_for`, whose `_gate.wait` holds for the length of
+    a rotation. On the event loop that froze every request already riding the tunnel: their
+    `riding_the_tunnel` blocks could not exit, `_inflight` could not fall, and `_drain` therefore
+    waited out its whole `_DRAIN_CAP` and restarted through the requests it existed to protect.
+    Measured on the harness, that cost 18-23 of 48 pages and 122-149 severed connections per crawl;
+    with the loop free, both are 0.
+
+    Driven through `fetch_async` rather than the resolver, because the defect was *which* resolver
+    the call site reached for — a test on `proxy_for_async` alone stays green when someone switches
+    that line back. The assertion is the symptom: other coroutines keep being scheduled while a
+    request waits on a closed gate.
+    """
+    from headstart import spare_egress
+
+    _warp(monkeypatch)
+    monkeypatch.setattr(spare_egress, "proxy_url", lambda: "socks5h://127.0.0.1:40000")
+
+    class _Session:
+        async def request(self, method, url, **kwargs):
+            return _Resp(200)
+
+    # Walled, or the resolver short-circuits to the direct route and never reaches the gate —
+    # which is what made the first draft of this test pass with the fix reverted.
+    monkeypatch.setattr(spare_egress, "_walled", set())
+    spare_egress.mark_walled("workday", 429)
+    spare_egress._gate.clear()
+    try:
+
+        async def _drive():
+            ticks = 0
+
+            async def heartbeat():
+                nonlocal ticks
+                while True:
+                    ticks += 1
+                    await asyncio.sleep(0.01)
+
+            beat = asyncio.create_task(heartbeat())
+            call = asyncio.create_task(
+                http.fetch_async(_Session(), "GET", "u", egress_group="workday")
+            )
+            await asyncio.sleep(0.3)
+            opened = ticks
+            spare_egress._gate.set()
+            await call
+            beat.cancel()
+            return opened
+
+        # ~30 ticks if the loop runs; exactly 1 if the gate wait blocked it.
+        assert asyncio.run(_drive()) > 5
+    finally:
+        spare_egress._gate.set()

@@ -514,3 +514,54 @@ signal to watch after this ships is the shard's `time budget reached` line along
 `ConnectionError` counts. And the drain is shard-wide, not per-ATS: one tunnel, one daemon, so
 rotating for Workday now waits on Eightfold's in-flight requests too. That is correct — they would
 otherwise be severed — but it is real coupling between ATSes that did not exist before.
+
+## Amendment (2026-09-05): the drain's cost was a blocked event loop, not its cap
+
+The drain shipped and worked — production `ConnectionError` pages fell from 105–170 per run to
+3–9 — but it cost far more wall clock than the trade above priced in. Across ten runs on `f74892b`
+the scrape stage ran 47.5–58.0 min against 20.0–30.2 min on the ten runs before it, with the same
+~1,200–1,400 rotations per run on both sides. Same rotations, roughly double the stage: the price
+was per rotation, and the obvious reading was that rotations were sitting on `_DRAIN_CAP`.
+
+They were, and the cap was not why. `fetch_async` resolved its route through the **blocking**
+`proxy_for`, whose `_gate.wait` holds for the length of a rotation. On the event loop that froze
+every request already riding the tunnel: their `riding_the_tunnel` blocks could not exit, so
+`_inflight` could not fall, so `_drain` could never see the tunnel empty. It burned the whole cap
+and then restarted through the very cohort it existed to protect. Sampling `in_flight_count()` every
+0.25s across a drain shows the tell — 79 consecutive samples reading exactly `1`, another drain
+pinned at `2`, for a full 20s, on requests whose own latency tops out at 8.7s. 29 of one trial's
+drains did this.
+
+The harness missed it for a mechanical reason worth recording: it held every request at one *fixed*
+latency, so the whole cohort landed together and the tunnel emptied before anything asked for a
+route. Replaying it with the measured *spread* of real page latencies reproduces the failure
+immediately — a slot frees mid-drain, and that is all it takes. A uniform-latency model of a
+fan-out is not a conservative simplification; it is the one shape that cannot exhibit this.
+
+`proxy_for_async` polls the gate instead, leaving the loop free, and `proxy_url` goes to a thread.
+On the same harness, same cadence, staggered latencies: pages lost 18–23 of 48 → **0 of 48**,
+severed connections 122–149 → **0**, wall 449–551s → **35–38s** (12–16x), and the drain completes in 8.0–8.4s
+against an 8.67s slowest page instead of pinning at 20.0s.
+
+`_DRAIN_CAP` stays at 20.0. Tightening it was the obvious response to the wall-clock cost and would
+have bought nothing: the drain returns when the tunnel empties, so the cap is a backstop that is now
+never reached. It still needs its margin — the tunnel carries every walled group at once, so
+aggregate concurrency can exceed any one group's clamped width — and a cap under the real tail is
+the cliff the 12.0s draft already fell off.
+
+**"Why not drop the drain and just let the refund retry them?"** Because that is what the code
+already did, and it is what the 105–170 lost pages per run *were*. `http._severed_by_our_rotation`
+refunds an attempt whenever our own rotation killed a proxied request, and the route resolver
+(`proxy_for`, or `proxy_for_async` on the path these pages actually take) makes that retry wait for
+the restart, so the severed page does go out again on the fresh IP. It is not enough
+for two reasons that compound: the refund is capped at `_MAX_EARNED_ATTEMPTS = 2`, and while a wall
+persists the next rotation arrives every `_ROTATION_COOLDOWN` (5s) against a page that takes 6–13s
+through the tunnel — so the retry is severed too, and the one after it, until the budget is gone.
+Retrying harder cannot outrun a restart cadence faster than the latency it is restarting under;
+that is why the fix is to stop severing, not to recover from it better.
+
+**What to watch now.** `spare_egress.report()` gained a `spare egress drains:` line — count, median,
+max, and how many hit the cap. That last number carries this amendment's whole claim and should be
+**0**; above zero means either the tail has outgrown the cap or something is again stopping the
+tunnel from emptying. Nothing counted drains before, which is precisely why the loop stall could sit
+in production for two runs looking like a cap that was merely set too high.
