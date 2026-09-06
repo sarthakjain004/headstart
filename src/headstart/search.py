@@ -248,6 +248,23 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
     return url
 
 
+def _ago(**window: int) -> datetime:
+    """``now`` minus one recency window, with the overflow answered as a bad date.
+
+    Both windows arrive as unbounded ints off the query string, and each blows up twice over:
+    ~739k days (~17.7M hours) walks ``datetime`` below year 1, and a magnitude past 999,999,999
+    days breaks ``timedelta`` itself — in both directions, since a negative window that large
+    runs off the far end instead. Converted here rather than clamped in :func:`_int_arg`, which
+    is shared with ``k``, ``page`` and the salary bounds and has no business knowing what a date
+    can hold; here it sits beside ``_next_day``'s identical treatment and also covers the facet
+    counts, which call :func:`build_filter` directly rather than through the parse step.
+    """
+    try:
+        return datetime.now(UTC) - timedelta(**window)
+    except OverflowError as exc:  # off the calendar, or past timedelta's cap
+        raise ValueError(f"recency window out of range: {window}") from exc
+
+
 def build_filter(
     *,
     remote: bool = False,
@@ -370,9 +387,7 @@ def build_filter(
         # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
         # '21-Apr-2026' sort lexicographically ABOVE any ISO cutoff and would otherwise
         # leak into every window.
-        cutoff = (datetime.now(UTC) - timedelta(days=int(posted_within))).strftime(
-            "%Y-%m-%d"
-        )
+        cutoff = _ago(days=int(posted_within)).strftime("%Y-%m-%d")
         filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
 
     # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
@@ -403,9 +418,7 @@ def build_filter(
         # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
         # ourselves, so it is always ISO-8601 UTC. Rows predating the column are null, and
         # `NULL >= '…'` is never true, so they drop out on their own (ADR-0031).
-        since = (datetime.now(UTC) - timedelta(hours=int(seen_within))).isoformat(
-            timespec="seconds"
-        )
+        since = _ago(hours=int(seen_within)).isoformat(timespec="seconds")
         filters.append(f"first_seen >= '{since}'")
     if first_seen_after and has_first_seen:
         # The alerts run's exact cutoff (ADR-0035), beside the UI's hour-granular window: a

@@ -585,6 +585,26 @@ def test_range_overflow_is_a_valueerror_not_a_500():
         _clause(seen_before="9999-12-31")
 
 
+def test_recency_window_overflow_is_a_valueerror_not_a_500():
+    # Same treatment for the windows, which take an unbounded int: both the calendar bound
+    # (~739k days / ~17.7M hours walks below year 1) and timedelta's own magnitude cap, in
+    # both directions — a huge negative window runs off the far end of the calendar instead.
+    for days in (740_000, 1_000_000_000, -3_000_000, -1_000_000_000):
+        with pytest.raises(ValueError):
+            _clause(posted_within=days)
+    for hours in (17_800_000, 24_000_000_000, -70_000_000, -24_000_000_000):
+        with pytest.raises(ValueError):
+            _clause(seen_within=hours)
+
+
+def test_recency_windows_still_compile_inside_the_calendar():
+    # The guard is the calendar's own bound, not a policy about plausible windows: an absurd
+    # but representable one still compiles. (Both values keep a century of slack against the
+    # bound, which creeps forward with `now`, so neither is a dated test.)
+    assert "posted_at >= '" in _clause(posted_within=700_000)
+    assert "first_seen >= '" in _clause(seen_within=17_000_000)
+
+
 # ── the salary bracket and the sort control (issue #275) ─────────────────────────────────
 
 
