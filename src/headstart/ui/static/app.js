@@ -40,9 +40,9 @@ window.addEventListener('hashchange', () => showTab(currentTab()));
 let coverage = null;
 // `remote` is deliberately absent: it is a facet, not a gap. Nearly every row has a value, so
 // a percentage here would answer "how many are remote" — which the Search rail's own counts
-// already answer — rather than "how often is this unknown". (Its provenance is mixed: ten
-// scrapers read the board's own field, the rest infer it from the location text. An earlier
-// draft of this comment asserted the latter universally, which was equally untrue.)
+// already answer — rather than "how often is this unknown". Its provenance is mixed too (some
+// boards publish the field, others are read from the location text), which is why the rail's
+// caveat describes both and this row describes neither.
 const COV_ROWS = [
   ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
   ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],

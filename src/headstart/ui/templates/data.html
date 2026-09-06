@@ -109,11 +109,12 @@
   <section class="doc-sec">
     <h3>What is stored about you</h3>
     <ul class="doc-list">
-      {% if not auth_on %}
-      <li><b>Nothing.</b> This deployment has no sign-in, so there is no account to store
-        anything against and nothing below applies to it.</li>
-      {% else %}
-      <li>Your <b>email address</b>, from Google sign-in — the key your saved work hangs off.</li>
+      {# Written so the DEFAULT is to disclose. Jinja renders an undefined name as falsy, so
+         testing `not auth_on` first meant a renderer that forgot the kwarg would claim nothing
+         is stored on a deployment that stores plenty — the one direction this must not fail. #}
+      {% if auth_on or alerts_on %}
+      <li>Your <b>email address</b>{% if auth_on %}, from Google sign-in — the key your saved
+        work hangs off{% else %} if you subscribe to alerts — and nothing else{% endif %}.</li>
       {% if saved_on %}<li>Anything you save yourself: saved searches, starred jobs, and a
         profile if you fill one in. Deleting a profile deletes it — with one exception we would rather name than
         hide: a count of how many résumés you have had read stays behind, because that allowance
@@ -123,10 +124,13 @@
         outside HeadStart. What you save is stored — the saved searches, stars and profile above
         live in a private dataset only this service reads — and your searches themselves are
         never recorded at all.</li>{% endif %}
-      {% if saved_on %}<li><b>No email is ever sent</b> unless you switch it on for a saved
-        search, and every one of those carries an unsubscribe link.</li>{% endif %}
+      {% if saved_on or alerts_on %}<li><b>No email is ever sent</b> unless you switch it on
+        yourself, and every one of those carries an unsubscribe link.</li>{% endif %}
       <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing
         side of this product at all.</li>
+      {% else %}
+      <li><b>Nothing.</b> This deployment has neither sign-in nor email alerts, so there is no
+        account to keep anything against.</li>
       {% endif %}
     </ul>
   </section>

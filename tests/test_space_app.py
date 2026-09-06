@@ -1137,9 +1137,9 @@ def test_coverage_counts_the_served_table_rather_than_asserting(app):
     # field against the one total; `total` is not repeated onto every field.
     assert d["fields"]["posted_at"] == 1
     assert d["fields"]["min_years"] == 1
-    # `remote` is never a coverage field: the column is never null, and the value is an
-    # inference from the location string rather than the board's flag, so reporting it
-    # claimed both a gap that does not exist and a provenance that is false.
+    # `remote` is never a coverage field: it is a facet, not a gap — a share would answer
+    # "how many are remote", which the rail's own counts already answer. (Its provenance is
+    # mixed, and four successive drafts described it wrongly; see ADR-0112.)
     assert "remote" not in d["fields"]
     assert "atses" not in d  # nothing reads it; the template has its own list
 
@@ -1242,3 +1242,21 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     assert (
         page.index('class="go"') < page.index('class="skip"') < page.index('id="rail"')
     )
+
+
+def test_the_storage_list_defaults_to_disclosing(app):
+    """A missing `auth_on` must not make the page claim nothing is stored.
+
+    Jinja renders an undefined name as falsy, so the conditional is written `if auth_on or
+    alerts_on` with the "Nothing" case in the `else`. Written the other way round, a renderer
+    that forgot the kwarg would print a denial on a deployment that stores plenty — the one
+    direction a storage disclosure must never fail."""
+    tpl = app.app.jinja_env.get_template("data.html")
+    # Rendered with the flag simply absent, exactly as a forgetful caller would.
+    out = tpl.render(atses=["greenhouse"], repo="https://example.test", alerts_on=True)
+    assert "Nothing." not in out
+    assert "email address" in out
+    # …and it still says "Nothing" when the deployment really does keep nothing.
+    bare = tpl.render(atses=["greenhouse"], repo="https://example.test")
+    assert "Nothing." in bare
+    assert "the key your saved work hangs off" not in bare

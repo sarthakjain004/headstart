@@ -976,10 +976,11 @@ class JobSearch:
         Only fields a Job may legitimately be *missing* belong here. ``remote`` was removed
         after review: it is a facet, not a gap — a share here would answer "how many are
         remote", which the Search rail's own counts already answer, rather than "how often do
-        we not know". Note the provenance is genuinely mixed (ten scrapers read the board's own
-        field; the rest fall back to ``models.is_remote`` over the location text), so neither
-        "the board's flag" nor "an inference" describes the column, and an earlier revision of
-        this docstring asserted the second as confidently as the first draft asserted the first.
+        we not know". Its provenance is also mixed — many scrapers read a board-supplied
+        workplace-type field, others fall back to ``models.is_remote`` over the location text,
+        several OR the two — so no single sentence describes the column. Successive revisions
+        of this docstring asserted "the board's flag" and then "an inference" with equal
+        confidence, and two attempts to count the split were both wrong; see ADR-0112.
 
         Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
         `headstart.facets` measured that primitive at 4–6 ms against a 316,606-row table,

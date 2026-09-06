@@ -114,8 +114,8 @@
           {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
         </select>
         <span class="tip">Their date, in their format. Jobs without one are hidden by this
-          filter rather than kept, and so are the few whose date is written in a shape we
-          cannot compare — so this filter keeps slightly fewer than the Data tab's
+          filter rather than kept, and so are any whose date is written in a shape we cannot
+          compare against a cutoff — so it keeps somewhat fewer than the Data tab's
           posting-date figure would suggest.</span></div>
       {% if has_first_seen %}
       <div class="f"><label for="seen">First seen by HeadStart</label>

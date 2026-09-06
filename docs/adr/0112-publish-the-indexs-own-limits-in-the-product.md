@@ -50,14 +50,21 @@ It is a facet, not a limit: a share there answers "how many are remote", which t
 counts (ADR-0084) already answer, rather than "how often do we not know". A limits page that
 drifts into reporting facts about the *jobs* stops being a limits page.
 
-The reasoning around this took two wrong turns worth recording, because both were confident. The
-first draft's caveat called `remote` "the board's own flag, not an inference from the location
-text"; review corrected it to the opposite, "not a board flag — `is_remote()` is a substring test
-on the location string"; and a later review found *that* false too. The truth is mixed — ten
-scrapers read a native field (`ashby.workplaceType`, `zoho.Remote_Job`, `eightfold
-.workLocationOption`, `workday.remoteType`, …), the rest fall back to the location text, several
-`OR` the two — so **no single sentence describes the column's provenance**, which is itself the
-reason it does not belong on a page whose currency is one-sentence claims. It is built from `count_rows(filter=…)` — the same primitive
+The reasoning around this took **four** wrong turns, each asserted confidently, and they are worth
+recording precisely because the failure mode was correction rather than ignorance. The first
+draft's caveat called `remote` "the board's own flag, not an inference from the location text".
+Review corrected it to the opposite — "not a board flag; `is_remote()` is a substring test on the
+location string" — and that went into this ADR, the code and a test comment. A later review found
+*that* false: `ashby.workplaceType`, `zoho.Remote_Job`, `eightfold.workLocationOption` and
+`workday.remoteType` are real board fields. The correction then asserted "ten scrapers"; a fifth
+review counted differently again, and an attempt to settle it by grepping the `remote=`
+assignments produced a third number, because the constructions vary too much to count that way.
+
+So the number is gone, and the standing rule is the prose form of ADR-0111's tile rule: **a figure
+that cannot be established cheaply and reliably is not asserted at all.** What is safe to say is
+qualitative — many boards publish a workplace-type field and the scraper uses it, others are read
+from the location text, several `OR` the two — and *that* is exactly why the column has no place
+on a page whose currency is one-sentence claims. It is built from `count_rows(filter=…)` — the same primitive
 ADR-0084's facet counts use, measured at 4–6 ms against a 316,606-row table — so the whole panel
 is a handful of counts, not a scan.
 
