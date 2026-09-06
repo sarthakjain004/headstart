@@ -16,6 +16,8 @@ import pytest
 
 from headstart.search import (
     EMPLOYMENT_TYPES,
+    RESULT_COLUMNS,
+    SORT_COLUMNS,
     JobSearch,
     build_filter,
     eval_filter,
@@ -263,7 +265,11 @@ class _Query:
     def metric(self, _m):
         return self
 
-    def select(self, _cols):
+    def select(self, cols):
+        # lancedb raises `columns must be a list or a dictionary` on a tuple, and the browse
+        # branch shipped one — green here, 500 in production, because this fake took anything.
+        assert isinstance(cols, (list, dict)), f"lancedb rejects {type(cols).__name__}"
+        self._t.last_select = list(cols)
         return self
 
     def where(self, clause, prefilter=False):
@@ -297,6 +303,7 @@ class _Table:
         self.last_k = None
         self.last_offset = None
         self.last_order = None
+        self.last_select = None
 
     def search(self, *args, **kwargs):
         self.last_query = args[0] if args else None  # None => a browse, not a search
@@ -816,3 +823,65 @@ def test_sorting_a_ranked_search_still_paginates_without_repeating():
     second = searcher.run({"q": "backend", "sort": "posted", "k": "2", "page": "2"})
     assert [r["id"] for r in first] == ["d", "c"]
     assert [r["id"] for r in second] == ["b", "a"]
+
+
+# ── the served projection (ADR-0084's window, re-costed) ─────────────────────────────────────
+
+
+def test_a_query_asks_only_for_the_columns_the_response_is_built_from():
+    """The sorted-query path materialises 2,000 rows, so what each row carries is the cost.
+
+    Without this the scan returned every column — above all the 768-float `vector`, which is the
+    bulk of the payload — and threw it away one line later. `RESULT_COLUMNS` carries the measured
+    figures; this test pins the behaviour rather than restating them. `_distance` is named
+    explicitly because `score` is that value and lancedb warns its auto-projection "will change
+    in the future".
+    """
+    searcher, table = _searcher()
+    searcher.run({"q": "backend"})
+    assert table.last_select is not None, "the scan asked for every column"
+    assert "_distance" in table.last_select
+    assert "vector" not in table.last_select
+    assert set(table.last_select) - {"_distance"} == set(searcher.projection)
+
+
+def test_a_browse_asks_for_the_projection_alone():
+    """No vector means no `_distance`, and nothing else is needed either.
+
+    An `order_by` over a projected scan plans fine so long as the ordering column is in the
+    projection — see `test_every_sortable_column_is_projected`. A `_rowid` briefly lived here,
+    justified by a planning error ("TakeExec requires the input plan to have a column named
+    `_rowaddr` or `_rowid`") that a probe had produced only because *its* projection left the
+    ordering column out.
+    """
+    searcher, table = _searcher()
+    searcher.run({})
+    assert table.last_select == list(searcher.projection)
+    assert "_distance" not in table.last_select
+
+
+def test_every_sortable_column_is_projected():
+    """The invariant the browse path rests on: anything `run` can order by must be a column it
+    also asked for. Leave one out and LanceDB fails planning outright rather than degrading, so
+    this is what stands between a new sort option and a 500 on every browse."""
+    # Asserted against RESULT_COLUMNS, not against a searcher built on the fake's toy schema:
+    # filtering by that schema silently excused `posted_at` and `id`, and the test stayed green
+    # with BOTH removed from the constant — while dropping `id` alone 500s every browse.
+    orderable = set(SORT_COLUMNS.values()) | {"first_seen", "id"}
+    assert orderable <= set(RESULT_COLUMNS), (
+        f"orderable but not projected: {sorted(orderable - set(RESULT_COLUMNS))}"
+    )
+
+
+def test_the_projection_is_narrowed_to_columns_the_table_actually_has():
+    """`select()` RAISES on a column the table lacks, and half of `RESULT_COLUMNS` arrive by
+    migration (`first_seen`, the ADR-0082 salary columns). Naming one unconditionally would turn
+    ADR-0031's dark-until-migrated rule into a 500 on every search, so the projection is
+    intersected with the live schema once, at construction.
+    """
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["id", "ats", "title", "url"])
+    searcher = JobSearch(_Model(), table)
+    assert searcher.projection == ("id", "title", "ats", "url")
+    searcher.run({"q": "x"})  # must not raise
+    assert set(table.last_select) == {"id", "title", "ats", "url", "_distance"}

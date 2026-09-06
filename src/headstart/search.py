@@ -105,6 +105,56 @@ ETYPE_CLAUSES = {
 }
 
 
+#: Exactly the columns :meth:`JobSearch.run` reads to build a result row — the projection the
+#: served query asks for, rather than every column the table holds.
+#:
+#: **This is a latency fix, not tidiness.** Without it the sorted-query path materialises
+#: `max_k * max_page` = 2,000 whole rows and throws all but these fields away one line later.
+#: The 768-float `vector` is the bulk of that payload — a 2,000-row window costs 331 ms whole
+#: against 162 ms with only the vector dropped — and a stored `description` (ADR-0104) adds to it
+#: wherever the table has one.
+#:
+#: Measured through :meth:`JobSearch.run` on a 318,003-row table carrying **no index**, which is
+#: the shape production is in, and the basis every figure here and in ADR-0084's amendment uses:
+#:
+#: ===================================  =========  ========
+#: path                                 before     after
+#: ===================================  =========  ========
+#: query + sort (the 2,000-row window)  420.6 ms   256.5 ms
+#: browse, no query                     115.9 ms    60.7 ms
+#: query, no sort — one page of 20      105.0 ms   103.7 ms
+#: ===================================  =========  ========
+#:
+#: The last row is the control: with 20 rows to carry, projecting is worth nothing, which is what
+#: shows the saving is per-row payload rather than anything about the query. An earlier draft of
+#: these numbers was taken on a local snapshot that had been given an IVF_PQ index by an unrelated
+#: benchmark, and read 264.9 -> 83.6 ms; a faster search makes the payload a larger share, so it
+#: flattered the fix.
+#:
+#: Intersected with the live schema in :meth:`JobSearch.__init__`, never used raw: `select()`
+#: **raises** on a column the table lacks, and five of these arrive by migration
+#: (`first_seen`, the ADR-0082 salary columns). Naming one unconditionally would turn
+#: ADR-0031's dark-until-migrated rule into a 500 on every search.
+RESULT_COLUMNS = (
+    "id",
+    "title",
+    "company",
+    "location",
+    "remote",
+    "employment_type",
+    "min_years",
+    "salary",
+    "min_salary_annual",
+    "max_salary_annual",
+    "salary_currency",
+    "salary_source",
+    "ats",
+    "posted_at",
+    "first_seen",
+    "url",
+)
+
+
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
 # ranking a vector search already applies and asking for it means adding no ordering at all.
@@ -539,6 +589,9 @@ class JobSearch:
         # column arrives with the first `index sync` after that ADR, and the UI disables the
         # scope until it does rather than 500ing on it.
         self.has_description = "description" in table.schema.names
+        #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
+        #: for why the intersection is mandatory rather than defensive.
+        self.projection = tuple(c for c in RESULT_COLUMNS if c in table.schema.names)
         # The currency whitelist for the ADR-0082 salary bracket, learned the same way and for
         # the same reason as `atses`: it lands in a where-clause, so it is matched against what
         # the table holds rather than interpolated from the query string.
@@ -656,6 +709,18 @@ class JobSearch:
             )  # no vector: a plain, filtered scan (ADR-0074)
         if where:
             search = search.where(where, prefilter=True)
+        # Ask only for the columns the response is built from (:data:`RESULT_COLUMNS`).
+        # `_distance` is named explicitly rather than left to lancedb's auto-projection, which
+        # warns that it "will change in the future" and stop supplying it — and `score` is that
+        # value. Nothing extra is needed on the browse side: an `order_by` over a projected scan
+        # plans fine *provided the ordering column is in the projection*, which
+        # `test_every_sortable_column_is_projected` pins. (Leave one out and planning fails with
+        # "TakeExec requires the input plan to have a column named `_rowaddr` or `_rowid`" — the
+        # error that briefly bought a `_rowid` here, on a probe whose projection was the thing
+        # at fault.)
+        search = search.select(
+            [*self.projection, "_distance"] if query else [*self.projection]
+        )
         if not query and not sort:
             # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
             # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`
@@ -691,9 +756,11 @@ class JobSearch:
             #
             # The window is the whole result set as far as anyone can tell: `max_k * max_page`
             # is exactly what ADR-0074's clamp lets pagination address, so a row outside it
-            # was already unreachable by any request. Measured 2026-08-25 on a 316,606-row
-            # table: 2.7 ms for one page against 9.2 ms for the full 2,000-row window, so
-            # keeping the query costs ~6.5 ms rather than a redesign.
+            # was already unreachable by any request. The window is not free — measured
+            # through this method on a 318,003-row unindexed table, it is 420.6 ms against
+            # 105.0 ms for a single page — but `select()` above is what pays for it, taking it
+            # to 256.5 ms without touching the shape. (ADR-0084 recorded "2.7 ms … 9.2 ms …
+            # ~6.5 ms" here on 2026-08-25; its amendment carries why that no longer holds.)
             #
             # It is NOT a global sort, and the UI says so: a Job older than the 2,000th-best
             # match cannot appear. That is the honest shape of "newest among your best
