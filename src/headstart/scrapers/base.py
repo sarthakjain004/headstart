@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
-from headstart import fanout_stats, http, log, spare_egress
+from headstart import company_name, fanout_stats, http, log, spare_egress
 from headstart.models import Job
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
@@ -273,9 +273,54 @@ class BaseScraper(ABC):
     def fetch_raw(self) -> Any:
         return json.loads(self._get())
 
+    #: The page whose ``<title>`` carries this Board's company name, or None for an ATS that has
+    #: no such page. Overridden by the four scrapers `headstart.company_name` has evidence for;
+    #: everything else keeps serving its slug, exactly as before.
+    def board_page(self) -> str | None:
+        return None
+
+    def resolve_company(self) -> None:
+        """Replace the slug standing in for this Board's company with its real name, if we can.
+
+        Called from :meth:`fetch`, not :meth:`parse`, because it makes a request and ``parse`` is
+        pure — that split is what lets the parse tests run against recorded fixtures.
+
+        One request per Board, never per Job, and every failure path leaves ``self.company``
+        exactly as it was: no ``board_page``, a request that raises, a title this ATS's patterns
+        cannot read. A name is only ever *upgraded*, so the worst case is today's behaviour.
+        """
+        if self.company != self.slug:
+            return  # the ledger already gave a real name; it outranks a page title
+        page = self.board_page()
+        if not page:
+            return
+        try:
+            # `http.fetch` directly, not `self._get`: that method's return type is not the same
+            # across subclasses — eightfold's override hands back the `Response` where the base
+            # returns `.text` — and going through it fed a `Response` to the title parser and
+            # broke every eightfold Board. Caught end to end against live boards, not by the
+            # suite, which passed throughout.
+            response = http.fetch(
+                "GET",
+                page,
+                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+                timeout=30,
+                **self._egress(),
+            )
+            html_text = response.text if response.status_code == 200 else None
+        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+            return
+        name = company_name.from_title(
+            self.ats, company_name.title_of(html_text), self.slug
+        )
+        if name:
+            self.company = name
+
     def fetch(self) -> list[Job]:
         scraped_at = datetime.now(UTC).isoformat()
-        return self.parse(self.fetch_raw(), scraped_at)
+        raw = self.fetch_raw()
+        self.resolve_company()
+        return self.parse(raw, scraped_at)
 
     @staticmethod
     def fan_out(
