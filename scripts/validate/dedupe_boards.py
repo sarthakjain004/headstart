@@ -98,6 +98,17 @@ def main() -> int:
     ap.add_argument("--limit", type=int, help="probe only the first N live Boards")
     args = ap.parse_args()
 
+    # `write` replaces the ledger, and a limited scan has only seen part of the ATS — so applying
+    # one would delete every alias row outside the slice, silently and with a clean-looking
+    # "wrote N alias row(s)". `--limit` exists to smoke-test the probe path; refuse the pairing
+    # rather than trust nobody ever types it.
+    if args.limit and args.apply:
+        raise SystemExit(
+            "--limit is for smoke-testing the probe; --apply rewrites the whole ledger "
+            "from what this run saw, so a partial scan would delete the rows it never "
+            "probed. Run the full scan to apply."
+        )
+
     scraper_cls = SCRAPERS.get(args.ats)
     if scraper_cls is None:
         raise SystemExit(f"no scraper for ats {args.ats!r}")

@@ -74,6 +74,12 @@ group the ledger by the host it lands on.
   `slug_from()`, which are defaulted in `base.py` and overridden where an ATS disagrees, so the
   seam is the one the codebase already uses for per-ATS identity. It is built now with one
   adapter because the second is measured and deferred, not hypothetical.
+  **The default carries a contract worth stating: it returns a host, and the grouping compares
+  that against the ATS's own `slug`, so the default only works where the slug *is* a host.** It is
+  for SuccessFactors (slug = vanity host); Workday's slug is a whole careers URL and Zoho's a host
+  plus path, so on those every key would fall outside the live set and the whole ledger would come
+  back labelled `migrated` — an empty result rather than an error. Those ATSes need an override in
+  their own slug space, and `dedupe_boards.py` warns when a run's shape suggests this happened.
 - **Grouping is a plain group-by, not union-find.** The general entity-resolution answer to
   transitive matches is a connected-components pass, and it is not needed here: the HTTP client
   follows the whole redirect chain, so `A → B → C` already yields `alias_key(A) = C`. The
