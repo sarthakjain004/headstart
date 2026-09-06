@@ -9,6 +9,10 @@ filter actually responsible instead of leaving the user to guess.
 
 from __future__ import annotations
 
+import inspect
+import re
+from pathlib import Path
+
 import pytest
 
 from headstart import facets
@@ -185,6 +189,20 @@ def test_the_runtime_facts_of_the_index_are_never_offered_as_droppable():
     )
 
 
+def test_a_date_range_is_never_offered_as_droppable():
+    """The Matches tab's ranges reach `/search` under keys the Search tab has no control for,
+    so naming one would print a raw key beside a "remove it" button that removes nothing —
+    `dropFilter` clears through `CONTROL`, which holds no id for them. The generic "try
+    loosening a filter" fallback is the honest answer instead."""
+
+    def rule(where):
+        return 0 if where and "posted_at >=" in where else 10
+
+    out = facets.counts(_CountingTable(rule), _kwargs(posted_after="2026-08-01"))
+    assert out["total"] == 0
+    assert out["blocking"] is None
+
+
 def test_the_salary_facet_stays_dark_without_the_salary_columns():
     out = facets.counts(_CountingTable(), _kwargs(has_min_salary_annual=False))
     assert "has_salary" not in out["facets"]
@@ -311,3 +329,49 @@ def test_sorting_by_posted_narrows_the_counts_the_same_way_it_narrows_the_list()
     table = _CountingTable()
     facets.counts(table, _kwargs(posted_sortable=True))
     assert all("posted_at LIKE" in (c or "") for c in table.seen if c)
+
+
+APP_JS = Path(__file__).resolve().parents[1] / "src/headstart/ui/static/app.js"
+
+
+def _js_decl(name: str) -> str:
+    """The right-hand side of ``const <name> = …;`` in app.js, as raw text.
+
+    There is no import seam between this module's deny-list and the browser's own maps, and the
+    check below spans exactly that gap, so the JS is read rather than run. `tests/js/` does
+    evaluate app.js properly, but it cannot see `build_filter`'s parameters — the half that has
+    to drive the comparison.
+    """
+    decl = re.search(
+        rf"^const {name} = (.*?);$", APP_JS.read_text(), re.MULTILINE | re.DOTALL
+    )
+    assert decl, f"app.js no longer declares `const {name}`"
+    return decl.group(1)
+
+
+def test_every_nameable_filter_is_labelled_and_clearable_in_the_ui():
+    """A filter `_blocking` can name needs a label AND a control, or the empty state prints a
+    raw key beside a "remove it" button that removes nothing.
+
+    The two lists are hand-maintained in different languages, so an omission is otherwise
+    silent — which is how the Matches tab's four date ranges came to be nameable with neither.
+    """
+    labels = set(re.findall(r"(\w+)\s*:", _js_decl("LABELS")))
+    control = set(re.findall(r"(\w+)\s*:", _js_decl("CONTROL")))
+    # dropFilter() clears the salary bracket through its two bounds, so its members need no
+    # control of their own.
+    bracket = set(re.findall(r"'([^']+)'", _js_decl("BRACKET")))
+    nameable = set(inspect.signature(build_filter).parameters) - set(
+        facets.NEVER_BLOCKING
+    )
+    for key in sorted(nameable):
+        assert key in labels, (
+            f"{key} can be the Blocking filter but has no LABELS entry"
+        )
+        assert key in control or key in bracket, (
+            f"{key} can be the Blocking filter but dropFilter() has nothing to clear"
+        )
+    # ...and the other way: a filter that gains a Search-tab control has to leave the deny-list,
+    # or it stays silently un-nameable. LABELS is deliberately not checked in this direction —
+    # `kw_in` is labelled for the active-filter pills while being denied as a blocker.
+    assert not control & set(facets.NEVER_BLOCKING)
