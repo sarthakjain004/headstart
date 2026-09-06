@@ -540,7 +540,7 @@ fan-out is not a conservative simplification; it is the one shape that cannot ex
 
 `proxy_for_async` polls the gate instead, leaving the loop free, and `proxy_url` goes to a thread.
 On the same harness, same cadence, staggered latencies: pages lost 18–23 of 48 → **0 of 48**,
-severed connections 122–149 → **0**, wall 449–551s → **35–38s**, and the drain completes in 8.0–8.4s
+severed connections 122–149 → **0**, wall 449–551s → **35–38s** (12–16x), and the drain completes in 8.0–8.4s
 against an 8.67s slowest page instead of pinning at 20.0s.
 
 `_DRAIN_CAP` stays at 20.0. Tightening it was the obvious response to the wall-clock cost and would

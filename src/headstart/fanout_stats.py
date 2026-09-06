@@ -16,11 +16,11 @@ batch walls overshoots the shard's own wall by design; `req/s` here is the throu
 at that width, which is the thing a width decides. Comparing it across the widths of one fan-out is
 the whole point, and that comparison is unaffected.
 
-**One ATS's detail passes merge into one row.** Eightfold calls `fan_out_async` from two places
-(`eightfold.py:284` and `:351`) and both land in `eightfold details`. Accepted rather than
-overlooked: both resolve their width from the same clamp, so the row stays honest about
-`(ATS, width)`, and separating them would thread a label through a shared helper for a distinction
-no width decision turns on (ADR-0110).
+**One ATS's detail passes merge into one row.** Eightfold calls `fan_out_async` from two places in
+`eightfold.py` and both land in `eightfold details`. Accepted rather than overlooked: both resolve
+their width from the same clamp, so the row stays honest about `(ATS, width)`, and separating them
+would thread a label through a shared helper for a distinction no width decision turns on
+(ADR-0110).
 
 Read it as Little's Law. `streams` is the mean occupancy actually achieved (item-seconds ÷ batch
 wall): near the ceiling every stream is busy; far below it the width is not the binding constraint.
@@ -158,10 +158,13 @@ def _compare(
     width_x = widths[0] / widths[-1]
     rate_x = rate_wide / rate_narrow
     lat_x = (wide["busy"] / wide["items"]) / (narrow["busy"] / narrow["items"])
-    # Bands, not a tuned threshold. Both live measurements of the 25-vs-12 pair returned
-    # throughput ratios *below* 1.0 — 0.98x and 0.88x, i.e. the wider fan-out was slower — so at
-    # or under 1.05x reads as queueing with room to spare. 1.15x is the first ratio clear of that
-    # observed spread by enough to act on. The middle band deliberately declines to recommend.
+    # The cut-points are **chosen, not derived** — 1.05x and 1.15x are round numbers either side
+    # of "no change", picked to make the line legible. They could not be derived: the only
+    # measurements in hand are two probes of one host on one day (0.98x and 0.88x), which ADR-0110
+    # says are a reason to instrument every shard rather than to move a constant, and the same
+    # evidence cannot be too thin to move `_WALLED_STREAM_WIDTH` and thick enough to calibrate the
+    # line recommending it. So the bands label a direction; the ratio beside them is the evidence,
+    # and it takes agreement across runs before anything moves. The middle band recommends nothing.
     verdict = (
         "throughput scaled — room to widen"
         if rate_x >= 1.15

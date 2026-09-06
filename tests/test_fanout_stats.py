@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 from headstart import fanout_stats
 
 
@@ -48,32 +46,40 @@ def test_a_batch_that_raises_is_still_recorded() -> None:
     assert fanout_stats.stats()[("workday pages", 12)]["items"] == 1
 
 
+def _row(fanout: str, width: int, *, items: float, busy: float, wall: float) -> None:
+    """Seed one (fan-out, width) row directly.
+
+    The verdict tests do NOT drive `batch()`. Its `wall` is real elapsed time, so a test that
+    sleeps to create one is asserting on the OS scheduler: the first version of these did exactly
+    that and flipped verdict roughly once in twenty runs, because `rate_x` reduces to the ratio of
+    two ~50ms sleeps. `_compare` is arithmetic over four numbers, so give it the four numbers.
+    """
+    fanout_stats._rows[(fanout, width)] = {
+        "batches": 1.0,
+        "items": items,
+        "busy": busy,
+        "wall": wall,
+    }
+
+
 def test_the_verdict_calls_flat_throughput_queueing() -> None:
-    """The measured shape this exists to surface: 2.1x the streams for ~1.0x the throughput."""
-    with fanout_stats.batch("workday pages", 25) as done:
-        for _ in range(100):
-            done(10.3)
-        time.sleep(0.05)
-    with fanout_stats.batch("workday pages", 12) as done:
-        for _ in range(100):
-            done(4.7)
-        time.sleep(0.05)
+    """The measured shape this exists to surface: ~2.1x the streams for ~1.0x the throughput."""
+    _row("workday pages", 25, items=100, busy=1030.0, wall=45.8)
+    _row("workday pages", 12, items=100, busy=470.0, wall=44.7)
     verdict = [line for line in fanout_stats.report() if "bought" in line]
     assert len(verdict) == 1
-    assert "queueing, not throughput" in verdict[0]
+    assert "queueing, not throughput" in verdict[0], verdict[0]
     assert "2.1x the streams" in verdict[0]
+    assert "0.98x the throughput" in verdict[0]
 
 
-def test_a_thin_sample_reports_its_row_but_no_verdict() -> None:
-    """Three postings on two Boards must not produce a confident-looking recommendation — but the
-    row itself still prints, so a small sample is visible rather than silently dropped."""
-    with fanout_stats.batch("workday pages", 25) as done:
-        done(1.0)
-    with fanout_stats.batch("workday pages", 12) as done:
-        done(1.0)
-    lines = fanout_stats.report()
-    assert len(lines) == 2
-    assert not [line for line in lines if "bought" in line]
+def test_the_verdict_says_widen_when_throughput_actually_scaled() -> None:
+    """The other direction has to be reachable, or the line only ever says one thing."""
+    _row("eightfold details", 25, items=200, busy=400.0, wall=20.0)
+    _row("eightfold details", 12, items=100, busy=400.0, wall=20.0)
+    verdict = [line for line in fanout_stats.report() if "bought" in line]
+    assert len(verdict) == 1
+    assert "room to widen" in verdict[0], verdict[0]
 
 
 def test_reset_clears_the_totals() -> None:

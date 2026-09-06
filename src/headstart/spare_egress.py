@@ -53,6 +53,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import socket
+import statistics
 import subprocess
 import sys
 import threading
@@ -390,16 +391,18 @@ def report() -> list[str]:
                 if spins.get(why)
             )
         )
-    if _drain_waits:
+    with _drain_lock:
         waits = sorted(_drain_waits)
-        capped = _drains.get("drain capped", 0)
+        capped = _drains_capped
+        cap_seen = _drain_cap_seen
+    if waits:
         # `capped` is the number that matters, and it should be 0: the drain is meant to return
         # when the tunnel empties, so a rotation sitting on `_DRAIN_CAP` means either the tail has
         # outgrown the cap or something is stopping the tunnel emptying — the shape that made
         # every drain cost its full cap before ADR-0063's 2026-09-05 amendment.
         lines.append(
-            f"spare egress drains: {len(waits)}, median {waits[len(waits) // 2]:.1f}s, "
-            f"max {waits[-1]:.1f}s, {capped} hit the {_DRAIN_CAP:.0f}s cap"
+            f"spare egress drains: {len(waits)}, median {statistics.median(waits):.1f}s, "
+            f"max {waits[-1]:.1f}s, {capped} hit the {cap_seen:.0f}s cap"
         )
     addresses = egress_ips()
     seen = {k[3:] for k in addresses if k.startswith("ip:")}
@@ -564,7 +567,7 @@ _inflight_cv = threading.Condition()
 #: resolved its route through the blocking :func:`proxy_for` and froze the event loop that would
 #: have retired those requests. Every drain then ran the full cap and restarted through the cohort
 #: anyway. With :func:`proxy_for_async` in place the same harness drains in 8.0-8.4s against a
-#: 8.67s slowest page, loses 0 of 48 pages where it lost 18-23, and finishes 12-14x faster; the cap
+#: 8.67s slowest page, loses 0 of 48 pages where it lost 18-23, and finishes 12-16x faster; the cap
 #: is never reached. Left at 20.0 deliberately: it is a backstop for a genuinely slow cohort — the
 #: tunnel carries every walled group at once, so aggregate concurrency can exceed one group's
 #: clamped width — and lowering it below the real tail is the cliff the 12.0s draft already fell
@@ -572,13 +575,17 @@ _inflight_cv = threading.Condition()
 #: max 9.19s (n=100).
 _DRAIN_CAP = 20.0
 _rotations: Counter[str] = Counter()
-#: Every drain's wait in seconds, and its two counts. A list rather than a running max: the shard
-#: report prints the median beside the max, and a max alone cannot say whether one slow cohort or
-#: every rotation is paying. Bounded by the rotation count, which `_ROTATION_COOLDOWN` bounds.
+#: Every drain's measured wait in seconds, and how many of them ran out of cap. A list rather than
+#: a running max: the shard report prints the median beside the max, and a max alone cannot say
+#: whether one slow cohort or every rotation is paying. Bounded by the rotation count, which
+#: `_ROTATION_COOLDOWN` bounds.
 #:
 #: Guarded by their own lock rather than `_rotation_lock`, which `rotate` holds across `_drain`.
 _drain_waits: list[float] = []
-_drains: Counter[str] = Counter()
+_drains_capped = 0
+#: The cap the last drain was given. Reported rather than `_DRAIN_CAP` so the line says what was
+#: actually in force — identical in production, where `rotate` is the only caller, but honest.
+_drain_cap_seen = 0.0
 _drain_lock = threading.Lock()
 #: Which Board each rotation request came from. Every caller of :func:`rotate` has just been
 #: refused *through* the spare egress, so this is the set of Boards actually consuming the IP
@@ -711,13 +718,13 @@ def _drain(cap: float) -> None:
         while _inflight:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                _note_drain(cap, capped=True)
+                _note_drain(time.monotonic() - started, cap, capped=True)
                 return
             _inflight_cv.wait(remaining)
-    _note_drain(time.monotonic() - started, capped=False)
+    _note_drain(time.monotonic() - started, cap, capped=False)
 
 
-def _note_drain(waited: float, *, capped: bool) -> None:
+def _note_drain(waited: float, cap: float, *, capped: bool) -> None:
     """Record what one drain cost, so the claim `_DRAIN_CAP` rests on stays checkable.
 
     That claim — the drain returns when the tunnel empties, so the cap is a backstop and never
@@ -730,11 +737,12 @@ def _note_drain(waited: float, *, capped: bool) -> None:
     # Its own lock, emphatically not `_rotation_lock`: `rotate` already holds that across the
     # call to `_drain`, and it is a plain `threading.Lock`, so reaching for it here is a
     # self-deadlock that hangs the shard rather than failing it.
+    global _drain_cap_seen, _drains_capped
     with _drain_lock:
-        _drains["drained"] += 1
         if capped:
-            _drains["drain capped"] += 1
+            _drains_capped += 1
         _drain_waits.append(round(waited, 2))
+        _drain_cap_seen = cap
 
 
 def generation() -> int:
@@ -1058,7 +1066,9 @@ def reset() -> None:
         _last_rotation, \
         _rotation_generation, \
         _last_egress_ip, \
-        _inflight
+        _inflight, \
+        _drain_cap_seen, \
+        _drains_capped
     with _lock:
         _resolved = False
         _proxy = None
@@ -1070,7 +1080,8 @@ def reset() -> None:
         _traffic.clear()
     with _drain_lock:
         _drain_waits.clear()
-        _drains.clear()
+        _drains_capped = 0
+        _drain_cap_seen = 0.0
     with _rotation_lock:
         _rotations.clear()
         _rotation_causes.clear()

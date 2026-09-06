@@ -803,7 +803,7 @@ def test_a_drain_that_times_out_is_counted_as_capped():
     finally:
         with spare_egress._inflight_cv:
             spare_egress._inflight = 0
-    assert spare_egress._drains["drain capped"] == 1
+    assert spare_egress._drains_capped == 1
     assert "1 hit the" in next(
         ln for ln in spare_egress.report() if ln.startswith("spare egress drains")
     )
