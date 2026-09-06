@@ -52,13 +52,25 @@ helper for a distinction no width decision turns on.
 The clamp becomes measurable in production rather than argued from. Two probes taken while building
 this already disagree with the constant's premise — against one Workday CXS host through the
 tunnel, width 25 bought **0.98x** the throughput of width 12 at 2.2x the latency, and driving the
-real paginate through the module agreed at 0.88x. Both say the wider fan-out is slower.
+real paginate through the module rather than a side probe agreed at 0.96x. Both say the wider
+fan-out is slower. (A third, uncaptured run read 0.88x; it is not quoted here because it was not
+recorded and did not reproduce — the spread across 0.88–0.98x is itself the reason two probes
+cannot settle a constant.)
 
 That is deliberately **not** acted on here. Two probes of one host on one day are a reason to
 instrument every shard, not to move a constant — the same standard ADR-0063 sets for an egress
 opt-in, and the one freshteam (#311) and personio (#312) each failed by generalising from an
 aggregate. The constant moves when the shards themselves have said so across runs.
 
-The cost is one context manager per batch and one `time.monotonic()` per item, inside the semaphore
-so a wait for a slot counts as queueing rather than stream time. A shard whose Boards are all
-single-request prints nothing.
+The cost is one context manager per batch and two `time.monotonic()` calls per item, inside the semaphore
+so a wait for a slot counts as queueing rather than stream time.
+
+**What stays silent, and it is more than the obvious case.** A shard whose Boards are all
+single-request prints nothing, as intended — but so does one that fanned out entirely on the *sync*
+path. `BaseScraper.fan_out` (thread pool) and `WorkdayScraper._paginate_sync` are not instrumented,
+because neither consults `stream_width`, so neither can produce the two-point curve this exists for.
+That is a real blind spot rather than a rounding error: a zwayam-only shard calls `fan_out`
+unconditionally with no async twin, and any shard run with `HEADSTART_ASYNC_FANOUT=0` (ADR-0016's
+kill switch) takes the sync path throughout. Both fan out wide and report nothing. A single
+`streams/width` row would still say whether their workers are saturated; it is deferred, not
+overlooked, and an empty report is therefore not evidence that a shard fanned out narrowly.

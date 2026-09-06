@@ -69,7 +69,7 @@ def test_the_verdict_calls_flat_throughput_queueing() -> None:
     verdict = [line for line in fanout_stats.report() if "bought" in line]
     assert len(verdict) == 1
     assert "queueing, not throughput" in verdict[0], verdict[0]
-    assert "2.1x the streams" in verdict[0]
+    assert "2.1x the width" in verdict[0]
     assert "0.98x the throughput" in verdict[0]
 
 
@@ -80,6 +80,16 @@ def test_the_verdict_says_widen_when_throughput_actually_scaled() -> None:
     verdict = [line for line in fanout_stats.report() if "bought" in line]
     assert len(verdict) == 1
     assert "room to widen" in verdict[0], verdict[0]
+
+
+def test_the_middle_band_recommends_nothing() -> None:
+    """Between the two cut-points the honest answer is that the measurement does not say. Tested
+    because an untested band is one nobody has ever seen the wording of."""
+    _row("workday pages", 25, items=110, busy=200.0, wall=10.0)
+    _row("workday pages", 12, items=100, busy=200.0, wall=10.0)
+    verdict = [line for line in fanout_stats.report() if "bought" in line]
+    assert len(verdict) == 1
+    assert "mixed" in verdict[0], verdict[0]
 
 
 def test_reset_clears_the_totals() -> None:

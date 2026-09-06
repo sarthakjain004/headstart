@@ -33,9 +33,10 @@ Then, for one fan-out:
 Measured 2026-09-05 against one Workday CXS host through the tunnel — the shape this exists to
 surface — width 12 served 100 pages in 44.7s (p50 4.68s) and width 25 served 100 in 45.8s (p50
 10.30s): **2.1x the streams bought 0.98x the throughput at 2.2x the latency**. Driving the real
-paginate through this module a second time agreed, at 0.88x. Both runs say the wider fan-out is
-slower, which is the answer `_WALLED_STREAM_WIDTH` never had — but two probes of one host on one
-day are a reason to instrument every shard, not to move the constant.
+paginate through this module rather than a side probe agreed, at 0.96x
+(`experiment/workday-rotation-severed-pages/artifacts/2026-09-06_width-25-vs-12-via-fanout-stats.txt`).
+Both say the wider fan-out is slower, which is the answer `_WALLED_STREAM_WIDTH` never had — but two
+probes of one host are a reason to instrument every shard, not to move the constant.
 """
 
 from __future__ import annotations
@@ -149,22 +150,21 @@ def _compare(
     wide, narrow = rows[(fanout, widths[0])], rows[(fanout, widths[-1])]
     if wide["items"] < _MIN_ITEMS or narrow["items"] < _MIN_ITEMS:
         return []
-    if not (wide["wall"] and narrow["wall"] and wide["items"] and narrow["items"]):
-        return []
+    if not (wide["wall"] and narrow["wall"]):
+        return []  # a batch that recorded items in no measurable time says nothing about a rate
     rate_wide = wide["items"] / wide["wall"]
     rate_narrow = narrow["items"] / narrow["wall"]
-    if not rate_narrow:
-        return []
     width_x = widths[0] / widths[-1]
     rate_x = rate_wide / rate_narrow
     lat_x = (wide["busy"] / wide["items"]) / (narrow["busy"] / narrow["items"])
-    # The cut-points are **chosen, not derived** — 1.05x and 1.15x are round numbers either side
-    # of "no change", picked to make the line legible. They could not be derived: the only
-    # measurements in hand are two probes of one host on one day (0.98x and 0.88x), which ADR-0110
-    # says are a reason to instrument every shard rather than to move a constant, and the same
-    # evidence cannot be too thin to move `_WALLED_STREAM_WIDTH` and thick enough to calibrate the
-    # line recommending it. So the bands label a direction; the ratio beside them is the evidence,
-    # and it takes agreement across runs before anything moves. The middle band recommends nothing.
+    # The cut-points are **chosen, not derived** — 1.05x is a gain small enough to be noise and
+    # 1.15x one clearly worth acting on, picked to make the line legible. They could not be
+    # derived: the only measurements in hand are two probes of one host (0.98x and 0.96x), which
+    # ADR-0110 says are a reason to instrument every shard rather than to move a constant, and the
+    # same evidence cannot be too thin to move `_WALLED_STREAM_WIDTH` and thick enough to calibrate
+    # the line recommending it. So the bands label a direction; the ratio beside them is the
+    # evidence, and it takes agreement across runs before anything moves. The middle band
+    # recommends nothing, which is the honest answer between those two.
     verdict = (
         "throughput scaled — room to widen"
         if rate_x >= 1.15
@@ -174,7 +174,7 @@ def _compare(
     )
     return [
         (
-            f"concurrency {fanout}: {width_x:.1f}x the streams bought {rate_x:.2f}x the "
+            f"concurrency {fanout}: {width_x:.1f}x the width bought {rate_x:.2f}x the "
             f"throughput at {lat_x:.1f}x the latency — {verdict}"
         )
     ]

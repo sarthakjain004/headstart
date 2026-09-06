@@ -551,8 +551,9 @@ the cliff the 12.0s draft already fell off.
 
 **"Why not drop the drain and just let the refund retry them?"** Because that is what the code
 already did, and it is what the 105–170 lost pages per run *were*. `http._severed_by_our_rotation`
-refunds an attempt whenever our own rotation killed a proxied request, and `proxy_for` makes that
-retry wait for the restart, so the severed page does go out again on the fresh IP. It is not enough
+refunds an attempt whenever our own rotation killed a proxied request, and the route resolver
+(`proxy_for`, or `proxy_for_async` on the path these pages actually take) makes that retry wait for
+the restart, so the severed page does go out again on the fresh IP. It is not enough
 for two reasons that compound: the refund is capped at `_MAX_EARNED_ATTEMPTS = 2`, and while a wall
 persists the next rotation arrives every `_ROTATION_COOLDOWN` (5s) against a page that takes 6–13s
 through the tunnel — so the retry is severed too, and the one after it, until the budget is gone.

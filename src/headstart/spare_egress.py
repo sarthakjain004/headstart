@@ -508,8 +508,9 @@ async def proxy_for_async(group: str | None) -> str | None:
     The gate is polled rather than awaited because it is a `threading.Event`, shared with the sync
     callers that must keep blocking on it. :data:`_GATE_POLL` is far below the seconds-long waits
     it is watching, so the poll costs nothing a rotation does not already cost. `proxy_url` goes to
-    a thread instead: it is cached after the first dial, so the hop is only ever paid once per
-    process for real work, and the executor is not held for the long wait.
+    a thread instead: the hop itself is per call, but what it guards — the lock held across the WARP
+    dial — is only ever contended on the first one, so the executor is never held for the long wait
+    the way it would be if the gate wait went there too.
     """
     if not _rides_the_tunnel(group):
         return None
