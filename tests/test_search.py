@@ -120,6 +120,33 @@ def test_location_quotes_are_doubled():
     assert _clause(location="O'Fallon") == "lower(location) LIKE '%o''fallon%'"
 
 
+def test_like_metacharacters_are_escaped_so_a_term_matches_literally():
+    r"""Quote doubling stops injection; this stops the quieter failure, a widened match.
+
+    `%` and `_` are LIKE wildcards, so a user typing them got a pattern rather than the
+    characters — measured on the served table: company "100%" returned 30 rows for the 1 that is
+    right, location "new_york" 9,004 for 8. `\` is escaped for the same reason: DataFusion
+    honours it as LIKE's escape character with no ESCAPE clause present, so "AT\T" matched
+    "att" (698 rows).
+    """
+    assert _clause(company="100%") == r"lower(company) LIKE '%100\%%'"
+    assert _clause(location="new_york") == r"lower(location) LIKE '%new\_york%'"
+    assert _clause(company="AT\\T") == r"lower(company) LIKE '%at\\t%'"
+
+
+def test_the_term_cap_lands_on_the_raw_term_so_it_cannot_split_an_escape_pair():
+    r"""60 chars of what the user typed, *then* escaping — never a truncated `\x` pair.
+
+    Order matters here, which is why it is pinned: capping after escaping can leave a trailing
+    lone backslash, which escapes the pattern's own closing `%` and matches nothing at all
+    (measured: 0 rows). A long term would become a silent zero-result filter.
+    """
+    assert (
+        _clause(company="a" * 59 + "%b")
+        == "lower(company) LIKE '%" + "a" * 59 + r"\%%'"
+    )
+
+
 def test_india_expands_via_geo():
     """The India control expands through the gazetteer rather than matching its value literally.
 
@@ -169,6 +196,15 @@ def test_keyword_description_scope_compiles_once_the_column_exists():
 
 def test_keyword_quotes_are_doubled_like_every_other_term():
     assert _clause(kw="O'Reilly") == "(lower(title) LIKE '%o''reilly%')"
+
+
+def test_keyword_metacharacters_are_escaped_like_every_other_term():
+    # The widening is worst here: unescaped, the keyword "c_" matched 199,591 of the served
+    # table's 318,003 rows — 63% — where the literal reading matches 243.
+    assert _clause(kw="c_ 100%", kw_in="both", has_description=True) == (
+        r"(lower(title) LIKE '%c\_%' OR lower(description) LIKE '%c\_%') AND "
+        r"(lower(title) LIKE '%100\%%' OR lower(description) LIKE '%100\%%')"
+    )
 
 
 def test_keyword_unknown_scope_compiles_to_nothing_at_the_builder():

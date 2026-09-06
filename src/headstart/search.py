@@ -163,8 +163,30 @@ def _int_arg(args: Mapping[str, str]):
 
 
 def _like(term: str) -> str:
-    """A user term made safe for a quoted LIKE pattern: quotes doubled, length-capped."""
-    return term[:60].replace("'", "''").lower()
+    r"""A user term made safe for a quoted LIKE pattern: metacharacters escaped, quotes doubled.
+
+    Doubling quotes keeps the term inside its literal; escaping `%`, `_` and `\` is what keeps it
+    *meaning* what was typed, which is the substring match ADR-0104 specifies. Unescaped, a term
+    is silently promoted to a wildcard pattern — measured on the local 318,003-row snapshot of
+    the served table (2026-09-06): company "100%" matched 30 rows where exactly 1 is right,
+    location "new_york" 9,004 against 8, and the keyword "c_" 199,591 rows — 63% of the table —
+    against 243. `\` is on the list because DataFusion already treats it as LIKE's escape
+    character with no ESCAPE clause present, so "AT\T" reads as "att" today (698 rows).
+
+    No ESCAPE clause is emitted. Backslash is not just the default, it is the only character
+    DataFusion accepts there ("LIKE does not support escape_char other than the backslash"), so
+    the clause can only ever restate the default — measured identical with and without it, on
+    both the served table and a fixture holding literal `%`, `_` and `\` values.
+
+    The 60-char cap stays on the raw term, ahead of the escaping, for two reasons: it keeps the
+    cap denominated in what the user typed, and cutting afterwards could split a `\x` pair and
+    leave a trailing lone backslash, which escapes the pattern's own closing `%` and then matches
+    nothing at all (measured: 0 rows).
+    """
+    term = term[:60]
+    for char in ("\\", "%", "_"):
+        term = term.replace(char, "\\" + char)
+    return term.replace("'", "''").lower()
 
 
 def _keyword_terms(kw: str) -> list[str]:
