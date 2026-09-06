@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Container, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
-from headstart import http, log, spare_egress
+from headstart import fanout_stats, http, log, spare_egress
 from headstart.models import Job
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
@@ -298,7 +299,12 @@ class BaseScraper(ABC):
         concurrency = spare_egress.stream_width(
             self._egress().get("egress_group"), concurrency
         )
-        return asyncio.run(BaseScraper._gather_async(items, fn, concurrency, default))
+        # Recorded against the width in force, not the ceiling above it, so the clamp's two
+        # operating points stay comparable (`headstart.fanout_stats`).
+        with fanout_stats.batch(f"{self.ats} details", concurrency) as item_done:
+            return asyncio.run(
+                BaseScraper._gather_async(items, fn, concurrency, default, item_done)
+            )
 
     @staticmethod
     async def _gather_async(
@@ -306,6 +312,7 @@ class BaseScraper(ABC):
         fn: Callable[[Any, _T], Awaitable[_R]],
         concurrency: int,
         default: _R | None,
+        item_done: Callable[[float], None],
     ) -> list[_R | None]:
         from curl_cffi.requests import AsyncSession
 
@@ -315,10 +322,15 @@ class BaseScraper(ABC):
 
             async def one(index: int, item: _T) -> None:
                 async with sem:
+                    # Timed from inside the semaphore: the wait for a slot is queueing, and
+                    # counting it as busy time would report every width as fully occupied.
+                    started = time.monotonic()
                     try:
                         results[index] = await fn(session, item)
                     except Exception:  # noqa: BLE001 - one item's failure must not sink the batch
                         results[index] = default
+                    finally:
+                        item_done(time.monotonic() - started)
 
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return results

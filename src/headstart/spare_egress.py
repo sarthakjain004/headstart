@@ -50,8 +50,10 @@ negotiation on the critical path. An unregistered client simply fails to connect
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import socket
+import statistics
 import subprocess
 import sys
 import threading
@@ -68,6 +70,7 @@ __all__ = [
     "note_routed",
     "note_settled",
     "proxy_for",
+    "proxy_for_async",
     "proxy_url",
     "report",
     "reset",
@@ -388,6 +391,19 @@ def report() -> list[str]:
                 if spins.get(why)
             )
         )
+    with _drain_lock:
+        waits = sorted(_drain_waits)
+        capped = _drains_capped
+        cap_seen = _drain_cap_seen
+    if waits:
+        # `capped` is the number that matters, and it should be 0: the drain is meant to return
+        # when the tunnel empties, so a rotation sitting on `_DRAIN_CAP` means either the tail has
+        # outgrown the cap or something is stopping the tunnel emptying — the shape that made
+        # every drain cost its full cap before ADR-0063's 2026-09-05 amendment.
+        lines.append(
+            f"spare egress drains: {len(waits)}, median {statistics.median(waits):.1f}s, "
+            f"max {waits[-1]:.1f}s, {capped} hit the {cap_seen:.0f}s cap"
+        )
     addresses = egress_ips()
     seen = {k[3:] for k in addresses if k.startswith("ip:")}
     colos = {k[5:] for k in addresses if k.startswith("colo:")}
@@ -438,22 +454,70 @@ def report() -> list[str]:
     return lines
 
 
+def _rides_the_tunnel(group: str | None) -> bool:
+    """Whether ``group`` is walled and should therefore be routed through the tunnel.
+
+    Split out of :func:`proxy_for` so both the sync and the async route resolvers share one
+    answer to "is this group walled" and differ only in *how they wait* for the gate. Never
+    blocks: one set lookup under a lock held for the length of that lookup.
+    """
+    if group is None:
+        return False
+    with _walled_lock:
+        return group in _walled
+
+
 def proxy_for(group: str | None) -> str | None:
     """The proxy ``group`` should be routed through now, or None to stay on the direct route.
 
     None until the group is walled — so the fast path costs one set lookup — and None *after* it is
     walled if no spare egress can be brought up, in which case the caller degrades to the direct
     route it would have used before this existed.
+
+    **Blocking, and only safe off the event loop.** Both waits below can take
+    :data:`_CONNECT_TIMEOUT` seconds. A coroutine must call :func:`proxy_for_async` instead — see
+    that function for what calling this one on a loop cost.
     """
-    if group is None:
+    if not _rides_the_tunnel(group):
         return None
-    with _walled_lock:
-        if group not in _walled:
-            return None
     # Wait out an in-flight rotation rather than handing back a port the restart has taken away.
     # Bounded: if a rotation overruns, going direct beats blocking the whole shard behind it.
     _gate.wait(timeout=_CONNECT_TIMEOUT)
     return proxy_url()
+
+
+async def proxy_for_async(group: str | None) -> str | None:
+    """:func:`proxy_for` for a coroutine: same answer, without stalling the event loop.
+
+    **This exists because calling the sync one from a coroutine deadlocked the drain.** Both of
+    its waits are blocking — `_gate.wait` for the length of a rotation, and `proxy_url`'s lock
+    across the first WARP dial — and `fetch_async` called it directly on the loop. So the moment a
+    rotation cleared the gate, the next page to start waiting froze the loop, and every request
+    already riding the tunnel froze with it: their `riding_the_tunnel` blocks could not exit, so
+    `_inflight` could not fall, so :func:`_drain` could never see the tunnel empty. It burned its
+    whole :data:`_DRAIN_CAP` and then restarted *through* the requests it was supposed to protect.
+
+    Measured in `experiment/workday-rotation-severed-pages/` (2026-09-05): sampling
+    :func:`in_flight_count` every 0.25s across a drain showed it pinned — 79 consecutive samples
+    reading exactly 1, then another drain reading exactly 2 — for the full 20s, on requests whose
+    own latency tops out at 8.7s. 29 of a trial's drains did this. The harness only missed it
+    because it held every request at one fixed latency, so the whole cohort landed together and
+    the tunnel emptied before anything asked for a route; with the measured *spread* of real page
+    latencies a slot frees mid-drain, and that is all it takes.
+
+    The gate is polled rather than awaited because it is a `threading.Event`, shared with the sync
+    callers that must keep blocking on it. :data:`_GATE_POLL` is far below the seconds-long waits
+    it is watching, so the poll costs nothing a rotation does not already cost. `proxy_url` goes to
+    a thread instead: the hop itself is per call, but what it guards — the lock held across the WARP
+    dial — is only ever contended on the first one, so the executor is never held for the long wait
+    the way it would be if the gate wait went there too.
+    """
+    if not _rides_the_tunnel(group):
+        return None
+    deadline = time.monotonic() + _CONNECT_TIMEOUT
+    while not _gate.is_set() and time.monotonic() < deadline:
+        await asyncio.sleep(_GATE_POLL)
+    return await asyncio.to_thread(proxy_url)
 
 
 #: Rotations are coalesced on a generation counter: sixteen worker threads meeting a walled spare
@@ -497,8 +561,33 @@ _inflight_cv = threading.Condition()
 #: the restart. `proxy_for` bounds only its own *wait* (`_CONNECT_TIMEOUT`), not the gate's closed
 #: duration, so a waiter that times out can still proceed mid-drain. Everything stays bounded, but
 #: the quiescent window is best-effort rather than a guarantee.
+#:
+#: **2026-09-05: the cap is not what this cost, and tightening it would have bought nothing.** The
+#: drain returns the moment the tunnel empties, so its price is the slowest in-flight request, not
+#: this number — but for two runs it read as though the cap were the price, because the async path
+#: resolved its route through the blocking :func:`proxy_for` and froze the event loop that would
+#: have retired those requests. Every drain then ran the full cap and restarted through the cohort
+#: anyway. With :func:`proxy_for_async` in place the same harness drains in 8.0-8.4s against a
+#: 8.67s slowest page, loses 0 of 48 pages where it lost 18-23, and finishes 12-16x faster; the cap
+#: is never reached. Left at 20.0 deliberately: it is a backstop for a genuinely slow cohort — the
+#: tunnel carries every walled group at once, so aggregate concurrency can exceed one group's
+#: clamped width — and lowering it below the real tail is the cliff the 12.0s draft already fell
+#: off. Re-measured through the tunnel at the walled width the same day: p50 4.68s, p95 8.68s,
+#: max 9.19s (n=100).
 _DRAIN_CAP = 20.0
 _rotations: Counter[str] = Counter()
+#: Every drain's measured wait in seconds, and how many of them ran out of cap. A list rather than
+#: a running max: the shard report prints the median beside the max, and a max alone cannot say
+#: whether one slow cohort or every rotation is paying. Bounded by the rotation count, which
+#: `_ROTATION_COOLDOWN` bounds.
+#:
+#: Guarded by their own lock rather than `_rotation_lock`, which `rotate` holds across `_drain`.
+_drain_waits: list[float] = []
+_drains_capped = 0
+#: The cap the last drain was given. Reported rather than `_DRAIN_CAP` so the line says what was
+#: actually in force — identical in production, where `rotate` is the only caller, but honest.
+_drain_cap_seen = 0.0
+_drain_lock = threading.Lock()
 #: Which Board each rotation request came from. Every caller of :func:`rotate` has just been
 #: refused *through* the spare egress, so this is the set of Boards actually consuming the IP
 #: supply — the attribution the shard report could not make before, and the one that decides
@@ -556,6 +645,13 @@ _ROTATION_WAIT_CAP = 10.0
 #: Pause after `systemctl restart` before re-arming proxy mode — the unit is back before the daemon
 #: is listening.
 _RESTART_SETTLE = 2.0
+
+#: How often :func:`proxy_for_async` re-checks the rotation gate. The gate is a
+#: `threading.Event` because sync callers block on it, and a coroutine cannot await one — so the
+#: async side polls. Two orders of magnitude below the wait it is watching (a rotation is seconds,
+#: `_DRAIN_CAP` is 20.0), so it adds no measurable latency to a route resolution while keeping the
+#: event loop free to retire the in-flight requests a drain is waiting on.
+_GATE_POLL = 0.05
 
 #: Held closed for the duration of a rotation. Without it, peers keep firing at a SOCKS5 port that
 #: the restart has just taken away — each one a RequestsError that burns an attempt and can lose a
@@ -617,13 +713,37 @@ def _drain(cap: float) -> None:
     version was reverted. Unproven concurrency machinery on the scrape's critical path is a worse
     trade than a race that is real in principle and unobserved in practice; it stays written down.
     """
-    deadline = time.monotonic() + cap
+    started = time.monotonic()
+    deadline = started + cap
     with _inflight_cv:
         while _inflight:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                _note_drain(time.monotonic() - started, cap, capped=True)
                 return
             _inflight_cv.wait(remaining)
+    _note_drain(time.monotonic() - started, cap, capped=False)
+
+
+def _note_drain(waited: float, cap: float, *, capped: bool) -> None:
+    """Record what one drain cost, so the claim `_DRAIN_CAP` rests on stays checkable.
+
+    That claim — the drain returns when the tunnel empties, so the cap is a backstop and never
+    reached — is exactly the kind that was believed for two runs while the opposite was true: every
+    drain was sitting on the cap because the event loop could not retire the requests it waited on,
+    and nothing counted drains, so nothing said so. A `capped` count above zero means either the
+    tail has grown past the cap or something is blocking the tunnel from emptying again; either way
+    it is the number to look at before touching the constant.
+    """
+    # Its own lock, emphatically not `_rotation_lock`: `rotate` already holds that across the
+    # call to `_drain`, and it is a plain `threading.Lock`, so reaching for it here is a
+    # self-deadlock that hangs the shard rather than failing it.
+    global _drain_cap_seen, _drains_capped
+    with _drain_lock:
+        if capped:
+            _drains_capped += 1
+        _drain_waits.append(round(waited, 2))
+        _drain_cap_seen = cap
 
 
 def generation() -> int:
@@ -947,7 +1067,9 @@ def reset() -> None:
         _last_rotation, \
         _rotation_generation, \
         _last_egress_ip, \
-        _inflight
+        _inflight, \
+        _drain_cap_seen, \
+        _drains_capped
     with _lock:
         _resolved = False
         _proxy = None
@@ -957,6 +1079,10 @@ def reset() -> None:
         _inflight = 0
     with _traffic_lock:
         _traffic.clear()
+    with _drain_lock:
+        _drain_waits.clear()
+        _drains_capped = 0
+        _drain_cap_seen = 0.0
     with _rotation_lock:
         _rotations.clear()
         _rotation_causes.clear()

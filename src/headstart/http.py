@@ -382,17 +382,25 @@ async def fetch_async(
     they kept hammering the walled IP while the sync path had already moved (run 32146017194:
     37,688 sync requests carried, every async one still direct).
 
-    Three deliberate blocking choices, safe because ``fan_out_async`` runs one event loop per
-    Board inside its own worker thread: ``proxy_for``'s bounded gate-wait may pause this loop
-    during a rotation — every stream on it targets the walled origin, so waiting *is* the work;
-    when this path is the *first* to see the wall, ``proxy_for`` dials WARP inline on the loop
-    thread (bounded by the dial's own timeouts) for the same reason; and ``rotate()`` (a
-    ``systemctl`` round-trip) is pushed to a thread so the pause it imposes is the gate's bounded
-    wait, not an unbounded subprocess.
+    **Nothing on this path may block the event loop**, and the two calls that would are routed
+    around it: the route comes from :func:`~headstart.spare_egress.proxy_for_async`, which polls
+    the rotation gate and sends the WARP dial to a thread, and ``rotate()`` (a ``systemctl``
+    round-trip) goes to a thread of its own.
+
+    An earlier version of this docstring argued the opposite — that ``proxy_for``'s gate-wait
+    could pause the loop because "every stream on it targets the walled origin, so waiting *is*
+    the work". That reasoning was wrong, and it was the defect: the requests already riding the
+    tunnel cannot retire while the loop is frozen, so `spare_egress._drain` never saw the tunnel
+    empty, spent its whole cap and then restarted through them. Waiting is the work only for the
+    stream that is waiting; for its twelve peers it is the difference between landing and dying as
+    ``curl: (56)``. See the 2026-09-05 amendment to ADR-0063.
     """
     budget, attempt, proxied = attempts, 0, False
     while attempt < budget:
-        proxy = spare_egress.proxy_for(egress_group)
+        # Async twin, not `proxy_for`: the sync one blocks on the rotation gate, and blocking the
+        # loop here froze the very requests a drain waits on, so the drain always timed out and
+        # restarted through them (see `spare_egress.proxy_for_async`).
+        proxy = await spare_egress.proxy_for_async(egress_group)
         proxied = proxied or proxy is not None
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
