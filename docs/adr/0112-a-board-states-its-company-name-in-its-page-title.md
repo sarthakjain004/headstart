@@ -35,7 +35,7 @@ parse tests running against recorded fixtures.
 | ashby | `{Name} Jobs` | 28/30 |
 | eightfold | `Careers at {Name}` / `{Name} Careers` | 28/30 |
 | ripplehire | `{Name} Careers \| Latest jobs at …` | 28/30 |
-| lever | `{Name}` — no wrapper at all | 21–25/30 (two samples disagreed) |
+| lever | `{Name}` — no wrapper at all | ~85% (131/150) |
 
 successfactors, keka, darwinbox and freshteam scored **0/30 against the registered patterns**,
 which is not the same as having nothing to read: a later sweep found roughly one keka Board in
@@ -90,6 +90,13 @@ name per Board, and each is the company's own claim about itself. A stable paren
 defensible answer to "who is hiring"; three different legal entities on three postings of one
 Board is not. An earlier draft of this ADR asserted no Board could end up worse. That was wrong.
 
+**A page label is never a company name.** `lever:destinationknot` titles itself "Destination
+Careers" — the page-label shape this ADR refuses Workday's `og:title` over, arriving through the
+front door. Every pattern that models "{Name} Careers" strips it, so a title still ending that way
+means the pattern did not model it; only lever's catch-all can reach the check. Anchored to the
+tail, because "Jobsoid" and "Careers24 Group" are names. Measured cost across 520 live Boards:
+one rejection, `destinationknot` itself, and no real employer.
+
 **A vendor's own name is never a company.** `ripplehire:trampolinetech` titles itself "RippleHire
 Careers | …", which shipped as the employer until a rule rejected it — the failure ADR-0034
 blocklists Boards for, arriving through a title instead.
@@ -110,8 +117,8 @@ states one, the ATS slug everywhere else. That is honest rather than tidy, and i
 incremental fix to this has.
 
 **These are ceilings, not achieved coverage.** Every figure below counts rows on a Board whose
-ATS is wired — not rows that actually gain a name. The per-ATS hit rates are 25-28/30 (and keka's
-5/40), so the realised share lands near 27.5%, not 31.6%. Quote the ceiling only as a ceiling.
+ATS is wired — not rows that actually gain a name. The per-ATS hit rates run 83-93% (and keka's
+12.5%), so the realised share lands near 27.5%, not 31.6%. Quote the ceiling only as a ceiling.
 
 **Coverage is 5 of the affected ATSes.** The four measured on the served table are 59,123 rows —
 39% of the narrow denominator, but **31.6% of the 186,798 slug-shaped rows**, and the second

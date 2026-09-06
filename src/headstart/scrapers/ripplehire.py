@@ -66,7 +66,7 @@ class RippleHireScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
 
-    def board_page(self) -> str:
+    def _x_board_page(self) -> str:
         """The careers URL again — its ``<title>`` opens with ``"{Name} Careers |"``.
 
         The same page `url` names, fetched a second time rather than threaded through the token

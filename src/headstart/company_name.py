@@ -91,9 +91,10 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 
 #: Same idea as `_SEPARATORS`, for a wrapper word rather than a wrapper character. Every pattern
 #: above that models "{Name} Careers" strips it, so text still ending in "Careers" here means the
-#: title was a page label and not a name — reachable only through **lever**, whose pattern matches
+#: title was a page label and not a name. In practice that means **lever**, whose pattern matches
 #: anything: `lever:destinationknot` serves "Destination Careers", the page-label shape this
-#: module refuses Workday's ``og:title`` over. Measured against 150 live lever Boards, no real
+#: module refuses Workday's ``og:title`` over. A doubled label ("Careers at X Careers") would
+#: reach it on eightfold or keka too; none was seen in 520 live Boards. Measured against 150 live lever Boards, no real
 #: company name ends this way, so the rule costs nothing it should keep.
 _LABEL_TAIL = re.compile(r"\s(?:careers|jobs)$", re.IGNORECASE)
 
