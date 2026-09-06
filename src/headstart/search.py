@@ -345,68 +345,25 @@ def _ago(**window: int) -> datetime:
         raise ValueError(f"recency window out of range: {size} {unit}") from exc
 
 
-def build_filter(
-    *,
-    remote: bool = False,
-    max_years: int | None = None,
-    ats: str | None = None,
-    etype: str | None = None,
-    india: str | None = None,
-    location: str | None = None,
-    company: str | None = None,
-    has_salary: bool = False,
-    salary_min: int | None = None,
-    salary_max: int | None = None,
-    salary_currency: str | None = None,
-    posted_within: int | None = None,
-    posted_sortable: bool = False,
-    seen_within: int | None = None,
-    posted_after: str | None = None,
-    posted_before: str | None = None,
-    seen_after: str | None = None,
-    seen_before: str | None = None,
-    first_seen_after: str | None = None,
-    kw: str | None = None,
-    kw_in: str | None = None,
-    has_description: bool = False,
-    atses: Collection[str],
-    currencies: Collection[str] = (),
-    has_first_seen: bool,
-    has_min_salary_annual: bool,
-) -> str | None:
-    """The prod-table where-clause — the reference Search-filter compiler (ADR-0031).
+def _next_day(value: str) -> str:
+    """The day after ``value``, so an inclusive "before" can compare strictly below it.
 
-    ``atses`` is the whitelist of ATSes actually present in the served table,
-    ``has_first_seen`` whether the table carries that column, and ``has_min_salary_annual``
-    likewise for the ADR-0082 salary columns — all runtime facts of the index a
-    :class:`JobSearch` learns once at startup and passes through. Deliberately required, not
-    defaulted: a caller that forgot them would silently drop the ATS whitelist and turn the
-    alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
-    ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
-
-    ``has_description`` (ADR-0104) is the one runtime fact that *is* defaulted, and the asymmetry
-    is deliberate: forgetting it can only leave the Keyword filter's description scope dark —
-    the safe direction — where forgetting ``has_first_seen`` would turn a cutoff into no clause.
-    ``kw``/``kw_in`` are the Keyword filter: every term must appear (AND) in at least one of the
-    scope's columns (OR); see :data:`KEYWORD_SCOPES`.
+    Both date columns hold date-or-datetime ISO strings and `'2026-08-10T12:00' > '2026-08-10'`,
+    so an inclusive upper bound has to be expressed as "< the next day" rather than "<= this one".
+    Module level rather than nested inside :func:`build_filter`, where it captured nothing from
+    the enclosing scope and could not be read or tested on its own.
     """
+    try:
+        return (date.fromisoformat(value) + timedelta(days=1)).isoformat()
+    except OverflowError as exc:  # 9999-12-31 + 1 day; a 400 like any bad date
+        raise ValueError(f"date out of range: {value!r}") from exc
+
+
+def _keyword_clauses(
+    kw: str | None, kw_in: str | None, has_description: bool
+) -> list[str]:
+    """The Keyword filter's clauses (ADR-0104) — one per term, OR'd across the scope's columns."""
     filters: list[str] = []
-    if remote:
-        filters.append("remote = true")
-    if max_years is not None:
-        filters.append(f"(min_years <= {int(max_years)} OR min_years IS NULL)")
-    if ats in atses:  # whitelist — never interpolated from free text
-        filters.append(f"ats = '{ats}'")
-    if etype in ETYPE_CLAUSES:
-        filters.append(ETYPE_CLAUSES[etype])
-    if india:
-        clause = geo.where(india)  # canonical-place lookup — unknown values are ignored
-        if clause:
-            filters.append(clause)
-    if location:
-        filters.append(f"lower(location) LIKE '%{_like(location)}%'")
-    if company:
-        filters.append(f"lower(company) LIKE '%{_like(company)}%'")
     if kw:
         # Per term, OR across the scope's columns; AND across terms. A scope whose only column is
         # absent compiles to nothing at all — dark, never an error — like every optional-column
@@ -416,6 +373,20 @@ def build_filter(
             filters.append(
                 "(" + " OR ".join(f"lower({c}) LIKE '%{term}%'" for c in columns) + ")"
             )
+    return filters
+
+
+def _salary_clauses(
+    *,
+    has_salary: bool,
+    salary_min: int | None,
+    salary_max: int | None,
+    salary_currency: str | None,
+    currencies: Collection[str],
+    has_min_salary_annual: bool,
+) -> list[str]:
+    """The "shows salary" switch and the ADR-0082 salary bracket, which share a column."""
+    filters: list[str] = []
     if has_salary and has_min_salary_annual:
         # `min_salary_annual` (ADR-0082), not the raw `salary` string: `salary` is only ever
         # populated from a scraper's own structured field, so gating on it silently excluded
@@ -485,7 +456,25 @@ def build_filter(
             # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
             # test rather than containment: a band wider than the user's still qualifies.
             filters.append(f"min_salary_annual <= {int(salary_max)}")
+    return filters
 
+
+def _recency_clauses(
+    *,
+    posted_sortable: bool,
+    posted_within: int | None,
+    posted_after: str | None,
+    posted_before: str | None,
+    seen_after: str | None,
+    seen_before: str | None,
+    seen_within: int | None,
+    first_seen_after: str | None,
+    has_first_seen: bool,
+) -> list[str]:
+    """Everything keyed on a date: the two windows, the custom ranges, the sort's shape guard,
+    and the alerts Watermark. Grouped because they share the `posted_at` shape guard and the
+    dark-until-migrated rule on `first_seen`, not merely because they are all dates."""
+    filters: list[str] = []
     if posted_sortable:
         # Ordering by `posted_at` needs the same shape guard filtering by it does, and it has
         # to be compiled HERE rather than bolted onto the where-clause in `run` — otherwise the
@@ -505,11 +494,6 @@ def build_filter(
     # garbage raises ValueError, which the routes answer as 400, and nothing user-typed is
     # ever interpolated. Inclusive "before" compares strictly below the NEXT day, because
     # both columns hold date-or-datetime ISO strings and '2026-08-10T12:00' > '2026-08-10'.
-    def _next_day(value: str) -> str:
-        try:
-            return (date.fromisoformat(value) + timedelta(days=1)).isoformat()
-        except OverflowError as exc:  # 9999-12-31 + 1 day; a 400 like any bad date
-            raise ValueError(f"date out of range: {value!r}") from exc
 
     if posted_after:
         start = date.fromisoformat(posted_after).isoformat()
@@ -542,6 +526,91 @@ def build_filter(
         # answer as 400.
         moment = datetime.fromisoformat(first_seen_after).isoformat(timespec="seconds")
         filters.append(f"first_seen > '{moment}'")
+    return filters
+
+
+def build_filter(
+    *,
+    remote: bool = False,
+    max_years: int | None = None,
+    ats: str | None = None,
+    etype: str | None = None,
+    india: str | None = None,
+    location: str | None = None,
+    company: str | None = None,
+    has_salary: bool = False,
+    salary_min: int | None = None,
+    salary_max: int | None = None,
+    salary_currency: str | None = None,
+    posted_within: int | None = None,
+    posted_sortable: bool = False,
+    seen_within: int | None = None,
+    posted_after: str | None = None,
+    posted_before: str | None = None,
+    seen_after: str | None = None,
+    seen_before: str | None = None,
+    first_seen_after: str | None = None,
+    kw: str | None = None,
+    kw_in: str | None = None,
+    has_description: bool = False,
+    atses: Collection[str],
+    currencies: Collection[str] = (),
+    has_first_seen: bool,
+    has_min_salary_annual: bool,
+) -> str | None:
+    """The prod-table where-clause — the reference Search-filter compiler (ADR-0031).
+
+    ``atses`` is the whitelist of ATSes actually present in the served table,
+    ``has_first_seen`` whether the table carries that column, and ``has_min_salary_annual``
+    likewise for the ADR-0082 salary columns — all runtime facts of the index a
+    :class:`JobSearch` learns once at startup and passes through. Deliberately required, not
+    defaulted: a caller that forgot them would silently drop the ATS whitelist and turn the
+    alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
+    ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
+
+    ``has_description`` (ADR-0104) is the one runtime fact that *is* defaulted, and the asymmetry
+    is deliberate: forgetting it can only leave the Keyword filter's description scope dark —
+    the safe direction — where forgetting ``has_first_seen`` would turn a cutoff into no clause.
+    ``kw``/``kw_in`` are the Keyword filter: every term must appear (AND) in at least one of the
+    scope's columns (OR); see :data:`KEYWORD_SCOPES`.
+    """
+    filters: list[str] = []
+    if remote:
+        filters.append("remote = true")
+    if max_years is not None:
+        filters.append(f"(min_years <= {int(max_years)} OR min_years IS NULL)")
+    if ats in atses:  # whitelist — never interpolated from free text
+        filters.append(f"ats = '{ats}'")
+    if etype in ETYPE_CLAUSES:
+        filters.append(ETYPE_CLAUSES[etype])
+    if india:
+        clause = geo.where(india)  # canonical-place lookup — unknown values are ignored
+        if clause:
+            filters.append(clause)
+    if location:
+        filters.append(f"lower(location) LIKE '%{_like(location)}%'")
+    if company:
+        filters.append(f"lower(company) LIKE '%{_like(company)}%'")
+    filters += _keyword_clauses(kw, kw_in, has_description)
+    filters += _salary_clauses(
+        has_salary=has_salary,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        salary_currency=salary_currency,
+        currencies=currencies,
+        has_min_salary_annual=has_min_salary_annual,
+    )
+    filters += _recency_clauses(
+        posted_sortable=posted_sortable,
+        posted_within=posted_within,
+        posted_after=posted_after,
+        posted_before=posted_before,
+        seen_after=seen_after,
+        seen_before=seen_before,
+        seen_within=seen_within,
+        first_seen_after=first_seen_after,
+        has_first_seen=has_first_seen,
+    )
     return " AND ".join(filters) if filters else None
 
 
