@@ -14,6 +14,8 @@ from headstart.geo import (
     REGIONS,
     STATES,
     SUBDIVISIONS,
+    _anchored,
+    _rx,
     where,
 )
 
@@ -124,8 +126,8 @@ def test_country_tag_terms_are_sql_safe():
     # be a broken query and an uppercase term would silently never match lower(location).
     for term in IND_FORMS + SUBDIVISIONS + IND_EXCLUDE + INDIA_EXCLUDE:
         assert term == term.lower() and "'" not in term, term
-    # The exclude terms are wrapped in their own %...% by _not_like_all, so carrying one is a
-    # double-wrap that matches nothing.
+    # The exclude terms become their own regex alternation, so a stray `%` would be matched
+    # literally rather than as a wildcard and the guard would never fire.
     for term in IND_EXCLUDE + INDIA_EXCLUDE:
         assert "%" not in term, term
     # Subdivision codes are two letters and only ever used inside a ', {code}, in' anchor;
@@ -153,3 +155,30 @@ def test_ind_is_never_a_bare_substring():
 def test_dropdown_entries_resolve():
     for place in DROPDOWN:
         assert where(place) is not None, place
+
+
+def test_regex_escaping_keeps_an_alias_literal():
+    """The aliases moved from LIKE patterns into a regex alternation, where `.` and `(` mean
+    something. `re.escape` is what keeps them literal — without it "(ind)" would be a capture
+    group and any alias carrying a dot would become a wildcard, silently widening the filter.
+    """
+    assert _rx("(ind)") == r"\(ind\)"
+    assert _rx("a.b") == r"a\.b"
+    # SQL-literal safety on top of regex safety: two different escapes, both needed.
+    assert _rx("o'brien").count("''") == 1
+
+
+def test_ind_forms_keep_their_anchoring_through_the_translation():
+    """The IND rule *is* anchoring (`test_ind_is_never_a_bare_substring`), so the LIKE-to-regex
+    step is exactly where it could be lost — and losing it is silent and huge: a bare `ind`
+    claims Indore and every "Industrial Area". `%` means "unanchored at that end"; its absence
+    becomes a `^` or `$`.
+    """
+    translated = {form: _anchored(form) for form in IND_FORMS}
+    for form, rx in translated.items():
+        assert rx.startswith("^") == (not form.startswith("%")), form
+        assert rx.endswith("$") == (not form.endswith("%")), form
+    # The two that pin nothing on the left must still pin something on the right, and vice
+    # versa — the property the constants' own test asserts, carried through the translation.
+    assert translated["ind-%"] == r"^ind\-"
+    assert translated["% - ind"] == r"\ \-\ ind$"

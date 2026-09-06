@@ -58,3 +58,45 @@ to rot.
 - New India-relevant spellings/localities require a gazetteer edit (regenerate the inventory in
   `experiment/india-location-filter/` and re-vet). Other countries can follow the same pattern.
 - The free-text "Location contains" box is unchanged and composes (AND) with the India filter.
+
+## Amendment (2026-09-06): one regex alternation, not 267 LIKEs
+
+The gazetteer's expansion was one `lower(location) LIKE '%alias%'` per alias, OR'd together. For
+"india" that is a **10,307-character clause of 267 predicates**, and each one is its own pass over
+the column. This ADR already flagged the shape as costly — *"the full country OR-chain ~1 s on the
+laptop (worse on the free CPU tier)"* — but that was before ADR-0084's facet strip put the clause
+inside ~46 counts per request. Measured on the served table (318,003 rows):
+
+| | before | after |
+| --- | --- | --- |
+| one `count_rows` with the India clause | 2,669 ms | 350 ms |
+| `/facets` with All India selected | **8,670 ms** | **1,314 ms** |
+| clause | 10,307 chars, 267 `LIKE` | 3,068 chars, 10 `regexp_like` |
+
+The five-part structure and every collision guard are unchanged; only the compilation is. Each
+OR-chain of substring `LIKE`s becomes one `regexp_like` alternation, and since only 2 of 68 cities
+carry an `EXCLUDE` guard, the other 66 share a single alternation with the states — which is where
+the predicate count actually falls.
+
+**Verified by set equality, not by count.** A faster filter that returns different rows is not a
+faster filter, and the first attempt at this returned 96,795 rows against the correct 50,013
+because it swept the exclusion terms in as positives. The committed version was checked by
+comparing the full set of matched ids, old implementation against new, across **all 70 places the
+filter accepts** — "india", every region, every city, including both cities that carry collision
+guards. 70/70 identical. `experiment/india-filter-regex/` holds the harness.
+
+Two escapes are now load-bearing where one was before: aliases are `re.escape`d so their own
+punctuation is not read as regex syntax (`(ind)` would otherwise be a capture group, and any alias
+carrying `.` would become a wildcard), and quote-doubled so the SQL literal stays closed.
+`IND_FORMS` keeps its LIKE shape as the source of truth — `test_ind_is_never_a_bare_substring`
+asserts anchoring on those constants — and is translated per pattern, with a test pinning that the
+anchoring survives the translation.
+
+`where()` is also memoised now: it is a pure function of module constants and `facets` calls it
+once per count.
+
+**This does not supersede "not ingestion-time columns (yet)."** A derived country column remains
+the cleaner end state and the only route to millisecond-level; the reasoning recorded above for
+deferring it — a schema migration plus a full-index backfill — is unchanged. What changed is that
+the deferral was justified partly by *"a result users can't distinguish"*, and 8.7 s versus 1.3 s
+is distinguishable. This buys most of that back for no migration.

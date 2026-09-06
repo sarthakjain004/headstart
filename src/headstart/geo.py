@@ -7,8 +7,10 @@ city-only strings ("Bangalore North", "Pune City"), and Bengaluru/Bangalore is a
 spelling split. This module expands a canonical place ("india" or a city) into the OR-chain
 of every observed alias, so the filter stops lying.
 
-Aliases are lowercase substrings matched with ``LIKE '%alias%'`` — every alias must be
-unambiguous *as a substring of any world location string*. Traps vetted OUT of the
+Aliases are lowercase substrings — every alias must be unambiguous *as a substring of any world
+location string*. They are matched by one ``regexp_like`` alternation rather than one ``LIKE
+'%alias%'`` per alias: same substring semantics, same rows, one pass instead of 267 (see
+:func:`_any`, and ADR-0024's 2026-09-06 amendment). Traps vetted OUT of the
 inventory's raw map (do not re-add without a guard): "salt lake" (Salt Lake City, UT — it
 contaminated the raw inventory), "wai" (inside taiwan/kuwait/hawaii), "salem" (US city),
 "punjab" (Pakistan has one), "verna" (inside Governador Valadares), "whitefield"
@@ -21,6 +23,10 @@ app.py), so it must stay dependency-free. Regenerate the inventory before extend
 """
 
 from __future__ import annotations
+
+import functools
+import re
+from collections.abc import Iterable
 
 # Canonical city -> observed alias substrings (spelling variants, real typos seen in the
 # data, and metro localities that appear WITHOUT the metro's name). Ordered by observed
@@ -345,42 +351,79 @@ def dropdown_options() -> list[tuple[str, str]]:
     return [(c, c.title().replace("Ncr", "NCR")) for c in DROPDOWN]
 
 
-def _like_any(aliases: tuple[str, ...]) -> str:
-    return " OR ".join(f"lower(location) LIKE '%{a}%'" for a in aliases)
+#: The column every clause here matches on, lowercased once per predicate rather than per alias.
+_LOC = "lower(location)"
 
 
-def _not_like_all(terms: tuple[str, ...]) -> str:
-    """The ``AND NOT LIKE`` chain that guards a clause against its known collisions."""
-    return "".join(f" AND lower(location) NOT LIKE '%{t}%'" for t in terms)
+def _rx(literal: str) -> str:
+    """One alias as a regex fragment: regex-escaped, then made safe for a SQL string literal.
+
+    Both escapes are needed and they are not the same escape. ``re.escape`` stops an alias's own
+    punctuation being read as regex syntax — ``(ind)``'s parentheses would otherwise be a capture
+    group — and doubling the quote is what keeps the literal closed. The aliases are constants
+    vetted by ``test_alias_hygiene`` and carry neither today; escaping anyway is what keeps that
+    true when someone adds one.
+    """
+    return re.escape(literal).replace("'", "''")
+
+
+def _any(aliases: Iterable[str]) -> str:
+    """One ``regexp_like`` matching any of ``aliases`` as a substring.
+
+    **This is the whole optimisation.** These were one ``lower(location) LIKE '%alias%'`` per
+    alias, OR'd — 267 predicates and a 10,307-character clause for "india", each one its own pass
+    over the column. One alternation is a single pass over a single automaton: measured on the
+    served table (318,003 rows), a count went from 2,669 ms to 350 ms, and because `/facets`
+    issues ~46 counts, selecting All India went from 8,670 ms to 1,314 ms. The rows are
+    identical — verified by set equality across all 70 places the filter accepts, not by count
+    (`experiment/india-filter-regex/`).
+    """
+    return f"regexp_like({_LOC}, '{'|'.join(_rx(a) for a in aliases)}')"
+
+
+def _none(terms: tuple[str, ...]) -> str:
+    """The ``AND NOT`` guard that protects a clause from its known collisions, or nothing."""
+    return f" AND NOT {_any(terms)}" if terms else ""
+
+
+def _anchored(pattern: str) -> str:
+    """A LIKE pattern from :data:`IND_FORMS` as an equivalent regex fragment.
+
+    Only these patterns need it, and only because their anchoring *is* the rule: ``'ind-%'``
+    means "starts with", ``'%(ind)%'`` means "contains", and the difference between them is what
+    stops ``ind`` claiming Indore and every "Industrial Area" (``test_ind_is_never_a_bare_substring``
+    asserts that shape on the constants). A leading or trailing ``%`` becomes "unanchored at that
+    end"; its absence becomes a ``^`` or ``$``. No pattern here contains ``_``, so ``%`` is the
+    only wildcard to read.
+    """
+    starts, ends = pattern.startswith("%"), pattern.endswith("%")
+    return ("" if starts else "^") + _rx(pattern.strip("%")) + ("" if ends else "$")
 
 
 def _city_where(city: str) -> str | None:
     aliases = CITIES.get(city)
     if not aliases:
         return None
-    return f"(({_like_any(aliases)}){_not_like_all(EXCLUDE.get(city, ()))})"
+    return f"({_any(aliases)}{_none(EXCLUDE.get(city, ()))})"
 
 
 def _country_where() -> str:
     """The word "india" itself, minus the US places whose names contain it."""
-    return f"(lower(location) LIKE '%india%'{_not_like_all(INDIA_EXCLUDE)})"
+    return f"({_any(('india',))}{_none(INDIA_EXCLUDE)})"
 
 
 def _ind_where() -> str:
     """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
-    forms = " OR ".join(f"lower(location) LIKE '{f}'" for f in IND_FORMS)
-    return f"((lower(location) = 'ind' OR {forms}){_not_like_all(IND_EXCLUDE)})"
+    forms = "|".join(_anchored(f) for f in IND_FORMS)
+    return f"(({_LOC} = 'ind' OR regexp_like({_LOC}, '{forms}')){_none(IND_EXCLUDE)})"
 
 
 def _subdivision_where() -> str:
     """Workday's "City, KA, IN" tail - the subdivision code plus the country, anchored to the end."""
-    return (
-        "("
-        + " OR ".join(f"lower(location) LIKE '%, {c}, in'" for c in SUBDIVISIONS)
-        + ")"
-    )
+    return f"regexp_like({_LOC}, '{'|'.join(_rx(f', {c}, in') + '$' for c in SUBDIVISIONS)}')"
 
 
+@functools.cache
 def where(place: str) -> str | None:
     """The where-fragment for a canonical place, or None if the place is unknown.
 
@@ -396,8 +439,17 @@ def where(place: str) -> str | None:
     """
     if place == "india":
         parts = [_country_where(), _ind_where(), _subdivision_where()]
-        parts += [_city_where(c) for c in CITIES]  # keys exist: no Nones
-        parts.append(f"({_like_any(STATES)})")
+        # Every city whose aliases carry no collision guard shares ONE alternation with the
+        # states, because a guard is the only reason an alias needs a term of its own — and only
+        # two of 68 cities have one. That is where the predicate count actually falls: 267 LIKEs
+        # become 10 `regexp_like`s, of which this is the largest by far.
+        plain: list[str] = []
+        for city, aliases in CITIES.items():
+            if EXCLUDE.get(city):
+                parts.append(_city_where(city))
+            else:
+                plain.extend(aliases)
+        parts.append(_any([*plain, *STATES]))
         return "(" + " OR ".join(p for p in parts if p) + ")"
     if place in REGIONS:
         return "(" + " OR ".join(_city_where(c) for c in REGIONS[place]) + ")"
