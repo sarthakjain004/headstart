@@ -63,7 +63,7 @@ python -c "from headstart.board_cost import load; print(len({k.lower() for k in 
 ```
 Count distinct keys, never lines — both files carry case-variants.
 
-Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,617 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 43 Boards from the raw live rows but only **41** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −43 / −6,615. Both reconcile; neither is quotable without saying which order it used.
+Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,617 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 40 Boards from the raw live rows but only **38** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −40 / −6,615. Both reconcile; neither is quotable without saying which order it used.
 
 **Ledger row** — 178,129:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
@@ -75,11 +75,11 @@ _Avoid_: "live Boards" for this number — that is the phrase this section exist
 **Unique Board** — 111,091:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 600 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 85,631:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−41 vendor test Boards) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 25,460 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated.
+**Scrapable Board** — 85,611:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,416, all of it `join`), `config.EXCLUDED_BOARDS` (−38 vendor test Boards), the alias ledger (−23 Boards published under a second hostname, ADR-0111) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 25,480 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 23 genuinely are not distinct Boards, they are one Board reached by two names.
 
-**Hiring Board** — 53,835:
+**Hiring Board** — 53,815:
 A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 31,796 are live but empty.
 
 **Slice** — 20,000:

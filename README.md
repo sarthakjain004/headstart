@@ -159,22 +159,27 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 117,708 live *rows* reduce to 85,631 **Scrapable Boards** a run can even
-consider (measured 2026-08-28; the terms are defined in `CONTEXT.md` §Counting Boards):
+that matters. The 117,708 live *rows* reduce to 85,611 **Scrapable Boards** a run can even
+consider (measured 2026-09-06; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
 | live rows in the ledger | 117,708 | a row, not a board — 6,617 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
-| − `config.EXCLUDED_BOARDS` | −43 | vendor test/sandbox boards, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −40 | vendor test/sandbox boards, confirmed by reading their postings |
+| − alias ledger | −23 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
 | − case-variant dedupe | −6,615 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −3 | real boards withheld for now — Accenture's and EY's outrun any shard budget, and SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs |
-| = **Scrapable Board** | **85,631** | |
+| = **Scrapable Board** | **85,611** | |
 
-That order matters: excluding before deduping reads −43 and −6,615, deduping first reads −41 and
-−6,617, because two excluded boards were themselves duplicates. Both land on 85,631.
+That order matters: excluding before deduping reads −40 and −6,615, deduping first reads −38 and
+−6,617, because two excluded boards were themselves duplicates. Both land on 85,611.
 
-Of those, **53,835 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
+serving one board share no key to collapse on, so it takes a live probe to find them
+(`scripts/validate/dedupe_boards.py`, ADR-0111).
+
+Of those, **53,815 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
 the 31,796 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —

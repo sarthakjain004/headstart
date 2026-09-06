@@ -118,15 +118,6 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "careers-test". Safe to drop because their production board is in the ledger too
         # (`careers.capgemini.com`, 1338 postings) — this removes the duplicate, not the jobs.
         "successfactors:careers-test.capgemini.com",
-        # A plain Apache 301 to `conaservices.jobs2web.com` (`/` -> `/`, `/sitemap.xml` ->
-        # `/xml/sitemap.xml`, both verified live 2026-08-20) — not an independent tenant, just a
-        # vanity hostname for the Coca-Cola bottlers' board the ledger already tracks under its
-        # own "live" entry. What settles them as one board is the sitemap, not the ledger: both
-        # hosts serve the byte-identical document of 1467 job ids, while the ledger's 1226 (this
-        # row) and 1251 (`conaservices`) differ only because the two rows were checked on
-        # different days. Left in, it scrapes that board twice and indexes every posting under
-        # two ids. Found by #218's sweep.
-        "successfactors:careers.cokeonena.com",
         # LTIMindtree's retired vanity host. Its TLS cert is SAP's own unconfigured-vanity
         # placeholder (CN=certificate-not-found.jobs2web.com, no SAN for this hostname) —
         # verified live 2026-08-19, failing the same way in all 6 recent pipeline runs. Its
@@ -137,22 +128,12 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # cert (`careers.ltm.com`, 49 postings, comparable to this host's last-good 55). Safe to
         # drop: it removes the permanently broken duplicate, not LTIMindtree's jobs.
         "successfactors:careers.ltimindtree.com",
-        # A plain Apache 301 redirect to `careers.hcltech.com` (`/sitemap.xml` and `/` both
-        # redirect, verified live 2026-08-20) — not an independent tenant, the same board
-        # reached through a vanity hostname the liveness ledger independently tracks as its
-        # own "live" entry. Left in, it cost ~1150-1300s as a floor-bound worst shard in
-        # multiple pipeline runs (docs/pipeline/2026-08-20_cadence-settle-in-and-critical-path.md
-        # §3) for zero extra coverage, and duplicated every posting in the index under two ids
-        # (the scraper keys off `self.slug`, `successfactors.py:314`). Fixes #212.
-        "successfactors:hcltech.jobs.hr.cloud.sap",
-        # The `www.` spelling of `jobs.bombardier.com`, which the ledger carries as its own
-        # "live" entry — the same Apache 301 shape as the HCLTech and CONA aliases (`/` -> `/`,
-        # `/sitemap.xml` -> `/xml/sitemap.xml`, both verified live 2026-08-20), and again both
-        # hosts serve the byte-identical sitemap, here of 1158 job ids. Ignore that the ledger
-        # has this row *higher* than the canonical one (1227 vs 1174): those are two check dates,
-        # not two boards. Not an independent tenant, so dropping it removes the duplicate, not
-        # Bombardier's jobs. Found by #218's sweep.
-        "successfactors:www.jobs.bombardier.com",
+        # Three more SuccessFactors redirect-aliases used to sit here by hand (CONA, HCLTech,
+        # Bombardier — #212, #218). They now come from `data/validate/aliases/successfactors.csv`,
+        # regenerated live by `dedupe_boards.py`, so the fact has one home instead of two
+        # (ADR-0111). The two above stay hand-listed: Capgemini's is a *test* board rather than a
+        # duplicate, and LTIMindtree's TLS cert is permanently broken, so the scan can never reach
+        # it to prove what its redirect says.
         # Trakstar Hire's own demo/QA tenants (found during trakstar's salary-extraction pass,
         # 2026-08-22, reading real board content — not from the slug alone, per this list's own
         # rule). Confirmed by content: `bbtest`'s sole posting is titled "Bug Buster"; `smoketest`
@@ -264,11 +245,16 @@ def load_active_companies(
     postings — the "currently hiring" subset). Each scraper turns a ``(tenant, url)`` into its
     own slug via ``slug_from``, so no per-ATS logic lives here. Rows for an ATS with no scraper
     are skipped, as are the vendor test Boards in :data:`EXCLUDED_BOARDS` (matched on
-    ``ats:slug``) and the real-but-withheld ones in :data:`PARKED_BOARDS` (matched after the
+    ``ats:slug``), the Boards buried as duplicates in the alias ledger (ADR-0111, matched on the
+    slug) and the real-but-withheld ones in :data:`PARKED_BOARDS` (matched after the
     dedupe, on the canonical ``board_key``). This is the production source for a full scrape;
     ``config/companies.toml`` remains the small curated seed.
+
+    Two dedupes run here and they catch different things: the alias ledger is *semantic* (one
+    company, two hostnames, no shared key to collapse on) and ``_dedupe_boards`` below is
+    *syntactic* (one hostname, two spellings). Neither subsumes the other.
     """
-    from headstart import liveness
+    from headstart import board_aliases, liveness
     from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 
     ledger_dir = Path(ledger_dir)
@@ -277,11 +263,15 @@ def load_active_companies(
         scraper = SCRAPERS.get(csv_path.stem)
         if scraper is None or scraper.ats in DISABLED_ATS:
             continue
+        # Boards this ATS publishes twice, buried in favour of their canonical (ADR-0111). Dropped
+        # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* dedupe
+        # below cannot do it, since two different hostnames share no `board_key` to collapse on.
+        aliases = board_aliases.load(board_aliases.path_for(ledger_dir, scraper.ats))
         for v in liveness.load(csv_path).values():
             if v.status != liveness.LIVE or (v.jobs or 0) < min_jobs:
                 continue
             slug = scraper.slug_from(v.tenant, v.url)
-            if f"{scraper.ats}:{slug}".lower() in EXCLUDED_BOARDS:
+            if f"{scraper.ats}:{slug}".lower() in EXCLUDED_BOARDS or slug in aliases:
                 continue
             companies.append(CompanyRef(ats=scraper.ats, slug=slug, name=v.tenant))
     return _drop_parked(_dedupe_boards(companies))
