@@ -289,8 +289,11 @@ class BaseScraper(ABC):
         exactly as it was: no ``board_page``, a request that raises, a title this ATS's patterns
         cannot read. A name is only ever *upgraded*, so the worst case is today's behaviour.
         """
-        if self.company != self.slug:
-            return  # the ledger already gave a real name; it outranks a page title
+        # A real name outranks a page title — but "different from the slug" is not the same
+        # question. The ledger itself holds "wipro" and "citi", so the first draft's
+        # `self.company != self.slug` refused to improve exactly the rows this exists to fix.
+        if not company_name.looks_like_slug(self.company):
+            return
         page = self.board_page()
         if not page:
             return
@@ -305,7 +308,13 @@ class BaseScraper(ABC):
                 page,
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
-                **self._egress(),
+                # One attempt, and it can never wall the ATS. A display name is the most
+                # optional thing this scrape fetches, so it must not spend the retry ladder
+                # (three attempts against a walled origin is ~90s for a Board) and its own
+                # non-200 must not be what routes every other Board of that ATS onto the spare
+                # egress — the reason eightfold's own probe already passes `marks_wall=False`.
+                attempts=1,
+                **self._egress(marks_wall=False),
             )
             html_text = response.text if response.status_code == 200 else None
         except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
