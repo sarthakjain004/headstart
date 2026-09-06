@@ -319,8 +319,14 @@ function drawResultKind(q, shown){
       : sort === 'seen' ? 'most recently added first'
       : CFG.has_first_seen ? 'most recently added first'
       : 'in no particular order';
-    node.textContent = `Jobs from across every board, ${order} \u2014 no search yet, so nothing ` +
-      'is ranked. Describe a role above to rank by meaning.';
+    // "across every board" only if nothing is narrowing it: a browse takes the same
+    // where-clause a ranked search does, so with ATS=lever the chips one line above would
+    // read "ATS: lever" while this claimed the whole index. Same class of unconditional
+    // sentence as the `has_first_seen` one directly below.
+    const scope = Object.keys(currentFilters()).length
+      ? 'Jobs matching the filters above' : 'Jobs from across every board';
+    node.textContent = `${scope}, ${order} \u2014 no search yet, so nothing is ranked. ` +
+      'Describe a role above to rank by meaning.';
   }
 }
 
