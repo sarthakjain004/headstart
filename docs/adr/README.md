@@ -114,3 +114,4 @@ supersedes it and note the supersession in both.
 | [0103](0103-workdays-400-is-an-invalid-session-cookie-clear-it.md) | Workday's 400 is an invalid session cookie — clear it, don't retry or reroute | 2026-09-02 |
 | [0104](0104-a-keyword-filter-with-a-scope-map-and-a-stored-description-column.md) | A Keyword filter with a scope map, backed by a stored `description` column | 2026-09-02 |
 | [0110](0110-record-fan-out-throughput-against-the-width-in-force.md) | Record fan-out throughput against the width in force | 2026-09-05 |
+| [0111](0111-duplicate-boards-resolve-the-board-surface.md) | A duplicate Board is found by resolving its Board surface, not by comparing its key | 2026-09-07 |

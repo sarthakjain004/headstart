@@ -22,7 +22,7 @@ import functools
 import re
 from pathlib import Path
 
-from headstart import liveness
+from headstart import board_aliases, liveness
 from headstart.config import (
     EXCLUDED_BOARDS,
     PARKED_BOARDS,
@@ -69,18 +69,29 @@ def _counts() -> dict[str, int]:
 
     live = _live_companies()
     unique = _dedupe_boards(live)
+    # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
+    # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
+    # outside the ledger, so without it the components stop summing to Scrapable Board.
+    alias = {ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c in live}}
+
+    def is_alias(c: CompanyRef) -> bool:
+        return c.slug.lower() in alias.get(c.ats, {})  # `load` lowercases its keys
+
     # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards
-    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 43 there and 41 here.
+    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 40 there and 38 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
     kept = [c for c in enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS]
+    unaliased = [c for c in kept if not is_alias(c)]
     # the other order, for the README's funnel: exclude on the raw live set, then dedupe
     live_enabled = [c for c in live if c.ats not in DISABLED_ATS]
     exclude_first_excluded = [
         c for c in live_enabled if f"{c.ats}:{c.slug}".lower() in EXCLUDED_BOARDS
     ]
     exclude_first_kept = [
-        c for c in live_enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS
+        c
+        for c in live_enabled
+        if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS and not is_alias(c)
     ]
     return {
         "Ledger row": sum(by_status.values()),
@@ -90,12 +101,15 @@ def _counts() -> dict[str, int]:
         "Unique Board": len(unique),
         "disabled": len(unique) - len(enabled),
         "excluded_after_dedupe": len(enabled) - len(kept),
+        "aliased": len(kept) - len(unaliased),
         # The README excludes first, so its two middle deltas differ from the dedupe-first ones
         # above. Both are real; each doc must be checked in the order it actually states.
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(exclude_first_kept)
         - len(_dedupe_boards(exclude_first_kept)),
-        "parked": sum(1 for c in kept if board_identity(c).lower() in PARKED_BOARDS),
+        "parked": sum(
+            1 for c in unaliased if board_identity(c).lower() in PARKED_BOARDS
+        ),
         "Scrapable Board": len(load_active_companies(LEDGER, min_jobs=0)),
         "Hiring Board": len(load_active_companies(LEDGER, min_jobs=1)),
         # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh
@@ -207,6 +221,7 @@ def test_the_readme_funnel_agrees_with_the_ledger() -> None:
     expected = [
         truth["disabled"],
         truth["excluded_before_dedupe"],
+        truth["aliased"],
         truth["dedupe_after_exclude"],
         truth["parked"],
     ]
@@ -262,8 +277,13 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
         # the Scrapable Board entry restates the chain it is the end of
         (
             "CONTEXT.md",
-            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`config\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\) and `config\.PARKED_BOARDS` \(−([\d,]+)\)",
-            (truth["disabled"], truth["excluded_after_dedupe"], truth["parked"]),
+            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`config\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\), the alias ledger \(−([\d,]+) Boards.*?`config\.PARKED_BOARDS` \(−([\d,]+)\)",
+            (
+                truth["disabled"],
+                truth["excluded_after_dedupe"],
+                truth["aliased"],
+                truth["parked"],
+            ),
         ),
         # and the two-orders rule quotes all four of the numbers that make it true
         (
@@ -300,6 +320,7 @@ def test_both_orders_reach_the_same_scrapable_count() -> None:
         truth["Unique Board"]
         - truth["disabled"]
         - truth["excluded_after_dedupe"]
+        - truth["aliased"]
         - truth["parked"]
     )
     assert dedupe_first == truth["Scrapable Board"]
