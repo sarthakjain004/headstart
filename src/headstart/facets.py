@@ -207,29 +207,39 @@ def _count(table: Any, where: str | None) -> int:
 # user filters, so none of them can be "dropped"; `posted_sortable` in particular is the sort
 # control's shape guard. Naming any of them would render a raw key in the empty state beside a
 # button that removes nothing, since the UI has neither a label nor a control for it.
-NEVER_BLOCKING = (
-    "atses",
-    "currencies",
-    "has_first_seen",
-    "has_min_salary_annual",
-    "has_description",
-    "posted_sortable",
-    # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a keyword,
-    # and with one it is the `kw` entry that would be named.
-    "kw_in",
-    # The Matches tab's date ranges (`matchesRange()`) and the alerts run's Watermark cutoff
-    # (ADR-0035). Excluded rather than labelled, because there is nothing here for the empty
-    # state's button to clear: the four range inputs live in matches.html, so adding them to
-    # app.js's `CONTROL` — the *Search* tab's control registry, which `clearAll()` and
-    # `applyProfile()` sweep wholesale — would have one tab blanking another's controls, and
-    # `first_seen_after` is machine-set by the alerts run and has no input at all. If the Search
-    # tab ever grows its own range controls, drop them from here in the same change;
-    # `tests/test_facets.py` fails on a filter that is in neither this tuple nor those maps.
-    "posted_after",
-    "posted_before",
-    "seen_after",
-    "seen_before",
-    "first_seen_after",
+NEVER_BLOCKING = frozenset(
+    {
+        "atses",
+        "currencies",
+        "has_first_seen",
+        "has_min_salary_annual",
+        "has_description",
+        "posted_sortable",
+        # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a keyword,
+        # and with one it is the `kw` entry that would be named.
+        "kw_in",
+        # The salary bracket's scope, for the same reason and with a sharper consequence. Unsetting
+        # it does not remove the bracket — it re-scopes it to `SALARY_DEFAULT_CURRENCY` — so the
+        # recovery `_blocking` measures would be one no control can perform: the empty state's button
+        # clears the two *bounds* (app.js's `BRACKET`), which is a different, much larger recovery.
+        # Measured on a 318,003-row table, an INR bracket at 100,000: unsetting the currency recovers
+        # 70,549 rows, clearing the bounds recovers all 318,003. Naming the currency would point the
+        # user at a button that does something else.
+        "salary_currency",
+        # The Matches tab's date ranges (`matchesRange()`) and the alerts run's Watermark cutoff
+        # (ADR-0035). Excluded rather than labelled, because there is nothing here for the empty
+        # state's button to clear: the four range inputs live in matches.html, so adding them to
+        # app.js's `CONTROL` — the *Search* tab's control registry, which `clearAll()` and
+        # `applyProfile()` sweep wholesale — would have one tab blanking another's controls, and
+        # `first_seen_after` is machine-set by the alerts run and has no input at all. If the Search
+        # tab ever grows its own range controls, drop them from here in the same change;
+        # `tests/test_facets.py` fails on a filter that is in neither this tuple nor those maps.
+        "posted_after",
+        "posted_before",
+        "seen_after",
+        "seen_before",
+        "first_seen_after",
+    }
 )
 
 

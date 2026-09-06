@@ -114,7 +114,7 @@ SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
 # "defaults to USD", and 86.5% of the Jobs carrying a salary are USD (measured 2026-08-25), so
 # that is the least surprising scope for a bare number. It lives here, beside the compiler that
 # applies it, because it is the *compiler's* default rather than one client's — see build_filter.
-DEFAULT_CURRENCY = "USD"
+SALARY_DEFAULT_CURRENCY = "USD"
 
 
 class KeywordScope(NamedTuple):
@@ -280,17 +280,18 @@ def _ago(**window: int) -> datetime:
     """``now`` minus one recency window, with the overflow answered as a bad date.
 
     Both windows arrive as unbounded ints off the query string, and each blows up twice over:
-    ~739k days (~17.7M hours) walks ``datetime`` below year 1, and a magnitude past 999,999,999
+    739,864 days (17,756,754 hours) walks ``datetime`` below year 1, and a magnitude past 999,999,999
     days breaks ``timedelta`` itself — in both directions, since a negative window that large
     runs off the far end instead. Converted here rather than clamped in :func:`_int_arg`, which
     is shared with ``k``, ``page`` and the salary bounds and has no business knowing what a date
-    can hold; here it sits beside ``_next_day``'s identical treatment and also covers the facet
+    can hold; here it matches ``_next_day``'s identical treatment further down and also covers the facet
     counts, which call :func:`build_filter` directly rather than through the parse step.
     """
     try:
         return datetime.now(UTC) - timedelta(**window)
     except OverflowError as exc:  # off the calendar, or past timedelta's cap
-        raise ValueError(f"recency window out of range: {window}") from exc
+        unit, size = next(iter(window.items()))
+        raise ValueError(f"recency window out of range: {size} {unit}") from exc
 
 
 def build_filter(
@@ -381,7 +382,7 @@ def build_filter(
     # currency therefore comes first and is whitelisted against what the table actually holds,
     # exactly like `ats` — never interpolated from free text. Without one the bracket does not
     # apply unscoped, because an unscoped bracket is the wrong answer, not a looser one — it
-    # takes :data:`DEFAULT_CURRENCY` instead.
+    # takes :data:`SALARY_DEFAULT_CURRENCY` instead.
     #
     # The currency is a *modifier of the bracket*, not a filter of its own: picking one with
     # both bounds empty must not quietly cut the result set to the 28.5% of Jobs that carry a
@@ -390,27 +391,32 @@ def build_filter(
     #
     # The default is applied HERE and not in `filter_kwargs` for two reasons. It used to live
     # only in the browser's <select> (`ui/static/app.js`, control `salcur`), so a bound with no
-    # currency compiled to no filter at all and every other caller — the alerts path,
-    # `scripts/eval/verify_filters.py`, a hand-built `/search?salary_min=…` — had its numeric
-    # constraint silently discarded; `facets._blocking` could not even report it, since dropping
-    # a clause that compiled to nothing recovers nothing. And it stays out of the parse step so
-    # that `None` keeps meaning "the user named no currency": `_blocking` drops each active
-    # filter in turn, and a currency defaulted in there would let the empty state blame a picker
-    # the user never touched. The default is a module constant, never free text, so a table
-    # holding no USD salary honestly matches nothing rather than widening to every currency.
+    # currency compiled to no filter at all and the numeric constraint was silently discarded for
+    # every caller that is not that <select> — a hand-built `/search?salary_min=…`, or
+    # `scripts/eval/verify_filters.py`. (Not the alerts path: `alerts.store.ALLOWED_SEARCH_FILTERS`
+    # excludes the salary keys, so a Subscription can never carry a bracket at all.)
     #
-    # A currency the user *did* name and the table does not hold raises, rather than dropping
-    # the bracket — the routes answer ValueError as a 400, as they do the malformed dates below.
-    # Unlike an unknown `ats` or `india`, ignoring this value does not just drop itself: it
-    # discards the two bounds it scopes, i.e. a supported constraint the user did set, which is
-    # the same silent wrong answer the default above exists to remove. The picker is rendered
-    # from `currencies`, so only a hand-built request can reach it. The rejection sits inside the
-    # `has_min_salary_annual` guard because `currencies` is empty until the ADR-0082 columns land
-    # — outside it, dark-until-migrated would become a 400 on every bracket.
+    # An unrecognised currency falls back to the same default rather than raising, which is the
+    # rule ADR-0084 states — whitelisted "like `ats`", and `ats` ignores what it does not know —
+    # and the rule `kw_in` already follows one screen down as the keyword's own modifier. The
+    # alternative, a 400, was tried and reverted: it made two identically-shaped "modifier with a
+    # default" parameters behave oppositely, and bought nothing, since the picker is rendered from
+    # `currencies` and only a hand-built request could reach it.
+    #
+    # The default is resolved against `currencies` too, rather than trusted. It is a module
+    # constant so it can never be free text, but a table holding no USD salary would otherwise get
+    # a clause matching nothing — the silent wrong answer this whole block exists to remove, just
+    # relocated. Where even the default is unavailable the bracket does not apply.
     if has_min_salary_annual and (salary_min is not None or salary_max is not None):
-        if salary_currency and salary_currency not in currencies:
-            raise ValueError(f"unknown salary currency: {salary_currency}")
-        filters.append(f"salary_currency = '{salary_currency or DEFAULT_CURRENCY}'")
+        currency = (
+            salary_currency
+            if salary_currency in currencies
+            else SALARY_DEFAULT_CURRENCY
+        )
+    else:
+        currency = None
+    if currency in currencies:
+        filters.append(f"salary_currency = '{currency}'")
         if salary_min is not None:
             # The job's TOP of range clears the user's floor: a 90k-140k posting answers
             # "at least 100k". `max_salary_annual` is null on single-figure postings, so

@@ -623,7 +623,7 @@ def test_range_overflow_is_a_valueerror_not_a_500():
 
 def test_recency_window_overflow_is_a_valueerror_not_a_500():
     # Same treatment for the windows, which take an unbounded int: both the calendar bound
-    # (~739k days / ~17.7M hours walks below year 1) and timedelta's own magnitude cap, in
+    # (739,864 days / 17,756,754 hours walks below year 1) and timedelta's own magnitude cap, in
     # both directions — a huge negative window runs off the far end of the calendar instead.
     for days in (740_000, 1_000_000_000, -3_000_000, -1_000_000_000):
         with pytest.raises(ValueError):
@@ -634,9 +634,10 @@ def test_recency_window_overflow_is_a_valueerror_not_a_500():
 
 
 def test_recency_windows_still_compile_inside_the_calendar():
-    # The guard is the calendar's own bound, not a policy about plausible windows: an absurd
-    # but representable one still compiles. (Both values keep a century of slack against the
-    # bound, which creeps forward with `now`, so neither is a dated test.)
+    # A CONTROL, not a regression test: it passes with the fix reverted too, and is here to pin
+    # that the guard is the calendar's own bound rather than a policy about plausible windows —
+    # an absurd but representable window must still compile. Both values keep ~86 years of slack
+    # under the bound, which creeps forward with `now`, so neither is a dated test.
     assert "posted_at >= '" in _clause(posted_within=700_000)
     assert "first_seen >= '" in _clause(seen_within=17_000_000)
 
@@ -700,21 +701,23 @@ def test_a_bound_with_no_currency_defaults_to_usd():
 
 
 def test_currency_is_whitelisted_against_the_table_never_interpolated():
-    # Never interpolated — and a 400 rather than a silently dropped bracket, because ignoring
-    # this value discards the two bounds it scopes, unlike an unknown `ats`, which only drops
-    # itself. Only a hand-built request reaches it: the picker is rendered from `currencies`.
-    with pytest.raises(ValueError):
+    # Never interpolated: an unrecognised value falls back to the default rather than reaching
+    # the clause — ADR-0084's "whitelisted like `ats`", and `ats` ignores what it does not know.
+    # The bound it scopes still applies, which is the whole point of the default.
+    assert (
         _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
-    with pytest.raises(ValueError):
-        _bracket(salary_currency="XXX", salary_min=1)
-    # With no bound there is no bracket to scope, so there is nothing to reject either.
+        == "salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 1"
+    )
+    assert _bracket(salary_currency="XXX", salary_min=1) == _bracket(salary_min=1)
+    # With no bound there is no bracket to scope, so a currency alone still compiles nothing —
+    # ADR-0084's rule that picking one must not cut the result set to the ~28.5% carrying a salary.
     assert _bracket(salary_currency="XXX") is None
 
 
-def test_an_unmigrated_table_does_not_reject_the_currency_it_cannot_hold():
-    # `currencies` is empty until the ADR-0082 columns land, which makes EVERY currency unknown
-    # there. The whitelist rejection therefore sits inside the `has_min_salary_annual` guard:
-    # outside it, the dark-until-migrated rule below would become a 400 on every bracket.
+def test_the_bracket_stays_dark_where_even_the_default_is_unavailable():
+    # `currencies` is empty until the ADR-0082 columns land, which makes every currency unknown
+    # there — including `SALARY_DEFAULT_CURRENCY`. Emitting it anyway would be a clause matching
+    # nothing: the same silent wrong answer the default exists to remove, just relocated.
     assert (
         build_filter(
             salary_currency="INR",
@@ -722,7 +725,7 @@ def test_an_unmigrated_table_does_not_reject_the_currency_it_cannot_hold():
             atses=[],
             currencies=[],
             has_first_seen=True,
-            has_min_salary_annual=False,
+            has_min_salary_annual=True,
         )
         is None
     )
