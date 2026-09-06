@@ -110,13 +110,15 @@
     <h3>What is stored about you</h3>
     <ul class="doc-list">
       <li>Your <b>email address</b>, from Google sign-in — the key your saved work hangs off.</li>
-      <li>Anything you save yourself: saved searches, starred jobs, and a profile if you fill
-        one in. Deleting a profile deletes it — with one exception we would rather name than
+      {% if saved_on %}<li>Anything you save yourself: saved searches, starred jobs, and a
+        profile if you fill one in. Deleting a profile deletes it — with one exception we would rather name than
         hide: a count of how many résumés you have had read stays behind, because that allowance
         is per account for the lifetime of the account and deleting must not reset it.</li>
       <li>If you use the résumé reader, <b>the text you paste is sent to a language model</b> to
-        pull out the fields, then discarded. It is the one thing here that leaves this service.
-        Nothing else you do — searches, filters, stars — is sent anywhere.</li>
+        pull out the fields, then discarded. That is the only thing here handed to anyone
+        outside HeadStart. What you save is stored — the saved searches, stars and profile above
+        live in a private dataset only this service reads — and your searches themselves are
+        never recorded at all.</li>{% endif %}
       <li><b>No email is ever sent</b> unless you switch it on for a saved search, and every one
         of those carries an unsubscribe link.</li>
       <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing

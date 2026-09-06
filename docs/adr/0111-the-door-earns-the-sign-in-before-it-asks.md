@@ -79,8 +79,19 @@ What it has instead is verifiability, which is stronger and costs nothing to kee
   same single count the signed-in header already makes, so the door is no more expensive than the
   page behind it — but it is not free, and the signed-out path is the one with no auth in front of
   it.
-- **The second tile counts Boards, not employers, and the first attempt at it was wrong in the
-  dangerous direction.** It began as distinct `company` values labelled "employers", argued in
+- **Exactly countable, or it is not a tile.** Three drafts failed that bar. A typed-in "~6h
+  between index refreshes" was ~5x the measured cadence. An "employers" count of distinct
+  `company` values was argued here as a conservative floor and is the opposite — a ceiling.
+  Recasting it as a Board count did not save it either: `company` is a board-supplied display
+  name on greenhouse, workday, oracle, smartrecruiters, recruitee, workable and teamtailor, and
+  ADR-0023's Board key is `{ats}:{slug}` (Workday: `{ats}:{company}/{site}`), so the pair
+  `(ats, company)` collapses Workday sites while personio's per-job `subcompany` splits one
+  board — the error's **sign is undetermined**, which is worse than either direction.
+  `corpus.board_of` is no rescue: ADR-0049 calls it a guess. The tile is now the count of Jobs
+  first seen in the last seven days, which is exact — a row without `first_seen` predates the
+  column (ADR-0031) and therefore cannot be new, so the window has no unknown bucket — and it
+  proves the thing a stranger actually doubts, that the index is alive.
+- **What the failed attempt taught (kept because the mistake is easy to repeat).** It began as distinct `company` values labelled "employers", argued in
   this ADR to be a conservative *floor*. That is backwards: `company` is an ATS slug, not a
   display name (README §"The served table"), so one firm spelt two ways — or hosting on two
   ATSes — counts twice, which makes distinct-slug an *over*-count of employers. A trust surface

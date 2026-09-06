@@ -495,12 +495,12 @@ function draw(rows, target){
         </div>` : ''}
       </div>
       <div class="tags">
-        ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
+        ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
         ${r.remote? '<span class="tag rem">remote</span>':''}
         ${payLabel(r)? '<span class="tag pay">'+esc(payLabel(r))+'</span>':''}
         ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
         ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
-        ${age(r.posted_at)? '<span class="tag mono">'+age(r.posted_at)+'</span>':''}
+        ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
         ${r.ats? '<span class="tag src" title="Read directly from this company\'s '+esc(r.ats)+' board — not a repost">via '+esc(r.ats)+'</span>':''}
       </div>
     </div>`; }).join('');

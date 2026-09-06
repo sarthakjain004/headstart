@@ -72,6 +72,8 @@
         <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
           requirement are kept.</span></div>
       <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
+      <span class="tip">Read from how the employer worded the location, not from a tick-box on
+        their board — so a remote role described only in the body text can be missed.</span>
       <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
       {% if currencies %}
       <div class="f"><label for="salcur">Salary bracket (annual)</label>
@@ -91,6 +93,8 @@
     <div class="set">
       <h2>Where</h2>
       <div class="f"><label for="india">India — city or region</label>
+        <span class="tip">Only India has city-level matching so far; everywhere else, use
+          Location below. The index itself is worldwide.</span>
         <select id="india"><option value="">Anywhere</option>
           <option value="india">All India</option>
           {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
@@ -106,7 +110,9 @@
       <div class="f"><label for="posted">Posted by the employer</label>
         <select id="posted"><option value="">Any time</option>
           {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select></div>
+        </select>
+        <span class="tip">Their date, and plenty of boards publish none — jobs without one are
+          hidden by this filter rather than kept. The Data tab has the current share.</span></div>
       {% if has_first_seen %}
       <div class="f"><label for="seen">First seen by HeadStart</label>
         <select id="seen"><option value="">Any time</option>
@@ -150,7 +156,9 @@
        identical apart from the match rings, and a user who cannot tell them apart reads the
        missing ring as a bug rather than as "this was never ranked" (ADR-0074). #}
     <p class="kind" id="kind" role="status"></p>
-    <div id="results" aria-live="polite"></div>
+    {# tabindex="-1" so the skip link above actually MOVES focus here. Without it WebKit
+       scrolls the results into view and leaves the tab position back in the filter rail. #}
+    <div id="results" tabindex="-1" aria-live="polite"></div>
     <div class="pager" id="pager"></div>
   </main>
 </div>

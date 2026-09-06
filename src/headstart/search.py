@@ -679,20 +679,13 @@ class JobSearch:
         self._table = table
         self.max_k = max_k
         self.max_page = max_page
-        # the ATSes actually present in the index — feeds the dropdown and the whitelist.
-        # `company` rides the same scan rather than a second one: the door states how many
-        # company boards are in the index (ADR-0111), and one extra string column on a pass
-        # already being paid for is the cheapest honest way to know.
-        _rows = table.search().select(["ats", "company"]).limit(1_000_000).to_list()
-        self.atses = sorted({r["ats"] for r in _rows})
-        # Boards, and deliberately NOT "employers". `company` is the ATS slug, not a display
-        # name (README §"The served table"), so distinct slugs count one firm twice whenever it
-        # is spelt two ways or hosts on two ATSes — which makes the number an over-count of
-        # employers, not an under-count. An earlier draft shipped it on the door labelled
-        # "employers" and argued it was a conservative floor; that was backwards, and an
-        # overstatement is the one direction a trust surface cannot afford. The pair
-        # (ats, company) is exactly ADR-0023's Board key, which this counts precisely.
-        self.n_boards = len({(r["ats"], r["company"]) for r in _rows if r["company"]})
+        # the ATSes actually present in the index — feeds the dropdown and the whitelist
+        self.atses = sorted(
+            {
+                r["ats"]
+                for r in table.search().select(["ats"]).limit(1_000_000).to_list()
+            }
+        )
         # `first_seen` only appears on the first pipeline run after ADR-0031; filtering on
         # a column the table lacks errors every query, so the feature stays dark until then.
         self.has_first_seen = "first_seen" in table.schema.names
@@ -946,6 +939,29 @@ class JobSearch:
             .to_list()
         )
         return {r["id"] for r in rows}
+
+    def n_seen_within(self, hours: int) -> int | None:
+        """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
+
+        The door's freshness proof (ADR-0111). Exact, which is the whole reason it is there:
+        `first_seen` is written by us on arrival, and a row that lacks it predates the column
+        (ADR-0031) and therefore cannot be new — so unlike a coverage share this window has no
+        unknown bucket to hand-wave. Compiled through :func:`build_filter` rather than a
+        hand-written clause so "new" means here exactly what it means in the Search rail.
+
+        One :meth:`count_rows`, the ADR-0084 primitive measured at 4–6 ms.
+        """
+        if not self.has_first_seen:
+            return None
+        where = build_filter(
+            seen_within=hours,
+            has_first_seen=True,
+            atses=self.atses,
+            currencies=self.currencies,
+            has_description=self.has_description,
+            has_min_salary_annual=self.has_min_salary_annual,
+        )
+        return self._table.count_rows(filter=where) if where else None
 
     def coverage(self) -> dict[str, Any]:
         """What share of the served table actually carries each field (ADR-0112).

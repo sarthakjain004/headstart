@@ -13,6 +13,7 @@ cookie is `Secure` and the test client honours that over plain http.
 
 import importlib.util
 import os
+import re
 import sys
 import types
 from contextlib import contextmanager
@@ -1082,12 +1083,18 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
     assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
-    assert '<div class="v">2</div><div class="k">company boards indexed' in page
     assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
-    # Every tile is a counted number. A typed-in cadence figure ("~6h") shipped here once,
-    # ~5x off the measured run duration and contradicting the footer — ADR-0111 now forbids
-    # any tile the running product cannot produce.
+    # The freshness tile: an EXACT count, because a row without `first_seen` predates the
+    # column and so cannot be new. The fake answers 1 to any filtered count, so a real
+    # ratio shows rather than the total repeated — which a wrong denominator would give.
+    assert (
+        '<div class="v">1</div><div class="k">of them added in the last 7 days' in page
+    )
+    # Every tile is a counted number, and exactly counted. Three drafts failed that bar and
+    # were removed rather than qualified: a typed-in cadence ("~6h"), an employer count and
+    # a board count — neither of the last two derivable exactly from the served table.
     assert "~6h" not in page and "refreshes" not in page
+    assert "employers" not in page and "boards indexed" not in page
     # The provenance claim, the removal policy, and the no-paid-placement claim.
     assert "employer's own board" in page
     assert "Closed roles get removed, and the exception is published." in page
@@ -1104,10 +1111,22 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert 'id="openout"' in page
 
 
-def test_the_door_holds_up_when_the_index_is_tiny(auth_app):
-    """No arithmetic in display copy — a three-ATS index once read 'and -1 more'."""
+def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
+    """A table with no `first_seen` column drops the freshness tile rather than guessing.
+
+    Replaces a vacuous check that asserted the absence of strings nothing generates. The
+    real risk is the opposite one: a tile rendering `None`, `0` or an exception where the
+    number is simply unavailable."""
+    searcher = auth_app.app.view_functions["index"].__globals__["_searcher"]
+    monkeypatch.setattr(searcher, "has_first_seen", False)
     page = auth_app.app.test_client().get("/").data.decode()
-    assert "-1 more" not in page and "0 more" not in page
+    assert "added in the last" not in page
+    # Scoped to the tiles: the page's own prose opens "None of this has to be taken on faith".
+    tiles = re.findall(r'<div class="v">([^<]*)</div>', page)
+    assert tiles and all(t.strip() and "None" not in t for t in tiles), tiles
+    # …and the tiles that CAN be counted are still there.
+    assert "tech jobs indexed right now" in page
+    assert "ATS providers read directly" in page
 
 
 def test_coverage_counts_the_served_table_rather_than_asserting(app):
@@ -1192,9 +1211,15 @@ def test_the_resume_reader_says_the_text_leaves_the_service(sets_app, monkeypatc
     another tab first — the disclosure belongs at the moment of the decision. Needs
     ``sets_app``: the Profile panel only renders where per-Account storage is configured."""
     page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
-    body = page.split('id="panel-profile"', 1)[1]
+    # Bounded at the panel's own end tag: unbounded, this reached the Data tab further down
+    # the document, which says "language model" too — so the assertion passed with the
+    # disclosure deleted from profile.html entirely.
+    body = page.split('id="panel-profile"', 1)[1].split("</section>", 1)[0]
     assert "language model" in body
-    assert "leaves HeadStart" in body
+    assert "outside HeadStart" in body
+    # …and it must not claim the rest is sent nowhere: stars, saved searches and the profile
+    # are uploaded to the private subscribers dataset.
+    assert "sends nothing at all" not in body
 
 
 def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
@@ -1203,7 +1228,10 @@ def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
     page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
     body = page.split('id="panel-saved"', 1)[1]
     assert "no longer in our index" in body
-    assert "stopped being able to read that" in body
+    # The mechanism, right way round: an unreadable board is why a job STAYS (ADR-0053), so
+    # the second cause is ADR-0023's wholesale board sweep, not a failed read.
+    assert "dropped the whole board" in body
+    assert "stopped being able to read that" not in body
 
 
 def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
@@ -1211,4 +1239,6 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     placed before it is never reached by tabbing forward — verified in a browser."""
     page = app.app.test_client().get("/").data.decode()
     assert 'class="skip" href="#results"' in page
-    assert page.index('class="go"') < page.index('class="skip"') < page.index('id="rail"')
+    assert (
+        page.index('class="go"') < page.index('class="skip"') < page.index('id="rail"')
+    )

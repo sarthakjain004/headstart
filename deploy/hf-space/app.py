@@ -197,10 +197,16 @@ app.config.update(
 # from the caller's own cookie, so it can only tell you what you sent.
 _PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
 
-# The public repository, named once. Both trust surfaces (ADR-0111's door, ADR-0112's Data
-# tab) link into it, and "check it yourself" is the claim they both rest on — so a rename
-# must not be able to leave half the links dead.
+# The public repository, named once *for the Space*. Both trust surfaces (ADR-0111's door,
+# ADR-0112's Data tab) link into it, and "check it yourself" is the claim they both rest on,
+# so a rename must not leave half of one page's links dead. `scripts/ui/serve.py` necessarily
+# keeps its own copy — it is the local renderer and shares no config with this module.
 _REPO = "https://github.com/sarthakjain004/headstart"
+
+# The door's freshness window (ADR-0111). Seven days rather than 24 hours: a single day's
+# intake swings with which Boards the run happened to slice, and a tile that halves overnight
+# for no reason the visitor can see reads as broken rather than as honest.
+_DOOR_NEW_HOURS = 168
 
 # The Digest generator is the one caller with no Google identity to offer: it is a
 # scheduled run, not a person, and it must reach /search for every Subscription
@@ -867,16 +873,18 @@ def coverage():
 def index():
     if _AUTH_ON and not session.get("email"):
         # The door states what this is and proves it before asking for an identity
-        # (ADR-0111). All three numbers are read rather than written: the two counts come
-        # off the searcher's boot scan, and `count_rows` is one table query — the same one
-        # the signed-in page already makes for its header, so the door is no more expensive
-        # than the page behind it.
+        # (ADR-0111). Every number is read rather than written, and every one is EXACT —
+        # a tile that can only be approximated does not go on this page. Two table
+        # queries: the row count the signed-in header already makes, and the freshness
+        # window (~5 ms each, ADR-0084's primitive). `n_new` is None on a table with no
+        # `first_seen` column, and the template drops the tile rather than guess.
         return render_template(
             "signin.html",
             google_client_id=_GOOGLE_CLIENT_ID,
             njobs=f"{_table.count_rows():,}",
             n_atses=len(_searcher.atses),
-            n_boards=f"{_searcher.n_boards:,}",
+            n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
+            new_days=_DOOR_NEW_HOURS // 24,
             repo=_REPO,
         )
     scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)

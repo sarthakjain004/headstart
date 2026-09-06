@@ -111,9 +111,16 @@
     among them. No reposts, no agencies, nothing bought to the top. You describe the role you
     want in plain words, and it matches on meaning rather than keywords.</p>
 
+  {# Every tile is an exact count. An earlier pair of drafts put an employer count here and
+     then a board count; neither can be counted exactly from the served table (`company` is a
+     display name on several ATSes, and ADR-0023's Board key is not the (ats, company) pair),
+     so both were dropped rather than shipped with a shrug. The freshness window that replaced
+     them IS exact: a row without `first_seen` predates the column and cannot be new. #}
   <div class="proof">
     <div class="stat"><div class="v">{{ njobs }}</div><div class="k">tech jobs indexed right now</div></div>
-    <div class="stat"><div class="v">{{ n_boards }}</div><div class="k">company boards indexed</div></div>
+    {% if n_new is not none %}
+    <div class="stat"><div class="v">{{ "{:,}".format(n_new) }}</div><div class="k">of them added in the last {{ new_days }} days</div></div>
+    {% endif %}
     <div class="stat"><div class="v">{{ n_atses }}</div><div class="k">ATS providers read directly</div></div>
   </div>
 

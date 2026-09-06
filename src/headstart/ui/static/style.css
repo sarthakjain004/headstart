@@ -67,7 +67,10 @@ body{
   background:var(--raise); color:var(--ink); border:1px solid var(--aqua);
   padding:11px 18px; border-radius:var(--r-md); font:600 14px var(--sans);
   text-decoration:none; }
-.skip:focus{ position:static; display:inline-block; margin-top:12px; }
+/* Absolutely positioned even when visible, so revealing it cannot reflow the page under a
+   sighted keyboard user mid-tab. */
+.skip:focus{ left:0; top:calc(100% + 10px); }
+#results:focus{ outline:none; }   /* a scroll target, not an interactive element */
 .disclose{ border-left:2px solid var(--rule-2); padding-left:11px; margin-top:10px; }
 .disclose b{ color:var(--ink); }
 
@@ -125,6 +128,7 @@ body{
 /* ---- search ---- */
 .hero{ margin-bottom:22px; }
 .searchbar{ display:flex; gap:10px; }
+.hero{ position:relative; }   /* the skip link positions against the search bar */
 .field{ flex:1; }
 .field input{ width:100%; padding:17px 19px; border-radius:var(--r-xl); font:inherit; font-size:16px;
   background:var(--raise); color:var(--ink); border:1px solid var(--rule-2); outline:none;
