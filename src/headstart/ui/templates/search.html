@@ -6,6 +6,10 @@
     </div>
     <button class="go" onclick="go()">Search</button>
   </div>
+  {# Second stop in the tab order, because `#q` autofocuses and the ~20-control filter rail
+     sits between it and the first job link. A skip link at the top of the document would be
+     unreachable by forward tabbing for exactly that reason. #}
+  <a class="skip" href="#results">Skip the filters, go to results</a>
   <div class="hint">
     <span>Try:</span>
     <button class="chip" onclick="tryIt(this)">backend engineer at a climate startup</button>

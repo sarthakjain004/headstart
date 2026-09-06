@@ -59,15 +59,15 @@ body{
                   to{ transform:translate3d(3%,2%,0) scale(1.08); } }
 
 .shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:26px 22px 80px; }
-/* Past the section nav in one keystroke. On the Search tab the filter rail is ~20 controls
-   deep and sits before the results in the DOM, so a keyboard user otherwise tabs the whole
-   rail to reach the first job. Visible only when focused, as a skip link should be. */
-.skip{ position:absolute; left:-9999px; top:0; z-index:9;
+/* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
+   user otherwise tabs all of it to reach the first job. Placed after the search bar rather
+   than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
+   tabbing forward. Visible only when focused, as a skip link should be. */
+.skip{ position:absolute; left:-9999px; z-index:9;
   background:var(--raise); color:var(--ink); border:1px solid var(--aqua);
   padding:11px 18px; border-radius:var(--r-md); font:600 14px var(--sans);
   text-decoration:none; }
-.skip:focus{ left:16px; top:16px; }
-.content:focus{ outline:none; }   /* the skip target, not an interactive element */
+.skip:focus{ position:static; display:inline-block; margin-top:12px; }
 .disclose{ border-left:2px solid var(--rule-2); padding-left:11px; margin-top:10px; }
 .disclose b{ color:var(--ink); }
 

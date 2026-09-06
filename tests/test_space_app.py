@@ -1206,7 +1206,9 @@ def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
     assert "stopped being able to read that" in body
 
 
-def test_the_page_offers_a_skip_link_past_the_nav(app):
+def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
+    """After the search bar, not at the top of the document: `#q` autofocuses, so a skip link
+    placed before it is never reached by tabbing forward — verified in a browser."""
     page = app.app.test_client().get("/").data.decode()
-    assert 'class="skip" href="#content"' in page
-    assert 'id="content" tabindex="-1"' in page
+    assert 'class="skip" href="#results"' in page
+    assert page.index('class="go"') < page.index('class="skip"') < page.index('id="rail"')
