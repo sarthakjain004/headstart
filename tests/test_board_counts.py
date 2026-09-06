@@ -72,14 +72,14 @@ def _counts() -> dict[str, int]:
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
     # outside the ledger, so without it the components stop summing to Scrapable Board.
-    alias = {
-        ats: board_aliases.load(board_aliases.path_for(LEDGER, ats))
-        for ats in {c.ats for c in live}
-    }
-    is_alias = lambda c: c.slug in alias.get(c.ats, {})  # noqa: E731
+    alias = {ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c in live}}
+
+    def is_alias(c: CompanyRef) -> bool:
+        return c.slug in alias.get(c.ats, {})
+
     # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards
-    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 43 there and 41 here.
+    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 40 there and 38 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
     kept = [c for c in enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS]
     unaliased = [c for c in kept if not is_alias(c)]
@@ -107,7 +107,9 @@ def _counts() -> dict[str, int]:
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(exclude_first_kept)
         - len(_dedupe_boards(exclude_first_kept)),
-        "parked": sum(1 for c in unaliased if board_identity(c).lower() in PARKED_BOARDS),
+        "parked": sum(
+            1 for c in unaliased if board_identity(c).lower() in PARKED_BOARDS
+        ),
         "Scrapable Board": len(load_active_companies(LEDGER, min_jobs=0)),
         "Hiring Board": len(load_active_companies(LEDGER, min_jobs=1)),
         # Needs `data/state/board_cost.csv`, which is HF-backed and gitignored. Absent on a fresh

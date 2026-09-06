@@ -112,11 +112,13 @@ def main() -> int:
             if v.status == liveness.LIVE
         }
     )
-    if args.limit:
-        live = live[: args.limit]
-    print(f"{args.ats}: probing {len(live)} live Board(s)", flush=True)
+    # `--limit` bounds what is PROBED, never what counts as live. Truncating the membership set
+    # would relabel a real duplicate as `migrated` — its canonical simply fell outside the slice —
+    # so a quick smoke run would print verdicts that a full run contradicts.
+    probe = live[: args.limit] if args.limit else live
+    print(f"{args.ats}: probing {len(probe)} of {len(live)} live Board(s)", flush=True)
 
-    keys = probe_all(scraper_cls, live)
+    keys = probe_all(scraper_cls, probe)
     resolution = board_aliases.resolve(
         keys,
         live,
@@ -127,36 +129,55 @@ def main() -> int:
 
     buried = sum(len(c.duplicates) for c in resolution.clusters)
     print(
-        f"\n{len(resolution.clusters)} duplicate cluster(s), {buried} Board(s) to bury"
+        f"\n{len(resolution.clusters)} duplicate cluster(s), {buried} Board(s) to bury",
+        flush=True,
     )
     for c in sorted(resolution.clusters, key=lambda c: c.canonical):
-        print(f"  keep {c.canonical}")
+        print(f"  keep {c.canonical}", flush=True)
         for dup in c.duplicates:
-            print(f"       bury {dup}")
+            print(f"       bury {dup}", flush=True)
 
     by_reason: dict[str, list[board_aliases.Moved]] = defaultdict(list)
     for m in resolution.moved:
         by_reason[m.reason].append(m)
     if by_reason:
-        print("\nmoved but not duplicated — reported only, nothing written:")
+        print(
+            "\nmoved but not duplicated — reported only, nothing written:", flush=True
+        )
         for reason, items in sorted(by_reason.items()):
-            print(f"  {reason}: {len(items)}")
+            print(f"  {reason}: {len(items)}", flush=True)
             for m in sorted(items, key=lambda m: m.slug)[:20]:
-                print(f"      {m.slug} -> {m.resolved_to or '?'}")
+                print(f"      {m.slug} -> {m.resolved_to or '?'}", flush=True)
             if len(items) > 20:
-                print(f"      ... +{len(items) - 20} more")
+                print(f"      ... +{len(items) - 20} more", flush=True)
 
     counts = Counter(m.reason for m in resolution.moved)
-    print(f"\nsummary: {dict(counts)} | duplicates {buried}")
+    print(f"\nsummary: {dict(counts)} | duplicates {buried}", flush=True)
+
+    # An ATS whose slug is not a hostname (Workday's is a careers URL, Zoho's a host plus path)
+    # cannot use the default `alias_key`: every key it returns falls outside the live slug set, so
+    # every Board is labelled `migrated` and the ledger comes back empty. That is a silent wrong
+    # answer, not an error, so say it out loud rather than letting a clean-looking zero stand.
+    migrated = counts.get(board_aliases.MIGRATED, 0)
+    if probe and migrated > len(probe) // 2:
+        print(
+            f"\nWARNING: {migrated} of {len(probe)} probed Boards resolved outside the ledger. "
+            f"That usually means {args.ats}'s slug is not a hostname, so the default "
+            "`alias_key` cannot be compared against it — give that scraper an override "
+            "(ADR-0111) rather than trusting this run.",
+            flush=True,
+        )
 
     out = board_aliases.path_for(ledger_dir, args.ats)
     if not args.apply:
-        print(f"\n(dry run — pass --apply to write {out.relative_to(ROOT)})")
+        print(
+            f"\n(dry run — pass --apply to write {out.relative_to(ROOT)})", flush=True
+        )
         return 0
 
     today = datetime.now(UTC).date().isoformat()
     board_aliases.write(out, board_aliases.aliases_of(resolution, args.ats, today))
-    print(f"\nwrote {buried} alias row(s) -> {out.relative_to(ROOT)}")
+    print(f"\nwrote {buried} alias row(s) -> {out.relative_to(ROOT)}", flush=True)
     return 0
 
 

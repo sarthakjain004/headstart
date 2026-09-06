@@ -41,9 +41,10 @@ migrated, 30 unreachable). The duplicate verdict is the stable part; the residue
 weather, which is why only duplicates are acted on.
 
 Clustered, the 23 duplicates form **22 clusters covering 45 live Boards**, so 23 Boards are
-redundant — 1.0% of the live SuccessFactors ledger, carrying ~8,500 advertised postings on the
-redundant side (ledger counts, measured stale by up to 1.7x within a single cluster; order of
-magnitude only). Eightfold's comparable pass measured ~10,240 duplicate rows, 9.5% of that ATS.
+redundant — 1.0% of the live SuccessFactors ledger, carrying **8,221** advertised postings on the
+redundant side (summing the committed alias ledger against the liveness ledger's own counts, which
+are themselves stale by up to 1.7x within a single cluster — so treat it as the size of the prize,
+not a row count). Eightfold's comparable pass measured ~10,240 duplicate rows, 9.5% of that ATS.
 
 Four measurements decided the design.
 
@@ -78,8 +79,11 @@ group the ledger by the host it lands on.
   follows the whole redirect chain, so `A → B → C` already yields `alias_key(A) = C`. The
   transitive step happens in the transport. A future *pairwise* signal (id-set overlap between
   arbitrary Boards) would bring union-find back; nothing shipping today is pairwise.
-- **A group is a duplicate cluster only when its key is itself a live Board.** That single
-  condition separates all four classes above and is what stops the `sap.com` over-merge.
+- **A group is a duplicate cluster only when its key is itself a live Board.** That condition is
+  what stops the `sap.com` over-merge. A second one follows it: the key must also be *among the
+  probed members*, or the canonical is live but this scan never reached it, and the only members
+  present are the ones pointing away. That case is reported as `canonical-unconfirmed` — a fifth
+  outcome beyond the four in the table above, which describes a completed scan.
 - **There is no survivorship election.** The canonical *is* the resolved key: the site owner has
   already declared which name is real, and the cluster-formation guard above requires that key to
   be a member, so exactly one member always qualifies. A ladder of tie-breaks was designed first —
@@ -112,9 +116,11 @@ lets the liveness row stay true.
 
 ## Consequences
 
-- 23 SuccessFactors Boards leave the scrape list — measured, `load_active_companies` returns
-  53,838 -> 53,815 Scrapable Boards — and `index prune`'s existing off-Board path evicts their
-  rows, so there is no new eviction machinery.
+- 23 SuccessFactors Boards leave the scrape list — measured, **Scrapable Board** falls 85,634 ->
+  85,611 and **Hiring Board** 53,838 -> 53,815 — and `index prune`'s existing off-Board path
+  evicts their rows, so there is no new eviction machinery. (Against the previously *documented*
+  figures the net is -20, not -23: three hand-listed `EXCLUDED_BOARDS` entries were retired in the
+  same change and are counted below.)
 - Three of the five SuccessFactors entries in `EXCLUDED_BOARDS` (CONA, HCLTech, Bombardier —
   #212, #218) were the same three duplicates by hand, and are removed: the ledger now carries
   that fact alone rather than the repo asserting it twice. The other two stay hand-listed, and the
@@ -131,5 +137,6 @@ lets the liveness row stay true.
   it does not take it. Two consequences to keep in view: those 6 migrated Boards are scraped
   every run for content that has moved, and the 2 tombstones are scraped for nothing at all.
 - A Board can be buried on evidence that later reverses. The ledger records the signal and the
-  resolved chain per row, and the script re-derives every verdict live, so a reversal shows up as
-  a changed row rather than as a Board that quietly never comes back.
+  host each Board resolved *to* — the destination, not the route that reached it — and the script
+  re-derives every verdict live, so a reversal shows up as a changed row rather than as a Board
+  that quietly never comes back.

@@ -92,7 +92,7 @@ def test_a_canonical_this_scan_never_reached_is_reported_not_elected():
         live=["a.example", "b.example", "canon.example"],
     )
     assert r.clusters == ()
-    assert {m.reason for m in r.moved} == {board_aliases.UNCONFIRMED}
+    assert {m.reason for m in r.moved} == {board_aliases.CANONICAL_UNCONFIRMED}
 
 
 def test_a_board_nothing_points_at_is_left_alone():
@@ -117,6 +117,28 @@ def test_ledger_round_trips(tmp_path):
         path, board_aliases.aliases_of(r, "successfactors", "2026-09-06")
     )
     assert board_aliases.load(path) == {"basf-se.jobs2web.com": "basf.jobs"}
+
+
+def test_the_ledger_is_looked_up_case_insensitively(tmp_path):
+    """A ledger holds one Board under several casings (ADR-0023), and an exact-case miss looks
+    exactly like "not a duplicate" — so it would scrape the duplicate anyway, silently."""
+    path = tmp_path / "successfactors.csv"
+    board_aliases.write(
+        path,
+        [
+            board_aliases.Alias(
+                "successfactors",
+                "Careers.Example.COM",
+                "jobs.example.com",
+                "redirect",
+                "jobs.example.com",
+                "2026-09-06",
+            )
+        ],
+    )
+    loaded = board_aliases.load(path)
+    assert "careers.example.com" in loaded
+    assert loaded["careers.example.com"] == "jobs.example.com"  # value keeps its casing
 
 
 def test_a_missing_ledger_reads_as_empty(tmp_path):

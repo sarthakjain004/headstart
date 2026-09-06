@@ -266,12 +266,15 @@ def load_active_companies(
         # Boards this ATS publishes twice, buried in favour of their canonical (ADR-0111). Dropped
         # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* dedupe
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
-        aliases = board_aliases.load(board_aliases.path_for(ledger_dir, scraper.ats))
+        aliases = board_aliases.load_for(ledger_dir, scraper.ats)
         for v in liveness.load(csv_path).values():
             if v.status != liveness.LIVE or (v.jobs or 0) < min_jobs:
                 continue
             slug = scraper.slug_from(v.tenant, v.url)
-            if f"{scraper.ats}:{slug}".lower() in EXCLUDED_BOARDS or slug in aliases:
+            if (
+                f"{scraper.ats}:{slug}".lower() in EXCLUDED_BOARDS
+                or slug.lower() in aliases
+            ):
                 continue
             companies.append(CompanyRef(ats=scraper.ats, slug=slug, name=v.tenant))
     return _drop_parked(_dedupe_boards(companies))

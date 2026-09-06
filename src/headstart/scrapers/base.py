@@ -164,11 +164,25 @@ class BaseScraper(ABC):
         the default finds nothing there and its tenant id is the key. This is the same
         default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
 
+        **The default's return value must be comparable to this ATS's own ``slug``, and for the
+        default that means the slug has to BE a host.** ``board_aliases.resolve`` decides a Board
+        is a duplicate by asking whether the key is itself a live slug, so on an ATS whose slug is
+        not a hostname — Workday's is a whole careers URL, Zoho's a careers host with a path —
+        every key falls outside the live set and the entire ledger comes back labelled
+        ``migrated``: an empty result, not an error. Those ATSes need an override that returns
+        something in their own slug space, and `dedupe_boards.py` warns when a run looks like it
+        hit this. Today only SuccessFactors uses the default, and its slug is exactly the vanity
+        host.
+
         None when the probe failed: an unreachable Board has earned no verdict, and
-        ``board_aliases.resolve`` reports it rather than grouping it.
+        ``board_aliases.resolve`` reports it rather than grouping it. Note ``http.fetch`` settles
+        4xx/5xx rather than raising, so a Board whose own host answers 503 records itself, not
+        None — which reads as "nothing points away from it" and leaves it unburied. That is the
+        conservative direction: it can miss a duplicate, never invent one.
 
         Streamed and closed unread — only the redirect chain is wanted, and a SuccessFactors
-        sitemap body runs to megabytes.
+        sitemap body runs to megabytes. Only the final host survives, not the chain that reached
+        it, which is why the ledger records a destination rather than a route.
         """
         try:
             resp = http.fetch(

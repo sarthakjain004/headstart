@@ -34,18 +34,22 @@ from __future__ import annotations
 import csv
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 from pathlib import Path
 
 FIELDS = ("ats", "duplicate", "canonical", "signal", "resolved_to", "checked_at")
 
 #: Why a Board that moved is not a duplicate. Each needs a different action and none of them is
 #: this module's to take (ADR-0111) — they are reported so the decision is informed.
+#:
+#: Note the prefix on the last one: CONTEXT.md already binds bare **Unconfirmed** to ADR-0083's
+#: per-*Job* eviction state, and this is a per-*Board* verdict about a canonical we could not
+#: reach. Two different things one word away from each other is the collision Rule 3 warns about.
 MIGRATED = "migrated"  # resolves somewhere real that the ledger has never heard of
 WWW_VARIANT = "www-variant"  # resolves to its own ``www.`` form
 TOMBSTONE = "tombstone"  # resolves to the vendor's marketing page: the tenant is gone
 UNREACHABLE = "unreachable"  # the probe itself failed; no verdict was earned
-UNCONFIRMED = "canonical-unconfirmed"  # target is a live Board this scan never reached
+CANONICAL_UNCONFIRMED = "canonical-unconfirmed"  # a live Board this scan never reached
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +136,7 @@ def resolve(
             )
             continue
         if key not in members:
-            moved.extend(Moved(slug, key, UNCONFIRMED) for slug in members)
+            moved.extend(Moved(slug, key, CANONICAL_UNCONFIRMED) for slug in members)
             continue
         if len(members) == 1:
             continue  # resolves to itself and nothing else points at it: an ordinary Board
@@ -173,8 +177,22 @@ def path_for(liveness_dir: str | Path, ats: str) -> Path:
     return Path(liveness_dir).parent / "aliases" / f"{ats}.csv"
 
 
+def load_for(liveness_dir: str | Path, ats: str) -> dict[str, str]:
+    """This ATS's ``{duplicate: canonical}`` map — :func:`path_for` then :func:`load`.
+
+    Every caller wanted both halves and none wanted either alone, so the pair is the real
+    interface and the walk through a path belongs behind it."""
+    return load(path_for(liveness_dir, ats))
+
+
 def load(path: str | Path) -> dict[str, str]:
     """``{duplicate_slug: canonical_slug}``, or empty when no ledger exists for this ATS.
+
+    **Keys are lowercased; look up with `slug.lower()`.** A ledger routinely holds the same Board
+    under more than one casing (ADR-0023, and the 1,843-pair casing incident behind #202), so an
+    exact-case membership test silently misses the variant and scrapes the duplicate anyway —
+    silently, because a miss looks exactly like "not a duplicate". Values keep their real casing:
+    they name the Board we keep, and that name is reported to a person.
 
     Missing-file-is-empty rather than an error: every ATS reads this on the scrape path and only
     the ones that have been scanned have a file. A read that raised would make adding an ATS a
@@ -184,7 +202,7 @@ def load(path: str | Path) -> dict[str, str]:
         return {}
     with open(path, newline="", encoding="utf-8") as fh:
         return {
-            row["duplicate"]: row["canonical"]
+            row["duplicate"].lower(): row["canonical"]
             for row in csv.DictReader(fh)
             if row.get("duplicate") and row.get("canonical")
         }
@@ -200,5 +218,5 @@ def write(path: str | Path, aliases: Iterable[Alias]) -> None:
         writer.writerow(FIELDS)
         for a in rows:
             writer.writerow(
-                [a.ats, a.duplicate, a.canonical, a.signal, a.resolved_to, a.checked_at]
-            )
+                astuple(a)
+            )  # field order comes from `Alias`, which `FIELDS` mirrors

@@ -902,7 +902,7 @@ def _drop_alias_duplicates(ats: str, rows: list[dict], ledger_dir: Path) -> list
     ``slug_from`` rather than assuming ``tenant`` is what keeps this correct when the framework
     reaches those — assuming it would fail silently, skipping nothing, which is the least
     detectable way for this to be wrong."""
-    aliases = board_aliases.load(board_aliases.path_for(ledger_dir, ats))
+    aliases = board_aliases.load_for(ledger_dir, ats)
     if not aliases:
         return rows
     scraper = SCRAPERS.get(ats)
