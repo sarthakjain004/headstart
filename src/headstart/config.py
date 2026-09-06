@@ -111,7 +111,13 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "ripplehire:prodtest",  # 863 postings, company "prodtest"
         "ripplehire:qa1-tataaia",  # 209 postings, company "qa1-tataaia"
         "ripplehire:qa1-ust-app",  # 300 postings, company "qa1-ust-app"; "software developement"
+        "ripplehire:itcinfotech",  # 631 postings; titles itself "ITC Infotech Demo"
+        "ripplehire:labs-axisqa",  # 1,226 postings; RippleHire's own QA tenant for Axis
         "ripplehire:rhsandbox",  # 649 postings; RippleHire's own sandbox tenant
+        # 502 postings. Found because ADR-0112 made it *stop* looking fake: its board titles
+        # itself "Mphasis Careers | …", so the served company became "Mphasis" — a QA tenant
+        # impersonating the real employer, where the slug had at least shown what it was.
+        "ripplehire:tenant1-mph",
         "ripplehire:uat2",  # 788 postings, company "uat2"
         "smartrecruiters:dev2",  # company "Dev"; SmartRecruiters demo tenant
         # Capgemini's test RMK host, which mirrors real postings under the company name

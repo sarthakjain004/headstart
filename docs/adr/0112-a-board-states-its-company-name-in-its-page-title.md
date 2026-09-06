@@ -41,14 +41,22 @@ successfactors, keka, darwinbox and freshteam scored **0/30 against the register
 which is not the same as having nothing to read: a later sweep found roughly one keka Board in
 eight already serving an eightfold-shaped title ("Entropik Careers"), and successfactors serves
 parseable ones too ("Careers at Bachem"). They are excluded because a hit rate that low buys a
-request on *every* Board of the ATS for a name on few of them. That is a cost decision, open to
-revisiting with its own measurement — not an absence of data, as an earlier draft claimed.
+request on *every* Board of the ATS for a name on few of them.
+
+**Keka was that revisiting, and it changed the answer.** A 40-Board sweep found 5 serving a
+`<title>` — 12.5%, not the 0/30 the first draft asserted — and every one of the five in a wrapper
+eightfold's patterns already read ("Careers at Skylark Drones", "Entropik Careers"). It is wired.
+Be clear about the size: ~1,820 of 1,429,908 ledger jobs, **+0.13%**, across ~102 of 819 Boards.
+It earns its place not on volume but on cost and floor — the page returns in 0.14s, *every* keka
+Board serves a slug today, so there is nothing to lose and no Board that can end up worse.
+Successfactors stays out on a different and firmer ground: its titles are real but heterogeneous
+marketing copy in several languages, so no single wrapper strips them safely.
 
 **Workday is excluded, and it is the largest single block** (51,861 rows). Its board page is an
 empty SPA, and neither its listing nor its detail response carries a name — verified by driving the
 real scraper. Its public job page's JSON-LD *does* carry `hiringOrganization`, but that is the
-**per-posting legal entity**: it varies within one Board and is frequently worse than the slug —
-it varies **within a single Board** — nvidia alone returns "IL00 Mellanox Technologies, Ltd.",
+**per-posting legal entity**, so it varies **within a single Board** and is frequently worse than
+the slug — nvidia alone returns "IL00 Mellanox Technologies, Ltd.",
 "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA USA" across three postings, and `nc` returns
 "Adult Correction" and "Department of Transportation". Its board SPA does serve an `og:title`, but
 sampled live that is correct on well under half the Boards carrying one and otherwise junk these
@@ -81,7 +89,26 @@ over days", not "fixed on the next run".
 states one, the ATS slug everywhere else. That is honest rather than tidy, and it is the shape any
 incremental fix to this has.
 
-**Coverage is 4 of the affected ATSes** — 59,123 rows, which is 39% of the narrow denominator but
+**These are ceilings, not achieved coverage.** Every figure below counts rows on a Board whose
+ATS is wired — not rows that actually gain a name. The per-ATS hit rates are 25-28/30 (and keka's
+5/40), so the realised share lands near 27.5%, not 31.6%. Quote the ceiling only as a ceiling.
+
+**Coverage is 5 of the affected ATSes** — 59,123 rows, which is 39% of the narrow denominator but
 **31.6% of the 186,798 slug-shaped rows**, and the second number is the one to quote. The remainder
 is not a rollout waiting to happen; it needs a per-ATS source that the evidence does not currently
 support, and Workday's case shows that "some name" is not automatically better than none.
+
+
+## Two things this change surfaced
+
+**Three vendor Boards had to be blocklisted, not renamed.** Reading titles is also a way of
+*finding* fake tenants: `ripplehire:itcinfotech` titles itself "ITC Infotech Demo" and
+`ripplehire:labs-axisqa` is a QA tenant with 1,226 postings. The sharp one is
+`ripplehire:tenant1-mph`, which titles itself "Mphasis" — so this change would have *stopped it
+looking fake*, turning a visibly-bogus slug into a real employer's name in front of users. A
+title rule cannot catch that; only ADR-0034's blocklist can, and all three went there. The
+`_PLACEHOLDER` rule catches the self-declaring ones a blocklist has not reached yet.
+
+**Lever's board page is assumed to be `jobs.lever.co`.** A Board on Lever's EU host resolves no
+name and keeps its slug — the same no-worse-than-today floor as every other miss, recorded here
+because the next person to see a Lever Board unnamed should look here first.

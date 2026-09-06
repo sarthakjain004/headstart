@@ -7,9 +7,9 @@ once the Boards whose ledger "name" is itself an identifier are counted — the 
 and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1password",
 "jobs.vodafone.com", "nttltd" where a company name belongs. The wider figure is the honest one.
 
-Four ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
-request per Board recovers it. Which four is a measurement, not a guess: 30 live Boards were
-sampled per ATS (`experiment/company-display-name/`, gitignored), and only those where the wrapper is uniform
+Five ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
+request per Board recovers it. Which five is a measurement, not a guess: live Boards were sampled
+per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
 enough to strip safely are here.
 
 ===============  ==========================================  =====================
@@ -19,15 +19,20 @@ ashby            ``{Name} Jobs``                             28/30
 eightfold        ``Careers at {Name}`` / ``{Name} Careers``  28/30
 ripplehire       ``{Name} Careers | Latest jobs at …``       28/30
 lever            ``{Name}`` — no wrapper at all              25/30
+keka             ``Careers at {Name}`` / ``{Name} Careers``   5/40
 ===============  ==========================================  =====================
 
-**Absent, and why — stated more carefully than the first draft, which overclaimed.**
-successfactors, keka, darwinbox and freshteam score **0/30** *against the patterns registered
-here*. That is not the same as having nothing to read: a later sweep found roughly one keka board
-in eight serving a title already in eightfold's shape ("Entropik Careers"), and successfactors
-serves parseable ones too ("Careers at Bachem"). They are excluded because a hit rate that low
-buys a request on every Board of the ATS for a name on few of them — a cost decision, not an
-absence of data, and one worth revisiting with its own measurement.
+Keka is the odd row and worth reading twice: only one board in eight serves a ``<title>`` at all
+(the rest render it client-side), but where one exists the wrapper is as uniform as eightfold's,
+and *every* keka Board serves a slug today — so the 12.5% is pure upside for one cheap request.
+The first draft excluded it on a stated **0/30**, which was simply wrong.
+
+**Absent, and why.** darwinbox and freshteam render their boards client-side and serve nothing to
+read. successfactors is the interesting exclusion: it does serve titles, but they are marketing
+copy in several languages with no shared wrapper — "Life@MOHH - people, culture, and values |
+MOHH", "Trabaja en Volaris", "Careers at Bachem" — so a pattern wide enough to catch the third
+mangles the first two. That is a quality bar, not a cost one, and no measurement will move it;
+what it needs is per-tenant evidence this module has no place to keep.
 
 **Workday** is excluded on stronger evidence. Its listing and detail responses carry no name —
 verified by driving the real scraper — and its board page is a client-rendered SPA. It does serve
@@ -58,6 +63,10 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"^Careers?\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
         re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
     ),
+    "keka": (
+        re.compile(r"^Careers?\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
+        re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
+    ),
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
 }
@@ -72,26 +81,29 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #: Long enough for "Financial Software & Systems (P) Ltd.", short enough to reject a sentence.
 _MAX_LEN = 60
 
-#: The ATS vendors themselves. A Board whose title names its *vendor* is a demo, a parked tenant,
-#: or a page that fell back to the platform's own branding — `ripplehire:trampolinetech` really
-#: does title itself "RippleHire Careers | …", and shipping that puts the ATS's name in front of
-#: a user as the employer. ADR-0034 already blocklists the Boards it knows are vendor-owned; this
-#: catches the ones that only reveal it in their title.
-_VENDORS = frozenset(
-    {
-        "ashby",
-        "ashbyhq",
-        "darwinbox",
-        "eightfold",
-        "freshteam",
-        "freshworks",
-        "greenhouse",
-        "keka",
-        "lever",
-        "ripplehire",
-        "successfactors",
-        "workday",
-    }
+#: Per ATS, the names its *own* branding goes by. A board page that fails to render its tenant
+#: falls back to the platform's branding, so the vendor a title can wrongly name is always the
+#: Board's own — `ripplehire:trampolinetech` really does title itself "RippleHire Careers | …".
+#: Keying on the Board's ATS is what keeps a vendor that is also a genuine employer elsewhere:
+#: `lever:freshworks` titles itself "Freshworks", and a flat set of every vendor name refused it.
+#: ADR-0034 blocklists the Boards already known to be vendor-owned; this catches the rest.
+_VENDOR_ALIASES: dict[str, frozenset[str]] = {
+    "ashby": frozenset({"ashby", "ashbyhq"}),
+    "eightfold": frozenset({"eightfold", "eightfoldai"}),
+    "keka": frozenset({"keka"}),
+    "lever": frozenset({"lever"}),
+    "ripplehire": frozenset({"ripplehire"}),
+}
+
+
+#: A board that says out loud it is not a real employer. ADR-0034 blocklists the ones we know
+#: about, but a demo tenant that has not been found yet still gets scraped, and a title is often
+#: where it admits itself — "ITC Infotech Demo", "Your Company". This cannot catch a QA tenant
+#: that titles itself after the company it is imitating (`ripplehire:tenant1-mph` served
+#: "Mphasis"); only the blocklist can, which is where that one went.
+_PLACEHOLDER = re.compile(
+    r"\b(?:demo|sandbox|test(?:ing)?|your\s+company|example|placeholder)\b",
+    re.IGNORECASE,
 )
 
 
@@ -106,9 +118,8 @@ def looks_like_slug(name: str | None) -> bool:
     """
     if not name:
         return True
-    return " " not in name.strip() and bool(
-        re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", name)
-    )
+    text = name.strip()
+    return " " not in text and bool(re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", text))
 
 
 def title_of(page: str | None) -> str | None:
@@ -156,6 +167,8 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
     # precisely the improvement being sought. It did: ashby scored 0/12 until this was narrowed.
     if text == slug:
         return None
-    if re.sub(r"[^a-z]", "", text.lower()) in _VENDORS:
+    if re.sub(r"[^a-z]", "", text.lower()) in _VENDOR_ALIASES.get(ats, frozenset()):
+        return None
+    if _PLACEHOLDER.search(text):
         return None
     return text

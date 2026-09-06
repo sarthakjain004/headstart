@@ -1,7 +1,7 @@
 """The Board's company name, read from its board page instead of standing in as the slug.
 
 Every case here is a real title observed while sampling 30 live Boards per ATS
-(`experiment/company-display-name/`), not an invented one — including the two that talked the
+(`experiment/company-display-name/`, gitignored), not an invented one — including the two that talked the
 first draft of `from_title` out of a rule it had wrong.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.company_name import from_title, title_of
+from headstart.company_name import from_title, looks_like_slug, title_of
 
 
 @pytest.mark.parametrize(
@@ -60,7 +60,7 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         ("lever", "cargo-partner", "cargo-partner"),
         ("ashby", "telli Jobs", "telli"),
         # an ATS with no evidence behind it has no patterns at all
-        ("keka", "Careers at Red Baton", "redbaton"),
+        ("freshteam", "Careers at Red Baton", "redbaton"),
         ("workday", "Careers at Anything", "pwc"),
         # nothing to read
         ("lever", None, "acme"),
@@ -87,6 +87,43 @@ def test_a_dotted_name_is_not_mistaken_for_a_hostname():
     case-insensitively rejected the first, so the rule requires a lowercase string."""
     assert from_title("ashby", "Character.AI Jobs", "character") == "Character.AI"
     assert from_title("lever", "webfx.com", "webfx") is None
+
+
+def test_a_vendor_name_is_refused_only_on_that_vendors_own_boards():
+    """The failure mode is a board page falling back to its *own* platform's branding.
+
+    `ripplehire:trampolinetech` really does title itself "RippleHire Careers | …" (live, 15
+    jobs, and not in `EXCLUDED_BOARDS`). But a vendor is a real employer on someone else's ATS:
+    `jobs.lever.co/freshworks` titles itself "Freshworks", and refusing every vendor name
+    everywhere threw that away.
+    """
+    assert (
+        from_title("ripplehire", "RippleHire Careers | Latest jobs", "trampolinetech")
+        is None
+    )
+    assert from_title("lever", "Freshworks", "freshworks") == "Freshworks"
+
+
+def test_a_board_that_calls_itself_a_demo_is_refused():
+    """A demo tenant ADR-0034 has not caught yet often admits itself in its title.
+
+    It cannot catch one that titles itself after the company it imitates — `tenant1-mph` served
+    "Mphasis" — which is why that Board went to the blocklist instead.
+    """
+    assert (
+        from_title("ripplehire", "ITC Infotech Demo Careers | x", "itcinfotech") is None
+    )
+    assert from_title("ripplehire", "Your Company Careers | x", "prodtest") is None
+    assert (
+        from_title("ripplehire", "Tata Steel Ltd Careers | x", "tatasteel")
+        == "Tata Steel Ltd"
+    )
+
+
+def test_a_padded_slug_is_still_a_slug():
+    """`looks_like_slug` judges the stripped string, not two different ones."""
+    assert looks_like_slug(" wipro ")
+    assert not looks_like_slug(" Tata Steel ")
 
 
 def test_title_of_reads_and_tidies_the_tag():

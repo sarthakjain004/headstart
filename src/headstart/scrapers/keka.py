@@ -75,6 +75,19 @@ class KekaScraper(BaseScraper):
         super().__init__(slug, company)
         self._tenant: str | None = None
 
+    def board_page(self) -> str:
+        """The careers page, whose ``<title>`` is "Careers at {Name}" or "{Name} Careers".
+
+        Only 5 of 40 live hiring Boards sampled serve a non-empty ``<title>`` at all — the rest
+        render it client-side — but where one exists the wrapper is as uniform as eightfold's,
+        and every keka Board serves a slug as its company today, so the 12.5% is all upside.
+
+        :meth:`fetch_raw` already GETs this same URL for the tenant uuid. Re-fetching it costs a
+        measured 0.14s per Board (~2 min across a full run, concurrent within each shard), which
+        is cheaper than threading the response out of ``fetch_raw`` and into ``fetch``.
+        """
+        return f"https://{self.slug}.keka.com/careers"
+
     def url(self) -> str:
         base = f"https://{self.slug}.keka.com/careers/api"
         if self._tenant is None:
