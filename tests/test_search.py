@@ -16,6 +16,7 @@ import pytest
 
 from headstart.search import (
     EMPLOYMENT_TYPES,
+    SORT_COLUMNS,
     JobSearch,
     build_filter,
     eval_filter,
@@ -264,6 +265,9 @@ class _Query:
         return self
 
     def select(self, cols):
+        # lancedb raises `columns must be a list or a dictionary` on a tuple, and the browse
+        # branch shipped one — green here, 500 in production, because this fake took anything.
+        assert isinstance(cols, (list, dict)), f"lancedb rejects {type(cols).__name__}"
         self._t.last_select = list(cols)
         return self
 
@@ -840,14 +844,31 @@ def test_a_query_asks_only_for_the_columns_the_response_is_built_from():
     assert set(table.last_select) - {"_distance"} == set(searcher.projection)
 
 
-def test_a_browse_asks_for_rowid_instead_because_ordering_needs_it():
-    """No vector means no `_distance` — and an `order_by` over a projected scan fails planning
-    without a row identifier ("TakeExec requires the input plan to have a column named
-    `_rowaddr` or `_rowid`"), which is why the two paths ask for different extras."""
+def test_a_browse_asks_for_the_projection_alone():
+    """No vector means no `_distance`, and nothing else is needed either.
+
+    An `order_by` over a projected scan plans fine so long as the ordering column is in the
+    projection — see `test_every_sortable_column_is_projected`. A `_rowid` briefly lived here,
+    justified by a planning error ("TakeExec requires the input plan to have a column named
+    `_rowaddr` or `_rowid`") that a probe had produced only because *its* projection left the
+    ordering column out.
+    """
     searcher, table = _searcher()
     searcher.run({})
-    assert "_rowid" in table.last_select
+    assert table.last_select == list(searcher.projection)
     assert "_distance" not in table.last_select
+
+
+def test_every_sortable_column_is_projected():
+    """The invariant the browse path rests on: anything `run` can order by must be a column it
+    also asked for. Leave one out and LanceDB fails planning outright rather than degrading, so
+    this is what stands between a new sort option and a 500 on every browse."""
+    searcher, _ = _searcher()
+    orderable = set(SORT_COLUMNS.values()) | {"first_seen", "id"}
+    missing = {c for c in orderable if c in _Table.schema.names} - set(
+        searcher.projection
+    )
+    assert not missing, f"orderable but not projected: {sorted(missing)}"
 
 
 def test_the_projection_is_narrowed_to_columns_the_table_actually_has():

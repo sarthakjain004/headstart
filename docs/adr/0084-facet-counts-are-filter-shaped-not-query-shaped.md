@@ -141,30 +141,36 @@ measurement: *"2.7 ms for one page against 9.2 ms for the full 2,000-row window,
 query costs ~6.5 ms rather than a redesign."* That was measured 2026-08-25. ADR-0104 added a
 stored `description` column on 2026-09-02, and nothing re-measured.
 
-Re-measured through `JobSearch.run` on the served table (318,003 rows), and the figure is now
-**264.9 ms**, not 9.2 ms — the window was materialising 2,000 whole rows, each carrying its
-768-float `vector` and a description averaging ~5,000 characters, only to discard both when the
-response was projected one line later.
+Re-measured through `JobSearch.run` on a 318,003-row table carrying no index — the shape
+production is in — and the figure is now **420.6 ms**, not 9.2 ms. The window was materialising
+2,000 whole rows and discarding all but sixteen fields when the response was projected one line
+later. The dominant payload is the **768-float `vector`**, not the description: on that table a
+2,000-row window costs 331 ms whole against 162 ms with only the vector dropped, and the table in
+question has no `description` column at all. ADR-0104 adds to the cost wherever a table does have
+one, but it is not what this ADR's figure missed.
 
 The fix is a `select()` of exactly the columns `run` reads (`RESULT_COLUMNS`), not a redesign, so
 this ADR's decision stands — the window is still the right shape. Only its price changes:
 
 | path | before | after |
 | --- | --- | --- |
-| query + sort (the 2,000-row window) | 264.9 ms | **83.6 ms** |
-| browse, no query | 105.5 ms | **55.8 ms** |
-| query, no sort (one page of 20) | 21.2 ms | 20.4 ms |
+| query + sort (the 2,000-row window) | 420.6 ms | **256.5 ms** |
+| browse, no query | 115.9 ms | **60.7 ms** |
+| query, no sort (one page of 20) | 105.0 ms | 103.7 ms |
 
 The last row is the control: with only 20 rows to carry, the projection is worth nothing, which
 is what confirms the saving is per-row payload rather than anything about the query.
 
-Two things the projection cannot be naive about, both measured against the real backend:
-`select()` **raises** on a column the table lacks, so it is intersected with the live schema at
-construction — half of `RESULT_COLUMNS` arrive by migration, and naming one unconditionally would
-turn ADR-0031's dark-until-migrated rule into a 500 on every search. And the two paths need
-different extras: the vector path names `_distance` explicitly, because `score` is that value and
-lancedb warns its auto-projection "will change in the future"; the browse path names `_rowid`,
-without which an `order_by` over a projected scan fails planning outright.
+Two things the projection cannot be naive about, both measured against the real backend rather
+than assumed. `select()` **raises** on a column the table lacks, so it is intersected with the
+live schema at construction — half of `RESULT_COLUMNS` arrive by migration, and naming one
+unconditionally would turn ADR-0031's dark-until-migrated rule into a 500 on every search. And
+the vector path names `_distance` explicitly, because `score` is that value and lancedb warns its
+auto-projection "will change in the future".
+
+An `order_by` over a projected scan does plan correctly **provided the ordering column is in the
+projection** — which is an invariant worth its own test rather than a `_rowid` bolted on, since
+leaving one out fails planning outright rather than degrading.
 
 **Not done here, and deliberately:** the corpus still carries no index of any kind. Scalar indexes
 (~10 MB, 0.15 s to build) and an IVF_PQ vector index are the next levers, but the latter is only

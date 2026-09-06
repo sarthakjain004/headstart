@@ -109,11 +109,27 @@ ETYPE_CLAUSES = {
 #: served query asks for, rather than every column the table holds.
 #:
 #: **This is a latency fix, not tidiness.** Without it the sorted-query path materialises
-#: `max_k * max_page` = 2,000 whole rows, each carrying its 768-float `vector` and (since
-#: ADR-0104) a `description` averaging ~5,000 characters, only to throw both away one line later.
-#: Measured on the served table: the 2,000-row window falls from 230 ms to 45 ms, and the browse
-#: page from 105 ms to 32 ms. ADR-0084 costed that window at "9.2 ms … ~6.5 ms" — a figure taken
-#: before `description` existed, and no longer true of the table it describes.
+#: `max_k * max_page` = 2,000 whole rows and throws all but these fields away one line later.
+#: The 768-float `vector` is the bulk of that payload — a 2,000-row window costs 331 ms whole
+#: against 162 ms with only the vector dropped — and a stored `description` (ADR-0104) adds to it
+#: wherever the table has one.
+#:
+#: Measured through :meth:`JobSearch.run` on a 318,003-row table carrying **no index**, which is
+#: the shape production is in, and the basis every figure here and in ADR-0084's amendment uses:
+#:
+#: ===================================  =========  ========
+#: path                                 before     after
+#: ===================================  =========  ========
+#: query + sort (the 2,000-row window)  420.6 ms   256.5 ms
+#: browse, no query                     115.9 ms    60.7 ms
+#: query, no sort — one page of 20      105.0 ms   103.7 ms
+#: ===================================  =========  ========
+#:
+#: The last row is the control: with 20 rows to carry, projecting is worth nothing, which is what
+#: shows the saving is per-row payload rather than anything about the query. An earlier draft of
+#: these numbers was taken on a local snapshot that had been given an IVF_PQ index by an unrelated
+#: benchmark, and read 264.9 -> 83.6 ms; a faster search makes the payload a larger share, so it
+#: flattered the fix.
 #:
 #: Intersected with the live schema in :meth:`JobSearch.__init__`, never used raw: `select()`
 #: **raises** on a column the table lacks, and half of these are added by migration
@@ -693,14 +709,18 @@ class JobSearch:
             )  # no vector: a plain, filtered scan (ADR-0074)
         if where:
             search = search.where(where, prefilter=True)
-        # Ask only for the columns the response is built from (:data:`RESULT_COLUMNS`), plus the
-        # one extra each path needs. `_distance` is named explicitly rather than left to
-        # lancedb's auto-projection, which warns that it "will change in the future" and stop
-        # supplying it — and `score` is that value. `_rowid` is not optional either: an
-        # `order_by` over a projected scan fails planning without it ("TakeExec requires the
-        # input plan to have a column named `_rowaddr` or `_rowid`"), which is why the browse
-        # branch carries it and the vector branch, which never orders, does not.
-        search = search.select([*self.projection, "_distance" if query else "_rowid"])
+        # Ask only for the columns the response is built from (:data:`RESULT_COLUMNS`).
+        # `_distance` is named explicitly rather than left to lancedb's auto-projection, which
+        # warns that it "will change in the future" and stop supplying it — and `score` is that
+        # value. Nothing extra is needed on the browse side: an `order_by` over a projected scan
+        # plans fine *provided the ordering column is in the projection*, which
+        # `test_every_sortable_column_is_projected` pins. (Leave one out and planning fails with
+        # "TakeExec requires the input plan to have a column named `_rowaddr` or `_rowid`" — the
+        # error that briefly bought a `_rowid` here, on a probe whose projection was the thing
+        # at fault.)
+        search = search.select(
+            [*self.projection, "_distance"] if query else [*self.projection]
+        )
         if not query and not sort:
             # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
             # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`
