@@ -1,0 +1,103 @@
+{# The Data tab (ADR-0112): what the index holds, what it deliberately leaves out, and what it
+   does not know. Named for its tab, as every other panel here is.
+
+   Two rules govern what may be written on this page. Every number is counted off the served
+   table at request time (`/coverage`) rather than typed in, because a coverage figure in prose
+   is stale the moment the next run lands. And every claim names its mechanism and links the
+   decision behind it, so a sceptical reader arrives at the reasoning instead of at more
+   assertion. A sentence that can satisfy neither rule does not belong here. #}
+<div class="doc">
+
+  <header class="doc-hd">
+    <h2>What is actually in here</h2>
+    <p>Everything below is either counted off the live index when this page loads, or a link to
+       the decision that made it so. Job search runs on claims that are hard to check; these are
+       meant to be easy.</p>
+  </header>
+
+  <section class="doc-sec">
+    <h3>Where the listings come from</h3>
+    <p>Companies run their hiring on an <b>applicant tracking system</b> — the software that owns
+       their careers page and their application form. HeadStart reads those boards directly, one
+       scraper per provider, and keeps what it finds. The result is the employer's own posting,
+       not a copy of it, and the link on every card opens on the employer's own domain.</p>
+    <p class="ats-line"><span class="lbl">Read from {{ atses|length }} providers:</span>
+      {% for a in atses %}<span class="ats-pill">{{ a }}</span>{% endfor %}</p>
+    <p class="aside">This is the whole reason the index catches roles that never reach the big
+       aggregators: an employer has to opt in to syndicate a job outwards, and plenty never do.</p>
+  </section>
+
+  <section class="doc-sec">
+    <h3>What is deliberately left out</h3>
+    <ul class="doc-list">
+      <li><b>Anything that is not a tech role.</b> Only software-engineering and adjacent
+        openings are indexed. The filter that decides is tuned to keep borderline roles rather
+        than drop them, so a little non-tech gets through — that direction is on purpose.</li>
+      <li><b>Listings not written in English.</b> The matching model is English-only, and it
+        would rank a German description confidently and wrongly. Those boards are still read;
+        their jobs are held out of search until multilingual matching exists.</li>
+      <li><b>Anything an employer paid to place.</b> There is no such mechanism. Ordering is
+        similarity to your query and nothing else.</li>
+    </ul>
+  </section>
+
+  <section class="doc-sec">
+    <h3>What the index does not know</h3>
+    <p>Boards vary in what they publish, so a field being missing is usually the employer's
+       silence rather than a bug. These are counted from the served index right now — if the
+       pipeline gets worse at something, this number falls.</p>
+    <div class="cov" id="cov" aria-live="polite"><p class="aside">Counting…</p></div>
+    <p class="aside">Percentages are of listings in the index. They say nothing about boards not
+       yet discovered or jobs never scraped — a high number here is not a claim of completeness.</p>
+  </section>
+
+  <section class="doc-sec">
+    <h3>How results get ordered</h3>
+    <ul class="doc-list">
+      <li><b>Your words are matched on meaning.</b> The query and every job description are
+        turned into vectors, and results come back by similarity. "Backend engineer at a climate
+        startup" works; it is not looking for those words.</li>
+      <li><b>The match percentage is relative, not absolute.</b> Raw similarity sits in a narrow
+        band — a strong on-topic query tops out around 0.78, an absurd one still scores 0.66 — so
+        the badge stretches that band to 0–100% to make results comparable <i>to each other</i>.
+        A 90% means "among the closest things in this index", never "90% suitable for you".</li>
+      <li><b>Filters narrow; the query ranks.</b> The rail on the left is exact and deterministic.
+        The search box is the only fuzzy part, which is why years and salary belong in the
+        filters rather than in the sentence.</li>
+      <li><b>Sorting by date sorts your best matches.</b> Choosing "newest" reorders the strong
+        matches by date rather than date-sorting the whole index, which would bury relevance.</li>
+    </ul>
+  </section>
+
+  <section class="doc-sec">
+    <h3>How a closed job leaves</h3>
+    <p>Boards are re-read on a rolling schedule. When a posting is missing from its board, it is
+       marked unconfirmed rather than deleted; it is removed only if the <b>next</b> read of that
+       same board misses it too. One failed fetch therefore cannot delete a live job, and a
+       genuinely closed one takes two passes to go.</p>
+    <p class="aside">Which means a dead link is possible, and the honest description of the
+       window is "hours, not minutes". Each run reads a slice of boards rather than all of them,
+       so a quiet board is revisited less often than a busy one.</p>
+  </section>
+
+  <section class="doc-sec">
+    <h3>What is stored about you</h3>
+    <ul class="doc-list">
+      <li>Your <b>email address</b>, from Google sign-in — the key your saved work hangs off.</li>
+      <li>Anything you save yourself: saved searches, starred jobs, and a profile if you fill
+        one in. Deleting them deletes them.</li>
+      <li><b>No email is ever sent</b> unless you switch it on for a saved search, and every one
+        of those carries an unsubscribe link.</li>
+      <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing
+        side of this product at all.</li>
+    </ul>
+  </section>
+
+  <footer class="doc-ft">
+    <span>Check any of it:</span>
+    <a href="https://github.com/sarthakjain004/headstart" target="_blank" rel="noopener">source</a>
+    <a href="https://github.com/sarthakjain004/headstart/tree/main/docs/adr" target="_blank" rel="noopener">design decisions</a>
+    <a href="https://github.com/sarthakjain004/headstart/actions" target="_blank" rel="noopener">pipeline runs</a>
+  </footer>
+
+</div>

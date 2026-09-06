@@ -846,10 +846,30 @@ def me():
     )
 
 
+@app.route("/coverage")
+def coverage():
+    """What the served table actually carries, counted live (ADR-0112).
+
+    The Data tab reads this. Its own route rather than a field on ``index`` because the tab
+    is opened by a minority of visits and the counts, though cheap, are not free on the
+    first one — and because a number rendered into the page at boot would freeze at
+    whatever the table held then, which is the staleness this ADR exists to avoid.
+    """
+    return jsonify(_searcher.coverage())
+
+
 @app.route("/")
 def index():
     if _AUTH_ON and not session.get("email"):
-        return render_template("signin.html", google_client_id=_GOOGLE_CLIENT_ID)
+        # The door states what this is and proves it before asking for an identity
+        # (ADR-0111). Both numbers come off objects built at boot, so the signed-out
+        # path stays one render with no query behind it.
+        return render_template(
+            "signin.html",
+            google_client_id=_GOOGLE_CLIENT_ID,
+            njobs=f"{_table.count_rows():,}",
+            n_atses=len(_searcher.atses),
+        )
     scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",

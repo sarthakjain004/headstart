@@ -61,7 +61,10 @@ body{
 .shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:26px 22px 80px; }
 
 /* ---- masthead ---- */
-.top{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:26px; }
+.top{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 16px;
+  grid-template-areas:"brand right" "tagline tagline"; margin-bottom:26px; }
+.brand{ grid-area:brand; } .top-right{ grid-area:right; }
+.tagline{ grid-area:tagline; }
 .brand{ display:flex; align-items:center; gap:11px; }
 .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
   background:linear-gradient(135deg,var(--aqua),var(--violet));
@@ -69,6 +72,11 @@ body{
 .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
   border-radius:50%; background:var(--ground); }
 .brand h1{ font:600 21px/1 var(--serif); letter-spacing:-.01em; margin:0; }
+/* What this product is, kept on screen wherever the user goes — the footer sentence is at
+   the bottom of a long results page and a first-time user never reaches it. It has its own
+   grid row rather than sitting inside .brand, so a narrow header pushes it down instead of
+   squeezing it out: phones are where first-time visitors mostly arrive. */
+.tagline{ margin:0; color:var(--ink-2); font-size:12px; line-height:1.35; text-wrap:pretty; }
 .brand h1 em{ font-style:normal;
   background:linear-gradient(100deg,var(--aqua),var(--violet)); -webkit-background-clip:text;
   background-clip:text; color:transparent; }
@@ -219,6 +227,13 @@ textarea:focus{ border-color:var(--violet); }
 .card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:16px;
   letter-spacing:-.01em; line-height:1.35; }
 .card a.title:hover{ color:var(--aqua); }
+/* The link leaves for the employer's own board, which is the product's central claim — so
+   the card marks it rather than making the reader hover and parse a URL. */
+.card a.title .ext{ width:11px; height:11px; margin-left:5px; vertical-align:baseline;
+  color:var(--ink-3); }
+.card a.title:hover .ext{ color:var(--aqua); }
+.sr{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip-path:inset(50%); white-space:nowrap; border:0; }
 .card .org{ color:var(--ink-2); font-size:13px; margin-top:3px; }
 .card .org span{ color:var(--ink-3); }
 /* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
@@ -242,9 +257,21 @@ textarea:focus{ border-color:var(--violet); }
   border-color:color-mix(in srgb, var(--lime) 32%, transparent); }
 .tag.rem{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet);
   border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
+/* Provenance, not a category — so no hue of its own (those are spoken for: amber=new,
+   lime=pays, violet=remote). It stays the neutral chip and earns its weight from the word. */
+.tag.src{ font-variant:none; letter-spacing:.005em; }
+.tag.src::before{ content:""; display:inline-block; width:4px; height:4px; border-radius:50%;
+  background:var(--aqua); margin-right:6px; vertical-align:1.5px; }
 
 .pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
 .pager .ghost{ padding:8px 16px; }
+
+/* Names the list below (browse vs ranked). Sits between the filter chips and the rows
+   because that is where the eye already is on its way down. */
+.kind{ margin:0 0 12px; color:var(--ink-2); font-size:12.5px; line-height:1.5;
+  max-width:74ch; text-wrap:pretty; }
+.kind a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
+.kind a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
 
 .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); max-width:56ch;
   margin-inline:auto; }
@@ -429,6 +456,9 @@ textarea:focus{ border-color:var(--violet); }
 /* running text, so it gets a measure — 1180px of prose is unreadable */
 .foot{ max-width:62ch; margin:46px auto 0; text-align:center; color:var(--ink-3);
   font-size:12.5px; line-height:1.6; text-wrap:pretty; }
+.foot a{ color:var(--ink-2); text-decoration:none; white-space:nowrap;
+  border-bottom:1px solid var(--rule-2); }
+.foot a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
 
 /* ---- narrow screens. The sidebar becomes a horizontal tab row above the content. ---- */
 @media (max-width:900px){
@@ -487,3 +517,49 @@ textarea:focus{ border-color:var(--violet); }
 .linkish{ background:none; border:0; padding:0; cursor:pointer; font:inherit;
   color:var(--violet); text-decoration:underline; }
 .linkish:hover{ opacity:.8; }
+
+/* ---- the Data tab (ADR-0112). Running prose, so it gets a measure and a type scale of its
+       own — the rest of this page is controls and cards, which want neither. ---- */
+.doc{ max-width:70ch; margin-inline:auto; }
+.doc-hd h2{ font:600 22px/1.25 var(--serif); margin:0 0 8px; letter-spacing:-.01em; }
+.doc-hd p{ color:var(--ink-2); font-size:14.5px; margin:0 0 30px; text-wrap:pretty; }
+.doc-sec{ border-top:1px solid var(--rule); padding-top:22px; margin-bottom:26px; }
+.doc-sec h3{ font:600 14px/1.3 var(--sans); margin:0 0 12px; letter-spacing:.005em; }
+.doc-sec p{ color:var(--ink-2); font-size:14px; margin:0 0 12px; text-wrap:pretty; }
+.doc-sec b{ color:var(--ink); font-weight:600; }
+.doc-list{ list-style:none; margin:0; padding:0; display:grid; gap:11px; }
+.doc-list li{ color:var(--ink-2); font-size:14px; padding-left:15px; position:relative;
+  text-wrap:pretty; }
+.doc-list li::before{ content:""; position:absolute; left:0; top:8px; width:5px; height:5px;
+  border-radius:50%; background:var(--rule-2); }
+/* Set one size down, NOT one ink down. --ink-3 measures 3.5–4.3:1 against these surfaces,
+   under the 4.5:1 body-text floor — and a caveat nobody can read is exactly the defect this
+   page exists to avoid, so the hierarchy is carried by size alone. */
+.aside{ color:var(--ink-2); font-size:12.5px; line-height:1.5; }
+.doc-sec .aside{ display:block; }
+.ats-line{ line-height:2.1; }
+.ats-line .lbl{ color:var(--ink-3); font-size:13px; margin-right:6px; }
+/* Not `.pill` — that name belongs to the active-filter chip above, which carries a `pop`
+   animation and a remove button these must not inherit. */
+.ats-pill{ display:inline-block; font:500 11.5px var(--mono); padding:3px 9px; margin-right:5px;
+  border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule);
+  color:var(--ink-2); }
+.doc-ft{ border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3);
+  font-size:13px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
+.doc-ft a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
+.doc-ft a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+
+/* Coverage bars. A share of the index, so one hue at varying length — never a category
+   palette, and never red/green, which would read as pass/fail on facts that are neither. */
+.cov-total{ margin-bottom:14px !important; }
+.cov-row{ display:grid; grid-template-columns:64px 1fr; gap:14px; align-items:start;
+  margin-bottom:13px; }
+.cov-bar{ height:7px; border-radius:var(--r-pill); background:var(--rule); overflow:hidden;
+  margin-top:6px; }
+.cov-bar span{ display:block; height:100%; border-radius:var(--r-pill);
+  background:var(--aqua); }
+.cov-txt{ color:var(--ink-2); font-size:14px; line-height:1.45; }
+.cov-txt b{ color:var(--ink); font:600 14px var(--mono); font-variant-numeric:tabular-nums;
+  margin-right:2px; }
+.cov-txt .aside{ margin-top:2px; }
+@media (max-width:520px){ .cov-row{ grid-template-columns:48px 1fr; gap:10px; } }

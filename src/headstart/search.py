@@ -717,6 +717,10 @@ class JobSearch:
             if self.has_min_salary_annual
             else []
         )
+        # The Data tab's coverage counts (ADR-0112), filled on first use. Not counted here:
+        # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
+        # asked for the tab yet.
+        self._coverage: dict[str, Any] | None = None
 
     def filter_kwargs(self, args: Mapping[str, str]) -> dict[str, Any]:
         """The :func:`build_filter` keywords one request asks for, parsed exactly once.
@@ -935,3 +939,54 @@ class JobSearch:
             .to_list()
         )
         return {r["id"] for r in rows}
+
+    def coverage(self) -> dict[str, Any]:
+        """What share of the served table actually carries each field (ADR-0112).
+
+        The Data tab's numbers. Every one is counted here rather than written down, because a
+        coverage figure in prose is stale the moment the next run lands — README §"The served
+        table" already carries two dated to 2026-08-18 for exactly that reason. A number the
+        product measures about itself gets worse on the page when the pipeline gets worse,
+        which is the only incentive a limits page should have.
+
+        Costs one :meth:`count_rows` per field. ADR-0084's facet counts measured that at 4–6 ms
+        against a 316,606-row table, so the whole panel is cheaper than a single ranked search
+        — but it is cached per process anyway: the table cannot change under a running Space
+        (a new index arrives with a restart), so every call after the first is free.
+
+        Columns absent from an un-migrated table are reported as ``None``, never as zero. Zero
+        would read as "measured, and none have it" — the same unknown-is-not-zero rule
+        ``min_years`` follows (ADR-0009).
+        """
+        if self._coverage is None:
+            total = self._table.count_rows()
+            fields = {
+                "posted_at": "posted_at IS NOT NULL AND posted_at != ''",
+                "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
+                if self.has_first_seen
+                else None,
+                "salary": "min_salary_annual IS NOT NULL"
+                if self.has_min_salary_annual
+                else None,
+                "min_years": "min_years IS NOT NULL",
+                "description": "description IS NOT NULL AND description != ''"
+                if self.has_description
+                else None,
+                "remote": "remote = true",
+            }
+            self._coverage = {
+                "total": total,
+                "atses": len(self.atses),
+                "fields": {
+                    name: (
+                        None
+                        if where is None
+                        else {
+                            "n": self._table.count_rows(filter=where),
+                            "total": total,
+                        }
+                    )
+                    for name, where in fields.items()
+                },
+            }
+        return self._coverage

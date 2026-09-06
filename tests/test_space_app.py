@@ -104,8 +104,12 @@ class _Table:
             },
         ]
 
-    def count_rows(self):
-        return 2
+    def count_rows(self, filter=None):
+        # Coverage (ADR-0112) counts with a filter; everything else counts the table. One
+        # of the two rows is given each field so a percentage that is neither 0 nor 100
+        # comes back — a fake that answered `2` to everything would pass a renderer that
+        # had silently divided by the wrong total.
+        return 2 if filter is None else 1
 
 
 @contextmanager
@@ -1062,3 +1066,84 @@ def test_trends_multiple_ats_params_union(ats_trends_app):
     assert d["stamps"] == [_U2]
     by_name = {s["name"]: s for s in d["series"]}
     assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
+
+
+# ── The trust surfaces (ADR-0111, ADR-0112) ────────────────────────────────────────────
+# These assert *claims*, not markup. Each one is a sentence the product makes to a stranger
+# who has no way to check it from inside the page; a refactor that drops one should fail
+# here rather than ship a quieter, less accountable door.
+
+
+def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
+    """ADR-0111: what it is, proof, what sign-in costs, and how to check — then the button."""
+    page = auth_app.app.test_client().get("/").data.decode()
+    # The proof numbers are counted, not written: the fake table holds two rows and two
+    # ATSes, so a hardcoded marketing figure would not survive this.
+    assert '<div class="v">2</div><div class="k">tech roles indexed' in page
+    assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
+    # The provenance claim, the removal policy, and the no-paid-placement claim.
+    assert "employer's own board" in page
+    assert "Closed roles get removed." in page
+    assert "paid placement" in page
+    # What signing in costs, stated before the button rather than in a policy page behind it.
+    assert "stores your email address" in page
+    assert "signing out drops the session" in page
+    # …and the links that make the rest checkable.
+    assert "github.com/sarthakjain004/headstart" in page
+    # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0111
+    # changed the page around it, which is exactly when this gets dropped by accident).
+    assert page.index("Why the listings hold up") < page.index("Sign in to search")
+    assert 'id="openout"' in page
+
+
+def test_the_door_holds_up_when_the_index_is_tiny(auth_app):
+    """No arithmetic in display copy — a three-ATS index once read 'and -1 more'."""
+    page = auth_app.app.test_client().get("/").data.decode()
+    assert "-1 more" not in page and "0 more" not in page
+
+
+def test_coverage_counts_the_served_table_rather_than_asserting(app):
+    """ADR-0112: the Data tab's numbers are measured, so they cannot go stale in prose."""
+    d = app.app.test_client().get("/coverage").json
+    assert d["total"] == 2
+    assert d["atses"] == 2
+    # One of two rows carries each field — a real ratio, not a placeholder.
+    assert d["fields"]["posted_at"] == {"n": 1, "total": 2}
+    assert d["fields"]["min_years"] == {"n": 1, "total": 2}
+
+
+def test_coverage_is_behind_the_wall_like_everything_else(auth_app):
+    assert auth_app.app.test_client().get("/coverage").status_code == 401
+
+
+def test_coverage_reports_a_missing_column_as_unknown_not_zero(app, monkeypatch):
+    """A column the table lacks is None. Zero would read as 'measured, and none have it'."""
+    searcher = app.app.view_functions["coverage"].__globals__["_searcher"]
+    monkeypatch.setattr(searcher, "has_description", False)
+    monkeypatch.setattr(searcher, "_coverage", None)  # drop the per-process cache
+    assert app.app.test_client().get("/coverage").json["fields"]["description"] is None
+
+
+def test_the_signed_in_page_says_what_the_product_is(app):
+    """A user inside the app should never have to guess what they are looking at."""
+    page = app.app.test_client().get("/").data.decode()
+    # On screen wherever they navigate, not only in the footer of a long results page.
+    assert "Tech jobs read straight from company career boards" in page
+    # The Data tab is always present — a limits page that can be switched off is not a
+    # commitment — and the footer points at it.
+    assert 'data-tab="data"' in page
+    assert "What's in the index, and what isn't" in page
+    # And the slot that names the current result list (browse vs ranked, ADR-0074).
+    assert 'id="kind"' in page
+
+
+def test_the_data_tab_states_scope_gaps_and_provenance(app):
+    page = app.app.test_client().get("/").data.decode()
+    assert "Where the listings come from" in page
+    assert "What is deliberately left out" in page
+    assert "What the index does not know" in page
+    assert "How a closed job leaves" in page
+    assert "What is stored about you" in page
+    # The ATS list is rendered from the index's own whitelist, not typed in.
+    assert "Read from 2 providers" in page
+    assert ">greenhouse<" in page and ">lever<" in page

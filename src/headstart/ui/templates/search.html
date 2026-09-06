@@ -142,6 +142,10 @@
     </div>
     {% endif %}
     <div class="active" id="active"></div>
+    {# Says what the list below actually is. A no-Query browse and a ranked search look
+       identical apart from the match rings, and a user who cannot tell them apart reads the
+       missing ring as a bug rather than as "this was never ranked" (ADR-0074). #}
+    <p class="kind" id="kind" role="status"></p>
     <div id="results" aria-live="polite"></div>
     <div class="pager" id="pager"></div>
   </main>

@@ -26,8 +26,49 @@ function showTab(name){
   }
   if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
   if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
+  if (name === 'data' && el('cov') && !coverage) loadCoverage();
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
+
+/* ---- The Data tab's coverage counts (ADR-0112). Fetched on first open, never on page load:
+   the tab is a minority of visits and the counts, though cheap, are not free on the first one.
+
+   Every row is a share of the served index, phrased as what a user would actually ask —
+   "how often will I see a salary" — rather than as a column name. A field the table does not
+   carry yet comes back null and is skipped entirely; rendering it as 0% would read as
+   "measured, and none have it", which is a different and wrong claim. ---- */
+let coverage = null;
+const COV_ROWS = [
+  ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
+  ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],
+  ['min_years', 'state an experience requirement', 'The years filter keeps listings that state none, rather than guessing.'],
+  ['first_seen', 'record when HeadStart first saw them', 'Stamped on arrival, so older rows predate the field and cannot show a \u201cnew\u201d tag.'],
+  ['description', 'have their full text stored', 'Keyword search inside descriptions reaches only these.'],
+  ['remote', 'are marked remote by the employer', 'The board\u2019s own flag, not an inference from the location text.'],
+];
+
+async function loadCoverage(){
+  const box = el('cov');
+  try{ coverage = await (await fetch('/coverage')).json(); }
+  catch(e){
+    box.innerHTML = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
+      'Reload to try again \u2014 no figure is better than a guessed one.</p>';
+    return; }
+  const total = Number(coverage.total) || 0;
+  const rows = COV_ROWS
+    .map(([key, what, why]) => [coverage.fields && coverage.fields[key], what, why])
+    .filter(([f]) => f && Number(f.total) > 0)
+    .map(([f, what, why]) => {
+      const pct = Math.round((Number(f.n) / Number(f.total)) * 100);
+      return `<div class="cov-row">
+        <div class="cov-bar"><span style="width:${pct}%"></span></div>
+        <div class="cov-txt"><b>${pct}%</b> ${esc(what)}
+          <span class="aside">${esc(why)}</span></div>
+      </div>`; }).join('');
+  box.innerHTML = rows
+    ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> listings in the index right now:</p>${rows}`
+    : '<p class="aside">The index carries none of these fields yet.</p>';
+}
 
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
@@ -207,18 +248,20 @@ async function fetchPage(){
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
-            el('n').textContent = ''; return; }
+            el('n').textContent = ''; el('kind').textContent = ''; return; }
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
-    el('n').textContent = ''; return; }
+    el('n').textContent = ''; el('kind').textContent = ''; return; }
   const facets = await facetsPromise;
   drawKeywordNote(facets);
+  drawResultKind(q, rows.length);
   if(!rows.length){
     el('results').innerHTML = page === 1
       ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
       : '<div class="empty"><div class="big">No more jobs</div>' +
         'You\'ve reached the end of these results.</div>';
     el('n').textContent = page === 1 ? '0 results' : '';
+    el('kind').textContent = '';
     drawPager(0, facets);
     return; }
   drawCount(rows.length, facets);
@@ -230,6 +273,20 @@ async function fetchPage(){
 // search RANKS the filtered set rather than shrinking it, so the total counts rows matching
 // the filters, and the query decides only their order. Calling it "results for your query"
 // would promise a relevance the number never measured.
+// What the list below IS, in one line — the orientation a first-time user has nowhere else
+// to get. Two states, because there are exactly two: a browse (no Query — the index's newest
+// rows, in date order, unranked per ADR-0074) and a ranked search. Written on every fetch so
+// it can never describe the previous one.
+function drawResultKind(q, shown){
+  const node = el('kind');
+  if (!node || !shown) { if (node) node.textContent = ''; return; }
+  node.innerHTML = q
+    ? 'Ranked by how close each listing is to what you described. ' +
+      '<a href="#data" data-tab="data">How the match score works →</a>'
+    : 'The newest listings across every board, most recently added first — no search yet, ' +
+      'so nothing is ranked. Describe a role above to rank by meaning.';
+}
+
 function drawCount(shown, facets){
   if (!facets || typeof facets.total !== 'number'){
     el('n').textContent = shown + ' result' + (shown===1?'':'s'); return; }
@@ -391,16 +448,18 @@ function draw(rows, target){
     <div class="card" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="hd">
         <div style="flex:1; min-width:0">
-          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
+          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
         ${starBtn(r.id)}
-        ${ranked? `<div class="match" title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+        ${ranked? `<div class="match" role="img"
+             aria-label="Match ${pct} percent — how close this listing is to your search, relative to the rest of this index"
+             title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
-          <div class="v">${pct}%</div>
+          <div class="v" aria-hidden="true">${pct}%</div>
         </div>` : ''}
       </div>
       <div class="tags">
@@ -410,7 +469,7 @@ function draw(rows, target){
         ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
         ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
         ${age(r.posted_at)? '<span class="tag mono">'+age(r.posted_at)+'</span>':''}
-        ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
+        ${r.ats? '<span class="tag src" title="Read directly from this company\'s '+esc(r.ats)+' board — not a repost">via '+esc(r.ats)+'</span>':''}
       </div>
     </div>`; }).join('');
 }
