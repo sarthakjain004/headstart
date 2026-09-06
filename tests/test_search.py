@@ -16,6 +16,7 @@ import pytest
 
 from headstart.search import (
     EMPLOYMENT_TYPES,
+    RESULT_COLUMNS,
     SORT_COLUMNS,
     JobSearch,
     build_filter,
@@ -830,11 +831,11 @@ def test_sorting_a_ranked_search_still_paginates_without_repeating():
 def test_a_query_asks_only_for_the_columns_the_response_is_built_from():
     """The sorted-query path materialises 2,000 rows, so what each row carries is the cost.
 
-    Without this the scan returned every column — including the 768-float `vector` and, since
-    ADR-0104, a ~5,000-character `description` — and threw both away one line later. Measured
-    through `run` on the served table: the window fell from 264.9 ms to 83.6 ms, and browse from
-    105.5 ms to 55.8 ms. `_distance` is named explicitly because `score` is that value and
-    lancedb warns its auto-projection "will change in the future".
+    Without this the scan returned every column — above all the 768-float `vector`, which is the
+    bulk of the payload — and threw it away one line later. `RESULT_COLUMNS` carries the measured
+    figures; this test pins the behaviour rather than restating them. `_distance` is named
+    explicitly because `score` is that value and lancedb warns its auto-projection "will change
+    in the future".
     """
     searcher, table = _searcher()
     searcher.run({"q": "backend"})
@@ -863,12 +864,13 @@ def test_every_sortable_column_is_projected():
     """The invariant the browse path rests on: anything `run` can order by must be a column it
     also asked for. Leave one out and LanceDB fails planning outright rather than degrading, so
     this is what stands between a new sort option and a 500 on every browse."""
-    searcher, _ = _searcher()
+    # Asserted against RESULT_COLUMNS, not against a searcher built on the fake's toy schema:
+    # filtering by that schema silently excused `posted_at` and `id`, and the test stayed green
+    # with BOTH removed from the constant — while dropping `id` alone 500s every browse.
     orderable = set(SORT_COLUMNS.values()) | {"first_seen", "id"}
-    missing = {c for c in orderable if c in _Table.schema.names} - set(
-        searcher.projection
+    assert orderable <= set(RESULT_COLUMNS), (
+        f"orderable but not projected: {sorted(orderable - set(RESULT_COLUMNS))}"
     )
-    assert not missing, f"orderable but not projected: {sorted(missing)}"
 
 
 def test_the_projection_is_narrowed_to_columns_the_table_actually_has():

@@ -132,7 +132,7 @@ ETYPE_CLAUSES = {
 #: flattered the fix.
 #:
 #: Intersected with the live schema in :meth:`JobSearch.__init__`, never used raw: `select()`
-#: **raises** on a column the table lacks, and half of these are added by migration
+#: **raises** on a column the table lacks, and five of these arrive by migration
 #: (`first_seen`, the ADR-0082 salary columns). Naming one unconditionally would turn
 #: ADR-0031's dark-until-migrated rule into a 500 on every search.
 RESULT_COLUMNS = (
@@ -756,9 +756,11 @@ class JobSearch:
             #
             # The window is the whole result set as far as anyone can tell: `max_k * max_page`
             # is exactly what ADR-0074's clamp lets pagination address, so a row outside it
-            # was already unreachable by any request. Measured 2026-08-25 on a 316,606-row
-            # table: 2.7 ms for one page against 9.2 ms for the full 2,000-row window, so
-            # keeping the query costs ~6.5 ms rather than a redesign.
+            # was already unreachable by any request. The window is not free — measured
+            # through this method on a 318,003-row unindexed table, it is 420.6 ms against
+            # 105.0 ms for a single page — but `select()` above is what pays for it, taking it
+            # to 256.5 ms without touching the shape. (ADR-0084 recorded "2.7 ms … 9.2 ms …
+            # ~6.5 ms" here on 2026-08-25; its amendment carries why that no longer holds.)
             #
             # It is NOT a global sort, and the UI says so: a Job older than the 2,000th-best
             # match cannot appear. That is the honest shape of "newest among your best
