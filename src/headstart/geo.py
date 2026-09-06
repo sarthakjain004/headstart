@@ -186,7 +186,7 @@ CITIES: dict[str, tuple[str, ...]] = {
     "baddi": ("baddi",),
 }
 
-# Per-city NOT-LIKE guards for aliases that collide with a specific other place.
+# Per-city exclusion guards for aliases that collide with a specific other place.
 EXCLUDE: dict[str, tuple[str, ...]] = {
     "surat": ("surat thani",),  # Thailand
     "thane": ("kalyani",),  # 'kalyan' is inside Pune's Kalyani Nagar
@@ -367,25 +367,33 @@ def _rx(literal: str) -> str:
     return re.escape(literal).replace("'", "''")
 
 
+def _matches(alternation: str) -> str:
+    """One ``regexp_like`` over ``alternation`` — the only place this module emits a predicate.
+
+    Guards the empty case here rather than at each caller, because an empty alternation matches
+    *every* row: exactly backwards from the empty set it reads as. Unreachable today, since every
+    caller builds from a non-empty constant, and cheap to make impossible rather than to rely on
+    that staying true — a branch that silently returns the whole table is the wrong one to leave
+    to convention.
+    """
+    if not alternation.strip("|"):
+        raise ValueError("refusing to build a match on no aliases")
+    return f"regexp_like({_LOC}, '{alternation}')"
+
+
 def _any(aliases: Iterable[str]) -> str:
     """One ``regexp_like`` matching any of ``aliases`` as a substring.
 
     **This is the whole optimisation.** These were one ``lower(location) LIKE '%alias%'`` per
     alias, OR'd — 267 predicates and a 10,307-character clause for "india", each one its own pass
     over the column. One alternation is a single pass over a single automaton: measured on the
-    served table (318,003 rows), a count went from 2,669 ms to 350 ms and `/facets` with All India
-    from 8,670 ms to 1,261 ms. Those two ratios differ because ADR-0084 runs its ~46 counts in a
-    thread pool, so the strip costs roughly its slowest count rather than their sum — the clause
-    is inside all of them, but not 46 times over. The rows are identical, verified by set equality
+    served table (318,003 rows), a count went from 2,669 ms to 357 ms and `/facets` with All India
+    from 8,670 ms to 1,279 ms (medians, n=7 on this code). Those two ratios differ because
+    ADR-0084 runs its ~46 counts in a thread pool, so the strip costs roughly its slowest count
+    rather than their sum — the clause is inside all of them, but not 46 times over. The rows are identical, verified by set equality
     of matched ids across all 70 places the filter accepts rather than by count.
     """
-    alternation = "|".join(_rx(a) for a in aliases)
-    if not alternation:
-        # An empty alternation matches *everything*, which for a filter is the opposite of the
-        # empty set it looks like. Unreachable today — every caller passes a non-empty constant —
-        # and cheap to make impossible rather than rely on that staying true.
-        raise ValueError("refusing to build a match on no aliases")
-    return f"regexp_like({_LOC}, '{alternation}')"
+    return _matches("|".join(_rx(a) for a in aliases))
 
 
 def _none(terms: tuple[str, ...]) -> str:
@@ -425,13 +433,13 @@ def _country_where() -> str:
 
 def _ind_where() -> str:
     """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
-    forms = "|".join(_anchored(f) for f in IND_FORMS)
-    return f"(({_LOC} = 'ind' OR regexp_like({_LOC}, '{forms}')){_none(IND_EXCLUDE)})"
+    forms = _matches("|".join(_anchored(f) for f in IND_FORMS))
+    return f"(({_LOC} = 'ind' OR {forms}){_none(IND_EXCLUDE)})"
 
 
 def _subdivision_where() -> str:
     """Workday's "City, KA, IN" tail - the subdivision code plus the country, anchored to the end."""
-    return f"regexp_like({_LOC}, '{'|'.join(_rx(f', {c}, in') + '$' for c in SUBDIVISIONS)}')"
+    return _matches("|".join(_rx(f", {c}, in") + "$" for c in SUBDIVISIONS))
 
 
 def where(place: str) -> str | None:
@@ -439,10 +447,12 @@ def where(place: str) -> str | None:
 
     ``place`` is "india", a :data:`REGIONS` key, or a :data:`CITIES` key.
 
-    The country-level "india" clause is five things OR'd together (ADR-0024, extended by
+    The country-level "india" rule is five things OR'd together (ADR-0024, extended by
     ADR-0086): the substring "india" minus :data:`INDIA_EXCLUDE`; ISO alpha-3 "IND" in its
     :data:`IND_FORMS` positions minus :data:`IND_EXCLUDE`; the ", {code}, in" subdivision tail;
-    every city alias; and every state name.
+    every city alias; and every state name. That is how the rule is *written*; the clause it
+    compiles to has fewer parts, because every city without an :data:`EXCLUDE` guard shares one
+    alternation with the states.
 
     Aliases are trusted constants — callers must never pass free text through this into SQL
     beyond the dict lookups here.

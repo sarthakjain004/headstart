@@ -69,8 +69,8 @@ inside ~46 counts per request. Measured on the served table (318,003 rows):
 
 | | before | after |
 | --- | --- | --- |
-| one `count_rows` with the India clause | 2,669 ms | 350 ms |
-| `/facets` with All India selected | **8,670 ms** | **1,314 ms** |
+| one `count_rows` with the India clause | 2,669 ms | 357 ms |
+| `/facets` with All India selected | **8,670 ms** | **1,279 ms** |
 | clause | 10,307 chars, 267 `LIKE` | 3,068 chars, 10 `regexp_like` |
 
 Every alias, every collision guard and every matched row are unchanged; only the compilation is.

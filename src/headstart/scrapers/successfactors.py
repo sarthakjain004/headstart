@@ -467,7 +467,7 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
         # Worth being exact about what this buys, because it is less than it looks. Where the
         # tenant configured a city the value is fully filterable ("Kuala Lumpur, MY, 50450",
         # "Iasi, RO"). Where it is a bare two-letter tag it is NOT: `geo.where("india")` is an
-        # OR-chain of place *names*, so "IN" matches none of its 213 patterns (verified against
+        # set of place *names*, so "IN" matches none of its 213 patterns (verified against
         # the live clause) -- "Karnataka, IN" only ever matched on "karnataka". So the bare-tag
         # rows gain a displayable country and stop being blank; they do not gain a place filter
         # unless one that reads country tags is added later.

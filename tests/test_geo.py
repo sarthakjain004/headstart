@@ -8,6 +8,7 @@ import pytest
 from headstart.geo import (
     CITIES,
     DROPDOWN,
+    EXCLUDE,
     IND_EXCLUDE,
     IND_FORMS,
     INDIA_EXCLUDE,
@@ -114,6 +115,7 @@ def test_alias_hygiene():
         # `_` joins `%` here: the aliases are substrings in a regex alternation now, and the
         # LIKE-to-regex equivalence holds only because none of them carries a LIKE wildcard.
         # One that did would silently NARROW the filter — a wildcard becoming a literal.
+        assert a, "an empty alias would make its whole alternation match every row"
         assert a == a.lower() and "'" not in a and "%" not in a and "_" not in a, a
     for trap in ("salt lake", "wai", "salem", "punjab", "verna", "whitefield", "supa"):
         assert trap not in aliases, f"vetoed trap alias reintroduced: {trap}"
@@ -127,12 +129,15 @@ def test_alias_hygiene():
 def test_country_tag_terms_are_sql_safe():
     # Every one of these is interpolated straight into a where-clause, so a stray quote would
     # be a broken query and an uppercase term would silently never match lower(location).
-    for term in IND_FORMS + SUBDIVISIONS + IND_EXCLUDE + INDIA_EXCLUDE:
+    guards = tuple(t for ts in EXCLUDE.values() for t in ts)
+    for term in IND_FORMS + SUBDIVISIONS + IND_EXCLUDE + INDIA_EXCLUDE + guards:
         assert term == term.lower() and "'" not in term, term
     # The exclude terms become their own regex alternation, so a stray `%` would be matched
     # literally rather than as a wildcard and the guard would never fire.
-    for term in IND_EXCLUDE + INDIA_EXCLUDE:
-        assert "%" not in term, term
+    for term in IND_EXCLUDE + INDIA_EXCLUDE + guards:
+        # A wildcard in a *guard* widens rather than narrows: the guard stops firing, and the
+        # collision it was vetted to exclude comes back.
+        assert term and "%" not in term and "_" not in term, term
     # Subdivision codes are two letters and only ever used inside a ', {code}, in' anchor;
     # a longer or looser one would match free text.
     for code in SUBDIVISIONS:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """How good is the India location filter, measured against the served LanceDB table.
 
-The filter is a raw ``lower(location) LIKE '%alias%'`` OR-chain expanded from
+The filter matches ``location`` against every alias as a substring, expanded from
 :mod:`headstart.geo` (ADR-0024). It has three independent failure modes and they need three
 different kinds of evidence, so this reports them separately rather than as one accuracy score:
 
