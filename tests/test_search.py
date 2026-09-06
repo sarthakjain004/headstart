@@ -887,11 +887,10 @@ def test_the_projection_is_narrowed_to_columns_the_table_actually_has():
     assert set(table.last_select) == {"id", "title", "ats", "url", "_distance"}
 
 
-def test_next_day_is_testable_on_its_own():
-    """It was nested inside `build_filter`, capturing nothing, reachable only by compiling a
-    whole where-clause. At module level the inclusive-"before" rule can be read directly: an
-    upper bound compares strictly below the NEXT day, because both date columns hold
-    date-or-datetime strings and '2026-08-10T12:00' sorts above '2026-08-10'.
+def test_an_inclusive_upper_bound_compares_below_the_next_day():
+    """An inclusive "before" has to be expressed as "< the next day", because both date columns
+    hold date-or-datetime strings and '2026-08-10T12:00' sorts above '2026-08-10'. Leap years
+    come from `date` itself, and running off the calendar is a 400 like any other bad date.
     """
     from headstart.search import _next_day
 

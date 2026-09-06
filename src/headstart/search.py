@@ -527,9 +527,8 @@ def _first_seen_clauses(
         filters.append(f"first_seen < '{_next_day(seen_before)}'")
     if seen_within is not None:
         # In HOURS, not days: this window is meant to be shorter than one pipeline cycle.
-        # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
-        # ourselves, so it is always ISO-8601 UTC. Rows predating the column are null, and
-        # `NULL >= '…'` is never true, so they drop out on their own (ADR-0031).
+        # Rows predating the column are null, and `NULL >= '…'` is never true, so they drop
+        # out on their own (ADR-0031).
         since = _ago(hours=int(seen_within)).isoformat(timespec="seconds")
         filters.append(f"first_seen >= '{since}'")
     if first_seen_after:
@@ -609,7 +608,7 @@ def build_filter(
         filters.append(f"lower(location) LIKE '%{_like(location)}%'")
     if company:
         filters.append(f"lower(company) LIKE '%{_like(company)}%'")
-    # These three append in order, and that order is part of the string this returns —
+    # These four append in order, and that order is part of the string this returns —
     # `" AND ".join` below is not a set. SQL's AND commutes, so reordering reads as harmless and
     # is not: every test asserting a whole where-clause would fail, and so would any caller
     # comparing two compiled filters for equality.
