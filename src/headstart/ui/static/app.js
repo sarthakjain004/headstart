@@ -288,9 +288,9 @@ async function fetchPage(){
 // search RANKS the filtered set rather than shrinking it, so the total counts rows matching
 // the filters, and the query decides only their order. Calling it "results for your query"
 // would promise a relevance the number never measured.
-// What the list below IS, in one line — the orientation a first-time user has nowhere else
-// to get. Two states, because there are exactly two: a browse (no Query — the index's newest
-// rows, in date order, unranked per ADR-0074) and a ranked search. Written on every fetch so
+// What the list below IS, in one line — the orientation a first-time user has nowhere else to
+// get. A browse (no Query, unranked per ADR-0074) and a ranked search look identical apart from
+// the match rings, and the ordering in force is not visible at all. Written on every fetch so
 // it can never describe the previous one.
 function drawResultKind(q, shown){
   const node = el('kind');
@@ -305,13 +305,17 @@ function drawResultKind(q, shown){
   } else if (q){
     node.innerHTML = 'Ranked by how close each job is to what you described.' + explain;
   } else {
-    // A no-query browse orders by `first_seen` only where the table has that column;
-    // otherwise the fallback is `id`, which is not a date, so "newest first" would be untrue.
-    node.textContent = CFG.has_first_seen
-      ? 'The newest jobs across every board, most recently added first \u2014 no search yet, ' +
-        'so nothing is ranked. Describe a role above to rank by meaning.'
-      : 'Jobs from across every board, in no particular order \u2014 no search yet, so nothing ' +
-        'is ranked. Describe a role above to rank by meaning.';
+    // A browse is ordered three different ways depending on the sort control and on whether
+    // the table even has `first_seen` — and the line has to name the one actually in force.
+    // The default browse falls back to ordering by `id` without that column, which is not a
+    // date at all, so "newest first" would simply be untrue there.
+    const sort = el('sort').value;
+    const order = sort === 'posted' ? 'newest by the employer\u2019s posting date first'
+      : sort === 'seen' ? 'most recently added first'
+      : CFG.has_first_seen ? 'most recently added first'
+      : 'in no particular order';
+    node.textContent = `Jobs from across every board, ${order} \u2014 no search yet, so nothing ` +
+      'is ranked. Describe a role above to rank by meaning.';
   }
 }
 
@@ -481,7 +485,7 @@ function draw(rows, target){
         </div>
         ${starBtn(r.id)}
         ${ranked? `<div class="match" role="img"
-             aria-label="Match ${pct} percent — how close this job is to your search, relative to the rest of this index"
+             aria-label="Match ${pct} percent — how close this job is to your search, on a fixed scale that gives the same job the same number every time"
              title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>

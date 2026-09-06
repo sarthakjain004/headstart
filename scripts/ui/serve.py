@@ -45,7 +45,14 @@ app = Flask(
 def index():
     return render_template(
         "base.html",
-        cfg={"google_client_id": ""},
+        cfg={
+            "google_client_id": "",
+            # The Data tab's browse line reads this to name the ordering actually in force.
+            "has_first_seen": _searcher.has_first_seen,
+        },
+        # The Data tab links out to the public repo (ADR-0112). Hardcoded here rather than
+        # imported: this file is the local dev renderer and shares no config with the Space.
+        repo="https://github.com/sarthakjain004/headstart",
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),
@@ -66,6 +73,12 @@ def index():
         saved_on=False,
         profile_on=False,
     )
+
+
+@app.route("/coverage")
+def coverage():
+    """The Data tab's live counts (ADR-0112) — the Space route's local twin."""
+    return jsonify(_searcher.coverage())
 
 
 @app.route("/search")

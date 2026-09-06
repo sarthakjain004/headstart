@@ -1174,10 +1174,39 @@ def test_the_data_tab_states_scope_gaps_and_provenance(app):
     flat = " ".join(page.split())
     assert "105 closed jobs, the oldest 22 days old" in flat
     assert "no-client-side-fix-for-replica-instability.md" in page
-    assert "2026-08-23" in page  # the one uncounted number carries its date
+    # The date of the measurement itself (the doc is headed 2026-08-24) — an earlier fix
+    # wrote 2026-08-23, which is ADR-0083's go-live date, not when this was measured.
+    assert "2026-08-24" in page
     assert "hours, not minutes" not in flat
     # CONTEXT.md reserves "listing"/"posting"/"opening" for the raw ATS record; the user-facing
     # noun is "job". The word may still appear in this file's own explanation of that rule.
     body = page.split('id="panel-data"', 1)[1].split("</section>", 1)[0]
     for banned in ("listings", "openings", "postings"):
         assert banned not in body, banned
+
+
+def test_the_resume_reader_says_the_text_leaves_the_service(sets_app, monkeypatch):
+    """The one datum that goes to a third party is disclosed where it is pasted.
+
+    The Data tab lists it too, but a person pasting a résumé should not have to have read
+    another tab first — the disclosure belongs at the moment of the decision. Needs
+    ``sets_app``: the Profile panel only renders where per-Account storage is configured."""
+    page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
+    body = page.split('id="panel-profile"', 1)[1]
+    assert "language model" in body
+    assert "leaves HeadStart" in body
+
+
+def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
+    """`closed` is read off the job's absence from the index, and ADR-0023's prune can drop a
+    still-open row — so the tab says what the tag actually means rather than asserting it."""
+    page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
+    body = page.split('id="panel-saved"', 1)[1]
+    assert "no longer in our index" in body
+    assert "stopped being able to read that" in body
+
+
+def test_the_page_offers_a_skip_link_past_the_nav(app):
+    page = app.app.test_client().get("/").data.decode()
+    assert 'class="skip" href="#content"' in page
+    assert 'id="content" tabindex="-1"' in page

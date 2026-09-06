@@ -66,11 +66,13 @@
       <li><b>Your words are matched on meaning.</b> The query and every job description are
         turned into vectors, and results come back by similarity. "Backend engineer at a climate
         startup" works; it is not looking for those words.</li>
-      <li><b>The match percentage is relative, not absolute.</b> Raw similarity sits in a narrow
-        band, so the badge stretches that band to 0–100% to make results comparable <i>to each
-        other</i>. A 90% means "among the closest things in this index", never "90% suitable for
-        you". The two anchors it stretches between, and the queries they were tuned against, are
-        in <a href="{{ adr }}/0042-signed-in-ui-saved-sets.md" target="_blank" rel="noopener">ADR-0042</a>.</li>
+      <li><b>The match percentage is a fixed scale, not a position in your results.</b> Raw
+        similarity sits in a narrow band, so the badge stretches a fixed slice of it — 0.60 reads
+        as 0%, 0.85 as 100% — to spread the numbers far enough apart to be worth reading. The
+        same job always shows the same percentage, whatever else is on the page with it; it is
+        not scored against its neighbours. And it measures closeness to the words you typed, not
+        how suitable the role is for you.
+        <a href="{{ adr }}/0042-signed-in-ui-saved-sets.md" target="_blank" rel="noopener">ADR-0042</a></li>
       <li><b>Filters narrow; the query ranks.</b> The rail on the left is exact and deterministic.
         The search box is the only fuzzy part, which is why years and salary belong in the
         filters rather than in the sentence.
@@ -93,7 +95,7 @@
        that board leaves the removal pass entirely for that run — removing jobs on the strength of
        a bad read would delete live ones. A board that reads badly <i>every</i> time therefore
        never re-enters it, and its closed jobs can be served indefinitely. This is measured, not
-       hypothetical: on 2026-08-23 one board was found serving 105 closed jobs, the oldest 22
+       hypothetical: on 2026-08-24 one board was found serving 105 closed jobs, the oldest 22
        days old. That figure is the one number on this page not counted live, so here is exactly
        where it came from —
        <a href="{{ repo }}/blob/main/docs/eightfold/no-client-side-fix-for-replica-instability.md" target="_blank" rel="noopener">the measurement</a>,
@@ -109,7 +111,12 @@
     <ul class="doc-list">
       <li>Your <b>email address</b>, from Google sign-in — the key your saved work hangs off.</li>
       <li>Anything you save yourself: saved searches, starred jobs, and a profile if you fill
-        one in. Deleting them deletes them.</li>
+        one in. Deleting a profile deletes it — with one exception we would rather name than
+        hide: a count of how many résumés you have had read stays behind, because that allowance
+        is per account for the lifetime of the account and deleting must not reset it.</li>
+      <li>If you use the résumé reader, <b>the text you paste is sent to a language model</b> to
+        pull out the fields, then discarded. It is the one thing here that leaves this service.
+        Nothing else you do — searches, filters, stars — is sent anywhere.</li>
       <li><b>No email is ever sent</b> unless you switch it on for a saved search, and every one
         of those carries an unsubscribe link.</li>
       <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing
