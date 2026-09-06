@@ -124,10 +124,12 @@
       <li>If you use the résumé reader, <b>the text you paste is sent to a language model</b> to
         pull out the fields, then discarded. That is the only thing here handed to anyone
         outside HeadStart. What you save is stored — the saved searches, stars and profile above
-        live in a private dataset only this service reads. Your searches are never stored
-        against your account — though, like any web server, this one writes an access log that
-        includes the query string, so treat a search as visible to whoever runs the server and
-        to nobody else.</li>{% endif %}
+        live in a private dataset only this service reads. A search you simply type is not kept
+        against your account — only the ones you deliberately save are, and an alerting one is
+        stored with its filters so the digest knows what to send. Two limits worth knowing: this
+        runs on Hugging Face, and like any web server it writes an access log carrying the
+        query string, so the operators of this service and of that platform can see a search
+        even when nothing is saved.</li>{% endif %}
       {% if saved_on or alerts_on %}<li><b>No email is ever sent</b> unless you switch it on
         yourself, and every one of those carries an unsubscribe link.</li>{% endif %}
       <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing

@@ -79,9 +79,8 @@ body{
 /* ---- masthead ---- */
 .top{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 16px;
   grid-template-areas:"brand right" "tagline tagline"; margin-bottom:26px; }
-.brand{ grid-area:brand; } .top-right{ grid-area:right; }
-.tagline{ grid-area:tagline; }
-.brand{ display:flex; align-items:center; gap:11px; }
+.top-right{ grid-area:right; }
+.brand{ grid-area:brand; display:flex; align-items:center; gap:11px; }
 .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
   background:linear-gradient(135deg,var(--aqua),var(--violet));
   box-shadow:0 0 0 1px rgba(255,255,255,.10) inset, 0 8px 20px var(--glow); }
@@ -92,7 +91,8 @@ body{
    the bottom of a long results page and a first-time user never reaches it. It has its own
    grid row rather than sitting inside .brand, so a narrow header pushes it down instead of
    squeezing it out: phones are where first-time visitors mostly arrive. */
-.tagline{ margin:0; color:var(--ink-2); font-size:12px; line-height:1.35; text-wrap:pretty; }
+.tagline{ grid-area:tagline; margin:0; color:var(--ink-2); font-size:12px; line-height:1.35;
+  text-wrap:pretty; }
 .brand h1 em{ font-style:normal;
   background:linear-gradient(100deg,var(--aqua),var(--violet)); -webkit-background-clip:text;
   background-clip:text; color:transparent; }
@@ -277,7 +277,6 @@ textarea:focus{ border-color:var(--violet); }
   border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
 /* Provenance, not a category — so no hue of its own (those are spoken for: amber=new,
    lime=pays, violet=remote). It stays the neutral chip and earns its weight from the word. */
-.tag.src{ font-variant:none; letter-spacing:.005em; }
 .tag.src::before{ content:""; display:inline-block; width:4px; height:4px; border-radius:50%;
   background:var(--aqua); margin-right:6px; vertical-align:1.5px; }
 
@@ -577,7 +576,7 @@ textarea:focus{ border-color:var(--violet); }
 
 /* Coverage bars. A share of the index, so one hue at varying length — never a category
    palette, and never red/green, which would read as pass/fail on facts that are neither. */
-.cov-total{ margin-bottom:14px !important; }
+.doc-sec .cov-total{ margin-bottom:14px; }
 .cov-row{ display:grid; grid-template-columns:64px 1fr; gap:14px; align-items:start;
   margin-bottom:13px; }
 .cov-bar{ height:7px; border-radius:var(--r-pill); background:var(--rule); overflow:hidden;

@@ -43,7 +43,9 @@ compute every number on it from the served table at request time rather than wri
 
 `JobSearch.coverage()` returns the share of the served table carrying each field a user might
 otherwise assume is always present: `posted_at`, `first_seen`, a salary, a stated experience
-requirement, a stored description.
+requirement, a stored description. It is built from `count_rows(filter=…)` — the same primitive
+ADR-0084's facet counts use, measured at 4–6 ms against a 316,606-row table in `headstart.facets`
+— so the whole panel is a handful of counts, not a scan.
 
 **Only fields that can legitimately be absent belong here.** A first cut also reported `remote`.
 It is a facet, not a limit: a share there answers "how many are remote", which the rail's own
@@ -64,9 +66,7 @@ So the number is gone, and the standing rule is the prose form of ADR-0111's til
 that cannot be established cheaply and reliably is not asserted at all.** What is safe to say is
 qualitative — many boards publish a workplace-type field and the scraper uses it, others are read
 from the location text, several `OR` the two — and *that* is exactly why the column has no place
-on a page whose currency is one-sentence claims. It is built from `count_rows(filter=…)` — the same primitive
-ADR-0084's facet counts use, measured at 4–6 ms against a 316,606-row table — so the whole panel
-is a handful of counts, not a scan.
+on a page whose currency is one-sentence claims.
 
 This is the point of the ADR. A number the product computes about itself cannot go stale, cannot
 be rounded up in a later edit, and gets *worse* on the page when the pipeline gets worse — which

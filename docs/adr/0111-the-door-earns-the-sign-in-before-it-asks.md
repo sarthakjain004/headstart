@@ -38,12 +38,11 @@ what signing in costs the visitor, and links to the evidence — then asks.**
 Four blocks, in this order, because the order *is* the argument:
 
 1. **What this is**, in one sentence a stranger can evaluate.
-2. **Proof, in live numbers** read from the served table at request time — jobs indexed,
-   employers, ATS providers. Not marketing copy: `count_rows()` and two counts off the searcher's
-   own boot scan, so a shrunk index shrinks the claim. Every tile must be a number the running
-   product can produce; a first cut carried a typed-in "~6h between index refreshes" that was
-   roughly 5x the measured cadence (`pipeline.yml`: mean run 74.1 min, chained back-to-back) and
-   contradicted the app's own footer. **A tile that cannot be counted does not go on this page.**
+2. **Proof, in live numbers** read from the served table at request time — jobs indexed, how many
+   arrived in the last week, ATS providers. Not marketing copy: two `count_rows()` calls and the
+   length of the searcher's own ATS list, so a shrunk index shrinks the claim. **A tile that
+   cannot be counted exactly does not go on this page** — see Consequences for the three drafts
+   that failed that bar and why each was removed rather than qualified.
 3. **What signing in does**, stated as a limit rather than a promise: the session stores an email
    address and nothing else; no posting, no email unless a Saved set asks for it; sign-out drops
    the cookie. Written so that the sentence a visitor most wants — *what do you take from me* —

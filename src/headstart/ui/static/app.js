@@ -71,10 +71,14 @@ async function loadCoverage(){
   const rows = COV_ROWS
     .filter(([key]) => typeof coverage.fields[key] === 'number')
     .map(([key, what, why]) => {
-      const pct = total ? Math.round((coverage.fields[key] / total) * 100) : 0;
+      const share = coverage.fields[key] / total;
+      const pct = Math.round(share * 100);
+      // A nonzero count must never print "0%": rounded down it reads as "measured, and none
+      // have it", which is the unknown-is-not-zero confusion one row over (ADR-0009).
+      const label = coverage.fields[key] > 0 && pct === 0 ? 'under 1%' : pct + '%';
       return `<div class="cov-row">
-        <div class="cov-bar"><span style="width:${pct}%"></span></div>
-        <div class="cov-txt"><b>${pct}%</b> ${esc(what)}
+        <div class="cov-bar"><span style="width:${Math.max(pct, share > 0 ? 1 : 0)}%"></span></div>
+        <div class="cov-txt"><b>${label}</b> ${esc(what)}
           <span class="aside">${esc(why)}</span></div>
       </div>`; }).join('');
   // An empty table would otherwise render "Of 0 jobs \u2026 0% state a salary" \u2014 exactly the
@@ -278,7 +282,6 @@ async function fetchPage(){
       : '<div class="empty"><div class="big">No more jobs</div>' +
         'You\'ve reached the end of these results.</div>';
     el('n').textContent = page === 1 ? '0 results' : '';
-    el('kind').textContent = '';
     drawPager(0, facets);
     return; }
   drawCount(rows.length, facets);
