@@ -167,7 +167,7 @@ def india_clauses() -> list[tuple[str, object]]:
       ``IN_India_WFH``;
     * ISO alpha-3 ``IND`` matches only in :data:`geo.IND_FORMS` positions, guarded by
       :data:`geo.IND_EXCLUDE` because ``IND`` is also Indianapolis's IATA code;
-    * a city can carry :data:`geo.EXCLUDE` NOT-LIKE guards ("surat" minus "surat thani");
+    * a city can carry :data:`geo.EXCLUDE` exclusion guards ("surat" minus "surat thani");
     * :data:`geo.REGIONS` is *not* part of it — its values are city keys, not alias substrings,
       and ``where("india")`` already iterates every city.
 

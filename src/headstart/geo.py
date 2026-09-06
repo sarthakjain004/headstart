@@ -1,11 +1,11 @@
-"""India place gazetteer for the location filter (query-time LIKE expansion, ADR-0024).
+"""India place gazetteer for the location filter (query-time alias expansion, ADR-0024).
 
 Why this exists: the location filter is a raw ``lower(location) LIKE '%term%'``, and the
 live-index inventory (``experiment/india-location-filter/``, 2026-07-20: 24,964 India rows)
 showed **47% of India jobs never contain the word "india"** — zoho/keka/ripplehire write
 city-only strings ("Bangalore North", "Pune City"), and Bengaluru/Bangalore is a ~50/50
-spelling split. This module expands a canonical place ("india" or a city) into the OR-chain
-of every observed alias, so the filter stops lying.
+spelling split. This module expands a canonical place ("india" or a city) into a match over
+every observed alias, so the filter stops lying.
 
 Aliases are lowercase substrings — every alias must be unambiguous *as a substring of any world
 location string*. They are matched by one ``regexp_like`` alternation rather than one ``LIKE
@@ -24,7 +24,6 @@ app.py), so it must stay dependency-free. Regenerate the inventory before extend
 
 from __future__ import annotations
 
-import functools
 import re
 from collections.abc import Iterable
 
@@ -360,9 +359,10 @@ def _rx(literal: str) -> str:
 
     Both escapes are needed and they are not the same escape. ``re.escape`` stops an alias's own
     punctuation being read as regex syntax — ``(ind)``'s parentheses would otherwise be a capture
-    group — and doubling the quote is what keeps the literal closed. The aliases are constants
-    vetted by ``test_alias_hygiene`` and carry neither today; escaping anyway is what keeps that
-    true when someone adds one.
+    group — and doubling the quote is what keeps the literal closed. Neither is dormant:
+    ``test_alias_hygiene`` vets the aliases for case, quotes and ``%`` but says nothing about
+    regex metacharacters, and 28 of the constants already change under ``re.escape`` (every one
+    containing a space).
     """
     return re.escape(literal).replace("'", "''")
 
@@ -373,12 +373,19 @@ def _any(aliases: Iterable[str]) -> str:
     **This is the whole optimisation.** These were one ``lower(location) LIKE '%alias%'`` per
     alias, OR'd — 267 predicates and a 10,307-character clause for "india", each one its own pass
     over the column. One alternation is a single pass over a single automaton: measured on the
-    served table (318,003 rows), a count went from 2,669 ms to 350 ms, and because `/facets`
-    issues ~46 counts, selecting All India went from 8,670 ms to 1,314 ms. The rows are
-    identical — verified by set equality across all 70 places the filter accepts, not by count
-    (`experiment/india-filter-regex/`).
+    served table (318,003 rows), a count went from 2,669 ms to 350 ms and `/facets` with All India
+    from 8,670 ms to 1,261 ms. Those two ratios differ because ADR-0084 runs its ~46 counts in a
+    thread pool, so the strip costs roughly its slowest count rather than their sum — the clause
+    is inside all of them, but not 46 times over. The rows are identical, verified by set equality
+    of matched ids across all 70 places the filter accepts rather than by count.
     """
-    return f"regexp_like({_LOC}, '{'|'.join(_rx(a) for a in aliases)}')"
+    alternation = "|".join(_rx(a) for a in aliases)
+    if not alternation:
+        # An empty alternation matches *everything*, which for a filter is the opposite of the
+        # empty set it looks like. Unreachable today — every caller passes a non-empty constant —
+        # and cheap to make impossible rather than rely on that staying true.
+        raise ValueError("refusing to build a match on no aliases")
+    return f"regexp_like({_LOC}, '{alternation}')"
 
 
 def _none(terms: tuple[str, ...]) -> str:
@@ -393,8 +400,12 @@ def _anchored(pattern: str) -> str:
     means "starts with", ``'%(ind)%'`` means "contains", and the difference between them is what
     stops ``ind`` claiming Indore and every "Industrial Area" (``test_ind_is_never_a_bare_substring``
     asserts that shape on the constants). A leading or trailing ``%`` becomes "unanchored at that
-    end"; its absence becomes a ``^`` or ``$``. No pattern here contains ``_``, so ``%`` is the
-    only wildcard to read.
+    end"; its absence becomes a ``^`` or ``$``.
+
+    Two assumptions about :data:`IND_FORMS`, both asserted by
+    ``test_ind_forms_carry_no_interior_wildcard``: no pattern contains ``_``, so ``%`` is the only
+    wildcard to read, and no ``%`` appears anywhere but the ends — an interior one would be
+    stripped by neither branch and pass through as a literal ``%``.
     """
     starts, ends = pattern.startswith("%"), pattern.endswith("%")
     return ("" if starts else "^") + _rx(pattern.strip("%")) + ("" if ends else "$")
@@ -423,7 +434,6 @@ def _subdivision_where() -> str:
     return f"regexp_like({_LOC}, '{'|'.join(_rx(f', {c}, in') + '$' for c in SUBDIVISIONS)}')"
 
 
-@functools.cache
 def where(place: str) -> str | None:
     """The where-fragment for a canonical place, or None if the place is unknown.
 

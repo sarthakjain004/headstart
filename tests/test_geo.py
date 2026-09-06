@@ -111,7 +111,10 @@ def test_unknown_place_is_none():
 def test_alias_hygiene():
     aliases = [a for aliases in CITIES.values() for a in aliases] + list(STATES)
     for a in aliases:
-        assert a == a.lower() and "'" not in a and "%" not in a, a
+        # `_` joins `%` here: the aliases are substrings in a regex alternation now, and the
+        # LIKE-to-regex equivalence holds only because none of them carries a LIKE wildcard.
+        # One that did would silently NARROW the filter — a wildcard becoming a literal.
+        assert a == a.lower() and "'" not in a and "%" not in a and "_" not in a, a
     for trap in ("salt lake", "wai", "salem", "punjab", "verna", "whitefield", "supa"):
         assert trap not in aliases, f"vetoed trap alias reintroduced: {trap}"
     # 2026-08-25 audit re-confirmed these against the live table: every one is a world
@@ -182,3 +185,13 @@ def test_ind_forms_keep_their_anchoring_through_the_translation():
     # versa — the property the constants' own test asserts, carried through the translation.
     assert translated["ind-%"] == r"^ind\-"
     assert translated["% - ind"] == r"\ \-\ ind$"
+
+
+def test_ind_forms_carry_no_interior_wildcard():
+    """`_anchored` reads a `%` only at the ends. An interior one would be stripped by neither
+    branch and reach the regex as a literal `%`, silently matching nothing — and `_` is not read
+    as a wildcard at all. Both assumptions are asserted here rather than left in a docstring.
+    """
+    for form in IND_FORMS:
+        assert "_" not in form, form
+        assert "%" not in form.strip("%"), form

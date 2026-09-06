@@ -73,17 +73,25 @@ inside ~46 counts per request. Measured on the served table (318,003 rows):
 | `/facets` with All India selected | **8,670 ms** | **1,314 ms** |
 | clause | 10,307 chars, 267 `LIKE` | 3,068 chars, 10 `regexp_like` |
 
-The five-part structure and every collision guard are unchanged; only the compilation is. Each
-OR-chain of substring `LIKE`s becomes one `regexp_like` alternation, and since only 2 of 68 cities
-carry an `EXCLUDE` guard, the other 66 share a single alternation with the states — which is where
-the predicate count actually falls.
+Every alias, every collision guard and every matched row are unchanged; only the compilation is.
+Each OR-chain of substring `LIKE`s becomes one `regexp_like` alternation, and since only 2 of 68
+cities carry an `EXCLUDE` guard, the other 66 share a single alternation with the states — which is
+where the predicate count actually falls. Note what that means for the *emitted* clause: the five
+parts are still how the rule is written and reasoned about, but they are no longer five readable
+parts in the SQL, because 66 cities and the states now dissolve into one alternation.
 
 **Verified by set equality, not by count.** A faster filter that returns different rows is not a
 faster filter, and the first attempt at this returned 96,795 rows against the correct 50,013
-because it swept the exclusion terms in as positives. The committed version was checked by
-comparing the full set of matched ids, old implementation against new, across **all 70 places the
-filter accepts** — "india", every region, every city, including both cities that carry collision
-guards. 70/70 identical. `experiment/india-filter-regex/` holds the harness.
+because it swept the exclusion terms in as positives — a count-only check would have called that a
+15x win. The committed version was checked by comparing the full set of matched ids, old
+implementation against new, across **all 70 places the filter accepts** — "india", every region,
+every city, including both cities that carry collision guards. 70/70 identical.
+
+That was a one-time migration check, and `experiment/` is gitignored, so it is not a standing
+guard: reproduce it by loading `git show <this-sha>~1:src/headstart/geo.py` beside the current
+module and comparing `{row["id"] for row in table.search().where(clause).select(["id"])}` for each
+place. The standing guard is `tests/test_geo.py`, which runs both the clause and every vetted
+substring trap against a real LanceDB table.
 
 Two escapes are now load-bearing where one was before: aliases are `re.escape`d so their own
 punctuation is not read as regex syntax (`(ind)` would otherwise be a capture group, and any alias
@@ -91,9 +99,6 @@ carrying `.` would become a wildcard), and quote-doubled so the SQL literal stay
 `IND_FORMS` keeps its LIKE shape as the source of truth — `test_ind_is_never_a_bare_substring`
 asserts anchoring on those constants — and is translated per pattern, with a test pinning that the
 anchoring survives the translation.
-
-`where()` is also memoised now: it is a pure function of module constants and `facets` calls it
-once per count.
 
 **This does not supersede "not ingestion-time columns (yet)."** A derived country column remains
 the cleaner end state and the only route to millisecond-level; the reasoning recorded above for
