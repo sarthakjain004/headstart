@@ -71,6 +71,20 @@ def test_an_unreadable_title_leaves_the_board_on_its_slug(ats, title, slug):
     assert from_title(ats, title, slug) is None
 
 
+def test_keka_reads_the_wrapper_it_shares_with_eightfold():
+    """Both titles are live keka boards, and neither shape was covered by any test.
+
+    Keka is the ATS with the most to gain — all 819 of its hiring Boards serve a slug today —
+    and deleting its patterns left the whole suite green until this existed.
+    """
+    assert (
+        from_title("keka", "Careers at Skylark Drones", "skylarkdrones")
+        == "Skylark Drones"
+    )
+    assert from_title("keka", "Entropik Careers", "entropik") == "Entropik"
+    assert from_title("keka", "", "minfy") is None
+
+
 def test_capitalisation_alone_is_worth_taking():
     """The rule this pins talked the first draft out of its own purpose.
 
@@ -80,28 +94,6 @@ def test_capitalisation_alone_is_worth_taking():
     """
     assert from_title("ashby", "Aida Jobs", "aida") == "Aida"
     assert from_title("ashby", "HiringCafe Jobs", "hiring-cafe") == "HiringCafe"
-
-
-def test_a_dotted_name_is_not_mistaken_for_a_hostname():
-    """ "Character.AI" is a company; "webfx.com" is a hostname. Matching the hostname shape
-    case-insensitively rejected the first, so the rule requires a lowercase string."""
-    assert from_title("ashby", "Character.AI Jobs", "character") == "Character.AI"
-    assert from_title("lever", "webfx.com", "webfx") is None
-
-
-def test_a_vendor_name_is_refused_only_on_that_vendors_own_boards():
-    """The failure mode is a board page falling back to its *own* platform's branding.
-
-    `ripplehire:trampolinetech` really does title itself "RippleHire Careers | …" (live, 15
-    jobs, and not in `EXCLUDED_BOARDS`). But a vendor is a real employer on someone else's ATS:
-    `jobs.lever.co/freshworks` titles itself "Freshworks", and refusing every vendor name
-    everywhere threw that away.
-    """
-    assert (
-        from_title("ripplehire", "RippleHire Careers | Latest jobs", "trampolinetech")
-        is None
-    )
-    assert from_title("lever", "Freshworks", "freshworks") == "Freshworks"
 
 
 def test_a_board_that_calls_itself_a_demo_is_refused():
@@ -179,20 +171,27 @@ def test_a_lowercase_name_with_a_tld_is_read_as_a_hostname():
     lowercase TLD, which a live ashby board serves: "Sprout.ai Jobs".
     """
     assert from_title("ashby", "Sprout.ai Jobs", "sprout-ai") == "Sprout.ai"
+    assert from_title("ashby", "Character.AI Jobs", "character") == "Character.AI"
     assert from_title("lever", "webfx.com", "webfx") is None
     assert from_title("lever", "acme.io", "acme") is None
 
 
-def test_the_ats_vendors_own_name_is_never_the_company():
-    """A Board whose title names its *vendor* is a demo or a parked tenant.
+def test_a_vendor_name_is_refused_only_on_that_vendors_own_boards():
+    """A Board whose title names its *own* platform has fallen back to that platform's branding.
 
-    `ripplehire:trampolinetech` really does serve "RippleHire Careers | Latest jobs at RippleHire",
-    which shipped as the employer name until this rule existed — the same failure ADR-0034 already
-    blocklists Boards for, reaching us through a title instead.
+    `ripplehire:trampolinetech` really does serve "RippleHire Careers | Latest jobs at RippleHire"
+    (live, 15 jobs, not in `EXCLUDED_BOARDS`), which shipped as the employer until this rule
+    existed — the failure ADR-0034 blocklists Boards for, reaching us through a title instead.
+
+    The second assert is the one that pins *keying on the ATS*: "Ashby" on a **lever** Board is a
+    company, not a fallback, so a rule refusing every vendor name everywhere would wrongly drop
+    it. An earlier version of this test used `lever:freshworks` — a real employer — but freshworks
+    is in no alias set at all, so it discriminated nothing and the flat-set defect survived it.
     """
     title = "RippleHire Careers | Latest jobs at RippleHire - Ripplehire.com"
     assert from_title("ripplehire", title, "trampolinetech") is None
     assert from_title("ashby", "Ashby Jobs", "ashby-demo") is None
+    assert from_title("lever", "Ashby", "ashby-co") == "Ashby"
     # a real employer that merely contains a vendor-ish word is unaffected
     assert (
         from_title("ashby", "Lever Industries Jobs", "lever-ind") == "Lever Industries"

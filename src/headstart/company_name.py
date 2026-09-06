@@ -10,7 +10,8 @@ and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1pa
 Five ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
 request per Board recovers it. Which five is a measurement, not a guess: live Boards were sampled
 per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
-enough to strip safely are here.
+enough to strip safely are here. Lever's row is a range because two independent 30-Board samples
+disagreed (25 and 21); the others were re-sampled and held.
 
 ===============  ==========================================  =====================
 ATS              title shape                                 yields a name
@@ -18,7 +19,7 @@ ATS              title shape                                 yields a name
 ashby            ``{Name} Jobs``                             28/30
 eightfold        ``Careers at {Name}`` / ``{Name} Careers``  28/30
 ripplehire       ``{Name} Careers | Latest jobs at …``       28/30
-lever            ``{Name}`` — no wrapper at all              25/30
+lever            ``{Name}`` — no wrapper at all              21-25/30
 keka             ``Careers at {Name}`` / ``{Name} Careers``   5/40
 ===============  ==========================================  =====================
 
@@ -44,8 +45,16 @@ Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA 
 postings. A name we invent is worse than a slug we admit to.
 
 Every rule below rejects a shape that was actually observed. A title this cannot read leaves the
-Board on its slug, which is exactly today's behaviour — this only ever replaces a slug with
-something better, never with something worse.
+Board on its slug, which is exactly today's behaviour.
+
+**The floor is narrower than "never worse", and saying so matters.** What these rules guarantee is
+that a slug is never replaced by a *non-name* — a slogan fragment, a hostname, the ATS vendor, a
+demo placeholder. They cannot guarantee the name a Board states is the one a user would search
+for: `ripplehire:ltimindtree` titles itself "LTM Careers | …" and becomes **"LTM"**, and a parent
+or acquiring entity can displace a familiar brand (`keka:abcoffee` -> "Brewbay Innovations",
+`lever:silhouette` -> "DNAM Brands", `lever:developintelligence` -> "Pluralsight"). Each of those
+is the company's own claim about itself, which is the best source available here; an earlier draft
+of this paragraph asserted no Board could end up worse, and a 60-Board sweep found otherwise.
 """
 
 from __future__ import annotations
@@ -57,16 +66,17 @@ __all__ = ["from_title", "looks_like_slug", "title_of"]
 
 #: Per ATS, the wrapper its board title puts around the company name. Anchored, so a title
 #: without the expected shape falls through to ``None`` rather than being mangled into one.
+#: "Careers at {Name}" or "{Name} Careers" — eightfold and keka wrap their titles identically,
+#: so they share one tuple rather than two that must be kept in step by hand.
+_CAREERS_WRAPPER = (
+    re.compile(r"^Careers?\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
+    re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
+)
+
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
-    "eightfold": (
-        re.compile(r"^Careers?\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
-        re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
-    ),
-    "keka": (
-        re.compile(r"^Careers?\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
-        re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
-    ),
+    "eightfold": _CAREERS_WRAPPER,
+    "keka": _CAREERS_WRAPPER,
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
 }
@@ -97,17 +107,21 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
 
 
 #: A board that says out loud it is not a real employer. Reading titles is also a way of *finding*
-#: the vendor tenants ADR-0034 exists to remove, and two shapes were observed doing exactly that:
-#: a trailing marker ("ITC Infotech Demo") and the unfilled placeholder itself ("Your Company").
-#: ADR-0034's own blocklist comment records a third, a greenhouse board named literally "Test".
+#: the vendor tenants ADR-0034 exists to remove, and exactly two shapes were seen doing it: a
+#: trailing marker ("ITC Infotech Demo") and the unfilled placeholder itself ("Your Company").
+#: Both of those Boards are now blocklisted, so this rule guards the *next* one rather than any
+#: Board live today — the blocklist is the real defence and this is the cheaper backstop.
 #:
-#: Deliberately anchored rather than matching these words anywhere, because "Sandbox VR" and
-#: "Test Rite Group" are real employers and a loose word-boundary rule refused both. It cannot
-#: catch a QA tenant that titles itself after the company it imitates — `ripplehire:tenant1-mph`
-#: served "Mphasis" — so that one went to the blocklist, which is the only thing that can.
-_PLACEHOLDER = re.compile(
-    r"(?:\s(?:demo|test|sandbox|uat|qa)|^(?:test|your\s+company))$", re.IGNORECASE
-)
+#: Anchored, and holding only the two observed shapes, for two reasons. "Sandbox VR" and "Test
+#: Rite Group" are real employers that a rule matching these words anywhere refused. And a
+#: trailing "sandbox"/"uat"/"qa" was never observed at all — an earlier draft carried them, plus a
+#: comment citing a greenhouse board named literally "Test", which this rule can never see because
+#: greenhouse has no ``board_page``.
+#:
+#: It cannot catch a QA tenant that titles itself after the company it imitates —
+#: `ripplehire:tenant1-mph` served "Mphasis" — so that one went to the blocklist, which is the
+#: only thing that can.
+_PLACEHOLDER = re.compile(r"(?:\sdemo|^your\s+company)$", re.IGNORECASE)
 
 
 def looks_like_slug(name: str | None) -> bool:
@@ -119,9 +133,9 @@ def looks_like_slug(name: str | None) -> bool:
     :meth:`~headstart.scrapers.base.BaseScraper.resolve_company` refuse to improve precisely the
     rows this exists to fix.
     """
-    if not name:
+    text = (name or "").strip()
+    if not text:
         return True
-    text = name.strip()
     return " " not in text and bool(re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", text))
 
 

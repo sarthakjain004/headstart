@@ -82,9 +82,11 @@ class KekaScraper(BaseScraper):
         render it client-side — but where one exists the wrapper is as uniform as eightfold's,
         and every keka Board serves a slug as its company today, so the 12.5% is all upside.
 
-        :meth:`fetch_raw` already GETs this same URL for the tenant uuid. Re-fetching it costs a
-        measured 0.14s per Board (~2 min across a full run, concurrent within each shard), which
-        is cheaper than threading the response out of ``fetch_raw`` and into ``fetch``.
+        :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose
+        ``careerportalinfo`` omits the uuid — so for most Boards this is a genuinely new request,
+        not a duplicate one. Either way it costs a measured 0.14s (~2 min across a full run,
+        concurrent within each shard), which is cheaper than threading a response that may never
+        have been fetched out of ``fetch_raw`` and into ``fetch``.
         """
         return f"https://{self.slug}.keka.com/careers"
 

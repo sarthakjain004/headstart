@@ -7635,6 +7635,28 @@ def test_resolve_company_upgrades_a_slug_to_the_board_titles_name(monkeypatch):
     assert seen == ["https://jobs.ashbyhq.com/1password"]
 
 
+def test_keka_resolves_its_company_from_the_careers_page(monkeypatch):
+    """Keka's hook was added in review and nothing pinned it — deleting `KekaScraper.board_page`
+    left the whole suite green. The URL is asserted too, because it is also the page
+    `_tenant_uuid` sometimes fetches and the two must not drift apart."""
+    from headstart import http
+    from headstart.scrapers.keka import KekaScraper
+
+    seen = []
+
+    def _fetch(method, url, **kwargs):
+        seen.append(url)
+        return SimpleNamespace(
+            status_code=200, text="<title>Careers at Skylark Drones</title>"
+        )
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = KekaScraper("skylarkdrones")
+    scraper.resolve_company()
+    assert scraper.company == "Skylark Drones"
+    assert seen == ["https://skylarkdrones.keka.com/careers"]
+
+
 def test_resolve_company_costs_nothing_for_an_ats_without_a_board_page(monkeypatch):
     """Every ATS with no measured title shape keeps its slug AND makes no extra request —
     the whole change is inert for them."""

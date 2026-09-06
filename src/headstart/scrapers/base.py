@@ -273,9 +273,9 @@ class BaseScraper(ABC):
     def fetch_raw(self) -> Any:
         return json.loads(self._get())
 
-    #: The page whose ``<title>`` carries this Board's company name, or None for an ATS that has
-    #: no such page. Overridden by the four scrapers `headstart.company_name` has evidence for;
-    #: everything else keeps serving its slug, exactly as before.
+    # The page whose ``<title>`` carries this Board's company name, or None for an ATS that has
+    # no such page. Overridden by the five scrapers `headstart.company_name` has evidence for;
+    # everything else keeps serving its slug, exactly as before.
     def board_page(self) -> str | None:
         return None
 

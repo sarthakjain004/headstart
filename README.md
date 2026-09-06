@@ -172,7 +172,7 @@ consider (measured 2026-09-06; the terms are defined in `CONTEXT.md` §Counting 
 | − `config.PARKED_BOARDS` | −3 | real boards withheld for now — Accenture's and EY's outrun any shard budget, and SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs |
 | = **Scrapable Board** | **85,608** | |
 
-That order matters: excluding before deduping reads −40 and −6,615, deduping first reads −38 and
+That order matters: excluding before deduping reads −43 and −6,615, deduping first reads −41 and
 −6,617, because two excluded boards were themselves duplicates. Both land on 85,608.
 
 The alias row is the one stage that is not derivable from the ledger's own text: two hostnames

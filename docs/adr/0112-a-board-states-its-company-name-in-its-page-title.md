@@ -48,7 +48,7 @@ request on *every* Board of the ATS for a name on few of them.
 eightfold's patterns already read ("Careers at Skylark Drones", "Entropik Careers"). It is wired.
 Be clear about the size: ~1,820 of 1,429,908 ledger jobs, **+0.13%**, across ~102 of 819 Boards.
 It earns its place not on volume but on cost and floor — the page returns in 0.14s, *every* keka
-Board serves a slug today, so there is nothing to lose and no Board that can end up worse.
+Board serves a slug today, so the downside is a request that yields nothing seven times in eight.
 Successfactors stays out on a different and firmer ground: its titles are real but heterogeneous
 marketing copy in several languages, so no single wrapper strips them safely.
 
@@ -65,10 +65,24 @@ to.
 
 ## Consequences
 
-**It can only improve a name.** Every failure path leaves `self.company` untouched: no
-`board_page`, a request that raises, a non-200, a title no pattern reads, a title that is exactly
-the slug. A ledger-supplied name outranks a page title and skips the request entirely. Scrapers
-that do not opt in make **zero** extra requests — measured, not assumed.
+**It never substitutes a non-name for a slug, which is a narrower promise than "it can only
+improve".** Every failure path leaves `self.company` untouched: no `board_page`, a request that
+raises, a non-200, a title no pattern reads, a title that is exactly the slug. A ledger-supplied
+name outranks a page title and skips the request entirely. Scrapers that do not opt in make
+**zero** extra requests — measured, not assumed.
+
+What the rules cannot promise is that the name a Board states is the one a user would search for.
+A 60-Board sweep found the exceptions and they are worth naming: `ripplehire:ltimindtree` titles
+itself "LTM Careers | …" and serves **"LTM"**, plainly less recognisable than the slug; and a
+parent or acquiring entity can displace a familiar brand — `keka:abcoffee` -> "Brewbay
+Innovations", `lever:silhouette` -> "DNAM Brands", `lever:developintelligence` -> "Pluralsight".
+
+That last class is the same shape as the `hiringOrganization` field Workday is excluded over, so
+the distinction has to be stated rather than assumed. It is this: Workday's legal entity varies
+**per posting inside one Board**, so no single value is even self-consistent; these are one stable
+name per Board, and each is the company's own claim about itself. A stable parent name is a
+defensible answer to "who is hiring"; three different legal entities on three postings of one
+Board is not. An earlier draft of this ADR asserted no Board could end up worse. That was wrong.
 
 **A vendor's own name is never a company.** `ripplehire:trampolinetech` titles itself "RippleHire
 Careers | …", which shipped as the employer until a rule rejected it — the failure ADR-0034
@@ -93,8 +107,11 @@ incremental fix to this has.
 ATS is wired — not rows that actually gain a name. The per-ATS hit rates are 25-28/30 (and keka's
 5/40), so the realised share lands near 27.5%, not 31.6%. Quote the ceiling only as a ceiling.
 
-**Coverage is 5 of the affected ATSes** — 59,123 rows, which is 39% of the narrow denominator but
-**31.6% of the 186,798 slug-shaped rows**, and the second number is the one to quote. The remainder
+**Coverage is 5 of the affected ATSes.** The four measured on the served table are 59,123 rows —
+39% of the narrow denominator, but **31.6% of the 186,798 slug-shaped rows**, and the second
+number is the one to quote. Keka was wired after that measurement and its *served* rows were never
+counted, so 31.6% excludes it; on the ledger it is ~1,820 jobs, which moves the figure by well
+under a point. Do not read 59,123 as a five-ATS number. The remainder
 is not a rollout waiting to happen; it needs a per-ATS source that the evidence does not currently
 support, and Workday's case shows that "some name" is not automatically better than none.
 
