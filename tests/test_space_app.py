@@ -54,7 +54,10 @@ class _Table:
     def search(self, *a, **k):
         return self
 
-    def select(self, *a, **k):
+    def select(self, cols, *a, **k):
+        # lancedb rejects a tuple (`columns must be a list or a dictionary`); this fake
+        # took anything, which is how a browse-path 500 stayed green in the suite.
+        assert isinstance(cols, (list, dict)), f"lancedb rejects {type(cols).__name__}"
         return self
 
     def where(self, *a, **k):
