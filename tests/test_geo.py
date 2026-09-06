@@ -1,5 +1,5 @@
-"""India gazetteer (ADR-0024): alias hygiene + the where-clauses run against real LanceDB
-LIKE semantics, including every substring trap the inventory vetting caught."""
+"""India gazetteer (ADR-0024): alias hygiene + the where-clauses run against a real LanceDB
+table, including every substring trap the inventory vetting caught."""
 
 from __future__ import annotations
 

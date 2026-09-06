@@ -1390,8 +1390,8 @@ def _with_country(location: str | None, country: Any) -> str | None:
     2026-08-25): 81.45% of served locations named no country at all, and 26.37% ended in a bare
     US-state code a country filter can't match. The detail response is already fetched for the
     description, so this costs no extra request. The free-text "Location contains" box is a raw
-    substring ``LIKE`` (ADR-0024); ``geo.where()`` layers ``NOT LIKE`` exclusion guards on top of
-    the same substring match. Neither cares whether a term appears once or twice, so this guard is
+    substring ``LIKE`` (ADR-0024); ``geo.where()`` layers exclusion guards on top of the same
+    substring match. Neither cares whether a term appears once or twice, so this guard is
     for a clean served string, not filter correctness — a country already named in ``location``
     should not be repeated.
     """
