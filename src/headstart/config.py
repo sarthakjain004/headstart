@@ -108,11 +108,11 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "lever:leverdemo956",  # 15 postings
         "lever:levertest",  # 894 postings
         "lever:salesdemo-jr",  # 21 postings
+        "ripplehire:itcinfotech",  # 631 postings; titles itself "ITC Infotech Demo"
+        "ripplehire:labs-axisqa",  # 1,226 postings; RippleHire's own QA tenant for Axis
         "ripplehire:prodtest",  # 863 postings, company "prodtest"
         "ripplehire:qa1-tataaia",  # 209 postings, company "qa1-tataaia"
         "ripplehire:qa1-ust-app",  # 300 postings, company "qa1-ust-app"; "software developement"
-        "ripplehire:itcinfotech",  # 631 postings; titles itself "ITC Infotech Demo"
-        "ripplehire:labs-axisqa",  # 1,226 postings; RippleHire's own QA tenant for Axis
         "ripplehire:rhsandbox",  # 649 postings; RippleHire's own sandbox tenant
         # 502 postings. Found because ADR-0112 made it *stop* looking fake: its board titles
         # itself "Mphasis Careers | …", so the served company became "Mphasis" — a QA tenant

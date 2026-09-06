@@ -28,27 +28,31 @@ enough to strip — and for no others.
 them, between `fetch_raw()` and `parse()` in `fetch()`. `parse` stays pure, which is what keeps the
 parse tests running against recorded fixtures.
 
-**Which ATSes is a measurement.** 30 live Boards were sampled per ATS before any code shipped:
+**Which ATSes is a measurement.** 30 live Boards per ATS before any code shipped, and larger
+samples since where the first one proved too small to trust — the sample size is part of each row:
 
 | ATS | title shape | yields a name |
 | --- | --- | --- |
-| ashby | `{Name} Jobs` | 28/30 |
-| eightfold | `Careers at {Name}` / `{Name} Careers` | 28/30 |
-| ripplehire | `{Name} Careers \| Latest jobs at …` | 28/30 |
-| lever | `{Name}` — no wrapper at all | ~85% (131/150) |
+| ashby | `{Name} Jobs` | ~92% (n=120) |
+| eightfold | `Careers at {Name}` / `{Name} Careers` | ~93% (n=100) |
+| ripplehire | `{Name} Careers \| Latest jobs at …` | ~94% (all 52 Hiring Boards) |
+| lever | `{Name}` — no wrapper at all | ~88% (352/400) |
+| keka | `Careers at {Name}` / `{Name} Careers` | ~11% (92 of 819, a full census) |
 
-successfactors, keka, darwinbox and freshteam scored **0/30 against the registered patterns**,
-which is not the same as having nothing to read: a later sweep found roughly one keka Board in
-eight already serving an eightfold-shaped title ("Entropik Careers"), and successfactors serves
-parseable ones too ("Careers at Bachem"). They are excluded because a hit rate that low buys a
-request on *every* Board of the ATS for a name on few of them.
+successfactors, darwinbox and freshteam scored **0/30 against the registered patterns**. For
+darwinbox and freshteam that is genuine — they render client-side and serve nothing to read.
+Successfactors is the interesting exclusion: it *does* serve titles ("Careers at Bachem"), but
+they are marketing copy in several languages with no shared wrapper ("Life@MOHH - people, culture,
+and values | MOHH", "Trabaja en Volaris"), so a pattern wide enough to catch the third mangles the
+first two. That is a quality bar, not a cost one.
 
-**Keka was that revisiting, and it changed the answer.** A 40-Board sweep found 5 serving a
-`<title>` — 12.5%, not the 0/30 the first draft asserted — and every one of the five in a wrapper
-eightfold's patterns already read ("Careers at Skylark Drones", "Entropik Careers"). It is wired.
-Be clear about the size: ~1,820 of 1,429,908 ledger jobs, **+0.13%**, across ~102 of 819 Boards.
-It earns its place not on volume but on cost and floor — the page returns in 0.14s, *every* keka
-Board serves a slug today, so the downside is a request that yields nothing seven times in eight.
+**Keka was scored 0/30 too, and that was simply wrong.** A 40-Board sweep found 5 serving a
+`<title>`, and a full 819-Board census settled it at **92 names from 103 titles — ~11%** (the rest
+render client-side), every one in a wrapper eightfold's patterns already read ("Careers at Skylark
+Drones", "Entropik Careers"). It is wired. Be clear about the size: ~1,600 of 1,429,908 ledger
+jobs, **~+0.11%**. It earns its place not on volume but on cost and floor — the page returns in
+0.12s, and *every* keka Board serves a slug today, so the downside is a request that yields
+nothing eight times in nine.
 Successfactors stays out on a different and firmer ground: its titles are real but heterogeneous
 marketing copy in several languages, so no single wrapper strips them safely.
 
@@ -93,9 +97,17 @@ Board is not. An earlier draft of this ADR asserted no Board could end up worse.
 **A page label is never a company name.** `lever:destinationknot` titles itself "Destination
 Careers" — the page-label shape this ADR refuses Workday's `og:title` over, arriving through the
 front door. Every pattern that models "{Name} Careers" strips it, so a title still ending that way
-means the pattern did not model it; only lever's catch-all can reach the check. Anchored to the
-tail, because "Jobsoid" and "Careers24 Group" are names. Measured cost across 520 live Boards:
-one rejection, `destinationknot` itself, and no real employer.
+means the title wore the wrapper twice and what is left is a label. Anchored at **both** ends,
+because both happen: `lever:destinationknot` serves "Destination Careers" (trailing, reachable
+because lever's pattern matches anything) and `keka:enpro` serves "Careers at Careers at Enpro
+Industries" (leading, which a tail-only rule served to users as the employer until round 6 caught
+it). Anchored rather than matching anywhere, because "Jobsoid" and "Careers24 Group" are names.
+
+It costs recall, and the honest number is not zero: across 400 lever and all 819 keka Boards it
+refused `enpro`, and an independent 700-Board lever sweep refused `lever:pmaconsultants` ("PMA
+Consultants Careers", 29 real postings). Refusing is still the right trade — stripping the word
+instead would turn "Destination Careers" into "Destination", a confident wrong name, where
+refusing costs only an upgrade and leaves the slug.
 
 **A vendor's own name is never a company.** `ripplehire:trampolinetech` titles itself "RippleHire
 Careers | …", which shipped as the employer until a rule rejected it — the failure ADR-0034
@@ -104,7 +116,8 @@ blocklists Boards for, arriving through a title instead.
 **One extra request per Board, and it is the cheapest possible one.** `attempts=1`, so it never
 spends the retry ladder (three attempts against a walled origin is ~90s for one Board), and
 `marks_wall=False`, so a 403 on an HTML careers page can never be what routes an entire ATS onto
-the spare egress. Measured added latency per Board: 0.4s–1.2s mean.
+the spare egress. Measured added latency per Board, median of three: 0.05s (ashby), 0.12s
+(keka), 0.20s (ripplehire), 0.40s (lever), 0.66s (eightfold); worst single request 1.13s.
 
 **Existing rows are renamed without a backfill, but not quickly.** `company` is in
 `doc_prep.META_FIELDS`, so `update_meta` re-observes it and `index sync` rewrites the stored row —
@@ -117,8 +130,8 @@ states one, the ATS slug everywhere else. That is honest rather than tidy, and i
 incremental fix to this has.
 
 **These are ceilings, not achieved coverage.** Every figure below counts rows on a Board whose
-ATS is wired — not rows that actually gain a name. The per-ATS hit rates run 83-93% (and keka's
-12.5%), so the realised share lands near 27.5%, not 31.6%. Quote the ceiling only as a ceiling.
+ATS is wired — not rows that actually gain a name. The per-ATS hit rates run 88-94% (and keka's
+~11%), so the realised share lands near 27.5%, not 31.6%. Quote the ceiling only as a ceiling.
 
 **Coverage is 5 of the affected ATSes.** The four measured on the served table are 59,123 rows —
 39% of the narrow denominator, but **31.6% of the 186,798 slug-shaped rows**, and the second

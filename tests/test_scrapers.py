@@ -7616,62 +7616,45 @@ def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
 def _titled(title: str, status: int = 200):
     """A board-page response carrying one ``<title>`` — the only thing `resolve_company` reads.
 
-    Local to these tests rather than a fixture: five of them differ only in the title and the
-    status, and four hand-rolled stubs of the same two fields is what a reviewer flagged.
+    Local to these tests rather than a fixture: they differ only in the title and the status,
+    and hand-rolling that same pair of fields per test is what a reviewer flagged.
     """
     return SimpleNamespace(status_code=status, text=f"<title>{title}</title>")
 
 
-def test_resolve_company_upgrades_a_slug_to_the_board_titles_name(monkeypatch):
-    """`fetch` calls this between the listing and `parse`, so the Jobs carry the real name."""
-    from headstart import http
-    from headstart.scrapers.ashby import AshbyScraper
-
-    seen: list[str] = []
-
-    def _fetch(method, url, **kwargs):
-        seen.append(url)
-        return _titled("1Password Jobs")
-
-    monkeypatch.setattr(http, "fetch", _fetch)
-    scraper = AshbyScraper("1password")
-    scraper.resolve_company()
-    assert scraper.company == "1Password"
-    assert seen == ["https://jobs.ashbyhq.com/1password"]
-
-
-def test_keka_resolves_its_company_from_the_careers_page(monkeypatch):
-    """Keka's hook was added in review and nothing pinned it — deleting `KekaScraper.board_page`
-    left the whole suite green. The URL is asserted too, because it is also the page
-    `_tenant_uuid` sometimes fetches and the two must not drift apart."""
-    from headstart import http
-    from headstart.scrapers.keka import KekaScraper
-
-    seen = []
-
-    def _fetch(method, url, **kwargs):
-        seen.append(url)
-        return _titled("Careers at Skylark Drones")
-
-    monkeypatch.setattr(http, "fetch", _fetch)
-    scraper = KekaScraper("skylarkdrones")
-    scraper.resolve_company()
-    assert scraper.company == "Skylark Drones"
-    assert seen == ["https://skylarkdrones.keka.com/careers"]
-
-
 @pytest.mark.parametrize(
-    ("factory", "slug", "title", "expected", "url"),
+    ("ats", "slug", "title", "expected", "url"),
     [
         (
-            "headstart.scrapers.lever:LeverScraper",
+            "ashby",
+            "1password",
+            "1Password Jobs",
+            "1Password",
+            "https://jobs.ashbyhq.com/1password",
+        ),
+        (
+            "eightfold",
+            "jobs.vodafone.com",
+            "Careers at Vodafone",
+            "Vodafone",
+            "https://jobs.vodafone.com/careers",
+        ),
+        (
+            "keka",
+            "skylarkdrones",
+            "Careers at Skylark Drones",
+            "Skylark Drones",
+            "https://skylarkdrones.keka.com/careers",
+        ),
+        (
+            "lever",
             "picklerobot",
             "Pickle Robot Company",
             "Pickle Robot Company",
             "https://jobs.lever.co/picklerobot",
         ),
         (
-            "headstart.scrapers.ripplehire:RippleHireScraper",
+            "ripplehire",
             "tatasteel",
             "Tata Steel Ltd Careers | Latest jobs at Tata Steel Ltd",
             "Tata Steel Ltd",
@@ -7680,19 +7663,16 @@ def test_keka_resolves_its_company_from_the_careers_page(monkeypatch):
     ],
 )
 def test_every_wired_scraper_resolves_its_company(
-    monkeypatch, factory, slug, title, expected, url
+    monkeypatch, ats, slug, title, expected, url
 ):
-    """Ashby, eightfold and keka were pinned; lever and ripplehire were not.
+    """One row per ATS in `company_name.PATTERNS`; the test below enforces that count.
 
-    That gap is not hypothetical: a stray rename of `RippleHireScraper.board_page` reached the
-    branch and turned ripplehire name resolution off with the whole suite still green.
+    Ashby and eightfold were the only two pinned for several rounds, and a stray rename of
+    `RippleHireScraper.board_page` then reached the branch and turned ripplehire resolution off
+    with the whole suite green. The URL is asserted too — for keka it is also the page
+    `_tenant_uuid` fetches, and the two must not drift apart.
     """
-    import importlib
-
     from headstart import http
-
-    module, name = factory.split(":")
-    scraper_cls = getattr(importlib.import_module(module), name)
 
     seen: list[str] = []
 
@@ -7701,10 +7681,60 @@ def test_every_wired_scraper_resolves_its_company(
         return _titled(title)
 
     monkeypatch.setattr(http, "fetch", _fetch)
-    scraper = scraper_cls(slug)
+    scraper = get_scraper(ats, slug, slug)
     scraper.resolve_company()
     assert scraper.company == expected
     assert seen == [url]
+
+
+def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
+    """Binds `company_name.PATTERNS` to the scrapers that override `board_page`.
+
+    Without this, adding a sixth ATS to one side and not the other is silent, and the test above
+    keeps the name "every" while covering less than every.
+    """
+    from headstart.company_name import PATTERNS
+    from headstart.scrapers.base import BaseScraper
+    from headstart.scrapers.registry import SCRAPERS
+
+    overriding = {
+        ats
+        for ats, cls in SCRAPERS.items()
+        if cls.board_page is not BaseScraper.board_page
+    }
+    assert overriding == set(PATTERNS), (
+        "an ATS has a board_page but no patterns, or patterns but no board_page"
+    )
+    rows = test_every_wired_scraper_resolves_its_company.pytestmark[0].args[1]
+    covered = {row[0] for row in rows}
+    assert covered == set(PATTERNS), "every wired ATS needs a row in the resolve test"
+
+
+def test_the_title_fetch_is_one_attempt_and_never_walls_its_ats(monkeypatch):
+    """ADR-0112 sells both of these as why one extra request per Board is safe, and deleting
+    either left the whole suite green.
+
+    `attempts=1`: a display name is the most optional thing a scrape fetches, so it must not
+    spend the retry ladder — three attempts against a walled origin is ~90s for one Board.
+    `marks_wall=False`: `egress_on` empties, so this request's own non-200 can never be what
+    routes every other Board of the ATS onto the spare egress — while `egress_group` stays, so it
+    still *rides* the fallback once the ATS is walled (ADR-0063).
+    """
+    from headstart import http
+
+    captured: dict = {}
+
+    def _fetch(method, url, **kwargs):
+        captured.update(kwargs)
+        return _titled("Careers at Vodafone")
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = get_scraper("eightfold", "jobs.vodafone.com", "jobs.vodafone.com")
+    assert scraper.egress_fallback_on, "this ATS must opt in for the test to bite"
+    scraper.resolve_company()
+    assert captured["attempts"] == 1
+    assert captured["egress_on"] == frozenset(), "marking must be dropped"
+    assert captured["egress_group"] == "eightfold", "routing must be kept"
 
 
 def test_resolve_company_costs_nothing_for_an_ats_without_a_board_page(monkeypatch):

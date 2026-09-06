@@ -172,12 +172,17 @@ def test_a_title_long_enough_to_be_prose_is_refused():
 
 
 def test_a_page_label_is_not_a_company_name():
-    """Lever's pattern matches anything, so a page label reaches the rejection rules intact.
+    """A title that wore the wrapper twice leaves a page label behind after one strip.
 
-    `lever:destinationknot` really serves "Destination Careers" (verified live) — the page-label
-    shape this module refuses Workday's og:title over. The ATSes whose patterns model
-    "{Name} Careers" strip it first, so this must not fire on them.
+    Both shapes are live and it took both ends of the rule to cover them. Trailing:
+    `lever:destinationknot` serves "Destination Careers", reachable because lever's pattern
+    matches anything. Leading: `keka:enpro` serves "Careers at Careers at Enpro Industries" — the
+    pattern strips one wrapper, and while the rule was anchored to the tail only, the survivor
+    "Careers at Enpro Industries" was served to users as the employer. A single-wrapper title must
+    still resolve, so this must not fire on the ordinary case.
     """
+    assert from_title("keka", "Careers at Careers at Enpro Industries", "enpro") is None
+    assert from_title("eightfold", "Careers at Foo Careers", "foo") is None
     assert from_title("lever", "Destination Careers", "destinationknot") is None
     assert from_title("eightfold", "Sephora Careers", "sephora") == "Sephora"
     # anchored to the tail, so a real name that merely contains the word survives

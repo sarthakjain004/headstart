@@ -10,24 +10,26 @@ and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1pa
 Five ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
 request per Board recovers it. Which five is a measurement, not a guess: live Boards were sampled
 per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
-enough to strip safely are here. Lever's row is measured over 150 Boards rather than 30, because
-two 30-Board samples disagreed (25 and 21); at 150 it is 131 (87.3%), and an independent 300-Board
-sweep got 84.7%. The 30-Board figures for the other four were re-sampled and held.
+enough to strip safely are here. Sample sizes differ on purpose: the first pass was 30 Boards per
+ATS, and each row was re-measured larger wherever 30 proved too few to trust. Lever needed it most
+— two 30-Board samples disagreed (25 and 21) before 400 settled it near 88% — and keka's row is a
+full census rather than a sample.
 
 ===============  ==========================================  =====================
 ATS              title shape                                 yields a name
 ===============  ==========================================  =====================
-ashby            ``{Name} Jobs``                             28/30
-eightfold        ``Careers at {Name}`` / ``{Name} Careers``  28/30
-ripplehire       ``{Name} Careers | Latest jobs at …``       28/30
-lever            ``{Name}`` — no wrapper at all              ~85% (131/150)
-keka             ``Careers at {Name}`` / ``{Name} Careers``   5/40
+ashby            ``{Name} Jobs``                             ~92% (n=120)
+eightfold        ``Careers at {Name}`` / ``{Name} Careers``  ~93% (n=100)
+ripplehire       ``{Name} Careers | Latest jobs at …``       ~94% (all 52)
+lever            ``{Name}`` — no wrapper at all              ~88% (352/400)
+keka             ``Careers at {Name}`` / ``{Name} Careers``  ~11% (92 of 819)
 ===============  ==========================================  =====================
 
-Keka is the odd row and worth reading twice: only one board in eight serves a ``<title>`` at all
-(the rest render it client-side), but where one exists the wrapper is as uniform as eightfold's,
-and *every* keka Board serves a slug today — so the 12.5% is pure upside for one cheap request.
-The first draft excluded it on a stated **0/30**, which was simply wrong.
+Keka is the odd row and worth reading twice: only about one Board in nine serves a ``<title>`` at
+all (the rest render it client-side), but where one exists the wrapper is as uniform as
+eightfold's, and *every* keka Board serves a slug today — so that ~11% is pure upside for one
+cheap request. The first draft excluded keka on a stated **0/30**, which was simply wrong; the
+figure here is a full 819-Board census, not a sample.
 
 **Absent, and why.** darwinbox and freshteam render their boards client-side and serve nothing to
 read. successfactors is the interesting exclusion: it does serve titles, but they are marketing
@@ -92,13 +94,18 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 _SEPARATORS = ("|", "—", "–", " - ", "::")
 
 #: Same idea as `_SEPARATORS`, for a wrapper word rather than a wrapper character. Every pattern
-#: above that models "{Name} Careers" strips it, so text still ending in "Careers" here means the
-#: title was a page label and not a name. In practice that means **lever**, whose pattern matches
-#: anything: `lever:destinationknot` serves "Destination Careers", the page-label shape this
-#: module refuses Workday's ``og:title`` over. A doubled label ("Careers at X Careers") would
-#: reach it on eightfold or keka too, but none was seen across 520 live Boards — where this
-#: rejected exactly one title, `destinationknot` itself, and no real employer.
-_LABEL_TAIL = re.compile(r"\s(?:careers|jobs)$", re.IGNORECASE)
+#: above strips one wrapper; text that *still* carries one means the title wore it twice, and what
+#: is left is a page label, not a name. Two live shapes, and it took both ends to cover them:
+#: `lever:destinationknot` serves "Destination Careers" (trailing), and `keka:enpro` serves
+#: "Careers at Careers at Enpro Industries" — the pattern strips one "Careers at", and while this
+#: was tail-anchored the other reached users as the employer.
+#:
+#: Anchored at both ends rather than matching anywhere, because "Jobsoid" and "Careers24 Group"
+#: are names. It costs recall: a real employer whose title genuinely ends in " Careers" is refused
+#: and keeps its slug — `lever:pmaconsultants` ("PMA Consultants Careers", 29 postings) is one.
+#: That is the deliberate trade. Stripping the word instead would turn "Destination Careers" into
+#: "Destination", a confident wrong name, where refusing costs only a missed upgrade.
+_LABEL = re.compile(r"^careers?\s+at\s+|\s(?:careers|jobs)$", re.IGNORECASE)
 
 #: Long enough for "Financial Software and Systems Ltd", short enough to reject a sentence — the
 #: test pins both ends, against that name and the 70-character lever title that is a whole
@@ -189,7 +196,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
         return None
     if not text or len(text) > _MAX_LEN:
         return None
-    if any(separator in text for separator in _SEPARATORS) or _LABEL_TAIL.search(text):
+    if any(separator in text for separator in _SEPARATORS) or _LABEL.search(text):
         return None
     # A hostname — "webfx.com" — but only when written like one. The regex is deliberately
     # case-sensitive, which alone spares "Character.AI"; the lowercase test earns its place on

@@ -79,7 +79,7 @@ def _counts() -> dict[str, int]:
 
     # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards
-    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 40 there and 38 here.
+    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 43 there and 41 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
     kept = [c for c in enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS]
     unaliased = [c for c in kept if not is_alias(c)]
