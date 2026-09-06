@@ -273,10 +273,10 @@ class BaseScraper(ABC):
     def fetch_raw(self) -> Any:
         return json.loads(self._get())
 
-    # The page whose ``<title>`` carries this Board's company name, or None for an ATS that has
-    # no such page. Overridden by the five scrapers `headstart.company_name` has evidence for;
-    # everything else keeps serving its slug, exactly as before.
     def board_page(self) -> str | None:
+        """The page whose ``<title>`` carries this Board's company name, or None for an ATS with
+        no such page. Overridden by the five scrapers `headstart.company_name` has evidence for;
+        everything else keeps serving its slug, exactly as before."""
         return None
 
     def resolve_company(self) -> None:
@@ -287,7 +287,9 @@ class BaseScraper(ABC):
 
         One request per Board, never per Job, and every failure path leaves ``self.company``
         exactly as it was: no ``board_page``, a request that raises, a title this ATS's patterns
-        cannot read. A name is only ever *upgraded*, so the worst case is today's behaviour.
+        cannot read. What that guarantees is narrower than "only ever an upgrade": a slug is never
+        replaced by a *non-name*, but a Board can state a name less recognisable than its own slug
+        (`ripplehire:ltimindtree` serves "LTM"). ADR-0112 §Consequences has the measured cases.
         """
         # A real name outranks a page title — but "different from the slug" is not the same
         # question. The ledger itself holds "wipro" and "citi", so the first draft's

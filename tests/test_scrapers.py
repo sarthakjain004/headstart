@@ -7613,20 +7613,25 @@ def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
 # ── the Board's company name, not its slug (headstart.company_name) ──────────────────────────
 
 
+def _titled(title: str, status: int = 200):
+    """A board-page response carrying one ``<title>`` — the only thing `resolve_company` reads.
+
+    Local to these tests rather than a fixture: five of them differ only in the title and the
+    status, and four hand-rolled stubs of the same two fields is what a reviewer flagged.
+    """
+    return SimpleNamespace(status_code=status, text=f"<title>{title}</title>")
+
+
 def test_resolve_company_upgrades_a_slug_to_the_board_titles_name(monkeypatch):
     """`fetch` calls this between the listing and `parse`, so the Jobs carry the real name."""
     from headstart import http
     from headstart.scrapers.ashby import AshbyScraper
 
-    class _Resp:
-        status_code = 200
-        text = "<html><head><title>1Password Jobs</title></head></html>"
-
     seen: list[str] = []
 
     def _fetch(method, url, **kwargs):
         seen.append(url)
-        return _Resp()
+        return _titled("1Password Jobs")
 
     monkeypatch.setattr(http, "fetch", _fetch)
     scraper = AshbyScraper("1password")
@@ -7646,9 +7651,7 @@ def test_keka_resolves_its_company_from_the_careers_page(monkeypatch):
 
     def _fetch(method, url, **kwargs):
         seen.append(url)
-        return SimpleNamespace(
-            status_code=200, text="<title>Careers at Skylark Drones</title>"
-        )
+        return _titled("Careers at Skylark Drones")
 
     monkeypatch.setattr(http, "fetch", _fetch)
     scraper = KekaScraper("skylarkdrones")
@@ -7706,11 +7709,7 @@ def test_a_non_200_board_page_leaves_the_company_untouched(monkeypatch):
     from headstart import http
     from headstart.scrapers.lever import LeverScraper
 
-    class _Gone:
-        status_code = 404
-        text = "<title>Not Found</title>"
-
-    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Gone())
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Not Found", status=404))
     scraper = LeverScraper("acme")
     scraper.resolve_company()
     assert scraper.company == "acme"
@@ -7724,11 +7723,7 @@ def test_the_title_fetch_does_not_go_through_the_get_override(monkeypatch):
     from headstart import http
     from headstart.scrapers.eightfold import EightfoldScraper
 
-    class _Resp:
-        status_code = 200
-        text = "<html><head><title>Careers at Vodafone</title></head></html>"
-
-    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Resp())
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Careers at Vodafone"))
     scraper = EightfoldScraper("jobs.vodafone.com")
     scraper.resolve_company()
     assert scraper.company == "Vodafone"
@@ -7742,11 +7737,7 @@ def test_fetch_resolves_the_company_before_parsing(monkeypatch):
     from headstart import http
     from headstart.scrapers.ashby import AshbyScraper
 
-    class _Resp:
-        status_code = 200
-        text = "<html><head><title>1Password Jobs</title></head></html>"
-
-    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Resp())
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("1Password Jobs"))
     scraper = AshbyScraper("1password")
     monkeypatch.setattr(scraper, "fetch_raw", lambda: {"jobs": []})
     captured: dict = {}

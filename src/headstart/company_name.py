@@ -10,8 +10,9 @@ and "gamuda", Workday's holds "citi" and "dick-s-sporting-goods". Users see "1pa
 Five ATSes put the real name in their board page's ``<title>``, each wrapped differently, and one
 request per Board recovers it. Which five is a measurement, not a guess: live Boards were sampled
 per ATS (`experiment/company-display-name/`, gitignored), and only those whose wrapper is uniform
-enough to strip safely are here. Lever's row is a range because two independent 30-Board samples
-disagreed (25 and 21); the others were re-sampled and held.
+enough to strip safely are here. Lever's row is measured over 150 Boards rather than 30, because
+two 30-Board samples disagreed (25 and 21); at 150 it is 131 (87.3%), and an independent 300-Board
+sweep got 84.7%. The 30-Board figures for the other four were re-sampled and held.
 
 ===============  ==========================================  =====================
 ATS              title shape                                 yields a name
@@ -19,7 +20,7 @@ ATS              title shape                                 yields a name
 ashby            ``{Name} Jobs``                             28/30
 eightfold        ``Careers at {Name}`` / ``{Name} Careers``  28/30
 ripplehire       ``{Name} Careers | Latest jobs at …``       28/30
-lever            ``{Name}`` — no wrapper at all              21-25/30
+lever            ``{Name}`` — no wrapper at all              ~85% (131/150)
 keka             ``Careers at {Name}`` / ``{Name} Careers``   5/40
 ===============  ==========================================  =====================
 
@@ -88,14 +89,26 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 #: this far: no eightfold pattern matches it, so the loop below rejects it first.)
 _SEPARATORS = ("|", "—", "–", " - ", "::")
 
-#: Long enough for "Financial Software & Systems (P) Ltd.", short enough to reject a sentence.
+#: Same idea as `_SEPARATORS`, for a wrapper word rather than a wrapper character. Every pattern
+#: above that models "{Name} Careers" strips it, so text still ending in "Careers" here means the
+#: title was a page label and not a name — reachable only through **lever**, whose pattern matches
+#: anything: `lever:destinationknot` serves "Destination Careers", the page-label shape this
+#: module refuses Workday's ``og:title`` over. Measured against 150 live lever Boards, no real
+#: company name ends this way, so the rule costs nothing it should keep.
+_LABEL_TAIL = re.compile(r"\s(?:careers|jobs)$", re.IGNORECASE)
+
+#: Long enough for "Financial Software and Systems Ltd", short enough to reject a sentence — the
+#: test pins both ends, against that name and a 69-character lever title that is a whole sentence.
 _MAX_LEN = 60
 
 #: Per ATS, the names its *own* branding goes by. A board page that fails to render its tenant
 #: falls back to the platform's branding, so the vendor a title can wrongly name is always the
 #: Board's own — `ripplehire:trampolinetech` really does title itself "RippleHire Careers | …".
 #: Keying on the Board's ATS is what keeps a vendor that is also a genuine employer elsewhere:
-#: `lever:freshworks` titles itself "Freshworks", and a flat set of every vendor name refused it.
+#: `lever:freshworks` titles itself "Freshworks", and the rule this replaced refused it. Note that
+#: flattening the values below would *not* reproduce that — the set it replaced was wider, naming
+#: every ATS this repo scrapes (freshteam, greenhouse, successfactors, workday and freshworks
+#: among them), and only the four ATSes with patterns can reach this test at all.
 #: ADR-0034 blocklists the Boards already known to be vendor-owned; this catches the rest.
 _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "ashby": frozenset({"ashby", "ashbyhq"}),
@@ -172,7 +185,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
         return None
     if not text or len(text) > _MAX_LEN:
         return None
-    if any(separator in text for separator in _SEPARATORS):
+    if any(separator in text for separator in _SEPARATORS) or _LABEL_TAIL.search(text):
         return None
     # A hostname — "webfx.com" — but only when written like one. The regex is deliberately
     # case-sensitive, which alone spares "Character.AI"; the lowercase test earns its place on

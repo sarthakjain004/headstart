@@ -35,7 +35,7 @@ parse tests running against recorded fixtures.
 | ashby | `{Name} Jobs` | 28/30 |
 | eightfold | `Careers at {Name}` / `{Name} Careers` | 28/30 |
 | ripplehire | `{Name} Careers \| Latest jobs at …` | 28/30 |
-| lever | `{Name}` — no wrapper at all | 25/30 |
+| lever | `{Name}` — no wrapper at all | 21–25/30 (two samples disagreed) |
 
 successfactors, keka, darwinbox and freshteam scored **0/30 against the registered patterns**,
 which is not the same as having nothing to read: a later sweep found roughly one keka Board in
@@ -72,10 +72,16 @@ name outranks a page title and skips the request entirely. Scrapers that do not 
 **zero** extra requests — measured, not assumed.
 
 What the rules cannot promise is that the name a Board states is the one a user would search for.
-A 60-Board sweep found the exceptions and they are worth naming: `ripplehire:ltimindtree` titles
-itself "LTM Careers | …" and serves **"LTM"**, plainly less recognisable than the slug; and a
-parent or acquiring entity can displace a familiar brand — `keka:abcoffee` -> "Brewbay
-Innovations", `lever:silhouette` -> "DNAM Brands", `lever:developintelligence` -> "Pluralsight".
+A 452-Board sweep across all five wired ATSes found two recurring classes. These are **examples,
+not the complete set** — the sweep was a sample, and more Boards of both shapes certainly exist.
+
+An acronym or short form less findable than the slug: `ripplehire:ltimindtree` serves **"LTM"**,
+`eightfold:puertoricogov.eightfold.ai` serves **"OATRH"**. And a parent or acquiring entity
+displacing a familiar brand: `eightfold:gotinder.eightfold.ai` -> "Match Group", `keka:abcoffee`
+-> "Brewbay Innovations", `lever:silhouette` -> "DNAM Brands", `lever:developintelligence` ->
+"Pluralsight", `eightfold:grupobimbo.eightfold.ai` -> "Bimbo Bakeries USA".
+
+The narrowed floor held across all 418 names that sweep resolved: not one was a non-name.
 
 That last class is the same shape as the `hiringOrganization` field Workday is excluded over, so
 the distinction has to be stated rather than assumed. It is this: Workday's legal entity varies
@@ -129,3 +135,15 @@ title rule cannot catch that; only ADR-0034's blocklist can, and all three went 
 **Lever's board page is assumed to be `jobs.lever.co`.** A Board on Lever's EU host resolves no
 name and keeps its slug — the same no-worse-than-today floor as every other miss, recorded here
 because the next person to see a Lever Board unnamed should look here first.
+
+
+## Known misses, recorded rather than fixed
+
+`ripplehire:7-eleven-gsc` titles itself "7 - Eleven Careers | …", which `_SEPARATORS` refuses over
+the `" - "` it contains — a real employer losing a real name. The floor holds (it keeps its slug)
+and the separator rule earns its place elsewhere, so this is left as a recall miss rather than
+narrowed around one Board.
+
+`ripplehire:labs-mph` is in the same `labs-` family as the newly blocklisted `labs-axisqa` and
+looks like another RippleHire QA tenant, but it currently 502s and exposes no title, so there is
+no evidence to blocklist it on. Named here so the next person meets it with the context.

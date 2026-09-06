@@ -123,6 +123,8 @@ def test_a_padded_slug_is_still_a_slug():
     """`looks_like_slug` judges the stripped string, not two different ones."""
     assert looks_like_slug(" wipro ")
     assert not looks_like_slug(" Tata Steel ")
+    # a ledger name that is only padding is no more a name than an empty one
+    assert looks_like_slug("   ")
 
 
 def test_title_of_reads_and_tidies_the_tag():
@@ -163,6 +165,21 @@ def test_a_title_long_enough_to_be_prose_is_refused():
     assert from_title("lever", "Financial Software and Systems Ltd", "fss")
 
 
+def test_a_page_label_is_not_a_company_name():
+    """Lever's pattern matches anything, so a page label reaches the rejection rules intact.
+
+    `lever:destinationknot` really serves "Destination Careers" (verified live) — the page-label
+    shape this module refuses Workday's og:title over. The ATSes whose patterns model
+    "{Name} Careers" strip it first, so this must not fire on them.
+    """
+    assert from_title("lever", "Destination Careers", "destinationknot") is None
+    assert from_title("eightfold", "Sephora Careers", "sephora") == "Sephora"
+    # anchored to the tail, so a real name that merely contains the word survives
+    assert from_title("lever", "Jobsoid", "jobsoid") == "Jobsoid"
+    assert from_title("lever", "Careers24 Group", "careers24") == "Careers24 Group"
+    assert from_title("keka", "Entropik Careers", "entropik") == "Entropik"
+
+
 def test_a_lowercase_name_with_a_tld_is_read_as_a_hostname():
     """The guard the hostname rule really needs.
 
@@ -201,8 +218,6 @@ def test_a_vendor_name_is_refused_only_on_that_vendors_own_boards():
 def test_a_ledger_name_that_is_itself_a_slug_is_not_a_real_name():
     """`looks_like_slug` is what stops `resolve_company` skipping the rows it exists to fix: the
     liveness ledger holds "wipro" and "gamuda", and Workday's holds "dick-s-sporting-goods"."""
-    from headstart.company_name import looks_like_slug
-
     for slug_like in (
         "wipro",
         "gamuda",
