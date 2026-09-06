@@ -63,7 +63,10 @@ review counted differently again, and an attempt to settle it by grepping the `r
 assignments produced a third number, because the constructions vary too much to count that way.
 
 So the number is gone, and the standing rule is the prose form of ADR-0111's tile rule: **a figure
-that cannot be established cheaply and reliably is not asserted at all.** What is safe to say is
+that cannot be established cheaply and reliably is not asserted at all** — and it binds our own
+documents, not only the product's surfaces. ADR-0111's Context carried an invented "39 words"
+through eight rounds of review precisely because every reviewer was checking what the *UI*
+claimed. What is safe to say is
 qualitative — many boards publish a workplace-type field and the scraper uses it, others are read
 from the location text, several `OR` the two — and *that* is exactly why the column has no place
 on a page whose currency is one-sentence claims.

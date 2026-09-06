@@ -9,9 +9,20 @@ Trends are no longer anonymous — accepted deliberately, knowing it costs casua
 decision is not in question here. What is in question is the page a stranger actually meets.
 
 Fetched live on 2026-09-07, `GET https://imposeidon-headstart-search.hf.space/` returns
-`signin.html`: a centred card carrying a logo, a heading, **39 words** of copy, and a Google
-button. It does not say who runs it, where the jobs come from, what happens to a Google identity
-once handed over, or that the entire pipeline behind it is public source code.
+`signin.html`: a centred card carrying a logo, a heading, **one 15-word sentence** of copy, and a
+Google button. That sentence — *"Tech jobs read straight from company career boards, matched on
+meaning. Sign in to search."* — does name the provenance, and it is the best thing on the page.
+What it cannot do in fifteen words is say who runs this, what happens to a Google identity once
+handed over, how much is in the index, or that the entire pipeline behind it is public source code.
+
+> **Correction, recorded rather than overwritten.** This paragraph said "**39 words**" from the
+> first commit of this branch until the ninth round of review caught it. The real figure is 15 in
+> the sentence and 22 rendered word-tokens on the whole page; there is no counting that gives 39.
+> The same paragraph also listed "where the jobs come from" among what the old door omits, which
+> those fifteen words plainly do not. Both were invented, in the Context that motivates a decision
+> whose entire subject is not asserting unverified numbers — and they survived eight reviews that
+> were busy checking the *product's* claims. The rule this ADR states for tiles, and ADR-0112
+> states for prose, evidently has to bind an ADR's own Context too.
 
 That shape is the problem. Asking for an identity provider's credential before showing any
 evidence of value is the *exact* interaction shape of a credential-harvesting page, and users have
