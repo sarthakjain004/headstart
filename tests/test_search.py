@@ -646,9 +646,50 @@ def test_currency_alone_does_not_filter():
     assert "salary_currency" in _bracket(salary_currency="USD", salary_min=1)
 
 
+def test_a_bound_with_no_currency_defaults_to_usd():
+    """A bracket with no currency named must still compile — it used to vanish entirely.
+
+    The USD default ADR-0084 records lived only in the browser's <select>, so every other
+    caller (the alerts path, `scripts/eval/verify_filters.py`, a hand-built
+    `/search?salary_min=…`) had its numeric bound silently dropped and got the unfiltered set
+    back, with no error and nothing for `facets._blocking` to name.
+    """
+    where = _bracket(salary_min=100_000)
+    assert "salary_currency = 'USD'" in where
+    assert "COALESCE(max_salary_annual, min_salary_annual) >= 100000" in where
+    # ...and the default is still a *modifier*: with no bound to scope there is no bracket, so
+    # nothing salary-shaped is compiled beside the filters the user did ask for (ADR-0084 —
+    # filtering on the currency alone would cut the set to the 28.5% carrying any salary).
+    assert _bracket(remote=True) == "remote = true"
+
+
 def test_currency_is_whitelisted_against_the_table_never_interpolated():
-    assert _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1) is None
-    assert _bracket(salary_currency="XXX", salary_min=1) is None
+    # Never interpolated — and a 400 rather than a silently dropped bracket, because ignoring
+    # this value discards the two bounds it scopes, unlike an unknown `ats`, which only drops
+    # itself. Only a hand-built request reaches it: the picker is rendered from `currencies`.
+    with pytest.raises(ValueError):
+        _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
+    with pytest.raises(ValueError):
+        _bracket(salary_currency="XXX", salary_min=1)
+    # With no bound there is no bracket to scope, so there is nothing to reject either.
+    assert _bracket(salary_currency="XXX") is None
+
+
+def test_an_unmigrated_table_does_not_reject_the_currency_it_cannot_hold():
+    # `currencies` is empty until the ADR-0082 columns land, which makes EVERY currency unknown
+    # there. The whitelist rejection therefore sits inside the `has_min_salary_annual` guard:
+    # outside it, the dark-until-migrated rule below would become a 400 on every bracket.
+    assert (
+        build_filter(
+            salary_currency="INR",
+            salary_min=1,
+            atses=[],
+            currencies=[],
+            has_first_seen=True,
+            has_min_salary_annual=False,
+        )
+        is None
+    )
 
 
 def test_bracket_stays_dark_until_the_salary_columns_exist():

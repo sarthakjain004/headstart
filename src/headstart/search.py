@@ -110,6 +110,12 @@ ETYPE_CLAUSES = {
 # ranking a vector search already applies and asking for it means adding no ordering at all.
 SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
 
+# The salary bracket's currency when a request names none (issue #275). ADR-0084 says the picker
+# "defaults to USD", and 86.5% of the Jobs carrying a salary are USD (measured 2026-08-25), so
+# that is the least surprising scope for a bare number. It lives here, beside the compiler that
+# applies it, because it is the *compiler's* default rather than one client's — see build_filter.
+DEFAULT_CURRENCY = "USD"
+
 
 class KeywordScope(NamedTuple):
     """One entry of :data:`KEYWORD_SCOPES`: the columns a keyword is matched in, and the rail's label."""
@@ -352,18 +358,37 @@ def build_filter(
     # a bare number across currencies would rank 60,000 INR beside 60,000 USD as equals. The
     # currency therefore comes first and is whitelisted against what the table actually holds,
     # exactly like `ats` — never interpolated from free text. Without one the bracket does not
-    # apply at all, because an unscoped bracket is the wrong answer, not a looser one.
+    # apply unscoped, because an unscoped bracket is the wrong answer, not a looser one — it
+    # takes :data:`DEFAULT_CURRENCY` instead.
     #
     # The currency is a *modifier of the bracket*, not a filter of its own: picking one with
     # both bounds empty must not quietly cut the result set to the 28.5% of Jobs that carry a
     # salary at all (measured 2026-08-25), which is what filtering on it alone would do. So it
     # only bites once the user has actually named a bound.
-    if (
-        salary_currency in currencies
-        and has_min_salary_annual
-        and (salary_min is not None or salary_max is not None)
-    ):
-        filters.append(f"salary_currency = '{salary_currency}'")
+    #
+    # The default is applied HERE and not in `filter_kwargs` for two reasons. It used to live
+    # only in the browser's <select> (`ui/static/app.js`, control `salcur`), so a bound with no
+    # currency compiled to no filter at all and every other caller — the alerts path,
+    # `scripts/eval/verify_filters.py`, a hand-built `/search?salary_min=…` — had its numeric
+    # constraint silently discarded; `facets._blocking` could not even report it, since dropping
+    # a clause that compiled to nothing recovers nothing. And it stays out of the parse step so
+    # that `None` keeps meaning "the user named no currency": `_blocking` drops each active
+    # filter in turn, and a currency defaulted in there would let the empty state blame a picker
+    # the user never touched. The default is a module constant, never free text, so a table
+    # holding no USD salary honestly matches nothing rather than widening to every currency.
+    #
+    # A currency the user *did* name and the table does not hold raises, rather than dropping
+    # the bracket — the routes answer ValueError as a 400, as they do the malformed dates below.
+    # Unlike an unknown `ats` or `india`, ignoring this value does not just drop itself: it
+    # discards the two bounds it scopes, i.e. a supported constraint the user did set, which is
+    # the same silent wrong answer the default above exists to remove. The picker is rendered
+    # from `currencies`, so only a hand-built request can reach it. The rejection sits inside the
+    # `has_min_salary_annual` guard because `currencies` is empty until the ADR-0082 columns land
+    # — outside it, dark-until-migrated would become a 400 on every bracket.
+    if has_min_salary_annual and (salary_min is not None or salary_max is not None):
+        if salary_currency and salary_currency not in currencies:
+            raise ValueError(f"unknown salary currency: {salary_currency}")
+        filters.append(f"salary_currency = '{salary_currency or DEFAULT_CURRENCY}'")
         if salary_min is not None:
             # The job's TOP of range clears the user's floor: a 90k-140k posting answers
             # "at least 100k". `max_salary_annual` is null on single-figure postings, so
