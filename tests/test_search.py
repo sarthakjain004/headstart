@@ -120,6 +120,33 @@ def test_location_quotes_are_doubled():
     assert _clause(location="O'Fallon") == "lower(location) LIKE '%o''fallon%'"
 
 
+def test_like_metacharacters_are_escaped_so_a_term_matches_literally():
+    r"""Quote doubling stops injection; this stops the quieter failure, a widened match.
+
+    `%` and `_` are LIKE wildcards, so a user typing them got a pattern rather than the
+    characters — measured on the served table: company "100%" returned 30 rows for the 1 that is
+    right, location "new_york" 9,004 for 8. `\` is escaped for the same reason: DataFusion
+    honours it as LIKE's escape character with no ESCAPE clause present, so "AT\T" matched
+    "att" (698 rows).
+    """
+    assert _clause(company="100%") == r"lower(company) LIKE '%100\%%'"
+    assert _clause(location="new_york") == r"lower(location) LIKE '%new\_york%'"
+    assert _clause(company="AT\\T") == r"lower(company) LIKE '%at\\t%'"
+
+
+def test_the_term_cap_lands_on_the_raw_term_so_it_cannot_split_an_escape_pair():
+    r"""60 chars of what the user typed, *then* escaping — never a truncated `\x` pair.
+
+    Order matters here, which is why it is pinned: capping after escaping can leave a trailing
+    lone backslash, which escapes the pattern's own closing `%` and matches nothing at all
+    (measured: 0 rows). A long term would become a silent zero-result filter.
+    """
+    assert (
+        _clause(company="a" * 59 + "%b")
+        == "lower(company) LIKE '%" + "a" * 59 + r"\%%'"
+    )
+
+
 def test_india_expands_via_geo():
     """The India control expands through the gazetteer rather than matching its value literally.
 
@@ -169,6 +196,15 @@ def test_keyword_description_scope_compiles_once_the_column_exists():
 
 def test_keyword_quotes_are_doubled_like_every_other_term():
     assert _clause(kw="O'Reilly") == "(lower(title) LIKE '%o''reilly%')"
+
+
+def test_keyword_metacharacters_are_escaped_like_every_other_term():
+    # The widening is worst here: unescaped, the keyword "c_" matched 199,591 of the served
+    # table's 318,003 rows — 63% — where the literal reading matches 243.
+    assert _clause(kw="c_ 100%", kw_in="both", has_description=True) == (
+        r"(lower(title) LIKE '%c\_%' OR lower(description) LIKE '%c\_%') AND "
+        r"(lower(title) LIKE '%100\%%' OR lower(description) LIKE '%100\%%')"
+    )
 
 
 def test_keyword_unknown_scope_compiles_to_nothing_at_the_builder():
@@ -585,6 +621,27 @@ def test_range_overflow_is_a_valueerror_not_a_500():
         _clause(seen_before="9999-12-31")
 
 
+def test_recency_window_overflow_is_a_valueerror_not_a_500():
+    # Same treatment for the windows, which take an unbounded int: both the calendar bound
+    # (739,865 days / 17,756,755 hours walks below year 1) and timedelta's own magnitude cap, in
+    # both directions — a huge negative window runs off the far end of the calendar instead.
+    for days in (740_000, 1_000_000_000, -3_000_000, -1_000_000_000):
+        with pytest.raises(ValueError):
+            _clause(posted_within=days)
+    for hours in (17_800_000, 24_000_000_000, -70_000_000, -24_000_000_000):
+        with pytest.raises(ValueError):
+            _clause(seen_within=hours)
+
+
+def test_recency_windows_still_compile_inside_the_calendar():
+    # A CONTROL, not a regression test: it passes with the fix reverted too, and is here to pin
+    # that the guard is the calendar's own bound rather than a policy about plausible windows —
+    # an absurd but representable window must still compile. Both values keep ~86 years of slack
+    # under the bound, which creeps forward with `now`, so neither is a dated test.
+    assert "posted_at >= '" in _clause(posted_within=700_000)
+    assert "first_seen >= '" in _clause(seen_within=17_000_000)
+
+
 # ── the salary bracket and the sort control (issue #275) ─────────────────────────────────
 
 
@@ -626,9 +683,56 @@ def test_currency_alone_does_not_filter():
     assert "salary_currency" in _bracket(salary_currency="USD", salary_min=1)
 
 
+def test_a_bound_with_no_currency_defaults_to_usd():
+    """A bracket with no currency named must still compile — it used to vanish entirely.
+
+    The USD default ADR-0084 records lived only in the browser's <select>, so a caller that is
+    not that <select> — `scripts/eval/verify_filters.py`, or a hand-built `/search?salary_min=…`
+    — had its numeric bound silently dropped and got the unfiltered set back, with no error and
+    nothing for `facets._blocking` to name. Not the alerts path: `alerts.store`'s
+    `ALLOWED_SEARCH_FILTERS` excludes the salary keys, so a Subscription never carries a bracket.
+    """
+    where = _bracket(salary_min=100_000)
+    assert "salary_currency = 'USD'" in where
+    assert "COALESCE(max_salary_annual, min_salary_annual) >= 100000" in where
+    # ...and the default is still a *modifier*: with no bound to scope there is no bracket, so
+    # nothing salary-shaped is compiled beside the filters the user did ask for (ADR-0084 —
+    # filtering on the currency alone would cut the set to the 28.5% carrying any salary).
+    assert _bracket(remote=True) == "remote = true"
+
+
 def test_currency_is_whitelisted_against_the_table_never_interpolated():
-    assert _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1) is None
-    assert _bracket(salary_currency="XXX", salary_min=1) is None
+    # Never interpolated: an unrecognised value falls back to the default rather than reaching
+    # the clause — ADR-0084's "whitelisted like `ats`", and `ats` ignores what it does not know.
+    # The bound it scopes still applies, which is the whole point of the default.
+    assert (
+        _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
+        == "salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 1"
+    )
+    assert _bracket(salary_currency="XXX", salary_min=1) == _bracket(salary_min=1)
+    # With no bound there is no bracket to scope, so a currency alone still compiles nothing —
+    # ADR-0084's rule that picking one must not cut the result set to the ~28.5% carrying a salary.
+    assert _bracket(salary_currency="XXX") is None
+
+
+def test_the_bracket_stays_dark_where_even_the_default_is_unavailable():
+    # A CONTROL for the *placement* of the whitelist check, not for the fallback itself: it passes
+    # with `search.py` reverted too, because the old code also emitted nothing here. What it
+    # discriminates against is a naive fallback that trusts its own default.
+    # `currencies` is empty until the ADR-0082 columns land, which makes every currency unknown
+    # there — including `SALARY_DEFAULT_CURRENCY`. Emitting it anyway would be a clause matching
+    # nothing: the same silent wrong answer the default exists to remove, just relocated.
+    assert (
+        build_filter(
+            salary_currency="INR",
+            salary_min=1,
+            atses=[],
+            currencies=[],
+            has_first_seen=True,
+            has_min_salary_annual=True,
+        )
+        is None
+    )
 
 
 def test_bracket_stays_dark_until_the_salary_columns_exist():
