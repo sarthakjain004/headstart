@@ -120,6 +120,13 @@ def test_a_board_that_calls_itself_a_demo_is_refused():
     )
 
 
+def test_a_real_company_is_not_mistaken_for_a_placeholder():
+    """The marker has to be trailing. "Sandbox VR" and "Test Rite Group" are real employers, and
+    a word-boundary rule matching those words anywhere refused both."""
+    assert from_title("ashby", "Sandbox VR Jobs", "sandboxvr") == "Sandbox VR"
+    assert from_title("lever", "Test Rite Group", "testrite") == "Test Rite Group"
+
+
 def test_a_padded_slug_is_still_a_slug():
     """`looks_like_slug` judges the stripped string, not two different ones."""
     assert looks_like_slug(" wipro ")

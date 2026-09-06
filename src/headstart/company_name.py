@@ -96,14 +96,17 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
 }
 
 
-#: A board that says out loud it is not a real employer. ADR-0034 blocklists the ones we know
-#: about, but a demo tenant that has not been found yet still gets scraped, and a title is often
-#: where it admits itself — "ITC Infotech Demo", "Your Company". This cannot catch a QA tenant
-#: that titles itself after the company it is imitating (`ripplehire:tenant1-mph` served
-#: "Mphasis"); only the blocklist can, which is where that one went.
+#: A board that says out loud it is not a real employer. Reading titles is also a way of *finding*
+#: the vendor tenants ADR-0034 exists to remove, and two shapes were observed doing exactly that:
+#: a trailing marker ("ITC Infotech Demo") and the unfilled placeholder itself ("Your Company").
+#: ADR-0034's own blocklist comment records a third, a greenhouse board named literally "Test".
+#:
+#: Deliberately anchored rather than matching these words anywhere, because "Sandbox VR" and
+#: "Test Rite Group" are real employers and a loose word-boundary rule refused both. It cannot
+#: catch a QA tenant that titles itself after the company it imitates — `ripplehire:tenant1-mph`
+#: served "Mphasis" — so that one went to the blocklist, which is the only thing that can.
 _PLACEHOLDER = re.compile(
-    r"\b(?:demo|sandbox|test(?:ing)?|your\s+company|example|placeholder)\b",
-    re.IGNORECASE,
+    r"(?:\s(?:demo|test|sandbox|uat|qa)|^(?:test|your\s+company))$", re.IGNORECASE
 )
 
 
