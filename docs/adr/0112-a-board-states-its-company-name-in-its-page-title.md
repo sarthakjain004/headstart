@@ -34,7 +34,7 @@ samples since where the first one proved too small to trust — the sample size 
 | ATS | title shape | yields a name |
 | --- | --- | --- |
 | ashby | `{Name} Jobs` | ~92% (n=120) |
-| eightfold | `Careers at {Name}` / `{Name} Careers` | ~93% (n=100) |
+| eightfold | `Careers at {Name}` / `{Name} Careers` | ~93% (all 100 Hiring Boards) |
 | ripplehire | `{Name} Careers \| Latest jobs at …` | ~94% (all 52 Hiring Boards) |
 | lever | `{Name}` — no wrapper at all | ~88% (352/400) |
 | keka | `Careers at {Name}` / `{Name} Careers` | ~11% (92 of 819, a full census) |
@@ -49,8 +49,10 @@ first two. That is a quality bar, not a cost one.
 **Keka was scored 0/30 too, and that was simply wrong.** A 40-Board sweep found 5 serving a
 `<title>`, and a full 819-Board census settled it at **92 names from 103 titles — ~11%** (the rest
 render client-side), every one in a wrapper eightfold's patterns already read ("Careers at Skylark
-Drones", "Entropik Careers"). It is wired. Be clear about the size: ~1,600 of 1,429,908 ledger
-jobs, **~+0.11%**. It earns its place not on volume but on cost and floor — the page returns in
+Drones", "Entropik Careers"). It is wired. Be clear about the size: those 92 Boards carry
+**1,964 ledger jobs**. Deliberately an absolute number rather than a share — the obvious
+denominator does not survive contact, because 15,262 of the 53,812 Hiring Boards do not join to a
+ledger row on `(ats, tenant)`, so any "% of all ledger jobs" silently drops 28% of the Boards. It earns its place not on volume but on cost and floor — the page returns in
 0.12s, and *every* keka Board serves a slug today, so the downside is a request that yields
 nothing eight times in nine.
 Successfactors stays out on a different and firmer ground: its titles are real but heterogeneous
@@ -136,8 +138,8 @@ ATS is wired — not rows that actually gain a name. The per-ATS hit rates run 8
 **Coverage is 5 of the affected ATSes.** The four measured on the served table are 59,123 rows —
 39% of the narrow denominator, but **31.6% of the 186,798 slug-shaped rows**, and the second
 number is the one to quote. Keka was wired after that measurement and its *served* rows were never
-counted, so 31.6% excludes it; on the ledger it is ~1,820 jobs, which moves the figure by well
-under a point. Do not read 59,123 as a five-ATS number. The remainder
+counted, so 31.6% excludes it; on the ledger it is the 1,964 jobs counted above. Do not read
+59,123 as a five-ATS number. The remainder
 is not a rollout waiting to happen; it needs a per-ATS source that the evidence does not currently
 support, and Workday's case shows that "some name" is not automatically better than none.
 
@@ -163,6 +165,10 @@ because the next person to see a Lever Board unnamed should look here first.
 the `" - "` it contains — a real employer losing a real name. The floor holds (it keeps its slug)
 and the separator rule earns its place elsewhere, so this is left as a recall miss rather than
 narrowed around one Board.
+
+`lever:springrecruits` loses a 70-character title to `_MAX_LEN`, and `lever:bananajobs`
+("Banana Jobs") loses a real name to `_PAGE_LABEL`'s trailing "Jobs". Both keep their slug.
+Recorded because each rejection rule's cost belongs here as well as in its own comment.
 
 `ripplehire:labs-mph` is in the same `labs-` family as the newly blocklisted `labs-axisqa` and
 looks like another RippleHire QA tenant, but it currently 502s and exposes no title, so there is

@@ -3,8 +3,8 @@
 Every case that *drives* a rule is a real title observed while sampling live Boards
 (`experiment/company-display-name/`, gitignored) — including the two that talked the first draft
 of `from_title` out of a rule it had wrong. Sample sizes differ by ATS and are recorded in
-`headstart.company_name`: 30 Boards for ashby, eightfold and ripplehire, 40 for keka, 150 for
-lever, whose first two samples disagreed.
+`headstart.company_name`, which is the single source for them — the first pass was 30 Boards each,
+and every row has since been re-measured larger.
 
 Some *counter*-cases are invented ("Acme | Careers", "acme.io", "Lever Industries Jobs"). That is
 deliberate and the distinction matters: a rule must fire on a shape someone really serves, but it
@@ -65,8 +65,14 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         # exactly the slug: nothing gained
         ("lever", "cargo-partner", "cargo-partner"),
         ("ashby", "telli Jobs", "telli"),
-        # an ATS with no evidence behind it has no patterns at all
+        # An ATS with no patterns resolves nothing — the central decision of ADR-0112. These
+        # names are ordinary and clean: no separator, no label, no hostname, so nothing else in
+        # `from_title` would refuse them and only the pattern gate can be what does. Without
+        # such a row, deleting that gate left the whole suite green.
         ("freshteam", "Careers at Red Baton", "redbaton"),
+        ("workday", "Bachem", "sap"),
+        ("darwinbox", "Tata Motors", "tatamotors"),
+        ("greenhouse", "Stripe", "stripe"),
         ("workday", "Careers at Anything", "pwc"),
         # nothing to read
         ("lever", None, "acme"),
@@ -185,7 +191,7 @@ def test_a_page_label_is_not_a_company_name():
     assert from_title("eightfold", "Careers at Foo Careers", "foo") is None
     assert from_title("lever", "Destination Careers", "destinationknot") is None
     assert from_title("eightfold", "Sephora Careers", "sephora") == "Sephora"
-    # anchored to the tail, so a real name that merely contains the word survives
+    # anchored to the ends, so a real name that merely contains the word survives
     assert from_title("lever", "Jobsoid", "jobsoid") == "Jobsoid"
     assert from_title("lever", "Careers24 Group", "careers24") == "Careers24 Group"
     assert from_title("keka", "Entropik Careers", "entropik") == "Entropik"

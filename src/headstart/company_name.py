@@ -57,7 +57,7 @@ for: `ripplehire:ltimindtree` titles itself "LTM Careers | …" and becomes **"L
 or acquiring entity can displace a familiar brand (`keka:abcoffee` -> "Brewbay Innovations",
 `lever:silhouette` -> "DNAM Brands", `lever:developintelligence` -> "Pluralsight"). Each of those
 is the company's own claim about itself, which is the best source available here; an earlier draft
-of this paragraph asserted no Board could end up worse, and a 60-Board sweep found otherwise.
+of this paragraph asserted no Board could end up worse, and a 452-Board sweep found otherwise.
 """
 
 from __future__ import annotations
@@ -101,11 +101,12 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #: was tail-anchored the other reached users as the employer.
 #:
 #: Anchored at both ends rather than matching anywhere, because "Jobsoid" and "Careers24 Group"
-#: are names. It costs recall: a real employer whose title genuinely ends in " Careers" is refused
-#: and keeps its slug — `lever:pmaconsultants` ("PMA Consultants Careers", 29 postings) is one.
-#: That is the deliberate trade. Stripping the word instead would turn "Destination Careers" into
+#: are names. It costs recall: a real employer whose title genuinely ends this way is refused and
+#: keeps its slug. Two in 1,519 live lever and keka Boards — `lever:pmaconsultants` ("PMA
+#: Consultants Careers", 29 postings) and `lever:bananajobs` ("Banana Jobs"). That is the
+#: deliberate trade. Stripping the word instead would turn "Destination Careers" into
 #: "Destination", a confident wrong name, where refusing costs only a missed upgrade.
-_LABEL = re.compile(r"^careers?\s+at\s+|\s(?:careers|jobs)$", re.IGNORECASE)
+_PAGE_LABEL = re.compile(r"^careers?\s+at\s+|\s(?:careers|jobs)$", re.IGNORECASE)
 
 #: Long enough for "Financial Software and Systems Ltd", short enough to reject a sentence — the
 #: test pins both ends, against that name and the 70-character lever title that is a whole
@@ -196,7 +197,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
         return None
     if not text or len(text) > _MAX_LEN:
         return None
-    if any(separator in text for separator in _SEPARATORS) or _LABEL.search(text):
+    if any(separator in text for separator in _SEPARATORS) or _PAGE_LABEL.search(text):
         return None
     # A hostname — "webfx.com" — but only when written like one. The regex is deliberately
     # case-sensitive, which alone spares "Character.AI"; the lowercase test earns its place on

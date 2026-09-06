@@ -78,13 +78,15 @@ class KekaScraper(BaseScraper):
     def board_page(self) -> str:
         """The careers page, whose ``<title>`` is "Careers at {Name}" or "{Name} Careers".
 
-        Only 5 of 40 live hiring Boards sampled serve a non-empty ``<title>`` at all — the rest
-        render it client-side — but where one exists the wrapper is as uniform as eightfold's,
-        and every keka Board serves a slug as its company today, so the 12.5% is all upside.
+        Roughly one Board in nine serves a non-empty ``<title>`` at all — the rest render it
+        client-side — but where one exists the wrapper is as uniform as eightfold's, and every
+        keka Board serves a slug today, so it is all upside. `headstart.company_name` holds the
+        measured rate and is the only place it should be written down; three copies of it drifted
+        apart once already.
 
         :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose
         ``careerportalinfo`` omits the uuid — so for most Boards this is a genuinely new request,
-        not a duplicate one. Either way it costs a measured 0.14s (~2 min across a full run,
+        not a duplicate one. Either way it costs a measured 0.12s (~2 min across a full run,
         concurrent within each shard), which is cheaper than threading a response that may never
         have been fetched out of ``fetch_raw`` and into ``fetch``.
         """
