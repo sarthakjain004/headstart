@@ -19,8 +19,12 @@ candidate, and the query only decides the order they come back in. So a count ne
 call and no vector at all — which is why this module never touches the model, and why the UI
 must label the number as matching *filters* rather than matching the query.
 
-**Cost.** One :meth:`count_rows` with a filter measured 4–6 ms against a 316,606-row table on
-2026-08-25, and the full strip below is ~40 of them. They are issued through one
+**Cost.** Re-measured 2026-09-07 on the 318,003-row served table: one :meth:`count_rows` with a
+plain filter is 9–13 ms, and the full strip below is **46** of them (48 once ``description``
+lands). The figure that matters is not that one: a count carrying the India clause is **353 ms**,
+so the strip's cost is dominated by whichever filter is active rather than by how many options it
+counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 ``LIKE``s to 10
+``regexp_like``s for this reason. They are issued through one
 :class:`ThreadPoolExecutor` because LanceDB's counting happens in Rust with the GIL released, so
 the wall cost is roughly the slowest count rather than their sum.
 
