@@ -62,10 +62,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import http, liveness, spare_egress  # needs src on sys.path first
+from headstart import (  # needs src on sys.path first
+    board_aliases,
+    http,
+    liveness,
+    spare_egress,
+)
 from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
+from headstart.scrapers.registry import SCRAPERS  # slug_from, per ATS
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
 )
@@ -866,7 +872,13 @@ def is_nonprod(tenant: str, url: str) -> bool:
 # the same pre-probe skip ADR-0034 gives non-prod boards, re-asserted free on every check (#157).
 # The winner named against each is the live tenant it duplicates.
 # TODO: regenerate, don't hand-maintain — a company onboarding a second vanity domain forms a
-# cluster this frozen set cannot see; have `dedupe_eightfold_aliases.py` write it to a data file.
+# cluster this frozen set cannot see. The data file this wanted now exists (ADR-0111:
+# `data/validate/aliases/{ats}.csv`, written by `dedupe_boards.py`, skipped unprobed by
+# `_drop_alias_duplicates` above), and migrating means teaching `BaseScraper.alias_key` to return
+# `_EF_GROUP_ID` for eightfold — the default resolves redirects, and these six do not redirect
+# (measured 2026-09-06: each `{tenant}.eightfold.ai/careers` serves itself). That signal's members
+# are independently served, so unlike the redirect one it needs the id-set overlap check
+# `dedupe_eightfold_aliases.py` already performs, carried across with it.
 _EIGHTFOLD_ALIAS_LOSERS = {
     "nvidia.eightfold.ai",  # jobs.nvidia.com
     "qualcomm.eightfold.ai",  # careers.qualcomm.com
@@ -880,6 +892,27 @@ _EIGHTFOLD_ALIAS_LOSERS = {
 def _is_eightfold_alias_loser(ats: str, tenant: str) -> bool:
     """A duplicate-hostname eightfold board — dead before any probe is spent (#157)."""
     return ats == "eightfold" and (tenant or "") in _EIGHTFOLD_ALIAS_LOSERS
+
+
+def _drop_alias_duplicates(ats: str, rows: list[dict], ledger_dir: Path) -> list[dict]:
+    """Rows naming a Board buried as another Board's duplicate (ADR-0111), removed unprobed.
+
+    The alias ledger is keyed on the scraper's **slug**, which is the bare tenant for most ATSes
+    but not all (Workday's is the whole careers URL, Zoho's the careers host). Going through
+    ``slug_from`` rather than assuming ``tenant`` is what keeps this correct when the framework
+    reaches those — assuming it would fail silently, skipping nothing, which is the least
+    detectable way for this to be wrong."""
+    aliases = board_aliases.load_for(ledger_dir, ats)
+    if not aliases:
+        return rows
+    scraper = SCRAPERS.get(ats)
+    if scraper is None:
+        return rows
+    return [
+        r
+        for r in rows
+        if scraper.slug_from(r["tenant"], r["url"]).lower() not in aliases
+    ]
 
 
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
@@ -1674,6 +1707,12 @@ def main():
                 unknown_ttl=unknown_ttl,
             )
         ]
+        # Boards buried as duplicates of another live Board (ADR-0111). Dropped from the work list
+        # rather than probed-and-marked: they answer 200 and serve a full board, so any verdict
+        # this could reach would be `live` — which is true, and beside the point. Their ledger row
+        # carries forward untouched, and `config.load_active_companies` is what keeps them out of
+        # the scrape. This is the free half of #157's problem, without the frozen set.
+        todo = _drop_alias_duplicates(ats, todo, ledger_dir)
         if limit:
             todo = todo[:limit]
         if todo:

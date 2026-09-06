@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import time
+import urllib.parse
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Container, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -83,6 +84,13 @@ class BaseScraper(ABC):
     #: ``**self._egress()`` itself, or setting this is silently inert.
     egress_fallback_on: frozenset[int] = frozenset()
 
+    #: Hosts this ATS parks a decommissioned tenant on — its own marketing pages. A Board whose
+    #: :meth:`alias_key` lands on one of these has not moved and is not a duplicate: the tenant is
+    #: gone (ADR-0111). Reporting-only, but the label is the difference between "go find where this
+    #: board went" and "mark it dead", so the two are not collapsed. Measured for SuccessFactors
+    #: 2026-09-06: `careers.toagroup.com` and `jobs.bhs-world.com` both land on `www.sap.com`.
+    alias_vendor_hosts: frozenset[str] = frozenset()
+
     #: Job ids whose per-job detail fetch can be skipped because we already hold it (ADR-0048;
     #: re-keyed onto the description store by ADR-0050). ``None`` means fetch every detail. The
     #: pipeline's scrape stage sets this via :func:`~headstart.scrapers.registry.get_scraper`;
@@ -142,6 +150,53 @@ class BaseScraper(ABC):
         from its careers-URL slug). Lets index maintenance (eviction / dead-Board prune, ADR-0023)
         map a ledger entry to the exact key its rows use."""
         return f"{self.ats}:{self.slug}"
+
+    def alias_key(self) -> str | None:
+        """What this Board resolves to, for finding two Boards that are the same one (ADR-0111).
+
+        Two Boards sharing an ``alias_key`` are the same Board. The default reads the answer the
+        site owner already published: fetch the Board surface, follow the redirects, and return the
+        host it lands on. A Board nothing points away from resolves to its own host, which is what
+        makes the shared key meaningful rather than merely equal.
+
+        Override where an ATS serves its aliases independently instead of redirecting between them
+        — Eightfold's ``nvidia.eightfold.ai`` and ``jobs.nvidia.com`` each answer for themselves, so
+        the default finds nothing there and its tenant id is the key. This is the same
+        default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
+
+        **The default's return value must be comparable to this ATS's own ``slug``, and for the
+        default that means the slug has to BE a host.** ``board_aliases.resolve`` decides a Board
+        is a duplicate by asking whether the key is itself a live slug, so on an ATS whose slug is
+        not a hostname — Workday's is a whole careers URL, Zoho's a careers host with a path —
+        every key falls outside the live set and the entire ledger comes back labelled
+        ``migrated``: an empty result, not an error. Those ATSes need an override that returns
+        something in their own slug space, and `dedupe_boards.py` warns when a run looks like it
+        hit this. Today only SuccessFactors uses the default, and its slug is exactly the vanity
+        host.
+
+        None when the probe failed: an unreachable Board has earned no verdict, and
+        ``board_aliases.resolve`` reports it rather than grouping it. Note ``http.fetch`` settles
+        4xx/5xx rather than raising, so a Board whose own host answers 503 records itself, not
+        None — which reads as "nothing points away from it" and leaves it unburied. That is the
+        conservative direction: it can miss a duplicate, never invent one.
+
+        Streamed and closed unread — only the redirect chain is wanted, and a SuccessFactors
+        sitemap body runs to megabytes. Only the final host survives, not the chain that reached
+        it, which is why the ledger records a destination rather than a route.
+        """
+        try:
+            resp = http.fetch(
+                "GET",
+                self.url(),
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                allow_redirects=True,
+                stream=True,
+            )
+            resp.close()
+            return urllib.parse.urlsplit(resp.url).netloc.lower() or None
+        except Exception:  # noqa: BLE001 - any failure to reach it is "no verdict", not a crash
+            return None
 
     @abstractmethod
     def url(self) -> str:
