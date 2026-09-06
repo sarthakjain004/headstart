@@ -53,6 +53,7 @@ def index():
         # The Data tab links out to the public repo (ADR-0112). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
         repo="https://github.com/sarthakjain004/headstart",
+        auth_on=False,  # the local renderer has no sign-in, so nothing is stored
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,
         india_opts=geo.dropdown_options(),

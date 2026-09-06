@@ -45,12 +45,19 @@ compute every number on it from the served table at request time rather than wri
 otherwise assume is always present: `posted_at`, `first_seen`, a salary, a stated experience
 requirement, a stored description.
 
-**Only fields that can legitimately be absent belong here.** A first cut also reported `remote`,
-which fails that test twice over: the column is never null, and the value is not the board's flag
-but an inference — `models.is_remote()` is a substring test on the location string, used by 19 of
-the scrapers. Presenting it as coverage stated a gap that does not exist *and* a provenance that
-is false. A facet is not a limit; the rail's own counts (ADR-0084) are where "how many are
-remote" belongs. It is built from `count_rows(filter=…)` — the same primitive
+**Only fields that can legitimately be absent belong here.** A first cut also reported `remote`.
+It is a facet, not a limit: a share there answers "how many are remote", which the rail's own
+counts (ADR-0084) already answer, rather than "how often do we not know". A limits page that
+drifts into reporting facts about the *jobs* stops being a limits page.
+
+The reasoning around this took two wrong turns worth recording, because both were confident. The
+first draft's caveat called `remote` "the board's own flag, not an inference from the location
+text"; review corrected it to the opposite, "not a board flag — `is_remote()` is a substring test
+on the location string"; and a later review found *that* false too. The truth is mixed — ten
+scrapers read a native field (`ashby.workplaceType`, `zoho.Remote_Job`, `eightfold
+.workLocationOption`, `workday.remoteType`, …), the rest fall back to the location text, several
+`OR` the two — so **no single sentence describes the column's provenance**, which is itself the
+reason it does not belong on a page whose currency is one-sentence claims. It is built from `count_rows(filter=…)` — the same primitive
 ADR-0084's facet counts use, measured at 4–6 ms against a 316,606-row table — so the whole panel
 is a handful of counts, not a scan.
 

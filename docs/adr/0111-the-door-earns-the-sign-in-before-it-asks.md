@@ -72,13 +72,12 @@ What it has instead is verifiability, which is stronger and costs nothing to kee
 ## Consequences
 
 - The door renders numbers, so `index()` must pass them on the signed-out path too — previously it
-  passed the Google client id alone. Two of the three (employers, ATS providers) are read off the
-  searcher's existing boot scan, which now selects `company` alongside `ats` — one extra column on
-  a pass already being paid for. The third, `count_rows()`, **is** a per-request table query;
-  an earlier draft of this ADR claimed the door "costs no new query", which was wrong. It is the
-  same single count the signed-in header already makes, so the door is no more expensive than the
-  page behind it — but it is not free, and the signed-out path is the one with no auth in front of
-  it.
+  passed the Google client id alone. The ATS count is read off the searcher's existing boot scan;
+  the other two are **per-request table queries** (`count_rows()`, and one filtered count for the
+  freshness window, ~5 ms each). An earlier draft of this ADR claimed the door "costs no new
+  query", which was wrong, and a later one said one query when there are two. The signed-out path
+  is the one with no auth in front of it, so the cost is worth stating plainly rather than
+  rounding to zero.
 - **Exactly countable, or it is not a tile.** Three drafts failed that bar. A typed-in "~6h
   between index refreshes" was ~5x the measured cadence. An "employers" count of distinct
   `company` values was argued here as a conservative floor and is the opposite — a ceiling.
@@ -91,13 +90,6 @@ What it has instead is verifiability, which is stronger and costs nothing to kee
   first seen in the last seven days, which is exact — a row without `first_seen` predates the
   column (ADR-0031) and therefore cannot be new, so the window has no unknown bucket — and it
   proves the thing a stranger actually doubts, that the index is alive.
-- **What the failed attempt taught (kept because the mistake is easy to repeat).** It began as distinct `company` values labelled "employers", argued in
-  this ADR to be a conservative *floor*. That is backwards: `company` is an ATS slug, not a
-  display name (README §"The served table"), so one firm spelt two ways — or hosting on two
-  ATSes — counts twice, which makes distinct-slug an *over*-count of employers. A trust surface
-  can absorb understating itself; overstating is the one thing it cannot. What the pair
-  `(ats, company)` names exactly is ADR-0023's Board key, so the tile counts Boards and says
-  "company boards indexed", which is true without qualification.
 - **A claim the door makes to earn the sign-in cannot be evidenced only behind the sign-in.**
   The eviction point originally ended "the Data tab inside says how, and for how long", which
   puts the proof on the far side of the decision it is meant to inform. The measured figure now

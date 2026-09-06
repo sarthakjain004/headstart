@@ -109,6 +109,10 @@
   <section class="doc-sec">
     <h3>What is stored about you</h3>
     <ul class="doc-list">
+      {% if not auth_on %}
+      <li><b>Nothing.</b> This deployment has no sign-in, so there is no account to store
+        anything against and nothing below applies to it.</li>
+      {% else %}
       <li>Your <b>email address</b>, from Google sign-in — the key your saved work hangs off.</li>
       {% if saved_on %}<li>Anything you save yourself: saved searches, starred jobs, and a
         profile if you fill one in. Deleting a profile deletes it — with one exception we would rather name than
@@ -119,10 +123,11 @@
         outside HeadStart. What you save is stored — the saved searches, stars and profile above
         live in a private dataset only this service reads — and your searches themselves are
         never recorded at all.</li>{% endif %}
-      <li><b>No email is ever sent</b> unless you switch it on for a saved search, and every one
-        of those carries an unsubscribe link.</li>
+      {% if saved_on %}<li><b>No email is ever sent</b> unless you switch it on for a saved
+        search, and every one of those carries an unsubscribe link.</li>{% endif %}
       <li>Your searches are not sold, shared, or shown to employers. There is no employer-facing
         side of this product at all.</li>
+      {% endif %}
     </ul>
   </section>
 

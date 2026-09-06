@@ -50,8 +50,9 @@
   .lede b{ color:var(--ink); font-weight:600; }
 
   /* Proof, counted at request time (ADR-0111) — not copy. */
-  .proof{ display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--rule);
-    border:1px solid var(--rule); border-radius:14px; overflow:hidden; margin:0 0 34px; }
+  .proof{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1px;
+    background:var(--rule); border:1px solid var(--rule); border-radius:14px; overflow:hidden;
+    margin:0 0 34px; }
   .stat{ background:var(--raise); padding:16px 18px; }
   .stat .v{ font:600 22px/1.1 var(--mono); font-variant-numeric:tabular-nums; color:var(--aqua);
     letter-spacing:-.02em; }

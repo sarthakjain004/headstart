@@ -920,6 +920,9 @@ def index():
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
         repo=_REPO,  # the Data tab's "check any of it" links (ADR-0112)
+        # The Data tab's storage list must describe THIS deployment. With the wall off there
+        # is no account, so it says so rather than listing what a different one would keep.
+        auth_on=_AUTH_ON,
         trends_on=bool(_TRENDS),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,

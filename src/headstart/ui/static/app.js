@@ -38,9 +38,11 @@ window.addEventListener('hashchange', () => showTab(currentTab()));
    carry yet comes back null and is skipped entirely; rendering it as 0% would read as
    "measured, and none have it", which is a different and wrong claim. ---- */
 let coverage = null;
-// `remote` is deliberately absent: it is never missing, and it is not a board flag either —
-// models.is_remote() infers it from the location string — so naming it here would have
-// claimed both a gap that does not exist and a provenance that is not true.
+// `remote` is deliberately absent: it is a facet, not a gap. Nearly every row has a value, so
+// a percentage here would answer "how many are remote" — which the Search rail's own counts
+// already answer — rather than "how often is this unknown". (Its provenance is mixed: ten
+// scrapers read the board's own field, the rest infer it from the location text. An earlier
+// draft of this comment asserted the latter universally, which was equally untrue.)
 const COV_ROWS = [
   ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
   ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],

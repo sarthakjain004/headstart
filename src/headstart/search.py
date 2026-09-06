@@ -949,19 +949,20 @@ class JobSearch:
         unknown bucket to hand-wave. Compiled through :func:`build_filter` rather than a
         hand-written clause so "new" means here exactly what it means in the Search rail.
 
-        One :meth:`count_rows`, the ADR-0084 primitive measured at 4–6 ms.
+        One :meth:`count_rows` — measured at 4–6 ms in `headstart.facets`.
         """
         if not self.has_first_seen:
             return None
-        where = build_filter(
-            seen_within=hours,
-            has_first_seen=True,
-            atses=self.atses,
-            currencies=self.currencies,
-            has_description=self.has_description,
-            has_min_salary_annual=self.has_min_salary_annual,
+        return self._table.count_rows(
+            filter=build_filter(
+                seen_within=hours,
+                has_first_seen=True,
+                atses=self.atses,
+                currencies=self.currencies,
+                has_description=self.has_description,
+                has_min_salary_annual=self.has_min_salary_annual,
+            )
         )
-        return self._table.count_rows(filter=where) if where else None
 
     def coverage(self) -> dict[str, Any]:
         """What share of the served table actually carries each field (ADR-0112).
@@ -973,12 +974,15 @@ class JobSearch:
         which is the only incentive a limits page should have.
 
         Only fields a Job may legitimately be *missing* belong here. ``remote`` was removed
-        after review: it is never absent, and it is not a board flag either — ``models
-        .is_remote`` infers it from the location string on 19 of the scrapers — so reporting it
-        as coverage stated a gap that does not exist and a provenance that is not true.
+        after review: it is a facet, not a gap — a share here would answer "how many are
+        remote", which the Search rail's own counts already answer, rather than "how often do
+        we not know". Note the provenance is genuinely mixed (ten scrapers read the board's own
+        field; the rest fall back to ``models.is_remote`` over the location text), so neither
+        "the board's flag" nor "an inference" describes the column, and an earlier revision of
+        this docstring asserted the second as confidently as the first draft asserted the first.
 
         Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
-        ADR-0084's facet counts measured that primitive at 4–6 ms against a 316,606-row table,
+        `headstart.facets` measured that primitive at 4–6 ms against a 316,606-row table,
         so the whole panel is cheaper than a single ranked search — and it is cached per
         process anyway: a new index arrives with a Space restart, never under a running one.
 
