@@ -1,8 +1,14 @@
 """The Board's company name, read from its board page instead of standing in as the slug.
 
-Every case here is a real title observed while sampling 30 live Boards per ATS
-(`experiment/company-display-name/`, gitignored), not an invented one — including the two that talked the
-first draft of `from_title` out of a rule it had wrong.
+Every case that *drives* a rule is a real title observed while sampling live Boards
+(`experiment/company-display-name/`, gitignored) — including the two that talked the first draft
+of `from_title` out of a rule it had wrong. Sample sizes differ by ATS and are recorded in
+`headstart.company_name`: 30 Boards for ashby, eightfold and ripplehire, 40 for keka, 150 for
+lever, whose first two samples disagreed.
+
+Some *counter*-cases are invented ("Acme | Careers", "acme.io", "Lever Industries Jobs"). That is
+deliberate and the distinction matters: a rule must fire on a shape someone really serves, but it
+may be pinned against any shape it must not eat.
 """
 
 from __future__ import annotations
@@ -202,8 +208,8 @@ def test_a_vendor_name_is_refused_only_on_that_vendors_own_boards():
 
     The second assert is the one that pins *keying on the ATS*: "Ashby" on a **lever** Board is a
     company, not a fallback, so a rule refusing every vendor name everywhere would wrongly drop
-    it. An earlier version of this test used `lever:freshworks` — a real employer — but freshworks
-    is in no alias set at all, so it discriminated nothing and the flat-set defect survived it.
+    it. An earlier version used `lever:freshworks` — a real employer — but freshworks is in no
+    alias set at all, so it discriminated nothing and the flat-set defect survived it.
     """
     title = "RippleHire Careers | Latest jobs at RippleHire - Ripplehire.com"
     assert from_title("ripplehire", title, "trampolinetech") is None

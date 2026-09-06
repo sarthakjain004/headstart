@@ -83,8 +83,10 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 }
 
 #: A separator still present after the wrapper came off means the title had a shape this does not
-#: model, and half a slogan is a worse company name than the slug. It bites on **lever**, whose
-#: pattern matches anything, so "Acme | Careers" reaches here and is refused. (An earlier version
+#: model, and half a slogan is a worse company name than the slug. Mostly it bites **lever**,
+#: whose pattern matches anything, so "Acme | Careers" reaches here and is refused — but not only
+#: lever: `ripplehire:7-eleven-gsc` loses a real name to the `" - "` in "7 - Eleven" (ADR-0112
+#: §Known misses). (An earlier version
 #: of this comment cited eightfold's "Kraft Heinz Careers – Explore Careers…", which never gets
 #: this far: no eightfold pattern matches it, so the loop below rejects it first.)
 _SEPARATORS = ("|", "—", "–", " - ", "::")
@@ -94,12 +96,13 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #: title was a page label and not a name. In practice that means **lever**, whose pattern matches
 #: anything: `lever:destinationknot` serves "Destination Careers", the page-label shape this
 #: module refuses Workday's ``og:title`` over. A doubled label ("Careers at X Careers") would
-#: reach it on eightfold or keka too; none was seen in 520 live Boards. Measured against 150 live lever Boards, no real
-#: company name ends this way, so the rule costs nothing it should keep.
+#: reach it on eightfold or keka too, but none was seen across 520 live Boards — where this
+#: rejected exactly one title, `destinationknot` itself, and no real employer.
 _LABEL_TAIL = re.compile(r"\s(?:careers|jobs)$", re.IGNORECASE)
 
 #: Long enough for "Financial Software and Systems Ltd", short enough to reject a sentence — the
-#: test pins both ends, against that name and a 69-character lever title that is a whole sentence.
+#: test pins both ends, against that name and the 70-character lever title that is a whole
+#: sentence.
 _MAX_LEN = 60
 
 #: Per ATS, the names its *own* branding goes by. A board page that fails to render its tenant
@@ -109,7 +112,7 @@ _MAX_LEN = 60
 #: `lever:freshworks` titles itself "Freshworks", and the rule this replaced refused it. Note that
 #: flattening the values below would *not* reproduce that — the set it replaced was wider, naming
 #: every ATS this repo scrapes (freshteam, greenhouse, successfactors, workday and freshworks
-#: among them), and only the four ATSes with patterns can reach this test at all.
+#: among them), and only an ATS with patterns can reach this test at all.
 #: ADR-0034 blocklists the Boards already known to be vendor-owned; this catches the rest.
 _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "ashby": frozenset({"ashby", "ashbyhq"}),

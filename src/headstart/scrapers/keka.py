@@ -114,7 +114,7 @@ class KekaScraper(BaseScraper):
         match = _UUID_RE.search(info)
         if match:
             return match.group(0)
-        page = self._get(f"https://{self.slug}.keka.com/careers")
+        page = self._get(self.board_page())
         match = _UUID_RE.search(page)
         return match.group(0) if match else None
 

@@ -7610,7 +7610,7 @@ def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
     assert classes[_BROKEN_OFF] == 4
 
 
-# ── the Board's company name, not its slug (headstart.company_name) ──────────────────────────
+# ── the Board's company name, not its slug (headstart.company_name) ──────────────────
 
 
 def _titled(title: str, status: int = 200):
@@ -7660,19 +7660,69 @@ def test_keka_resolves_its_company_from_the_careers_page(monkeypatch):
     assert seen == ["https://skylarkdrones.keka.com/careers"]
 
 
+@pytest.mark.parametrize(
+    ("factory", "slug", "title", "expected", "url"),
+    [
+        (
+            "headstart.scrapers.lever:LeverScraper",
+            "picklerobot",
+            "Pickle Robot Company",
+            "Pickle Robot Company",
+            "https://jobs.lever.co/picklerobot",
+        ),
+        (
+            "headstart.scrapers.ripplehire:RippleHireScraper",
+            "tatasteel",
+            "Tata Steel Ltd Careers | Latest jobs at Tata Steel Ltd",
+            "Tata Steel Ltd",
+            "https://tatasteel.ripplehire.com/candidate/careers",
+        ),
+    ],
+)
+def test_every_wired_scraper_resolves_its_company(
+    monkeypatch, factory, slug, title, expected, url
+):
+    """Ashby, eightfold and keka were pinned; lever and ripplehire were not.
+
+    That gap is not hypothetical: a stray rename of `RippleHireScraper.board_page` reached the
+    branch and turned ripplehire name resolution off with the whole suite still green.
+    """
+    import importlib
+
+    from headstart import http
+
+    module, name = factory.split(":")
+    scraper_cls = getattr(importlib.import_module(module), name)
+
+    seen: list[str] = []
+
+    def _fetch(method, fetched, **kwargs):
+        seen.append(fetched)
+        return _titled(title)
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = scraper_cls(slug)
+    scraper.resolve_company()
+    assert scraper.company == expected
+    assert seen == [url]
+
+
 def test_resolve_company_costs_nothing_for_an_ats_without_a_board_page(monkeypatch):
     """Every ATS with no measured title shape keeps its slug AND makes no extra request —
     the whole change is inert for them."""
     from headstart import http
     from headstart.scrapers.greenhouse import GreenhouseScraper
 
-    def _boom(*a, **k):  # pragma: no cover - reaching this is the failure
-        raise AssertionError("a scraper with no board_page must not fetch one")
+    # Records rather than raises. `resolve_company` catches every exception, so a raising stub
+    # has its AssertionError swallowed and the test can never fail — which is how a renamed
+    # `board_page` shipped to the branch with nothing red.
+    calls: list[str] = []
 
-    monkeypatch.setattr(http, "fetch", _boom)
+    monkeypatch.setattr(http, "fetch", lambda method, url, **k: calls.append(url))
     scraper = GreenhouseScraper("acme")
     scraper.resolve_company()
     assert scraper.company == "acme"
+    assert calls == [], "a scraper with no board_page must not fetch one"
 
 
 def test_a_name_from_the_ledger_outranks_the_board_title(monkeypatch):
@@ -7681,13 +7731,13 @@ def test_a_name_from_the_ledger_outranks_the_board_title(monkeypatch):
     from headstart import http
     from headstart.scrapers.ashby import AshbyScraper
 
-    def _boom(*a, **k):  # pragma: no cover
-        raise AssertionError("a Board that already has a name must not fetch a title")
+    calls: list[str] = []
 
-    monkeypatch.setattr(http, "fetch", _boom)
+    monkeypatch.setattr(http, "fetch", lambda method, url, **k: calls.append(url))
     scraper = AshbyScraper("1password", company="1Password, Inc.")
     scraper.resolve_company()
     assert scraper.company == "1Password, Inc."
+    assert calls == [], "a Board that already has a name must not fetch a title"
 
 
 def test_a_failed_title_fetch_leaves_the_company_untouched(monkeypatch):
