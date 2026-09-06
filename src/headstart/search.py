@@ -360,14 +360,14 @@ def _next_day(value: str) -> str:
 
 
 def _keyword_clauses(
-    kw: str | None, kw_in: str | None, has_description: bool
+    *, kw: str | None, kw_in: str | None, has_description: bool
 ) -> list[str]:
     """The Keyword filter's clauses (ADR-0104) — one per term, OR'd across the scope's columns."""
     filters: list[str] = []
     if kw:
         # Per term, OR across the scope's columns; AND across terms. A scope whose only column is
         # absent compiles to nothing at all — dark, never an error — like every optional-column
-        # filter above.
+        # filter in this module.
         columns = _keyword_columns(kw_in, has_description)
         for term in _keyword_terms(kw) if columns else ():
             filters.append(
@@ -459,21 +459,20 @@ def _salary_clauses(
     return filters
 
 
-def _recency_clauses(
+def _posted_clauses(
     *,
     posted_sortable: bool,
     posted_within: int | None,
     posted_after: str | None,
     posted_before: str | None,
-    seen_after: str | None,
-    seen_before: str | None,
-    seen_within: int | None,
-    first_seen_after: str | None,
-    has_first_seen: bool,
 ) -> list[str]:
-    """Everything keyed on a date: the two windows, the custom ranges, the sort's shape guard,
-    and the alerts Watermark. Grouped because they share the `posted_at` shape guard and the
-    dark-until-migrated rule on `first_seen`, not merely because they are all dates."""
+    """Everything keyed on ``posted_at`` — the company's own date.
+
+    One rule holds these together: `posted_at` is a raw string the ATSes write, so every clause
+    here carries the same `LIKE '____-__-__%'` shape guard against the 3% that are not ISO. The
+    column is in the table's base schema, so unlike `first_seen` there is nothing to be dark
+    about.
+    """
     filters: list[str] = []
     if posted_sortable:
         # Ordering by `posted_at` needs the same shape guard filtering by it does, and it has
@@ -492,9 +491,7 @@ def _recency_clauses(
     # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
     # text and lands in a where-clause, so it is re-serialized through date.fromisoformat —
     # garbage raises ValueError, which the routes answer as 400, and nothing user-typed is
-    # ever interpolated. Inclusive "before" compares strictly below the NEXT day, because
-    # both columns hold date-or-datetime ISO strings and '2026-08-10T12:00' > '2026-08-10'.
-
+    # ever interpolated. `_next_day` carries why the upper bound is exclusive.
     if posted_after:
         start = date.fromisoformat(posted_after).isoformat()
         filters.append(f"(posted_at >= '{start}' AND posted_at LIKE '____-__-__%')")
@@ -502,19 +499,39 @@ def _recency_clauses(
         filters.append(
             f"(posted_at < '{_next_day(posted_before)}' AND posted_at LIKE '____-__-__%')"
         )
-    if seen_after and has_first_seen:
+    return filters
+
+
+def _first_seen_clauses(
+    *,
+    seen_after: str | None,
+    seen_before: str | None,
+    seen_within: int | None,
+    first_seen_after: str | None,
+    has_first_seen: bool,
+) -> list[str]:
+    """Everything keyed on ``first_seen`` — when *we* indexed the Job.
+
+    One rule holds these together, and it is not the one above: `first_seen` arrives by migration,
+    so the whole group is dark until the column exists (ADR-0031). Hoisting that to a single
+    guard is why none of the four clauses repeats it. No shape guard either — we write this
+    column ourselves, so it is always ISO-8601 UTC.
+    """
+    if not has_first_seen:
+        return []
+    filters: list[str] = []
+    if seen_after:
         start = date.fromisoformat(seen_after).isoformat()
         filters.append(f"first_seen >= '{start}'")
-    if seen_before and has_first_seen:
+    if seen_before:
         filters.append(f"first_seen < '{_next_day(seen_before)}'")
-    if seen_within is not None and has_first_seen:
+    if seen_within is not None:
         # In HOURS, not days: this window is meant to be shorter than one pipeline cycle.
-        # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
-        # ourselves, so it is always ISO-8601 UTC. Rows predating the column are null, and
-        # `NULL >= '…'` is never true, so they drop out on their own (ADR-0031).
+        # Rows predating the column are null, and `NULL >= '…'` is never true, so they drop
+        # out on their own (ADR-0031).
         since = _ago(hours=int(seen_within)).isoformat(timespec="seconds")
         filters.append(f"first_seen >= '{since}'")
-    if first_seen_after and has_first_seen:
+    if first_seen_after:
         # The alerts run's exact cutoff (ADR-0035), beside the UI's hour-granular window: a
         # Digest must carry precisely what appeared since that Subscription's Watermark, and
         # rounding up to whole hours would re-offer rows already mailed. Strictly `>`, so a
@@ -591,7 +608,11 @@ def build_filter(
         filters.append(f"lower(location) LIKE '%{_like(location)}%'")
     if company:
         filters.append(f"lower(company) LIKE '%{_like(company)}%'")
-    filters += _keyword_clauses(kw, kw_in, has_description)
+    # These four append in order, and that order is part of the string this returns —
+    # `" AND ".join` below is not a set. SQL's AND commutes, so reordering reads as harmless and
+    # is not: every test asserting a whole where-clause would fail, and so would any caller
+    # comparing two compiled filters for equality.
+    filters += _keyword_clauses(kw=kw, kw_in=kw_in, has_description=has_description)
     filters += _salary_clauses(
         has_salary=has_salary,
         salary_min=salary_min,
@@ -600,11 +621,13 @@ def build_filter(
         currencies=currencies,
         has_min_salary_annual=has_min_salary_annual,
     )
-    filters += _recency_clauses(
+    filters += _posted_clauses(
         posted_sortable=posted_sortable,
         posted_within=posted_within,
         posted_after=posted_after,
         posted_before=posted_before,
+    )
+    filters += _first_seen_clauses(
         seen_after=seen_after,
         seen_before=seen_before,
         seen_within=seen_within,
