@@ -107,8 +107,15 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         plan.append((dimension, value, label, overrides))
         dimensions.add(dimension)
 
-    for h, label in SEEN_OPTIONS:
-        add("seen_within", h, label, seen_within=h)
+    # Dark without the column, exactly like the salary facet below: `build_filter` compiles
+    # nothing for `seen_within` while `has_first_seen` is false (ADR-0031), so every option here
+    # — and the "Any" row the dimension's existence adds — would report the same unfiltered
+    # total, nine numbers saying the window costs nothing. `posted_within` needs no such guard:
+    # `posted_at` is in the table's base schema rather than added by a migration, so it is always
+    # there to filter on.
+    if base.get("has_first_seen"):
+        for h, label in SEEN_OPTIONS:
+            add("seen_within", h, label, seen_within=h)
     for d, label in POSTED_OPTIONS:
         add("posted_within", d, label, posted_within=d)
     for y in MAX_YEARS:
@@ -196,6 +203,46 @@ def _count(table: Any, where: str | None) -> int:
     return table.count_rows(filter=where) if where else table.count_rows()
 
 
+# Keys :func:`_blocking` may never name. Neither the runtime facts of the index nor the sort are
+# user filters, so none of them can be "dropped"; `posted_sortable` in particular is the sort
+# control's shape guard. Naming any of them would render a raw key in the empty state beside a
+# button that removes nothing, since the UI has neither a label nor a control for it.
+NEVER_BLOCKING = frozenset(
+    {
+        "atses",
+        "currencies",
+        "has_first_seen",
+        "has_min_salary_annual",
+        "has_description",
+        "posted_sortable",
+        # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a keyword,
+        # and with one it is the `kw` entry that would be named.
+        "kw_in",
+        # The salary bracket's scope, for the same reason and with a sharper consequence. Unsetting
+        # it does not remove the bracket — it re-scopes it to `SALARY_DEFAULT_CURRENCY` — so the
+        # recovery `_blocking` measures would be one no control can perform: the empty state's button
+        # clears the two *bounds* (app.js's `BRACKET`), which is a different, much larger recovery.
+        # Measured on a 318,003-row table, an INR bracket at 100,000: unsetting the currency recovers
+        # 70,549 rows, clearing the bounds recovers all 318,003. Naming the currency would point the
+        # user at a button that does something else.
+        "salary_currency",
+        # The Matches tab's date ranges (`matchesRange()`) and the alerts run's Watermark cutoff
+        # (ADR-0035). Excluded rather than labelled, because there is nothing here for the empty
+        # state's button to clear: the four range inputs live in matches.html, so adding them to
+        # app.js's `CONTROL` — the *Search* tab's control registry, which `clearAll()` and
+        # `applyProfile()` sweep wholesale — would have one tab blanking another's controls, and
+        # `first_seen_after` is machine-set by the alerts run and has no input at all. If the Search
+        # tab ever grows its own range controls, drop them from here in the same change;
+        # `tests/test_facets.py` fails on a filter that is in neither this set nor those maps.
+        "posted_after",
+        "posted_before",
+        "seen_after",
+        "seen_before",
+        "first_seen_after",
+    }
+)
+
+
 def _blocking(table: Any, base: Mapping[str, Any], total: int) -> str | None:
     """Which single active filter is costing the user everything, when nothing matched.
 
@@ -209,22 +256,7 @@ def _blocking(table: Any, base: Mapping[str, Any], total: int) -> str | None:
     active = [
         key
         for key, value in base.items()
-        # Neither the runtime facts of the index nor the sort are user filters, so none of them
-        # can be "dropped". `posted_sortable` in particular is the sort control's shape guard:
-        # naming it would render a raw key in the empty state beside a button that removes
-        # nothing, since the UI has neither a label nor a control for it.
-        if key
-        not in (
-            "atses",
-            "currencies",
-            "has_first_seen",
-            "has_min_salary_annual",
-            "has_description",
-            "posted_sortable",
-            # The keyword's scope, not a filter: `filter_kwargs` already nulls it without a
-            # keyword, and with one it is the `kw` entry that would be named.
-            "kw_in",
-        )
+        if key not in NEVER_BLOCKING
         # `is`, not `in (None, False, "")`: `max_years=0` is the Entry-level filter and a real
         # constraint, but `0 == False` in Python, so a membership test silently calls it unset
         # and would never name it as the blocker.

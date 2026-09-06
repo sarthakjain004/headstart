@@ -110,6 +110,12 @@ ETYPE_CLAUSES = {
 # ranking a vector search already applies and asking for it means adding no ordering at all.
 SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
 
+# The salary bracket's currency when a request names none (issue #275). ADR-0084 says the picker
+# "defaults to USD", and 86.5% of the Jobs carrying a salary are USD (measured 2026-08-25), so
+# that is the least surprising scope for a bare number. It lives here, beside the compiler that
+# applies it, because it is the *compiler's* default rather than one client's — see build_filter.
+SALARY_DEFAULT_CURRENCY = "USD"
+
 
 class KeywordScope(NamedTuple):
     """One entry of :data:`KEYWORD_SCOPES`: the columns a keyword is matched in, and the rail's label."""
@@ -157,8 +163,30 @@ def _int_arg(args: Mapping[str, str]):
 
 
 def _like(term: str) -> str:
-    """A user term made safe for a quoted LIKE pattern: quotes doubled, length-capped."""
-    return term[:60].replace("'", "''").lower()
+    r"""A user term made safe for a quoted LIKE pattern: metacharacters escaped, quotes doubled.
+
+    Doubling quotes keeps the term inside its literal; escaping `%`, `_` and `\` is what keeps it
+    *meaning* what was typed, which is the substring match ADR-0104 specifies. Unescaped, a term
+    is silently promoted to a wildcard pattern — measured on the local 318,003-row snapshot of
+    the served table (2026-09-06): company "100%" matched 30 rows where exactly 1 is right,
+    location "new_york" 9,004 against 8, and the keyword "c_" 199,591 rows — 63% of the table —
+    against 243. `\` is on the list because DataFusion already treats it as LIKE's escape
+    character with no ESCAPE clause present, so "AT\T" reads as "att" today (698 rows).
+
+    No ESCAPE clause is emitted. Backslash is not just the default, it is the only character
+    DataFusion accepts there ("LIKE does not support escape_char other than the backslash"), so
+    the clause can only ever restate the default — measured identical with and without it, on
+    both the served table and a fixture holding literal `%`, `_` and `\` values.
+
+    The 60-char cap stays on the raw term, ahead of the escaping, for two reasons: it keeps the
+    cap denominated in what the user typed, and cutting afterwards could split a `\x` pair and
+    leave a trailing lone backslash, which escapes the pattern's own closing `%` and then matches
+    nothing at all (measured: 0 rows).
+    """
+    term = term[:60]
+    for char in ("\\", "%", "_"):
+        term = term.replace(char, "\\" + char)
+    return term.replace("'", "''").lower()
 
 
 def _keyword_terms(kw: str) -> list[str]:
@@ -248,6 +276,25 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
     return url
 
 
+def _ago(**window: int) -> datetime:
+    """``now`` minus one recency window, with the overflow answered as a bad date.
+
+    Both windows arrive as unbounded ints off the query string, and each blows up twice over:
+    739,865 days (17,756,755 hours) walks ``datetime`` below year 1 — one past the last that
+    lands on 0001-01-01, and both creep by a day each day as ``now`` moves — and a magnitude past 999,999,999
+    days breaks ``timedelta`` itself — in both directions, since a negative window that large
+    runs off the far end instead. Converted here rather than clamped in :func:`_int_arg`, which
+    is shared with ``k``, ``page`` and the salary bounds and has no business knowing what a date
+    can hold; here it matches ``_next_day``'s identical treatment further down and also covers the facet
+    counts, which call :func:`build_filter` directly rather than through the parse step.
+    """
+    try:
+        return datetime.now(UTC) - timedelta(**window)
+    except OverflowError as exc:  # off the calendar, or past timedelta's cap
+        unit, size = next(iter(window.items()))
+        raise ValueError(f"recency window out of range: {size} {unit}") from exc
+
+
 def build_filter(
     *,
     remote: bool = False,
@@ -335,18 +382,48 @@ def build_filter(
     # a bare number across currencies would rank 60,000 INR beside 60,000 USD as equals. The
     # currency therefore comes first and is whitelisted against what the table actually holds,
     # exactly like `ats` — never interpolated from free text. Without one the bracket does not
-    # apply at all, because an unscoped bracket is the wrong answer, not a looser one.
+    # apply unscoped, because an unscoped bracket is the wrong answer, not a looser one — it
+    # takes :data:`SALARY_DEFAULT_CURRENCY` instead.
     #
     # The currency is a *modifier of the bracket*, not a filter of its own: picking one with
     # both bounds empty must not quietly cut the result set to the 28.5% of Jobs that carry a
     # salary at all (measured 2026-08-25), which is what filtering on it alone would do. So it
     # only bites once the user has actually named a bound.
-    if (
-        salary_currency in currencies
-        and has_min_salary_annual
-        and (salary_min is not None or salary_max is not None)
-    ):
-        filters.append(f"salary_currency = '{salary_currency}'")
+    #
+    # The default is applied HERE and not in `filter_kwargs` for two reasons. It used to live
+    # only in the browser's <select> (`ui/static/app.js`, control `salcur`), so a bound with no
+    # currency compiled to no filter at all and the numeric constraint was silently discarded for
+    # every caller that is not that <select> — a hand-built `/search?salary_min=…`, or
+    # `scripts/eval/verify_filters.py`. (Not the alerts path: `alerts.store.ALLOWED_SEARCH_FILTERS`
+    # excludes the salary keys, so a Subscription can never carry a bracket at all.)
+    #
+    # An unrecognised currency falls back to the same default rather than raising, which is the
+    # rule ADR-0084 states — whitelisted "like `ats`", and `ats` ignores what it does not know.
+    # The alternative, a 400, was tried and reverted: it bought nothing, since the picker is
+    # rendered from `currencies` and only a hand-built request could reach it, and it made this
+    # parameter contradict `kw_in`, the other "modifier with a default".
+    #
+    # It resolves the fallback in a different *layer* from `kw_in`, though, and deliberately.
+    # `kw_in`'s lands in `filter_kwargs` and this builder compiles nothing for a scope it does not
+    # know; that is enough for `kw_in` because every path into the builder — `/search`, and
+    # `facets` via `filter_kwargs` output — has already normalised it. It is not enough here: the
+    # bug this fixes was reported against `scripts/eval/verify_filters.py` and hand-built requests,
+    # which call the reference compiler (ADR-0031) directly and never see the parse step.
+    #
+    # The default is resolved against `currencies` too, rather than trusted. It is a module
+    # constant so it can never be free text, but a table holding no USD salary would otherwise get
+    # a clause matching nothing — the silent wrong answer this whole block exists to remove, just
+    # relocated. Where even the default is unavailable the bracket does not apply.
+    if has_min_salary_annual and (salary_min is not None or salary_max is not None):
+        currency = (
+            salary_currency
+            if salary_currency in currencies
+            else SALARY_DEFAULT_CURRENCY
+        )
+    else:
+        currency = None
+    if currency in currencies:
+        filters.append(f"salary_currency = '{currency}'")
         if salary_min is not None:
             # The job's TOP of range clears the user's floor: a 90k-140k posting answers
             # "at least 100k". `max_salary_annual` is null on single-figure postings, so
@@ -370,9 +447,7 @@ def build_filter(
         # shape guard excludes the rest — non-ISO forms like darwinbox's legacy
         # '21-Apr-2026' sort lexicographically ABOVE any ISO cutoff and would otherwise
         # leak into every window.
-        cutoff = (datetime.now(UTC) - timedelta(days=int(posted_within))).strftime(
-            "%Y-%m-%d"
-        )
+        cutoff = _ago(days=int(posted_within)).strftime("%Y-%m-%d")
         filters.append(f"(posted_at >= '{cutoff}' AND posted_at LIKE '____-__-__%')")
 
     # Custom date ranges (both ends optional, both inclusive). Each value arrives as free
@@ -403,9 +478,7 @@ def build_filter(
         # No shape guard is needed here — unlike `posted_at`, we write `first_seen`
         # ourselves, so it is always ISO-8601 UTC. Rows predating the column are null, and
         # `NULL >= '…'` is never true, so they drop out on their own (ADR-0031).
-        since = (datetime.now(UTC) - timedelta(hours=int(seen_within))).isoformat(
-            timespec="seconds"
-        )
+        since = _ago(hours=int(seen_within)).isoformat(timespec="seconds")
         filters.append(f"first_seen >= '{since}'")
     if first_seen_after and has_first_seen:
         # The alerts run's exact cutoff (ADR-0035), beside the UI's hour-granular window: a
