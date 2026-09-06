@@ -43,7 +43,14 @@ compute every number on it from the served table at request time rather than wri
 
 `JobSearch.coverage()` returns the share of the served table carrying each field a user might
 otherwise assume is always present: `posted_at`, `first_seen`, a salary, a stated experience
-requirement, a stored description. It is built from `count_rows(filter=…)` — the same primitive
+requirement, a stored description.
+
+**Only fields that can legitimately be absent belong here.** A first cut also reported `remote`,
+which fails that test twice over: the column is never null, and the value is not the board's flag
+but an inference — `models.is_remote()` is a substring test on the location string, used by 19 of
+the scrapers. Presenting it as coverage stated a gap that does not exist *and* a provenance that
+is false. A facet is not a limit; the rail's own counts (ADR-0084) are where "how many are
+remote" belongs. It is built from `count_rows(filter=…)` — the same primitive
 ADR-0084's facet counts use, measured at 4–6 ms against a 316,606-row table — so the whole panel
 is a handful of counts, not a scan.
 

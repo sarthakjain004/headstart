@@ -105,20 +105,20 @@
     <div class="name">Head<em>Start</em></div>
   </div>
 
-  <h1>Job listings with nothing in between.</h1>
+  <h1>Jobs with nothing in between.</h1>
   <p class="lede">HeadStart reads software-engineering openings <b>straight from the applicant
     tracking system each company runs its own hiring on</b> — Greenhouse, Lever, Workday, Ashby
-    among them. No reposts, no agencies, no listings bought to the top. You describe the role
-    you want in plain words, and it matches on meaning rather than keywords.</p>
+    among them. No reposts, no agencies, nothing bought to the top. You describe the role you
+    want in plain words, and it matches on meaning rather than keywords.</p>
 
   <div class="proof">
-    <div class="stat"><div class="v">{{ njobs }}</div><div class="k">tech roles indexed right now</div></div>
+    <div class="stat"><div class="v">{{ njobs }}</div><div class="k">tech jobs indexed right now</div></div>
+    <div class="stat"><div class="v">{{ n_companies }}</div><div class="k">employers hiring on them</div></div>
     <div class="stat"><div class="v">{{ n_atses }}</div><div class="k">ATS providers read directly</div></div>
-    <div class="stat"><div class="v">~6h</div><div class="k">between index refreshes</div></div>
   </div>
 
   <div class="card">
-    <h2>Why the listings hold up</h2>
+    <h2>Why the jobs hold up</h2>
     <ul class="points">
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -127,19 +127,21 @@
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>Closed roles get removed.</b> Boards are re-read on a schedule; a posting that
-        has vanished from its board twice running comes out of the index.</span>
+        <span><b>Closed roles get removed, and the exception is published.</b> A job missing
+        from its board twice running comes out of the index — but a board we cannot read
+        properly is skipped rather than emptied, so some dead entries do persist. The Data tab
+        inside says how, and for how long.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>The gaps are published too.</b> Inside, a Data tab reports what share of listings
+        <span><b>The gaps are published too.</b> Inside, a Data tab reports what share of jobs
         carry a salary, a posting date or a stated experience level — counted off the live index
         each time, not written down once.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>Nothing here is paid placement.</b> Results are ordered by similarity to what you
-        asked for. No employer can buy a position, because there is nothing to buy.</span>
+        <span><b>Nothing here is paid placement.</b> Results are ordered by similarity to what
+        you asked for. No employer can buy a position, because there is nothing to buy.</span>
       </li>
     </ul>
   </div>
@@ -155,9 +157,9 @@
   </div>
 
   <p class="checkable">None of this has to be taken on faith —
-    <a href="https://github.com/sarthakjain004/headstart" target="_blank" rel="noopener">the code that gathers it is public</a><span class="sep">·</span>
-    <a href="https://github.com/sarthakjain004/headstart/tree/main/docs/adr" target="_blank" rel="noopener">so is every design decision</a><span class="sep">·</span>
-    <a href="https://github.com/sarthakjain004/headstart/actions" target="_blank" rel="noopener">and every pipeline run</a>
+    <a href="{{ repo }}" target="_blank" rel="noopener">the code that gathers it is public</a><span class="sep">·</span>
+    <a href="{{ repo }}/tree/main/docs/adr" target="_blank" rel="noopener">so is every design decision</a><span class="sep">·</span>
+    <a href="{{ repo }}/actions" target="_blank" rel="noopener">and every pipeline run</a>
   </p>
 
 </div>

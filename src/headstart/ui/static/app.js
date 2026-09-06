@@ -38,35 +38,45 @@ window.addEventListener('hashchange', () => showTab(currentTab()));
    carry yet comes back null and is skipped entirely; rendering it as 0% would read as
    "measured, and none have it", which is a different and wrong claim. ---- */
 let coverage = null;
+// `remote` is deliberately absent: it is never missing, and it is not a board flag either —
+// models.is_remote() infers it from the location string — so naming it here would have
+// claimed both a gap that does not exist and a provenance that is not true.
 const COV_ROWS = [
   ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
   ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],
-  ['min_years', 'state an experience requirement', 'The years filter keeps listings that state none, rather than guessing.'],
+  ['min_years', 'state an experience requirement', 'The years filter keeps jobs that state none, rather than guessing.'],
   ['first_seen', 'record when HeadStart first saw them', 'Stamped on arrival, so older rows predate the field and cannot show a \u201cnew\u201d tag.'],
   ['description', 'have their full text stored', 'Keyword search inside descriptions reaches only these.'],
-  ['remote', 'are marked remote by the employer', 'The board\u2019s own flag, not an inference from the location text.'],
 ];
 
 async function loadCoverage(){
   const box = el('cov');
-  try{ coverage = await (await fetch('/coverage')).json(); }
-  catch(e){
-    box.innerHTML = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
-      'Reload to try again \u2014 no figure is better than a guessed one.</p>';
-    return; }
-  const total = Number(coverage.total) || 0;
+  // `r.ok` is checked, not just the parse. A 401 or 500 body parses perfectly well into an
+  // object with no `fields`, and the render below would then have reported "the index carries
+  // none of these fields yet" \u2014 a false claim, on the one page whose subject is not making any.
+  const fail = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
+    'Reload to try again \u2014 no figure is better than a guessed one.</p>';
+  try{
+    const r = await fetch('/coverage');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    if (!d || typeof d.total !== 'number' || !d.fields) throw new Error('shape');
+    coverage = d;
+  }catch(e){ box.innerHTML = fail; return; }
+  const total = coverage.total;
+  // One count per field against the one total \u2014 the server used to repeat `total` on every
+  // field, which is one number said five times and five chances for them to disagree.
   const rows = COV_ROWS
-    .map(([key, what, why]) => [coverage.fields && coverage.fields[key], what, why])
-    .filter(([f]) => f && Number(f.total) > 0)
-    .map(([f, what, why]) => {
-      const pct = Math.round((Number(f.n) / Number(f.total)) * 100);
+    .filter(([key]) => typeof coverage.fields[key] === 'number')
+    .map(([key, what, why]) => {
+      const pct = total ? Math.round((coverage.fields[key] / total) * 100) : 0;
       return `<div class="cov-row">
         <div class="cov-bar"><span style="width:${pct}%"></span></div>
         <div class="cov-txt"><b>${pct}%</b> ${esc(what)}
           <span class="aside">${esc(why)}</span></div>
       </div>`; }).join('');
   box.innerHTML = rows
-    ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> listings in the index right now:</p>${rows}`
+    ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> jobs in the index right now:</p>${rows}`
     : '<p class="aside">The index carries none of these fields yet.</p>';
 }
 
@@ -239,6 +249,7 @@ async function fetchPage(){
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   el('pager').innerHTML = '';
+  el('kind').textContent = '';   // never describe the previous search's rows over the new ones
   el('n').textContent = q ? 'searching…' : 'loading…';
   // Fired together, not one after the other: the counts depend only on the filters, never on
   // the query, so they neither wait for the ranking nor make the user wait for them.
@@ -281,9 +292,9 @@ function drawResultKind(q, shown){
   const node = el('kind');
   if (!node || !shown) { if (node) node.textContent = ''; return; }
   node.innerHTML = q
-    ? 'Ranked by how close each listing is to what you described. ' +
+    ? 'Ranked by how close each job is to what you described. ' +
       '<a href="#data" data-tab="data">How the match score works →</a>'
-    : 'The newest listings across every board, most recently added first — no search yet, ' +
+    : 'The newest jobs across every board, most recently added first — no search yet, ' +
       'so nothing is ranked. Describe a role above to rank by meaning.';
 }
 
@@ -453,7 +464,7 @@ function draw(rows, target){
         </div>
         ${starBtn(r.id)}
         ${ranked? `<div class="match" role="img"
-             aria-label="Match ${pct} percent — how close this listing is to your search, relative to the rest of this index"
+             aria-label="Match ${pct} percent — how close this job is to your search, relative to the rest of this index"
              title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>

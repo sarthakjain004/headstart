@@ -1,11 +1,16 @@
 {# The Data tab (ADR-0112): what the index holds, what it deliberately leaves out, and what it
    does not know. Named for its tab, as every other panel here is.
 
-   Two rules govern what may be written on this page. Every number is counted off the served
-   table at request time (`/coverage`) rather than typed in, because a coverage figure in prose
-   is stale the moment the next run lands. And every claim names its mechanism and links the
-   decision behind it, so a sceptical reader arrives at the reasoning instead of at more
-   assertion. A sentence that can satisfy neither rule does not belong here. #}
+   Two rules govern what may be written on this page, and review has already caught this file
+   breaking both. Every number is counted off the served table at request time (`/coverage`)
+   rather than typed in, because a coverage figure in prose is stale the moment the next run
+   lands. And every claim names its mechanism and LINKS the decision behind it, so a sceptical
+   reader arrives at the reasoning instead of at more assertion — a number that cannot be
+   counted (the match-score anchors) is admissible only because its ADR is one click away.
+
+   Vocabulary: CONTEXT.md reserves "listing", "posting" and "opening" for the raw record an ATS
+   returns. The normalized thing a user sees is a Job, so this page says "job". #}
+{% set adr = repo ~ '/blob/main/docs/adr' %}
 <div class="doc">
 
   <header class="doc-hd">
@@ -16,7 +21,7 @@
   </header>
 
   <section class="doc-sec">
-    <h3>Where the listings come from</h3>
+    <h3>Where the jobs come from</h3>
     <p>Companies run their hiring on an <b>applicant tracking system</b> — the software that owns
        their careers page and their application form. HeadStart reads those boards directly, one
        scraper per provider, and keeps what it finds. The result is the employer's own posting,
@@ -32,10 +37,11 @@
     <ul class="doc-list">
       <li><b>Anything that is not a tech role.</b> Only software-engineering and adjacent
         openings are indexed. The filter that decides is tuned to keep borderline roles rather
-        than drop them, so a little non-tech gets through — that direction is on purpose.</li>
-      <li><b>Listings not written in English.</b> The matching model is English-only, and it
-        would rank a German description confidently and wrongly. Those boards are still read;
-        their jobs are held out of search until multilingual matching exists.</li>
+        than drop them, so a little non-tech gets through — that direction is on purpose.
+        <a href="{{ adr }}/0017-tech-role-filter.md" target="_blank" rel="noopener">ADR-0017</a></li>
+      <li><b>Jobs not written in English.</b> The matching model is English-only, and it would
+        rank a German description confidently and wrongly. Those boards are still read; their
+        jobs are held out of search until multilingual matching exists.</li>
       <li><b>Anything an employer paid to place.</b> There is no such mechanism. Ordering is
         similarity to your query and nothing else.</li>
     </ul>
@@ -47,8 +53,9 @@
        silence rather than a bug. These are counted from the served index right now — if the
        pipeline gets worse at something, this number falls.</p>
     <div class="cov" id="cov" aria-live="polite"><p class="aside">Counting…</p></div>
-    <p class="aside">Percentages are of listings in the index. They say nothing about boards not
-       yet discovered or jobs never scraped — a high number here is not a claim of completeness.</p>
+    <p class="aside">Percentages are of jobs in the index. They say nothing about boards not yet
+       discovered or jobs never scraped — a high number here is not a claim of completeness.
+       <a href="{{ adr }}/0112-publish-the-indexs-own-limits-in-the-product.md" target="_blank" rel="noopener">ADR-0112</a></p>
   </section>
 
   <section class="doc-sec">
@@ -58,26 +65,37 @@
         turned into vectors, and results come back by similarity. "Backend engineer at a climate
         startup" works; it is not looking for those words.</li>
       <li><b>The match percentage is relative, not absolute.</b> Raw similarity sits in a narrow
-        band — a strong on-topic query tops out around 0.78, an absurd one still scores 0.66 — so
-        the badge stretches that band to 0–100% to make results comparable <i>to each other</i>.
-        A 90% means "among the closest things in this index", never "90% suitable for you".</li>
+        band, so the badge stretches that band to 0–100% to make results comparable <i>to each
+        other</i>. A 90% means "among the closest things in this index", never "90% suitable for
+        you". The two anchors it stretches between, and the queries they were tuned against, are
+        in <a href="{{ adr }}/0042-signed-in-ui-saved-sets.md" target="_blank" rel="noopener">ADR-0042</a>.</li>
       <li><b>Filters narrow; the query ranks.</b> The rail on the left is exact and deterministic.
         The search box is the only fuzzy part, which is why years and salary belong in the
-        filters rather than in the sentence.</li>
-      <li><b>Sorting by date sorts your best matches.</b> Choosing "newest" reorders the strong
-        matches by date rather than date-sorting the whole index, which would bury relevance.</li>
+        filters rather than in the sentence.
+        <a href="{{ adr }}/0084-facet-counts-are-filter-shaped-not-query-shaped.md" target="_blank" rel="noopener">ADR-0084</a></li>
+      <li><b>With no query, nothing is ranked at all.</b> An empty search box browses the newest
+        jobs by date, and those cards carry no match badge rather than a misleading 0%.
+        <a href="{{ adr }}/0074-browse-and-paginate-the-search-index.md" target="_blank" rel="noopener">ADR-0074</a></li>
     </ul>
   </section>
 
   <section class="doc-sec">
-    <h3>How a closed job leaves</h3>
-    <p>Boards are re-read on a rolling schedule. When a posting is missing from its board, it is
-       marked unconfirmed rather than deleted; it is removed only if the <b>next</b> read of that
-       same board misses it too. One failed fetch therefore cannot delete a live job, and a
-       genuinely closed one takes two passes to go.</p>
-    <p class="aside">Which means a dead link is possible, and the honest description of the
-       window is "hours, not minutes". Each run reads a slice of boards rather than all of them,
-       so a quiet board is revisited less often than a busy one.</p>
+    <h3>How a closed job leaves — and when it doesn't</h3>
+    <p>Boards are re-read on a rolling schedule, a slice at a time rather than all of them. When
+       a job is missing from a board we read successfully, it is marked unconfirmed rather than
+       deleted; it is removed only if the <b>next</b> read of that same board misses it too. One
+       failed fetch therefore cannot delete a live job, and a genuinely closed one goes after two
+       passes.
+       <a href="{{ adr }}/0083-evict-only-on-a-second-consecutive-absence.md" target="_blank" rel="noopener">ADR-0083</a></p>
+    <p><b>The exception, stated plainly:</b> when a board's own read is incomplete or unreliable,
+       that board leaves the removal pass entirely for that run — removing jobs on the strength of
+       a bad read would delete live ones. A board that reads badly <i>every</i> time therefore
+       never re-enters it, and its closed jobs can be served indefinitely. This is measured, not
+       hypothetical: one board was found serving 105 closed jobs, the oldest 22 days old.
+       <a href="{{ adr }}/0053-scope-eviction-on-scrape-outcome.md" target="_blank" rel="noopener">ADR-0053</a></p>
+    <p class="aside">So: a dead link is possible here, and on an unhealthy board it can persist for
+       weeks. Every card links to the employer's own page, which is always the authority on
+       whether a role is still open.</p>
   </section>
 
   <section class="doc-sec">
@@ -95,9 +113,9 @@
 
   <footer class="doc-ft">
     <span>Check any of it:</span>
-    <a href="https://github.com/sarthakjain004/headstart" target="_blank" rel="noopener">source</a>
-    <a href="https://github.com/sarthakjain004/headstart/tree/main/docs/adr" target="_blank" rel="noopener">design decisions</a>
-    <a href="https://github.com/sarthakjain004/headstart/actions" target="_blank" rel="noopener">pipeline runs</a>
+    <a href="{{ repo }}" target="_blank" rel="noopener">source</a>
+    <a href="{{ repo }}/tree/main/docs/adr" target="_blank" rel="noopener">design decisions</a>
+    <a href="{{ repo }}/actions" target="_blank" rel="noopener">pipeline runs</a>
   </footer>
 
 </div>

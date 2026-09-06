@@ -277,7 +277,9 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     client = auth_app.app.test_client()
     page = client.get("/").data
     assert b"Sign in to search" in page
-    assert b"jobs indexed" not in page
+    # Not "jobs indexed": the door itself now says "tech jobs indexed right now" (ADR-0111).
+    # The tab shell is what only the signed-in page has.
+    assert b'data-tab="search"' not in page
     # The door's Google button carries the real client id — a drifted placeholder would
     # ship a dead button on a page that otherwise renders fine.
     assert b"client-id.example" in page
@@ -1079,11 +1081,16 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     page = auth_app.app.test_client().get("/").data.decode()
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
-    assert '<div class="v">2</div><div class="k">tech roles indexed' in page
+    assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
+    assert '<div class="v">2</div><div class="k">employers hiring on them' in page
     assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
+    # Every tile is a counted number. A typed-in cadence figure ("~6h") shipped here once,
+    # ~5x off the measured run duration and contradicting the footer — ADR-0111 now forbids
+    # any tile the running product cannot produce.
+    assert "~6h" not in page and "refreshes" not in page
     # The provenance claim, the removal policy, and the no-paid-placement claim.
     assert "employer's own board" in page
-    assert "Closed roles get removed." in page
+    assert "Closed roles get removed, and the exception is published." in page
     assert "paid placement" in page
     # What signing in costs, stated before the button rather than in a policy page behind it.
     assert "stores your email address" in page
@@ -1092,7 +1099,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert "github.com/sarthakjain004/headstart" in page
     # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0111
     # changed the page around it, which is exactly when this gets dropped by accident).
-    assert page.index("Why the listings hold up") < page.index("Sign in to search")
+    assert page.index("Why the jobs hold up") < page.index("Sign in to search")
     assert 'id="openout"' in page
 
 
@@ -1106,10 +1113,15 @@ def test_coverage_counts_the_served_table_rather_than_asserting(app):
     """ADR-0112: the Data tab's numbers are measured, so they cannot go stale in prose."""
     d = app.app.test_client().get("/coverage").json
     assert d["total"] == 2
-    assert d["atses"] == 2
-    # One of two rows carries each field — a real ratio, not a placeholder.
-    assert d["fields"]["posted_at"] == {"n": 1, "total": 2}
-    assert d["fields"]["min_years"] == {"n": 1, "total": 2}
+    # One of two rows carries each field — a real ratio, not a placeholder. One count per
+    # field against the one total; `total` is not repeated onto every field.
+    assert d["fields"]["posted_at"] == 1
+    assert d["fields"]["min_years"] == 1
+    # `remote` is never a coverage field: the column is never null, and the value is an
+    # inference from the location string rather than the board's flag, so reporting it
+    # claimed both a gap that does not exist and a provenance that is false.
+    assert "remote" not in d["fields"]
+    assert "atses" not in d  # nothing reads it; the template has its own list
 
 
 def test_coverage_is_behind_the_wall_like_everything_else(auth_app):
@@ -1129,6 +1141,9 @@ def test_the_signed_in_page_says_what_the_product_is(app):
     page = app.app.test_client().get("/").data.decode()
     # On screen wherever they navigate, not only in the footer of a long results page.
     assert "Tech jobs read straight from company career boards" in page
+    # One repo URL, server-side: the door and the Data tab both link into it, and a rename
+    # must not be able to leave half the links dead.
+    assert page.count("github.com/sarthakjain004/headstart") >= 3
     # The Data tab is always present — a limits page that can be switched off is not a
     # commitment — and the footer points at it.
     assert 'data-tab="data"' in page
@@ -1139,7 +1154,7 @@ def test_the_signed_in_page_says_what_the_product_is(app):
 
 def test_the_data_tab_states_scope_gaps_and_provenance(app):
     page = app.app.test_client().get("/").data.decode()
-    assert "Where the listings come from" in page
+    assert "Where the jobs come from" in page
     assert "What is deliberately left out" in page
     assert "What the index does not know" in page
     assert "How a closed job leaves" in page
@@ -1147,3 +1162,15 @@ def test_the_data_tab_states_scope_gaps_and_provenance(app):
     # The ATS list is rendered from the index's own whitelist, not typed in.
     assert "Read from 2 providers" in page
     assert ">greenhouse<" in page and ">lever<" in page
+    # ADR-0112: every claim links the decision behind it. The eviction section in particular
+    # must carry ADR-0053 as well as ADR-0083 — an earlier draft described the window as
+    # "hours, not minutes" and omitted the scope exclusion, which has no drain at all and was
+    # measured serving one board's closed jobs for 22 days.
+    assert "0083-evict-only-on-a-second-consecutive-absence.md" in page
+    assert "0053-scope-eviction-on-scrape-outcome.md" in page
+    assert "22 days old" in page
+    assert "hours, not minutes" not in page
+    # CONTEXT.md reserves "listing"/"posting"/"opening" for the raw ATS record; the user-facing
+    # noun is "job". The word may still appear in this file's own explanation of that rule.
+    body = page.split('id="panel-data"', 1)[1]
+    assert "listings" not in body

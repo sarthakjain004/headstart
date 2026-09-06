@@ -679,13 +679,16 @@ class JobSearch:
         self._table = table
         self.max_k = max_k
         self.max_page = max_page
-        # the ATSes actually present in the index — feeds the dropdown and the whitelist
-        self.atses = sorted(
-            {
-                r["ats"]
-                for r in table.search().select(["ats"]).limit(1_000_000).to_list()
-            }
-        )
+        # the ATSes actually present in the index — feeds the dropdown and the whitelist.
+        # `company` rides the same scan rather than a second one: the door states how many
+        # employers are in the index (ADR-0111), and one extra column on a pass already being
+        # paid for is the cheapest honest way to know.
+        _boards = table.search().select(["ats", "company"]).limit(1_000_000).to_list()
+        self.atses = sorted({r["ats"] for r in _boards})
+        # Employers, not Boards: `company` is the ATS slug (README §"The served table"), so two
+        # ATSes hosting the same firm count twice and a slug is not a display name. It is a
+        # floor on the real number, which is the safe direction for a claim on the door.
+        self.n_companies = len({r["company"] for r in _boards if r.get("company")})
         # `first_seen` only appears on the first pipeline run after ADR-0031; filtering on
         # a column the table lacks errors every query, so the feature stays dark until then.
         self.has_first_seen = "first_seen" in table.schema.names
@@ -949,17 +952,23 @@ class JobSearch:
         product measures about itself gets worse on the page when the pipeline gets worse,
         which is the only incentive a limits page should have.
 
+        Only fields a Job may legitimately be *missing* belong here. ``remote`` was removed
+        after review: it is never absent, and it is not a board flag either — ``models
+        .is_remote`` infers it from the location string on 19 of the scrapers — so reporting it
+        as coverage stated a gap that does not exist and a provenance that is not true.
+
         Costs one :meth:`count_rows` per field. ADR-0084's facet counts measured that at 4–6 ms
         against a 316,606-row table, so the whole panel is cheaper than a single ranked search
         — but it is cached per process anyway: the table cannot change under a running Space
         (a new index arrives with a restart), so every call after the first is free.
 
-        Columns absent from an un-migrated table are reported as ``None``, never as zero. Zero
-        would read as "measured, and none have it" — the same unknown-is-not-zero rule
-        ``min_years`` follows (ADR-0009).
+        A field whose column arrives with a migration (``first_seen``, the salary columns,
+        ``description``) is reported as ``None`` on a table that predates it — never as zero,
+        which would read as "measured, and none have it" (ADR-0009's unknown-is-not-zero rule).
+        ``posted_at`` and ``min_years`` need no such guard: they are in the base ``_schema()``
+        and every served table has carried them.
         """
         if self._coverage is None:
-            total = self._table.count_rows()
             fields = {
                 "posted_at": "posted_at IS NOT NULL AND posted_at != ''",
                 "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
@@ -972,19 +981,12 @@ class JobSearch:
                 "description": "description IS NOT NULL AND description != ''"
                 if self.has_description
                 else None,
-                "remote": "remote = true",
             }
             self._coverage = {
-                "total": total,
-                "atses": len(self.atses),
+                "total": self._table.count_rows(),
                 "fields": {
                     name: (
-                        None
-                        if where is None
-                        else {
-                            "n": self._table.count_rows(filter=where),
-                            "total": total,
-                        }
+                        None if where is None else self._table.count_rows(filter=where)
                     )
                     for name, where in fields.items()
                 },

@@ -38,9 +38,12 @@ what signing in costs the visitor, and links to the evidence — then asks.**
 Four blocks, in this order, because the order *is* the argument:
 
 1. **What this is**, in one sentence a stranger can evaluate.
-2. **Proof, in live numbers** read from the served table at request time — jobs indexed, ATS
-   providers, employers. Not marketing copy: `count_rows()` and the length of the searcher's own
-   ATS whitelist, so a shrunk index shrinks the claim.
+2. **Proof, in live numbers** read from the served table at request time — jobs indexed,
+   employers, ATS providers. Not marketing copy: `count_rows()` and two counts off the searcher's
+   own boot scan, so a shrunk index shrinks the claim. Every tile must be a number the running
+   product can produce; a first cut carried a typed-in "~6h between index refreshes" that was
+   roughly 5x the measured cadence (`pipeline.yml`: mean run 74.1 min, chained back-to-back) and
+   contradicted the app's own footer. **A tile that cannot be counted does not go on this page.**
 3. **What signing in does**, stated as a limit rather than a promise: the session stores an email
    address and nothing else; no posting, no email unless a Saved set asks for it; sign-out drops
    the cookie. Written so that the sentence a visitor most wants — *what do you take from me* —
@@ -69,8 +72,16 @@ What it has instead is verifiability, which is stronger and costs nothing to kee
 ## Consequences
 
 - The door renders numbers, so `index()` must pass them on the signed-out path too — previously it
-  passed the Google client id alone. Both numbers come from objects the app has already built at
-  boot, so the door costs no new query.
+  passed the Google client id alone. Two of the three (employers, ATS providers) are read off the
+  searcher's existing boot scan, which now selects `company` alongside `ats` — one extra column on
+  a pass already being paid for. The third, `count_rows()`, **is** a per-request table query;
+  an earlier draft of this ADR claimed the door "costs no new query", which was wrong. It is the
+  same single count the signed-in header already makes, so the door is no more expensive than the
+  page behind it — but it is not free, and the signed-out path is the one with no auth in front of
+  it.
+- The employer count is of distinct `company` values, which are ATS slugs rather than display
+  names (README §"The served table"). Two boards for one firm count twice, so the figure is a
+  **floor** on the real number — the safe direction for a claim made on this page.
 - The door still cannot fetch `/static` (the wall gates it, and `signin.html` is deliberately
   self-contained), so its styles stay inline. That constraint is now load-bearing on a much larger
   page; the inline block is kept to the tokens the door actually uses.

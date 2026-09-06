@@ -197,6 +197,11 @@ app.config.update(
 # from the caller's own cookie, so it can only tell you what you sent.
 _PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
 
+# The public repository, named once. Both trust surfaces (ADR-0111's door, ADR-0112's Data
+# tab) link into it, and "check it yourself" is the claim they both rest on — so a rename
+# must not be able to leave half the links dead.
+_REPO = "https://github.com/sarthakjain004/headstart"
+
 # The Digest generator is the one caller with no Google identity to offer: it is a
 # scheduled run, not a person, and it must reach /search for every Subscription
 # (ADR-0035; ADR-0042's amendment records why the wall admits it). So it carries a shared
@@ -862,13 +867,17 @@ def coverage():
 def index():
     if _AUTH_ON and not session.get("email"):
         # The door states what this is and proves it before asking for an identity
-        # (ADR-0111). Both numbers come off objects built at boot, so the signed-out
-        # path stays one render with no query behind it.
+        # (ADR-0111). All three numbers are read rather than written: the two counts come
+        # off the searcher's boot scan, and `count_rows` is one table query — the same one
+        # the signed-in page already makes for its header, so the door is no more expensive
+        # than the page behind it.
         return render_template(
             "signin.html",
             google_client_id=_GOOGLE_CLIENT_ID,
             njobs=f"{_table.count_rows():,}",
             n_atses=len(_searcher.atses),
+            n_companies=f"{_searcher.n_companies:,}",
+            repo=_REPO,
         )
     scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
@@ -898,6 +907,7 @@ def index():
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
+        repo=_REPO,  # the Data tab's "check any of it" links (ADR-0112)
         trends_on=bool(_TRENDS),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,

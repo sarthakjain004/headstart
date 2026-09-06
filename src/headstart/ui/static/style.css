@@ -544,6 +544,15 @@ textarea:focus{ border-color:var(--violet); }
 .ats-pill{ display:inline-block; font:500 11.5px var(--mono); padding:3px 9px; margin-right:5px;
   border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule);
   color:var(--ink-2); }
+/* The inline ADR citations (ADR-0112). They were falling through to the browser's default
+   blue, which is both off-system and unreadable on the dark ground. Set as a quiet citation:
+   the aqua measures 10.04:1 dark / 4.56:1 light against the page ground, and the rule
+   underneath keeps it identifiable as a link without colour being the only signal. */
+.doc-sec a{ color:var(--aqua); text-decoration:none; font-weight:500; white-space:nowrap;
+  border-bottom:1px solid color-mix(in srgb, var(--aqua) 42%, transparent); }
+.doc-sec a:hover{ border-bottom-color:var(--aqua); }
+.doc-sec a:focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:3px; }
+
 .doc-ft{ border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3);
   font-size:13px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
 .doc-ft a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
