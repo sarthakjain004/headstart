@@ -190,6 +190,19 @@ def test_the_salary_facet_stays_dark_without_the_salary_columns():
     assert "has_salary" not in out["facets"]
 
 
+def test_the_recency_facet_stays_dark_without_the_first_seen_column():
+    """The same dark-until-migrated rule the salary facet follows, on the recency window.
+
+    `build_filter` compiles nothing for `seen_within` without the column, so counting its
+    options there gives all eight windows AND their "Any" row the identical unfiltered total —
+    a dropdown whose every entry claims to cost nothing, and eight counts nobody can use.
+    """
+    table = _CountingTable()
+    out = facets.counts(table, _kwargs(has_first_seen=False))
+    assert "seen_within" not in out["facets"]  # not even a lone "Any" row
+    assert not any(w and "first_seen" in w for w in table.seen)
+
+
 # ---- the Keyword filter's disclaimer (ADR-0104) ----
 
 

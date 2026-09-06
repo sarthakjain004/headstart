@@ -107,8 +107,15 @@ def counts(table: Any, filter_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         plan.append((dimension, value, label, overrides))
         dimensions.add(dimension)
 
-    for h, label in SEEN_OPTIONS:
-        add("seen_within", h, label, seen_within=h)
+    # Dark without the column, exactly like the salary facet below: `build_filter` compiles
+    # nothing for `seen_within` while `has_first_seen` is false (ADR-0031), so every option here
+    # — and the "Any" row the dimension's existence adds — would report the same unfiltered
+    # total, nine numbers saying the window costs nothing. `posted_within` needs no such guard:
+    # `posted_at` is in the table's base schema rather than added by a migration, so it is always
+    # there to filter on.
+    if base.get("has_first_seen"):
+        for h, label in SEEN_OPTIONS:
+            add("seen_within", h, label, seen_within=h)
     for d, label in POSTED_OPTIONS:
         add("posted_within", d, label, posted_within=d)
     for y in MAX_YEARS:
