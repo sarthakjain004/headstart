@@ -69,6 +69,7 @@ __all__ = [
     "note_routed",
     "note_settled",
     "proxy_for",
+    "proxy_for_async",
     "proxy_url",
     "report",
     "reset",
@@ -389,6 +390,17 @@ def report() -> list[str]:
                 if spins.get(why)
             )
         )
+    if _drain_waits:
+        waits = sorted(_drain_waits)
+        capped = _drains.get("drain capped", 0)
+        # `capped` is the number that matters, and it should be 0: the drain is meant to return
+        # when the tunnel empties, so a rotation sitting on `_DRAIN_CAP` means either the tail has
+        # outgrown the cap or something is stopping the tunnel emptying — the shape that made
+        # every drain cost its full cap before ADR-0063's 2026-09-05 amendment.
+        lines.append(
+            f"spare egress drains: {len(waits)}, median {waits[len(waits) // 2]:.1f}s, "
+            f"max {waits[-1]:.1f}s, {capped} hit the {_DRAIN_CAP:.0f}s cap"
+        )
     addresses = egress_ips()
     seen = {k[3:] for k in addresses if k.startswith("ip:")}
     colos = {k[5:] for k in addresses if k.startswith("colo:")}
@@ -560,6 +572,14 @@ _inflight_cv = threading.Condition()
 #: max 9.19s (n=100).
 _DRAIN_CAP = 20.0
 _rotations: Counter[str] = Counter()
+#: Every drain's wait in seconds, and its two counts. A list rather than a running max: the shard
+#: report prints the median beside the max, and a max alone cannot say whether one slow cohort or
+#: every rotation is paying. Bounded by the rotation count, which `_ROTATION_COOLDOWN` bounds.
+#:
+#: Guarded by their own lock rather than `_rotation_lock`, which `rotate` holds across `_drain`.
+_drain_waits: list[float] = []
+_drains: Counter[str] = Counter()
+_drain_lock = threading.Lock()
 #: Which Board each rotation request came from. Every caller of :func:`rotate` has just been
 #: refused *through* the spare egress, so this is the set of Boards actually consuming the IP
 #: supply — the attribution the shard report could not make before, and the one that decides
@@ -685,13 +705,36 @@ def _drain(cap: float) -> None:
     version was reverted. Unproven concurrency machinery on the scrape's critical path is a worse
     trade than a race that is real in principle and unobserved in practice; it stays written down.
     """
-    deadline = time.monotonic() + cap
+    started = time.monotonic()
+    deadline = started + cap
     with _inflight_cv:
         while _inflight:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                _note_drain(cap, capped=True)
                 return
             _inflight_cv.wait(remaining)
+    _note_drain(time.monotonic() - started, capped=False)
+
+
+def _note_drain(waited: float, *, capped: bool) -> None:
+    """Record what one drain cost, so the claim `_DRAIN_CAP` rests on stays checkable.
+
+    That claim — the drain returns when the tunnel empties, so the cap is a backstop and never
+    reached — is exactly the kind that was believed for two runs while the opposite was true: every
+    drain was sitting on the cap because the event loop could not retire the requests it waited on,
+    and nothing counted drains, so nothing said so. A `capped` count above zero means either the
+    tail has grown past the cap or something is blocking the tunnel from emptying again; either way
+    it is the number to look at before touching the constant.
+    """
+    # Its own lock, emphatically not `_rotation_lock`: `rotate` already holds that across the
+    # call to `_drain`, and it is a plain `threading.Lock`, so reaching for it here is a
+    # self-deadlock that hangs the shard rather than failing it.
+    with _drain_lock:
+        _drains["drained"] += 1
+        if capped:
+            _drains["drain capped"] += 1
+        _drain_waits.append(round(waited, 2))
 
 
 def generation() -> int:
@@ -1025,6 +1068,9 @@ def reset() -> None:
         _inflight = 0
     with _traffic_lock:
         _traffic.clear()
+    with _drain_lock:
+        _drain_waits.clear()
+        _drains.clear()
     with _rotation_lock:
         _rotations.clear()
         _rotation_causes.clear()

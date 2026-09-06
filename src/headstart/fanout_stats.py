@@ -13,20 +13,29 @@ experiment, no flag, no extra traffic.
 
 **The unit is one fan-out batch, not the shard.** Many Boards fan out concurrently, so summing
 batch walls overshoots the shard's own wall by design; `req/s` here is the throughput *of a fan-out*
-at that width, which is the thing a width decides. Comparing it across the widths of one site is
+at that width, which is the thing a width decides. Comparing it across the widths of one fan-out is
 the whole point, and that comparison is unaffected.
+
+**One ATS's detail passes merge into one row.** Eightfold calls `fan_out_async` from two places
+(`eightfold.py:284` and `:351`) and both land in `eightfold details`. Accepted rather than
+overlooked: both resolve their width from the same clamp, so the row stays honest about
+`(ATS, width)`, and separating them would thread a label through a shared helper for a distinction
+no width decision turns on (ADR-0110).
 
 Read it as Little's Law. `streams` is the mean occupancy actually achieved (item-seconds ÷ batch
 wall): near the ceiling every stream is busy; far below it the width is not the binding constraint.
-Then, for one site:
+Then, for one fan-out:
 
 - throughput flat while latency scales with the width -> past the knee, narrow it.
 - throughput scaling with the width -> below the knee, widen it.
-- `streams` far below its width -> the width is not what limits this site; look elsewhere.
+- `streams` far below its width -> the width is not what limits this fan-out; look elsewhere.
 
 Measured 2026-09-05 against one Workday CXS host through the tunnel — the shape this exists to
 surface — width 12 served 100 pages in 44.7s (p50 4.68s) and width 25 served 100 in 45.8s (p50
-10.30s): 2.1x the streams for 1.02x the throughput, all of the difference queueing.
+10.30s): **2.1x the streams bought 0.98x the throughput at 2.2x the latency**. Driving the real
+paginate through this module a second time agreed, at 0.88x. Both runs say the wider fan-out is
+slower, which is the answer `_WALLED_STREAM_WIDTH` never had — but two probes of one host on one
+day are a reason to instrument every shard, not to move the constant.
 """
 
 from __future__ import annotations
@@ -38,7 +47,7 @@ from collections.abc import Callable, Iterator
 
 __all__ = ["batch", "report", "reset", "stats"]
 
-#: Keyed (site, width). `busy` is item-seconds, `wall` is batch-seconds; their ratio is the mean
+#: Keyed (fanout, width). `busy` is item-seconds, `wall` is batch-seconds; their ratio is the mean
 #: number of streams actually occupied, which is what separates "saturated" from "not the
 #: constraint" and cannot be recovered from a count of requests alone.
 _rows: dict[tuple[str, int], dict[str, float]] = {}
@@ -51,7 +60,7 @@ _MIN_ITEMS = 50
 
 
 @contextlib.contextmanager
-def batch(site: str, width: int) -> Iterator[Callable[[float], None]]:
+def batch(fanout: str, width: int) -> Iterator[Callable[[float], None]]:
     """Time one fan-out batch at ``width``, yielding the per-item timer its workers call.
 
     The yielded callback takes one item's own duration. It is called from the gather's event-loop
@@ -75,7 +84,8 @@ def batch(site: str, width: int) -> Iterator[Callable[[float], None]]:
         wall = time.monotonic() - started
         with _lock:
             row = _rows.setdefault(
-                (site, width), {"batches": 0.0, "items": 0.0, "busy": 0.0, "wall": 0.0}
+                (fanout, width),
+                {"batches": 0.0, "items": 0.0, "busy": 0.0, "wall": 0.0},
             )
             row["batches"] += 1
             row["items"] += totals["items"]
@@ -96,7 +106,7 @@ def reset() -> None:
 
 
 def report() -> list[str]:
-    """One line per (site, width), plus the width comparison where a site ran at more than one.
+    """One line per (fan-out, width), plus the comparison where one ran at more than one width.
 
     Empty when nothing fanned out, so a shard of single-request Boards stays silent rather than
     printing a table of zeroes.
@@ -105,29 +115,29 @@ def report() -> list[str]:
     if not rows:
         return []
     lines: list[str] = []
-    for site in sorted({site for site, _ in rows}):
-        widths = sorted((w for s, w in rows if s == site), reverse=True)
+    for fanout in sorted({fanout for fanout, _ in rows}):
+        widths = sorted((w for name, w in rows if name == fanout), reverse=True)
         for width in widths:
-            row = rows[(site, width)]
+            row = rows[(fanout, width)]
             items, wall, busy = row["items"], row["wall"], row["busy"]
             rate = items / wall if wall else 0.0
             streams = busy / wall if wall else 0.0
             mean = busy / items if items else 0.0
             batches = int(row["batches"])
             lines.append(
-                f"concurrency {site} @{width}: {int(items):,} req over "
+                f"concurrency {fanout} @{width}: {int(items):,} req over "
                 f"{wall:,.0f} batch-s, {rate:.2f} req/s, streams {streams:.1f}/{width}, "
                 f"mean {mean:.1f}s ({batches:,} batch{'' if batches == 1 else 'es'})"
             )
-        lines.extend(_compare(site, widths, rows))
+        lines.extend(_compare(fanout, widths, rows))
     return lines
 
 
 def _compare(
-    site: str, widths: list[int], rows: dict[tuple[str, int], dict[str, float]]
+    fanout: str, widths: list[int], rows: dict[tuple[str, int], dict[str, float]]
 ) -> list[str]:
-    """The verdict line: what the extra streams actually bought, between a site's widest and
-    narrowest width.
+    """The verdict line: what the extra streams actually bought, between a fan-out's widest
+    and narrowest width.
 
     Deliberately only ever compares two rows and only when both carry :data:`_MIN_ITEMS`. The
     widths are not an experiment — a group is clamped because it *walled*, so the wide and narrow
@@ -136,7 +146,7 @@ def _compare(
     """
     if len(widths) < 2:
         return []
-    wide, narrow = rows[(site, widths[0])], rows[(site, widths[-1])]
+    wide, narrow = rows[(fanout, widths[0])], rows[(fanout, widths[-1])]
     if wide["items"] < _MIN_ITEMS or narrow["items"] < _MIN_ITEMS:
         return []
     if not (wide["wall"] and narrow["wall"] and wide["items"] and narrow["items"]):
@@ -148,8 +158,10 @@ def _compare(
     width_x = widths[0] / widths[-1]
     rate_x = rate_wide / rate_narrow
     lat_x = (wide["busy"] / wide["items"]) / (narrow["busy"] / narrow["items"])
-    # 1.15x is a fifth of the 2.1x width step that produced 1.02x in the measurement above: far
-    # enough from 1.0 to be worth acting on, near enough that a real gain is not called queueing.
+    # Bands, not a tuned threshold. Both live measurements of the 25-vs-12 pair returned
+    # throughput ratios *below* 1.0 — 0.98x and 0.88x, i.e. the wider fan-out was slower — so at
+    # or under 1.05x reads as queueing with room to spare. 1.15x is the first ratio clear of that
+    # observed spread by enough to act on. The middle band deliberately declines to recommend.
     verdict = (
         "throughput scaled — room to widen"
         if rate_x >= 1.15
@@ -159,7 +171,7 @@ def _compare(
     )
     return [
         (
-            f"concurrency {site}: {width_x:.1f}x the streams bought {rate_x:.2f}x the "
+            f"concurrency {fanout}: {width_x:.1f}x the streams bought {rate_x:.2f}x the "
             f"throughput at {lat_x:.1f}x the latency — {verdict}"
         )
     ]

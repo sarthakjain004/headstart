@@ -947,7 +947,8 @@ def test_resolving_a_route_never_stalls_the_event_loop_during_a_rotation(monkeyp
 
     # Walled, or the resolver short-circuits to the direct route and never reaches the gate —
     # which is what made the first draft of this test pass with the fix reverted.
-    monkeypatch.setattr(spare_egress, "_walled", {"workday"})
+    monkeypatch.setattr(spare_egress, "_walled", set())
+    spare_egress.mark_walled("workday", 429)
     spare_egress._gate.clear()
     try:
 

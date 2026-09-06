@@ -312,7 +312,7 @@ class BaseScraper(ABC):
         fn: Callable[[Any, _T], Awaitable[_R]],
         concurrency: int,
         default: _R | None,
-        item_done: Callable[[float], None] = lambda _seconds: None,
+        item_done: Callable[[float], None],
     ) -> list[_R | None]:
         from curl_cffi.requests import AsyncSession
 

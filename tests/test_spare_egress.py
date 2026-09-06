@@ -778,3 +778,32 @@ def test_the_direct_route_is_never_counted_as_riding_the_tunnel():
     with spare_egress.riding_the_tunnel(None):
         assert spare_egress.in_flight_count() == 0
     assert spare_egress.in_flight_count() == 0
+
+
+def test_a_drain_reports_what_it_cost_and_whether_it_hit_the_cap():
+    """`_DRAIN_CAP`'s justification is that the drain returns when the tunnel empties, so the cap
+    is a backstop and never reached. That claim was believed for two runs while the opposite was
+    true — every drain sat on the cap — and nothing counted drains, so nothing said so."""
+    spare_egress.reset()
+    spare_egress._drain(0.05)  # empty tunnel: returns at once
+    line = [ln for ln in spare_egress.report() if ln.startswith("spare egress drains")]
+    assert len(line) == 1, spare_egress.report()
+    assert "1, median 0.0s" in line[0]
+    assert "0 hit the" in line[0]
+
+
+def test_a_drain_that_times_out_is_counted_as_capped():
+    """The number to watch: non-zero means the tail outgrew the cap, or something is stopping the
+    tunnel emptying at all."""
+    spare_egress.reset()
+    with spare_egress._inflight_cv:
+        spare_egress._inflight = 1  # a rider that never lands
+    try:
+        spare_egress._drain(0.05)
+    finally:
+        with spare_egress._inflight_cv:
+            spare_egress._inflight = 0
+    assert spare_egress._drains["drain capped"] == 1
+    assert "1 hit the" in next(
+        ln for ln in spare_egress.report() if ln.startswith("spare egress drains")
+    )

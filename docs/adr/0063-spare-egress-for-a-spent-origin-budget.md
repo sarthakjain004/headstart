@@ -548,3 +548,19 @@ have bought nothing: the drain returns when the tunnel empties, so the cap is a 
 never reached. It still needs its margin — the tunnel carries every walled group at once, so
 aggregate concurrency can exceed any one group's clamped width — and a cap under the real tail is
 the cliff the 12.0s draft already fell off.
+
+**"Why not drop the drain and just let the refund retry them?"** Because that is what the code
+already did, and it is what the 105–170 lost pages per run *were*. `http._severed_by_our_rotation`
+refunds an attempt whenever our own rotation killed a proxied request, and `proxy_for` makes that
+retry wait for the restart, so the severed page does go out again on the fresh IP. It is not enough
+for two reasons that compound: the refund is capped at `_MAX_EARNED_ATTEMPTS = 2`, and while a wall
+persists the next rotation arrives every `_ROTATION_COOLDOWN` (5s) against a page that takes 6–13s
+through the tunnel — so the retry is severed too, and the one after it, until the budget is gone.
+Retrying harder cannot outrun a restart cadence faster than the latency it is restarting under;
+that is why the fix is to stop severing, not to recover from it better.
+
+**What to watch now.** `spare_egress.report()` gained a `spare egress drains:` line — count, median,
+max, and how many hit the cap. That last number carries this amendment's whole claim and should be
+**0**; above zero means either the tail has outgrown the cap or something is again stopping the
+tunnel from emptying. Nothing counted drains before, which is precisely why the loop stall could sit
+in production for two runs looking like a cap that was merely set too high.
