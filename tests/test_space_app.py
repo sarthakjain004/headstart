@@ -1244,18 +1244,23 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     )
 
 
-def test_the_storage_list_defaults_to_disclosing(app):
-    """A missing `auth_on` must not make the page claim nothing is stored.
+def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
+    """Forgetting `auth_on` alone must not make the page claim nothing is stored.
 
     Jinja renders an undefined name as falsy, so the conditional is written `if auth_on or
     alerts_on` with the "Nothing" case in the `else`. Written the other way round, a renderer
-    that forgot the kwarg would print a denial on a deployment that stores plenty — the one
-    direction a storage disclosure must never fail."""
+    that passed `alerts_on` but forgot `auth_on` printed a denial on a deployment that stores
+    plenty. Note the guarantee is exactly that and no wider: with *every* flag absent the page
+    still says "Nothing", which is correct — a caller supplying no flags at all is describing
+    a deployment with neither feature."""
     tpl = app.app.jinja_env.get_template("data.html")
-    # Rendered with the flag simply absent, exactly as a forgetful caller would.
+    # Rendered with `auth_on` simply absent, exactly as a forgetful caller would.
     out = tpl.render(atses=["greenhouse"], repo="https://example.test", alerts_on=True)
     assert "Nothing." not in out
     assert "email address" in out
+    # …and the alerts-only branch names what /subscribe actually keeps: `_project_subscription`
+    # stores the Query and the Search filters beside the address, not the address alone.
+    assert "the search and filters that alert is for" in " ".join(out.split())
     # …and it still says "Nothing" when the deployment really does keep nothing.
     bare = tpl.render(atses=["greenhouse"], repo="https://example.test")
     assert "Nothing." in bare
