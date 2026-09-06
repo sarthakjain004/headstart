@@ -87,7 +87,7 @@ def _spy_concurrency(monkeypatch):
     """Replace _gather_async with a no-network spy; returns the dict the width lands in."""
     seen = {}
 
-    def spy(items, f, concurrency, default):
+    def spy(items, f, concurrency, default, item_done=None):
         seen["concurrency"] = concurrency
 
         async def _noop():

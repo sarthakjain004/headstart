@@ -392,7 +392,10 @@ async def fetch_async(
     """
     budget, attempt, proxied = attempts, 0, False
     while attempt < budget:
-        proxy = spare_egress.proxy_for(egress_group)
+        # Async twin, not `proxy_for`: the sync one blocks on the rotation gate, and blocking the
+        # loop here froze the very requests a drain waits on, so the drain always timed out and
+        # restarted through them (see `spare_egress.proxy_for_async`).
+        proxy = await spare_egress.proxy_for_async(egress_group)
         proxied = proxied or proxy is not None
         routed = (
             {**kwargs, "proxies": {"http": proxy, "https": proxy}} if proxy else kwargs
