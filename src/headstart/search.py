@@ -105,6 +105,40 @@ ETYPE_CLAUSES = {
 }
 
 
+#: Exactly the columns :meth:`JobSearch.run` reads to build a result row — the projection the
+#: served query asks for, rather than every column the table holds.
+#:
+#: **This is a latency fix, not tidiness.** Without it the sorted-query path materialises
+#: `max_k * max_page` = 2,000 whole rows, each carrying its 768-float `vector` and (since
+#: ADR-0104) a `description` averaging ~5,000 characters, only to throw both away one line later.
+#: Measured on the served table: the 2,000-row window falls from 230 ms to 45 ms, and the browse
+#: page from 105 ms to 32 ms. ADR-0084 costed that window at "9.2 ms … ~6.5 ms" — a figure taken
+#: before `description` existed, and no longer true of the table it describes.
+#:
+#: Intersected with the live schema in :meth:`JobSearch.__init__`, never used raw: `select()`
+#: **raises** on a column the table lacks, and half of these are added by migration
+#: (`first_seen`, the ADR-0082 salary columns). Naming one unconditionally would turn
+#: ADR-0031's dark-until-migrated rule into a 500 on every search.
+RESULT_COLUMNS = (
+    "id",
+    "title",
+    "company",
+    "location",
+    "remote",
+    "employment_type",
+    "min_years",
+    "salary",
+    "min_salary_annual",
+    "max_salary_annual",
+    "salary_currency",
+    "salary_source",
+    "ats",
+    "posted_at",
+    "first_seen",
+    "url",
+)
+
+
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
 # ranking a vector search already applies and asking for it means adding no ordering at all.
@@ -539,6 +573,9 @@ class JobSearch:
         # column arrives with the first `index sync` after that ADR, and the UI disables the
         # scope until it does rather than 500ing on it.
         self.has_description = "description" in table.schema.names
+        #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
+        #: for why the intersection is mandatory rather than defensive.
+        self.projection = tuple(c for c in RESULT_COLUMNS if c in table.schema.names)
         # The currency whitelist for the ADR-0082 salary bracket, learned the same way and for
         # the same reason as `atses`: it lands in a where-clause, so it is matched against what
         # the table holds rather than interpolated from the query string.
@@ -656,6 +693,14 @@ class JobSearch:
             )  # no vector: a plain, filtered scan (ADR-0074)
         if where:
             search = search.where(where, prefilter=True)
+        # Ask only for the columns the response is built from (:data:`RESULT_COLUMNS`), plus the
+        # one extra each path needs. `_distance` is named explicitly rather than left to
+        # lancedb's auto-projection, which warns that it "will change in the future" and stop
+        # supplying it — and `score` is that value. `_rowid` is not optional either: an
+        # `order_by` over a projected scan fails planning without it ("TakeExec requires the
+        # input plan to have a column named `_rowaddr` or `_rowid`"), which is why the browse
+        # branch carries it and the vector branch, which never orders, does not.
+        search = search.select([*self.projection, "_distance" if query else "_rowid"])
         if not query and not sort:
             # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
             # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`

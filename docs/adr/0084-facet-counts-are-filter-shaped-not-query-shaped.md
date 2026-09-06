@@ -133,3 +133,41 @@ flat fallback, because the image has no `headstart` package — it lays every mo
 does not catch, so `/facets` 500'd and the browser's `.catch` degraded it to silence: counts simply
 absent, in production only. `tests/test_space_deploy_sync.py` now fails on any synced module whose
 `headstart` imports outnumber its `except ImportError` fallbacks.
+
+## Amendment (2026-09-07): the window's cost was re-measured, and it had moved
+
+This ADR justified taking the whole `max_k * max_page` window on the sorted-query path with a
+measurement: *"2.7 ms for one page against 9.2 ms for the full 2,000-row window, so keeping the
+query costs ~6.5 ms rather than a redesign."* That was measured 2026-08-25. ADR-0104 added a
+stored `description` column on 2026-09-02, and nothing re-measured.
+
+Re-measured through `JobSearch.run` on the served table (318,003 rows), and the figure is now
+**264.9 ms**, not 9.2 ms — the window was materialising 2,000 whole rows, each carrying its
+768-float `vector` and a description averaging ~5,000 characters, only to discard both when the
+response was projected one line later.
+
+The fix is a `select()` of exactly the columns `run` reads (`RESULT_COLUMNS`), not a redesign, so
+this ADR's decision stands — the window is still the right shape. Only its price changes:
+
+| path | before | after |
+| --- | --- | --- |
+| query + sort (the 2,000-row window) | 264.9 ms | **83.6 ms** |
+| browse, no query | 105.5 ms | **55.8 ms** |
+| query, no sort (one page of 20) | 21.2 ms | 20.4 ms |
+
+The last row is the control: with only 20 rows to carry, the projection is worth nothing, which
+is what confirms the saving is per-row payload rather than anything about the query.
+
+Two things the projection cannot be naive about, both measured against the real backend:
+`select()` **raises** on a column the table lacks, so it is intersected with the live schema at
+construction — half of `RESULT_COLUMNS` arrive by migration, and naming one unconditionally would
+turn ADR-0031's dark-until-migrated rule into a 500 on every search. And the two paths need
+different extras: the vector path names `_distance` explicitly, because `score` is that value and
+lancedb warns its auto-projection "will change in the future"; the browse path names `_rowid`,
+without which an `order_by` over a projected scan fails planning outright.
+
+**Not done here, and deliberately:** the corpus still carries no index of any kind. Scalar indexes
+(~10 MB, 0.15 s to build) and an IVF_PQ vector index are the next levers, but the latter is only
+viable with `refine_factor` — at defaults it returns recall@20 of 0.55 and changes the top result
+on 48% of queries, and the `_distance` it reports is the quantized estimate, so every score the UI
+prints drops by ~0.25. That is a quality decision, not a latency one, and is left open.

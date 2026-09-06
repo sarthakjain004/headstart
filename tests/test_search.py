@@ -263,7 +263,8 @@ class _Query:
     def metric(self, _m):
         return self
 
-    def select(self, _cols):
+    def select(self, cols):
+        self._t.last_select = list(cols)
         return self
 
     def where(self, clause, prefilter=False):
@@ -297,6 +298,7 @@ class _Table:
         self.last_k = None
         self.last_offset = None
         self.last_order = None
+        self.last_select = None
 
     def search(self, *args, **kwargs):
         self.last_query = args[0] if args else None  # None => a browse, not a search
@@ -816,3 +818,47 @@ def test_sorting_a_ranked_search_still_paginates_without_repeating():
     second = searcher.run({"q": "backend", "sort": "posted", "k": "2", "page": "2"})
     assert [r["id"] for r in first] == ["d", "c"]
     assert [r["id"] for r in second] == ["b", "a"]
+
+
+# ── the served projection (ADR-0084's window, re-costed) ─────────────────────────────────────
+
+
+def test_a_query_asks_only_for_the_columns_the_response_is_built_from():
+    """The sorted-query path materialises 2,000 rows, so what each row carries is the cost.
+
+    Without this the scan returned every column — including the 768-float `vector` and, since
+    ADR-0104, a ~5,000-character `description` — and threw both away one line later. Measured
+    through `run` on the served table: the window fell from 264.9 ms to 83.6 ms, and browse from
+    105.5 ms to 55.8 ms. `_distance` is named explicitly because `score` is that value and
+    lancedb warns its auto-projection "will change in the future".
+    """
+    searcher, table = _searcher()
+    searcher.run({"q": "backend"})
+    assert table.last_select is not None, "the scan asked for every column"
+    assert "_distance" in table.last_select
+    assert "vector" not in table.last_select
+    assert set(table.last_select) - {"_distance"} == set(searcher.projection)
+
+
+def test_a_browse_asks_for_rowid_instead_because_ordering_needs_it():
+    """No vector means no `_distance` — and an `order_by` over a projected scan fails planning
+    without a row identifier ("TakeExec requires the input plan to have a column named
+    `_rowaddr` or `_rowid`"), which is why the two paths ask for different extras."""
+    searcher, table = _searcher()
+    searcher.run({})
+    assert "_rowid" in table.last_select
+    assert "_distance" not in table.last_select
+
+
+def test_the_projection_is_narrowed_to_columns_the_table_actually_has():
+    """`select()` RAISES on a column the table lacks, and half of `RESULT_COLUMNS` arrive by
+    migration (`first_seen`, the ADR-0082 salary columns). Naming one unconditionally would turn
+    ADR-0031's dark-until-migrated rule into a 500 on every search, so the projection is
+    intersected with the live schema once, at construction.
+    """
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["id", "ats", "title", "url"])
+    searcher = JobSearch(_Model(), table)
+    assert searcher.projection == ("id", "title", "ats", "url")
+    searcher.run({"q": "x"})  # must not raise
+    assert set(table.last_select) == {"id", "title", "ats", "url", "_distance"}
