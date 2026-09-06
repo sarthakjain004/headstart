@@ -367,7 +367,7 @@ def _rx(literal: str) -> str:
     return re.escape(literal).replace("'", "''")
 
 
-def _matches(alternation: str) -> str:
+def _regexp_like(alternation: str) -> str:
     """One ``regexp_like`` over ``alternation`` — the only place this module emits a predicate.
 
     Guards the empty case here rather than at each caller, because an empty alternation matches
@@ -393,7 +393,7 @@ def _any(aliases: Iterable[str]) -> str:
     rather than their sum — the clause is inside all of them, but not 46 times over. The rows are identical, verified by set equality
     of matched ids across all 70 places the filter accepts rather than by count.
     """
-    return _matches("|".join(_rx(a) for a in aliases))
+    return _regexp_like("|".join(_rx(a) for a in aliases))
 
 
 def _none(terms: tuple[str, ...]) -> str:
@@ -433,13 +433,13 @@ def _country_where() -> str:
 
 def _ind_where() -> str:
     """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
-    forms = _matches("|".join(_anchored(f) for f in IND_FORMS))
+    forms = _regexp_like("|".join(_anchored(f) for f in IND_FORMS))
     return f"(({_LOC} = 'ind' OR {forms}){_none(IND_EXCLUDE)})"
 
 
 def _subdivision_where() -> str:
     """Workday's "City, KA, IN" tail - the subdivision code plus the country, anchored to the end."""
-    return _matches("|".join(_rx(f", {c}, in") + "$" for c in SUBDIVISIONS))
+    return _regexp_like("|".join(_rx(f", {c}, in") + "$" for c in SUBDIVISIONS))
 
 
 def where(place: str) -> str | None:

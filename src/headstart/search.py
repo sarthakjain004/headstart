@@ -25,7 +25,7 @@ constants and both filter builders stay importable (and unit-testable) without t
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
@@ -101,7 +101,16 @@ ETYPE_CLAUSES = {
     "part-time": "lower(employment_type) LIKE '%part%'",
     "contract": "(lower(employment_type) LIKE '%contract%'"
     " OR lower(employment_type) LIKE '%freelance%')",
-    "internship": "lower(employment_type) LIKE '%intern%'",
+    # Guarded like the gazetteer's collision traps, and for the same reason: the substring
+    # `intern` is inside `international`, which on the served table claimed 47 of the 794 rows
+    # this option returned (5.9%) — "International EOR", "International Full Time Employee",
+    # "International Office Entity". Every distinct value carrying both words is one of those,
+    # so nothing genuine is excluded; a real "International Internship" would be, and is the
+    # cost of a substring match without word boundaries (DataFusion's regex has no lookaround).
+    "internship": (
+        "(lower(employment_type) LIKE '%intern%'"
+        " AND lower(employment_type) NOT LIKE '%international%')"
+    ),
 }
 
 
@@ -197,7 +206,7 @@ _OPTIONAL_KEYWORD_COLUMN = "description"
 _KEYWORD_MAX_TERMS = 5
 
 
-def _int_arg(args: Mapping[str, str]):
+def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
     """Read an int out of a query string, or None when it isn't there.
 
     None rather than a default, so a caller can tell "absent" from "zero" — see the clamp in
@@ -585,11 +594,18 @@ def build_filter(
     alerts Watermark cutoff into no clause at all (ADR-0035's exactness guarantee), or error
     ``has_salary`` on a table LanceDB hasn't migrated onto the new columns yet.
 
-    ``has_description`` (ADR-0104) is the one runtime fact that *is* defaulted, and the asymmetry
-    is deliberate: forgetting it can only leave the Keyword filter's description scope dark —
-    the safe direction — where forgetting ``has_first_seen`` would turn a cutoff into no clause.
-    ``kw``/``kw_in`` are the Keyword filter: every term must appear (AND) in at least one of the
-    scope's columns (OR); see :data:`KEYWORD_SCOPES`.
+    Two of the five carry defaults, and both defaults fail *quietly*, which is why they are called
+    out here rather than left to the signature. ``has_description`` (ADR-0104) is the safe one:
+    forgetting it can only leave the Keyword filter's description scope dark, where forgetting
+    ``has_first_seen`` would turn ADR-0035's Watermark cutoff into no clause at all.
+
+    ``currencies`` is the dangerous one. Omit it and a salary bound compiles to **nothing** —
+    ``build_filter(salary_min=100_000, …)`` returns ``None`` — because the bracket resolves its
+    currency against that whitelist and finds an empty one. That is the exact failure
+    :func:`_salary_clauses` moved :data:`SALARY_DEFAULT_CURRENCY` into this compiler to prevent,
+    for the exact callers it names, so a caller that reaches this function directly
+    (``scripts/eval/verify_filters.py``, a hand-built request) must pass it. Every in-repo caller
+    goes through :meth:`JobSearch.filter_kwargs`, which always does.
     """
     filters: list[str] = []
     if remote:
@@ -903,8 +919,10 @@ class JobSearch:
     def indexed(self, ids: Collection[str]) -> set[str]:
         """Which of these job ids are still in the index — the Saved tab's "closed" check.
 
-        The ids come back out of stored records the browser once sent, so they are escaped
-        like every other filter term before reaching the where-clause."""
+        The ids come back out of stored records the browser once sent, so they are quote-doubled
+        before reaching the where-clause. Not `_like`'s escaping, and deliberately: this is an
+        `id IN (…)` equality test, where `%` and `_` are ordinary characters — escaping them here
+        would stop a real id containing one from ever matching itself."""
         wanted = [i for i in ids if i]
         if not wanted:
             return set()

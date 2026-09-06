@@ -899,3 +899,77 @@ def test_an_inclusive_upper_bound_compares_below_the_next_day():
     assert _next_day("2028-02-28") == "2028-02-29"  # a leap year, not 03-01
     with pytest.raises(ValueError):
         _next_day("9999-12-31")  # +1 day leaves the calendar; a 400 like any bad date
+
+
+def test_the_response_reads_only_columns_the_projection_asked_for():
+    """`run` projects `RESULT_COLUMNS` and then builds each row by name, and nothing binds the
+    two lists. Several reads are direct indexes (`r["title"]`), so dropping a column from the
+    projection is a runtime KeyError on every search rather than a missing field — and adding a
+    field to the response without adding its column is the same failure. This walks the source
+    of `run`'s response and asserts every name it reads was asked for.
+    """
+    import ast
+    import inspect
+
+    from headstart.search import RESULT_COLUMNS, JobSearch
+
+    tree = ast.parse(inspect.getsource(JobSearch.run).lstrip())
+    read: set[str] = set()
+    for node in ast.walk(tree):
+        # r["title"] and r.get("location") — the two shapes the response uses
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.slice, ast.Constant)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "r"
+        ):
+            read.add(node.slice.value)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "r"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            read.add(node.args[0].value)
+    # `_distance` is supplied by the vector search itself, not stored, so it is not projected.
+    missing = read - set(RESULT_COLUMNS) - {"_distance"}
+    assert not missing, f"read from a row but never projected: {sorted(missing)}"
+
+
+def test_the_two_sort_paths_break_ties_in_opposite_directions():
+    """A wart, pinned rather than fixed: the same tie orders differently with and without a query.
+
+    Browse and sort-without-query order `id` ASCENDING through lancedb. The query+sort path
+    re-orders its window in Python with `reverse=True`, and that flag applies to the whole key —
+    so `id` runs DESCENDING there. Both are stable, so ADR-0074's guarantee that a row cannot
+    repeat or vanish across pages holds either way; only which of two tied rows comes first
+    differs. Changing it would flip that order for real results, so it is recorded here to make
+    the asymmetry visible and any future change deliberate.
+    """
+    import inspect
+
+    from headstart.search import JobSearch
+
+    src = inspect.getsource(JobSearch.run)
+    assert 'key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True' in src
+    assert '{"column_name": "id", "ascending": True}' in src
+
+
+def test_internship_does_not_claim_international():
+    """`intern` is a substring of `international`, which is not an employment type at all.
+
+    On the served table the unguarded clause claimed 47 of the 794 rows it returned (5.9%) —
+    "International EOR", "International Full Time Employee", "International Office Entity".
+    Every distinct value carrying both words was one of those, so the guard costs nothing real.
+    Asserted on the compiled clause rather than through a table, the way
+    `test_ind_is_never_a_bare_substring` guards the gazetteer's identical trap: the failure is
+    silent and the table can only catch strings someone thought to add.
+    """
+    from headstart.search import ETYPE_CLAUSES
+
+    clause = ETYPE_CLAUSES["internship"]
+    assert "LIKE '%intern%'" in clause
+    assert "NOT LIKE '%international%'" in clause
