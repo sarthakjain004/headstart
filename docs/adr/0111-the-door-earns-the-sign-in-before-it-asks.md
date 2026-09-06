@@ -16,8 +16,9 @@ What it cannot do in fifteen words is say who runs this, what happens to a Googl
 handed over, how much is in the index, or that the entire pipeline behind it is public source code.
 
 > **Correction, recorded rather than overwritten.** This paragraph said "**39 words**" from the
-> first commit of this branch until the ninth round of review caught it. The real figure is 15 in
-> the sentence and 22 rendered word-tokens on the whole page; there is no counting that gives 39.
+> first commit of this branch until the ninth round of review caught it. The real figure is 15
+> words in the sentence; 17 word-tokens visible on the page; 22 counting the escape-hatch link
+> that renders only inside an embedding frame. There is no counting that gives 39.
 > The same paragraph also listed "where the jobs come from" among what the old door omits, which
 > those fifteen words plainly do not. Both were invented, in the Context that motivates a decision
 > whose entire subject is not asserting unverified numbers — and they survived eight reviews that
