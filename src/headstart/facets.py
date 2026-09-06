@@ -233,7 +233,7 @@ NEVER_BLOCKING = frozenset(
         # `applyProfile()` sweep wholesale — would have one tab blanking another's controls, and
         # `first_seen_after` is machine-set by the alerts run and has no input at all. If the Search
         # tab ever grows its own range controls, drop them from here in the same change;
-        # `tests/test_facets.py` fails on a filter that is in neither this tuple nor those maps.
+        # `tests/test_facets.py` fails on a filter that is in neither this set nor those maps.
         "posted_after",
         "posted_before",
         "seen_after",

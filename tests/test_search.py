@@ -623,7 +623,7 @@ def test_range_overflow_is_a_valueerror_not_a_500():
 
 def test_recency_window_overflow_is_a_valueerror_not_a_500():
     # Same treatment for the windows, which take an unbounded int: both the calendar bound
-    # (739,864 days / 17,756,754 hours walks below year 1) and timedelta's own magnitude cap, in
+    # (739,865 days / 17,756,755 hours walks below year 1) and timedelta's own magnitude cap, in
     # both directions — a huge negative window runs off the far end of the calendar instead.
     for days in (740_000, 1_000_000_000, -3_000_000, -1_000_000_000):
         with pytest.raises(ValueError):
@@ -686,10 +686,11 @@ def test_currency_alone_does_not_filter():
 def test_a_bound_with_no_currency_defaults_to_usd():
     """A bracket with no currency named must still compile — it used to vanish entirely.
 
-    The USD default ADR-0084 records lived only in the browser's <select>, so every other
-    caller (the alerts path, `scripts/eval/verify_filters.py`, a hand-built
-    `/search?salary_min=…`) had its numeric bound silently dropped and got the unfiltered set
-    back, with no error and nothing for `facets._blocking` to name.
+    The USD default ADR-0084 records lived only in the browser's <select>, so a caller that is
+    not that <select> — `scripts/eval/verify_filters.py`, or a hand-built `/search?salary_min=…`
+    — had its numeric bound silently dropped and got the unfiltered set back, with no error and
+    nothing for `facets._blocking` to name. Not the alerts path: `alerts.store`'s
+    `ALLOWED_SEARCH_FILTERS` excludes the salary keys, so a Subscription never carries a bracket.
     """
     where = _bracket(salary_min=100_000)
     assert "salary_currency = 'USD'" in where
@@ -715,6 +716,9 @@ def test_currency_is_whitelisted_against_the_table_never_interpolated():
 
 
 def test_the_bracket_stays_dark_where_even_the_default_is_unavailable():
+    # A CONTROL for the *placement* of the whitelist check, not for the fallback itself: it passes
+    # with `search.py` reverted too, because the old code also emitted nothing here. What it
+    # discriminates against is a naive fallback that trusts its own default.
     # `currencies` is empty until the ADR-0082 columns land, which makes every currency unknown
     # there — including `SALARY_DEFAULT_CURRENCY`. Emitting it anyway would be a clause matching
     # nothing: the same silent wrong answer the default exists to remove, just relocated.

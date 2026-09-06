@@ -280,7 +280,8 @@ def _ago(**window: int) -> datetime:
     """``now`` minus one recency window, with the overflow answered as a bad date.
 
     Both windows arrive as unbounded ints off the query string, and each blows up twice over:
-    739,864 days (17,756,754 hours) walks ``datetime`` below year 1, and a magnitude past 999,999,999
+    739,865 days (17,756,755 hours) walks ``datetime`` below year 1 — one past the last that
+    lands on 0001-01-01, and both creep by a day each day as ``now`` moves — and a magnitude past 999,999,999
     days breaks ``timedelta`` itself — in both directions, since a negative window that large
     runs off the far end instead. Converted here rather than clamped in :func:`_int_arg`, which
     is shared with ``k``, ``page`` and the salary bounds and has no business knowing what a date
@@ -397,11 +398,17 @@ def build_filter(
     # excludes the salary keys, so a Subscription can never carry a bracket at all.)
     #
     # An unrecognised currency falls back to the same default rather than raising, which is the
-    # rule ADR-0084 states — whitelisted "like `ats`", and `ats` ignores what it does not know —
-    # and the rule `kw_in` already follows one screen down as the keyword's own modifier. The
-    # alternative, a 400, was tried and reverted: it made two identically-shaped "modifier with a
-    # default" parameters behave oppositely, and bought nothing, since the picker is rendered from
-    # `currencies` and only a hand-built request could reach it.
+    # rule ADR-0084 states — whitelisted "like `ats`", and `ats` ignores what it does not know.
+    # The alternative, a 400, was tried and reverted: it bought nothing, since the picker is
+    # rendered from `currencies` and only a hand-built request could reach it, and it made this
+    # parameter contradict `kw_in`, the other "modifier with a default".
+    #
+    # It resolves the fallback in a different *layer* from `kw_in`, though, and deliberately.
+    # `kw_in`'s lands in `filter_kwargs` and this builder compiles nothing for a scope it does not
+    # know; that is enough for `kw_in` because every path into the builder — `/search`, and
+    # `facets` via `filter_kwargs` output — has already normalised it. It is not enough here: the
+    # bug this fixes was reported against `scripts/eval/verify_filters.py` and hand-built requests,
+    # which call the reference compiler (ADR-0031) directly and never see the parse step.
     #
     # The default is resolved against `currencies` too, rather than trusted. It is a module
     # constant so it can never be free text, but a table holding no USD salary would otherwise get
