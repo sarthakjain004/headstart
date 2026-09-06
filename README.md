@@ -295,7 +295,7 @@ fails if this table drifts from it.
 | --- | --- | --- |
 | `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
-| `company` | string | the ATS slug, not a display name |
+| `company` | string | the company's name where its Board states one — ashby, eightfold, lever and ripplehire read it from the board page title (`headstart.company_name`, ADR-0112). Every other ATS still serves the **ATS slug**, so a row's company may be either, and a slug is what a Board that never named itself looks like |
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so the Keyword filter's description scope reaches only part of the table, and the UI reports the share. Stored, not served: the API omits it |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
@@ -327,7 +327,7 @@ actually carries salary data once the pipeline has run against it.
 ```jsonc
 {
   "id": "ashby:level:538c0fe2-504d-45e9-8ae6-2b44de217418",
-  "ats": "ashby", "company": "level",
+  "ats": "ashby", "company": "Level",               // read from the board title (ADR-0112)
   "title": "Backend Engineer (senior or above)",
   "description": null,                               // indexed before ADR-0104 added the column
   "location": "Austin", "remote": false, "employment_type": "FullTime",

@@ -66,6 +66,13 @@ class RippleHireScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
 
+    def board_page(self) -> str:
+        """The careers URL again — its ``<title>`` opens with ``"{Name} Careers |"``.
+
+        The same page `url` names, fetched a second time rather than threaded through the token
+        dance in `fetch_raw`; one request per Board, and it keeps the two concerns apart."""
+        return self.url()
+
     def fetch_raw(self) -> Any:
         # step 1: the careers URL redirects to /candidate/?token=… — grab the token (the pooled
         # session follows the redirect and keeps the session cookie for the search call)

@@ -7608,3 +7608,133 @@ def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
     asyncio.run(drive())
     assert len(calls) == _DETAIL_BREAK_STREAK
     assert classes[_BROKEN_OFF] == 4
+
+
+# ── the Board's company name, not its slug (headstart.company_name) ──────────────────────────
+
+
+def test_resolve_company_upgrades_a_slug_to_the_board_titles_name(monkeypatch):
+    """`fetch` calls this between the listing and `parse`, so the Jobs carry the real name."""
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    class _Resp:
+        status_code = 200
+        text = "<html><head><title>1Password Jobs</title></head></html>"
+
+    seen: list[str] = []
+
+    def _fetch(method, url, **kwargs):
+        seen.append(url)
+        return _Resp()
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    scraper = AshbyScraper("1password")
+    scraper.resolve_company()
+    assert scraper.company == "1Password"
+    assert seen == ["https://jobs.ashbyhq.com/1password"]
+
+
+def test_resolve_company_costs_nothing_for_an_ats_without_a_board_page(monkeypatch):
+    """Every ATS with no measured title shape keeps its slug AND makes no extra request —
+    the whole change is inert for them."""
+    from headstart import http
+    from headstart.scrapers.greenhouse import GreenhouseScraper
+
+    def _boom(*a, **k):  # pragma: no cover - reaching this is the failure
+        raise AssertionError("a scraper with no board_page must not fetch one")
+
+    monkeypatch.setattr(http, "fetch", _boom)
+    scraper = GreenhouseScraper("acme")
+    scraper.resolve_company()
+    assert scraper.company == "acme"
+
+
+def test_a_name_from_the_ledger_outranks_the_board_title(monkeypatch):
+    """A Board whose ledger row already names the company is left alone, and not even fetched:
+    the curated name is better evidence than a page title."""
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    def _boom(*a, **k):  # pragma: no cover
+        raise AssertionError("a Board that already has a name must not fetch a title")
+
+    monkeypatch.setattr(http, "fetch", _boom)
+    scraper = AshbyScraper("1password", company="1Password, Inc.")
+    scraper.resolve_company()
+    assert scraper.company == "1Password, Inc."
+
+
+def test_a_failed_title_fetch_leaves_the_company_untouched(monkeypatch):
+    """A display name is never worth failing a Board for, so every error path degrades to today's
+    behaviour rather than raising out of `fetch`."""
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    def _raise(*a, **k):
+        raise http.RequestsError("boom")
+
+    monkeypatch.setattr(http, "fetch", _raise)
+    scraper = LeverScraper("acme")
+    scraper.resolve_company()
+    assert scraper.company == "acme"
+
+
+def test_a_non_200_board_page_leaves_the_company_untouched(monkeypatch):
+    from headstart import http
+    from headstart.scrapers.lever import LeverScraper
+
+    class _Gone:
+        status_code = 404
+        text = "<title>Not Found</title>"
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Gone())
+    scraper = LeverScraper("acme")
+    scraper.resolve_company()
+    assert scraper.company == "acme"
+
+
+def test_the_title_fetch_does_not_go_through_the_get_override(monkeypatch):
+    """`_get` does not mean the same thing in every scraper — eightfold's override returns the
+    `Response` where the base returns `.text` — so `resolve_company` uses the shared fetch seam
+    directly. Routing it through `_get` fed a `Response` to the title parser and broke every
+    eightfold Board; the suite passed, and only a live end-to-end run caught it."""
+    from headstart import http
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Resp:
+        status_code = 200
+        text = "<html><head><title>Careers at Vodafone</title></head></html>"
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Resp())
+    scraper = EightfoldScraper("jobs.vodafone.com")
+    scraper.resolve_company()
+    assert scraper.company == "Vodafone"
+
+
+def test_fetch_resolves_the_company_before_parsing(monkeypatch):
+    """The wiring, not the helper. Every other test here calls `resolve_company` directly, so
+    they all stayed green when the call was deleted from `fetch` — the served Jobs would have
+    carried the slug again with nothing red. This drives `fetch` end to end instead.
+    """
+    from headstart import http
+    from headstart.scrapers.ashby import AshbyScraper
+
+    class _Resp:
+        status_code = 200
+        text = "<html><head><title>1Password Jobs</title></head></html>"
+
+    monkeypatch.setattr(http, "fetch", lambda *a, **k: _Resp())
+    scraper = AshbyScraper("1password")
+    monkeypatch.setattr(scraper, "fetch_raw", lambda: {"jobs": []})
+    captured: dict = {}
+
+    def _parse(raw, scraped_at):
+        captured["company"] = scraper.company
+        return []
+
+    monkeypatch.setattr(scraper, "parse", _parse)
+    scraper.fetch()
+    assert captured["company"] == "1Password", (
+        "fetch() must resolve the name before parse()"
+    )
