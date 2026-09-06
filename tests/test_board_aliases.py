@@ -7,6 +7,8 @@ whole reason the fetching lives in `scripts/validate/dedupe_boards.py` instead.
 
 from __future__ import annotations
 
+from dataclasses import fields
+
 from headstart import board_aliases
 
 
@@ -108,6 +110,13 @@ def test_prefer_overrides_the_redirects_own_answer():
     )
     assert r.clusters[0].canonical == "basf-se.jobs2web.com"
     assert r.clusters[0].duplicates == ("basf.jobs",)
+
+
+def test_the_csv_header_matches_the_row_it_writes():
+    """`write` emits `astuple(alias)`, so `FIELDS` and `Alias`'s field order are one fact in two
+    places. Adding a field to either alone shifts every value under the wrong header — silently,
+    since a CSV has no idea its columns moved."""
+    assert tuple(f.name for f in fields(board_aliases.Alias)) == board_aliases.FIELDS
 
 
 def test_ledger_round_trips(tmp_path):

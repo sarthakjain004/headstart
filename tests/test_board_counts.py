@@ -75,7 +75,7 @@ def _counts() -> dict[str, int]:
     alias = {ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c in live}}
 
     def is_alias(c: CompanyRef) -> bool:
-        return c.slug in alias.get(c.ats, {})
+        return c.slug.lower() in alias.get(c.ats, {})  # `load` lowercases its keys
 
     # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards

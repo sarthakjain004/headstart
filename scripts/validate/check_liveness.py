@@ -908,7 +908,11 @@ def _drop_alias_duplicates(ats: str, rows: list[dict], ledger_dir: Path) -> list
     scraper = SCRAPERS.get(ats)
     if scraper is None:
         return rows
-    return [r for r in rows if scraper.slug_from(r["tenant"], r["url"]) not in aliases]
+    return [
+        r
+        for r in rows
+        if scraper.slug_from(r["tenant"], r["url"]).lower() not in aliases
+    ]
 
 
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
