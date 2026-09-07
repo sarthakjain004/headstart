@@ -196,8 +196,27 @@ ATS_PATTERNS = {
         "kind": "workday",
         # groups: (host, site); a leading locale (en-US) is skipped. Rebuilt to the canonical
         # board URL https://{host}/{site} that WorkdayScraper.slug_from expects.
+        # Two things this pattern must not do, both measured on the 2026-08 crawl.
+        #
+        # It must not treat a dotted filename as a site. `[a-zA-Z0-9_-]+` cannot match a dot, so
+        # without the trailing lookahead `.../robots.txt` captured the Board `.../robots` — 426 of
+        # 514 new workday rows (83%), 1,975 in the ledger, 20 of 20 sampled returning 404. The
+        # lookahead refuses to stop *before* a dot, which rejects the whole open set of
+        # well-known files (`sitemap.xml`, `apple-touch-icon.png`, `sw.js`) rather than a list
+        # someone has to keep extending — the same reasoning `wayback_feeder` states for its own
+        # `FILE_SUFFIXES` check.
+        #
+        # And it must skip only the *hyphenated* locale. Widening to a bare `[a-z]{2}/` to also
+        # catch `/es/Site` looks obviously right and is wrong: a Workday deep link is
+        # `{host}/{site}/job/{...}`, so on a genuine two-letter site the wider pattern eats the
+        # site and captures the path marker — `howard.../hu/job/...` went from `hu` to `job`
+        # (dropped by BLOCK, so the Board became undiscoverable) and `browardcollege.../pt/details/...`
+        # minted a phantom Board `details`. `load_active_companies(min_jobs=0)` counts 100
+        # Scrapable Boards with a two-letter Workday site, 7 of them an ISO-639-1 code. The cost
+        # of staying narrow is that a bare `/es` survives as a junk row, which the liveness
+        # checker settles as dead — one probe.
         "patterns": [
-            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)",
+            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)(?![a-zA-Z0-9_.-])",
         ],
     },
     "oracle": {
@@ -375,7 +394,8 @@ def tenant_from(kind, match):
     """Normalize one regex match to a (tenant, url_hint) or None to drop it."""
     if kind == "workday":
         host, site = match.group(1), match.group(2)
-        if site.lower() in BLOCK or len(site) < 2:
+        low = site.lower()
+        if low in BLOCK or len(site) < 2:
             return None
         board = f"https://{host}/{site}"
         return board, board  # canonical board URL (what slug_from reads)
