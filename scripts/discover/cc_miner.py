@@ -196,8 +196,10 @@ ATS_PATTERNS = {
         "kind": "workday",
         # groups: (host, site); a leading locale (en-US) is skipped. Rebuilt to the canonical
         # board URL https://{host}/{site} that WorkdayScraper.slug_from expects.
+        # The locale prefix comes in both forms — `/en-US/Site` and bare `/es/Site` — and only the
+        # hyphenated one was skipped, so a Spanish board yielded the site "es". Consume either.
         "patterns": [
-            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)",
+            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([a-zA-Z0-9_-]+)",
         ],
     },
     "oracle": {
@@ -290,6 +292,35 @@ BLOCK = {
     "wday",
     "cxs",
 }
+#: Path segments that name a well-known FILE, never a Workday career site. The workday pattern
+#: reads the segment after the host as the site, and `[a-zA-Z0-9_-]+` cannot match the dot — so
+#: `https://x.wd1.myworkdayjobs.com/robots.txt` was captured as the board `.../robots`. Measured on
+#: the 2026-08 crawl: **426 of 514 new workday rows (83%) were this**, and every one probed
+#: returned 404 or 500. They then sit in the ledger as `unknown` and are re-probed forever.
+WELL_KNOWN_FILES = {
+    "robots",
+    "llms",
+    "llms-full",
+    "sitemap",
+    "sitemap_index",
+    "sitemapindex",
+    "favicon",
+    "humans",
+    "security",
+    "ads",
+    "app-ads",
+    "manifest",
+    "browserconfig",
+    "opensearch",
+}
+#: Deliberately NOT extended to bare language codes. `.../es` with nothing after it is almost
+#: always a locale root, but the name alone cannot prove it: measured on the live ledger, six such
+#: rows are `live` with real job counts — `howard.../hu` (141 jobs, Howard University),
+#: `browardcollege.../pt` (137), `talkingrain.../tr` (8). Blocking two-letter sites would have
+#: deleted them. The regex above already recovers the real case (`/es/Alsa` -> `Alsa`); a bare
+#: locale root that survives is left for the liveness checker to settle as dead, which costs one
+#: probe and risks nothing.
+
 INFRA = BLOCK  # back-compat alias: probe_ats.py filters subdomain labels against cc_miner.INFRA
 
 
@@ -375,7 +406,8 @@ def tenant_from(kind, match):
     """Normalize one regex match to a (tenant, url_hint) or None to drop it."""
     if kind == "workday":
         host, site = match.group(1), match.group(2)
-        if site.lower() in BLOCK or len(site) < 2:
+        low = site.lower()
+        if low in BLOCK or low in WELL_KNOWN_FILES or len(site) < 2:
             return None
         board = f"https://{host}/{site}"
         return board, board  # canonical board URL (what slug_from reads)
