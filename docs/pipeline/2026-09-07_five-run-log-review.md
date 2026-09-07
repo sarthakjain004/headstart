@@ -221,6 +221,13 @@ consecutive timeouts on `*.hire.trakstar.com`, stop trying for the rest of the r
 ~300 s instead. `loginext`'s feed takes 9.6 s on a good day against a 30 s timeout, so the margin
 here is thin by design.
 
+**WITHDRAWN.** The breaker cannot fire in time. Reconstructing each failure's *start* from its own
+`failed after {n}s` line shows boards run concurrently: at N≥2 every later request is already on the
+wire when the breaker opens — **0 boards skipped run-wide, 0 seconds saved**. Only N=1 saves
+anything (7 boards, 658 board-s), and it is the variant the thin-margin caveat above rules out. See
+[the writeup](2026-09-07_circuit-breaker-cannot-catch-a-concurrent-fanout.md); the 1,900 board-seconds
+are real, but shard 3 absorbed 285 of them and still finished under its prediction.
+
 ### 3b. SuccessFactors TLS: four permanently broken boards that can never be struck off
 
 Every run, 2–4 `CertificateVerifyError`s, always SuccessFactors, always the same kind of board:
@@ -424,7 +431,7 @@ a dead dial and `mark_walled` keep their annotation.
 | 1 | ~~Diagnose the SuccessFactors zero-yield class, then fix~~ **FIXED, verification pending** — one denylisted User-Agent literal, not an egress wall ([writeup](../successfactors/2026-09-07_user-agent-denylist.md)). All evidence is laptop-vantage; the in-Actions probe cannot run until the fix merges | §1 | up to 56,120 postings/run **unblocked** — reaching the index also needs the listing to work in CI and the tech gate to keep them (~13.2%, so on the order of 7,400 tech jobs) |
 | 2 | Make the ADR-0064 gate read measured `jobs`, not a carried score | §2 | Would have caught this in one run; ~127 board-min/run and the critical path |
 | 3 | ~~Widen `workday` listing-page concurrency~~ **WITHDRAWN — measured, no gain.** The cited statistic compares 12 vs 25 (and a walled population against an unwalled one), not 25 vs 50. Probed directly: identical wall at both widths on both surfaces ([writeup](../workday/2026-09-07_page-streams-25-vs-50.md)) | §4 | **zero** — widening would add third-party load for no benefit |
-| 4 | Per-host circuit breaker on repeated timeouts | §3a | ~1,600 board-s saved in one outage; bounds any future one |
+| 4 | ~~Per-host circuit breaker on repeated timeouts~~ **WITHDRAWN — measured, cannot fire in time.** Boards run concurrently, so at the proposed N≥2 threshold every later request is already on the wire when the breaker opens: 0 boards skipped, 0 seconds saved. Only N=1 saves anything (7 boards, 658 board-s) and it would strike off live boards on one slow response ([writeup](2026-09-07_circuit-breaker-cannot-catch-a-concurrent-fanout.md)) | §3a | **zero** at the specified threshold |
 | 5 | Let a durable `CertificateVerifyError` count as a gone-strike | §3b | Stops 4 boards retrying forever; surfaces real lost coverage |
 | 6 | ~~Demote spare-egress rotation lines to info~~ **DONE (#368)** | §6 | 92–94% of the annotation stream gone (censused over two full runs); the ~380 warnings/run that carry a finding now visible |
 | 7 | ~~Narrow `eightfold` detail concurrency~~ **WITHDRAWN — same confound as item 3.** "27/73 say narrowing is free" compares walled groups at 12 against unwalled ones at 25, so it may only say "a walled eightfold fan-out is slower", which is trivially true. Needs a controlled probe at eightfold's real ceiling before any change | §4 | unknown until measured |
