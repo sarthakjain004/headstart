@@ -241,6 +241,19 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         "job-boards.eu.greenhouse.io",
         "boards.eu.greenhouse.io",
     ),
+    # `host` style: `icims.py`'s slug IS the board host (`career-celanese.icims.com`).
+    #
+    # Unlike `cc_miner.py`'s entry, this cannot apply the measured discriminator — 1,499 of 1,499
+    # live iCIMS boards have a hyphen in the label, and the vendor's ~120 infrastructure hosts are
+    # mostly single words — because `extract` takes (url, host, style) and no ATS, and widening
+    # that signature for one provider is not worth it. Two existing rules do most of the work:
+    # `valid()` rejects the INFRA words (`www`, `api`, `login`, `dev`, `staging`, `careers`,
+    # `jobs`…) and the `"." in label` guard rejects every deeper subdomain (`admin.social`,
+    # `agents.dev`, `staging.social`, and the one real `www.`-archived tenant, which is reachable
+    # without the prefix anyway). Roughly 70 single-label infra hosts still get harvested; each
+    # costs one `probe_icims.py` request and lands as a dead ledger row, so the error is bounded
+    # and self-correcting rather than silent.
+    "icims": _with_style("host", "icims.com"),
     "keka": _with_style("sub", "keka.com"),
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"

@@ -53,6 +53,25 @@ per-company web research). Full research, endpoint probes, and provenance:
   (Ericsson-class, DWR-RPC) remain the known gap** — their sitemap isn't RMK-shaped, so liveness
   marks them `dead` and they're skipped, never mis-scraped.
 
+- **iCIMS** ✅ DONE (2026-09-08) — `scrapers/icims.py`, wired through liveness (2,055 live /
+  1,583 hiring boards in `data/validate/liveness/icims.csv`, 143,964 jobs reachable). Slug = the
+  board host. **One surface only: `/sitemap.xml`.** The paginated `/jobs/search` HTML is
+  deliberately not implemented — on 380 boards `robots.txt` predicted sitemap availability
+  perfectly, and the boards returning 403 were *exactly* the boards serving `Disallow: /`, so the
+  HTML walk would only ever crawl tenants that opted out. That also deletes pagination, per-tenant
+  page size and the unreliable "Page N of M" string. Three measured traps are wired into the code
+  rather than documented: `datePosted`/`validThrough` are **fabricated per request** (the same job
+  fetched twice 3s apart moves both by the elapsed time), so `_LD_KEEP` allowlists them out and
+  `posted_at` comes only from the sitemap's `<lastmod>`; `baseSalary` puts min/max **directly on
+  the node** (a spec-correct parser reads every one as null) and never states `unitText`, so the
+  period is inferred from magnitude and emitted as the `hourly`/`yearly` spelling
+  `salary.extract()` can actually read; and a detail fetch missing `in_iframe=1` returns an 80 KB
+  branded wrapper with **no JSON-LD at all** — a silent empty, not an error. No JSON API exists (a
+  browser HAR shows 6 XHR calls, all third-party). No rate limit found (conc 16 / 15.2 req/s, flat
+  latency, zero non-200s) and UA-agnostic. Discovery is wired into both `cc_miner.py` and
+  `wayback_feeder.py`; the URL-format census and the discriminator (1,499/1,499 live boards have a
+  hyphen in the label) are in `docs/icims/`.
+
 **Highest ROI first — fingerprinter gaps, ZERO new scraper** (already-supported ATSes whose board
 sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` mining — 79% of the
 316 were opaque to no-JS curl, so these are a lower bound):
@@ -86,7 +105,7 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/discovery/shared-cert-tenant-rosters.md`.
 - **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
-- Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal. **iCIMS** = opportunistic-only (alive but HTML/JSP-only, non-enumerable, India tenants are GCC boards not IT majors).
+- Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal.
 
 Single-company unlocks (web research; a manual slug, not worth a scraper each):
 - **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).
