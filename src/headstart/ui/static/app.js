@@ -26,8 +26,69 @@ function showTab(name){
   }
   if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
   if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
+  if (name === 'data' && el('cov') && !coverage) loadCoverage();
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
+
+/* ---- The Data tab's coverage counts (ADR-0113). Fetched on first open, never on page load:
+   the tab is a minority of visits and the counts, though cheap, are not free on the first one.
+
+   Every row is a share of the served index, phrased as what a user would actually ask —
+   "how often will I see a salary" — rather than as a column name. A field the table does not
+   carry yet comes back null and is skipped entirely; rendering it as 0% would read as
+   "measured, and none have it", which is a different and wrong claim. ---- */
+let coverage = null;
+// `remote` is deliberately absent: it is a facet, not a gap. Nearly every row has a value, so
+// a percentage here would answer "how many are remote" — which the Search rail's own counts
+// already answer — rather than "how often is this unknown". Its provenance is mixed too (some
+// boards publish the field, others are read from the location text), which is why the rail's
+// caveat describes both and this row describes neither.
+const COV_ROWS = [
+  ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
+  ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],
+  ['min_years', 'have a years figure we could derive', 'Read from the posting where it states one \u2014 otherwise estimated from a seniority word like \u201cSenior\u201d in the title, which is a guess rather than the employer\u2019s stated requirement.'],
+  ['first_seen', 'record when HeadStart first saw them', 'Stamped on arrival, so older rows predate the field and cannot show a \u201cnew\u201d tag.'],
+  ['description', 'have their full text stored', 'Keyword search inside descriptions reaches only these.'],
+];
+
+async function loadCoverage(){
+  const box = el('cov');
+  // `r.ok` is checked, not just the parse. A 401 or 500 body parses perfectly well into an
+  // object with no `fields`, and the render below would then have reported "the index carries
+  // none of these fields yet" \u2014 a false claim, on the one page whose subject is not making any.
+  const fail = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
+    'Reload to try again \u2014 no figure is better than a guessed one.</p>';
+  try{
+    const r = await fetch('/coverage');
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    if (!d || typeof d.total !== 'number' || !d.fields) throw new Error('shape');
+    coverage = d;
+  }catch(e){ box.innerHTML = fail; return; }
+  const total = coverage.total;
+  // One count per field against the one total \u2014 the server used to repeat `total` on every
+  // field, which is one number said five times and five chances for them to disagree.
+  const rows = COV_ROWS
+    .filter(([key]) => typeof coverage.fields[key] === 'number')
+    .map(([key, what, why]) => {
+      const share = coverage.fields[key] / total;
+      const pct = Math.round(share * 100);
+      // A nonzero count must never print "0%": rounded down it reads as "measured, and none
+      // have it", which is the unknown-is-not-zero confusion one row over (ADR-0009).
+      const label = coverage.fields[key] > 0 && pct === 0 ? 'under 1%' : pct + '%';
+      return `<div class="cov-row">
+        <div class="cov-bar"><span style="width:${Math.max(pct, share > 0 ? 1 : 0)}%"></span></div>
+        <div class="cov-txt"><b>${label}</b> ${esc(what)}
+          <span class="aside">${esc(why)}</span></div>
+      </div>`; }).join('');
+  // An empty table would otherwise render "Of 0 jobs \u2026 0% state a salary" \u2014 exactly the
+  // "measured, and none have it" reading the unknown-is-not-zero rule exists to prevent.
+  box.innerHTML = !total
+    ? '<p class="aside">The index is empty right now, so there is nothing to measure.</p>'
+    : rows
+      ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> jobs in the index right now:</p>${rows}`
+      : '<p class="aside">The index carries none of these fields yet.</p>';
+}
 
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
@@ -198,6 +259,7 @@ async function fetchPage(){
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   el('pager').innerHTML = '';
+  el('kind').textContent = '';   // never describe the previous search's rows over the new ones
   el('n').textContent = q ? 'searching…' : 'loading…';
   // Fired together, not one after the other: the counts depend only on the filters, never on
   // the query, so they neither wait for the ranking nor make the user wait for them.
@@ -207,12 +269,13 @@ async function fetchPage(){
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
-            el('n').textContent = ''; return; }
+            el('n').textContent = ''; el('kind').textContent = ''; return; }
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
-    el('n').textContent = ''; return; }
+    el('n').textContent = ''; el('kind').textContent = ''; return; }
   const facets = await facetsPromise;
   drawKeywordNote(facets);
+  drawResultKind(q, rows.length);
   if(!rows.length){
     el('results').innerHTML = page === 1
       ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
@@ -230,6 +293,43 @@ async function fetchPage(){
 // search RANKS the filtered set rather than shrinking it, so the total counts rows matching
 // the filters, and the query decides only their order. Calling it "results for your query"
 // would promise a relevance the number never measured.
+// What the list below IS, in one line — the orientation a first-time user has nowhere else to
+// get. A browse (no Query, unranked per ADR-0074) and a ranked search look identical apart from
+// the match rings, and the ordering in force is not visible at all. Written on every fetch so
+// it can never describe the previous one.
+function drawResultKind(q, shown){
+  const node = el('kind');
+  if (!node || !shown) { if (node) node.textContent = ''; return; }
+  const explain = ' <a href="#data">How the match score works \u2192</a>';
+  // Three states, not two. A date sort re-orders the best matches, so claiming similarity
+  // order there would contradict #sortnote, which sits two lines above this in the same
+  // column and already says exactly that.
+  if (q && el('sort').value !== 'rel'){
+    node.innerHTML = 'Your best matches for what you described, re-ordered by date rather ' +
+      'than by closeness.' + explain;
+  } else if (q){
+    node.innerHTML = 'Ranked by how close each job is to what you described.' + explain;
+  } else {
+    // A browse is ordered three different ways depending on the sort control and on whether
+    // the table even has `first_seen` — and the line has to name the one actually in force.
+    // The default browse falls back to ordering by `id` without that column, which is not a
+    // date at all, so "newest first" would simply be untrue there.
+    const sort = el('sort').value;
+    const order = sort === 'posted' ? 'newest by the employer\u2019s posting date first'
+      : sort === 'seen' ? 'most recently added first'
+      : CFG.has_first_seen ? 'most recently added first'
+      : 'in no particular order';
+    // "across every board" only if nothing is narrowing it: a browse takes the same
+    // where-clause a ranked search does, so with ATS=lever the chips one line above would
+    // read "ATS: lever" while this claimed the whole index. Same class of unconditional
+    // sentence as the `has_first_seen` one directly below.
+    const scope = Object.keys(currentFilters()).length
+      ? 'Jobs matching the filters above' : 'Jobs from across every board';
+    node.textContent = `${scope}, ${order} \u2014 no search yet, so nothing is ranked. ` +
+      'Describe a role above to rank by meaning.';
+  }
+}
+
 function drawCount(shown, facets){
   if (!facets || typeof facets.total !== 'number'){
     el('n').textContent = shown + ' result' + (shown===1?'':'s'); return; }
@@ -391,26 +491,28 @@ function draw(rows, target){
     <div class="card" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="hd">
         <div style="flex:1; min-width:0">
-          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a>
+          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
           <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         </div>
         ${starBtn(r.id)}
-        ${ranked? `<div class="match" title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+        ${ranked? `<div class="match" role="img"
+             aria-label="Match ${pct} percent — how close this job is to your search, on a fixed scale that gives the same job the same number every time"
+             title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
-          <div class="v">${pct}%</div>
+          <div class="v" aria-hidden="true">${pct}%</div>
         </div>` : ''}
       </div>
       <div class="tags">
-        ${isNew(r.first_seen)? '<span class="tag new">new</span>':''}
+        ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
         ${r.remote? '<span class="tag rem">remote</span>':''}
         ${payLabel(r)? '<span class="tag pay">'+esc(payLabel(r))+'</span>':''}
         ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
         ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
-        ${age(r.posted_at)? '<span class="tag mono">'+age(r.posted_at)+'</span>':''}
-        ${r.ats? '<span class="tag">'+esc(r.ats)+'</span>':''}
+        ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
+        ${r.ats? '<span class="tag src" title="Read directly from this company\'s '+esc(r.ats)+' board — not a repost">via '+esc(r.ats)+'</span>':''}
       </div>
     </div>`; }).join('');
 }

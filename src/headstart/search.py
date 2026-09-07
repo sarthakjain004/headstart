@@ -717,6 +717,10 @@ class JobSearch:
             if self.has_min_salary_annual
             else []
         )
+        # The Data tab's coverage counts (ADR-0113), filled on first use. Not counted here:
+        # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
+        # asked for the tab yet.
+        self._coverage: dict[str, Any] | None = None
 
     def filter_kwargs(self, args: Mapping[str, str]) -> dict[str, Any]:
         """The :func:`build_filter` keywords one request asks for, parsed exactly once.
@@ -935,3 +939,81 @@ class JobSearch:
             .to_list()
         )
         return {r["id"] for r in rows}
+
+    def n_seen_within(self, hours: int) -> int | None:
+        """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
+
+        The door's freshness proof (ADR-0112). Exact, which is the whole reason it is there:
+        `first_seen` is written by us on arrival, and a row that lacks it predates the column
+        (ADR-0031) and therefore cannot be new — so unlike a coverage share this window has no
+        unknown bucket to hand-wave. Compiled through :func:`build_filter` rather than a
+        hand-written clause so "new" means here exactly what it means in the Search rail.
+
+        One :meth:`count_rows` — measured at 4–6 ms in `headstart.facets`.
+        """
+        if not self.has_first_seen:
+            return None
+        return self._table.count_rows(
+            filter=build_filter(
+                seen_within=hours,
+                has_first_seen=True,
+                atses=self.atses,
+                currencies=self.currencies,
+                has_description=self.has_description,
+                has_min_salary_annual=self.has_min_salary_annual,
+            )
+        )
+
+    def coverage(self) -> dict[str, Any]:
+        """What share of the served table actually carries each field (ADR-0113).
+
+        The Data tab's numbers. Every one is counted here rather than written down, because a
+        coverage figure in prose is stale the moment the next run lands — README §"The served
+        table" already carries two dated to 2026-08-18 for exactly that reason. A number the
+        product measures about itself gets worse on the page when the pipeline gets worse,
+        which is the only incentive a limits page should have.
+
+        Only fields a Job may legitimately be *missing* belong here. ``remote`` was removed
+        after review: it is a facet, not a gap — a share here would answer "how many are
+        remote", which the Search rail's own counts already answer, rather than "how often do
+        we not know". Its provenance is also mixed — many scrapers read a board-supplied
+        workplace-type field, others fall back to ``models.is_remote`` over the location text,
+        several OR the two — so no single sentence describes the column. Successive revisions
+        of this docstring asserted "the board's flag" and then "an inference" with equal
+        confidence, and two attempts to count the split were both wrong; see ADR-0113.
+
+        Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
+        `headstart.facets` measured that primitive at 4–6 ms against a 316,606-row table,
+        so the whole panel is cheaper than a single ranked search — and it is cached per
+        process anyway: a new index arrives with a Space restart, never under a running one.
+
+        A field whose column arrives with a migration (``first_seen``, the salary columns,
+        ``description``) is reported as ``None`` on a table that predates it — never as zero,
+        which would read as "measured, and none have it" (ADR-0009's unknown-is-not-zero rule).
+        ``posted_at`` and ``min_years`` need no such guard: they are in the base ``_schema()``
+        and every served table has carried them.
+        """
+        if self._coverage is None:
+            fields = {
+                "posted_at": "posted_at IS NOT NULL AND posted_at != ''",
+                "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
+                if self.has_first_seen
+                else None,
+                "salary": "min_salary_annual IS NOT NULL"
+                if self.has_min_salary_annual
+                else None,
+                "min_years": "min_years IS NOT NULL",
+                "description": "description IS NOT NULL AND description != ''"
+                if self.has_description
+                else None,
+            }
+            self._coverage = {
+                "total": self._table.count_rows(),
+                "fields": {
+                    name: (
+                        None if where is None else self._table.count_rows(filter=where)
+                    )
+                    for name, where in fields.items()
+                },
+            }
+        return self._coverage

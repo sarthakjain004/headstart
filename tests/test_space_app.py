@@ -13,6 +13,7 @@ cookie is `Secure` and the test client honours that over plain http.
 
 import importlib.util
 import os
+import re
 import sys
 import types
 from contextlib import contextmanager
@@ -104,8 +105,12 @@ class _Table:
             },
         ]
 
-    def count_rows(self):
-        return 2
+    def count_rows(self, filter=None):
+        # Coverage (ADR-0113) counts with a filter; everything else counts the table. One
+        # of the two rows is given each field so a percentage that is neither 0 nor 100
+        # comes back — a fake that answered `2` to everything would pass a renderer that
+        # had silently divided by the wrong total.
+        return 2 if filter is None else 1
 
 
 @contextmanager
@@ -273,7 +278,9 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     client = auth_app.app.test_client()
     page = client.get("/").data
     assert b"Sign in to search" in page
-    assert b"jobs indexed" not in page
+    # Not "jobs indexed": the door itself now says "tech jobs indexed right now" (ADR-0112).
+    # The tab shell is what only the signed-in page has.
+    assert b'data-tab="search"' not in page
     # The door's Google button carries the real client id — a drifted placeholder would
     # ship a dead button on a page that otherwise renders fine.
     assert b"client-id.example" in page
@@ -1062,3 +1069,199 @@ def test_trends_multiple_ats_params_union(ats_trends_app):
     assert d["stamps"] == [_U2]
     by_name = {s["name"]: s for s in d["series"]}
     assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
+
+
+# ── The trust surfaces (ADR-0112, ADR-0113) ────────────────────────────────────────────
+# These assert *claims*, not markup. Each one is a sentence the product makes to a stranger
+# who has no way to check it from inside the page; a refactor that drops one should fail
+# here rather than ship a quieter, less accountable door.
+
+
+def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
+    """ADR-0112: what it is, proof, what sign-in costs, and how to check — then the button."""
+    page = auth_app.app.test_client().get("/").data.decode()
+    # The proof numbers are counted, not written: the fake table holds two rows and two
+    # ATSes, so a hardcoded marketing figure would not survive this.
+    assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
+    assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
+    # The freshness tile: an EXACT count, because a row without `first_seen` predates the
+    # column and so cannot be new. The fake answers 1 to any filtered count, so a real
+    # ratio shows rather than the total repeated — which a wrong denominator would give.
+    assert (
+        '<div class="v">1</div><div class="k">of them added in the last 7 days' in page
+    )
+    # Every tile is a counted number, and exactly counted. Three drafts failed that bar and
+    # were removed rather than qualified: a typed-in cadence ("~6h"), an employer count and
+    # a board count — neither of the last two derivable exactly from the served table.
+    assert "~6h" not in page and "refreshes" not in page
+    assert "employers" not in page and "boards indexed" not in page
+    # The provenance claim, the removal policy, and the no-paid-placement claim.
+    assert "employer's own board" in page
+    assert "Closed roles get removed, and the exception is published." in page
+    assert "22 days" in page  # checkable at the door, not only behind the wall
+    assert "paid placement" in page
+    # What signing in costs, stated before the button rather than in a policy page behind it.
+    assert "stores your email address" in page
+    assert "signing out drops the session" in page
+    # …and the links that make the rest checkable.
+    assert "github.com/sarthakjain004/headstart" in page
+    # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0112
+    # changed the page around it, which is exactly when this gets dropped by accident).
+    assert page.index("Why the jobs hold up") < page.index("Sign in to search")
+    assert 'id="openout"' in page
+
+
+def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
+    """A table with no `first_seen` column drops the freshness tile rather than guessing.
+
+    Replaces a vacuous check that asserted the absence of strings nothing generates. The
+    real risk is the opposite one: a tile rendering `None`, `0` or an exception where the
+    number is simply unavailable."""
+    searcher = auth_app.app.view_functions["index"].__globals__["_searcher"]
+    monkeypatch.setattr(searcher, "has_first_seen", False)
+    page = auth_app.app.test_client().get("/").data.decode()
+    assert "added in the last" not in page
+    # Scoped to the tiles: the page's own prose opens "None of this has to be taken on faith".
+    tiles = re.findall(r'<div class="v">([^<]*)</div>', page)
+    assert tiles and all(t.strip() and "None" not in t for t in tiles), tiles
+    # …and the tiles that CAN be counted are still there.
+    assert "tech jobs indexed right now" in page
+    assert "ATS providers read directly" in page
+
+
+def test_coverage_counts_the_served_table_rather_than_asserting(app):
+    """ADR-0113: the Data tab's numbers are measured, so they cannot go stale in prose."""
+    d = app.app.test_client().get("/coverage").json
+    assert d["total"] == 2
+    # One of two rows carries each field — a real ratio, not a placeholder. One count per
+    # field against the one total; `total` is not repeated onto every field.
+    assert d["fields"]["posted_at"] == 1
+    assert d["fields"]["min_years"] == 1
+    # `remote` is never a coverage field: it is a facet, not a gap — a share would answer
+    # "how many are remote", which the rail's own counts already answer. (Its provenance is
+    # mixed, and four successive drafts described it wrongly; see ADR-0113.)
+    assert "remote" not in d["fields"]
+    assert "atses" not in d  # nothing reads it; the template has its own list
+
+
+def test_coverage_is_behind_the_wall_like_everything_else(auth_app):
+    assert auth_app.app.test_client().get("/coverage").status_code == 401
+
+
+def test_coverage_reports_a_missing_column_as_unknown_not_zero(app, monkeypatch):
+    """A column the table lacks is None. Zero would read as 'measured, and none have it'."""
+    searcher = app.app.view_functions["coverage"].__globals__["_searcher"]
+    monkeypatch.setattr(searcher, "has_description", False)
+    monkeypatch.setattr(searcher, "_coverage", None)  # drop the per-process cache
+    assert app.app.test_client().get("/coverage").json["fields"]["description"] is None
+
+
+def test_the_signed_in_page_says_what_the_product_is(app):
+    """A user inside the app should never have to guess what they are looking at."""
+    page = app.app.test_client().get("/").data.decode()
+    # On screen wherever they navigate, not only in the footer of a long results page.
+    assert "Tech jobs read straight from company career boards" in page
+    # One repo URL, server-side: the door and the Data tab both link into it, and a rename
+    # must not be able to leave half the links dead.
+    assert page.count("github.com/sarthakjain004/headstart") >= 3
+    # The Data tab is always present — a limits page that can be switched off is not a
+    # commitment — and the footer points at it.
+    assert 'data-tab="data"' in page
+    assert "What's in the index, and what isn't" in page
+    # And the slot that names the current result list (browse vs ranked, ADR-0074).
+    assert 'id="kind"' in page
+
+
+def test_the_data_tab_states_scope_gaps_and_provenance(app):
+    page = app.app.test_client().get("/").data.decode()
+    assert "Where the jobs come from" in page
+    assert "What is deliberately left out" in page
+    assert "What the index does not know" in page
+    assert "How a closed job leaves" in page
+    assert "What is stored about you" in page
+    # The ATS list is rendered from the index's own whitelist, not typed in.
+    assert "Read from 2 providers" in page
+    assert ">greenhouse<" in page and ">lever<" in page
+    # ADR-0113: every claim links the decision behind it. The eviction section in particular
+    # must carry ADR-0053 as well as ADR-0083 — an earlier draft described the window as
+    # "hours, not minutes" and omitted the scope exclusion, which has no drain at all and was
+    # measured serving one board's closed jobs for 22 days.
+    assert "0083-evict-only-on-a-second-consecutive-absence.md" in page
+    assert "0053-scope-eviction-on-scrape-outcome.md" in page
+    # Whitespace-normalised: the template wraps these sentences, and HTML collapses the
+    # newlines anyway, so asserting on the raw source would only pin the line breaks.
+    flat = " ".join(page.split())
+    assert "105 closed jobs, the oldest 22 days old" in flat
+    assert "no-client-side-fix-for-replica-instability.md" in page
+    # The date of the measurement itself (the doc is headed 2026-08-24) — an earlier fix
+    # wrote 2026-08-23, which is ADR-0083's go-live date, not when this was measured.
+    assert "2026-08-24" in page
+    assert "hours, not minutes" not in flat
+    # CONTEXT.md reserves "listing"/"posting"/"opening" for the raw ATS record; the user-facing
+    # noun is "job". The word may still appear in this file's own explanation of that rule.
+    body = page.split('id="panel-data"', 1)[1].split("</section>", 1)[0]
+    for banned in ("listings", "openings", "postings"):
+        assert banned not in body, banned
+
+
+def test_the_resume_reader_says_the_text_leaves_the_service(sets_app, monkeypatch):
+    """The one datum that goes to a third party is disclosed where it is pasted.
+
+    The Data tab lists it too, but a person pasting a résumé should not have to have read
+    another tab first — the disclosure belongs at the moment of the decision. Needs
+    ``sets_app``: the Profile panel only renders where per-Account storage is configured."""
+    page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
+    # Bounded at the panel's own end tag: unbounded, this reached the Data tab further down
+    # the document, which says "language model" too — so the assertion passed with the
+    # disclosure deleted from profile.html entirely.
+    body = page.split('id="panel-profile"', 1)[1].split("</section>", 1)[0]
+    assert "language model" in body
+    assert "outside HeadStart" in body
+    # …and it must not claim the rest is sent nowhere: stars, saved searches and the profile
+    # are uploaded to the private subscribers dataset.
+    assert "sends nothing at all" not in body
+
+
+def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
+    """`closed` is read off the job's absence from the index, and ADR-0023's prune can drop a
+    still-open row — so the tab says what the tag actually means rather than asserting it."""
+    page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
+    body = page.split('id="panel-saved"', 1)[1]
+    assert "no longer in our index" in body
+    # The mechanism, right way round: an unreadable board is why a job STAYS (ADR-0053), so
+    # the second cause is ADR-0023's wholesale board sweep, not a failed read.
+    assert "dropped the whole board" in body
+    assert "stopped being able to read that" not in body
+
+
+def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
+    """After the search bar, not at the top of the document: `#q` autofocuses, so a skip link
+    placed before it is never reached by tabbing forward — verified in a browser."""
+    page = app.app.test_client().get("/").data.decode()
+    assert 'class="skip" href="#results"' in page
+    assert (
+        page.index('class="go"') < page.index('class="skip"') < page.index('id="rail"')
+    )
+
+
+def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
+    """Forgetting `auth_on` alone must not make the page claim nothing is stored.
+
+    Jinja renders an undefined name as falsy, so the conditional is written `if auth_on or
+    alerts_on` with the "Nothing" case in the `else`. Written the other way round, a renderer
+    that passed `alerts_on` but forgot `auth_on` printed a denial on a deployment that stores
+    plenty. Note the guarantee is exactly that and no wider: with *every* flag absent the page
+    still says "Nothing", which is correct — a caller supplying no flags at all is describing
+    a deployment with neither feature."""
+    tpl = app.app.jinja_env.get_template("data.html")
+    # Rendered with `auth_on` simply absent, exactly as a forgetful caller would.
+    out = tpl.render(atses=["greenhouse"], repo="https://example.test", alerts_on=True)
+    assert "Nothing." not in out
+    assert "email address" in out
+    # …and the alerts-only branch names what /subscribe actually keeps: `_project_subscription`
+    # stores the Query and the Search filters beside the address, not the address alone.
+    assert "the search and filters that alert is for" in " ".join(out.split())
+    # …and it still says "Nothing" when the deployment really does keep nothing.
+    bare = tpl.render(atses=["greenhouse"], repo="https://example.test")
+    assert "Nothing." in bare
+    assert "the key your saved work hangs off" not in bare
