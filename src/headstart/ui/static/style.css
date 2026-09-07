@@ -1,45 +1,62 @@
 /* ---- tokens. Every colour and size below is named here and used through the token,
-       so the light theme is a token swap rather than a second stylesheet. ---- */
+       so the light theme is a token swap rather than a second stylesheet.
+
+       Palette: "quiet dossier" (ADR-0116). Warm paper and warm charcoal rather than blue-black,
+       one restrained accent, and no gradient or glow anywhere. The reasoning is about the user's
+       state, not taste: job searching is a long, repetitive, high-rejection scanning task, usually
+       done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
+       eye-fatigue across a forty-minute session, and — for this product specifically — the neon
+       "AI startup" register contradicts what the product now says about itself on the Data tab.
+       Hue is spent on exceptions (new, pays, remote), never on chrome. ---- */
 :root{
-  --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
-  --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
-  --aqua:#12D6B4; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
-  --coral:#FB7185;
+  --ground:#131211; --raise:#2A2724; --raise-2:#353128; --rule:#454039; --rule-2:#5C554C;
+  --ink:#F2EFE9; --ink-2:#BDB6AA; --ink-3:#968F82;
+  --accent:#5FBFB0; --violet:#A99BE0; --amber:#E0A526; --lime:#A9CC6B;
+  --coral:#E58374;
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
-     against this file's own --raise dark / #FFFFFF light chart surfaces — six-checks PASS in
-     both modes; see docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is
-     the CVD-safety mechanism, so these are read by SLOT, never re-ordered per chart. */
+     against this file's own --raise dark / near-white light chart surfaces; see
+     docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
+     mechanism, so these are read by SLOT, never re-ordered per chart. Re-measured against the
+     ADR-0116 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
+     light, i.e. the ground change is not what decides it. The light figure is under 3:1 and was
+     before this change too — a pre-existing gap, called out in ADR-0116 rather than inherited
+     silently. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
   --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
-  --glow:rgba(18,214,180,.22);
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
-  --shadow:0 18px 44px rgba(0,0,0,.42);
+  --shadow:0 10px 28px rgba(0,0,0,.30);
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:ui-serif,"Iowan Old Style",Georgia,serif;
   --step:.18s cubic-bezier(.2,.7,.3,1);
+  /* One content width for every panel (D1). A row's own needs set it — a ~74ch text measure
+     plus the pay/match/star columns — and it lives here as a token because Search, Matches
+     and Saved must not each pick their own: they render the same card, so a card that is
+     880px on one tab and 1276px on another is the same component at two sizes. */
+  --measure:880px;
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
-   `:not([data-theme])` is what lets the toggle beat the OS in BOTH directions. Amber and lime
-   are darkened here: at 11.5px on a tinted chip the dark-theme values missed WCAG AA. */
+   `:not([data-theme])` is what lets the toggle beat the OS in BOTH directions. Every pairing
+   below is contrast-checked in both modes; --ink-3 in particular is darker than the value it
+   replaces, which sat at 3.5:1 and failed AA for the rail's caveats. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme]){
-    --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
-    --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
-    --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+    --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
+    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#635D52;
+    --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
-    --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
+    --shadow:0 8px 22px rgba(40,34,24,.08);
   }
 }
 :root[data-theme="light"]{
-    --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
-    --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
-    --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+    --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
+    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#635D52;
+    --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
-    --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
+    --shadow:0 8px 22px rgba(40,34,24,.08);
 }
 
 *{ box-sizing:border-box; }
@@ -49,22 +66,26 @@ body{
   -webkit-font-smoothing:antialiased;
   transition:background .3s ease, color .3s ease;
 }
-/* slow ambient wash behind the header — the only purely decorative motion on the page */
-.aura{ position:fixed; inset:-30% -10% auto -10%; height:70vh; pointer-events:none; z-index:0;
-  background:
-    radial-gradient(46% 52% at 22% 12%, var(--glow), transparent 70%),
-    radial-gradient(38% 46% at 78% 4%, rgba(139,92,246,.16), transparent 72%);
-  filter:blur(6px); animation:drift 22s ease-in-out infinite alternate; }
-@keyframes drift{ from{ transform:translate3d(-2%,-1%,0) scale(1); }
-                  to{ transform:translate3d(3%,2%,0) scale(1.08); } }
 
-.shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:26px 22px 80px; }
+/* 924 = the one content measure (880) plus this padding, so the masthead, the tabs, the cards
+   and the footer all start and end on the same two x's. At 1320 the shell was 396px wider than
+   anything inside it could ever be: `.content` is capped at --measure and had no margin, so
+   every panel sat hard against the left edge with a 418px void on the right while the footer,
+   centred on the shell, sat 198px away from the column it belongs to. */
+.shell{ position:relative; z-index:1; max-width:924px; margin:0 auto; padding:18px 22px 72px; }
+/* Bounded here rather than on `main`, which is Search's element alone: constraining that one
+   left Matches and Saved rendering the SAME card at the shell's full 1276px, with the content
+   ending at 918 and 427px of empty card after it. The masthead, tab strip and footer keep the
+   shell width — chrome that spans the page rather than content to be read across — which now
+   lands on the same two x's as this, because the shell is capped at exactly this measure plus
+   its padding. Data's `.doc` sets its own, narrower prose measure and is unaffected. */
+.content{ max-width:var(--measure); margin-inline:auto; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
    tabbing forward. Visible only when focused, as a skip link should be. */
 .skip{ position:absolute; left:-9999px; z-index:9;
-  background:var(--raise); color:var(--ink); border:1px solid var(--aqua);
+  background:var(--raise); color:var(--ink); border:1px solid var(--accent);
   padding:11px 18px; border-radius:var(--r-md); font:600 14px var(--sans);
   text-decoration:none; }
 /* Revealed as a fixed overlay at the top of the viewport — the conventional pattern, and the
@@ -77,13 +98,12 @@ body{
 .disclose b{ color:var(--ink); }
 
 /* ---- masthead ---- */
-.top{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 16px;
-  grid-template-areas:"brand right" "tagline tagline"; margin-bottom:26px; }
+.top{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 16px;
+  grid-template-areas:"brand right" "tagline tagline"; margin-bottom:14px; }
 .top-right{ grid-area:right; }
 .brand{ grid-area:brand; display:flex; align-items:center; gap:11px; }
 .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-  background:linear-gradient(135deg,var(--aqua),var(--violet));
-  box-shadow:0 0 0 1px rgba(255,255,255,.10) inset, 0 8px 20px var(--glow); }
+  background:var(--accent); }
 .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
   border-radius:50%; background:var(--ground); }
 .brand h1{ font:600 21px/1 var(--serif); letter-spacing:-.01em; margin:0; }
@@ -94,60 +114,67 @@ body{
 .tagline{ grid-area:tagline; margin:0; color:var(--ink-2); font-size:12px; line-height:1.35;
   text-wrap:pretty; }
 .brand h1 em{ font-style:normal;
-  background:linear-gradient(100deg,var(--aqua),var(--violet)); -webkit-background-clip:text;
-  background-clip:text; color:transparent; }
+  color:var(--accent); }
 .top-right{ display:flex; align-items:center; gap:10px; }
 .count{ font:500 12px/1 var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);
   white-space:nowrap;
   background:var(--raise); border:1px solid var(--rule); padding:8px 12px; border-radius:var(--r-pill); }
-.count b{ color:var(--aqua); }
+.count b{ color:var(--accent); }
 .icon-btn{ width:36px; height:36px; border-radius:var(--r-md); border:1px solid var(--rule);
   background:var(--raise); color:var(--ink-2); cursor:pointer; font-size:15px; line-height:1;
   transition:transform var(--step), border-color var(--step), color var(--step); }
-.icon-btn:hover{ transform:translateY(-1px); border-color:var(--aqua); color:var(--aqua); }
+.icon-btn:hover{ transform:translateY(-1px); border-color:var(--accent); color:var(--accent); }
 #who{ max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* ---- the shell: sidebar nav + tab panels (ADR-0042) ---- */
-.layout{ display:grid; grid-template-columns:184px 1fr; gap:24px; align-items:start; }
-.side{ position:sticky; top:20px; display:flex; flex-direction:column; gap:4px; }
-.nav-item{ display:flex; align-items:center; gap:8px; padding:10px 13px; border-radius:var(--r-md);
+/* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0116).
+       The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
+       it costs one row and returns the width to the results. ---- */
+.tabs{ display:flex; gap:2px; margin:0 0 16px; border-bottom:1px solid var(--rule);
+  overflow-x:auto; scrollbar-width:none;
+  /* A tab was scrolling off a 390px screen with no sign it existed. The mask fades the
+     trailing edge so the strip reads as scrollable rather than as ending there. */
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);
+          mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent); }
+@supports not (mask-image:linear-gradient(90deg,#000,transparent)){ .tabs{ -webkit-mask-image:none; mask-image:none; } }
+.tabs::-webkit-scrollbar{ display:none; }
+.nav-item{ display:flex; align-items:center; gap:8px; padding:10px 14px; white-space:nowrap;
   color:var(--ink-2); text-decoration:none; font-size:14px; font-weight:500;
-  border:1px solid transparent;
-  transition:color var(--step), background var(--step), border-color var(--step); }
-.nav-item:hover{ color:var(--ink); background:var(--raise); }
-.nav-item[aria-current="page"]{ color:var(--ink); background:var(--raise);
-  border-color:var(--rule); position:relative; }
-.nav-item[aria-current="page"]::before{ content:""; position:absolute; left:0; top:9px; bottom:9px;
-  width:3px; border-radius:var(--r-pill);
-  background:linear-gradient(180deg,var(--aqua),var(--violet)); }
+  border-bottom:2px solid transparent; margin-bottom:-1px;
+  transition:color var(--step), border-color var(--step); }
+.nav-item:hover{ color:var(--ink); }
+.nav-item[aria-current="page"]{ color:var(--ink); border-bottom-color:var(--accent); }
 .nav-item.soon{ color:var(--ink-3); cursor:default; }
-.nav-item.soon:hover{ background:transparent; color:var(--ink-3); }
-.chip-soon{ margin-left:auto; font:600 9.5px/1 var(--sans); letter-spacing:.08em;
+.nav-item.soon:hover{ color:var(--ink-3); }
+.chip-soon{ font:600 9.5px/1 var(--sans); letter-spacing:.08em;
   text-transform:uppercase; color:var(--ink-3); border:1px solid var(--rule);
   padding:3px 6px; border-radius:var(--r-pill); }
 .panel[hidden]{ display:none !important; }
 
 /* ---- search ---- */
-.hero{ margin-bottom:22px; }
+.hero{ margin-bottom:14px; }
 .searchbar{ display:flex; gap:10px; }
 .field{ flex:1; }
 .field input{ width:100%; padding:17px 19px; border-radius:var(--r-xl); font:inherit; font-size:16px;
   background:var(--raise); color:var(--ink); border:1px solid var(--rule-2); outline:none;
   transition:border-color var(--step), box-shadow var(--step); }
 .field input::placeholder{ color:var(--ink-3); }
-.field input:focus{ border-color:var(--aqua); box-shadow:0 0 0 4px var(--glow); }
+.field input:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--rule-2); }
 .go{ padding:0 30px; border:0; border-radius:var(--r-xl); cursor:pointer; color:#04121A;
   font:700 15px/1 var(--sans); letter-spacing:.01em;
-  background:linear-gradient(120deg,var(--aqua),var(--lime));
+  background:var(--accent);
   transition:transform var(--step), box-shadow var(--step), filter var(--step); }
-.go:hover{ transform:translateY(-2px); box-shadow:0 12px 30px var(--glow); filter:saturate(1.15); }
+.go:hover{ transform:translateY(-2px); filter:brightness(1.06); }
 .go:active{ transform:translateY(0); }
-.hint{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
-  color:var(--ink-3); font-size:12.5px; }
+/* One scrollable row, not three stacked ones: on a phone these suggestions cost 3 lines of
+   the first screen, above any actual job. */
+.hint{ display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:nowrap;
+  overflow-x:auto; scrollbar-width:none; color:var(--ink-3); font-size:12.5px; }
+.hint::-webkit-scrollbar{ display:none; }
+.hint .chip{ flex:none; }
 .chip{ border:1px dashed var(--rule-2); background:transparent; color:var(--ink-2);
   padding:6px 12px; border-radius:var(--r-pill); font:inherit; font-size:12.5px; cursor:pointer;
   transition:border-color var(--step), color var(--step), transform var(--step); }
-.chip:hover{ border-color:var(--aqua); color:var(--aqua); transform:translateY(-1px); }
+.chip:hover{ border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
 
 /* ---- the two AI features, promoted out of footnotes ---- */
 /* auto-fit, not 1fr 1fr: when only one panel is configured the other is absent from the
@@ -161,9 +188,9 @@ body{
 .feature summary{ list-style:none; cursor:pointer; padding:14px 16px; display:flex; gap:11px;
   align-items:center; user-select:none; }
 .feature summary::-webkit-details-marker{ display:none; }
-/* the brand gradient, not flat violet — violet on its own means "remote" on a result tag */
+/* the accent, not violet — violet on its own means "remote" on a result tag (ADR-0116) */
 .feature .dot{ width:8px; height:8px; border-radius:50%; flex:none;
-  background:linear-gradient(135deg,var(--aqua),var(--violet)); box-shadow:0 0 12px var(--glow); }
+  background:var(--accent); }
 .feature .ttl{ font-weight:600; font-size:14px; }
 .feature .sub{ color:var(--ink-3); font-size:12.5px; margin-left:auto; }
 .feature .body{ padding:0 16px 16px; }
@@ -183,15 +210,40 @@ textarea:focus{ border-color:var(--violet); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
 
-/* ---- search layout: sticky filter rail + results ---- */
-.grid{ display:grid; grid-template-columns:260px 1fr; gap:22px; align-items:start; }
-@media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
-.rail{ position:sticky; top:20px; background:var(--raise); border:1px solid var(--rule);
-  border-radius:var(--r-lg); padding:16px; }
-@media (max-width:900px){ .rail{ position:static; display:none; } .rail.open{ display:block; } }
+/* ---- search layout: filter panel above, results below (ADR-0116). ---- */
+/* The filter panel (ADR-0116). Above the results rather than beside them, full width, and
+   closed until asked for — so the default view is the thing the user came for. Open, the
+   groups flow into as many columns as the width allows rather than one tall column. */
+.rail{ display:none; background:var(--raise); border:1px solid var(--rule);
+  border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
+/* Balanced columns, not grid tracks. The five groups are wildly different heights (214 to
+   403px measured), and a grid gives every column the height of the tallest thing in its row:
+   four tracks left the panel 824px tall and half empty, and splitting Pay out of Role made it
+   858 by starting a second row for one group. Multi-column fills in order to whatever height
+   makes all five fit, so a short group and a tall one share a column instead of one padding
+   out the other. */
+.rail.open{ display:block; columns:4 190px; column-gap:24px; }
+/* A group is one block or it is nothing — a filter split down the middle of a column is worse
+   than an uneven column. */
+.rail.open .set{ break-inside:avoid; margin-bottom:16px; }
+/* Uncapped, and that is the trade being made rather than an omission. The 46vh cap it had was
+   written while the panel sat ABOVE its own button: it kept the results on screen, but measured
+   at 1440x950 it put 761px of controls in a 338px box with no scrollbar to say so — 55% of the
+   panel, including the salary bracket and "Clear all filters", behind a scroller nothing marked.
+   Now that the panel opens BELOW the toolbar, the Filters button stays put at the top of the
+   page whatever the panel does, so shutting it is one click on a control that never moves —
+   which is a cheaper way back to the rows than discovering a hidden scroll region. */
 .rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
   color:var(--ink-3); margin:0 0 10px; }
-.set + .set{ margin-top:18px; padding-top:16px; border-top:1px solid var(--rule); }
+/* Each group is a column of the panel grid, so the vertical rules that separated them in a
+   single stacked column would now draw between unrelated things. The stacked-column rule that
+   used to follow this one undid it — measured, three of the four heads sat at y=320 against
+   Keywords' 285, under a stray rule. */
+.set + .set{ margin-top:0; padding-top:0; border-top:0; }
+/* `display:block` is not cosmetic: a spanner has to be block-level, and a <button> is
+   inline-block by default, so without it the rule computes to `all` and is ignored — the
+   button lands inside whichever column it fell in, 192px wide. */
+.clear{ column-span:all; display:block; }
 .f{ display:flex; flex-direction:column; gap:5px; margin-bottom:11px; }
 .f:last-child{ margin-bottom:0; }
 .f label{ font-size:12px; color:var(--ink-2); font-weight:500; }
@@ -200,15 +252,15 @@ textarea:focus{ border-color:var(--violet); }
 .set > .tip{ display:block; margin:-4px 0 11px 25px; }
 .f select,.f input{ width:100%; padding:9px 11px; border-radius:var(--r-md); font:inherit;
   font-size:13px; background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
-  outline:none; transition:border-color var(--step); }
-.f select:focus,.f input:focus{ border-color:var(--aqua); }
+  transition:border-color var(--step); }
+.f select:focus,.f input:focus{ border-color:var(--accent); }
 .sw{ display:flex; align-items:center; gap:9px; color:var(--ink-2); font-size:13px;
   cursor:pointer; user-select:none; margin-bottom:9px; }
 .sw input{ appearance:none; width:36px; height:21px; border-radius:var(--r-pill); flex:none;
   background:var(--rule-2); position:relative; cursor:pointer; transition:background var(--step); margin:0; }
 .sw input::after{ content:""; position:absolute; top:3px; left:3px; width:15px; height:15px;
   border-radius:50%; background:#fff; transition:transform var(--step); }
-.sw input:checked{ background:linear-gradient(120deg,var(--aqua),var(--lime)); }
+.sw input:checked{ background:var(--accent); }
 .sw input:checked::after{ transform:translateX(15px); }
 .clear{ width:100%; margin-top:14px; padding:9px; border-radius:var(--r-md); cursor:pointer;
   background:transparent; border:1px solid var(--rule); color:var(--ink-3); font:inherit;
@@ -216,12 +268,20 @@ textarea:focus{ border-color:var(--violet); }
 .clear:hover{ border-color:var(--coral); color:var(--coral); }
 
 .toolbar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
-.toolbar .n{ font:500 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); }
+/* The counts and caveats, on their own line under the controls. Inside the toolbar the result
+   count was ~300px of prose in a flex row of buttons, so at 880px of content one control was
+   always pushed onto a second line by itself — measured 86px of toolbar with "Save this
+   search", and 86px again with "Compact" once Save moved. Out of the row, the toolbar is one
+   40px line and these sit where they belong, immediately above the rows they count. */
+.status{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+.status .n{ font:500 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); }
 .toolbar .spacer{ flex:1; }
 .toolbar select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
-  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
-.filters-btn{ display:none; }
-@media (max-width:900px){ .filters-btn{ display:inline-block; } }
+  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; }
+.filters-btn{ display:inline-block; }
+/* A filter that is applied but out of sight needs to announce itself on the control that
+   hides it. */
+.filters-btn.has{ border-color:var(--accent); color:var(--accent); }
 .active{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
 .pill{ display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:5px 10px;
   border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule-2);
@@ -232,53 +292,92 @@ textarea:focus{ border-color:var(--violet); }
 .pill button:hover{ color:var(--coral); }
 @keyframes pop{ from{ opacity:0; transform:scale(.86); } to{ opacity:1; transform:none; } }
 
-/* ---- result cards ---- */
-.card{ position:relative; background:var(--raise); border:1px solid var(--rule);
-  border-radius:var(--r-lg); padding:16px 18px 15px; margin-bottom:11px; overflow:hidden;
-  animation:rise .42s cubic-bezier(.2,.7,.3,1) both;
-  transition:border-color var(--step), transform var(--step), box-shadow var(--step); }
-.card:hover{ transform:translateY(-2px); border-color:var(--rule-2); box-shadow:var(--shadow); }
+/* ---- result cards (ADR-0116). A row, not a box: the whole point of the full width is that
+       salary and match land at the SAME x on every row, so the eye scans one column down the
+       page instead of re-reading each card left to right. The text block is bounded to a
+       readable measure (the skill's 65-75ch rule); the freed width goes to alignment, not to
+       stretching one line of text across 1276px. ---- */
+.card{ position:relative; display:grid; align-items:center; gap:0 20px;
+  grid-template-columns:minmax(0,30rem) 190px 56px 44px; justify-content:start;
+  background:var(--raise); border:1px solid var(--rule);
+  border-radius:var(--r-lg); padding:13px 16px 13px 18px; margin-bottom:8px; overflow:hidden;
+  animation:rise .3s cubic-bezier(.2,.7,.3,1) both;
+  transition:border-color var(--step), background var(--step); }
+.card:hover{ border-color:var(--rule-2); background:var(--raise-2); }
+/* The whole row navigates (handled in app.js, not by an overlay — an overlay made titles
+   unselectable and hid every tooltip beneath it). */
+.card{ cursor:pointer; }
+.card:focus-within{ border-color:var(--accent); }
 .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
-  background:var(--tone,var(--aqua)); opacity:.85; }
-@keyframes rise{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
-.card .hd{ display:flex; align-items:flex-start; gap:14px; }
-.card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:16px;
-  letter-spacing:-.01em; line-height:1.35; }
-.card a.title:hover{ color:var(--aqua); }
-/* The link leaves for the employer's own board, which is the product's central claim — so
-   the card marks it rather than making the reader hover and parse a URL. */
+  background:var(--tone,var(--accent)); opacity:.8; }
+@keyframes rise{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+.card .who{ min-width:0; }
+.card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:15.5px;
+  letter-spacing:-.01em; line-height:1.3; }
+/* Every result leaves the site for the employer's own board, so returning to a fifty-row
+   list with no memory of what you already opened is the main cost of the loop. Ink-2 rather
+   than a new hue: "already seen" is a de-emphasis, not a category. */
+.card a.title:visited{ color:var(--ink-2); }
+.card a.title:hover{ color:var(--accent); }
 .card a.title .ext{ width:11px; height:11px; margin-left:5px; vertical-align:baseline;
   color:var(--ink-3); }
-.card a.title:hover .ext{ color:var(--aqua); }
+.card a.title:hover .ext{ color:var(--accent); }
 .sr{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip-path:inset(50%); white-space:nowrap; border:0; }
-.card .org{ color:var(--ink-2); font-size:13px; margin-top:3px; }
+.card .org{ color:var(--ink-2); font-size:13px; margin-top:2px; }
 .card .org span{ color:var(--ink-3); }
+
+/* Pay is the field the decision turns on, so it gets its own column and its own weight —
+   it used to be one chip among six, the same size as "3d ago". */
+.card .pay{ font:600 13.5px/1.3 var(--mono); font-variant-numeric:tabular-nums;
+  color:var(--ink); text-align:right; }
+/* 44x44: the most-repeated control on the page was a 34x23 hit area. */
+.card .star{ width:44px; height:44px; display:grid; place-items:center; font-size:17px; }
+.card .nopay{ color:var(--ink-3); font-weight:400; }
+.card .dismiss{ position:absolute; top:3px; right:6px; width:22px; height:22px; padding:0;
+  background:none; border:0; cursor:pointer; line-height:1; font-size:15px; color:var(--ink-3);
+  opacity:0; transition:opacity var(--step), color var(--step); }
+.card:hover .dismiss, .card:focus-within .dismiss{ opacity:1; }
+.card .dismiss:hover{ color:var(--coral); }
+/* No hover to reveal it on, so it is simply there. */
+@media (hover:none){ .card .dismiss{ opacity:.7; } }
+/* Hidden by default, and shown dimmed while "show" is on — so undoing one is a click on the
+   row it was, not a hunt through a settings list. */
+#results:not(.reveal) .card.dismissed{ display:none; }
+/* .75, not the .45 this started at: opacity on the card composites every child against the
+   page ground, and .45 took the `.org` line to 2.58:1 dark / 2.37 light — a revealed row is
+   still text somebody is reading. Measured, .75 is the floor that clears 4.5 in both themes
+   (4.81 / 4.82 on that same weakest line). */
+/* `animation:none` is load-bearing: `.card`'s entry animation is `both`-filled, so its final
+   keyframe keeps `opacity:1` applied for the life of the row and the declaration below never
+   showed. Measured 1, not .75, before this line. */
+.card.dismissed{ opacity:.75; animation:none; }
+.card.dismissed .dismiss{ opacity:1; color:var(--accent); }
+
 /* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
    colour-blindness. pathLength=100 on the circles makes the dasharray a straight percent. */
-.match{ flex:none; width:44px; height:44px; position:relative; }
-.ring{ width:44px; height:44px; display:block; transform:rotate(-90deg); }
+.match{ width:52px; height:52px; position:relative; }
+.ring{ width:52px; height:52px; display:block; transform:rotate(-90deg); }
 .ring circle{ fill:none; stroke-width:3.5; }
 .ring-track{ stroke:var(--rule); }
-.ring-fill{ stroke:var(--tone,var(--aqua)); stroke-linecap:round;
-  stroke-dasharray:0 100; animation:ringfill .7s .1s cubic-bezier(.2,.7,.3,1) forwards; }
+.ring-fill{ stroke:var(--tone,var(--accent)); stroke-linecap:round;
+  stroke-dasharray:0 100; animation:ringfill .6s .1s cubic-bezier(.2,.7,.3,1) forwards; }
 @keyframes ringfill{ to{ stroke-dasharray:var(--p,50) 100; } }
 .match .v{ position:absolute; inset:0; display:grid; place-items:center;
-  font:600 10.5px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--aqua)); }
-.card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:11px; }
-.tag{ font:500 11.5px var(--sans); padding:4px 10px; border-radius:var(--r-pill);
+  font:600 12px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--accent)); }
+
+.card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center; }
+.tag{ font:500 11px var(--sans); padding:2px 8px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
+.card:hover .tag{ background:var(--ground); }
 .tag.mono{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
-.tag.new{ background:color-mix(in srgb, var(--amber) 16%, transparent); color:var(--amber);
-  border-color:color-mix(in srgb, var(--amber) 34%, transparent); font-weight:600; }
-.tag.pay{ background:color-mix(in srgb, var(--lime) 15%, transparent); color:var(--lime);
-  border-color:color-mix(in srgb, var(--lime) 32%, transparent); }
-.tag.rem{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet);
-  border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
-/* Provenance, not a category — so no hue of its own (those are spoken for: amber=new,
-   lime=pays, violet=remote). It stays the neutral chip and earns its weight from the word. */
-.tag.src::before{ content:""; display:inline-block; width:4px; height:4px; border-radius:50%;
-  background:var(--aqua); margin-right:6px; vertical-align:1.5px; }
+/* Two hues, not four. Amber says "arrived recently", violet says "remote" — the two facts a
+   scanner filters on. Everything else is neutral, and provenance is plain text. */
+.tag.new{ background:color-mix(in srgb, var(--amber) 15%, transparent); color:var(--amber);
+  border-color:color-mix(in srgb, var(--amber) 32%, transparent); font-weight:600; }
+.tag.rem{ background:color-mix(in srgb, var(--violet) 15%, transparent); color:var(--violet);
+  border-color:color-mix(in srgb, var(--violet) 32%, transparent); }
+.card .src{ font:500 11px var(--sans); color:var(--ink-3); }
 
 .pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
 .pager .ghost{ padding:8px 16px; }
@@ -288,10 +387,11 @@ textarea:focus{ border-color:var(--violet); }
 .kind{ margin:0 0 12px; color:var(--ink-2); font-size:12.5px; line-height:1.5;
   max-width:74ch; text-wrap:pretty; }
 .kind a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
-.kind a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+.kind a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
-.empty{ text-align:center; padding:56px 24px; color:var(--ink-2); max-width:56ch;
-  margin-inline:auto; }
+/* Left, like every other block on the page. Centring these gave the product three different
+   alignment systems depending on which tab you were on. */
+.empty{ text-align:left; padding:40px 0; color:var(--ink-2); max-width:56ch; }
 .empty .big{ font:600 17px var(--serif); color:var(--ink); margin-bottom:8px;
   text-wrap:balance; }
 .skel{ background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
@@ -301,6 +401,16 @@ textarea:focus{ border-color:var(--violet); }
   animation:shim 1.2s linear infinite; }
 @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
 
+/* ---- compact rows (B7). The ui-ux-pro-max design-system generator models density as the
+       spacing scale alone (its dense tier roughly halves every step), so this touches padding,
+       row gap and the ring's diameter and leaves the content untouched. ---- */
+.dense .card{ padding:7px 16px 7px 18px; margin-bottom:4px; }
+.dense .card .org{ margin-top:0; }
+.dense .card .tags{ margin-top:4px; gap:5px; }
+.dense .card .match, .dense .card .ring{ width:40px; height:40px; }
+.dense .card .star{ height:34px; }
+.dense .kind, .dense .active{ margin-bottom:8px; }
+
 /* ---- the Matches tab (ADR-0043): saved-set strip + live results ---- */
 .matches-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
 .matches-head h2{ font:600 16px var(--sans); letter-spacing:-.01em; margin:0; }
@@ -308,13 +418,13 @@ textarea:focus{ border-color:var(--violet); }
 .set-chip{ display:inline-flex; align-items:center; gap:2px; border:1px solid var(--rule);
   background:var(--raise); border-radius:var(--r-pill); padding:3px 6px 3px 4px;
   transition:border-color var(--step); }
-.set-chip.active{ border-color:var(--aqua); box-shadow:0 0 0 3px var(--glow); }
+.set-chip.active{ border-color:var(--accent); box-shadow:0 0 0 3px transparent; }
 .set-chip button{ background:none; border:0; cursor:pointer; font:inherit; color:var(--ink-2);
   padding:5px 7px; border-radius:var(--r-pill); font-size:13px;
   transition:color var(--step), background var(--step); }
 .set-chip button:hover{ color:var(--ink); background:var(--raise-2); }
 .set-chip .set-name{ font-weight:600; color:var(--ink); }
-.set-chip .mail-on{ color:var(--aqua); }
+.set-chip .mail-on{ color:var(--accent); }
 .set-tools{ display:inline-flex; align-items:center; }
 .set-tools button{ font-size:11.5px; color:var(--ink-3); padding:5px 6px; }
 .set-tools [data-act="del"]:hover{ color:var(--coral); }
@@ -322,10 +432,10 @@ textarea:focus{ border-color:var(--violet); }
 .saverow input{ flex:1; max-width:340px; }
 .matches-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
 .matches-controls select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
-  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
+  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; }
 .matches-controls input[type="date"]{ padding:7px 9px; border-radius:var(--r-md); font:inherit;
   font-size:12.5px; background:var(--raise); color:var(--ink); border:1px solid var(--rule);
-  outline:none; color-scheme:dark light; }
+  color-scheme:dark light; }
 /* the native picker follows the SITE theme when the toggle has forced one, not the OS */
 :root[data-theme="dark"] .matches-controls input[type="date"]{ color-scheme:dark; }
 :root[data-theme="light"] .matches-controls input[type="date"]{ color-scheme:light; }
@@ -412,6 +522,13 @@ textarea:focus{ border-color:var(--violet); }
    width, so text/gridlines never stretch non-uniformly the way a fixed height + width:100% +
    preserveAspectRatio="none" used to (a real bug on a narrow sidebar or a very wide monitor). */
 #trends-chart{ width:100%; aspect-ratio:720/260; height:auto; display:block; overflow:visible; }
+/* The same aspect-ratio as the chart it replaces, so the panel holds its height across the
+   swap — a skeleton that reserves the wrong space is its own layout shift. */
+.trends-skel[hidden]{ display:none !important; }
+.trends-skel .shim{ height:auto; aspect-ratio:720/260; border-radius:var(--r-md); }
+/* The legend column has no aspect of its own — it stretches to the chart's row, so the two
+   halves of the skeleton are exactly as tall as the two halves they stand in for. */
+.trends-skel .shim:last-child{ aspect-ratio:auto; align-self:stretch; }
 #trends-hitrect{ cursor:crosshair; }
 .crosshair-line{ stroke:var(--rule-2); stroke-width:1; }
 .ch-dot{ pointer-events:none; }
@@ -468,22 +585,29 @@ textarea:focus{ border-color:var(--violet); }
 .trends-table th[scope="row"]{ text-align:left; color:var(--ink); font-weight:500;
   font-variant-numeric:normal; position:sticky; left:0; background:var(--raise); }
 
-@media (max-width:760px){ .trends-grid{ grid-template-columns:1fr; } }
+@media (max-width:760px){
+  .trends-grid{ grid-template-columns:1fr; }
+}
 
 /* running text, so it gets a measure — 1180px of prose is unreadable */
 .foot{ max-width:62ch; margin:46px auto 0; text-align:center; color:var(--ink-3);
   font-size:12.5px; line-height:1.6; text-wrap:pretty; }
 .foot a{ color:var(--ink-2); text-decoration:none; white-space:nowrap;
   border-bottom:1px solid var(--rule-2); }
-.foot a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+.foot a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
-/* ---- narrow screens. The sidebar becomes a horizontal tab row above the content. ---- */
-@media (max-width:900px){
-  .layout{ grid-template-columns:1fr; gap:16px; }
-  .side{ position:static; flex-direction:row; overflow-x:auto; gap:6px; padding-bottom:2px; }
-  .nav-item{ white-space:nowrap; padding:8px 12px; }
-  .nav-item[aria-current="page"]::before{ display:none; }
-  .chip-soon{ margin-left:6px; }
+/* The tab strip is horizontal at every width now, so it needs no breakpoint of its own —
+   it simply scrolls when the tabs outgrow the viewport. */
+
+/* The row layout needs width to be a row. Below this the aligned columns cost more than
+   they buy, so the card folds: text on the left, pay and match on a second line under it. */
+@media (max-width:760px){
+  .card{ grid-template-columns:minmax(0,1fr) auto auto; gap:0 12px;
+    grid-template-areas:"who who who" "pay match star"; row-gap:10px; }
+  .card .who{ grid-area:who; max-width:none; }
+  .card .pay{ grid-area:pay; text-align:left; align-self:center; }
+  .card .match{ grid-area:match; }
+  .card .star{ grid-area:star; }
 }
 
 /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
@@ -491,16 +615,24 @@ textarea:focus{ border-color:var(--violet); }
 @media (max-width:560px){
   .shell{ padding:18px 14px 60px; }
   .count, #who{ display:none; }        /* the index size is context, not a control */
-  .searchbar{ flex-direction:column; }
-  .go{ padding:15px; width:100%; }
-  .hint{ gap:6px; }
+  /* Beside the field, not stacked under it. The stacked form was chosen when the button kept
+     its 30px side padding and squeezed the field to about fifteen characters; trimming the
+     padding buys the row back without that. */
+  .go{ padding:0 16px; }
+  /* The example queries cost a whole row above the first job, and the placeholder inside the
+     field already carries one. They stay on every wider screen, where the row is free. */
+  .hint{ display:none; }
+  /* The spacer pushes Sort to the right edge, so on a phone every control after it starts a
+     new line. Packed left instead. (The `order` rule that used to sit here sent the three
+     status texts to the end of the row; they have their own line now, so there is nothing
+     left in the toolbar to reorder.) */
   .toolbar{ gap:8px 10px; }
-    .toolbar .n{ order:3; width:100%; }
+  .toolbar .spacer{ display:none; }
   .card{ padding:14px 15px; }
   .card a.title{ font-size:15px; }
 }
 
-:focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important;
     transition-duration:.001ms !important; }
@@ -508,13 +640,76 @@ textarea:focus{ border-color:var(--violet); }
 }
 
 /* ── Facet counts and the salary bracket (issue #275) ─────────────────────────────────── */
-/* The bracket is one control in three parts, so it stays on one line until the rail is too
-   narrow to hold it; currency leads because it scopes the two numbers after it. */
-.bracket{ display:flex; gap:6px; flex-wrap:wrap; }
-/* `width:auto` overrides the rail's `.f select,.f input{ width:100% }` — inside a flex row a
-   100% basis makes each part demand the whole line and wrap every time. */
-.bracket select{ flex:0 0 5.5em; width:auto; }
-.bracket input{ flex:1 1 5em; min-width:0; width:auto; }
+/* The bracket is one control in three parts: a currency that scopes two bounds. As a wrapping
+   flex row it could only fit two of the three in the rail's own column — measured at 1440,
+   `#salmin` came out 113.5px on the first line and `#salmax` 191.5px on the second, so the
+   pair a user reads as "from / to" were neither the same size nor next to each other. A grid
+   states the relationship instead: the currency owns the row above (it qualifies both), and
+   min and max are two equal columns that stay a pair at every rail width. */
+.bracket{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+/* `width:auto` overrides the rail's `.f select,.f input{ width:100% }`, which would otherwise
+   make the select demand a whole grid column of its own. */
+.bracket select{ grid-column:1/-1; justify-self:start; width:auto; }
+.bracket input{ width:100%; min-width:0; }
+
+/* The bracket's slider. Two native ranges stacked on one track: each input is transparent and
+   `pointer-events:none` so it cannot swallow clicks meant for the other's thumb, and only the
+   thumbs take the pointer back. `.f select,.f input` would otherwise give these a border, a
+   background and 9px of padding — the whole reason this block is more specific than it looks.
+   Widths are overridden per part rather than by unsetting the rule, so a new control added to
+   the rail still inherits the shared shape. */
+.slider{ position:relative; height:28px; margin-top:12px; }
+/* --rule, checked rather than assumed: what has to clear 3:1 on a slider is the part that
+   identifies the control and its state — the thumb (6.76 dark / 7.38 light against the panel)
+   and the filled span against the track behind it (4.68 / 4.96). The track against the panel
+   is 1.45 / 1.49, which is the same decorative separation every 1px --rule border on this page
+   already is, not a state anyone reads. Moving it to --rule-2 or --ink-3 buys that boundary at
+   the cost of the fill, which drops to 3.35 and 1.46 respectively — a worse trade. */
+.slider-track{ position:absolute; left:9px; right:9px; top:12px; height:4px;
+  border-radius:var(--r-pill); background:var(--rule); }
+/* Neutral until a bound is actually set. Painted --accent from the start, a full-width
+   coloured span said "this filter is on" on a page nobody had filtered. --rule-2 against the
+   --rule track is deliberately near-invisible (1.4:1) and needs no 3:1: with no bound set it
+   states nothing, and the moment one is, the span becomes --accent at 4.68 / 4.96. */
+.slider-fill{ position:absolute; top:0; height:100%; border-radius:var(--r-pill);
+  background:var(--rule-2); }
+.slider-fill.on{ background:var(--accent); }
+/* The ends of the scale, so the track's span is a fact rather than a guess. --ink-3 on the
+   panel: 4.63 dark / 6.53 light. */
+.slider-caps{ display:flex; justify-content:space-between; margin-top:1px;
+  font:500 11px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-3); }
+.slider input[type="range"]{ position:absolute; left:0; top:0; width:100%; height:28px;
+  margin:0; padding:0; border:0; background:none; appearance:none; -webkit-appearance:none;
+  pointer-events:none; }
+.slider input[type="range"]::-webkit-slider-thumb{ -webkit-appearance:none; pointer-events:auto;
+  width:18px; height:18px; border-radius:50%; background:var(--raise);
+  border:2px solid var(--accent); cursor:grab; box-shadow:var(--shadow); }
+.slider input[type="range"]::-moz-range-thumb{ pointer-events:auto; width:14px; height:14px;
+  border-radius:50%; background:var(--raise); border:2px solid var(--accent); cursor:grab; }
+/* The element is 100% wide and mostly empty, so the page's own outline would ring the whole
+   track rather than the control the user is actually moving. Replaced on the thumb, not
+   removed — an unreplaced `outline:none` is the defect this file just finished fixing
+   everywhere else. */
+.slider input[type="range"]:focus{ outline:none; }
+.slider input[type="range"]:focus-visible::-webkit-slider-thumb{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.slider input[type="range"]:focus-visible::-moz-range-thumb{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.slider-read{ display:block; margin-top:2px; font:500 12px var(--mono);
+  font-variant-numeric:tabular-nums; color:var(--ink-2); }
+
+/* The converted figure under a row's own pay (ADR-0117) — its own line, quieter than the
+   employer's number and never in place of it: the board's figure is the fact, this is an
+   approximation of it at a dated rate.
+
+   --ink-2, not the --ink-3 the other quiet marks on a card use: a hovered card swaps to
+   --raise-2, where --ink-3 measures 4.04 in dark and this is a figure to be read, not a glyph.
+   Quieter than the employer's own number either way — that one is --ink at 12.94. */
+.pay .conv{ display:block; margin-top:2px; color:var(--ink-2); font-size:11.5px;
+  font-weight:500; font-variant-numeric:tabular-nums; }
+/* The rates' date, above the results it applies to. */
+.fxnote{ display:block; margin:-6px 0 12px; color:var(--ink-3); font-size:12px; }
+.fxnote:empty{ display:none; }   /* no bracket, no line, and no gap where one would be */
 
 /* A switch's count, in its own node so appending markup to the label can never displace it. */
 .sw .fcount{ color:var(--ink-3); }
@@ -537,7 +732,7 @@ textarea:focus{ border-color:var(--violet); }
 
 /* ---- the Data tab (ADR-0112). Running prose, so it gets a measure and a type scale of its
        own — the rest of this page is controls and cards, which want neither. ---- */
-.doc{ max-width:70ch; margin-inline:auto; }
+.doc{ max-width:70ch; }
 .doc-hd h2{ font:600 22px/1.25 var(--serif); margin:0 0 8px; letter-spacing:-.01em; }
 .doc-hd p{ color:var(--ink-2); font-size:14.5px; margin:0 0 30px; text-wrap:pretty; }
 .doc-sec{ border-top:1px solid var(--rule); padding-top:22px; margin-bottom:26px; }
@@ -565,14 +760,14 @@ textarea:focus{ border-color:var(--violet); }
    blue, which is both off-system and unreadable on the dark ground. Set as a quiet citation:
    the aqua measures 10.04:1 dark / 4.56:1 light against the page ground, and the rule
    underneath keeps it identifiable as a link without colour being the only signal. */
-.doc-sec a{ color:var(--aqua); text-decoration:none; font-weight:500; white-space:nowrap;
-  border-bottom:1px solid color-mix(in srgb, var(--aqua) 42%, transparent); }
-.doc-sec a:hover{ border-bottom-color:var(--aqua); }
+.doc-sec a{ color:var(--accent); text-decoration:none; font-weight:500; white-space:nowrap;
+  border-bottom:1px solid color-mix(in srgb, var(--accent) 42%, transparent); }
+.doc-sec a:hover{ border-bottom-color:var(--accent); }
 
 .doc-ft{ border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3);
   font-size:13px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
 .doc-ft a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
-.doc-ft a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+.doc-ft a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
 /* Coverage bars. A share of the index, so one hue at varying length — never a category
    palette, and never red/green, which would read as pass/fail on facts that are neither. */
@@ -582,7 +777,7 @@ textarea:focus{ border-color:var(--violet); }
 .cov-bar{ height:7px; border-radius:var(--r-pill); background:var(--rule); overflow:hidden;
   margin-top:6px; }
 .cov-bar span{ display:block; height:100%; border-radius:var(--r-pill);
-  background:var(--aqua); }
+  background:var(--accent); }
 .cov-txt{ color:var(--ink-2); font-size:14px; line-height:1.45; }
 .cov-txt b{ color:var(--ink); font:600 14px var(--mono); font-variant-numeric:tabular-nums;
   margin-right:2px; }

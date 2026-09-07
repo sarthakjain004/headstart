@@ -37,6 +37,7 @@ experiment/
 # git cannot re-include a file whose parent DIRECTORY is excluded, and the curated role
 # taxonomy below must stay tracked (ADR-0040).
 config/*
+!config/fx_rates.json
 !config/role_families.json
 !config/role_watchlist.json
 

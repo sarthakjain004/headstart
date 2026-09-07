@@ -58,6 +58,28 @@
     <p class="aside">Percentages are of jobs in the index. They say nothing about boards not yet
        discovered or jobs never scraped — a high number here is not a claim of completeness.
        <a href="{{ adr }}/0113-publish-the-indexs-own-limits-in-the-product.md" target="_blank" rel="noopener">ADR-0113</a></p>
+    {# The one approximation on this page that silently changes which jobs come back, rather
+       than only how many carry a field — so it is stated here rather than left to the rail's
+       own tip, which is only read by someone already using the control. The date is printed
+       because a rate without its date is the defect ADR-0117 exists to avoid; where there is
+       no table at all the bracket degrades to one currency and this says that instead. #}
+    {% if fx_as_of %}
+    <p><b>What a salary is in another currency.</b> Salaries are stored exactly as the employer
+       published them, in their own currency. To compare a bracket across them, your bounds are
+       restated in each currency at a committed table of rates dated <b>{{ fx_as_of }}</b> — not
+       a live lookup, so the same search returns the same rows to everyone, and so no result
+       depends on a third party answering. Two limits worth stating plainly: a currency the
+       table has no rate for is left out of a converted bracket rather than compared one-to-one,
+       and market rates are not purchasing power — a converted figure is roughly this much
+       money, never a comparable offer.
+       <a href="{{ adr }}/0117-the-salary-bracket-compares-across-currencies.md" target="_blank" rel="noopener">ADR-0117</a></p>
+    {% else %}
+    <p><b>What a salary is in another currency.</b> Nothing here converts one. The rate table
+       this deployment would use is unreadable, so the salary bracket compares inside the one
+       currency you pick and leaves every other currency's jobs out — a narrower answer rather
+       than a wrong one.
+       <a href="{{ adr }}/0117-the-salary-bracket-compares-across-currencies.md" target="_blank" rel="noopener">ADR-0117</a></p>
+    {% endif %}
   </section>
 
   <section class="doc-sec">

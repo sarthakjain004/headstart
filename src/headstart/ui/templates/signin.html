@@ -7,19 +7,23 @@
   /* A subset of style.css's tokens — just enough for one page. Deliberately self-contained:
      signed-out requests can't fetch /static (the wall gates it), so the door inlines all it
      needs. ADR-0112 grew this page from a card to an argument, which makes the constraint
-     load-bearing: nothing below is decoration, and every token here is one the door uses. */
+     load-bearing: nothing below is decoration, and every token here is one the door uses.
+
+     These values are a COPY of style.css's and must move with it. They have drifted once
+     already: two critique rounds lifted the app's surfaces for contrast and this block kept
+     the originals, so signing in visibly changed the background and the door went on carrying
+     a contrast defect the app had fixed. A test pins them together now. */
   :root{
-    --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
-    --ink:#EEF1F8; --ink-2:#A8B0C6;
-    --aqua:#12D6B4; --violet:#8B5CF6; --glow:rgba(18,214,180,.22);
+    --ground:#131211; --raise:#2A2724; --raise-2:#353128; --rule:#454039; --rule-2:#5C554C;
+    --ink:#F2EFE9; --ink-2:#BDB6AA;
+    --accent:#5FBFB0;
     --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --serif:ui-serif,"Iowan Old Style",Georgia,serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme: light){
-    :root{ --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
-      --ink:#131726; --ink-2:#4C5570; --aqua:#00806B; --violet:#5B34D6;
-      --glow:rgba(0,128,107,.16); }
+    :root{ --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
+      --ink:#1C1A17; --ink-2:#4A463F; --accent:#1F5F5B; }
   }
   *{ box-sizing:border-box; } html,body{ margin:0; }
   /* a `display` rule outranks the hidden attribute, and both .openout and .g set one —
@@ -27,22 +31,15 @@
   [hidden]{ display:none !important; }
   body{ background:var(--ground); color:var(--ink); font:15px/1.6 var(--sans);
     -webkit-font-smoothing:antialiased; }
-  .aura{ position:fixed; inset:-30% -10% auto -10%; height:60vh; pointer-events:none; z-index:0;
-    background:radial-gradient(46% 52% at 24% 10%, var(--glow), transparent 70%),
-               radial-gradient(38% 46% at 78% 4%, rgba(139,92,246,.14), transparent 72%);
-    filter:blur(6px); }
   .wrap{ position:relative; z-index:1; max-width:760px; margin:0 auto; padding:48px 22px 64px; }
 
   .brand{ display:flex; align-items:center; gap:11px; margin-bottom:38px; }
   .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-    background:linear-gradient(135deg,var(--aqua),var(--violet));
-    box-shadow:0 0 0 1px rgba(255,255,255,.10) inset, 0 8px 20px var(--glow); }
+    background:var(--accent); }
   .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
     border-radius:50%; background:var(--ground); }
   .brand .name{ font:600 21px/1 var(--serif); letter-spacing:-.01em; }
-  .brand .name em{ font-style:normal;
-    background:linear-gradient(100deg,var(--aqua),var(--violet)); -webkit-background-clip:text;
-    background-clip:text; color:transparent; }
+  .brand .name em{ font-style:normal; color:var(--accent); }
 
   h1{ font:600 clamp(26px,5vw,36px)/1.22 var(--serif); letter-spacing:-.015em; margin:0 0 14px;
     max-width:19ch; }
@@ -54,7 +51,7 @@
     background:var(--rule); border:1px solid var(--rule); border-radius:14px; overflow:hidden;
     margin:0 0 34px; }
   .stat{ background:var(--raise); padding:16px 18px; }
-  .stat .v{ font:600 22px/1.1 var(--mono); font-variant-numeric:tabular-nums; color:var(--aqua);
+  .stat .v{ font:600 22px/1.1 var(--mono); font-variant-numeric:tabular-nums; color:var(--accent);
     letter-spacing:-.02em; }
   /* --ink-2, not --ink-3: measured 3.4–4.3:1 against these surfaces, under the 4.5:1 floor
      for body text. Hierarchy comes from size here instead of from fading the ink — on a page
@@ -66,7 +63,7 @@
   h2{ font:600 15px/1.3 var(--sans); margin:0 0 14px; letter-spacing:.005em; }
   .points{ list-style:none; margin:0; padding:0; display:grid; gap:13px; }
   .points li{ display:flex; gap:11px; color:var(--ink-2); font-size:14.5px; }
-  .points svg{ flex:none; width:17px; height:17px; margin-top:3px; color:var(--aqua); }
+  .points svg{ flex:none; width:17px; height:17px; margin-top:3px; color:var(--accent); }
   .points b{ color:var(--ink); font-weight:600; }
 
   /* The ask. Placed after the argument, never before it. */
@@ -77,17 +74,16 @@
   .note{ color:var(--ink-2); font-size:12.5px; margin-top:14px; min-height:1em; }
   .openout{ display:inline-block; text-decoration:none; font:600 14px var(--sans);
     color:#04121A; padding:13px 26px; border-radius:12px;
-    background:linear-gradient(120deg,var(--aqua),var(--violet));
-    box-shadow:0 8px 22px var(--glow); }
+    background:var(--accent); }
   .openout:hover{ filter:saturate(1.12); }
 
   .checkable{ margin:26px 0 0; color:var(--ink-2); font-size:13px; text-align:center; }
   .checkable a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2);
     padding-bottom:1px; }
-  .checkable a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+  .checkable a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
   .sep{ margin:0 9px; opacity:.5; }
 
-  a:focus-visible, .openout:focus-visible{ outline:2px solid var(--aqua); outline-offset:3px;
+  a:focus-visible, .openout:focus-visible{ outline:2px solid var(--accent); outline-offset:3px;
     border-radius:4px; }
 
   @media (max-width:560px){
@@ -98,7 +94,6 @@
   }
   @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
 </style></head><body>
-<div class="aura"></div>
 <div class="wrap">
 
   <div class="brand">

@@ -10,6 +10,7 @@ on:
       [
         "deploy/hf-space/**",
         "src/headstart/facets.py",
+        "src/headstart/fx.py",
         "src/headstart/geo.py",
         "src/headstart/llm_router.py",
         "src/headstart/profile_extract.py",
@@ -17,6 +18,7 @@ on:
         "src/headstart/alerts/**",
         "src/headstart/ui/**",
         # shipped into the image too — a reworded label must reach the Space
+        "config/fx_rates.json",
         "config/role_families.json",
         "config/role_watchlist.json",
       ]
@@ -47,12 +49,16 @@ jobs:
           # these live in src/headstart (single source of truth, unit-tested there); the
           # standalone Space app imports them as sibling modules
           cp src/headstart/facets.py deploy/hf-space/facets.py
+          cp src/headstart/fx.py deploy/hf-space/fx.py
           cp src/headstart/geo.py deploy/hf-space/geo.py
           cp src/headstart/llm_router.py deploy/hf-space/llm_router.py
           cp src/headstart/profile_extract.py deploy/hf-space/profile_extract.py
           cp src/headstart/search.py deploy/hf-space/search.py
           # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
           # these labels. Same single-source-of-truth reason as the modules above.
+          # The salary bracket's dated rate table (ADR-0117). Without it the bracket
+          # degrades to one currency, so it ships beside the module that reads it.
+          cp config/fx_rates.json deploy/hf-space/fx_rates.json
           cp config/role_families.json deploy/hf-space/role_families.json
           cp config/role_watchlist.json deploy/hf-space/role_watchlist.json
           # A package, not a flat file: its members import each other relatively, so the same

@@ -17,7 +17,7 @@ function currentTab(){
 }
 function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
-  document.querySelectorAll('.side [data-tab]').forEach(a =>
+  document.querySelectorAll('.tabs [data-tab]').forEach(a =>
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
   if (name === 'trends' && el('trends') && !trendData) loadTrends(null);
   if (name === 'matches' && el('sets-strip')){
@@ -90,6 +90,17 @@ async function loadCoverage(){
       : '<p class="aside">The index carries none of these fields yet.</p>';
 }
 
+const DENSITY_KEY = 'hs.dense';
+function applyDensity(on){
+  const box = document.querySelector('.content'), btn = el('density');
+  if (box) box.classList.toggle('dense', on);
+  if (btn){ btn.setAttribute('aria-pressed', String(on)); btn.textContent = on ? 'Comfortable' : 'Compact'; }
+}
+function flipDensity(){
+  const on = !document.querySelector('.content').classList.contains('dense');
+  try { localStorage.setItem(DENSITY_KEY, on ? '1' : ''); } catch(e){}
+  applyDensity(on);
+}
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
@@ -113,9 +124,12 @@ async function signOut(){
 function toggleRail(){
   const rail = el('rail');
   const open = rail.classList.toggle('open');
-  // The rail sits before <main> in the DOM, so on a stacked phone layout it opens ABOVE the
-  // button that was just tapped. Without this the content jumps and the filters are off-screen.
-  if (open) rail.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  const btn = el('filtersbtn');
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+  // Deliberately no scrollIntoView. It was here because the panel used to open ABOVE its own
+  // button and take it off screen; now the panel opens directly below and its top is already
+  // in view, and `block:'nearest'` on a 761px panel scrolls the page 179px on every click —
+  // moving the page under the cursor, which is the thing this whole change was about.
 }
 
 const age = d => {
@@ -130,9 +144,12 @@ const age = d => {
 };
 // Indexed inside the window the user asked for, so the badge always means "newer than your
 // filter" — defaulting to 24h when no window is set. `first_seen` is ours, so it always parses.
+// Capped at 48h rather than tracking the filter window. Tied to the window, a "last 7 days"
+// filter badged EVERY row — a badge on every row is chrome, not signal, and the row it most
+// needs to distinguish is the one that arrived overnight.
 const isNew = s => {
   const t = Date.parse(s || ''); if (isNaN(t)) return false;
-  const hours = Number((el('seen') && el('seen').value) || 24);
+  const hours = Math.min(Number((el('seen') && el('seen').value) || 24), 48);
   return Date.now() - t < hours * 3600000;
 };
 // `salary` (the raw display string, per-ATS formatted) is only ever populated from a
@@ -150,6 +167,43 @@ const payLabel = r => {
     : fmt(r.min_salary_annual) + '+';
   return cur + range + '/yr';
 };
+/* ---- the bracket's rates, client-side (ADR-0117). The SAME table the server compiled the
+   query with, handed over on window.CFG rather than fetched: one table and one as_of, so the
+   figure printed beside a row can never disagree with the where-clause that returned it. Absent
+   — the server could not read the table either — means nothing is converted here, which is the
+   same fail-safe direction `fx.table()` takes. ---- */
+const FX = CFG.fx || null;
+// Rates are units-per-base, so the base cancels — the mirror of headstart.fx.convert.
+const fxConvert = (amount, frm, to) => {
+  const rates = (FX && FX.rates) || {};
+  const a = rates[(frm || '').toUpperCase()], b = rates[(to || '').toUpperCase()];
+  return (a && b) ? amount / a * b : null;
+};
+// The currency the Search bracket is asking in, set by `draw` and read by `jobCard`. Only the
+// Search list gets it: a Matches row is drawn from its own saved query, and labelling it with
+// a currency picked on another tab would answer a question nobody asked there. (The Saved list
+// cannot show one at all — `savedRow` carries no derived salary columns.)
+let convTo = '';
+// "≈ USD 34,000–51,000" — why a row priced in another currency is in a converted bracket at
+// all. Built from the ADR-0082 annual columns, never from `r.salary`: that string is the
+// board's own text, in the board's own period, and converting it would restate a number this
+// page never normalised. Rounded to the nearest thousand and prefixed ≈, because the rates
+// are approximate and dated and a figure to the rupee would claim a precision they have not
+// got. The date itself rides on `#fxnote` beside the results, not on every row.
+const convLabel = r => {
+  if (!convTo || !FX || r.min_salary_annual == null) return '';
+  const from = (r.salary_currency || '').toUpperCase();
+  if (!from || from === convTo) return '';
+  const lo = fxConvert(Number(r.min_salary_annual), from, convTo);
+  if (lo == null) return '';
+  // Three significant figures, never finer than a thousand: rounded to the nearest 1,000 a
+  // rupee figure came out as "14,940,000", six figures of precision the rates have not got.
+  const k = n => { const step = Math.max(1000, Math.pow(10, Math.floor(Math.log10(n)) - 2));
+                   return Math.round(n / step) * step; };
+  const hi = (r.max_salary_annual != null && r.max_salary_annual !== r.min_salary_annual)
+    ? fxConvert(Number(r.max_salary_annual), from, convTo) : null;
+  return '\u2248 ' + convTo + ' ' + salFmt(k(lo)) + (hi != null ? '\u2013' + salFmt(k(hi)) : '');
+};
 // The Match ring (ADR-0042): raw cosine lives in a narrow band (a strong on-topic query
 // tops out ≈0.78; an absurd one still scores ≈0.66), so the displayed % stretches it
 // through two fixed anchors — 0.60 → 0%, 0.85 → 100% — tuned once against real queries
@@ -160,7 +214,8 @@ const matchPct = s => Math.round(Math.max(0, Math.min(1, (s - .60) / .25)) * 100
 // not four different hues. Hue is reserved for categories (amber = new, lime = pays, violet =
 // remote); reusing those hues here would have made lime mean both "strong match" and "salary".
 // Weak matches fade toward the muted ink so a scan shows where the good results stop.
-const tone = s => `color-mix(in srgb, var(--aqua) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
+const tone = s => `color-mix(in srgb, var(--accent) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
+const busy = on => el('results').setAttribute('aria-busy', String(!!on));
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
   '<div class="shim" style="width:30%; margin-top:10px"></div>' +
@@ -190,8 +245,9 @@ function currentFilters(){
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
   if (el('salmin') && el('salmin').value) f.salary_min = el('salmin').value;
   if (el('salmax') && el('salmax').value) f.salary_max = el('salmax').value;
-  // Only meaningful alongside a bound: salaries are never FX-converted, so the currency
-  // scopes a bracket rather than filtering on its own (matches build_filter's own guard).
+  // Only meaningful alongside a bound: the currency says what the bracket's two numbers are
+  // counted in, and the server restates them in every other currency from there (ADR-0117) —
+  // so on its own it filters nothing, which is build_filter's own guard too.
   if (el('salcur') && (f.salary_min || f.salary_max)) f.salary_currency = el('salcur').value;
   return f;
 }
@@ -199,7 +255,15 @@ const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your exp
   kw:'Keyword', kw_in:'Look in',
   ats:'ATS provider', etype:'Type', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤',
-  salary_min:'Salary from', salary_max:'Salary to', salary_currency:'Currency' };
+  salary_min:'Salary from', salary_max:'Salary to' };
+// A chip should read as the sentence the user set, in the units the read-out and the results
+// use: "Salary from USD 60,000", not the raw "60000" out of the number field. The currency has
+// no chip of its own — it is not a filter, it is what both bounds are counted in, and a third
+// chip repeating it would also inflate the count on the Filters button by one.
+const chipValue = (key, value, f) =>
+  (key === 'salary_min' || key === 'salary_max')
+    ? `${f.salary_currency || ''} ${salFmt(value)}`.trim()
+    : (value === 'true' ? 'yes' : value);
 // `salary_currency` is deliberately absent: it has a default (USD) rather than an empty
 // state, so clearAll() blanking it would leave the picker showing nothing. Clearing the two
 // bounds already switches the bracket off, which is what "clear" has to mean here.
@@ -209,12 +273,145 @@ const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears',
   etype:'etype', india:'india', location:'location', company:'company',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
+  syncSalarySlider();
   const f = currentFilters(), box = el('active');
-  box.innerHTML = Object.entries(f).map(([k,v]) =>
-    `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(v === 'true' ? 'yes' : v)}` +
+  // Everything but the currency, which both bracket chips print for themselves.
+  const shown = Object.entries(f).filter(([k]) => k !== 'salary_currency');
+  // The panel is closed by default now (ADR-0116), so the button has to carry how many
+  // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
+  const btn = el('filtersbtn'), n = shown.length;
+  if (btn){
+    btn.textContent = n ? `Filters (${n})` : 'Filters';
+    btn.classList.toggle('has', n > 0);
+  }
+  // A converted figure has to carry the date of the rates that made it (ADR-0117), and the
+  // rail's own tip saying so is behind a panel that is closed by default. Written on every
+  // draw, like #sortnote and #kind, so it can never describe a bracket that is no longer set.
+  const fxnote = el('fxnote');
+  if (fxnote) fxnote.textContent = (f.salary_currency && FX && FX.as_of)
+    ? `Other currencies are converted at rates from ${FX.as_of} \u2014 currency conversion, not cost of living.`
+    : '';
+  box.innerHTML = shown.map(([k,v]) =>
+    `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(chipValue(k, v, f))}` +
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }
+/* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
+   stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
+   applySetToControls), so the slider is an input method for them and never a second source of
+   truth. It writes into them and fires `input`, which is what the number fields would fire if
+   a hand had typed there.
+
+   Traffic is one-way on the read side: a typed figure MOVES the handle but is never rewritten
+   by it. Salary asks for exact numbers, and a slider that rounded 137,000 up to its nearest
+   stop the moment focus left the field would be editing the user's filter behind them. It also
+   keeps the promise the number fields make on their own — a figure past the top of the scale
+   is still reachable by typing it.
+
+   The stops are round numbers, closer together where the salaries are: annual pay is heavily
+   skewed, and an even 0-500k track would spend four fifths of its length on a range almost
+   nothing sits in. The printed range is always the true value out of the number fields, never
+   the stop the handle is resting on.
+
+   The top of the scale is "no maximum", not "the most anyone here pays" — nothing in the
+   client has measured that, and a number implying it would be an invented bound. ---- */
+const BASE_STOPS = (() => {
+  const out = [];
+  for (let v = 0; v < 100000; v += 5000) out.push(v);
+  for (let v = 100000; v < 200000; v += 10000) out.push(v);
+  for (let v = 200000; v <= 500000; v += 25000) out.push(v);
+  return out;
+})();
+const SAL_TOP = BASE_STOPS.length - 1;
+/* The ladder above is drawn in the rate table's base currency (USD). Left at those numbers it
+   was unusable in every other one: in INR the whole track topped out at ₹5,00,000 — below
+   entry-level pay in the market this index covers best — so the handles could only ever park
+   at the far right and the control said nothing.
+
+   So the scale is restated in whichever currency the bracket is in, at the rate rounded to ONE
+   significant figure — 83 → 80, 0.79 → 0.8. The rounding is the point: every stop then stays a
+   round number in the currency it is printed in (₹4,00,000 steps, not ₹4,15,000), and the top
+   of the scale means "no maximum" rather than a converted figure anyone should read. The exact
+   rates are the server's business; these only decide where a handle can rest, and a figure
+   between two stops is still reachable by typing it into the number field. */
+const oneSig = x => { const p = Math.pow(10, Math.floor(Math.log10(x))); return Math.round(x / p) * p; };
+let SALARY_STOPS = BASE_STOPS;
+let stopsCurrency = '';
+function useStops(cur){
+  cur = (cur || '').toUpperCase();
+  if (cur === stopsCurrency) return;
+  stopsCurrency = cur;
+  const rate = FX ? fxConvert(1, FX.base, cur) : null;
+  const scale = rate ? oneSig(rate) : 1;   // no table, or no rate for it: the base ladder
+  SALARY_STOPS = scale === 1 ? BASE_STOPS : BASE_STOPS.map(v => Math.round(v * scale));
+}
+// The stop nearest a typed figure — nearest, not floor, so 137,000 rests on 140,000 rather
+// than sliding back to 130,000. Anything past the top end parks on the top.
+const salStop = v => {
+  let best = 0;
+  SALARY_STOPS.forEach((stop, i) => {
+    if (Math.abs(stop - v) < Math.abs(SALARY_STOPS[best] - v)) best = i;
+  });
+  return best;
+};
+const salFmt = n => Number(n).toLocaleString();
+
+// Position the handles, the fill and the read-out from whatever `#salmin`/`#salmax` now hold.
+// Called on every fetch (via drawActive) as well as on direct edits, so every path that can
+// change those fields — Clear all, a removed chip, a saved set, the Profile hand-off — leaves
+// the slider agreeing with them without each one having to know it exists.
+function syncSalarySlider(){
+  const lo = el('salrmin'), hi = el('salrmax'); if (!lo || !hi) return;
+  // Before anything is read off the stops: the scale belongs to the currency now picked.
+  useStops(el('salcur') ? el('salcur').value : '');
+  lo.max = String(SAL_TOP); hi.max = String(SAL_TOP);
+  const minV = el('salmin').value, maxV = el('salmax').value;
+  const li = minV === '' ? 0 : salStop(Number(minV));
+  const ri = maxV === '' ? SAL_TOP : salStop(Number(maxV));
+  lo.value = String(Math.min(li, ri));
+  hi.value = String(Math.max(li, ri));
+  // With both handles at the same stop the one underneath is unreachable; lift whichever is
+  // at the far end so there is always a thumb on top to drag back.
+  lo.style.zIndex = Number(lo.value) >= SAL_TOP ? '4' : '';
+  const pct = i => (i / SAL_TOP) * 100;
+  const fill = el('salfill');
+  if (fill){
+    fill.style.left = pct(Number(lo.value)) + '%';
+    fill.style.width = (pct(Number(hi.value)) - pct(Number(lo.value))) + '%';
+    // Coloured only once a bound exists: at rest the span covers the whole track, and in
+    // --accent that reads as an applied filter on a search nobody has filtered.
+    fill.classList.toggle('on', minV !== '' || maxV !== '');
+  }
+  // The ends of the scale, from the stops themselves — so a rebuilt scale relabels itself.
+  if (el('salcap0')) el('salcap0').textContent = salFmt(SALARY_STOPS[0]);
+  if (el('salcap1')) el('salcap1').textContent = salFmt(SALARY_STOPS[SAL_TOP]) + '+';
+  // The screen reader hears the salary, not the index the range actually holds.
+  lo.setAttribute('aria-valuetext', minV === '' ? 'no minimum' : salFmt(minV));
+  hi.setAttribute('aria-valuetext', maxV === '' ? 'no maximum' : salFmt(maxV));
+  const cur = el('salcur') ? el('salcur').value : '';
+  const read = el('salread');
+  if (read){
+    read.textContent = (minV === '' && maxV === '') ? 'Any salary'
+      : `${cur} ${minV === '' ? 'any' : salFmt(minV)} \u2013 ${maxV === '' ? 'no maximum' : salFmt(maxV)}`;
+  }
+}
+
+// A dragged handle writes the stop it landed on into the number field it stands for, then
+// searches — `input` so anything watching those fields sees the change the way it would see
+// a keystroke. Blank, not 0 / the top stop: an end-stop means "unbounded", and 0 is a real
+// minimum the server would compile into a clause.
+function salSlide(which){
+  const lo = el('salrmin'), hi = el('salrmax');
+  let li = Number(lo.value), ri = Number(hi.value);
+  if (li > ri){ if (which === 'min') li = ri; else ri = li; }   // handles never cross
+  lo.value = String(li); hi.value = String(ri);
+  el('salmin').value = li === 0 ? '' : String(SALARY_STOPS[li]);
+  el('salmax').value = ri === SAL_TOP ? '' : String(SALARY_STOPS[ri]);
+  for (const id of ['salmin', 'salmax'])
+    el(id).dispatchEvent(new Event('input', { bubbles: true }));
+  syncSalarySlider();
+}
+
 const BRACKET = ['salary_min', 'salary_max', 'salary_currency'];
 function dropFilter(key){
   // The currency picker has a default, not an empty state, so there is nothing to blank on it.
@@ -258,6 +455,7 @@ async function fetchPage(){
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
+  busy(true);
   el('pager').innerHTML = '';
   el('kind').textContent = '';   // never describe the previous search's rows over the new ones
   el('n').textContent = q ? 'searching…' : 'loading…';
@@ -268,8 +466,9 @@ async function fetchPage(){
   drawSortNote();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+  catch(e){ busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
             el('n').textContent = ''; el('kind').textContent = ''; return; }
+  busy(false);
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     el('n').textContent = ''; el('kind').textContent = ''; return; }
@@ -346,10 +545,15 @@ function drawCount(shown, facets){
 // max_k * max_page, which this page cannot see — PAGE_SIZE * MAX_PAGE is a different number
 // (400 against 2,000) and printing it would state the caveat with the wrong figure. The fact is
 // what the user needs: this is newest among their best matches, not a global date sort.
+const SORT_NOTES = {
+  seen:    ['most recently added first', 'newest among your best matches — not a global date sort'],
+  posted:  ['newest by the employer’s date first', 'newest among your best matches — not a global date sort'],
+  salary:  ['highest stated salary first — jobs with none come last',
+            'best-paid among your best matches — not a global salary sort'],
+};
 function drawSortNote(){
-  const sort = el('sort').value, q = el('q').value.trim();
-  el('sortnote').textContent = sort === 'rel' ? ''
-    : (q ? 'newest among your best matches — not a global date sort' : 'newest first');
+  const note = SORT_NOTES[el('sort').value];
+  el('sortnote').textContent = !note ? '' : note[el('q').value.trim() ? 1 : 0];
 }
 
 // When a search returns nothing, name the one filter that costs the most rather than telling
@@ -465,6 +669,9 @@ function countYears(options){
 // A short page (fewer than PAGE_SIZE rows) is how "no next page" is known — there is no
 // total-count query on the server (ADR-0074), so this is the only signal available.
 function drawPager(rowCount, facets){
+  // Nothing to page through. The pager used to render "Prev · Page 1 · Next" over an empty
+  // result set, offering navigation through zero rows.
+  if (!rowCount && page === 1){ el('pager').innerHTML = ''; return; }
   const total = facets && typeof facets.total === 'number' ? facets.total : null;
   // A short page still means "no next page"; the total, new in issue #275, additionally rules
   // out a next page whose rows exist but sit past what ADR-0074 lets pagination address.
@@ -477,44 +684,73 @@ function drawPager(rowCount, facets){
     `<button class="ghost" ${hasNext?'':'disabled'} onclick="goToPage(${page+1})">Next ›</button>`;
 }
 
-function draw(rows, target){
-  // No client-side reorder any more. It only ever sorted the twenty rows already fetched,
-  // which reads as "sort my results" and is not: the server now orders the whole result set
-  // (issue #275), so by the time rows arrive they are already in the asked-for order.
-  rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
-  el(target || 'results').innerHTML = rows.map((r,i) => {
-    // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
-    // match ring would otherwise show a misleading "0%" rather than "not applicable".
-    const ranked = r.score != null;
-    const s = Number(r.score) || 0, pct = matchPct(s);
-    return `
-    <div class="card" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
-      <div class="hd">
-        <div style="flex:1; min-width:0">
-          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
-          <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+/* ---- ONE result card, rendered by Search, Matches and Saved alike.
+   Saved used to build its own: a `.hd` wrapper no stylesheet has carried since the row layout
+   landed, the salary as a wrapped grey pill rather than in the pay column, no tags row, no
+   external-link glyph. Measured, its content ended 140px short of the search card's and the
+   same job read as two different things depending on which tab you found it on. A Saved
+   record is mapped onto this row shape in renderSaved rather than this function growing a
+   second branch — the card knows about rows, not about where they came from.
+
+   A Saved row carries the two facts only it has — whether the job has closed, and when it
+   was starred — and `canHide` is the one thing about the row that is about WHERE it is being
+   drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
+   "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
+   one intent would disagree about which list the row is in. ---- */
+function jobCard(r, i, canHide){
+  // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
+  // match ring would otherwise show a misleading "0%" rather than "not applicable".
+  const ranked = r.score != null;
+  const s = Number(r.score) || 0, pct = matchPct(s);
+  const hidden = r.id && dismissed.has(r.id);
+  const cls = ['card', r.closed && 'gone', hidden && 'dismissed'].filter(Boolean).join(' ');
+  return `
+    <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
+      <div class="who">
+        <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
+        <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+        <div class="tags">
+          ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
+          ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
+          ${r.remote? '<span class="tag rem">remote</span>':''}
+          ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
+          ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
+          ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
+          ${age(r.starred_at)? '<span class="tag mono">saved '+age(r.starred_at)+'</span>':''}
+          ${r.ats? '<span class="src" title="Read directly from this company\'s '+esc(r.ats)+' board \u2014 not a repost">via '+esc(r.ats)+'</span>':''}
         </div>
-        ${starBtn(r.id)}
-        ${ranked? `<div class="match" role="img"
-             aria-label="Match ${pct} percent — how close this job is to your search, on a fixed scale that gives the same job the same number every time"
-             title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+      </div>
+      <div class="pay">${payLabel(r)? esc(payLabel(r)) : '<span class="nopay" title="This board did not publish one">\u2014</span>'}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
+      ${ranked? `<div class="match" role="img"
+             aria-label="Match ${pct} percent \u2014 how close this job is to your search, on a fixed scale that gives the same job the same number every time"
+             title="Match strength \u2014 semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
           <div class="v" aria-hidden="true">${pct}%</div>
-        </div>` : ''}
-      </div>
-      <div class="tags">
-        ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
-        ${r.remote? '<span class="tag rem">remote</span>':''}
-        ${payLabel(r)? '<span class="tag pay">'+esc(payLabel(r))+'</span>':''}
-        ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
-        ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
-        ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
-        ${r.ats? '<span class="tag src" title="Read directly from this company\'s '+esc(r.ats)+' board — not a repost">via '+esc(r.ats)+'</span>':''}
-      </div>
-    </div>`; }).join('');
+        </div>`
+      // The column stays reserved on an unranked row rather than collapsing. Dropping it moved
+      // the star 76px between a browse and a search and left a 107px ragged right edge against
+      // the ranked rows' 31 — the aligned columns are the whole point of the row layout, and
+      // they cannot align across two different grids.
+      : '<div class="match" aria-hidden="true"></div>'}
+      ${starBtn(r.id, r.starred_at ? true : undefined)}
+      ${canHide ? dismissBtn(r.id) : ''}
+    </div>`;
+}
+
+function draw(rows, target){
+  // Only the Search list is labelled with the bracket's currency — see `convTo`.
+  convTo = target ? '' : (currentFilters().salary_currency || '');
+  // No client-side reorder any more. It only ever sorted the twenty rows already fetched,
+  // which reads as "sort my results" and is not: the server now orders the whole result set
+  // (issue #275), so by the time rows arrive they are already in the asked-for order.
+  rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
+  // `(r, i) => …`, never a bare `rows.map(jobCard)`: map passes the array as a third argument,
+  // which would land on `canHide` and quietly put a × on every list.
+  el(target || 'results').innerHTML = rows.map((r, i) => jobCard(r, i, !target)).join('');
+  if (!target) drawHidden(rows);
 }
 
 /* ---- Saved sets (ADR-0043): the Matches tab runs one live; "Save this search" creates
@@ -608,6 +844,7 @@ function applySetToControls(s){
     const c = el(CONTROL[key]); if (!c) continue;
     if (c.type === 'checkbox') c.checked = value === 'true'; else c.value = value;
   }
+  syncSalarySlider();
 }
 
 async function handleSetAction(act, id){
@@ -675,6 +912,49 @@ async function saveSearch(){
    fields, so the Saved tab survives the index churn and marks evicted postings "closed".
    Stars flip optimistically — an HF write is ~1s, too slow for a click — and revert with
    a message if the server refuses. ---- */
+/* ---- Dismissed rows. Every result leaves for the employer's own board, so the return trip
+   lands on a list with no memory of what has already been dealt with — the main cost of the
+   loop. `:visited` on the title says "opened"; this says "done with". Browser-local on
+   purpose: it is a scanning aid over one session's list, not a preference worth an account
+   round trip, and storage can throw outright in a private window. Rows are hidden rather than
+   dropped, so the server's own "showing 1-20 of N" stays true and one click puts them back.
+   ---- */
+const DISMISS_KEY = 'hs.dismissed';
+let revealDismissed = false;
+const dismissed = new Set((() => {
+  try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]'); } catch(e){ return []; }
+})());
+function saveDismissed(){
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...dismissed])); } catch(e){}
+}
+const dismissBtn = id => !id ? '' :
+  `<button class="dismiss" data-dismiss="${esc(id)}" title="Hide this job"
+    aria-label="Hide this job from the results">\u00d7</button>`;
+
+// The count of what is hidden, beside the result count that no longer matches what is on
+// screen. Written on every draw, including when it is zero — a stale "3 hidden" is worse
+// than none.
+function drawHidden(rows){
+  const node = el('hidden'), box = el('results'); if (!node || !box) return;
+  const n = rows.filter(r => r.id && dismissed.has(r.id)).length;
+  node.innerHTML = !n ? '' :
+    `${n} hidden <button class="linkish" onclick="toggleDismissed()">` +
+    `${revealDismissed ? 'hide again' : 'show'}</button>`;
+  box.classList.toggle('reveal', revealDismissed);
+}
+function toggleDismissed(){
+  revealDismissed = !revealDismissed;
+  drawHidden([...drawnRows.values()]);
+}
+function dismissRow(id){
+  if (dismissed.has(id)) dismissed.delete(id); else dismissed.add(id);
+  saveDismissed();
+  document.querySelectorAll('[data-dismiss]').forEach(b => {
+    if (b.dataset.dismiss === id) b.closest('.card').classList.toggle('dismissed', dismissed.has(id));
+  });
+  drawHidden([...drawnRows.values()]);
+}
+
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
 let mySaved = null;                        // server-truth list, newest star first
 const savedByJob = new Map();              // job id → saved record
@@ -726,23 +1006,20 @@ function renderSaved(){
   }
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
   el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
-  box.innerHTML = jobs.map((j,i) => `
-    <div class="card${j.open === false ? ' gone' : ''}" style="animation-delay:${Math.min(i,12)*35}ms">
-      <div class="hd">
-        <div style="flex:1; min-width:0">
-          <a class="title" href="${esc(safeUrl(j.url))}" target="_blank" rel="noopener">${esc(j.title)}</a>
-          <div class="org">${esc(j.company)}${j.location? ' <span>·</span> '+esc(j.location) : ''}</div>
-        </div>
-        ${starBtn(j.job_id, true)}
-      </div>
-      <div class="tags">
-        ${j.open === false ? '<span class="tag closed">closed</span>' : ''}
-        ${j.remote ? '<span class="tag rem">remote</span>' : ''}
-        ${j.salary ? '<span class="tag pay">'+esc(j.salary)+'</span>' : ''}
-        ${age(j.starred_at) ? '<span class="tag mono">saved '+age(j.starred_at)+'</span>' : ''}
-      </div>
-    </div>`).join('');
+  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
 }
+
+// A stored star, in the shape jobCard reads. The record is a display copy taken at star time
+// (SavedJob, alerts/store.py), so it carries no score and none of the derived columns — the
+// card renders whichever tags it can and leaves the rest out, exactly as it does for a search
+// row whose board published no salary. `open` is the server's own key for "still in the
+// index"; `closed` is what the card shows, and they are opposites, so the flip happens here
+// rather than being read the wrong way round somewhere downstream.
+const savedRow = j => ({
+  id: j.job_id, title: j.title, company: j.company, location: j.location,
+  url: j.url, remote: j.remote, salary: j.salary, starred_at: j.starred_at,
+  closed: j.open === false, score: null,
+});
 
 async function toggleStar(jobId){
   const existing = savedByJob.get(jobId);
@@ -813,10 +1090,11 @@ const PROFILE_FIELDS = { query:'pquery', title:'ptitle', years:'pyears', skills:
 function fillProfileForm(p){
   for (const [key, cid] of Object.entries(PROFILE_FIELDS))
     el(cid).value = p[key] == null ? '' : p[key];
-  el('pparses').textContent = p.parses_left > 0
-    ? `${p.parses_left} of ${p.parses_left + p.parses_used} résumé reads left`
+  const left = typeof p.parses_left === 'number' ? p.parses_left : null;
+  el('pparses').textContent = left === null ? ''
+    : left > 0 ? `${left} of ${left + (p.parses_used || 0)} résumé reads left`
     : 'No résumé reads left — edit by hand below.';
-  el('pparse').disabled = !(p.parses_left > 0);
+  el('pparse').disabled = left === 0;
 }
 
 function readProfileForm(){
@@ -1032,6 +1310,10 @@ async function loadTrends(family){
   // dimmed, rather than the panel blanking — a filter change must never read as "it broke"
   // while the round trip is in flight, and a genuine failure must never look like a dead toggle.
   if (el('trends-viz')) el('trends-viz').classList.add('loading');
+  // First open only: a refetch keeps the previous chart up, dimmed, which is already the
+  // right answer (a filter change must never read as "it broke"). With nothing to keep, a
+  // skeleton in the same grid holds the same space rather than letting the panel jump.
+  setTrendsBusy(!trendData);
   let r;
   try { r = await fetch('/trends' + (q.size ? '?' + q : '')); }
   catch(e){ showTrendsError('That request didn’t go through.'); return; }
@@ -1050,12 +1332,22 @@ async function loadTrends(family){
 // no explanation. Now only the chart/legend area is replaced; the header, toggles and Retry stay
 // reachable, and Retry replays the exact same request `loadTrends` just made.
 function showTrendsError(msg){
+  setTrendsBusy(false);
   if (el('trends-viz')){ el('trends-viz').classList.remove('loading'); el('trends-viz').hidden = true; }
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
 function hideTrendsError(){
+  setTrendsBusy(false);
   if (el('trends-error')) el('trends-error').hidden = true;
   if (el('trends-viz')){ el('trends-viz').hidden = false; el('trends-viz').classList.remove('loading'); }
+}
+// The skeleton swaps for the chart rather than sitting above it, so nothing moves when the
+// data lands; aria-busy is what says "working" to a screen reader, which a shimmer cannot.
+function setTrendsBusy(on){
+  const skel = el('trends-skel'), viz = el('trends-viz'), sec = el('trends');
+  if (sec) sec.setAttribute('aria-busy', String(!!on));
+  if (skel) skel.hidden = !on;
+  if (viz && on) viz.hidden = true;
 }
 
 // A series' value in the displayed unit: share of the index for stock, else the raw count.
@@ -1241,7 +1533,9 @@ function drawTrends(){
   // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
-  el('trends-empty').textContent = runs < 2
+  el('trends-empty').textContent = runs === 0
+    ? 'No measurements inside this window — widen the dates, or clear them to see the whole history.'
+    : runs < 2
     ? (trendAtsSelected()
         ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
         : 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.')
@@ -1251,6 +1545,9 @@ function drawTrends(){
       // a deploy and the next pipeline run the first exists without the second.
       ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : '');
+  // An axis with no lines under it is the "broken chart" reading the message above exists to
+  // replace, so with nothing measured the message stands on its own.
+  if (el('trends-viz')) el('trends-viz').hidden = runs === 0;
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
   // "7 days" mirrors role_trends.NEW_WINDOW_DAYS — change one and this sentence starts lying.
@@ -1521,6 +1818,22 @@ if (el('trends-legend')) {
     if (row){ hoveredSeries = null; applyEmphasis(); }
   });
 }
+if (el('salrmin')){
+  // `input` for the live fill and read-out while a thumb is moving, `change` for the search —
+  // one request per drag rather than one per pixel.
+  el('salrmin').addEventListener('input', () => salSlide('min'));
+  el('salrmax').addEventListener('input', () => salSlide('max'));
+  el('salrmin').addEventListener('change', go);
+  el('salrmax').addEventListener('change', go);
+  // Typing moves the handle; it never moves the typed figure back.
+  ['salmin', 'salmax'].forEach(id => el(id).addEventListener('input', syncSalarySlider));
+  // The currency is part of the where-clause, not a label on it (ADR-0117): the bounds are
+  // restated in it before anything is compared, so changing it changes which jobs match.
+  // Bound to `syncSalarySlider` alone, it relabelled the read-out and left the previous
+  // currency's results on screen underneath — USD rows under an INR heading. `go()` redraws
+  // the read-out and the chips on its way through drawActive, so this is the whole fix.
+  if (el('salcur')) el('salcur').addEventListener('change', go);
+}
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
@@ -1530,6 +1843,22 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-star]');
   if (b) toggleStar(b.dataset.star);
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-dismiss]');
+  if (b) dismissRow(b.dataset.dismiss);
+});
+// Whole-row click, without an overlay. A real element is never covered, so text stays
+// selectable and every title/tooltip underneath stays reachable. Three guards: a drag that
+// selected text is not a click, anything already interactive handles itself, and a modified
+// click keeps the browser's own open-in-new-tab behaviour.
+document.addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (!card || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (e.target.closest('a, button, input, select, textarea, label')) return;
+  if (String(window.getSelection())) return;
+  const link = card.querySelector('a.title');
+  if (link) window.open(link.href, '_blank', 'noopener');
 });
 if (el('pparse')){
   el('pparse').addEventListener('click', parseResume);
@@ -1560,6 +1889,7 @@ if (el('matches-controls')){
     rerun();
   });
 }
+try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
 showTab(currentTab());
