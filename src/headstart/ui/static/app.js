@@ -1231,27 +1231,70 @@ async function onGoogleCredential(resp){
    not have it turn blue because a filter changed who's biggest). ---- */
 let trendData = null, trendDrill = null;
 let trendMetric = 'stock', trendUnit = 'share', trendSplit = 'bands';
+let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
+let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
 let tableView = false;      // the WCAG-clean twin of the chart, independent of the SVG
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
+const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
 const CHART_MAX = 8;        // matches the 8-slot validated categorical palette
 
-const seriesColorAssignment = new Map();   // family/role name -> slot index, sticky per entity
+const seriesColorAssignment = new Map();   // family/role name -> slot index, for what is drawn now
+const slotMemory = new Map();              // name -> the slot it last held, kept for the session
+const slotOwner = new Map();               // slot -> the name that last held it, ditto
+let freedSlots = [];                       // slots vacated, longest-vacated first
+let recolouredNames = new Set();           // names that took over ANOTHER entity's slot this draw
 function seriesColor(slot){
   return getComputedStyle(document.documentElement).getPropertyValue(`--series-${slot + 1}`).trim();
 }
-// Keep whatever slot a name already had; hand any new name the lowest slot nothing currently
-// visible is using. Names no longer drawn are dropped so their slot can be reused — the map only
-// ever holds the (at most CHART_MAX) names on screen right now, never a 24-family reservation.
+// Keep whatever slot a name already had; hand a name that is new to the screen a slot in this
+// order: the one it held earlier in the session, then one nothing has ever held, then the
+// longest-vacated one. `slotMemory` is what makes the first of those work across a whole
+// round trip — drill into a family and back out and the eight categories come back in their
+// own colours, where the previous "lowest free slot" allocator dealt them out by rank.
+// Eight slots and twenty-four families means a slot must eventually change hands anyway, and
+// that is the one moment colour lies: a reader who learned "yellow is web development" watches
+// yellow become data engineering with nothing saying so. When it happens the entrant is
+// recorded and its legend row fades in, so the substitution is announced rather than silent.
+// A drill replaces all eight at once — nothing carries over, so nothing is marked there: a
+// change of subject is not a swap.
 function assignSeriesColors(names){
-  for (const name of [...seriesColorAssignment.keys()]) if (!names.includes(name)) seriesColorAssignment.delete(name);
+  recolouredNames = new Set();
+  for (const name of [...seriesColorAssignment.keys()]){
+    if (names.includes(name)) continue;
+    const slot = seriesColorAssignment.get(name);
+    seriesColorAssignment.delete(name);
+    freedSlots = freedSlots.filter(s => s !== slot).concat(slot);
+  }
   const used = new Set(seriesColorAssignment.values());
+  const carriedOver = used.size > 0;
+  const all = Array.from({ length: CHART_MAX }, (_, i) => i);
   for (const name of names){
     if (seriesColorAssignment.has(name)) continue;
-    let slot = 0; while (used.has(slot)) slot++;
+    const free = all.filter(s => !used.has(s));
+    if (!free.length) continue;
+    const mine = slotMemory.get(name);
+    const slot = (free.includes(mine) ? mine : undefined)
+      ?? free.find(s => !slotOwner.has(s))
+      ?? freedSlots.find(s => free.includes(s))
+      ?? free[0];
+    if (carriedOver && slotOwner.has(slot) && slotOwner.get(slot) !== name) recolouredNames.add(name);
     seriesColorAssignment.set(name, slot);
+    slotMemory.set(name, slot);
+    slotOwner.set(slot, name);
     used.add(slot);
+    freedSlots = freedSlots.filter(s => s !== slot);
   }
+}
+
+// The legend/table key mirrors the mark it stands for — a line, not a box (dataviz skill,
+// interaction.md). It is an <svg> rather than a coloured <span> so `data-slot` reaches a real
+// stroke: that attribute is what the texture channel keys off under `forced-colors` and print,
+// where hue is gone and the dash pattern is the only thing left telling two series apart.
+function swatchHtml(color, slot){
+  return `<svg class="swatch" viewBox="0 0 14 4" width="14" height="4" aria-hidden="true"
+    ><line data-slot="${slot}" x1="1.5" y1="2" x2="12.5" y2="2" stroke="${color}"
+     stroke-width="3" stroke-linecap="round"/></svg>`;
 }
 // Everything past CHART_MAX, folded into one honest aggregate row instead of the N real-looking
 // legend rows the previous design left permanently inert (a documented dead-click: dataviz
@@ -1278,16 +1321,29 @@ function chartedAndOther(d){
   return { charted, other, shown: other ? [...charted, other] : charted };
 }
 
-// The window inputs go to the server — a range must filter before the share denominator is
-// computed, not after. `datetime-local` reads in the browser's local zone; converted to UTC so
-// the filter lines up with the chart's own UTC axis (stampLabel already renders in UTC).
+// The window goes to the server — a range must filter before the share denominator is computed,
+// not after. Presets carry the common case (the axis is measured in days; the two
+// `datetime-local` fields were 365px each at minute precision). A custom bound always beats the
+// preset, so the two can never both be in force and disagree. `datetime-local` reads in the
+// browser's local zone; converted to UTC so the filter lines up with the chart's own UTC axis
+// (stampLabel already renders in UTC).
 function trendRange(){
   const r = {};
   const since = el('trends-since') && el('trends-since').value;
   const until = el('trends-until') && el('trends-until').value;
   if (since) r.since = new Date(since).toISOString();
   if (until) r.until = new Date(until).toISOString();
+  if (!r.since && !r.until && trendDays !== 'all')
+    r.since = new Date(Date.now() - Number(trendDays) * 864e5).toISOString();
   return r;
+}
+
+// Selecting the preset from code — the path a custom date takes, which has to drop the preset
+// back to "All" so the segment never claims a window the request is not using.
+function setRangePreset(v){
+  trendDays = v;
+  const seg = el('trends-range'); if (!seg) return;
+  seg.querySelectorAll('button').forEach(b => setRadioChecked(b, b.dataset.days === v));
 }
 
 // Checked ATS names, or null when every box is checked — the only spelling of "no filter"
@@ -1353,12 +1409,20 @@ async function loadTrends(family){
 function showTrendsError(msg){
   setTrendsBusy(false);
   if (el('trends-viz')){ el('trends-viz').classList.remove('loading'); el('trends-viz').hidden = true; }
+  // Everything that describes data goes with the data. The tiles, the table and the "how to
+  // read this" block used to survive a failed fetch, so a panel with no chart still carried
+  // 190 words about how to read one.
+  ['trends-kpi', 'trends-table-wrap', 'trends-chart-note'].forEach(id => {
+    if (el(id)) el(id).hidden = true;
+  });
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
 function hideTrendsError(){
   setTrendsBusy(false);
   if (el('trends-error')) el('trends-error').hidden = true;
-  if (el('trends-viz')){ el('trends-viz').hidden = false; el('trends-viz').classList.remove('loading'); }
+  if (el('trends-chart-note')) el('trends-chart-note').hidden = false;
+  if (el('trends-table-wrap')) el('trends-table-wrap').hidden = !tableView;
+  if (el('trends-viz')){ el('trends-viz').hidden = tableView; el('trends-viz').classList.remove('loading'); }
 }
 // The skeleton swaps for the chart rather than sitting above it, so nothing moves when the
 // data lands; aria-busy is what says "working" to a screen reader, which a shimmer cannot.
@@ -1393,17 +1457,67 @@ function trendDelta(points){
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// `terse` now means "the day alone is enough", which is true of the axis in two cases, not one:
+// a narrow plot whose labels would touch, and ANY window wider than two days — 12:57 on a
+// 27-day axis is precision the reader cannot use, and the tooltip still carries the clock.
+// Under two days it comes back, because without it every tick would print the same date.
 function stampLabel(ts, terse){
   const d = new Date(ts);
   if (isNaN(d)) return '';
   const day = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
-  if (terse) return day;   // a narrow axis drops the clock rather than letting labels touch
+  if (terse) return day;
   return `${day} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 
 function fmtValue(v){
   if (trendUnit === 'share') return v >= 10 ? v.toFixed(0) + '%' : v.toFixed(1) + '%';
   return Math.round(v).toLocaleString();
+}
+
+// The legend's own rendering of a value. Under Count, `45,174` is six characters taken straight
+// out of the name beside it — every legend label ellipsized the moment Count was selected. The
+// tooltip and the table still carry the exact figure, so nothing is lost, only shortened.
+function fmtCompact(v){
+  if (trendUnit === 'share') return fmtValue(v);
+  const n = Math.round(v);
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e4) return Math.round(n / 1e3) + 'k';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(n);
+}
+
+// A nice-number y axis (Heckbert): the step is 1/2/2.5/5 x 10^n, the top rounds UP to a whole
+// step, and every label prints at the precision that step needs. Dividing the data max by four
+// gave `0.0% / 6.8% / 14% / 20% / 27%` — five labels at three precisions, which read as five
+// unrelated numbers rather than one scale. Returns the top of the axis and its tick values.
+function niceAxis(hi){
+  const want = hi / 5;                                    // the smallest step that fits ~5 gaps
+  const mag = Math.pow(10, Math.floor(Math.log10(want || 1)));
+  const mult = [1, 2, 2.5, 5, 10].find(m => want <= m * mag) ?? 10;
+  const step = mult * mag;
+  const top = Math.ceil(hi / step) * step;
+  // Decimals the step itself needs: 2.5 costs one more than its magnitude does.
+  const dec = Math.max(0, (mult === 2.5 ? 1 : 0) - Math.round(Math.log10(mag)));
+  const ticks = [];
+  for (let k = 0; k * step <= top + step / 1e6; k++) ticks.push(k * step);
+  return { top, ticks, dec };
+}
+
+// One precision for the whole axis, unlike fmtValue's per-value choice.
+function fmtAxis(v, dec){
+  if (trendUnit === 'share') return v.toFixed(dec) + '%';
+  return v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+// Direction rides an ARROW, not a hue. --alert (#FB7185) sits Delta E 5.7 from --series-8
+// (#E66767) — 2.8 under a tritan simulation — and the two land on the SAME legend row, so a red
+// figure beside a red line-key read as one object rather than two. The figure is neutral ink
+// now; the glyph is the channel that survives every CVD, and the sign is in the glyph so the
+// magnitude prints unsigned.
+function deltaClass(dl){ return dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat'; }
+function deltaText(dl){
+  if (dl == null) return '—';
+  return `${dl > 1 ? '↑' : dl < -1 ? '↓' : '→'} ${Math.abs(dl).toFixed(1)}%`;
 }
 
 // Shared by every place that flips a radiogroup button's checked state — keeps the three call
@@ -1419,23 +1533,89 @@ function drawTrends(){
   // Measured from the box it is drawn into rather than fixed at 720: the chart used to
   // ignore the width the page had, so on a wide display every one of the 471 stamps was
   // squeezed into a 720-unit space and then scaled up, which is what made the line work
-  // look coarse. The height is derived from the measured width and capped, because a plot
-  // that grows without limit on an ultrawide monitor becomes a letterbox slot.
+  // look coarse.
   const host = el('trends-chart') && el('trends-chart').parentElement;  // .trends-chart-wrap — the legend is a sibling column, not part of the plot
   // 1 SVG unit == 1 CSS pixel wherever the container allows it, so the axis type renders at
   // the size the stylesheet asks for. A floor above the real container width does not make a
   // phone's chart bigger — it makes the whole viewBox scale down, and 12px labels arrive as
   // 6px. The floor is only a guard against a zero/undetached measurement.
   const W = Math.max(280, Math.round(host && host.clientWidth ? host.clientWidth : 720));
-  // Landscape where there is room; never shorter than the y-axis needs, never so tall on an
-  // ultrawide monitor that the plot becomes a letterbox slot.
-  const H = Math.max(200, Math.min(460, Math.round(W * 0.36)));
-  const PAD_L = 46, PAD_B = 22, PAD_T = 10, PAD_R = 14;
   const { charted, other, shown } = chartedAndOther(d);
 
   assignSeriesColors(charted.map(s => s.name));   // Other is a bucket, not an entity — no slot
 
-  const vals = shown.flatMap(s => s.points.map((v, j) => trendValue(v, j))).filter(v => v != null);
+  const runs = d.stamps.length;
+  // The measurement window, stated on the page: "19 measurements" alone could be two hours
+  // or two years, and every judgement about a trend depends on which.
+  const spanMs = runs > 1 ? new Date(d.stamps[runs-1]) - new Date(d.stamps[0]) : 0;
+  const spanDays = spanMs / 864e5;
+  const span = runs < 2 ? '' :
+    spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
+  const measured = `${runs} measurement${runs===1?'':'s'}${span}`;
+
+  // The legend is built BEFORE the plot, not after: it is a pure function of the series, and
+  // the plot's height floor is measured off it (below). Built after, the first paint would
+  // have had nothing to measure.
+  const legendRows = charted.map(s => {
+    const slot = seriesColorAssignment.get(s.name);
+    const c = seriesColor(slot);
+    const dl = trendDelta(s.points);
+    const j = d.stamps.length - 1;
+    const latest = s.latest == null ? null : trendValue(s.latest, j);
+    // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
+    // top level. Without it the split toggle only appears after drilling in, which means the
+    // one place that advertises the feature is the one place you reach by already knowing it
+    // exists.
+    const hasRoles = !trendDrill && (d.watch_parents || []).includes(s.name);
+    const off = hiddenSeries.has(s.name);
+    // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
+    // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
+    // before the JS parses — a name with a quote would break out of the string.
+    return `<li class="charted${recolouredNames.has(s.name) ? ' recoloured' : ''}${off ? ' off' : ''}"
+      ><span class="row" data-name="${esc(s.name)}" role="button" tabindex="0"
+      >${swatchHtml(c, slot)}
+      <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
+      ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Named roles are tracked inside this category">▸ roles</span>' : ''}
+      <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
+      <span class="dl ${deltaClass(dl)}">${deltaText(dl)}</span></span>
+      <button class="vis" type="button" data-hide="${esc(s.name)}" aria-pressed="${off}"
+        title="${off ? 'Show' : 'Hide'} this line" aria-label="${off ? 'Show' : 'Hide'} ${esc(s.label)}"
+        >${off ? '○' : '●'}</button></li>`;
+  });
+  if (other){
+    // Everything past CHART_MAX, as one honestly-labeled, honestly-inert row — not N rows that
+    // look like real categories but silently do nothing on click (the dead-click this replaces).
+    // No role/tabindex: `trendClick` already no-ops on a name absent from trendData.series
+    // (findIndex returns -1), so `__other__` is inert by the SAME guard real unknown names use,
+    // not a new special case. The hide button is a sibling, not a child of that row.
+    const dl = trendDelta(other.points);
+    const j = d.stamps.length - 1;
+    const latest = other.points[j] == null ? null : trendValue(other.points[j], j);
+    const off = hiddenSeries.has('__other__');
+    legendRows.push(`<li class="other${off ? ' off' : ''}"><span class="row" data-name="__other__"
+      >${swatchHtml('var(--ink-3)', 'other')}
+      <span class="nm" title="${esc(other.label)}">${esc(other.label)}</span>
+      <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
+      <span class="dl ${deltaClass(dl)}">${deltaText(dl)}</span></span>
+      <button class="vis" type="button" data-hide="__other__" aria-pressed="${off}"
+        title="${off ? 'Show' : 'Hide'} this line" aria-label="${off ? 'Show' : 'Hide'} other categories"
+        >${off ? '○' : '●'}</button></li>`);
+  }
+  el('trends-legend').innerHTML = legendRows.join('');
+
+  // Landscape where there is room, but the height now follows the space the panel HAS rather
+  // than a fixed 0.36 of the width. Measured before this changed: 390px gave a plot 15% of the
+  // panel's height and 900px gave 25.6%, because `W * 0.36` hit its floor while the legend,
+  // the controls and the caveat took the rest. Three floors, largest wins — the aspect the
+  // plot wants, the legend column beside it, and a fraction of the viewport.
+  const legendH = legendColumnHeight(host);
+  const viewportH = Math.round((typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 900) * 0.42);
+  const H = Math.max(240, legendH, Math.min(520, Math.max(Math.round(W * 0.36), Math.min(viewportH, Math.round(W * 0.8)))));
+  const PAD_L = 46, PAD_B = 22, PAD_T = 10;
+
+  // A hidden series leaves the plot AND the scale — rescaling is the point of hiding one.
+  const drawn = shown.filter(s => !hiddenSeries.has(s.name));
+  const vals = drawn.flatMap(s => s.points.map((v, j) => trendValue(v, j))).filter(v => v != null);
   const lo = 0;
   let hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
   // Datawrapper's line-chart guidance: extend the axis to 100% once a share reading comes
@@ -1443,25 +1623,43 @@ function drawTrends(){
   // headroom exists. Left alone otherwise — most shares here are single digits, and forcing
   // every chart to a 0-100 scale would flatten the small-value comparisons this page is for.
   if (trendUnit === 'share' && hi > 80) hi = 100;
+  const axis = niceAxis(hi);
+  const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (axis.top - lo));
+
+  // Direct end-labels, but only where endpoints actually separate (dataviz skill,
+  // marks-and-anatomy.md: "When end-labels collide, don't stack them"). Labelling all nine
+  // stacked them into an unreadable column against the right edge; a label is drawn here only
+  // where the endpoint clears both its neighbours by a full line-height, at most three of
+  // them, and only when the plot is wide enough to hold a gutter. y does not depend on PAD_R,
+  // so the decision can be made before the gutter is reserved.
+  const ends = drawn.map(s => {
+    const vs = s.points.map((v, j) => trendValue(v, j));
+    for (let j = vs.length - 1; j >= 0; j--) if (vs[j] != null) return { s, v: vs[j], y: y(vs[j]) };
+    return null;
+  }).filter(Boolean).sort((a, b) => a.y - b.y);
+  const CLEAR = 15;
+  const labelled = W < 640 ? [] : ends
+    .filter((e, i) => (i === 0 || e.y - ends[i-1].y >= CLEAR)
+                   && (i === ends.length - 1 || ends[i+1].y - e.y >= CLEAR))
+    .sort((a, b) => b.v - a.v).slice(0, 3);
+  const GUTTER = 140;
+  const PAD_R = labelled.length ? GUTTER : 14;
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - PAD_R) / (d.stamps.length - 1));
-  const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
 
   let svg = '';
-  for (let g = 0; g <= 4; g++){                       // horizontal gridlines + y labels
-    const v = hi * g / 4, yy = y(v);
-    svg += `<line class="gridline" x1="${PAD_L}" y1="${yy}" x2="${(W - PAD_R + 6).toFixed(1)}" y2="${yy}"/>`;
-    svg += `<text class="axis-label" x="0" y="${yy+3}">${fmtValue(v)}</text>`;
-  }
+  axis.ticks.forEach(v => {                          // horizontal gridlines + y labels
+    const yy = y(v);
+    svg += `<line class="gridline" x1="${PAD_L}" y1="${yy.toFixed(1)}" x2="${(W - PAD_R + 6).toFixed(1)}" y2="${yy.toFixed(1)}"/>`;
+    svg += `<text class="axis-label" x="0" y="${(yy+3).toFixed(1)}">${fmtAxis(v, axis.dec)}</text>`;
+  });
   // Time axis. Still sparse — a tick per stamp would be 471 of them — but the count now
   // follows the width the plot actually got: three ticks across a 1,500px window left the
-  // reader interpolating four weeks between two marks. ~260px of breathing room per tick,
-  // clamped so a narrow column keeps the original first/middle/last.
+  // reader interpolating four weeks between two marks.
   if (d.stamps.length > 1){
     const plotW = W - PAD_L - PAD_R;
-    // On a phone even three "Aug 11 12:57" labels run into each other, so the clock is
-    // dropped first and the count second — an axis whose labels touch is worse than a
-    // coarser one.
-    const terse = plotW < 420;
+    // The clock goes when the day alone identifies the tick — any span over two days, or a
+    // plot too narrow to hold "Aug 11 12:57" three times without the labels touching.
+    const terse = spanMs > 48 * 36e5 || plotW < 420;
     const per = terse ? 150 : 260;
     const nTicks = Math.max(2, Math.min(7, Math.floor(plotW / per) + 1));
     const ticks = Array.from({ length: nTicks }, (_, k) =>
@@ -1475,17 +1673,17 @@ function drawTrends(){
 
   const geomSeries = [];   // color + per-index resolved value, read by the hover layer below
   svg += '<g id="lines-layer">';
-  shown.forEach(s => {
+  drawn.forEach(s => {
     const isOther = s.name === '__other__';
-    const c = isOther ? 'var(--ink-3)' : seriesColor(seriesColorAssignment.get(s.name));
+    const slot = isOther ? 'other' : seriesColorAssignment.get(s.name);
+    const c = isOther ? 'var(--ink-3)' : seriesColor(slot);
     const values = s.points.map((v, j) => trendValue(v, j));
     // break the path at gaps rather than bridging them — an unmeasured run is not a value
-    let path = '', pen = 'M', first = null, lastPt = null;
+    let path = '', pen = 'M', lastPt = null;
     values.forEach((u, j) => {
       if (u == null) { pen = 'M'; return; }
       const px = x(j), py = y(u);
       path += `${pen}${px.toFixed(1)},${py.toFixed(1)} `;
-      if (pen === 'M') first = px;
       lastPt = [px, py];
       pen = 'L';
     });
@@ -1493,13 +1691,28 @@ function drawTrends(){
     // No area fill. The skill's wash is for a *single* series; eight of them overlapping
     // in the narrow band where the small categories run compounded into brown murk that
     // read as a stacked chart the data is not. The line alone carries the series.
-    svg += `<path class="series-line" data-name="${esc(s.name)}" d="${path}" fill="none" stroke="${c}"
+    svg += `<path class="series-line" data-slot="${slot}" data-name="${esc(s.name)}" d="${path}" fill="none" stroke="${c}"
              stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     if (lastPt) svg += `<circle class="series-end" data-name="${esc(s.name)}" cx="${lastPt[0].toFixed(1)}"
              cy="${lastPt[1].toFixed(1)}" r="4" fill="${c}" stroke="var(--raise)" stroke-width="2"/>`;
     geomSeries.push({ name: s.name, label: s.label, color: c, values });
   });
   svg += '</g>';
+  // The chosen end-labels, each tied to its own line by a leader. Text wears an ink token, not
+  // the series colour (dataviz skill: a light categorical hue is illegible as label text) — the
+  // coloured leader and dot beside it carry the identity.
+  labelled.forEach(e => {
+    const c = e.s.name === '__other__' ? 'var(--ink-3)' : seriesColor(seriesColorAssignment.get(e.s.name));
+    const x0 = W - PAD_R, tx = x0 + 10;
+    const fits = Math.floor((W - tx - 2) / 5.9);
+    // "Other (16 smaller categories)" is the legend's phrasing, not a label that belongs at
+    // the end of a line — the aggregate's own name is Other.
+    const full = e.s.name === '__other__' ? 'Other' : e.s.label;
+    const text = full.length > fits ? full.slice(0, Math.max(1, fits - 1)) + '…' : full;
+    svg += `<line class="end-leader" x1="${(x0 + 4).toFixed(1)}" y1="${e.y.toFixed(1)}"
+             x2="${(tx - 2).toFixed(1)}" y2="${e.y.toFixed(1)}" stroke="${c}"/>`;
+    svg += `<text class="end-label" x="${tx.toFixed(1)}" y="${(e.y + 3.5).toFixed(1)}">${esc(text)}</text>`;
+  });
   // The hover layer: a crosshair line + one dot per series, hidden until pointermove positions
   // them (dataviz skill, interaction.md — "an HTML chart is interactive by default"). Built once
   // per redraw, in the same order as geomSeries, so the pointermove handler below can index
@@ -1521,69 +1734,32 @@ function drawTrends(){
   positionHoverLayer(null);
   hoveredSeries = null;
 
-  const legendRows = charted.map(s => {
-    const c = seriesColor(seriesColorAssignment.get(s.name));
-    const dl = trendDelta(s.points);
-    const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
-    const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
-    const j = d.stamps.length - 1;
-    const latest = s.latest == null ? null : trendValue(s.latest, j);
-    // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
-    // top level. Without it the split toggle only appears after drilling in, which means the
-    // one place that advertises the feature is the one place you reach by already knowing it
-    // exists.
-    const hasRoles = !trendDrill && (d.watch_parents || []).includes(s.name);
-    // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
-    // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
-    // before the JS parses — a name with a quote would break out of the string.
-    return `<li class="charted"><span class="row" data-name="${esc(s.name)}" role="button" tabindex="0"
-      ><span class="swatch" style="background:${c}"></span>
-      <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
-      ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Named roles are tracked inside this category">▸ roles</span>' : ''}
-      <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
-      <span class="dl ${cls}">${txt}</span></span></li>`;
-  });
-  if (other){
-    // Everything past CHART_MAX, as one honestly-labeled, honestly-inert row — not N rows that
-    // look like real categories but silently do nothing on click (the dead-click this replaces).
-    // No role/tabindex: `trendClick` already no-ops on a name absent from trendData.series
-    // (findIndex returns -1), so `__other__` is inert by the SAME guard real unknown names use,
-    // not a new special case.
-    const dl = trendDelta(other.points);
-    const cls = dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat';
-    const txt = dl == null ? '—' : (dl > 0 ? '+' : '') + dl.toFixed(1) + '%';
-    const j = d.stamps.length - 1;
-    const latest = other.points[j] == null ? null : trendValue(other.points[j], j);
-    legendRows.push(`<li class="other"><span class="row" data-name="__other__"
-      ><span class="swatch" style="background:var(--ink-3)"></span>
-      <span class="nm" title="${esc(other.label)}">${esc(other.label)}</span>
-      <span class="ct">${latest == null ? '—' : fmtValue(latest)}</span>
-      <span class="dl ${cls}">${txt}</span></span></li>`);
-  }
-  el('trends-legend').innerHTML = legendRows.join('');
-
-  const runs = d.stamps.length;
-  // The measurement window, stated on the page: "19 measurements" alone could be two hours
-  // or two years, and every judgement about a trend depends on which.
-  const spanMs = runs > 1 ? new Date(d.stamps[runs-1]) - new Date(d.stamps[0]) : 0;
-  const spanDays = spanMs / 864e5;
-  const span = runs < 2 ? '' :
-    spanDays >= 1.5 ? ` over ${Math.round(spanDays)} days` : ` over ${Math.round(spanMs/36e5)} hours`;
-  const measured = `${runs} measurement${runs===1?'':'s'}${span}`;
   // Every category is now represented — individually if it's one of the top CHART_MAX, folded
-  // into Other otherwise — so this no longer needs a "top N of M" caveat.
+  // into Other otherwise — so this no longer needs a "top N of M" caveat. The drill's way out
+  // is the breadcrumb above, not a sentence at the end of this line.
   el('trends-scope').textContent = trendDrill
-    ? (trendSplit === 'roles'
-        ? `tracked roles · ${measured} — click any line to go back`
-        : `by experience level · ${measured} — click to go back`)
+    ? (trendSplit === 'roles' ? `tracked roles · ${measured}` : `by experience level · ${measured}`)
     : `${d.series.length} categories · ${measured} — click any of the top ${CHART_MAX} to break it down`;
+  // The SVG's own name for itself, written from the same facts. It was a fixed "Open roles over
+  // time by category" in the template, which stayed that after every Measure, Unit, ATS and
+  // drill change — right in exactly one state and stale in every other.
+  const grouping = trendDrill
+    ? (trendSplit === 'roles' ? `tracked role inside ${trendDrill}` : `experience level inside ${trendDrill}`)
+    : 'category';
+  const atsPick = trendAtsSelected();
+  el('trends-chart').setAttribute('aria-label',
+    `Line chart. ${trendMetric === 'new' ? 'Openings first seen in the last 7 days' : 'All live openings'}`
+    + ` by ${grouping}, as ${trendUnit === 'share' ? 'a share of the index' : 'a count'}`
+    + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
+    + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
+    + ' Arrow keys read the values; Table view lists them all.');
   // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
     ? 'No measurements inside this window — widen the dates, or clear them to see the whole history.'
     : runs < 2
-    ? (trendAtsSelected()
+    ? (atsPick
         ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
         : 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.')
     : (trendDrill && trendSplit === 'roles' && !d.series.length
@@ -1593,8 +1769,10 @@ function drawTrends(){
       ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : '');
   // An axis with no lines under it is the "broken chart" reading the message above exists to
-  // replace, so with nothing measured the message stands on its own.
-  if (el('trends-viz')) el('trends-viz').hidden = runs === 0;
+  // replace, so with nothing measured the message stands on its own — and so do the tiles,
+  // which would otherwise print four em-dashes under it.
+  if (el('trends-viz')) el('trends-viz').hidden = runs === 0 || tableView;
+  if (el('trends-kpi')) el('trends-kpi').hidden = runs === 0 || !buildKpis(d, charted, measured);
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
   // "7 days" mirrors role_trends.NEW_WINDOW_DAYS — change one and this sentence starts lying.
@@ -1606,22 +1784,82 @@ function drawTrends(){
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
 
-  // The by-level / by-role toggle only exists inside a family that has watched roles.
+  // The breadcrumb is the way out of a drill; the by-level / by-role toggle only exists inside
+  // a family that has watched roles.
+  if (el('trends-crumb')) el('trends-crumb').hidden = !trendDrill;
+  if (el('trends-crumb-here')) el('trends-crumb-here').textContent = trendDrill || '';
   const seg = el('trends-split');
   if (seg) {
     seg.hidden = !(trendDrill && (d.watch_parents || []).includes(trendDrill));
+    if (el('trends-split-ctl')) el('trends-split-ctl').hidden = seg.hidden;
     seg.querySelectorAll('button').forEach(b => setRadioChecked(b, b.dataset.split === trendSplit));
   }
-  if (tableView) el('trends-table').innerHTML = buildTrendsTable();
+  if (tableView) renderTrendsTables();
 }
 
+// The legend column's own content height, and only when it IS a column — stacked under the
+// plot below the 760px breakpoint it constrains nothing. Summed from the rows rather than read
+// off the <ul>, because the column is `align-self:stretch`: its box already reports whatever
+// height the chart gave the grid row, and feeding that back would ratchet the plot taller on
+// every redraw.
+function legendColumnHeight(host){
+  const ul = el('trends-legend');
+  if (!ul || !ul.children || !ul.children.length || !host) return 0;
+  const first = ul.firstElementChild, last = ul.lastElementChild;
+  if (!first || !last || ul.offsetTop > host.offsetTop + 4) return 0;
+  return (last.offsetTop + last.offsetHeight - first.offsetTop) || 0;
+}
+
+// The tiles above the plot. The two movers are what a reader is scanning the chart for, and the
+// two totals say what the shares are shares OF — questions the lines answer only by arithmetic.
+// Returns false when there is nothing to state, so the caller can hide the row rather than
+// print a line of em-dashes. Figures are proportional, not tabular (dataviz skill,
+// marks-and-anatomy.md § Figures): tabular-nums pads every digit to a `0` and reads loose at
+// tile size. Nothing here wears a hue — direction is the arrow glyph, as in the legend.
+function buildKpis(d, charted, measured){
+  const host = el('trends-kpi'); if (!host) return false;
+  const moves = charted.map(s => ({ label: s.label, dl: trendDelta(s.points) }))
+    .filter(m => m.dl != null).sort((a, b) => b.dl - a.dl);
+  // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
+  // metric only, so that subtraction reports the stock figure whatever the Measure says —
+  // measured against this payload, 266,008 under a "New this week" label whose series sum to
+  // 31,143. The sum agrees with the subtraction exactly on stock, where both are defined.
+  const openings = d.series.reduce((sum, s) => {
+    const last = s.latest != null ? s.latest : [...s.points].reverse().find(v => v != null);
+    return sum + (last || 0);
+  }, 0);
+  const tiles = [];
+  // Each mover tile has to earn its own name: on "New this week" every category is falling, so
+  // the top of the range is a -39.2% and calling it the biggest riser would be a lie the tile
+  // itself contradicts two words later. The extreme is stated only when its sign agrees.
+  const top = moves[0], bottom = moves[moves.length - 1];
+  if (top && top.dl > 0) tiles.push({ label: 'Biggest riser', value: top.label, dl: top.dl });
+  if (bottom && bottom.dl < 0) tiles.push({ label: 'Biggest faller', value: bottom.label, dl: bottom.dl });
+  if (d.series.length) tiles.push({
+    label: trendDrill ? 'Openings in this category'
+      : trendMetric === 'new' ? 'New tech openings' : 'Tech openings',
+    value: openings.toLocaleString(), note: measured });
+  tiles.push({
+    label: trendDrill ? (trendSplit === 'roles' ? 'Roles tracked' : 'Levels tracked') : 'Categories tracked',
+    value: String(d.series.length) });
+  if (!tiles.length) return false;
+  host.innerHTML = tiles.map(t => `<div class="kpi"><span class="kpi-label">${esc(t.label)}</span>
+    <span class="kpi-value">${esc(t.value)}</span>
+    ${t.dl == null ? (t.note ? `<span class="kpi-note">${esc(t.note)}</span>` : '')
+                   : `<span class="kpi-delta ${deltaClass(t.dl)}">${deltaText(t.dl)}</span>`}</div>`).join('');
+  return true;
+}
 // ---- hover: crosshair + one-tooltip-for-every-series (dataviz skill, interaction.md) --------
 
-function positionHoverLayer(index){
+// `opts.py` is the pointer's y in SVG units, used to mark the row nearest it; `opts.announce`
+// speaks the readout, which only the keyboard path wants — a mouse hover pushing every stamp
+// it crosses into a live region would be a stream of interruptions.
+function positionHoverLayer(index, opts){
   const svgEl = el('trends-chart'), tip = el('trends-tooltip');
   if (!svgEl || !lastGeom) return;
   const group = svgEl.querySelector('#trends-crosshair');
   if (!group) return;
+  hoverIndex = index;
   if (index == null){
     group.style.display = 'none';
     if (tip) tip.hidden = true;
@@ -1636,8 +1874,18 @@ function positionHoverLayer(index){
     const v = s.values[index], dot = dotEls[i];
     if (v == null){ if (dot) dot.style.display = 'none'; return; }
     if (dot){ dot.style.display = ''; dot.setAttribute('cx', x(index)); dot.setAttribute('cy', y(v)); }
-    rows.push({ label: s.label, color: s.color, value: v });
+    rows.push({ label: s.label, color: s.color, value: v,
+      dy: (opts && opts.py != null) ? Math.abs(y(v) - opts.py) : null });
   });
+  // Nine rows in one tooltip is a list to search, not a readout. The row the pointer is
+  // actually beside is emphasised, so the answer is already where the eye is.
+  let near = -1, best = Infinity;
+  rows.forEach((r, i) => { if (r.dy != null && r.dy < best){ best = r.dy; near = i; } });
+  if (opts && opts.announce && el('trends-readout')){
+    el('trends-readout').textContent = rows.length
+      ? `${stampLabel(stamps[index])}. ` + rows.map(r => `${r.label} ${fmtValue(r.value)}`).join(', ')
+      : `${stampLabel(stamps[index])}. Nothing measured.`;
+  }
   if (!tip) return;
   tip.hidden = rows.length === 0;
   if (rows.length){
@@ -1648,8 +1896,8 @@ function positionHoverLayer(index){
     const head = document.createElement('div');
     head.className = 'tt-date'; head.textContent = stampLabel(stamps[index]);
     tip.appendChild(head);
-    rows.forEach(r => {
-      const row = document.createElement('div'); row.className = 'tt-row';
+    rows.forEach((r, i) => {
+      const row = document.createElement('div'); row.className = 'tt-row' + (i === near ? ' near' : '');
       const key = document.createElement('span'); key.className = 'tt-key'; key.style.background = r.color;
       const val = document.createElement('span'); val.className = 'tt-val'; val.textContent = fmtValue(r.value);
       const nm = document.createElement('span'); nm.className = 'tt-name'; nm.textContent = r.label;
@@ -1659,7 +1907,13 @@ function positionHoverLayer(index){
     const svgRect = svgEl.getBoundingClientRect();
     const scaleX = lastGeom.W ? svgRect.width / lastGeom.W : 1;
     const px = x(index) * scaleX;
-    const left = px + 200 > wrapRect.width ? Math.max(4, px - 212) : px + 12;
+    // Flip at the MIDPOINT, not at the right edge. Flipping only on overflow left the tooltip
+    // sitting over the stretch of chart the reader is moving towards for the whole second half
+    // of the plot; past halfway it belongs on the other side of the crosshair. Width is
+    // measured now the rows are in, rather than assumed at 200.
+    const tw = tip.offsetWidth || 200;
+    const left = px > wrapRect.width / 2 ? Math.max(4, px - tw - 12)
+                                         : Math.min(Math.max(4, wrapRect.width - tw - 4), px + 12);
     tip.style.left = left + 'px';
     tip.style.top = '8px';
   }
@@ -1685,22 +1939,67 @@ function applyEmphasis(){
       node.style.opacity = (!hoveredSeries || node.dataset.name === hoveredSeries) ? '' : '.25';
     });
   }
+  // The legend's half of the same gesture. Measured before this changed: `opacity:.4` on the
+  // whole row put its label at ~1.6:1 against the surface — the de-emphasised rows became
+  // unreadable rather than secondary. Only the line-key fades now, and the focused row lifts
+  // its own surface; the text never moves.
   const legend = el('trends-legend');
-  if (legend) legend.querySelectorAll('.row[data-name]').forEach(row =>
-    row.classList.toggle('dim', !!hoveredSeries && row.dataset.name !== hoveredSeries));
+  if (legend) legend.querySelectorAll('.row[data-name]').forEach(row => {
+    row.classList.toggle('dim', !!hoveredSeries && row.dataset.name !== hoveredSeries);
+    row.classList.toggle('on', !!hoveredSeries && row.dataset.name === hoveredSeries);
+  });
 }
 
 // ---- the table view: the WCAG-clean twin of the chart (dataviz skill, components.md) --------
 
+// The row header both tables share — a line-key plus the label, so a reader who is here
+// BECAUSE the light-mode chart's contrast sent them can still tell which line is which.
+function tableRowHead(s){
+  const isOther = s.name === '__other__';
+  const slot = isOther ? 'other' : seriesColorAssignment.get(s.name);
+  return `<th scope="row">${swatchHtml(isOther ? 'var(--ink-3)' : seriesColor(slot), slot)}${esc(s.label)}</th>`;
+}
+
+// One row per series: what it is now, how far it moved, and the shape of the window around it.
+// This was 471 columns wide — one per measurement — which made the chart's a11y twin and the
+// documented relief for the sub-3:1 light-mode slots something nobody could read either. The
+// full grid is still here, one disclosure down (buildTrendsFull), so nothing is gated.
 function buildTrendsTable(){
+  const d = trendData; if (!d) return '';
+  const { shown: rows } = chartedAndOther(d);
+  const head = '<tr><th scope="col">Category</th><th scope="col">Latest</th>'
+    + '<th scope="col">Change over window</th><th scope="col">Start</th>'
+    + '<th scope="col">Min</th><th scope="col">Max</th></tr>';
+  const cell = v => `<td>${v == null ? '—' : esc(fmtValue(v))}</td>`;
+  const body = rows.map(s => {
+    const vals = s.points.map((v, j) => trendValue(v, j)).filter(v => v != null);
+    const dl = trendDelta(s.points);
+    return `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s)
+      + cell(vals.length ? vals[vals.length - 1] : null)
+      + `<td class="${deltaClass(dl)}">${deltaText(dl)}</td>`
+      + cell(vals.length ? vals[0] : null)
+      + cell(vals.length ? Math.min(...vals) : null)
+      + cell(vals.length ? Math.max(...vals) : null) + '</tr>';
+  }).join('');
+  return `<thead>${head}</thead><tbody>${body}</tbody>`;
+}
+
+// The whole time grid, one column per measurement — behind a disclosure because 471 columns
+// is a data dump, not a table view, and only some readers want it.
+function buildTrendsFull(){
   const d = trendData; if (!d) return '';
   const { shown: rows } = chartedAndOther(d);
   const head = '<tr><th scope="col">Category</th>' +
     d.stamps.map(ts => `<th scope="col">${esc(stampLabel(ts))}</th>`).join('') + '</tr>';
-  const body = rows.map(s => '<tr><th scope="row">' + esc(s.label) + '</th>' +
+  const body = rows.map(s => `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s) +
     s.points.map((v, j) => { const u = trendValue(v, j); return `<td>${u == null ? '—' : esc(fmtValue(u))}</td>`; }).join('') +
     '</tr>').join('');
   return `<thead>${head}</thead><tbody>${body}</tbody>`;
+}
+
+function renderTrendsTables(){
+  if (el('trends-table')) el('trends-table').innerHTML = buildTrendsTable();
+  if (el('trends-full-table')) el('trends-full-table').innerHTML = buildTrendsFull();
 }
 
 function toggleTrendsTable(force){
@@ -1709,7 +2008,7 @@ function toggleTrendsTable(force){
   if (el('trends-viz')) el('trends-viz').hidden = tableView;
   if (el('trends-table-wrap')){
     el('trends-table-wrap').hidden = !tableView;
-    if (tableView && el('trends-table')) el('trends-table').innerHTML = buildTrendsTable();
+    if (tableView) renderTrendsTables();
   }
 }
 
@@ -1759,17 +2058,16 @@ function trendSeg(id, attr, apply){
   });
 }
 // Share divides by the STOCK total, so it is meaningless against "new" — a share of new
-// openings over all live ones is a number with no reading. The unit segment is therefore
-// locked there. `disabled`, not just pointer-events: the latter stops the mouse and not the
-// keyboard, and a focused Space press would have plotted new counts over stock totals. `title`
-// says why, rather than leaving a dimmed control to speak for itself.
+// openings over all live ones is a number with no reading. "New this week" used to grey the
+// segment out and explain itself only in a `title`, which is a control the reader can see,
+// cannot use, and is given no visible reason for. The group is replaced by the answer and its
+// one-line why instead. `disabled` stays on the buttons underneath: `hidden` keeps them off
+// the screen, and `disabled` keeps them off the tab order in every browser.
 function setUnit(value, locked){
   trendUnit = value;
   const seg = el('trends-unit'); if (!seg) return;
-  seg.style.opacity = locked ? .4 : '';
-  seg.title = locked
-    ? 'Share isn’t meaningful for “New this week” — a share of new openings over all live ones has no reading, so this shows Count instead.'
-    : '';
+  seg.hidden = locked;
+  if (el('trends-unit-static')) el('trends-unit-static').hidden = !locked;
   seg.querySelectorAll('button').forEach(b => {
     b.disabled = locked;
     setRadioChecked(b, b.dataset.unit === value);
@@ -1782,13 +2080,23 @@ trendSeg('trends-metric', 'metric', v => {
 });
 trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
 trendSeg('trends-split', 'split', v => { trendSplit = v; loadTrends(trendDrill); });
-['trends-since', 'trends-until'].forEach(id => {
-  if (el(id)) el(id).addEventListener('change', () => loadTrends(trendDrill));
-});
-if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click', () => {
+// A preset and a custom bound are two spellings of the same window, so setting either clears
+// the other — a segment reading "30 days" beside a request that used a typed date is a lie the
+// reader has no way to spot.
+trendSeg('trends-range', 'days', v => {
+  trendDays = v;
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
   loadTrends(trendDrill);
 });
+['trends-since', 'trends-until'].forEach(id => {
+  if (el(id)) el(id).addEventListener('change', () => { setRangePreset('all'); loadTrends(trendDrill); });
+});
+if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click', () => {
+  ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
+  setRangePreset('all');
+  loadTrends(trendDrill);
+});
+if (el('trends-back')) el('trends-back').addEventListener('click', () => { trendSplit = 'bands'; loadTrends(null); });
 if (el('trends-retry')) el('trends-retry').addEventListener('click', () => loadTrends(trendDrill));
 if (el('trends-table-toggle')) el('trends-table-toggle').addEventListener('click', () => toggleTrendsTable());
 if (el('trends-ats-trigger')) {
@@ -1809,14 +2117,34 @@ if (el('trends-chart')) {
     if (!lastGeom) return;
     const rect = el('trends-chart').getBoundingClientRect();
     const svgX = rect.width ? (e.clientX - rect.left) / rect.width * lastGeom.W : 0;
+    const svgY = rect.width ? (e.clientY - rect.top) / rect.width * lastGeom.W : 0;
     let best = 0, bestDist = Infinity;
     lastGeom.stamps.forEach((_, j) => {
       const dist = Math.abs(lastGeom.x(j) - svgX);
       if (dist < bestDist){ bestDist = dist; best = j; }
     });
-    positionHoverLayer(best);
+    positionHoverLayer(best, { py: svgY });
   });
   el('trends-chart').addEventListener('pointerleave', () => positionHoverLayer(null));
+  // The keyboard path to the same values (dataviz skill, interaction.md: "same details on
+  // keyboard focus as on hover"). The plot is tabbable; arrows walk the crosshair a stamp at a
+  // time, Home/End jump to the ends, Escape parks it — and #trends-readout speaks each stop,
+  // because a crosshair moving inside an SVG announces nothing on its own.
+  el('trends-chart').addEventListener('keydown', e => {
+    if (!lastGeom || !lastGeom.stamps.length) return;
+    const last = lastGeom.stamps.length - 1;
+    const at = hoverIndex == null ? last : hoverIndex;
+    let next;
+    if (e.key === 'ArrowRight') next = Math.min(last, at + 1);
+    else if (e.key === 'ArrowLeft') next = Math.max(0, at - 1);
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = last;
+    else if (e.key === 'Escape'){ positionHoverLayer(null); return; }
+    else return;
+    e.preventDefault();
+    positionHoverLayer(next, { announce: true });
+  });
+  el('trends-chart').addEventListener('blur', () => positionHoverLayer(null));
 }
 
 function initAlerts(){
@@ -1828,6 +2156,19 @@ function initAlerts(){
 if (el('trends-legend')) {
   const legend = el('trends-legend');
   legend.addEventListener('click', e => {
+    // Hide/show is its own button beside the row, not inside it: the row is already
+    // role="button" (it drills), and an interactive control nested in another is unreachable
+    // for half the assistive tech that meets it.
+    const vis = e.target.closest('button[data-hide]');
+    if (vis){
+      const name = vis.dataset.hide;
+      if (hiddenSeries.has(name)) hiddenSeries.delete(name); else hiddenSeries.add(name);
+      drawTrends();
+      // The redraw replaced the button that was just pressed, taking the focus with it.
+      const again = legend.querySelector(`button[data-hide="${CSS.escape(name)}"]`);
+      if (again) again.focus();
+      return;
+    }
     const row = e.target.closest('.row[data-name]');
     if (row) trendClick(row.dataset.name);
   });

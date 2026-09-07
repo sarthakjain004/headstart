@@ -73,6 +73,7 @@ function loadApp() {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
+    + ' niceAxis: niceAxis, fmtAxis: fmtAxis,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
@@ -147,7 +148,9 @@ test('the Other row sums every series past CHART_MAX', () => {
   assert.match(other, /Other \(2 smaller categories\)/);
   const ct = other.match(/<span class="ct">([^<]+)<\/span>/);
   assert.ok(ct, 'Other row should render a count value');
-  assert.equal(Number(ct[1].replace(/,/g, '')), 3000);   // 2000 + 1000, not just the label text
+  // The legend compacts counts — `45,174` is six characters taken out of the label beside it —
+  // so this reads the compact form. Still the SUM (2000 + 1000), not the label text.
+  assert.equal(ct[1], '3.0k');
 });
 
 test('clicking a marked row opens the roles split it advertised', () => {
@@ -175,9 +178,11 @@ test('charted rows are real buttons; the Other row is not interactive', () => {
   assert.match(charted, /tabindex="0"/);
   assert.doesNotMatch(other, /role="button"/);
   assert.doesNotMatch(other, /tabindex/);
-  // Scoped to these rows, not the whole legend: a future real toggle must not fail this.
-  assert.doesNotMatch(charted, /aria-pressed/);
-  assert.doesNotMatch(other, /aria-pressed/);
+  // Scoped to the drill row itself, not the whole <li>: the hide toggle that now sits beside
+  // it IS a real aria-pressed button, and what this asserts is that the drill row is not one.
+  const drillPart = s => s.split('<button class="vis"')[0];
+  assert.doesNotMatch(drillPart(charted), /aria-pressed/);
+  assert.doesNotMatch(drillPart(other), /aria-pressed/);
   // The role belongs on the inner .row so the <li> keeps its implicit `listitem`.
   assert.match(charted, /<span class="row"[^>]*role="button"/);
 });
@@ -381,4 +386,68 @@ test('a short history with no ATS filter keeps the generic pipeline-is-new messa
   t.draw();
   assert.doesNotMatch(nodes['trends-empty'].textContent, /ATS selection/);
   assert.match(nodes['trends-empty'].textContent, /pipeline has run a few more times/);
+});
+
+// ---- the y axis --------------------------------------------------------------------------
+
+test('the y axis rounds up to a whole nice step, so the top tick is never the data max', () => {
+  const { t } = loadApp();
+  // 27.0% used to be divided by four into 0.0 / 6.8 / 13.5 / 20.3 / 27.0.
+  const a = t.niceAxis(27);
+  assert.equal(a.top % (a.ticks[1] - a.ticks[0]), 0);
+  assert.ok(a.top >= 27, 'the axis must contain the data');
+  assert.ok(a.ticks.length >= 4 && a.ticks.length <= 7, `got ${a.ticks.length} ticks`);
+  assert.equal(a.ticks[0], 0);
+  assert.equal(a.ticks[a.ticks.length - 1], a.top);
+});
+
+test('the step is a nice number in both units, not a division of the data max', () => {
+  const { t } = loadApp();
+  // 1 / 2 / 2.5 / 5 x 10^n — the mantissa is what makes a tick readable at a glance.
+  for (const hi of [27, 45174, 0.34, 6.8, 992]){
+    const a = t.niceAxis(hi);
+    const step = a.ticks[1] - a.ticks[0];
+    const mantissa = step / Math.pow(10, Math.floor(Math.log10(step)));
+    assert.ok([1, 2, 2.5, 5].some(m => Math.abs(m - mantissa) < 1e-9),
+      `hi=${hi} gave step ${step} (mantissa ${mantissa})`);
+  }
+});
+
+test('every label on one axis prints at the same precision', () => {
+  const { t } = loadApp();
+  t.setUnit('share', false);
+  const a = t.niceAxis(27);
+  const decimals = a.ticks.map(v => (t.fmtAxis(v, a.dec).match(/\.(\d+)/) || ['', ''])[1].length);
+  assert.equal(new Set(decimals).size, 1, `mixed precisions: ${a.ticks.map(v => t.fmtAxis(v, a.dec))}`);
+});
+
+// ---- colour slots ------------------------------------------------------------------------
+
+test('a category that drops off and comes back reclaims the colour it had', () => {
+  // Eight slots and twenty-four families means a slot has to change hands eventually, but a
+  // name RETURNING must not be handed a different one — the reader who learned it is still in
+  // the same session. Two names leave and come back RE-RANKED, so allocating by rank order
+  // (what the previous allocator did) hands them each other's colour and fails here; only
+  // per-name memory gets both right.
+  const { t } = loadApp();
+  const f = fixture();
+  t.set(f, null);
+  t.draw();
+  const qa = f.series[3].name, dev = f.series[4].name;
+  const qaWas = t.colorSlot(qa), devWas = t.colorSlot(dev);
+  assert.notEqual(qaWas, devWas);
+
+  const without = { ...f, series: f.series.filter(s => s.name !== qa && s.name !== dev) };
+  t.set(without, null);
+  t.draw();                                              // ai-ml + data-science take the two
+  assert.equal(t.colorSlot(qa), undefined);
+  assert.equal(t.colorSlot(dev), undefined);
+
+  // back, with devops now out-ranking qa-test
+  const swapped = { ...f, series: [f.series[0], f.series[1], f.series[2], f.series[4],
+                                   f.series[3], ...f.series.slice(5)] };
+  t.set(swapped, null);
+  t.draw();
+  assert.equal(t.colorSlot(qa), qaWas, 'a returning name must get its own colour back');
+  assert.equal(t.colorSlot(dev), devWas);
 });
