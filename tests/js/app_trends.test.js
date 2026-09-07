@@ -26,7 +26,13 @@ function fakeEl() {
     // `value: ''` so the load-time `go()` call (ADR-0074 — the Search tab browses on load,
     // reading `#q` even when this harness only cares about Trends) sees an empty query
     // rather than throwing on `undefined.trim()`.
-    innerHTML: '', textContent: '', hidden: false, style: {}, value: '',
+    innerHTML: '', textContent: '', hidden: false, value: '',
+    // `style` needs the methods the code actually calls on it. A bare `{}` let
+    // `style.setProperty` throw asynchronously, and Node reports that as an
+    // unhandledRejection AFTER the test ends — so 24 tests failed at once with no
+    // useful location while the real cause (a custom property set for the two-column
+    // results grid) sat in another file entirely.
+    style: { setProperty(k, v) { this[k] = String(v); }, getPropertyValue(k) { return this[k] ?? ''; }, removeProperty(k) { delete this[k]; } },
     // The redesigned drawTrends() queries into #trends-chart/#trends-legend for the hover layer
     // and the emphasis pass (querySelector/querySelectorAll). Null/empty is the correct stub
     // answer — every call site already guards on "not found" for the real DOM's own sake (the
