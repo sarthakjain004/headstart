@@ -8,7 +8,11 @@ version = "0.0.0"
 description = "Find software-engineering openings straight from company ATS boards."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["curl_cffi>=0.7"]  # Darwinbox is behind Cloudflare TLS fingerprinting
+# curl_cffi: Darwinbox is behind Cloudflare TLS fingerprinting.
+# requests: headstart.ingest.state_fetch's ranged/whole-file downloader (ADR-0085). It used to
+# arrive transitively via huggingface_hub, which moved to httpx in 1.0 — so the pipeline installed
+# no `requests` at all and every state fetch died on ModuleNotFoundError. Declared, not assumed.
+dependencies = ["curl_cffi>=0.7", "requests"]
 
 [project.optional-dependencies]
 # ruff is version-pinned: its formatter output can shift between releases, so an

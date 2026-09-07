@@ -550,17 +550,21 @@ def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
 
 
 # --- the download step itself (ADR-0085): real HTTP against a local Range-aware server ---
-# `requests` is not a base dependency (only [alerts] pulls it in transitively via
-# huggingface_hub), so these importorskip rather than faking it the way `hub` fakes
-# huggingface_hub — a real byte-serving server exercises the actual chunk/concat logic, which a
-# mock of `requests.get` would only be able to assert was *called*, not that it round-trips bytes
-# correctly.
-requests = pytest.importorskip("requests")
-
+# A real byte-serving server rather than faking `requests` the way `hub` fakes huggingface_hub: it
+# exercises the actual chunk/concat logic, which a mock of `requests.get` could only assert was
+# *called*, not that it round-trips bytes correctly.
+#
+# This was `pytest.importorskip("requests")` on the belief that `requests` was not a base
+# dependency — true at the time, and the reason this whole section silently skipped in CI while
+# `state_fetch` imported `requests` unconditionally in production. The dependency is declared now
+# (pyproject `[project] dependencies`), so import it plainly: if it ever goes missing again, these
+# tests must fail rather than quietly not run.
 import http.server
 import threading
 from contextlib import contextmanager
 from typing import ClassVar
+
+import requests
 
 
 class _RangeHandler(http.server.BaseHTTPRequestHandler):
