@@ -367,6 +367,13 @@ class LeverScraper(BaseScraper):
     def url(self) -> str:
         return f"https://api.lever.co/v0/postings/{self.slug}?mode=json"
 
+    def board_page(self) -> str:
+        """The public board, whose ``<title>`` is the company name with no wrapper at all.
+
+        The postings API carries no company name — its keys are the posting's own fields and
+        nothing else — so this is the only place Lever states it (`headstart.company_name`)."""
+        return f"https://jobs.lever.co/{self.slug}"
+
     def fetch_raw(self) -> Any:
         # try the global instance, then EU; a 404 on both means the company isn't on Lever —
         # which must RAISE, not read as an empty board: swallowing it left dead boards

@@ -75,6 +75,23 @@ class KekaScraper(BaseScraper):
         super().__init__(slug, company)
         self._tenant: str | None = None
 
+    def board_page(self) -> str:
+        """The careers page, whose ``<title>`` is "Careers at {Name}" or "{Name} Careers".
+
+        Most keka Boards render their ``<title>`` client-side and serve nothing to read, but
+        where one exists the wrapper is as uniform as eightfold's, and every keka Board serves a
+        slug today, so it is all upside. The measured rate is deliberately **not** repeated here:
+        `headstart.company_name` holds it and ADR-0114 restates it as the spec of record, and
+        three copies of it had already drifted apart before this docstring stopped being a fourth.
+
+        :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose
+        ``careerportalinfo`` omits the uuid — so for most Boards this is a genuinely new request,
+        not a duplicate one. Either way it costs a measured 0.12s (~2 min across a full run,
+        concurrent within each shard), which is cheaper than threading a response that may never
+        have been fetched out of ``fetch_raw`` and into ``fetch``.
+        """
+        return f"https://{self.slug}.keka.com/careers"
+
     def url(self) -> str:
         base = f"https://{self.slug}.keka.com/careers/api"
         if self._tenant is None:
@@ -99,7 +116,7 @@ class KekaScraper(BaseScraper):
         match = _UUID_RE.search(info)
         if match:
             return match.group(0)
-        page = self._get(f"https://{self.slug}.keka.com/careers")
+        page = self._get(self.board_page())
         match = _UUID_RE.search(page)
         return match.group(0) if match else None
 

@@ -97,6 +97,13 @@ class EightfoldScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}/careers/sitemap.xml"
 
+    def board_page(self) -> str:
+        """The careers landing page, whose ``<title>`` is ``"Careers at {Name}"``.
+
+        Not `url`, which is the sitemap: the slug here is a hostname, so without this the served
+        company reads "jobs.vodafone.com" (`headstart.company_name`)."""
+        return f"https://{self.slug}/careers"
+
     def _get(
         self,
         url: str | None = None,

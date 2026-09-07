@@ -157,6 +157,13 @@ class AshbyScraper(BaseScraper):
         # includeCompensation adds the structured compensation block to each posting
         return f"https://api.ashbyhq.com/posting-api/job-board/{self.slug}?includeCompensation=true"
 
+    def board_page(self) -> str:
+        """The public board, whose ``<title>`` is ``"{Name} Jobs"``.
+
+        The posting API returns only ``apiVersion`` and ``jobs``, and a job carries no company
+        field either, so the name is not otherwise available (`headstart.company_name`)."""
+        return f"https://jobs.ashbyhq.com/{self.slug}"
+
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
         for j in raw.get("jobs", []):

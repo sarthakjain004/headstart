@@ -159,27 +159,27 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 117,708 live *rows* reduce to 85,611 **Scrapable Boards** a run can even
+that matters. The 117,708 live *rows* reduce to 85,606 **Scrapable Boards** a run can even
 consider (measured 2026-09-06; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
 | live rows in the ledger | 117,708 | a row, not a board — 6,617 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
-| − `config.EXCLUDED_BOARDS` | −40 | vendor test/sandbox boards, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −45 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −23 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
 | − case-variant dedupe | −6,615 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −3 | real boards withheld for now — Accenture's and EY's outrun any shard budget, and SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs |
-| = **Scrapable Board** | **85,611** | |
+| = **Scrapable Board** | **85,606** | |
 
-That order matters: excluding before deduping reads −40 and −6,615, deduping first reads −38 and
-−6,617, because two excluded boards were themselves duplicates. Both land on 85,611.
+That order matters: excluding before deduping reads −45 and −6,615, deduping first reads −43 and
+−6,617, because two excluded boards were themselves duplicates. Both land on 85,606.
 
 The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
 serving one board share no key to collapse on, so it takes a live probe to find them
 (`scripts/validate/dedupe_boards.py`, ADR-0111).
 
-Of those, **53,815 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+Of those, **53,810 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
 the 31,796 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
@@ -295,7 +295,7 @@ fails if this table drifts from it.
 | --- | --- | --- |
 | `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
-| `company` | string | the ATS slug, not a display name |
+| `company` | string | the company's name where its Board states one — ashby, eightfold, keka, lever and ripplehire read it from the board page title (`headstart.company_name`, ADR-0114). Every other ATS still serves the **ATS slug**, so a row's company may be either, and a slug is what a Board that never named itself looks like |
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so the Keyword filter's description scope reaches only part of the table, and the UI reports the share. Stored, not served: the API omits it |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
@@ -327,7 +327,7 @@ actually carries salary data once the pipeline has run against it.
 ```jsonc
 {
   "id": "ashby:level:538c0fe2-504d-45e9-8ae6-2b44de217418",
-  "ats": "ashby", "company": "level",
+  "ats": "ashby", "company": "Level",               // read from the board title (ADR-0114)
   "title": "Backend Engineer (senior or above)",
   "description": null,                               // indexed before ADR-0104 added the column
   "location": "Austin", "remote": false, "employment_type": "FullTime",
