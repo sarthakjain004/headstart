@@ -1,0 +1,171 @@
+{
+ "captured": "2026-09-07",
+ "sample": {
+  "detail_pages": 1157,
+  "boards": 401,
+  "per_board": 3,
+  "http_200": 1155,
+  "http_302": 2
+ },
+ "json_ld": {
+  "ok": 1077,
+  "absent": 51,
+  "unparseable": 27
+ },
+ "field_coverage_of_json_ld_pages": {
+  "title": {
+   "n": 1077,
+   "pct": 100.0
+  },
+  "description": {
+   "n": 1077,
+   "pct": 100.0
+  },
+  "datePosted": {
+   "n": 1077,
+   "pct": 100.0
+  },
+  "industry": {
+   "n": 1077,
+   "pct": 100.0
+  },
+  "country": {
+   "n": 1077,
+   "pct": 100.0
+  },
+  "employmentType": {
+   "n": 909,
+   "pct": 84.4
+  },
+  "locality": {
+   "n": 847,
+   "pct": 78.6
+  },
+  "region": {
+   "n": 847,
+   "pct": 78.6
+  },
+  "org_str": {
+   "n": 737,
+   "pct": 68.4
+  },
+  "org_obj": {
+   "n": 340,
+   "pct": 31.6
+  },
+  "sal_max": {
+   "n": 113,
+   "pct": 10.5
+  },
+  "sal_min": {
+   "n": 112,
+   "pct": 10.4
+  },
+  "sal_unit": {
+   "n": 111,
+   "pct": 10.3
+  },
+  "sal_currency": {
+   "n": 96,
+   "pct": 8.9
+  }
+ },
+ "field_coverage_of_all_200s": {
+  "title": 93.2,
+  "description": 93.2,
+  "datePosted": 93.2,
+  "industry": 93.2,
+  "country": 93.2,
+  "employmentType": 78.7,
+  "locality": 73.3,
+  "region": 73.3,
+  "org_str": 63.8,
+  "org_obj": 29.4,
+  "sal_max": 9.8,
+  "sal_min": 9.7,
+  "sal_unit": 9.6,
+  "sal_currency": 8.3
+ },
+ "job_location_array_length": {
+  "1": 951,
+  "2": 73,
+  "3": 15,
+  "4": 16,
+  "5": 5,
+  "6": 4,
+  "7": 3,
+  "8": 2,
+  "9": 1,
+  "10": 1,
+  "11": 2,
+  "12": 2,
+  "13": 1,
+  "14": 1
+ },
+ "pages_without_usable_json_ld": {
+  "n": 78,
+  "boards": [
+   "actionet",
+   "agscareer",
+   "blountfinefoods",
+   "ccu",
+   "center-for-elders-independence",
+   "coe22",
+   "cristaministries",
+   "drillinginfo",
+   "eonetwork",
+   "imagine-learning",
+   "insighthousing",
+   "kantata",
+   "legalzoom",
+   "lewiscareers",
+   "logrhythm",
+   "longos",
+   "longos-internal",
+   "meltwater",
+   "momsorganicmarket",
+   "nutanix",
+   "parts-town",
+   "patelgreene",
+   "pilgrims",
+   "rightpoint",
+   "samtec",
+   "samtec-sp",
+   "sikichcareers",
+   "visiongroup",
+   "ziffdavis"
+  ],
+  "html_fallback_recovered_title_and_description": 78
+ },
+ "postings_with_a_real_salary_amount": {
+  "n": 118,
+  "pct_of_json_ld_pages": 10.96
+ },
+ "employment_type_values": {
+  "Full-Time": 526,
+  "Part-Time": 25,
+  "Contractor": 19,
+  "Full Time": 16,
+  "Full-Time(30 plus scheduled hours)": 14,
+  "Regular Full-Time": 12,
+  "Part-Time(less than 30 scheduled hours)": 12,
+  "Full-Time- Exempt": 9,
+  "Regular": 9,
+  "Permanent": 9,
+  "full-time": 9,
+  "Intern": 8,
+  "Regular Full Time": 7,
+  "Contract": 6,
+  "Permanent Full Time": 6,
+  "Colleague (Salary)": 6,
+  "FULL-FULL TIME": 6,
+  "Full-Time Regular": 6,
+  "Full-Time Regular Employee": 6,
+  "F - Full Time": 6,
+  "Full Time- Non-Exempt": 5,
+  "INT | Full-Time International": 5,
+  "Regular Full Time (RFT) Replacement": 5,
+  "Full-Time Salary": 5,
+  "Full-Time Hourly": 4
+ }
+}

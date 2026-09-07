@@ -81,6 +81,9 @@ _CAREERS_WRAPPER = (
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
     "eightfold": _CAREERS_WRAPPER,
+    # jobvite: every board titles itself "{Name} Careers"; 424 of 434 live boards resolve
+    # (2026-09-07). See JobviteScraper.board_page.
+    "jobvite": _CAREERS_WRAPPER,
     "keka": _CAREERS_WRAPPER,
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
@@ -148,6 +151,7 @@ _MAX_LEN = 60
 _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "ashby": frozenset({"ashby", "ashbyhq"}),
     "eightfold": frozenset({"eightfold", "eightfoldai"}),
+    "jobvite": frozenset({"jobvite"}),
     "keka": frozenset({"keka"}),
     "lever": frozenset({"lever"}),
     "ripplehire": frozenset({"ripplehire"}),
