@@ -79,7 +79,7 @@ def _counts() -> dict[str, int]:
 
     # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards
-    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 44 there and 42 here.
+    # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 45 there and 43 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
     kept = [c for c in enabled if f"{c.ats}:{c.slug}".lower() not in EXCLUDED_BOARDS]
     unaliased = [c for c in kept if not is_alias(c)]
@@ -284,6 +284,14 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
                 truth["aliased"],
                 truth["parked"],
             ),
+        ),
+        # The README states the same two-orders rule in its own words. It had no entry here, and
+        # drifted to 43/41 while the table two lines above it already said 44 — the exact
+        # single-site staleness this test exists to catch.
+        (
+            "README.md",
+            r"excluding before deduping reads −([\d,]+) and −[\d,]+, deduping first reads −([\d,]+)",
+            (truth["excluded_before_dedupe"], truth["excluded_after_dedupe"]),
         ),
         # and the two-orders rule quotes all four of the numbers that make it true
         (

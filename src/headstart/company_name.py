@@ -127,8 +127,10 @@ _PAGE_LABEL = re.compile(
 )
 
 #: Long enough for "Financial Software and Systems Ltd", short enough to reject a sentence — the
-#: test pins both ends, against that name and the 70-character lever title that is a whole
-#: sentence.
+#: test pins both ends, against that name and a 70-character lever title. That title —
+#: "Succession Planning for Railroads Investing in the Next Generation LLC" — is a legal
+#: entity name, not the sentence an earlier draft called it, so the cap is refusing a real
+#: name here rather than prose. Recorded as a known miss in ADR-0112.
 _MAX_LEN = 60
 
 #: Per ATS, the names its *own* branding goes by. A board page that fails to render its tenant

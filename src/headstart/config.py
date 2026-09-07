@@ -117,6 +117,12 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "lever:salesdemo-jr",  # 21 postings
         "ripplehire:itcinfotech",  # 631 postings; titles itself "ITC Infotech Demo"
         "ripplehire:labs-axisqa",  # 1,226 postings; RippleHire's own QA tenant for Axis
+        # 486 postings served as "Mphasis" — more than the genuine `ripplehire:mphasis`
+        # board's 189, with titles repeating verbatim. ADR-0112 declined to list it on
+        # 2026-09-07 because it 502'd and exposed no title; it answers 200 now, so the
+        # evidence that was missing then exists. A QA tenant wearing a real employer's
+        # name is the one thing a title rule cannot catch.
+        "ripplehire:labs-mph",
         "ripplehire:prodtest",  # 863 postings, company "prodtest"
         "ripplehire:qa1-tataaia",  # 209 postings, company "qa1-tataaia"
         "ripplehire:qa1-ust-app",  # 300 postings, company "qa1-ust-app"; "software developement"

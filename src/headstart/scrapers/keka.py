@@ -78,11 +78,11 @@ class KekaScraper(BaseScraper):
     def board_page(self) -> str:
         """The careers page, whose ``<title>`` is "Careers at {Name}" or "{Name} Careers".
 
-        Roughly one Board in nine serves a non-empty ``<title>`` at all — the rest render it
-        client-side — but where one exists the wrapper is as uniform as eightfold's, and every
-        keka Board serves a slug today, so it is all upside. `headstart.company_name` holds the measured
-        rate, and ADR-0112 repeats it as the spec of record — but nowhere else should, because
-        three copies of it drifted apart once already.
+        Most keka Boards render their ``<title>`` client-side and serve nothing to read, but
+        where one exists the wrapper is as uniform as eightfold's, and every keka Board serves a
+        slug today, so it is all upside. The measured rate is deliberately **not** repeated here:
+        `headstart.company_name` holds it and ADR-0112 restates it as the spec of record, and
+        three copies of it had already drifted apart before this docstring stopped being a fourth.
 
         :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose
         ``careerportalinfo`` omits the uuid — so for most Boards this is a genuinely new request,

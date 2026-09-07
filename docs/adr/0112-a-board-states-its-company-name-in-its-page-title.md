@@ -122,14 +122,13 @@ An earlier draft of this section claimed those three "exhaust the positions a to
 so the set was closed. That is false, and worth recording as the kind of claim to distrust: a
 token can also sit medially ("Acme Careers Portal"), the leading alternative matches one phrasing
 rather than a position ("Jobs at Acme" passes), and the singular passes ("Acme Career"). None has
-been observed across those 3,690 Boards, so none is handled — this module rejects only shapes
+been observed across those 2,998 Boards, so none is handled — this module rejects only shapes
 someone really serves. Expect a fourth shape rather than assuming there cannot be one.
 
 Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are real
 employers a `\b`-bounded rule would refuse.
 
-It costs recall, and the honest number is not zero. A census of all 3,690 lever and keka Hiring
-Boards fires the rule six times: three page labels it exists for, and **three real employers** it
+It costs recall, and the honest number is not zero. A census of every lever and keka Hiring Board (2,998) fires the rule six times: three page labels it exists for, and **three real employers** it
 refuses — `lever:pmaconsultants` ("PMA Consultants Careers", 29 real postings), `lever:bananajobs`
 ("Banana Jobs") and `lever:assurance` ("Assurance Careers"). All three keep their slug. Refusing is
 still the right trade — stripping the word
@@ -201,8 +200,9 @@ and the separator rule earns its place elsewhere, so this is left as a recall mi
 narrowed around one Board.
 
 **`lever:pip` is a live floor exception.** It titles itself "Jobs have moved to our Accenture Job
-Site" — a notice, not a name — and nothing here refuses it: 40 characters is well inside
-`_MAX_LEN`, and the label words sit medially. It has 0 postings today, so nothing reaches a user,
+Site" — a notice, not a name — and nothing here refuses it: 41 characters is well inside
+`_MAX_LEN`, and its leading "Jobs" is not the phrasing `_PAGE_LABEL`'s leading branch models
+(`^careers? at`), which is the position-versus-phrasing distinction drawn above. It has 0 postings today, so nothing reaches a user,
 but the floor should be read with this in mind. It is *not* fixed here on purpose: telling prose
 from a name in a 40-character string needs a judgement this module cannot make from a regex, and
 a rule fitted to this one Board would refuse real names for no measured gain.
@@ -216,6 +216,9 @@ which is the same anchoring that keeps them safe.
 ("Banana Jobs") loses a real name to `_PAGE_LABEL`'s trailing "Jobs". Both keep their slug.
 Recorded because each rejection rule's cost belongs here as well as in its own comment.
 
-`ripplehire:labs-mph` is in the same `labs-` family as the newly blocklisted `labs-axisqa` and
-looks like another RippleHire QA tenant, but it currently 502s and exposes no title, so there is
-no evidence to blocklist it on. Named here so the next person meets it with the context.
+`ripplehire:labs-mph` was recorded here as un-blocklistable because it 502'd and exposed no
+title. That held for about a day. It answers 200 now, titles itself "Mphasis Careers | …", and
+serves **486 postings** as "Mphasis" — more than the genuine `ripplehire:mphasis` board's 189.
+It is blocklisted. The lesson is about the shape of the evidence, not the Board: "no title today"
+is a reading, not a property, and a Known-miss entry resting on one should be re-checked rather
+than trusted.
