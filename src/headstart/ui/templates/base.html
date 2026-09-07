@@ -19,6 +19,9 @@
       <span class="count"><b>{{ njobs }}</b> jobs indexed</span>
       <button class="icon-btn" id="theme" onclick="flipTheme()" aria-label="Switch light or dark theme" title="Switch theme">◐</button>
     </div>
+    {# Its own row in the masthead grid, so a phone-width header pushes it down rather than
+       dropping it — this is the one line that answers "what am I looking at". #}
+    <p class="tagline">Tech jobs read straight from company career boards</p>
   </header>
 
   <div class="layout">
@@ -37,6 +40,7 @@
       {% if trends_on %}
       <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
       {% endif %}
+      <a class="nav-item" href="#data" data-tab="data" aria-current="false">Data</a>
       {% if profile_on %}
       <a class="nav-item" href="#profile" data-tab="profile" aria-current="false">Profile</a>
       {% else %}
@@ -58,12 +62,14 @@
       {% if trends_on %}
       <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>
       {% endif %}
+      <section class="panel" id="panel-data" hidden>{% include "data.html" %}</section>
     </div>
   </div>
 
   <div class="foot">Every job here is read straight from the company's own careers page — no
     reposts and no agencies. Your search is matched on meaning rather than
-    keywords. English-language tech roles, refreshed every couple of hours.</div>
+    keywords. English-language tech roles, refreshed every couple of hours.
+    <a href="#data">What's in the index, and what isn't →</a></div>
 </div>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% if alerts_on %}<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>{% endif %}

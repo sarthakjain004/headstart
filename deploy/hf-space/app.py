@@ -197,6 +197,17 @@ app.config.update(
 # from the caller's own cookie, so it can only tell you what you sent.
 _PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
 
+# The public repository, named once *for the Space*. Both trust surfaces (ADR-0112's door,
+# ADR-0113's Data tab) link into it, and "check it yourself" is the claim they both rest on,
+# so a rename must not leave half of one page's links dead. `scripts/ui/serve.py` necessarily
+# keeps its own copy — it is the local renderer and shares no config with this module.
+_REPO = "https://github.com/sarthakjain004/headstart"
+
+# The door's freshness window (ADR-0112). Seven days rather than 24 hours: a single day's
+# intake swings with which Boards the run happened to slice, and a tile that halves overnight
+# for no reason the visitor can see reads as broken rather than as honest.
+_DOOR_NEW_HOURS = 168
+
 # The Digest generator is the one caller with no Google identity to offer: it is a
 # scheduled run, not a person, and it must reach /search for every Subscription
 # (ADR-0035; ADR-0042's amendment records why the wall admits it). So it carries a shared
@@ -846,10 +857,36 @@ def me():
     )
 
 
+@app.route("/coverage")
+def coverage():
+    """What the served table actually carries, counted live (ADR-0113).
+
+    The Data tab reads this. Its own route rather than a field on ``index`` because the tab
+    is opened by a minority of visits and the counts, though cheap, are not free on the
+    first one — and because a number rendered into the page at boot would freeze at
+    whatever the table held then, which is the staleness this ADR exists to avoid.
+    """
+    return jsonify(_searcher.coverage())
+
+
 @app.route("/")
 def index():
     if _AUTH_ON and not session.get("email"):
-        return render_template("signin.html", google_client_id=_GOOGLE_CLIENT_ID)
+        # The door states what this is and proves it before asking for an identity
+        # (ADR-0112). Every number is read rather than written, and every one is EXACT —
+        # a tile that can only be approximated does not go on this page. Two table
+        # queries: the row count the signed-in header already makes, and the freshness
+        # window (~5 ms each, ADR-0084's primitive). `n_new` is None on a table with no
+        # `first_seen` column, and the template drops the tile rather than guess.
+        return render_template(
+            "signin.html",
+            google_client_id=_GOOGLE_CLIENT_ID,
+            njobs=f"{_table.count_rows():,}",
+            n_atses=len(_searcher.atses),
+            n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
+            new_days=_DOOR_NEW_HOURS // 24,
+            repo=_REPO,
+        )
     scopes = search.keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
@@ -861,6 +898,10 @@ def index():
             # same map the <select> below is rendered from, so the three cannot drift apart.
             "keyword_scopes": {value: needs for value, _, needs in scopes},
             "keyword_default_scope": search.KEYWORD_DEFAULT_SCOPE,
+            # A no-query browse orders by `first_seen` only when the column exists; without
+            # it the fallback is `id`, which is not a date at all. The line naming what the
+            # user is looking at must not claim "newest first" on the second one.
+            "has_first_seen": _searcher.has_first_seen,
         },
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,
@@ -878,6 +919,10 @@ def index():
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
+        repo=_REPO,  # the Data tab's "check any of it" links (ADR-0113)
+        # The Data tab's storage list must describe THIS deployment. With the wall off there
+        # is no account, so it says so rather than listing what a different one would keep.
+        auth_on=_AUTH_ON,
         trends_on=bool(_TRENDS),
         alerts_on=_ALERTS_ON,
         sets_on=_SETS_ON,
