@@ -135,6 +135,23 @@ that as transient and repeats forever. Three constraints, one narrow intersectio
 a fixed string, so the next edit that violates one fails there instead of in another silent
 five-run data loss.
 
+## Does this make the makespan floor worse?
+
+A fair challenge: a 111-byte 403 sounds cheaper than a 93 KB 200, so unblocking `careers.te.com`
+might make its 2,127-page pass *slower* and grow the very floor the fix was meant to remove.
+
+Measured on 8 of that Board's real pages, same session, one string each:
+
+| | mean per page | projected 2,127 pages at 6-wide |
+|---|---|---|
+| old UA — 403 | **5.57 s** | ~32.9 min |
+| new UA — 200 | **1.35 s** | ~8.0 min |
+
+**4.1x faster.** The intuition misses the retry ladder: 403 is in `http.TRANSIENT`, so every
+refusal cost several attempts with backoff, while a served page is fetched once. The old model
+reproduces the observed cost — 2,127 x 5.57 s / 6 workers is ~1,975 s against the 1,614 s the run
+logged — so the floor **shrinks**, and item 1 of the review's ranked scope holds.
+
 ## Verification
 
 **The bug's own loop, before and after** —
@@ -148,14 +165,28 @@ five-run data loss.
 
 **Recovery across the zero-yield Boards.** Of the 20 worst by seconds burned, 16 listed
 successfully from a laptop; **16 of 16 went 403 → 200 and parsed a real job title**, and 0 of 20
-worked under the old string. (Four — `careers-inc.nttdata.com`, `corningjobs.corning.com`,
-`jobs.scotiabank.com`, `bechtel.jobs.hr.cloud.sap` — returned no listing at all from here, which is
-a **separate, still-open** listing-side fault, not this one.)
+worked under the old string. Four — `careers-inc.nttdata.com`, `corningjobs.corning.com`, `jobs.scotiabank.com`,
+`bechtel.jobs.hr.cloud.sap` — returned no listing **from this laptop**, so they could not be
+sampled. Calling that "a separate listing-side fault", as an earlier draft of this doc did, is
+contradicted by the review's own §1 table: in CI those same Boards listed 1,399 / 1,212 / 1,232
+pages. Their listing works in production and the laptop is the odd vantage, so the likeliest
+reading is that the fix reaches them too and this **understates** recovery rather than deferring a
+known break. Not asserted either way — the in-Actions probe below is what would settle it.
 
-**No regression anywhere else.** Two live Boards per ATS, all 20 ATSes, real `fetch_raw()` +
-`parse()` under each string: **38 SAME, 2 BETTER (successfactors 0 → 1), 0 WORSE** — zwayam
-included, twice. The `DNSError` (personio, zoho) and `ValueError` (workday) outcomes are identical
-under both agents, so they are pre-existing and unrelated.
+**No regression anywhere else.** Two live Boards per ATS across the **20 ATSes that have a
+liveness ledger** — the registry holds 22, of which `join` is in `DISABLED_ATS` and `oracle` and
+`sensehq` have no ledger and therefore no Board to sample — real `fetch_raw()` + `parse()` under
+each string, reproducible from a clone:
+
+```
+python -u scripts/validate/user_agent_sweep.py \
+    --old "headstart/0.1 (job-board reader)" --new "headstart/0.1"
+```
+ **38 SAME, 2 BETTER (successfactors 0 → 1), 0 WORSE** — zwayam
+included, twice. The `DNSError` (personio, zoho) and `ValueError` (workday) rows never reached a
+host under **either** string, so the sweep reports them as `UNREACHED` rather than `SAME` — they
+are pre-existing and unrelated, and counting them as evidence that the change is safe would be
+wrong.
 
 ## What would have prevented it
 

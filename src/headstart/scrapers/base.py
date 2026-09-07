@@ -21,7 +21,8 @@ from headstart.models import Job
 #:
 #: This string is load-bearing, not cosmetic, and it is bare on purpose — two hosts have been
 #: measured rejecting a *specific* shape of it, and the intersection of what they accept is
-#: narrow. Full measurements: `docs/successfactors/2026-09-07_user-agent-denylist.md`.
+#: narrow. The policy is ADR-0115; the measurements behind it are
+#: `docs/successfactors/2026-09-07_user-agent-denylist.md`.
 #:
 #: **SuccessFactors** denylists the previous value, ``headstart/0.1 (job-board reader)``, as an
 #: **exact literal**. On `careers.te.com`, 2026-09-07: that string returns 403 (a 111-byte

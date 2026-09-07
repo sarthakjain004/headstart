@@ -118,3 +118,4 @@ supersedes it and note the supersession in both.
 | [0112](0112-the-door-earns-the-sign-in-before-it-asks.md) | The door earns the sign-in before it asks for it | 2026-09-07 |
 | [0113](0113-publish-the-indexs-own-limits-in-the-product.md) | Publish the index's own limits in the product, measured live | 2026-09-07 |
 | [0114](0114-a-board-states-its-company-name-in-its-page-title.md) | A Board states its company name in its page title — read it, don't infer it | 2026-09-07 |
+| [0115](0115-one-user-agent-identifies-and-hosts-constrain-its-shape.md) | One User-Agent, chosen to identify — and its shape is set by hosts, not by taste | 2026-09-07 |

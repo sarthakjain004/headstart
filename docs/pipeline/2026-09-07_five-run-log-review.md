@@ -103,20 +103,29 @@ l3harris : http=200 size=50,097 time=1.9s -> dict(title='Deputy Customer Success
                                                   posted_at='2026-08-12')
 ```
 
-**The parser builds a usable Job from both pages.** So the pages CI receives are not the pages the
-open internet serves. (Neither page carries JSON-LD or `<meta itemprop>` microdata — only
-`joblayouttoken` spans, German ones on te.com — but the parser does not need them, which is exactly
-why reading the markup instead of running the code would have produced the wrong answer.)
+**The parser builds a usable Job from both pages.** (Neither page carries JSON-LD or `<meta
+itemprop>` microdata — only `joblayouttoken` spans, German ones on te.com — but the parser does not
+need them, which is exactly why reading the markup instead of running the code would have produced
+the wrong answer.)
 
-**Hypothesis, consistent with all the evidence but not yet proven:** SAP's CSB host walls the
-Actions runner IP range, and `successfactors` is one of the ATSes with **no spare-egress
-fallback** — `egress_fallback_on` is set only on `eightfold` (403/405), `workday` (429) and
-`workable` (429); SuccessFactors leaves it empty, so a walled request has no second address and no
-rescue. A wall would produce exactly this: pages fetched, nothing parseable, silently.
-
-**Proving it needs one `workflow_dispatch` probe from inside Actions** that fetches a te.com job
-page and prints status + first bytes. CLAUDE.md sanctions that route precisely for the case where a
-host behaves differently from a session than from CI.
+> **RESOLVED — and the hypothesis this section originally reached for was wrong.**
+> **See [`docs/successfactors/2026-09-07_user-agent-denylist.md`](../successfactors/2026-09-07_user-agent-denylist.md).**
+>
+> What this section argued next, on the evidence above, was that the pages CI receives cannot be
+> the pages the open internet serves — and therefore that SAP's CSB host walls the Actions runner
+> IP range, `successfactors` being one of the ATSes with **no spare-egress fallback**
+> (`egress_fallback_on` is set only on `eightfold`, `workday` and `workable`). It followed that
+> settling it needed a `workflow_dispatch` probe from inside Actions.
+>
+> That reasoning had a hole: the plain `curl` above and *the scraper* do not send the same request.
+> The real cause is a SuccessFactors edge policy denylisting the **exact literal**
+> `headstart/0.1 (job-board reader)` — `(job-board)`, `(reader)`, `curl/8.7.1` and
+> `python-requests/2.32.3` are all served on the same URL. The vantage was never the variable, and
+> the bug reproduced on a laptop in about thirty seconds once a harness ran the real code path.
+>
+> Both dead theories are kept above rather than edited away, because the failure mode they share is the
+> point: each was plausible, each was reasoned from real evidence, and each cost more than the
+> measurement that killed it would have.
 
 ### Timing: this is recent
 
@@ -130,8 +139,8 @@ The priority ledger's `updated_at` is the last date a board appeared in a scrape
 | `jobs.scotiabank.com` | `960s, jobs=0, 2026-09-07` | `score=200.3, last_tech_jobs=200, 2026-09-03` |
 
 These boards last yielded on **2026-09-03/04**. No commit touched `successfactors.py` on 09-04 or
-09-05 (`57c1183` is 09-06, `5082406` is 09-07), so a code regression on our side is not the obvious
-cause — which is further weak support for the egress hypothesis.
+09-05 (`57c1183` is 09-06, `5082406` is 09-07), so nothing on our side changed when they went
+silent — consistent with the denylist entry having been added at the origin around then.
 
 ---
 
@@ -360,7 +369,7 @@ visible in the Actions UI instead of buried.
 
 | # | Change | Evidence | Payoff |
 |---|---|---|---|
-| 1 | Diagnose the SuccessFactors zero-yield class with an in-Actions probe, then fix (likely: opt SuccessFactors into the spare egress) | §1 | ~56,120 postings/run recovered; removes the makespan floor |
+| 1 | ~~Diagnose the SuccessFactors zero-yield class, then fix~~ **DONE** — one denylisted User-Agent literal, not an egress wall ([writeup](../successfactors/2026-09-07_user-agent-denylist.md)) | §1 | ~56,120 postings/run unblocked; te.com's detail pass measured **4.1x faster**, not slower |
 | 2 | Make the ADR-0064 gate read measured `jobs`, not a carried score | §2 | Would have caught this in one run; ~127 board-min/run and the critical path |
 | 3 | Widen `workday` listing-page concurrency | §4 — 74/75 shard-runs, 2.18× for free | Directly cuts the largest stage's Σ work |
 | 4 | Per-host circuit breaker on repeated timeouts | §3a | ~1,600 board-s saved in one outage; bounds any future one |
