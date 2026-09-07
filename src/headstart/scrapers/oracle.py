@@ -223,8 +223,13 @@ class OracleScraper(BaseScraper):
         )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        # A bare `{"items": ...}` means no detail pass ran — the pre-detail-pass raw shape, which
-        # recorded fixtures and any direct `parse` caller may still hand us.
+        # A bare `{"items": ...}` is the API's own listing envelope — what a fixture captured
+        # straight from the endpoint looks like, and `tests/fixtures/oracle_fa-etqo_cx2.json`
+        # is exactly that. `fetch_raw` never returns it, so this branch is unreachable in
+        # production; it exists so a captured fixture can stay as captured rather than being
+        # doctored into the internal shape. jazzhr and zoho keep the same fork for the same
+        # reason. A reviewer reasonably read it as dead code — it is not free, and if the
+        # fixture ever goes, this should go with it.
         if "requisitionList" in raw:
             reqs, details = raw["requisitionList"], raw.get("details") or {}
         else:
