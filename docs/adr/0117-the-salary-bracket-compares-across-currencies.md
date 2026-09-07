@@ -1,4 +1,4 @@
-# ADR-0116: The salary bracket compares across currencies, at a dated rate
+# ADR-0117: The salary bracket compares across currencies, at a dated rate
 
 **Status:** accepted · **Date:** 2026-09-07 · **Supersedes ADR-0082's "never FX-converted" clause for the *filter* only; ADR-0082's storage decision is unchanged**
 

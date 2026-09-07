@@ -229,7 +229,7 @@ const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears',
 function drawActive(){
   syncSalarySlider();
   const f = currentFilters(), box = el('active');
-  // The panel is closed by default now (ADR-0115), so the button has to carry how many
+  // The panel is closed by default now (ADR-0116), so the button has to carry how many
   // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
   const btn = el('filtersbtn'), n = Object.keys(f).length;
   if (btn){

@@ -26,7 +26,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # not in the repo's deploy/hf-space/ — deploy-space.yml copies them in from src/headstart/ and
 # config/ (single source of truth, where their tests live) before pushing to the Space.
 # `fx_rates.json` is here for the same reason as the role JSONs: `fx.py` reads it from beside
-# itself in this image (ADR-0116), and without it the salary bracket quietly stops comparing
+# itself in this image (ADR-0117), and without it the salary bracket quietly stops comparing
 # across currencies instead of failing loudly.
 # Both role JSONs must be COPYed, not merely synced: app.py reads them from beside itself
 # inside the image. Without role_families.json every trend series renders as its slug

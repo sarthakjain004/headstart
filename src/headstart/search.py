@@ -469,7 +469,7 @@ def _salary_clauses(
     else:
         currency = None
     if currency in currencies:
-        # The bracket is compared ACROSS currencies (ADR-0116), not within the one picked.
+        # The bracket is compared ACROSS currencies (ADR-0117), not within the one picked.
         # Pinning `salary_currency = 'USD'` made a USD range silently drop every INR job —
         # fewer results, no stated reason. Each currency present in the table gets the user's
         # bounds restated in its own units, and the whole thing ORs together; the numbers in
@@ -477,7 +477,7 @@ def _salary_clauses(
         #
         # A currency with no rate is left OUT rather than compared at 1:1, and if the table
         # is unavailable entirely this falls back to the single-currency clause that predates
-        # ADR-0116 — a narrower answer, never a wrong one.
+        # ADR-0117 — a narrower answer, never a wrong one.
         fx_table = fx.table()
         rates = (fx_table or {}).get("rates") or {}
         comparable = [c for c in currencies if c in rates] if currency in rates else []

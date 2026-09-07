@@ -56,7 +56,7 @@ jobs:
           cp src/headstart/search.py deploy/hf-space/search.py
           # Curated role taxonomy (ADR-0040): the ledger stores family slugs, the chart shows
           # these labels. Same single-source-of-truth reason as the modules above.
-          # The salary bracket's dated rate table (ADR-0116). Without it the bracket
+          # The salary bracket's dated rate table (ADR-0117). Without it the bracket
           # degrades to one currency, so it ships beside the module that reads it.
           cp config/fx_rates.json deploy/hf-space/fx_rates.json
           cp config/role_families.json deploy/hf-space/role_families.json

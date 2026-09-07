@@ -1,7 +1,7 @@
 /* ---- tokens. Every colour and size below is named here and used through the token,
        so the light theme is a token swap rather than a second stylesheet.
 
-       Palette: "quiet dossier" (ADR-0115). Warm paper and warm charcoal rather than blue-black,
+       Palette: "quiet dossier" (ADR-0116). Warm paper and warm charcoal rather than blue-black,
        one restrained accent, and no gradient or glow anywhere. The reasoning is about the user's
        state, not taste: job searching is a long, repetitive, high-rejection scanning task, usually
        done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
@@ -17,9 +17,9 @@
      against this file's own --raise dark / near-white light chart surfaces; see
      docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
      mechanism, so these are read by SLOT, never re-ordered per chart. Re-measured against the
-     ADR-0115 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
+     ADR-0116 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
      light, i.e. the ground change is not what decides it. The light figure is under 3:1 and was
-     before this change too — a pre-existing gap, called out in ADR-0115 rather than inherited
+     before this change too — a pre-existing gap, called out in ADR-0116 rather than inherited
      silently. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
   --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
@@ -120,7 +120,7 @@ body{
 .icon-btn:hover{ transform:translateY(-1px); border-color:var(--accent); color:var(--accent); }
 #who{ max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0115).
+/* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0116).
        The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
        it costs one row and returns the width to the results. ---- */
 .tabs{ display:flex; gap:2px; margin:0 0 16px; border-bottom:1px solid var(--rule);
@@ -204,8 +204,8 @@ textarea:focus{ border-color:var(--violet); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
 
-/* ---- search layout: filter panel above, results below (ADR-0115). ---- */
-/* The filter panel (ADR-0115). Above the results rather than beside them, full width, and
+/* ---- search layout: filter panel above, results below (ADR-0116). ---- */
+/* The filter panel (ADR-0116). Above the results rather than beside them, full width, and
    closed until asked for — so the default view is the thing the user came for. Open, the
    groups flow into as many columns as the width allows rather than one tall column. */
 .rail{ display:none; background:var(--raise); border:1px solid var(--rule);
@@ -269,7 +269,7 @@ textarea:focus{ border-color:var(--violet); }
 .pill button:hover{ color:var(--coral); }
 @keyframes pop{ from{ opacity:0; transform:scale(.86); } to{ opacity:1; transform:none; } }
 
-/* ---- result cards (ADR-0115). A row, not a box: the whole point of the full width is that
+/* ---- result cards (ADR-0116). A row, not a box: the whole point of the full width is that
        salary and match land at the SAME x on every row, so the eye scans one column down the
        page instead of re-reading each card left to right. The text block is bounded to a
        readable measure (the skill's 65-75ch rule); the freed width goes to alignment, not to

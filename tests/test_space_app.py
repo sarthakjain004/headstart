@@ -165,7 +165,7 @@ def _space_app(state, env=None):
     stubs["alerts.store"] = _store
     stubs["facets"] = _facets
     # The real module, not a stub: it reads a committed table off disk and the app only asks
-    # it for a date (ADR-0116). Faking it would test the fake.
+    # it for a date (ADR-0117). Faking it would test the fake.
     stubs["fx"] = _fx
     stubs["profile_extract"] = _profile_extract
     stubs["search"] = _search

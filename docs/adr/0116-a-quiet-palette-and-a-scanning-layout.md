@@ -1,4 +1,4 @@
-# ADR-0115: A quiet palette, and a layout built for scanning
+# ADR-0116: A quiet palette, and a layout built for scanning
 
 **Status:** accepted · **Date:** 2026-09-07 · **Replaces the visual language ADR-0042 shipped; keeps every decision ADR-0112 and ADR-0113 made about what the product says**
 

@@ -59,7 +59,7 @@ def index():
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
         currencies=_searcher.currencies,
-        # The salary bracket converts across currencies (ADR-0116); the rail prints the date
+        # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
         fx_as_of=(fx.table() or {}).get("as_of"),
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)

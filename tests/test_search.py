@@ -722,7 +722,7 @@ def test_currency_is_whitelisted_against_the_table_never_interpolated():
         in where
     )
     # Every currency named in the clause came from the table's own whitelist, never from the
-    # request — the cross-currency expansion (ADR-0116) widened what is emitted, not what is
+    # request — the cross-currency expansion (ADR-0117) widened what is emitted, not what is
     # trusted.
     import re
 
@@ -1040,7 +1040,7 @@ def test_internship_does_not_claim_international():
     assert "NOT LIKE '%international%'" in clause
 
 
-# ── The salary bracket compares across currencies (ADR-0116) ──────────────────────────────
+# ── The salary bracket compares across currencies (ADR-0117) ──────────────────────────────
 
 
 def test_a_usd_bracket_also_matches_the_same_money_in_other_currencies():

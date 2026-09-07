@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-currency comparison for the salary bracket — one dated table, no live lookup (ADR-0116).
+"""Cross-currency comparison for the salary bracket — one dated table, no live lookup (ADR-0117).
 
 ADR-0082 period-normalises salaries and deliberately does **not** FX-convert them, and until now
 the bracket honoured that by pinning one currency: picking a USD range silently dropped every INR
