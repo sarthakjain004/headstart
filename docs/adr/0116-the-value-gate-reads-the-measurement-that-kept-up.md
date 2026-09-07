@@ -91,6 +91,28 @@ The six are exactly the Boards that set the makespan — `careers.te.com`, `jobs
 `southasiacareers.deloitte.com`, `careers-inc.nttdata.com`, `jobs.scotiabank.com`,
 `corningjobs.corning.com`.
 
+**The live ledger is unmigrated, and the fix is inert for exactly one run.** `scrape_plan` runs
+*before* `update_ledgers cost`, so the first post-merge plan reads rows written entirely by the old
+code — where an errored Board's 0 had already overwritten its last good count. Measured 2026-09-07:
+**34,735 of 88,225 rows carry `jobs=0`**, but only the ones over the 15-min floor are reachable, and
+that is **15 rows** — six of them the genuine SuccessFactors zeros this ADR is about. So today's
+blast radius is benign. It is not zero in principle: a large Board that happens to error on the last
+pre-merge run carries a stale 0 into the first gated plan and earns the fortnight this ADR spends a
+section closing. It self-migrates from the second run onward, the same way ADR-0096's key shim does,
+and `scripts/validate/gate_impact.py` names every newly-dropped Board reading `jobs=0` so the check
+is one command rather than a hope.
+
+**What this is worth after the incident: nothing, in board-minutes.** The 128 board-minutes are
+`careers.te.com` and its five neighbours, and ADR-0115 has already fixed why they returned nothing —
+once they yield again the veto stops applying and reclaims zero. Stating that plainly matters
+because the number is the tempting part. **What the change actually buys is detection latency**: the
+same collapse would now be caught on the run after it starts, instead of running five deep and being
+found by hand.
+
+**A rollback is not free.** Once a run writes an empty `jobs` field to the dataset, reverting this
+code breaks `load()` — the old reader does `int(row["jobs"])` and raises on `""`. Rolling back means
+rolling the ledger back with it, or re-running the join to rewrite the column.
+
 **Residual case, named rather than solved.** A Board whose every posting id was already seen
 earlier in the same shard records a real 0 from a healthy scrape, because `harvest` counts *fresh*
 ids. That is a true duplicate contributing nothing new, so gating it is defensible — but which of

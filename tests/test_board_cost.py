@@ -8,8 +8,6 @@ of a shard's torn final row.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from headstart.board_cost import (
     BoardCost,
     ShardCost,
@@ -134,7 +132,12 @@ def test_a_floor_row_torn_mid_write_is_dropped_not_read_as_measured(tmp_path):
     """The floor rows are written last, at teardown, so a torn tail is most likely one of them —
     and a floor read as a measurement is EWMA-blended, which is exactly what the floor exists to
     prevent. The header tells the two apart: this file has the column, so a row without it is
-    torn, not old."""
+    torn, not old.
+
+    This exercises the four-column schema, which is now the LEGACY one — the writer emits five
+    since `errored` was added. The current schema's torn-tail case is
+    :func:`test_a_row_torn_after_unfinished_is_dropped_not_read_as_a_clean_scrape`, and both are
+    kept because a fragment of either shape can reach the join."""
     p = tmp_path / "board_cost.csv"
     p.write_text(
         "board,seconds,jobs,unfinished\nlever:a,12.5,3,0\nworkday:big,3120.0,0",
@@ -293,16 +296,34 @@ def test_an_unknown_job_count_survives_the_csv_round_trip(tmp_path):
     assert back["b:unknown"].jobs is None
 
 
-def test_a_fragment_without_the_errored_column_reads_as_not_errored():
+def test_a_fragment_without_the_errored_column_reads_as_not_errored(tmp_path):
     """A shard fragment written before this column existed is a complete measurement, and the
     column's absence must not be read as a torn row — the same contract `unfinished` already has.
     """
-    path = Path(__file__).parent / "_legacy_cost_fragment.csv"
+    path = tmp_path / "board_cost.csv"
     path.write_text("board,seconds,jobs,unfinished\na:b,12.5,3,0\n", encoding="utf-8")
-    try:
-        rows = read_shard_rows(path)
-        assert rows["a:b"] == ShardCost(
-            seconds=12.5, jobs=3, unfinished=False, errored=False
-        )
-    finally:
-        path.unlink()
+    rows = read_shard_rows(path)
+    assert rows["a:b"] == ShardCost(
+        seconds=12.5, jobs=3, unfinished=False, errored=False
+    )
+
+
+def test_a_row_torn_after_unfinished_is_dropped_not_read_as_a_clean_scrape(tmp_path):
+    """The hole the `errored` column opened, and why it needed the same guard as `unfinished`.
+
+    `errored` was first read as ``row.get("errored") or 0``, so its ABSENCE always meant False. On
+    a current five-column fragment whose tail is torn after ``unfinished``, that reads as a
+    complete, non-errored scrape returning 0 — which is exactly the finding ADR-0116's veto acts
+    on. A Board that merely died mid-write would have earned a 14-day exclusion, which is the same
+    failure the veto's own first draft was rejected for.
+    """
+    path = tmp_path / "board_cost.csv"
+    path.write_text(
+        "board,seconds,jobs,unfinished,errored\ngood:b,10.0,5,0,0\ntorn:b,1631.0,0,0\n",
+        encoding="utf-8",
+    )
+    rows = read_shard_rows(path)
+    assert "torn:b" not in rows
+    assert rows["good:b"] == ShardCost(
+        seconds=10.0, jobs=5, unfinished=False, errored=False
+    )

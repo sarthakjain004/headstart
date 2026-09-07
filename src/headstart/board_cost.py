@@ -89,7 +89,13 @@ class BoardCost:
     # cannot rest on a value with four meanings. The same empty-CSV-field idea the liveness
     # ledger already uses for an unknown count.
     jobs: int | None
-    updated_at: str  # ISO date of the last run that measured this Board
+    # ISO date of the last run that *looked at* this Board — which is what `_GATE_RECHECK_DAYS`
+    # wants, since a failed look is still a look. Note it no longer dates `jobs`: an errored or
+    # unfinished run refreshes this and the seconds while carrying the count forward, so a row can
+    # pair today's date with a count from days ago. That is the intended trade — a stale count is
+    # better than a 0 that means "we never found out" — but it means this date must not be read as
+    # the age of the yield.
+    updated_at: str
 
 
 def _rekeyed(board: str) -> str:
@@ -191,8 +197,12 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
     Tolerates a truncated final line: a shard killed mid-write by its time budget can leave one,
     and dropping just that row is strictly better than losing the shard's whole measurement set.
     A fragment written before the ``unfinished`` column existed reads as all-measured, which is
-    what it was — the column is absent, not false. ``errored`` is read the same way and for the
-    same reason, one column later.
+    what it was — the column is absent, not false. ``errored``, added later, needs the **same**
+    schema-aware guard for a sharper reason: a row torn after ``unfinished`` but before ``errored``
+    would otherwise read as a complete scrape that found nothing, which is exactly the finding
+    ADR-0116's veto acts on — a 14-day exclusion handed to a Board that merely died mid-write.
+    Absence of the column across the whole file means "written before it existed"; absence in one
+    row of a file that has it means "torn".
     """
     path = Path(path)
     if not path.exists():
@@ -204,17 +214,20 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
         # different things: in a pre-``unfinished`` fragment the row is a complete measurement,
         # but in a current one it is a tail torn mid-write — and a torn floor row read as a
         # measurement gets EWMA-blended, which is the one thing the floor exists to prevent.
-        has_flag = "unfinished" in (reader.fieldnames or ())
+        fields = reader.fieldnames or ()
+        has_flag = "unfinished" in fields
+        has_errored = "errored" in fields
         for row in reader:
             try:
                 flag = row.get("unfinished")
-                if has_flag and flag is None:
+                errored = row.get("errored")
+                if (has_flag and flag is None) or (has_errored and errored is None):
                     continue  # torn tail row
                 out[row["board"]] = ShardCost(
                     seconds=float(row["seconds"]),
                     jobs=int(row["jobs"]),
                     unfinished=bool(int(flag or 0)),
-                    errored=bool(int(row.get("errored") or 0)),
+                    errored=bool(int(errored or 0)),
                 )
             except (TypeError, ValueError):
                 continue  # half-written tail row

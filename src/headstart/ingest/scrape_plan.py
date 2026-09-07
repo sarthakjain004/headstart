@@ -108,6 +108,17 @@ _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap a
 _GATE_RECHECK_DAYS = 14
 
 
+def _measured_nothing(row: BoardCost) -> bool:
+    """Did this Board's last **complete** scrape find no postings at all?
+
+    Named rather than inlined because two places ask it — the veto in :func:`_gated_boards` and
+    the log line that reports why a Board went — and a rule encoded twice is a rule that drifts.
+    `None` is deliberately not "nothing": it means no complete scrape has ever measured this Board
+    (see `BoardCost.jobs`), which is a reason to keep looking, not a reason to stop.
+    """
+    return row.jobs == 0
+
+
 def _gated_boards(
     keys: list[str],
     cost_rows: Mapping[str, BoardCost],
@@ -159,7 +170,7 @@ def _gated_boards(
         # A guard on the old field would have gated any giant that failed once for a fortnight;
         # `run_one`'s own comment names that hazard, and errors run 19-40 a run.
         tech_per_min = (
-            0.0 if row.jobs == 0 else scores.get(key, 0.0) / (row.seconds / 60)
+            0.0 if _measured_nothing(row) else scores.get(key, 0.0) / (row.seconds / 60)
         )
         if tech_per_min < _GATE_MIN_TECH_PER_MIN:
             gated[key] = tech_per_min
@@ -339,7 +350,13 @@ def main() -> int:
         # invisible everywhere else"; an ambiguous entry only half-honours that.
         def _why(key: str, rate: float) -> str:
             row = cost_rows.get(key)
-            reason = " — measured 0 jobs" if row is not None and row.jobs == 0 else ""
+            # "last complete scrape", not "this run": an errored run carries the previous count
+            # forward, so the 0 being acted on may predate the row's own date.
+            reason = (
+                " — last complete scrape found 0 jobs"
+                if row is not None and _measured_nothing(row)
+                else ""
+            )
             return f"{key} ({rate:.2f}/min{reason})"
 
         _log.warning(
