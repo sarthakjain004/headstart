@@ -25,8 +25,12 @@ the live endpoint on 2026-08-27 rather than carried over:
 * **A non-default ``User-Agent`` is required, and a missing one HANGS.** Measured 2026-08-27:
   ``curl/8.7.1`` and ``python-requests``'s own default both **time out** rather than answering, so
   a caller that treats a timeout as a transient fault will retry forever. It is not a *browser*
-  check — this repo's own ``headstart/0.1 (job-board reader)`` returns 200 like Chrome does — it
-  is the stock tool agents that get blackholed.
+  check — this repo's own ``headstart/0.1`` returns 200 like Chrome does — it is the stock tool
+  agents that get blackholed. Measured again 2026-09-07 while moving that shared string off a
+  SuccessFactors denylist (``base.USER_AGENT``): this host additionally rejects any User-Agent
+  carrying a **domain or an email** with ``curl (92) HTTP/2 stream error`` — 2 of 2 attempts on
+  each of four candidates — which is half of why the shared value is bare rather than carrying a
+  contact URL.
 * **``Origin``/``Referer`` are ignored.** The capture calls them part of what selects the Board and
   says a mismatch 403s. Measured on the same Board: omitting them entirely returns the right Board,
   and sending *another tenant's* Origin still returns the one named in ``domain``. ``domain`` alone

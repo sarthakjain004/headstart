@@ -50,7 +50,10 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-UA = "headstart/0.1 (job-board reader)"
+# Kept as a literal rather than imported from `headstart.scrapers.base`: this script is
+# deliberately standalone (urllib only, no `headstart` import and no sys.path setup), so the
+# import would cost more than the duplication. Match `base.USER_AGENT` if that moves.
+UA = "headstart/0.1"
 CTX = ssl._create_unverified_context()
 TIMEOUT = 25
 BOARD_HOST = "https://careers.smartrecruiters.com"
