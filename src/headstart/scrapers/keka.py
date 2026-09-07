@@ -80,9 +80,9 @@ class KekaScraper(BaseScraper):
 
         Roughly one Board in nine serves a non-empty ``<title>`` at all — the rest render it
         client-side — but where one exists the wrapper is as uniform as eightfold's, and every
-        keka Board serves a slug today, so it is all upside. `headstart.company_name` holds the
-        measured rate and is the only place it should be written down; three copies of it drifted
-        apart once already.
+        keka Board serves a slug today, so it is all upside. `headstart.company_name` holds the measured
+        rate, and ADR-0112 repeats it as the spec of record — but nowhere else should, because
+        three copies of it drifted apart once already.
 
         :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose
         ``careerportalinfo`` omits the uuid — so for most Boards this is a genuinely new request,

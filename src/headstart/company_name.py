@@ -99,19 +99,29 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #: above strips one wrapper; text that *still* carries one means the title wore it twice, and what
 #: is left is a page label, not a name.
 #:
-#: Three live shapes, found one at a time, each after the previous fix shipped:
+#: **Three observed shapes** — not, as an earlier draft of this comment claimed, an exhaustive set
+#: of positions. Each was found only after the previous fix had shipped:
 #:   * trailing — `lever:destinationknot` serves "Destination Careers"
-#:   * leading  — `keka:enpro` serves "Careers at Careers at Enpro Industries"
+#:   * "Careers at" leading — `keka:enpro` serves "Careers at Careers at Enpro Industries"
 #:   * the whole string — `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as
 #:     their company before this branch caught it
-#: Those three exhaust the positions a token can occupy, so unlike the first two fixes this one
-#: closes the set rather than adding the next case someone happens to find.
 #:
-#: Anchored rather than matching anywhere, because "Jobsoid" and "Careers24 Group" are names. It
-#: costs recall: two in 1,519 live lever and keka Boards — `lever:pmaconsultants` ("PMA
-#: Consultants Careers", 29 postings) and `lever:bananajobs` ("Banana Jobs") — keep their slug.
-#: That is the deliberate trade. Stripping the word instead would turn "Destination Careers" into
-#: "Destination", a confident wrong name, where refusing costs only a missed upgrade.
+#: Shapes this deliberately does **not** catch, because none has been observed live in 1,519
+#: Boards and this module only ever rejects a shape someone really serves: a medial token ("Acme
+#: Careers Portal"), a leading token in another phrasing ("Jobs at Acme", "Careers Acme"), and
+#: the singular ("Acme Career"). If one shows up, add it — do not pre-empt it.
+#:
+#: Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are
+#: real employers a `\b`-bounded rule would refuse. Measured across all 3,700 live lever and keka
+#: Boards, it fires six times: three page labels it exists for, and three real employers it costs
+#: — `lever:pmaconsultants` ("PMA Consultants Careers", 29 postings), `lever:bananajobs` ("Banana
+#: Jobs") and `lever:assurance` ("Assurance Careers") — which keep their slug. That is the deliberate trade: stripping the word
+#: instead would turn "Destination Careers" into "Destination", a confident wrong name, where
+#: refusing costs only a missed upgrade.
+#:
+#: The trailing alternative omits the optional "s" the whole-string one allows, so "Acme Career"
+#: passes where "Career" alone would not. That is on purpose: a trailing singular reads as part
+#: of a name far more often than a bare one does.
 _PAGE_LABEL = re.compile(
     r"^careers?\s+at\s+|^(?:careers?|jobs?)$|\s(?:careers|jobs)$", re.IGNORECASE
 )

@@ -7622,46 +7622,49 @@ def _titled(title: str, status: int = 200):
     return SimpleNamespace(status_code=status, text=f"<title>{title}</title>")
 
 
-@pytest.mark.parametrize(
-    ("ats", "slug", "title", "expected", "url"),
-    [
-        (
-            "ashby",
-            "1password",
-            "1Password Jobs",
-            "1Password",
-            "https://jobs.ashbyhq.com/1password",
-        ),
-        (
-            "eightfold",
-            "jobs.vodafone.com",
-            "Careers at Vodafone",
-            "Vodafone",
-            "https://jobs.vodafone.com/careers",
-        ),
-        (
-            "keka",
-            "skylarkdrones",
-            "Careers at Skylark Drones",
-            "Skylark Drones",
-            "https://skylarkdrones.keka.com/careers",
-        ),
-        (
-            "lever",
-            "picklerobot",
-            "Pickle Robot Company",
-            "Pickle Robot Company",
-            "https://jobs.lever.co/picklerobot",
-        ),
-        (
-            "ripplehire",
-            "tatasteel",
-            "Tata Steel Ltd Careers | Latest jobs at Tata Steel Ltd",
-            "Tata Steel Ltd",
-            "https://tatasteel.ripplehire.com/candidate/careers",
-        ),
-    ],
-)
+#: One row per ATS in `company_name.PATTERNS`. Named so both the resolve test and the
+#: binding test below can read it directly, rather than reaching into pytest's own marker
+#: internals to recover what was parametrised.
+_RESOLVE_ROWS = [
+    (
+        "ashby",
+        "1password",
+        "1Password Jobs",
+        "1Password",
+        "https://jobs.ashbyhq.com/1password",
+    ),
+    (
+        "eightfold",
+        "jobs.vodafone.com",
+        "Careers at Vodafone",
+        "Vodafone",
+        "https://jobs.vodafone.com/careers",
+    ),
+    (
+        "keka",
+        "skylarkdrones",
+        "Careers at Skylark Drones",
+        "Skylark Drones",
+        "https://skylarkdrones.keka.com/careers",
+    ),
+    (
+        "lever",
+        "picklerobot",
+        "Pickle Robot Company",
+        "Pickle Robot Company",
+        "https://jobs.lever.co/picklerobot",
+    ),
+    (
+        "ripplehire",
+        "tatasteel",
+        "Tata Steel Ltd Careers | Latest jobs at Tata Steel Ltd",
+        "Tata Steel Ltd",
+        "https://tatasteel.ripplehire.com/candidate/careers",
+    ),
+]
+
+
+@pytest.mark.parametrize(("ats", "slug", "title", "expected", "url"), _RESOLVE_ROWS)
 def test_every_wired_scraper_resolves_its_company(
     monkeypatch, ats, slug, title, expected, url
 ):
@@ -7705,8 +7708,7 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
     assert overriding == set(PATTERNS), (
         "an ATS has a board_page but no patterns, or patterns but no board_page"
     )
-    rows = test_every_wired_scraper_resolves_its_company.pytestmark[0].args[1]
-    covered = {row[0] for row in rows}
+    covered = {row[0] for row in _RESOLVE_ROWS}
     assert covered == set(PATTERNS), "every wired ATS needs a row in the resolve test"
 
 

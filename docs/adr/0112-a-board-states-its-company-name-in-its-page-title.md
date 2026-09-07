@@ -47,7 +47,7 @@ and values | MOHH", "Trabaja en Volaris"), so a pattern wide enough to catch the
 first two. That is a quality bar, not a cost one.
 
 **Keka was scored 0/30 too, and that was simply wrong.** A 40-Board sweep found 5 serving a
-`<title>`, and a full 819-Board census settled it at **92 names from 103 titles — ~11%** (the rest
+`<title>`, and a full 819-Board census settled it at **92 names from 101 titles — ~11%** (the rest
 render client-side), every one in a wrapper eightfold's patterns already read ("Careers at Skylark
 Drones", "Entropik Careers"). It is wired. Be clear about the size: those 92 Boards carry
 **1,964 ledger jobs**. Deliberately an absolute number rather than a share — the obvious
@@ -91,7 +91,8 @@ The floor — never a *non-name* — is the claim this ADR actually makes, and i
 twice by measurement and repaired twice, most recently by a 1,971-Board sweep that found
 `lever:schmidt-entities` serving "jobs". Both repairs are pinned by tests. State it as a claim
 that has survived its latest attempt, not as one nothing could break: 1,111 names resolved in that
-sweep and, after the fix, none is a non-name.
+sweep and, after the fix, none is a non-name. A wider 8,228-Board census resolving 6,531 names
+then found exactly one: `lever:pip`, recorded under Known misses below.
 
 That last class is the same shape as the `hiringOrganization` field Workday is excluded over, so
 the distinction has to be stated rather than assumed. It is this: Workday's legal entity varies
@@ -113,13 +114,21 @@ were found one at a time, each after the previous fix had already shipped:
 - **the whole string** — `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as
   their company before this branch caught it.
 
-Those three exhaust the positions a token can occupy, which is why this one closes the set instead
-of adding the next case someone happens to trip over. Anchored rather than matching anywhere,
-because "Jobsoid" and "Careers24 Group" are names.
+An earlier draft of this section claimed those three "exhaust the positions a token can occupy",
+so the set was closed. That is false, and worth recording as the kind of claim to distrust: a
+token can also sit medially ("Acme Careers Portal"), the leading alternative matches one phrasing
+rather than a position ("Jobs at Acme" passes), and the singular passes ("Acme Career"). None has
+been observed across 1,519 live Boards, so none is handled — this module rejects only shapes
+someone really serves. Expect a fourth shape rather than assuming there cannot be one.
 
-It costs recall, and the honest number is not zero: across 400 lever and all 819 keka Boards it
-refused `enpro`, and an independent 700-Board lever sweep refused `lever:pmaconsultants` ("PMA
-Consultants Careers", 29 real postings). Refusing is still the right trade — stripping the word
+Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are real
+employers a `\b`-bounded rule would refuse.
+
+It costs recall, and the honest number is not zero. A census of all 3,700 live lever and keka
+Boards fires the rule six times: three page labels it exists for, and **three real employers** it
+refuses — `lever:pmaconsultants` ("PMA Consultants Careers", 29 real postings), `lever:bananajobs`
+("Banana Jobs") and `lever:assurance` ("Assurance Careers"). All three keep their slug. Refusing is
+still the right trade — stripping the word
 instead would turn "Destination Careers" into "Destination", a confident wrong name, where
 refusing costs only an upgrade and leaves the slug.
 
@@ -177,6 +186,13 @@ because the next person to see a Lever Board unnamed should look here first.
 the `" - "` it contains — a real employer losing a real name. The floor holds (it keeps its slug)
 and the separator rule earns its place elsewhere, so this is left as a recall miss rather than
 narrowed around one Board.
+
+**`lever:pip` is a live floor exception.** It titles itself "Jobs have moved to our Accenture Job
+Site" — a notice, not a name — and nothing here refuses it: 40 characters is well inside
+`_MAX_LEN`, and the label words sit medially. It has 0 postings today, so nothing reaches a user,
+but the floor should be read with this in mind. It is *not* fixed here on purpose: telling prose
+from a name in a 40-character string needs a judgement this module cannot make from a regex, and
+a rule fitted to this one Board would refuse real names for no measured gain.
 
 `lever:springrecruits` loses a 70-character title to `_MAX_LEN`, and `lever:bananajobs`
 ("Banana Jobs") loses a real name to `_PAGE_LABEL`'s trailing "Jobs". Both keep their slug.

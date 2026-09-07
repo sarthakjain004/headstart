@@ -185,9 +185,10 @@ def test_a_page_label_is_not_a_company_name():
     matches anything. Leading: `keka:enpro` serves "Careers at Careers at Enpro Industries" — the
     pattern strips one wrapper, and while the rule was anchored to the tail only, the survivor
     "Careers at Enpro Industries" was served to users as the employer. And the whole string:
-    `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as their company. Those
-    three exhaust the positions a token can occupy. A single-wrapper title must still resolve, so
-    this must not fire on the ordinary case.
+    `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as their company. These are
+    the three shapes *observed*, not an exhaustive set — a medial token and other leading
+    phrasings pass, and are left alone until one is seen live. A single-wrapper title must still
+    resolve, so this must not fire on the ordinary case.
     """
     assert from_title("keka", "Careers at Careers at Enpro Industries", "enpro") is None
     assert from_title("lever", "jobs", "schmidt-entities") is None
