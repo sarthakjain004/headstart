@@ -10,6 +10,7 @@ from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
+from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
 from headstart.scrapers.jobvite import JobviteScraper
 from headstart.scrapers.join import JoinScraper
@@ -55,6 +56,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         EightfoldScraper,
         SuccessFactorsScraper,
         ZwayamScraper,
+        ICIMSScraper,
         JazzHRScraper,
         JobviteScraper,
     )

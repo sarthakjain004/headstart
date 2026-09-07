@@ -37,6 +37,13 @@ socket.setdefaulttimeout(120)
 Style = Literal["sub", "host", "path", "workday"]
 # `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
 _LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
+# `www2`, `www4` — the vendor's own numbered web front-ends. INFRA holds bare `www`, which does
+# not catch these, and iCIMS is the first ATS whose archive surfaces them: Wayback's SURT
+# canonicalization strips `www.`, so `www.icims.com` collapses onto the bare `com,icims)` key and
+# sorts first, while `wwwN.icims.com` keeps its own label and reaches `extract` as a candidate
+# tenant. Rejected for *subdomain labels only*: `careers.smartrecruiters.com/www4` is a real live
+# Board whose slug is the path segment `www4`, so widening INFRA instead would have dropped it.
+_NUMBERED_WWW = re.compile(r"www\d+")
 # The datacenter label of a *production* Workday host, per `WorkdayScraper._URL_PATTERN`.
 _WD_INSTANCE = re.compile(r"wd\d+")
 # Workday's own routes under a board host. Unlike `INFRA` these are not plausible board names —
@@ -241,6 +248,19 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         "job-boards.eu.greenhouse.io",
         "boards.eu.greenhouse.io",
     ),
+    # `host` style: `icims.py`'s slug IS the board host (`career-celanese.icims.com`).
+    #
+    # Unlike `cc_miner.py`'s entry, this cannot apply the measured discriminator — 1,499 of 1,499
+    # live iCIMS boards have a hyphen in the label, and the vendor's ~120 infrastructure hosts are
+    # mostly single words — because `extract` takes (url, host, style) and no ATS, and widening
+    # that signature for one provider is not worth it. Two existing rules do most of the work:
+    # `valid()` rejects the INFRA words (`www`, `api`, `login`, `dev`, `staging`, `careers`,
+    # `jobs`…) and the `"." in label` guard rejects every deeper subdomain (`admin.social`,
+    # `agents.dev`, `staging.social`, and the one real `www.`-archived tenant, which is reachable
+    # without the prefix anyway). Roughly 70 single-label infra hosts still get harvested; each
+    # costs one `probe_icims.py` request and lands as a dead ledger row, so the error is bounded
+    # and self-correcting rather than silent.
+    "icims": _with_style("host", "icims.com"),
     "keka": _with_style("sub", "keka.com"),
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
@@ -315,6 +335,8 @@ def valid(label: str, path_slug: bool = False) -> bool:
     """
     lowered = label.lower()
     if lowered in INFRA or not 1 < len(lowered) < 64:
+        return False
+    if not path_slug and _NUMBERED_WWW.fullmatch(lowered):
         return False
     if path_slug and lowered.endswith(FILE_SUFFIXES):
         return False  # a file served from the board root, not a slug
