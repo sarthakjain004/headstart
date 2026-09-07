@@ -1,0 +1,12 @@
+# 10 of 10 Hiring Boards, even stride by job count
+host                                         widget   rss rss-only  union  note
+2coms.zohorecruit.in                            750   606       19    769  
+agileengine.zohorecruit.com                     750  None     None   None  feed disabled
+biztekpeople.zohorecruit.com                    750  None     None   None  feed disabled
+overturerede.zohorecruit.in                     750  None     None   None  feed disabled
+harrisonconsultingsolutions.zohorecruit.com     739  None     None   None  feed disabled
+maydaydentalstaffing.zohorecruit.com            750  None     None   None  feed disabled
+kgoci.zohorecruit.com                           750  None     None   None  feed disabled
+mdx.zohorecruit.com                             750  None     None   None  feed disabled
+smartbusinesssolutionsgroup.zohorecruit.com     750  None     None   None  feed disabled
+tmievan.zohorecruit.com                         750  None     None   None  feed disabled

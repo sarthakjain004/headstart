@@ -1,0 +1,152 @@
+# 150 of 5337 Hiring Boards, even stride by job count (header relabelled to CONTEXT.md vocabulary; data rows untouched)
+host                                         widget   rss rss-only  union  note
+2coms.zohorecruit.in                            750   606       18    768  
+avandagroup.zohorecruit.eu                       71  None     None   None  feed disabled
+myop.zohorecruit.in                              68  None     None   None  feed disabled
+easyhrgroup.zohorecruit.com                     193  None     None   None  feed disabled
+head-huntress.zohorecruit.com                    51  None     None   None  feed disabled
+fudme.zohorecruit.com                            81  None     None   None  feed disabled
+cliqhr.zohorecruit.in                           130   130        0    130  
+a-teamdentalstaffing.zohorecruit.com            140     9        0    140  
+fusionpractice.zohorecruit.in                    24    20        0     24  
+pointcare.zohorecruit.com.au                    108     7        0    108  
+siscojobs.zohorecruit.com                       246   246        0    246  
+bladerecruitment.zohorecruit.com                150    49        0    150  
+c-mci.zohorecruit.com                            60  None     None   None  feed disabled
+cascadestaff.zohorecruit.com                     14  None     None   None  feed disabled
+gtrworldwide.zohorecruit.com                    492   202        0    492  
+indovance.zohorecruit.com                        36  None     None   None  feed disabled
+jsrservices.zohorecruit.com                      28    28        0     28  
+institech.zohorecruit.com                        38  None     None   None  feed disabled
+prestigestaffingservices.zohorecruit.com         37  None     None   None  feed disabled
+blackwhite.zohorecruit.com                       12  None     None   None  feed disabled
+gus.zohorecruit.com                              45    45        0     45  
+naqla.zohorecruit.com                            26    20        0     26  
+sharepal.zohorecruit.com                         25  None     None   None  feed disabled
+benorelogistics.zohorecruit.com                  31    31        0     31  
+comfortkeepers.zohorecruit.eu                    23  None     None   None  feed disabled
+futuristiclabs.zohorecruit.in                     3  None     None   None  feed disabled
+fastfit-ems.zohorecruit.com                      28  None     None   None  feed disabled
+greathirehr.zohorecruit.com                      32    32        0     32  
+mixedmi.zohorecruit.com                          21  None     None   None  feed disabled
+securin.zohorecruit.in                           10  None     None   None  feed disabled
+optimusbank.zohorecruit.com                      22  None     None   None  feed disabled
+beablehealth.zohorecruit.in                      12  None     None   None  feed disabled
+flatworldsolutions-in.zohorecruit.com            18  None     None   None  feed disabled
+tkostaffpros.zohorecruit.com                     16  None     None   None  feed disabled
+waterfrontrestoration.zohorecruit.com            17  None     None   None  feed disabled
+yinternational.zohorecruit.com                   17  None     None   None  feed disabled
+kanini.zohorecruit.in                            13  None     None   None  feed disabled
+collierrecruitment.zohorecruit.com               14  None     None   None  feed disabled
+medha.zohorecruit.com                            15  None     None   None  feed disabled
+knightfrank.zohorecruit.com.au                   21    21        0     21  
+incubyte-incubyte.zohorecruit.in                 16  None     None   None  feed disabled
+ivywayplacements.zohorecruit.com                 14  None     None   None  feed disabled
+millennialassistants.zohorecruit.com             12    12        0     12  
+quicko.zohorecruit.in                            12  None     None   None  feed disabled
+aswav.zohorecruit.com                            11  None     None   None  feed disabled
+thehealthyhome.zohorecruit.com                   11     7        0     11  
+crayondata.zohorecruit.com                        3  None     None   None  feed disabled
+merillife.zohorecruit.in                          5  None     None   None  feed disabled
+bluedotinsights.zohorecruit.com                   9     9        0      9  
+luxuryescapebyjaclynvehlewald.zohorecruit.com     10  None     None   None  feed disabled
+theenrichery.zohorecruit.com                      6     6        0      6  
+ship2shoreemploy.zohorecruit.com                  2     0        0      2  feed present but empty
+ikerd.zohorecruit.com                             8  None     None   None  feed disabled
+blazesoft.zohorecruit.com                         7  None     None   None  feed disabled
+zidainvest.zohorecruit.com                       10  None     None   None  feed disabled
+feathersoft.zohorecruit.com                       7  None     None   None  feed disabled
+ceyond.zohorecruit.eu                             5     5        0      5  
+sol-ark.zohorecruit.com                           7  None     None   None  feed disabled
+abiastate.zohorecruit.com                         6  None     None   None  feed disabled
+mtabtechnology.zohorecruit.com                    6  None     None   None  feed disabled
+charter.zohorecruit.com                           8  None     None   None  feed disabled
+fuseitglobal.zohorecruit.com                      6  None     None   None  feed disabled
+solidsystems.zohorecruit.com                      7  None     None   None  feed disabled
+woodlandsnorth.zohorecruit.com                    7  None     None   None  feed disabled
+femto.zohorecruit.com                             5  None     None   None  feed disabled
+jdidistribution.zohorecruit.com                   5  None     None   None  feed disabled
+thnkbig.zohorecruit.com                           1  None     None   None  feed disabled
+csolsinc.zohorecruit.com                          4  None     None   None  feed disabled
+reachsummit.zohorecruit.com                       5  None     None   None  feed disabled
+groupevitae.zohorecruit.com                      10  None     None   None  feed disabled
+alloggio.zohorecruit.com.au                       4  None     None   None  feed disabled
+passionimo.zohorecruit.com                        6  None     None   None  feed disabled
+kheyti.zohorecruit.com                            2  None     None   None  feed disabled
+tawteen2030.zohorecruit.com                       4  None     None   None  feed disabled
+ababusinessgrowth.zohorecruit.com                 3  None     None   None  feed disabled
+codeniatechnologies.zohorecruit.com               3  None     None   None  feed disabled
+sesomo.zohorecruit.eu                             8  None     None   None  feed disabled
+theitsolutions.zohorecruit.eu                     1     0        0      1  feed present but empty
+beem.zohorecruit.com                              5     5        0      5  
+eprfireworks.zohorecruit.com                      4  None     None   None  feed disabled
+mavendevelopments.zohorecruit.com                 3  None     None   None  feed disabled
+innosphere.zohorecruit.com                        7  None     None   None  feed disabled
+piglerautomation.zohorecruit.com                  0     0        0      0  feed present but empty
+wsccnt.zohorecruit.ca                             3  None     None   None  feed disabled
+ampplacement.zohorecruit.com                      2     1        0      2  
+ecbsite.zohorecruit.com                           2  None     None   None  feed disabled
+cognitiocorp.zohorecruit.com                      3  None     None   None  feed disabled
+genworx.zohorecruit.com                           2  None     None   None  feed disabled
+streamlyn.zohorecruit.in                          2  None     None   None  feed disabled
+boconcept.zohorecruit.com                         2  None     None   None  feed disabled
+naukripay.zohorecruit.eu                          0     0        0      0  feed present but empty
+ibygroup.zohorecruit.com                          2     3        2      4  
+alshehiya.zohorecruit.in                          1  None     None   None  feed disabled
+arkafincap.zohorecruit.in                         1  None     None   None  feed disabled
+lacorta.zohorecruit.com                           2  None     None   None  feed disabled
+biglittle.zohorecruit.in                          1     1        0      1  
+brainee.zohorecruit.in                            1  None     None   None  feed disabled
+aiones.zohorecruit.eu                             1  None     None   None  feed disabled
+plakett.zohorecruit.com                           2  None     None   None  feed disabled
+workwide.zohorecruit.eu                           2  None     None   None  feed disabled
+rnssol.zohorecruit.com                            2  None     None   None  feed disabled
+titancareers.zohorecruit.com                      2     2        0      2  
+dexianinc.zohorecruit.eu                          1  None     None   None  feed disabled
+avenuesaustralia.zohorecruit.com.au               2  None     None   None  feed disabled
+duotton.zohorecruit.eu                            1  None     None   None  feed disabled
+capital.zohorecruit.com                           1  None     None   None  feed disabled
+chicagolandhabitat.zohorecruit.com                1     9        8      9  
+forsysinc.zohorecruit.in                          1  None     None   None  feed disabled
+cognitiv.zohorecruit.com                          1  None     None   None  feed disabled
+cpflexpack.zohorecruit.com                        1  None     None   None  feed disabled
+d2vclinical.zohorecruit.com                       1  None     None   None  feed disabled
+feldhoff-cie.zohorecruit.eu                       0  None     None   None  feed disabled
+electricsouth.zohorecruit.com                     1  None     None   None  feed disabled
+epoxygenius.zohorecruit.com                       1  None     None   None  feed disabled
+geekrecruiters.zohorecruit.com                    1  None     None   None  feed disabled
+ablecleaninginc.zohorecruit.com                   1  None     None   None  feed disabled
+kintlogix.zohorecruit.in                          1  None     None   None  feed disabled
+gloscale.zohorecruit.com                          1  None     None   None  feed disabled
+healthfirststaff.zohorecruit.com                  1  None     None   None  feed disabled
+isconsulting.zohorecruit.eu                       1  None     None   None  feed disabled
+grupocahema.zohorecruit.com                       1  None     None   None  feed disabled
+infosecventures.zohorecruit.com                   1  None     None   None  feed disabled
+hrpros24.zohorecruit.com                          1  None     None   None  feed disabled
+longleafhomebuyers.zohorecruit.com                0  None     None   None  feed disabled
+pabbly.zohorecruit.in                             0  None     None   None  feed disabled
+pixelbites.zohorecruit.in                         1  None     None   None  feed disabled
+joblinkinc.zohorecruit.com                        1  None     None   None  feed disabled
+raecroot.zohorecruit.in                           1  None     None   None  feed disabled
+nemeton.zohorecruit.eu                            1  None     None   None  feed disabled
+meow-biscuit-hotel.zohorecruit.com                1  None     None   None  feed disabled
+oncofocus.zohorecruit.com                         1  None     None   None  feed disabled
+nopo.zohorecruit.com                              1  None     None   None  feed disabled
+motovated.zohorecruit.com                         1  None     None   None  feed disabled
+stelotechnology.zohorecruit.in                    1  None     None   None  feed disabled
+lavoratori-stagionali.zohorecruit.com.au          1     0        0      1  feed present but empty
+pressply.zohorecruit.com                          1  None     None   None  feed disabled
+marinesciencerecruitment.zohorecruit.com.au       1     1        0      1  
+revampco.zohorecruit.com                          1  None     None   None  feed disabled
+techwarelab.zohorecruit.in                        1  None     None   None  feed disabled
+safo.zohorecruit.com                              1  None     None   None  feed disabled
+solveq.zohorecruit.eu                             1     6        5      6  
+silvercloudhealth.zohorecruit.eu                  1  None     None   None  feed disabled
+sec24-7.zohorecruit.com                           1     6        5      6  
+taleemabad.zohorecruit.com                        1     2        1      2  
+theoperator.zohorecruit.com                       0  None     None   None  feed disabled
+verso.zohorecruit.com                             1  None     None   None  feed disabled
+webservices.zohorecruit.com                       1  None     None   None  feed disabled
+tradelanes.zohorecruit.com                        1  None     None   None  feed disabled
+tydy.zohorecruit.com                              1  None     None   None  feed disabled
+xcentconsulting.zohorecruit.com                   1  None     None   None  feed disabled
