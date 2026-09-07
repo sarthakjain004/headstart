@@ -1,6 +1,10 @@
 # ADR-0064: A Board's hour must buy tech jobs
 
-**Status:** accepted · **Date:** 2026-08-18 · **Relates to:**
+**Status:** accepted · **Amended by:**
+[ADR-0116](0116-the-value-gate-reads-the-measurement-that-kept-up.md) (the gate's numerator and
+denominator sit on different clocks: a Board that scrapes and returns nothing is absent from the
+priority snapshot, so its score is carried forever while its cost is rewritten every run — the
+collapse this gate is for is what blinded it to one) · **Date:** 2026-08-18 · **Relates to:**
 [ADR-0022](0022-tech-priority-board-ordering.md),
 [ADR-0026](0026-parallelize-nightly-scrape.md),
 [ADR-0027](0027-measured-scrape-cost-ledger.md),

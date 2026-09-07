@@ -127,7 +127,13 @@ class JobWriter:
         self._done_handle.flush()
 
     def record_cost(
-        self, board_key: str, seconds: float, jobs: int, *, unfinished: bool = False
+        self,
+        board_key: str,
+        seconds: float,
+        jobs: int,
+        *,
+        unfinished: bool = False,
+        errored: bool = False,
     ) -> None:
         """Append this board's measured scrape seconds, flushed per board (ADR-0027).
 
@@ -136,7 +142,7 @@ class JobWriter:
         filename is deliberately *not* dotted — ``actions/upload-artifact`` skips hidden files by
         default, which is why the ``.done`` journal never reaches the join and this must."""
         self._cost_handle.write(
-            shard_row(board_key, seconds, jobs, unfinished=unfinished)
+            shard_row(board_key, seconds, jobs, unfinished=unfinished, errored=errored)
         )
         self._cost_handle.flush()
 
@@ -279,7 +285,11 @@ def scrape_all(
                 key
             )  # mark on completion (success or error): resume moves on
             seconds = elapsed.pop(key, 0.0)
-            writer.record_cost(cost_key[key], seconds, n_fresh)
+            # `errored` matters, not just `n_fresh`: this loop initialises `n_fresh = 0` before
+            # the try, so a Board that raised records a 0 indistinguishable from a Board that was
+            # read cleanly and found empty. ADR-0116's value-gate veto turns that difference into
+            # a 14-day exclusion, so the ledger has to carry it.
+            writer.record_cost(cost_key[key], seconds, n_fresh, errored=key in errors)
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
             if progress_every and done % progress_every == 0:

@@ -140,10 +140,17 @@ def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
         assert fh.read().strip() == "eightfold:acme:1"
 
 
-def _cost(seconds: float, day: str = "2026-08-18"):
+def _cost(seconds: float, day: str = "2026-08-18", jobs: int = 1):
+    """A cost-ledger row for the gate to judge.
+
+    ``jobs`` defaults to 1, not 0, and the difference is load-bearing since the gate began reading
+    it: a row saying ``jobs=0`` now means "a completed scrape of this Board returned nothing" and
+    is vetoed outright. Every fixture here that is *about* the score/seconds ratio wants a Board
+    that did return something, so 1 is the neutral default and 0 has to be asked for.
+    """
     from headstart.board_cost import BoardCost
 
-    return BoardCost(seconds=seconds, jobs=0, updated_at=day)
+    return BoardCost(seconds=seconds, jobs=jobs, updated_at=day)
 
 
 def test_the_gate_drops_a_giant_board_that_yields_almost_no_tech():
@@ -257,3 +264,112 @@ def test_a_workday_board_is_costed_under_the_same_key_two_pods_share():
         name="A",
     )
     assert board_identity(wd3) == board_identity(wd103) == "workday:accenture/careers"
+
+
+def test_the_gate_drops_a_board_whose_measured_yield_is_zero_however_high_its_score():
+    """The blind spot that cost 102 Boards five runs of silence — see ADR-0115's writeup.
+
+    `successfactors:careers.te.com` burned 1,631 s a run and returned **0 jobs**, five runs
+    running, while carrying priority score 171.7. On the ratio alone that is 6.32 tech/min — well
+    clear of the 2.0 threshold — so the gate kept re-packing a Board that produced nothing and set
+    the whole scrape stage's makespan doing it.
+
+    The score is not stale by accident. `update_ledgers.priority` builds its snapshot from *rows in
+    the scraped jobs file*, so a Board that scrapes and yields nothing contributes no row, lands in
+    `update_priority`'s "absent from the snapshot — carry unchanged" branch, and keeps its last
+    good score forever. **The collapse this gate exists to catch is exactly what stops it seeing
+    one.** Real ledger rows, 2026-09-07: cost `1631s, jobs=0, 2026-09-07` against priority
+    `score=171.7, last_tech_jobs=1, 2026-09-04` — the cost row rewritten every run, the priority
+    row three days cold.
+    """
+    gated = ps._gated_boards(
+        ["successfactors:careers.te.com"],
+        {"successfactors:careers.te.com": _cost(1631.0, "2026-09-07", jobs=0)},
+        {"successfactors:careers.te.com": 171.7},
+        today="2026-09-07",
+    )
+    assert gated == {"successfactors:careers.te.com": 0.0}
+
+
+def test_a_zero_yield_board_under_the_floor_is_still_left_alone():
+    """The veto rides the existing floor rather than widening the gate's reach.
+
+    A Board that returns nothing in 30 s is not a makespan problem, and this gate is only ever
+    about what a shard's slowest item costs. Dropping cheap empty Boards would be a different
+    rule — a value gate, not a makespan gate — and it would silently retire every Board between
+    hiring rounds.
+    """
+    gated = ps._gated_boards(
+        ["ashby:quiet"],
+        {"ashby:quiet": _cost(30.0, "2026-09-07", jobs=0)},
+        {"ashby:quiet": 0.0},
+        today="2026-09-07",
+    )
+    assert gated == {}
+
+
+def test_an_incomplete_measurement_cannot_gate_a_board_it_never_read():
+    """The way this veto could have evicted healthy giants — closed at the ledger, and pinned here
+    through the REAL `board_cost.update` rather than a hand-built row.
+
+    An earlier version of this test asserted the safety property against a `BoardCost` it
+    constructed itself, so it passed without the ledger doing anything and would have passed on
+    `main`. It also rested on a false premise: only the *unfinished* branch preserved the count,
+    while an **errored** Board wrote its `n_fresh = 0` straight over the last good one — and errors
+    run 19-40 a run. `run_one`'s own comment had already named the consequence: "the value gate
+    would drop it forever, on a Board that failed instantly".
+
+    Both incomplete outcomes now leave the count alone, so both survive the gate on their ratio.
+    """
+    from headstart.board_cost import BoardCost, ShardCost, update
+
+    prev = {
+        "workday:walmart": BoardCost(
+            seconds=2670.0, jobs=15476, updated_at="2026-08-17"
+        ),
+        "workday:target": BoardCost(seconds=2600.0, jobs=9000, updated_at="2026-08-17"),
+    }
+    after = update(
+        prev,
+        {
+            # burned an hour, then raised
+            "workday:walmart": ShardCost(seconds=3600.0, jobs=0, errored=True),
+            # killed by the shard's time budget mid-fetch
+            "workday:target": ShardCost(seconds=3600.0, jobs=0, unfinished=True),
+        },
+        today="2026-08-18",
+    )
+    assert after["workday:walmart"].jobs == 15476
+    assert after["workday:target"].jobs == 9000
+
+    gated = ps._gated_boards(
+        ["workday:walmart", "workday:target"],
+        after,
+        {"workday:walmart": 903.9, "workday:target": 400.0},
+        today="2026-08-18",
+    )
+    assert gated == {}
+
+
+def test_a_board_with_no_known_yield_is_judged_on_its_ratio_not_vetoed():
+    """`jobs=None` means "no complete scrape has ever measured this Board", which is not zero.
+
+    A Board whose only sighting failed, or whose first sighting was a budget kill, lands here. The
+    veto must not fire on it — that would turn one bad first run into a fortnight's exclusion — so
+    it falls through to ADR-0064's ratio exactly as before this change.
+    """
+    from headstart.board_cost import BoardCost
+
+    unknown = {
+        "workday:new": BoardCost(seconds=1200.0, jobs=None, updated_at="2026-09-07")
+    }
+    assert (
+        ps._gated_boards(
+            ["workday:new"], unknown, {"workday:new": 500.0}, today="2026-09-07"
+        )
+        == {}
+    )
+    # ...and still gated when the ratio itself is poor, so the fall-through is not an escape hatch
+    assert ps._gated_boards(
+        ["workday:new"], unknown, {"workday:new": 1.0}, today="2026-09-07"
+    )

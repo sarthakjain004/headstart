@@ -108,6 +108,17 @@ _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap a
 _GATE_RECHECK_DAYS = 14
 
 
+def _measured_nothing(row: BoardCost) -> bool:
+    """Did this Board's last **complete** scrape find no postings at all?
+
+    Named rather than inlined because two places ask it — the veto in :func:`_gated_boards` and
+    the log line that reports why a Board went — and a rule encoded twice is a rule that drifts.
+    `None` is deliberately not "nothing": it means no complete scrape has ever measured this Board
+    (see `BoardCost.jobs`), which is a reason to keep looking, not a reason to stop.
+    """
+    return row.jobs == 0
+
+
 def _gated_boards(
     keys: list[str],
     cost_rows: Mapping[str, BoardCost],
@@ -135,7 +146,32 @@ def _gated_boards(
             continue
         if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
             continue  # measurement expired — re-admit it and measure again
-        tech_per_min = scores.get(key, 0.0) / (row.seconds / 60)
+        # The score and the seconds come off different clocks, and only one of them keeps up.
+        # `update_ledgers.priority` builds its snapshot from *rows in the scraped jobs file*, so a
+        # Board that scrapes and returns nothing contributes no row, takes `update_priority`'s
+        # "absent from the snapshot — carry unchanged" branch, and keeps its last good score
+        # indefinitely. Its cost row, meanwhile, is rewritten every run. So the ratio below rises
+        # without limit on exactly the Boards this gate is for, and **the collapse it exists to
+        # catch is what blinds it to one**: measured 2026-09-07, `careers.te.com` read 6.32
+        # tech/min — clear of the threshold — while returning 0 jobs in five consecutive runs and
+        # setting the whole scrape stage's makespan. ADR-0116 has the reasoning; ADR-0115's
+        # writeup has the episode that exposed it.
+        #
+        # The Board's own measured `jobs` is the half that stayed current, so it gets a veto.
+        # Units are safe without reinterpreting the threshold: tech jobs are a subset of all jobs,
+        # so a scrape that found **no** jobs found no tech ones either.
+        #
+        # What makes the veto safe is that `board_cost` now says whether a 0 is a *finding*. It
+        # used to mean four things — a real empty Board, a raise, a first-ever budget kill, and a
+        # scrape whose every id was a duplicate — because `harvest` records `n_fresh = 0`
+        # regardless of outcome. An errored or unfinished run no longer overwrites a known count,
+        # and where none was ever known the ledger writes **None**. So a 0 reaching here is a
+        # complete run that found nothing, and None — never measured — falls through to the ratio.
+        # A guard on the old field would have gated any giant that failed once for a fortnight;
+        # `run_one`'s own comment names that hazard, and errors run 19-40 a run.
+        tech_per_min = (
+            0.0 if _measured_nothing(row) else scores.get(key, 0.0) / (row.seconds / 60)
+        )
         if tech_per_min < _GATE_MIN_TECH_PER_MIN:
             gated[key] = tech_per_min
     return gated
@@ -306,11 +342,27 @@ def main() -> int:
         # way that stays honest is if the list is in front of whoever reads the run — a Board
         # gated in error is invisible everywhere else, because nothing downstream misses it.
         worst = sorted(gated.items(), key=lambda kv: kv[1])
+
+        # Say *which* rule dropped each one. A Board vetoed for returning nothing and a Board with
+        # a genuinely poor ratio both print `0.00/min`, and they want opposite remedies — the
+        # first is usually a scraper or origin fault worth chasing, the second is the gate working
+        # as designed. ADR-0064 requires this list precisely because "a Board gated in error is
+        # invisible everywhere else"; an ambiguous entry only half-honours that.
+        def _why(key: str, rate: float) -> str:
+            row = cost_rows.get(key)
+            # "last complete scrape", not "this run": an errored run carries the previous count
+            # forward, so the 0 being acted on may predate the row's own date.
+            reason = (
+                " — last complete scrape found 0 jobs"
+                if row is not None and _measured_nothing(row)
+                else ""
+            )
+            return f"{key} ({rate:.2f}/min{reason})"
+
         _log.warning(
             f"value gate: skipped {len(gated)} Board(s) costing over "
             f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
-            f"jobs/min — "
-            + observability.named_sample([f"{k} ({d:.2f}/min)" for k, d in worst])
+            f"jobs/min — " + observability.named_sample([_why(k, d) for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)
