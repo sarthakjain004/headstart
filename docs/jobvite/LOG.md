@@ -198,3 +198,15 @@ steady state is only new postings.
 Nothing here needs a token. The whole investigation is `curl` plus Playwright against
 `jobs.jobvite.com`; `artifacts/2026-09-07_board-surfaces.csv` is the per-board table every count
 above is computed from.
+
+
+## A note on the HAR captures
+
+The three browser HARs this investigation used (`barracuda-networks-inc`, `firstcash-holdings-inc`,
+`evergreenhealth`, 1.28 MB together) are **not committed**. They were scanned first and carried no
+cookies, no `Authorization` and no `Set-Cookie`, so nothing was leaked by having them — they are
+left out because this repo routes raw captures to `experiment/` (gitignored) and its binding cost
+constraint is storage, and because what they established compresses to one sentence: across 256
+entries on three boards, every `jobs.jobvite.com` request is a `document` navigation and the only
+first-party JSON is `/search/facets` (taxonomy, no postings) and `/job/{id}/recommend` (5 related
+postings). Re-capture with `playwright` against any board if that ever needs re-checking.
