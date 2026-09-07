@@ -1614,6 +1614,43 @@ def p_zwayam(t, u):
     return LIVE, data.get("totalCount", 0)
 
 
+_JAZZHR_ROW = re.compile(rb'id="row_job_(\w+)"')
+
+
+def p_jazzhr(t, u):
+    """The embed listing, the same surface `JazzHRScraper.url()` reads.
+
+    Read the SHAPE, never the status: a departed tenant answers **200**, not 404. Measured over
+    a 1,000-tenant random sample of the pool, 2026-09-07 — every one of the 1,000 answered 200
+    at the transport layer, and the 75 dead ones split into the vendor's own
+    "JazzHR - Inactive Career Page" on the wildcard host (66) and a 302 to its job-seeker
+    marketing page (9, followed by `_get` into another 200). Neither renders the `jobs_table`
+    shell, and a slug that was never a tenant behaves identically (wildcard DNS resolves, then
+    302s), so a 200 without the shell is the only definitive DEAD signal here — the freshteam
+    and zoho soft-404 precedent.
+
+    The count is the number of DISTINCT `row_job` ids, not the raw match count: the same page
+    renders every posting twice, once in a desktop `<tr>` table and once in a mobile `<div>`
+    list (60 elements for 30 postings on `10pearls`).
+
+    Cross-checked against an independent career-page (`/apply/`) harvest of the same 1,000
+    tenants: 923 live/live, 75 dead/dead, zero contradictions. The two rows that differed were
+    one transport timeout (correctly UNKNOWN here) and one empty board the career-page harvest
+    miscounted.
+    """
+    status, body = _get(f"https://{t}.applytojob.com/apply/jobs")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    if b'id="jobs_table"' not in body:
+        return (
+            DEAD,
+            None,
+        )  # a 200 that is not a board: inactive tenant, or the vendor's page
+    return LIVE, len(set(_JAZZHR_ROW.findall(body)))
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -1635,6 +1672,7 @@ PROBES = {
     "eightfold": p_eightfold,
     "successfactors": p_successfactors,
     "zwayam": p_zwayam,
+    "jazzhr": p_jazzhr,
 }
 
 
