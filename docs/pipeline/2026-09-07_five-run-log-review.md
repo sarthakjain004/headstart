@@ -313,8 +313,13 @@ The pipeline measures its own concurrency headroom every run. Over all 75 shard-
 > docstring flags as untuned — but that is a politeness decision before a throughput one, since it
 > governs how hard to push a host that has just said no.
 
-Eightfold's detail concurrency is the mirror image of the walled-clamp finding — over-wide on a
-third of shards, where narrowing costs nothing and returns capacity.
+**The eightfold row is unusable for the same reason**, and its ranked item 7 is withdrawn with
+item 3. "27 of 73 say narrowing is free" is the same walled-vs-unwalled comparison read the other
+way round: a fan-out clamped to 12 *because the origin walled it* is slower per stream than a
+healthy one at 25, and reading that as "eightfold is over-wide at 25" inverts cause and effect.
+Eightfold remains by far the most expensive ATS per Board — **40.4 s median** against workday's 9.2
+and successfactors' 11.1 — so there is probably something real here; the width is simply not shown
+to be it.
 
 Eightfold is also the most expensive ATS per board by a wide margin: **40.4 s median** against
 workday 9.2 s and successfactors 11.1 s.
@@ -399,7 +404,7 @@ visible in the Actions UI instead of buried.
 | 4 | Per-host circuit breaker on repeated timeouts | §3a | ~1,600 board-s saved in one outage; bounds any future one |
 | 5 | Let a durable `CertificateVerifyError` count as a gone-strike | §3b | Stops 4 boards retrying forever; surfaces real lost coverage |
 | 6 | Demote spare-egress rotation lines to info | §6 | Makes 400 real warnings visible instead of 23,700 |
-| 7 | Narrow `eightfold` detail concurrency | §4 — 27/73 say narrowing is free | Returns capacity on the most expensive ATS per board |
+| 7 | ~~Narrow `eightfold` detail concurrency~~ **WITHDRAWN — same confound as item 3.** "27/73 say narrowing is free" compares walled groups at 12 against unwalled ones at 25, so it may only say "a walled eightfold fan-out is slower", which is trivially true. Needs a controlled probe at eightfold's real ceiling before any change | §4 | unknown until measured |
 | 8 | Paginate past the zoho 750 / freshteam 1000 ceilings, or `mark_truncated` | §3d | 8 boards permanently and silently short |
 
 Items 1 and 2 are the same incident seen from two sides: one is why the pipeline is losing 56,000

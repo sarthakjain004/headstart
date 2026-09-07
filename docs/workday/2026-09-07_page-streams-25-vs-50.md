@@ -71,3 +71,9 @@ there is no benefit to weigh the risk against.
   us** is a politeness decision before it is a throughput one. The clamp exists to back off; that it
   costs throughput is the point of it, not a defect.
 - The review doc's §4 and its ranked item 3 now carry this correction inline.
+- **The same confound invalidates the eightfold recommendation** (review item 7, "27 of 73 say
+  narrowing is free"), read the other way round: a fan-out clamped to 12 *because the origin walled
+  it* is slower per stream than a healthy one at 25, and calling that "eightfold is over-wide at 25"
+  inverts cause and effect. Withdrawn with this one. Eightfold is still the most expensive ATS per
+  Board by a wide margin — 40.4 s median against workday's 9.2 — so there is likely something real
+  to find; the width is simply not shown to be it.
