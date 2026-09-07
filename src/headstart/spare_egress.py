@@ -46,6 +46,24 @@ have today. The fallback is worth having only if its absence costs nothing.
 Registration is deliberately *not* done here — ``pipeline.yml`` installs and registers ``warp-cli``
 before the scrape, so the in-process path is the three cheap calls below rather than a licence
 negotiation on the critical path. An unregistered client simply fails to connect and degrades.
+
+**Rotation logs at INFO; the anomalies around it still warn.** ``log.py`` turns WARNING and above
+into GitHub ``::warning::`` annotations so anomalies surface on the run's summary page — and
+rotating is the normal working state of a walled shard, not an anomaly. Censused over all 15
+scrape shards of two runs, **the four rotation lines were 92-94% of every ``##[warning]`` the
+scrape emitted** (4,444 of 4,820 on run ``34088295600``; 5,621 of 6,004 on ``34074802564``): the
+wall that prompted it, the restart, the new generation, and the address :func:`_observe_egress_ip`
+reads back — that last one also fires on the initial dial, where its verdict is ``first``. What it
+buried barely moves between those runs, 376 lines against 383, so the signal was a near-constant
+~380 sitting under 5-6x its own volume.
+
+Those four now log at INFO, the default level, so the shard log still carries them in order and
+``scripts/runlog/fanout_retries.py`` still counts them; only the annotation goes. A rotation that
+*fails*, a dial that never answers and :func:`mark_walled` keep theirs, and :func:`report`
+annotates aggregate rotation health once per shard — the right granularity for one. This is not a
+claim that every remaining warning earns its annotation (:func:`proxy_url`'s success line is as
+routine as these were); it is that these four could not be found among their own volume. Do not
+promote them back without a reason that survives that ratio.
 """
 
 from __future__ import annotations
@@ -833,9 +851,9 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
         _last_rotation = time.monotonic()
         _rotations["attempted"] += 1
         if board:
-            _log.warning(f"spare egress: {board} walled the current IP — rotating")
+            _log.info(f"spare egress: {board} walled the current IP — rotating")
         _gate.clear()  # peers stop firing at a port the restart is about to take away
-        _log.warning(
+        _log.info(
             "spare egress: rotating egress IP "
             f"({' '.join(_RESTART_COMMAND.get(sys.platform, ['unsupported']))})"
         )
@@ -869,7 +887,7 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
                 return False
             _rotation_generation += 1
             _rotations["succeeded"] += 1
-            _log.warning(
+            _log.info(
                 f"spare egress: rotated to a fresh egress IP (#{_rotation_generation})"
             )
             fresh = True
@@ -962,7 +980,7 @@ def _observe_egress_ip() -> None:
         _egress_ips[f"ip:{ip}"] += 1
         _egress_ips[f"colo:{colo}"] += 1
         _last_egress_ip = ip
-    _log.warning(f"spare egress: now egressing from {ip} via {colo} ({verdict})")
+    _log.info(f"spare egress: now egressing from {ip} via {colo} ({verdict})")
 
 
 def egress_ips() -> Counter[str]:

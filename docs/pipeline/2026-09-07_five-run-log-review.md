@@ -371,10 +371,9 @@ re-raised.
 
 ---
 
-## 6. Observability: the warning stream is 98% noise
+## 6. Observability: the warning stream is ~93% rotation chatter
 
-Across all five runs, ~23,700 `##[warning]` lines. **23,213 of them — 98% — are spare-egress
-rotation chatter**, four lines per rotation:
+Four lines fire on every spare-egress rotation, and every one is an Actions annotation:
 
 ```
 spare egress: {board} walled the current IP — rotating
@@ -383,14 +382,38 @@ spare egress: rotated to a fresh egress IP
 spare egress: now egressing from {addr} via {pop}
 ```
 
-at 1,007–1,411 rotations per run. Every one is an Actions annotation. The per-run summary lines
-(`spare egress rotations: ...`, `rotation demand by board: ...`) already carry the same information
-in aggregate, and `fanout_retries.py` deliberately measures egress health from the 429/network
-*ratio* rather than these strings.
+Censused across all 15 scrape shards of two runs, counting those four exactly (echo-filtered):
 
-Demoting the four per-rotation lines to info would leave the roughly 400 warnings that actually
-mean something — the mid-crawl losses, the ceilings, the board errors, the scope exclusions —
-visible in the Actions UI instead of buried.
+| Run | `##[warning]` lines | the four | remainder | rotation share |
+|---|---|---|---|---|
+| 34088295600 | 4,820 | 4,444 | **376** | 92.2% |
+| 34074802564 | 6,004 | 5,621 | **383** | 93.6% |
+
+**The remainder barely moves — 376 against 383 — while the chatter swings by 1,177.** That is the
+finding: the substantive warning count per run is a near-constant ~380, and it was sitting under
+5–6× its own volume in noise.
+
+On the worst single shard (`34088295600` shard 0, 472 warnings, 446 of them rotation) the 26
+survivors split six findings — one freshteam ceiling, one trakstar cap, one Workday mid-crawl loss,
+two origin walls, the board-error digest — against twenty lines of per-shard telemetry.
+
+The per-shard summary lines (`spare egress rotations: ...`, `rotation demand by board: ...`) already
+carry the rotation story in aggregate, and `fanout_retries.py` deliberately measures egress health
+from the 429/network *ratio* rather than these strings.
+
+> **Correction.** An earlier draft of this section put the five-run figures at "~23,700 lines,
+> 23,213 of them — 98%", implying a remainder of only ~97 per run. The census above says ~380 —
+> nearly 4× more. Both original figures were low, and the ratio with them. The lesson is worth
+> more than the number: **when a small remainder is derived by subtracting one large count from
+> another, a few-percent error in either becomes a several-fold error in the remainder.** The
+> per-shard census is reproducible and is what this section now quotes; the five-run pair is
+> superseded.
+
+**DONE (#368).** The four lines now log at INFO. INFO is the default level, so the shard log still
+carries them in order and `fanout_retries.py`'s `ROTATED`/`WALLED` regexes still match — the
+`test_the_runlog_analyser_still_reads_a_rotation_at_either_level` case drives the real emitter
+through the real formatter at both levels so that pairing cannot drift silently. A failed rotation,
+a dead dial and `mark_walled` keep their annotation.
 
 ---
 
@@ -403,7 +426,7 @@ visible in the Actions UI instead of buried.
 | 3 | ~~Widen `workday` listing-page concurrency~~ **WITHDRAWN — measured, no gain.** The cited statistic compares 12 vs 25 (and a walled population against an unwalled one), not 25 vs 50. Probed directly: identical wall at both widths on both surfaces ([writeup](../workday/2026-09-07_page-streams-25-vs-50.md)) | §4 | **zero** — widening would add third-party load for no benefit |
 | 4 | Per-host circuit breaker on repeated timeouts | §3a | ~1,600 board-s saved in one outage; bounds any future one |
 | 5 | Let a durable `CertificateVerifyError` count as a gone-strike | §3b | Stops 4 boards retrying forever; surfaces real lost coverage |
-| 6 | Demote spare-egress rotation lines to info | §6 | Makes 400 real warnings visible instead of 23,700 |
+| 6 | ~~Demote spare-egress rotation lines to info~~ **DONE (#368)** | §6 | 92–94% of the annotation stream gone (censused over two full runs); the ~380 warnings/run that carry a finding now visible |
 | 7 | ~~Narrow `eightfold` detail concurrency~~ **WITHDRAWN — same confound as item 3.** "27/73 say narrowing is free" compares walled groups at 12 against unwalled ones at 25, so it may only say "a walled eightfold fan-out is slower", which is trivially true. Needs a controlled probe at eightfold's real ceiling before any change | §4 | unknown until measured |
 | 8 | Paginate past the zoho 750 / freshteam 1000 ceilings, or `mark_truncated` | §3d | 8 boards permanently and silently short |
 
