@@ -524,7 +524,9 @@ def test_a_rotation_that_moves_is_told_apart_from_one_that_does_not(
     # via the first observed rotation.
     _tracing(monkeypatch, ["104.28.232.96", "104.28.200.91", "104.28.200.91"])
 
-    with caplog.at_level("WARNING"):
+    # INFO, not WARNING: the address line is routine rotation detail, not an anomaly —
+    # see `test_a_routine_rotation_is_not_an_annotation`.
+    with caplog.at_level("INFO"):
         for _ in range(3):
             spare_egress.rotate()
 
@@ -546,7 +548,7 @@ def test_the_initial_dial_seeds_the_first_comparison(monkeypatch, caplog):
     _rotating(monkeypatch)
     _tracing(monkeypatch, ["9.9.9.9", "9.9.9.9"])
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("INFO"):
         spare_egress.proxy_url()
         monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
         spare_egress.rotate()
@@ -807,3 +809,126 @@ def test_a_drain_that_times_out_is_counted_as_capped():
     assert "1 hit the" in next(
         ln for ln in spare_egress.report() if ln.startswith("spare egress drains")
     )
+
+
+def test_a_routine_rotation_is_not_an_annotation(monkeypatch, caplog):
+    """Rotation is the normal working state of a walled shard, not an anomaly.
+
+    `log.py` renders WARNING and above as a GitHub `::warning::` annotation specifically so
+    anomalies "surface on the run's summary page instead of being buried in fifteen shard logs".
+    Rotation chatter inverts that: censused over all 15 scrape shards of two runs, **these four
+    lines were 92-94% of every warning the scrape emitted** (4,444 of 4,820; 5,621 of 6,004). What
+    they buried is near-constant — 376 lines and 383 — so the signal sat under 5-6x its own volume.
+    On the worst single shard, 26 warnings survived 446: six findings (a freshteam ceiling, a
+    trakstar cap, a Workday mid-crawl loss, two origin walls, the board-error digest) and twenty
+    lines of per-shard telemetry.
+
+    They stay at INFO rather than going away: the per-rotation detail is what
+    `fanout_retries.py` counts and what several incident writeups quote. INFO is the default
+    level, so the shard log still carries them, in order — only the annotation goes.
+    """
+    import logging
+
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+    _tracing(monkeypatch, ["104.28.232.96", "104.28.200.91"])
+
+    with caplog.at_level("INFO"):
+        assert spare_egress.rotate("workday:acme/careers") is True
+
+    assert [
+        r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+    ] == []
+    text = caplog.text
+    assert "workday:acme/careers walled the current IP" in text
+    assert "rotating egress IP" in text
+    assert "rotated to a fresh egress IP" in text
+    assert "now egressing from 104.28.232.96" in text
+
+
+def test_a_rotation_that_fails_is_still_an_annotation(monkeypatch, caplog):
+    """The control for the test above. Demoting the routine path is only safe if the paths that
+    mean something keep their annotation — otherwise this change trades 94% noise for 100%
+    silence."""
+    import logging
+
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch, comes_back=False)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    with caplog.at_level("INFO"):
+        assert spare_egress.rotate("workday:acme/careers") is False
+
+    warned = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("SOCKS5 did not come back" in m for m in warned), warned
+
+
+def _fanout_retries():
+    """`scripts/runlog/fanout_retries.py`, loaded from disk — it is a script, not an installed
+    module, and it does `from run_logs import ...`, so its own directory must be importable."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    runlog = Path(__file__).resolve().parent.parent / "scripts" / "runlog"
+    sys.path.insert(0, str(runlog))
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "fanout_retries", runlog / "fanout_retries.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(str(runlog))
+
+
+def test_the_runlog_analyser_still_reads_a_rotation_at_either_level(
+    monkeypatch, caplog
+):
+    """`scripts/runlog/fanout_retries.py` counts rotations and walls by matching the *message text*
+    of two of these lines, so demoting them could have taken its counts silently to zero — the
+    shape `run_logs.py`'s own header warns about ("a grep for `degrading to direct` matched 15/15
+    shards when the truth was 4/15"). It doesn't, because the patterns are unanchored substrings
+    while the level only decides which branch of `log._Formatter` renders them (`::warning::[tag]
+    msg` against `HH:MM:SS [tag] msg`) — but nothing checked that.
+
+    Both branches are exercised on purpose. The INFO one is what ships; re-rendering the same
+    records at WARNING covers a future run that promotes them back, and is the only way to reach
+    that branch now that the emitter no longer takes it.
+    """
+    import logging
+
+    from headstart import log
+
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    _tracing(monkeypatch, ["104.28.232.96"])
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    with caplog.at_level("INFO"):
+        assert spare_egress.rotate("workday:ssmh/ssmhealth") is True
+
+    analyser = _fanout_retries()
+    renders = {}
+    for level in (logging.INFO, logging.WARNING):
+        for record in caplog.records:
+            record.levelno = level
+        renders[level] = "\n".join(log._Formatter().format(r) for r in caplog.records)
+        assert len(analyser.ROTATED.findall(renders[level])) == 1, renders[level]
+        assert analyser.WALLED.findall(renders[level]) == ["workday:ssmh/ssmhealth"], (
+            renders[level]
+        )
+
+    # The two branches really are different text, so the assertions above are two measurements
+    # rather than one repeated. An earlier draft parametrised over `GITHUB_ACTIONS` instead and
+    # was inert: the emitter no longer reaches the WARNING branch at all, so both arms rendered
+    # identically and the test proved half of what it claimed.
+    assert "::warning::" in renders[logging.WARNING]
+    assert "::warning::" not in renders[logging.INFO]
