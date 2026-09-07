@@ -23,6 +23,13 @@ store does not hold are left alone — recomputing without the text a value came
 downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, so they carry no
 ``has_description``).
 
+**``remote`` is both** — a Fact (each scraper's own ATS-native field, re-observed above like any
+other) with a Derivation overlaid on top of it (``headstart.remote.extract``, ADR-0061 v8): if
+the JD confidently reads as remote, that wins over whatever the just-refreshed fact says. That
+overlay needs no "text the store doesn't hold" guard the way the cascade above does — it is
+one-directional (can only turn False/None into True), so recomputing it without text simply
+returns the fact unchanged rather than risking a downgrade.
+
 **The re-derivation queue** (ADR-0062) is the other half of that: when a run finally supplies one of
 those descriptions, the row is still carrying numbers derived without it, and no version has moved.
 ``update_descriptions`` appends the ids to ``data/state/pending_rederive.txt``; this module runs the
@@ -57,6 +64,7 @@ from headstart.experience import extract, from_field, from_seniority
 from headstart.ingest import PENDING_REDERIVE_PATH, REPO_ROOT, read_id_list
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
+from headstart.remote import extract as extract_remote
 from headstart.salary import extract as extract_salary
 from headstart.salary import from_field as salary_from_field
 from headstart.scrapers import registry
@@ -71,12 +79,23 @@ _WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
 #: Identity: what a row *is*, never re-observed, so it can never be rewritten onto another Job.
 _IDENTITY = ("id", "ats")
 
+#: `remote`'s served value is a **derivation** wearing a fact's column (ADR-0061 v8 / ADR-0118):
+#: the JD overlay overwrites it in place rather than living in a column of its own. If it stayed
+#: in FACT_FIELDS, this blind resync would overwrite an already-JD-derived `True` with the raw
+#: scrape's current value on every ordinary run — the overlay only gets a chance to reinstate it
+#: on a sweep, so between sweeps a Board's mere re-scrape would silently discard the override.
+#: Excluded here instead; `remote`'s own block below reads the fresh raw fact directly from
+#: `facts` and only runs on `sweep or rederive`, the same cadence every other derivation gets.
+_FACT_WITH_OVERLAY = ("remote",)
+
 #: Columns re-observed from the scrape every run — **derived** from the canonical metadata list, so
 #: a new served column is refreshed automatically instead of needing a second edit here that whoever
 #: adds it has no reason to know about. `title` is included for display: the vector keeps encoding
 #: the title it was built from until a doc-drift upgrade exists (ADR-0021), and a current title over
 #: a slightly stale vector beats a stale title.
-FACT_FIELDS = tuple(f for f in META_FIELDS if f not in _IDENTITY)
+FACT_FIELDS = tuple(
+    f for f in META_FIELDS if f not in _IDENTITY and f not in _FACT_WITH_OVERLAY
+)
 
 #: Recomputed from facts whenever the extractor's version moves.
 DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
@@ -132,7 +151,13 @@ def write_watermark(path: Path, version: int) -> None:
 
 
 def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
-    """``{Job id: {fact field: value}}`` from this run's tech corpus."""
+    """``{Job id: {fact field: value}}`` from this run's tech corpus.
+
+    Carries ``_FACT_WITH_OVERLAY`` fields (``remote``) alongside ``FACT_FIELDS`` — the blind
+    sync loop in :func:`refresh_row` only iterates ``FACT_FIELDS`` and so still correctly leaves
+    them alone, but `remote`'s own derivation block needs this run's fresh raw value to read, and
+    the fact dict is the only place that value exists once the field is out of `FACT_FIELDS`.
+    """
     facts: dict[str, dict] = {}
     for path in sorted(jobs_dir.glob("*.jsonl")):
         with path.open(encoding="utf-8") as fh:
@@ -141,7 +166,9 @@ def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
                 if not line:
                     continue
                 job = json.loads(line)
-                facts[job["id"]] = {f: job.get(f) for f in FACT_FIELDS}
+                facts[job["id"]] = {
+                    f: job.get(f) for f in (*FACT_FIELDS, *_FACT_WITH_OVERLAY)
+                }
     return facts
 
 
@@ -273,6 +300,21 @@ def refresh_row(
                 row.get(f) != derived_salary[f] for f in SALARY_DERIVED_FIELDS
             )
             row.update(derived_salary)
+
+    # `remote`'s overlay (headstart.remote, ADR-0061 v8/ADR-0118). `remote` is excluded from
+    # FACT_FIELDS (see `_FACT_WITH_OVERLAY`), so unlike every fact above, nothing has already
+    # refreshed `row["remote"]` to this run's raw field — that has to happen here, from `facts`,
+    # the same place `experience`/`salary`'s own raw-field re-syncs come from. Only on `sweep or
+    # rederive`: an ordinary run carries no held description (`descriptions` is `{}` unless
+    # sweeping or draining the ADR-0062 queue — see `main`), so running this every run would
+    # just be `extract_remote(raw_field, None)`, i.e. adopt the raw field with no chance to
+    # reinstate a JD override — the raw field would win by default, silently discarding it.
+    if sweep or rederive:
+        raw_remote = facts.get("remote") if facts else row.get("remote")
+        new_remote = extract_remote(raw_remote, descriptions.get(row["id"]))
+        if new_remote != row.get("remote"):
+            changed = True
+        row["remote"] = new_remote
 
     return row, facts_changed, changed
 

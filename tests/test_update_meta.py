@@ -63,6 +63,10 @@ def test_vector_facts_are_never_refreshed():
     # title-only vector from the upgrade path meant to repair it.
     meta = _meta(has_description=False)
     facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["remote"] = meta.get(
+        "remote"
+    )  # corpus_facts() carries this even though FACT_FIELDS
+    # (the blind sync loop) does not — see _FACT_WITH_OVERLAY
     row, _, _ = um.refresh_row(
         meta, facts, {"greenhouse:acme:1": "5+ years"}, sweep=True
     )
@@ -155,6 +159,85 @@ def test_changed_experience_field_rederives_without_a_sweep():
     row, facts_changed, derived_changed = um.refresh_row(meta, facts, {}, sweep=False)
     assert facts_changed and derived_changed
     assert (row["min_years"], row["experience_source"]) == (2, "field")
+
+
+# --- remote: JD supersedes the field, one direction only (ADR-0061 v8) ---------------------------
+
+
+def test_sweep_lets_the_jd_supersede_a_false_field():
+    meta = _meta(remote=False)
+    row, _, derived_changed = um.refresh_row(
+        meta, None, {"greenhouse:acme:1": "This is a remote position."}, sweep=True
+    )
+    assert derived_changed
+    assert row["remote"] is True
+
+
+def test_sweep_never_lets_the_jd_turn_true_into_false():
+    # one-directional: an onsite-reading JD must never override an existing True field. The
+    # experience fields are nulled out here so the (irrelevant) "#LI-Onsite" text re-deriving
+    # them to None-vs-None doesn't itself trip derived_changed and mask what's being tested.
+    meta = _meta(remote=True, min_years=None, max_years=None, experience_source=None)
+    row, _, derived_changed = um.refresh_row(
+        meta, None, {"greenhouse:acme:1": "#LI-Onsite"}, sweep=True
+    )
+    assert not derived_changed
+    assert row["remote"] is True
+
+
+def test_sweep_with_no_held_description_leaves_remote_alone():
+    meta = _meta(remote=False)
+    row, _, derived_changed = um.refresh_row(meta, None, {}, sweep=True)
+    assert not derived_changed
+    assert row["remote"] is False
+
+
+def test_a_facts_only_run_never_touches_remote():
+    # The regression a review caught: `remote` used to sit in FACT_FIELDS, so on an ordinary run
+    # its blind resync would overwrite an already-JD-derived True with the raw scrape's current
+    # value, and — since `descriptions` is `{}` off a sweep — the overlay had nothing to
+    # reinstate it with, silently discarding the override. `remote` is excluded from
+    # FACT_FIELDS now (`_FACT_WITH_OVERLAY`), so even a sharply different fresh fact must not
+    # move it at all outside sweep/rederive.
+    meta = _meta(remote=True)
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["location"] = (
+        "Munich"  # a real fact resyncs, to prove facts_changed isn't the reason
+    )
+    facts["remote"] = (
+        False  # the raw ATS field now disagrees with the stored, JD-derived value
+    )
+    row, facts_changed, derived_changed = um.refresh_row(
+        meta, facts, {"greenhouse:acme:1": "This is a remote position."}, sweep=False
+    )
+    assert facts_changed  # location did resync
+    assert not derived_changed
+    assert row["remote"] is True  # untouched — no sweep, no rederive
+
+
+def test_sweep_reads_the_fresh_raw_fact_not_the_stale_stored_one():
+    # When a sweep does run, it must read this run's raw fact from `facts`, not fall back to
+    # whatever was last stored — otherwise a Board that flipped its own field to False during the
+    # gap between sweeps would keep serving a stale True forever.
+    meta = _meta(remote=True)
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["remote"] = False  # the Board turned remote off since the last sweep
+    row, _, derived_changed = um.refresh_row(meta, facts, {}, sweep=True)
+    assert derived_changed
+    assert row["remote"] is False  # no held text this sweep, so the fresh fact stands
+
+
+def test_rederive_queue_entry_touches_remote_at_an_unchanged_version():
+    meta = _meta(remote=False)
+    row, _, derived_changed = um.refresh_row(
+        meta,
+        None,
+        {"greenhouse:acme:1": "This is a remote position."},
+        sweep=False,
+        rederive=True,
+    )
+    assert derived_changed
+    assert row["remote"] is True
 
 
 # --- the watermark -------------------------------------------------------------------------------
