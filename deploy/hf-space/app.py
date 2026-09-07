@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import facets  # facet counts — synced from src/headstart/facets.py (ADR-0084)
+import fx  # synced from src/headstart/fx.py by deploy-space.yml (ADR-0116)
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
 import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
@@ -919,6 +920,9 @@ def index():
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
         currencies=_searcher.currencies,
+        # The salary bracket converts across currencies (ADR-0116); the rail prints the date
+        # of the rates it used, so a stale table is visible rather than silent.
+        fx_as_of=(fx.table() or {}).get("as_of"),
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,

@@ -715,10 +715,22 @@ def test_currency_is_whitelisted_against_the_table_never_interpolated():
     # Never interpolated: an unrecognised value falls back to the default rather than reaching
     # the clause — ADR-0084's "whitelisted like `ats`", and `ats` ignores what it does not know.
     # The bound it scopes still applies, which is the whole point of the default.
+    where = _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
+    assert "DROP TABLE" not in where
     assert (
-        _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
-        == "salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 1"
+        "salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 1"
+        in where
     )
+    # Every currency named in the clause came from the table's own whitelist, never from the
+    # request — the cross-currency expansion (ADR-0116) widened what is emitted, not what is
+    # trusted.
+    import re
+
+    assert set(re.findall(r"salary_currency = '([^']+)'", where)) <= {
+        "USD",
+        "INR",
+        "EUR",
+    }
     assert _bracket(salary_currency="XXX", salary_min=1) == _bracket(salary_min=1)
     # With no bound there is no bracket to scope, so a currency alone still compiles nothing —
     # ADR-0084's rule that picking one must not cut the result set to the ~28.5% carrying a salary.
@@ -1026,3 +1038,54 @@ def test_internship_does_not_claim_international():
     clause = ETYPE_CLAUSES["internship"]
     assert "LIKE '%intern%'" in clause
     assert "NOT LIKE '%international%'" in clause
+
+
+# ── The salary bracket compares across currencies (ADR-0116) ──────────────────────────────
+
+
+def test_a_usd_bracket_also_matches_the_same_money_in_other_currencies():
+    """The defect this fixes: picking USD used to drop every INR job, silently."""
+    where = _bracket(salary_currency="USD", salary_min=100_000, salary_max=200_000)
+    # The user's own currency keeps the numbers they typed, unrounded.
+    assert (
+        "salary_currency = 'USD' AND "
+        "COALESCE(max_salary_annual, min_salary_annual) >= 100000 AND "
+        "min_salary_annual <= 200000"
+    ) in where
+    # …and the same money is asked for in the others, at the committed rate.
+    assert "salary_currency = 'INR'" in where
+    assert "8300000" in where  # 100k USD at the table's 83.0
+    assert where.startswith("((") and " OR " in where
+
+
+def test_a_converted_bound_rounds_outward_so_a_boundary_job_is_never_dropped():
+    where = _bracket(salary_currency="USD", salary_max=200_000)
+    # 200000 * 83 = 16,600,000 exactly; the ceiling still goes up rather than down, because
+    # the rule has to hold for the rates that do not divide evenly.
+    assert "min_salary_annual <= 16600001" in where
+
+
+def test_a_currency_with_no_rate_is_left_out_rather_than_compared_at_one_to_one():
+    where = build_filter(
+        salary_currency="USD",
+        salary_min=100_000,
+        currencies=["USD", "INR", "XTS"],  # XTS is not in config/fx_rates.json
+        atses=["greenhouse"],
+        has_first_seen=True,
+        has_description=True,
+        has_min_salary_annual=True,
+    )
+    assert "XTS" not in where
+    assert "salary_currency = 'INR'" in where
+
+
+def test_without_a_rate_table_the_bracket_falls_back_to_one_currency(monkeypatch):
+    """Degrading to the older, narrower answer is recoverable; a wrong one is not."""
+    from headstart import fx
+
+    monkeypatch.setattr(fx, "table", lambda: None)
+    where = _bracket(salary_currency="USD", salary_min=100_000)
+    assert where == (
+        "salary_currency = 'USD' AND "
+        "COALESCE(max_salary_annual, min_salary_annual) >= 100000"
+    )

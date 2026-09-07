@@ -31,8 +31,9 @@ from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
-    from headstart import geo
+    from headstart import fx, geo
 except ImportError:  # pragma: no cover - exercised only in the deployed Space
+    import fx  # type: ignore[no-redef]
     import geo  # type: ignore[no-redef]
 
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
@@ -468,18 +469,57 @@ def _salary_clauses(
     else:
         currency = None
     if currency in currencies:
-        filters.append(f"salary_currency = '{currency}'")
-        if salary_min is not None:
-            # The job's TOP of range clears the user's floor: a 90k-140k posting answers
-            # "at least 100k". `max_salary_annual` is null on single-figure postings, so
-            # COALESCE falls back to the one number there is rather than dropping the row.
+        # The bracket is compared ACROSS currencies (ADR-0116), not within the one picked.
+        # Pinning `salary_currency = 'USD'` made a USD range silently drop every INR job —
+        # fewer results, no stated reason. Each currency present in the table gets the user's
+        # bounds restated in its own units, and the whole thing ORs together; the numbers in
+        # the where-clause stay the employer's own, so nothing is rewritten in the index.
+        #
+        # A currency with no rate is left OUT rather than compared at 1:1, and if the table
+        # is unavailable entirely this falls back to the single-currency clause that predates
+        # ADR-0116 — a narrower answer, never a wrong one.
+        fx_table = fx.table()
+        rates = (fx_table or {}).get("rates") or {}
+        comparable = [c for c in currencies if c in rates] if currency in rates else []
+        for_currencies = comparable or [currency]
+        arms = []
+        for other in for_currencies:
+            bounds = []
+            for value, template in (
+                # The job's TOP of range clears the user's floor: a 90k-140k posting answers
+                # "at least 100k". `max_salary_annual` is null on single-figure postings, so
+                # COALESCE falls back to the one number there is rather than dropping the row.
+                (salary_min, "COALESCE(max_salary_annual, min_salary_annual) >= {}"),
+                # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
+                # test rather than containment: a band wider than the user's still qualifies.
+                (salary_max, "min_salary_annual <= {}"),
+            ):
+                if value is None:
+                    continue
+                if other == currency:
+                    # The user's own currency is not converted, so it keeps the number they
+                    # typed exactly — rounding it would move a bound nobody asked to move.
+                    bounds.append(template.format(int(value)))
+                    continue
+                here = fx.convert(float(value), currency, other, rates)
+                if here is None:
+                    bounds = []
+                    break
+                # Converted bounds round OUTWARD — floor down, ceiling up — so arithmetic can
+                # never drop a job sitting exactly on the boundary the user asked for.
+                bounds.append(
+                    template.format(int(here) if value is salary_min else int(here) + 1)
+                )
+            if bounds:
+                arms.append(" AND ".join([f"salary_currency = '{other}'", *bounds]))
+        if arms:
             filters.append(
-                f"COALESCE(max_salary_annual, min_salary_annual) >= {int(salary_min)}"
+                "(" + " OR ".join(f"({arm})" for arm in arms) + ")"
+                if len(arms) > 1
+                else arms[0]
             )
-        if salary_max is not None:
-            # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
-            # test rather than containment: a band wider than the user's still qualifies.
-            filters.append(f"min_salary_annual <= {int(salary_max)}")
+        else:
+            filters.append(f"salary_currency = '{currency}'")
     return filters
 
 

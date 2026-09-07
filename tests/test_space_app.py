@@ -157,12 +157,16 @@ def _space_app(state, env=None):
     import headstart.alerts.identity as _identity
     import headstart.alerts.store as _store
     import headstart.facets as _facets
+    import headstart.fx as _fx
     import headstart.profile_extract as _profile_extract
     import headstart.search as _search
 
     stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
     stubs["alerts.store"] = _store
     stubs["facets"] = _facets
+    # The real module, not a stub: it reads a committed table off disk and the app only asks
+    # it for a date (ADR-0116). Faking it would test the fake.
+    stubs["fx"] = _fx
     stubs["profile_extract"] = _profile_extract
     stubs["search"] = _search
     # Every stubbed name is restored, including the two above — leaving a fake `alerts` in

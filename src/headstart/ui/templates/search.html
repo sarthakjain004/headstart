@@ -133,9 +133,11 @@
             <input type="range" id="salrmax" min="0" step="1" aria-label="Maximum salary">
           </div>
           <span class="slider-read" id="salread"></span>
-          <span class="tip">Compared within one currency — salaries are period-normalised but
-            never FX-converted, so a bracket only means something inside a single currency.
-            Only jobs whose salary is known can match.</span></div>
+          <span class="tip">Jobs priced in other currencies are converted so they still match{% if fx_as_of %},
+            at approximate rates from {{ fx_as_of }}{% endif %}. That is currency conversion, not
+            cost of living — the same figure buys very different lives in different places, so read
+            a converted salary as "roughly this much money", not as a comparable offer. Only jobs
+            whose salary is known can match.</span></div>
         {% endif %}
       </div>
 
