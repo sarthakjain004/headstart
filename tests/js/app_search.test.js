@@ -16,7 +16,13 @@ function fakeEl() {
   const classes = new Set();
   const handlers = {};
   return {
-    innerHTML: '', textContent: '', hidden: false, style: {}, value: '', checked: false,
+    innerHTML: '', textContent: '', hidden: false, value: '', checked: false,
+    // `style` needs the methods the code actually calls on it. A bare `{}` let
+    // `style.setProperty` throw asynchronously, and Node reports that as an
+    // unhandledRejection AFTER the test ends — so 24 tests failed at once with no
+    // useful location while the real cause (a custom property set for the two-column
+    // results grid) sat in another file entirely.
+    style: { setProperty(k, v) { this[k] = String(v); }, getPropertyValue(k) { return this[k] ?? ''; }, removeProperty(k) { delete this[k]; } },
     querySelectorAll: () => [],
     setAttribute(k, v) { this[k] = v; }, getAttribute: k => null,
     // Listeners are RECORDED rather than dropped, and `fire` replays one — the only way to
