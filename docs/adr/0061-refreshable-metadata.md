@@ -35,7 +35,8 @@ derivation is `f(code, facts)` — recomputable at will, so a code fix must reac
 | `first_seen` | fact (table-owned) | never rewritten (ADR-0031) |
 | `id`, `ats` | identity | never rewritten |
 | `title` | fact, **display-refreshed** | fact reconcile; the vector keeps encoding the old title until a doc-drift upgrade exists ([ADR-0021](0021-re-embed-on-content-change.md)'s hook) — a current title over a slightly stale vector beats a stale title |
-| `company`, `location`, `remote`, `employment_type`, `experience` (raw), `salary`, `department`, `url`, `posted_at` | facts | **fact reconcile**: every run, jobs in this run's corpus that are already in the store get these fields overwritten from the fresh scrape row |
+| `company`, `location`, `employment_type`, `experience` (raw), `salary`, `department`, `url`, `posted_at` | facts | **fact reconcile**: every run, jobs in this run's corpus that are already in the store get these fields overwritten from the fresh scrape row |
+| `remote` | fact — **and derivation, overlaid on the same column** | **Amended by ADR-0118:** the raw ATS field is still a fact (captured every run in `corpus_facts()`), but the *served* value is `headstart.remote.extract`'s one-directional JD overlay on top of it, and — unlike every other fact in the row above — is deliberately excluded from the unconditional per-run resync (`update_meta._FACT_WITH_OVERLAY`) so a JD-derived override can't be silently discarded between version sweeps |
 | `min_years`, `max_years`, `experience_source` | derivations | **version sweep**: recomputed from held facts when the extractor changes |
 | `description` | fact — **not stored in meta at all** | lives in the ADR-0050 store; an *edited* description still propagates nowhere, because doc-drift detection (ADR-0021) remains deferred |
 

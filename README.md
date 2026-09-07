@@ -299,7 +299,7 @@ fails if this table drifts from it.
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing, so the Keyword filter's description scope reaches only part of the table, and the UI reports the share. Stored, not served: the API omits it |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
-| `remote` | bool | |
+| `remote` | bool | the scraper's own ATS-native field, **unless** the description confidently reads as remote — then `true` wins regardless of what the field said (`headstart.remote`, ADR-0061 v8). One-directional: a description read as onsite or hybrid never changes this field, even when it's unset |
 | `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), normalised at query time |
 | `experience` | string | raw, for display (`"2 - 5 Years"`) |
 | `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
