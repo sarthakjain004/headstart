@@ -83,9 +83,15 @@ ADR-0082 exists to prevent.
   **and** the Dockerfile's `COPY` — `tests/test_space_deploy_sync.py` caught the second half of
   that when only the first had been done, which is exactly the gap that would have made this
   feature silently do nothing in production while passing every test locally.
-- The rates in the committed table are approximate and dated 2024-06-01. **They should be
-  refreshed against a real source before this is relied on**, and the UI's printed date is what
-  makes that visible rather than hidden.
+- **The rates are real, cross-checked, and dated 2026-09-07.** Taken from exchangerate-api.com
+  and cross-checked against the ECB via frankfurter.dev: 28 of 33 currencies agreed within 2%,
+  and the five that did not appear in both are carried by one source and named in the file. The
+  first draft shipped placeholders dated 2024-06-01 whose INR rate was 83.0 against a real
+  94.55 — a **14% error**, large enough to move which jobs a cross-currency bracket returns, and
+  a reminder that "approximate" is not a licence to be wrong by an eighth.
+- **Refreshing is a two-line edit and must stay one.** `rates` and `as_of` move together, and the
+  UI prints the date beside the filter — a rate whose date is not visible is the failure this
+  whole arrangement is built to avoid.
 - Two existing tests asserted the single-currency clause verbatim and were updated: the
   overlap-not-containment rule still holds per arm, and the injection guard now asserts that every
   currency reaching the clause came from the table's own whitelist — the expansion widened what is

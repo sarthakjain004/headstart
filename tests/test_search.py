@@ -1052,17 +1052,25 @@ def test_a_usd_bracket_also_matches_the_same_money_in_other_currencies():
         "COALESCE(max_salary_annual, min_salary_annual) >= 100000 AND "
         "min_salary_annual <= 200000"
     ) in where
-    # …and the same money is asked for in the others, at the committed rate.
+    # …and the same money is asked for in the others, at whatever the committed table says.
+    # Derived from the table rather than hardcoded: a rate refresh is a routine two-line edit
+    # (ADR-0117), and a test that pins 83.0 turns every refresh into a failing build.
+    from headstart import fx
+
+    rate = fx.table()["rates"]["INR"]
     assert "salary_currency = 'INR'" in where
-    assert "8300000" in where  # 100k USD at the table's 83.0
+    assert str(int(100_000 * rate)) in where
     assert where.startswith("((") and " OR " in where
 
 
 def test_a_converted_bound_rounds_outward_so_a_boundary_job_is_never_dropped():
+    """The ceiling goes UP, never down — a job sitting exactly on the user's bound must survive
+    the arithmetic. Asserted against the table's own rate so a refresh cannot break it."""
+    from headstart import fx
+
+    rate = fx.table()["rates"]["INR"]
     where = _bracket(salary_currency="USD", salary_max=200_000)
-    # 200000 * 83 = 16,600,000 exactly; the ceiling still goes up rather than down, because
-    # the rule has to hold for the rates that do not divide evenly.
-    assert "min_salary_annual <= 16600001" in where
+    assert f"min_salary_annual <= {int(200_000 * rate) + 1}" in where
 
 
 def test_a_currency_with_no_rate_is_left_out_rather_than_compared_at_one_to_one():
