@@ -35,7 +35,7 @@ samples since where the first one proved too small to trust — the sample size 
 | --- | --- | --- |
 | ashby | `{Name} Jobs` | ~92% (n=120) |
 | eightfold | `Careers at {Name}` / `{Name} Careers` | ~93% (all 100 Hiring Boards) |
-| ripplehire | `{Name} Careers \| Latest jobs at …` | ~94% (all 52 Hiring Boards) |
+| ripplehire | `{Name} Careers \| Latest jobs at …` | ~96% (all 51 Hiring Boards) |
 | lever | `{Name}` — no wrapper at all | ~88% (352/400) |
 | keka | `Careers at {Name}` / `{Name} Careers` | ~11% (92 of 819, a full census) |
 
@@ -56,7 +56,8 @@ which cannot be true — `load_active_companies` *builds* each Board from a ledg
 that failed was keyed on the raw `tenant` column while a Board's slug is `scraper.slug_from(tenant,
 url)`; the gap was in the key, not the data. The real reason to prefer the absolute is duller: the
 denominator moves with which ATSes are enabled (`DISABLED_ATS` alone swings it by ~19,000 Boards),
-so a percentage quoted today misleads tomorrow. For scale, it is well under 0.1%. It earns its place not on volume but on cost and floor — the page returns in
+so a percentage quoted today misleads tomorrow. For scale, it is well under 0.1%. It earns its
+place not on volume but on cost and floor — the page returns in
 0.12s, and *every* keka Board serves a slug today, so the downside is a request that yields
 nothing eight times in nine.
 Successfactors stays out on a different and firmer ground: its titles are real but heterogeneous
@@ -128,7 +129,8 @@ someone really serves. Expect a fourth shape rather than assuming there cannot b
 Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are real
 employers a `\b`-bounded rule would refuse.
 
-It costs recall, and the honest number is not zero. A census of every lever and keka Hiring Board (2,998) fires the rule six times: three page labels it exists for, and **three real employers** it
+It costs recall, and the honest number is not zero. A census of every lever and keka Hiring Board
+(2,998) fires the rule six times: three page labels it exists for, and **three real employers** it
 refuses — `lever:pmaconsultants` ("PMA Consultants Careers", 29 real postings), `lever:bananajobs`
 ("Banana Jobs") and `lever:assurance` ("Assurance Careers"). All three keep their slug. Refusing is
 still the right trade — stripping the word
@@ -168,7 +170,7 @@ is not a rollout waiting to happen; it needs a per-ATS source that the evidence 
 support, and Workday's case shows that "some name" is not automatically better than none.
 
 
-## Two things this change surfaced
+## Three things this change surfaced
 
 **A fourth was found later, on a different ATS, and that is the lesson.** `ashby:krakensandbox`
 titles itself "Kraken Sandbox Jobs" and serves three template postings ("Basic Job Template",
@@ -179,7 +181,7 @@ a claim about where we had looked, not about what exists. Both are corrected. It
 (`ashby:bento`, `ripplehire:tenant1`) serve 0 postings, so ADR-0034's content-confirmation rule
 has nothing to read and they are left to `_PLACEHOLDER` instead.
 
-**Three vendor Boards had to be blocklisted, not renamed.** Reading titles is also a way of
+**Five vendor Boards had to be blocklisted, not renamed.** Reading titles is also a way of
 *finding* fake tenants: `ripplehire:itcinfotech` titles itself "ITC Infotech Demo" and
 `ripplehire:labs-axisqa` is a QA tenant with 1,226 postings. The sharp one is
 `ripplehire:tenant1-mph`, which titles itself "Mphasis" — so this change would have *stopped it
@@ -202,7 +204,8 @@ narrowed around one Board.
 **`lever:pip` is a live floor exception.** It titles itself "Jobs have moved to our Accenture Job
 Site" — a notice, not a name — and nothing here refuses it: 41 characters is well inside
 `_MAX_LEN`, and its leading "Jobs" is not the phrasing `_PAGE_LABEL`'s leading branch models
-(`^careers? at`), which is the position-versus-phrasing distinction drawn above. It has 0 postings today, so nothing reaches a user,
+(`^careers? at`), which is the position-versus-phrasing distinction drawn above. It has 0 postings
+today, so nothing reaches a user,
 but the floor should be read with this in mind. It is *not* fixed here on purpose: telling prose
 from a name in a 40-character string needs a judgement this module cannot make from a regex, and
 a rule fitted to this one Board would refuse real names for no measured gain.
@@ -215,6 +218,10 @@ which is the same anchoring that keeps them safe.
 `lever:springrecruits` loses a 70-character title to `_MAX_LEN`, and `lever:bananajobs`
 ("Banana Jobs") loses a real name to `_PAGE_LABEL`'s trailing "Jobs". Both keep their slug.
 Recorded because each rejection rule's cost belongs here as well as in its own comment.
+
+`ripplehire:labs` is the same 0-posting placeholder class as `ashby:bento` and
+`ripplehire:tenant1` — it serves "Your Company" and `_PLACEHOLDER` refuses it, with no content for
+ADR-0034 to confirm.
 
 `ripplehire:labs-mph` was recorded here as un-blocklistable because it 502'd and exposed no
 title. That held for about a day. It answers 200 now, titles itself "Mphasis Careers | …", and

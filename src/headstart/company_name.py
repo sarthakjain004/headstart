@@ -20,7 +20,7 @@ ATS              title shape                                 yields a name
 ===============  ==========================================  =====================
 ashby            ``{Name} Jobs``                             ~92% (n=120)
 eightfold        ``Careers at {Name}`` / ``{Name} Careers``  ~93% (n=100)
-ripplehire       ``{Name} Careers | Latest jobs at …``       ~94% (all 52)
+ripplehire       ``{Name} Careers | Latest jobs at …``       ~96% (all 51)
 lever            ``{Name}`` — no wrapper at all              ~88% (352/400)
 keka             ``Careers at {Name}`` / ``{Name} Careers``  ~11% (92 of 819)
 ===============  ==========================================  =====================
@@ -107,15 +107,18 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #:     their company before this branch caught it
 #:
 #: Shapes this deliberately does **not** catch, because none has been observed across every
-#: lever and keka Hiring Board (2,998) and this module only ever rejects a shape someone really serves: a medial token ("Acme
+#: lever and keka Hiring Board (2,998) and this module only ever rejects a shape someone really
+#: serves: a medial token ("Acme
 #: Careers Portal"), a leading token in another phrasing ("Jobs at Acme", "Careers Acme"), and
 #: the singular ("Acme Career"). If one shows up, add it — do not pre-empt it.
 #:
 #: Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are
 #: real employers a `\b`-bounded rule would refuse. Measured across every lever and keka Hiring
-#: Board (2,998), it fires six times: three page labels it exists for, and three real employers it costs
+#: Board (2,998), it fires six times: three page labels it exists for, and three real employers it
+#: costs
 #: — `lever:pmaconsultants` ("PMA Consultants Careers", 29 postings), `lever:bananajobs` ("Banana
-#: Jobs") and `lever:assurance` ("Assurance Careers") — which keep their slug. That is the deliberate trade: stripping the word
+#: Jobs") and `lever:assurance` ("Assurance Careers") — which keep their slug. That is the
+#: deliberate trade: stripping the word
 #: instead would turn "Destination Careers" into "Destination", a confident wrong name, where
 #: refusing costs only a missed upgrade.
 #:

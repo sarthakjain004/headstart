@@ -149,8 +149,31 @@ def test_a_padded_slug_is_still_a_slug():
     assert looks_like_slug("   ")
 
 
+def test_the_length_cap_is_pinned_at_its_boundary():
+    """60 and 61 characters, either side of `_MAX_LEN`.
+
+    The other length test straddles the cap with 34 and 70, which bounds the value without
+    pinning it: `>` could become `>=`, or the constant could move by several, with nothing red.
+    """
+    sixty = "A" * 60
+    assert from_title("lever", sixty, "x") == sixty
+    assert from_title("lever", "A" * 61, "x") is None
+
+
+def test_a_placeholder_must_be_the_whole_name_not_its_tail():
+    r"""`^your\s+company` is anchored at the front, and nothing pinned that.
+
+    A constructed counter-case rather than an observed one: the rule must not fire on a name that
+    merely *ends* with the phrase, and no live Board serves such a title to test against.
+    """
+    assert from_title("lever", "Acme Is Your Company", "acme") == "Acme Is Your Company"
+    assert from_title("lever", "Your Company", "x") is None
+
+
 def test_title_of_reads_and_tidies_the_tag():
     assert title_of("<html><head><title>  Acme\n  Jobs </title></head>") == "Acme Jobs"
+    # markup *inside* the tag is stripped, which is what "tags stripped" in the docstring means
+    assert title_of("<title>Acme <b>Corp</b></title>") == "Acme Corp"
     assert title_of("<TITLE>Acme</TITLE>") == "Acme"
     assert title_of("<html><head></head></html>") is None
     assert title_of("<title>   </title>") is None
