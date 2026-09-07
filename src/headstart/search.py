@@ -486,14 +486,18 @@ def _salary_clauses(
         arms = []
         for other in for_currencies:
             bounds = []
-            for value, template in (
+            for is_floor, value, template in (
                 # The job's TOP of range clears the user's floor: a 90k-140k posting answers
                 # "at least 100k". `max_salary_annual` is null on single-figure postings, so
                 # COALESCE falls back to the one number there is rather than dropping the row.
-                (salary_min, "COALESCE(max_salary_annual, min_salary_annual) >= {}"),
+                (
+                    True,
+                    salary_min,
+                    "COALESCE(max_salary_annual, min_salary_annual) >= {}",
+                ),
                 # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
                 # test rather than containment: a band wider than the user's still qualifies.
-                (salary_max, "min_salary_annual <= {}"),
+                (False, salary_max, "min_salary_annual <= {}"),
             ):
                 if value is None:
                     continue
@@ -507,10 +511,11 @@ def _salary_clauses(
                     bounds = []
                     break
                 # Converted bounds round OUTWARD — floor down, ceiling up — so arithmetic can
-                # never drop a job sitting exactly on the boundary the user asked for.
-                bounds.append(
-                    template.format(int(here) if value is salary_min else int(here) + 1)
-                )
+                # never drop a job sitting exactly on the boundary the user asked for. Keyed on
+                # `is_floor`, not on `value is salary_min`: Python interns small ints, so a range
+                # whose two ends are equal and under 257 made both bounds the same object and
+                # rounded the ceiling inward — the exact opposite of the guarantee above.
+                bounds.append(template.format(int(here) if is_floor else int(here) + 1))
             if bounds:
                 arms.append(" AND ".join([f"salary_currency = '{other}'", *bounds]))
         if arms:

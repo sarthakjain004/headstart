@@ -73,6 +73,15 @@ bound follows the skill database's own rule ("limit to 65-75 characters per line
 was sized against measured content — the widest row used 344px of a 694px column, leaving a
 389-474px gap.
 
+### Three behaviours came from the critique loop, not from the original ask
+
+A salary sort, a per-row dismiss/hide with a seen state, and a compact-density toggle were all
+raised by the critique as missing and were explicitly authorised. They are recorded here so a
+later reader does not read them as scope drift: the loop was instructed to complete its own
+missing-list, and these are what it found. An in-app job detail view was raised the same way and
+**declined** — the card links straight to the employer's posting, and putting a page in between
+would contradict the product's central claim.
+
 ## Consequences
 
 - **The trends series palette was re-measured against the new surfaces, not assumed.** Worst
@@ -86,9 +95,17 @@ was sized against measured content — the widest row used 344px of a 694px colu
 - Renaming `--aqua` touched 28 declarations plus the door's inline copy. The door carries its own
   token block because the sign-in wall gates `/static`, so the palette exists in two places by
   necessity; they must move together.
-- The design was reviewed by an adversarial critique loop that screenshots the running UI and rates
-  it, with a separate agent applying the fixes. It scored 5 → 6.5 → 6 → 5 across four rounds: the
-  dips are rounds catching that a previous fix had not worked or had cost something (a click
-  overlay that killed every tooltip in the card; a width cap that only constrained one tab and
-  moved the void to another). Recorded because the pattern — a fix that reads correct and fails on
-  contact — is the same one CLAUDE.md's measure-don't-reason rule exists for.
+- The design was reviewed by an adversarial critique loop that screenshots the running UI and
+  rates it, with a separate agent applying the fixes from round 4 on. Six rounds, scoring
+  5 → 6.5 → 6 → 5 → 6.5: **every dip is a round catching that a previous fix had not worked or
+  had cost something** — a click overlay that bought a bigger target and killed every tooltip in
+  the card; a width cap that constrained one tab and moved the void to another; a `:not()`
+  selector whose specificity silently disabled the phone layout on exactly the rows nobody
+  screenshotted. Recorded because the pattern — a fix that reads correct and fails on contact —
+  is the one CLAUDE.md's measure-don't-reason rule exists for, and because three separate
+  reviewers each had to be overruled by measurement at least once themselves.
+- **The door's token block drifted from `style.css` and nobody noticed for two rounds.** This ADR
+  said the two copies "must move together"; they did not. Rounds 2 and 3 lifted the app's
+  surfaces for contrast and the door kept iteration 1's values, so signing in visibly changed the
+  background and the door went on carrying a contrast defect the app had already fixed. A test now
+  pins them, because the instruction plainly was not enough.

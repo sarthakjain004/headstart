@@ -150,7 +150,7 @@
              conversion would then be describing something that is not happening. The date is
              not an optional decoration on the first branch — it is what makes an approximate
              rate checkable, so the two cannot be separated. #}
-          <span class="tip">{% if fx_as_of %}Jobs priced in other currencies are converted so they
+          <span class="tip">{% if fx_converts %}Jobs priced in other currencies are converted so they
             still match, at approximate rates from {{ fx_as_of }}. That is currency conversion, not
             cost of living — the same figure buys very different lives in different places, so read
             a converted salary as "roughly this much money", not as a comparable offer.{% else %}Compared

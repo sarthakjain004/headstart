@@ -7,9 +7,14 @@
   /* A subset of style.css's tokens — just enough for one page. Deliberately self-contained:
      signed-out requests can't fetch /static (the wall gates it), so the door inlines all it
      needs. ADR-0112 grew this page from a card to an argument, which makes the constraint
-     load-bearing: nothing below is decoration, and every token here is one the door uses. */
+     load-bearing: nothing below is decoration, and every token here is one the door uses.
+
+     These values are a COPY of style.css's and must move with it. They have drifted once
+     already: two critique rounds lifted the app's surfaces for contrast and this block kept
+     the originals, so signing in visibly changed the background and the door went on carrying
+     a contrast defect the app had fixed. A test pins them together now. */
   :root{
-    --ground:#171614; --raise:#201E1B; --raise-2:#2A2724; --rule:#38342F; --rule-2:#4B463F;
+    --ground:#131211; --raise:#2A2724; --raise-2:#353128; --rule:#454039; --rule-2:#5C554C;
     --ink:#F2EFE9; --ink-2:#BDB6AA;
     --accent:#5FBFB0;
     --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -17,7 +22,7 @@
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme: light){
-    :root{ --ground:#F7F5F0; --raise:#FFFDF8; --raise-2:#EFEBE3; --rule:#DFD9CD; --rule-2:#C7BFAF;
+    :root{ --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
       --ink:#1C1A17; --ink-2:#4A463F; --accent:#1F5F5B; }
   }
   *{ box-sizing:border-box; } html,body{ margin:0; }

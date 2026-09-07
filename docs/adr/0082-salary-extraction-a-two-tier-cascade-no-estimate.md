@@ -44,6 +44,14 @@ recorded here as the single citable record; per-ATS docs point here rather than 
    cross-currency number, no exchange-rate dependency to keep fresh. A `$` figure and a `₹` figure
    are never compared numerically — exactly the "multi-currency" ambiguity ADR-0019 flagged, now
    resolved by not conflating currencies rather than by converting between them.
+
+   > **Amended by [ADR-0117](0117-the-salary-bracket-compares-across-currencies.md)
+   > (2026-09-07), for the FILTER only.** Everything above still holds for what is *stored*:
+   > no converted column exists, and the index still carries only the employer's own figure in
+   > the employer's own currency. What changed is that the salary bracket no longer pins one
+   > currency — it converts the *user's bounds* into each currency's units at a committed dated
+   > rate, because pinning meant a USD range silently dropped every INR job. The sentence "are
+   > never compared numerically" is therefore true of the data and no longer true of the filter.
 2. **No estimate fallback — the deliberate divergence from `experience.py`.** Experience's Tier 3
    floor-estimates years from a seniority label when no number is stated ("Senior" → 5+), a
    defensible inference. Salary has no equivalent tier: a fabricated dollar figure risks

@@ -1333,13 +1333,42 @@ def test_the_salary_tip_does_not_promise_conversion_without_rates(app, monkeypat
         "atses": ["greenhouse"],
         "has_first_seen": True,
     }
-    with_rates = tpl.render(fx_as_of="2024-06-01", **ctx)
+    with_rates = tpl.render(fx_as_of="2024-06-01", fx_converts=True, **ctx)
     assert "converted so they" in " ".join(with_rates.split())
     assert "2024-06-01" in with_rates
 
-    without = tpl.render(
-        **ctx
-    )  # fx.table() returned None, so no date reaches the template
-    flat = " ".join(without.split())
-    assert "Compared inside one currency only" in flat
-    assert "are converted" not in flat
+    # Two ways to reach the fallback, and the copy has to hold for both: no table at all, and
+    # a table whose rates do not cover the currencies this deployment serves. `fx_converts` is
+    # what `build_filter` effectively keys on, so it is what the claim is guarded by — guarding
+    # on the date alone let the second case promise a conversion that was not happening.
+    for rendered in (
+        tpl.render(**ctx),
+        tpl.render(fx_as_of="2024-06-01", fx_converts=False, **ctx),
+    ):
+        flat = " ".join(rendered.split())
+        assert "Compared inside one currency only" in flat
+        assert "are converted" not in flat
+
+
+def test_the_door_and_the_app_share_one_palette():
+    """The door inlines its own copy of the tokens (the wall gates /static), and that copy
+    has already drifted once: two critique rounds lifted the app's surfaces for contrast and
+    the door kept the old values, so signing in changed the background and the door held on
+    to a contrast defect the app had fixed. Pinned rather than trusted to discipline."""
+    ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
+    css = (ui / "static" / "style.css").read_text()
+    door = (ui / "templates" / "signin.html").read_text()
+    for token in (
+        "--ground",
+        "--raise",
+        "--raise-2",
+        "--rule",
+        "--rule-2",
+        "--ink",
+        "--ink-2",
+    ):
+        for value in re.findall(rf"{re.escape(token)}:(#[0-9A-Fa-f]{{6}})", door):
+            assert f"{token}:{value}" in css, (
+                f"the door sets {token}:{value}, which style.css does not — the two token "
+                "blocks must move together"
+            )

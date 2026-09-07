@@ -870,6 +870,21 @@ def coverage():
     return jsonify(_searcher.coverage())
 
 
+def _fx_as_of() -> str | None:
+    """The date on the committed rate table, or None when it cannot be read (ADR-0117)."""
+    return (fx.table() or {}).get("as_of")
+
+
+def _fx_converts(currencies: list[str]) -> bool:
+    """Whether a bracket can actually cross a currency boundary here.
+
+    Two served currencies must both carry a rate; with fewer, `build_filter` compiles the
+    single-currency clause and any copy promising conversion would be describing nothing.
+    """
+    rates = (fx.table() or {}).get("rates") or {}
+    return len([c for c in currencies if c in rates]) > 1
+
+
 @app.route("/")
 def index():
     if _AUTH_ON and not session.get("email"):
@@ -928,7 +943,11 @@ def index():
         currencies=_searcher.currencies,
         # The salary bracket converts across currencies (ADR-0117); the rail prints the date
         # of the rates it used, so a stale table is visible rather than silent.
-        fx_as_of=(fx.table() or {}).get("as_of"),
+        # Both facts, because the tip needs the second one: `as_of` says the table parsed,
+        # but conversion only happens where the served currencies HAVE rates. Guarding the
+        # claim on the date let a deployment with no comparable currencies still promise it.
+        fx_as_of=_fx_as_of(),
+        fx_converts=_fx_converts(_searcher.currencies),
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,

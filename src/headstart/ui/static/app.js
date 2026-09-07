@@ -214,7 +214,7 @@ const matchPct = s => Math.round(Math.max(0, Math.min(1, (s - .60) / .25)) * 100
 // not four different hues. Hue is reserved for categories (amber = new, lime = pays, violet =
 // remote); reusing those hues here would have made lime mean both "strong match" and "salary".
 // Weak matches fade toward the muted ink so a scan shows where the good results stop.
-const tone = s => `color-mix(in srgb, var(--aqua) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
+const tone = s => `color-mix(in srgb, var(--accent) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
 const busy = on => el('results').setAttribute('aria-busy', String(!!on));
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
@@ -692,7 +692,7 @@ function drawPager(rowCount, facets){
    record is mapped onto this row shape in renderSaved rather than this function growing a
    second branch — the card knows about rows, not about where they came from.
 
-   A Saved row carries the two facts only it has — whether the posting has closed, and when it
+   A Saved row carries the two facts only it has — whether the job has closed, and when it
    was starred — and `canHide` is the one thing about the row that is about WHERE it is being
    drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
    "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
