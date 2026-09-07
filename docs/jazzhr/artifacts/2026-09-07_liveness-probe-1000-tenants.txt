@@ -1,0 +1,6 @@
+[1000/1000] bluerobotics: live jobs=0 status=200
+
+verdicts: {'live': 924, 'dead': 75, 'unknown': 1}
+statuses: {200: 999, 'err': 1}
+dead titles: {'JazzHR - Inactive Career Page': 66, 'JazzHR | Easy-to-Use Recruiting Software for Small Business': 9}
+(career-page verdict, probe verdict): {('live', 'live'): 923, ('dead', 'dead'): 75, ('live', 'unknown'): 1, ('dead', 'live'): 1}

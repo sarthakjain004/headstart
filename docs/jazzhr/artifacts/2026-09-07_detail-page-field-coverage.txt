@@ -1,0 +1,46 @@
+detail pages fetched: 1527
+statuses: {200: 1526, 'err': 1}
+templates: {'responsive': 1496, 'classic': 14, 'unknown': 16}
+
+JobPosting JSON-LD: 1063/1526 = 69.7%
+  responsive   1043/ 1496 =  69.7%
+  classic        10/   14 =  71.4%
+  unknown        10/   16 =  62.5%
+
+  key sets:
+      562  ['@context', '@type', 'datePosted', 'description', 'employmentType', 'experienceRequirements', 'hiringOrganization', 'jobLocation', 'title', 'uniqueJobCode', 'url', 'validThrough']
+      356  ['@context', '@type', 'baseSalary', 'datePosted', 'description', 'employmentType', 'experienceRequirements', 'hiringOrganization', 'jobLocation', 'title', 'uniqueJobCode', 'url', 'validThrough']
+      108  ['@context', '@type', 'applicantLocationRequirements', 'datePosted', 'description', 'employmentType', 'experienceRequirements', 'hiringOrganization', 'jobLocation', 'jobLocationType', 'title', 'uniqueJobCode', 'url', 'validThrough']
+       37  ['@context', '@type', 'applicantLocationRequirements', 'baseSalary', 'datePosted', 'description', 'employmentType', 'experienceRequirements', 'hiringOrganization', 'jobLocation', 'jobLocationType', 'title', 'uniqueJobCode', 'url', 'validThrough']
+
+JSON-LD field coverage (of the JobPosting pages):
+  ld_datePosted                 1063  100.0%
+  ld_validThrough               1063  100.0%
+  ld_employmentType             1063  100.0%
+  ld_experienceRequirements     1063  100.0%
+  ld_uniqueJobCode              1063  100.0%
+  ld_jobLocation                1063  100.0%
+  ld_baseSalary                  393   37.0%
+
+HTML attribute coverage (of all 200s):
+  Location                     present  1496 ( 98.0%)  non-empty  1496 ( 98.0%)
+  Type                         present  1496 ( 98.0%)  non-empty  1496 ( 98.0%)
+  Experience                   present  1496 ( 98.0%)  non-empty  1496 ( 98.0%)
+  Department                   present   493 ( 32.3%)  non-empty   493 ( 32.3%)
+  location:Location:           present    14 (  0.9%)  non-empty    14 (  0.9%)
+  employment:Type:             present    14 (  0.9%)  non-empty    14 (  0.9%)
+  experience:Min. Experience:  present    14 (  0.9%)  non-empty    14 (  0.9%)
+  department:Department:       present     3 (  0.2%)  non-empty     3 (  0.2%)
+
+description >50 chars: 1524/1526 = 99.9%
+  mean 4327 chars, max 16856
+
+employmentType values:
+    905  FULL_TIME
+     79  PART_TIME
+     48  CONTRACTOR
+     18  TEMPORARY
+     12  INTERN
+      1  VOLUNTEER
+
+Type attribute values:

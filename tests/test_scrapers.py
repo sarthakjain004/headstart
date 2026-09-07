@@ -7641,6 +7641,13 @@ _RESOLVE_ROWS = [
         "https://jobs.vodafone.com/careers",
     ),
     (
+        "jobvite",
+        "barracuda-networks-inc",
+        "Barracuda Networks Inc. Careers",
+        "Barracuda Networks Inc.",
+        "https://jobs.jobvite.com/barracuda-networks-inc/search",
+    ),
+    (
         "keka",
         "skylarkdrones",
         "Careers at Skylark Drones",
@@ -7693,7 +7700,7 @@ def test_every_wired_scraper_resolves_its_company(
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
     """Binds `company_name.PATTERNS` to the scrapers that override `board_page`.
 
-    Without this, adding a sixth ATS to one side and not the other is silent, and the test above
+    Without this, adding a seventh ATS to one side and not the other is silent, and the test above
     keeps the name "every" while covering less than every.
     """
     from headstart.company_name import _VENDOR_ALIASES, PATTERNS

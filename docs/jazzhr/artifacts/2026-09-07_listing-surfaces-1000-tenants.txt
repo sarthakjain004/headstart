@@ -1,0 +1,29 @@
+tenants probed: 1000
+verdicts: {'live': 919, 'inactive': 66, 'parked': 9, 'empty': 6}
+templates: {'responsive': 903, 'inactive': 66, 'classic': 22, 'offsite': 9}
+statuses: {200: 1000}
+embed statuses: {200: 925, '-': 75}
+
+corrected verdicts: {'live': 810, 'inactive': 66, 'empty': 115, 'parked': 9}
+
+hiring boards 810, empty 115
+jobs (embed surface) 22287
+  per hiring board  27.51
+  per live board    24.09
+  median 6.0  p90 40  max 3450
+
+/apply/ vs /apply/jobs: agree 918, disagree 7 {1: 6, -1: 1}
+    ('westdaleassetmanagement', 37, 36)
+    ('cmccfoundation', 4, 3)
+    ('aoglobelifesholaadebayo', 217, 216)
+    ('outcomes4me', 6, 5)
+    ('communitylivingalliance', 4, 3)
+    ('poweredbysearch', -1, 0)
+    ('newyorkcitybarassociation', 6, 5)
+
+listing rows: 22287
+  title        22287  100.0%
+  location     22287  100.0%
+  department    5433   24.4%
+  stamp        22287  100.0%
+  is_tech(title)    1126    5.1%

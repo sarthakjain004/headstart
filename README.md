@@ -88,7 +88,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>118,239 live rows of 176,815<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>122,971 live rows of 181,979<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -159,13 +159,13 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 118,239 live *rows* reduce to 86,063 **Scrapable Boards** a run can even
+that matters. The 122,971 live *rows* reduce to 86,063 **Scrapable Boards** a run can even
 consider (measured 2026-09-06; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 118,239 | a row, not a board — 6,619 of them are duplicate spellings |
-| − `registry.DISABLED_ATS` | −25,488 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
+| live rows in the ledger | 122,971 | a row, not a board — 6,619 of them are duplicate spellings |
+| − `registry.DISABLED_ATS` | −30,220 | `join` 25,488 (German-SMB, ~1 tech job in ~10k), `jazzhr` 4,298 and `jobvite` 434 (shipped disabled on storage cost) |
 | − `config.EXCLUDED_BOARDS` | −45 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −23 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
 | − case-variant dedupe | −6,617 | `company/External` and `company/external` are one board (ADR-0023) |
@@ -224,19 +224,22 @@ No always-on server: scheduled GitHub Actions and a free-tier Space.
 
 ## ATS coverage
 
-22 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
-`freshteam`, `greenhouse`, `join`, `keka`, `lever`, `oracle`, `personio`, `recruitee`,
-`ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`, `teamtailor`,
-`trakstar`, `workable`, `workday`, `zoho`, `zwayam`. `join` is in `registry.DISABLED_ATS` — German-SMB
-boards running ~1 tech job in ~10k, pure noise for a tech-only index — so it is skipped rather
-than scraped. Its scraper class and tests stay intact; re-enable by removing it from that set.
+24 scrapers, selected from a registry by the `ats` key: `ashby`, `darwinbox`, `eightfold`,
+`freshteam`, `greenhouse`, `jazzhr`, `jobvite`, `join`, `keka`, `lever`, `oracle`, `personio`,
+`recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
+`teamtailor`, `trakstar`, `workable`, `workday`, `zoho`, `zwayam`. Three are in
+`registry.DISABLED_ATS` and are skipped rather than scraped: `join` (German-SMB boards running ~1
+tech job in ~10k, pure noise for a tech-only index) and `jazzhr`/`jobvite` (shipped complete and
+liveness-checked, but a cold sweep costs ~10.7 GB and ~1.5-2 GB respectively against a storage
+budget that is this pipeline's binding constraint). All three keep their scraper classes, tests
+and liveness ledgers; re-enable by removing the name from that set.
 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **176,815 ledger rows**: 118,239 live, 51,470 dead, 7,106 unknown —
-rows, not boards; they collapse to 111,620 Unique Boards (CONTEXT.md §Counting Boards). Of the
-22 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
+liveness pipeline has probed **181,979 ledger rows**: 122,971 live, 51,902 dead, 7,106 unknown —
+rows, not boards; they collapse to 116,352 Unique Boards (CONTEXT.md §Counting Boards). Of the
+24 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
 nothing indexed yet, `zwayam` was added 2026-08-27 and has not run in the pipeline yet, and
 `join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
 scrape them again, so they leave by eviction rather than refresh.
