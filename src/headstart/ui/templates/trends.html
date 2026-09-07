@@ -53,7 +53,7 @@
            app.js's `trendUnit` initialiser or the group checks one button and draws another. #}
         <button data-unit="share" role="radio" aria-checked="false" tabindex="-1">Share</button>
         <button data-unit="count" role="radio" aria-checked="false" tabindex="-1">Count</button>
-        <button data-unit="index" role="radio" aria-checked="true" tabindex="0">Change</button>
+        <button data-unit="change" role="radio" aria-checked="true" tabindex="0">Change</button>
       </span>
       {# "New this week" used to grey this group out and explain itself only in a `title`. A
          control that can never be used here is replaced by the answer and its one-line why. #}
@@ -126,8 +126,9 @@
   <!-- The two caveats read as one thing — how to read this chart — so they sit in one
        bounded block rather than as loose grey prose orphaned under a full-width plot. The
        reassignment caveat is 190 words and was the tallest block on the panel at 390px, so
-       it folds to one line; the text inside is unchanged, because it is the honesty the
-       chart depends on and shortening it would cost meaning. -->
+       it collapses on a phone; above 1100px it sits beside the caption and stays open. The
+       text inside is unchanged, because it is the honesty the chart depends on and
+       shortening it would cost meaning. -->
   <div class="chart-note" id="trends-chart-note">
   <div class="note" id="trends-foot"></div>
   {# Open by default. ADR-0118's own Consequences say this caveat "gets more load-bearing, not

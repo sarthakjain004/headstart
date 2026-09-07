@@ -1238,7 +1238,10 @@ let trendData = null, trendDrill = null;
 // trendUnit must agree with the aria-checked/tabindex the Unit radiogroup ships in
 // trends.html — nothing calls setUnit before the first paint, so the markup IS the initial
 // state and a drift here would check one button and draw another unit.
-let trendMetric = 'stock', trendUnit = 'index', trendSplit = 'bands';
+// The unit token is 'change', not 'index': CONTEXT.md's "index" is the served corpus, and this
+// same file labels the reference line "whole index" in that sense. One word, two meanings, in
+// one function was a grep hazard. The UI has always called this unit Change.
+let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands';
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
@@ -1251,7 +1254,7 @@ const seriesColorAssignment = new Map();   // family/role name -> slot index, fo
 const slotMemory = new Map();              // name -> the slot it last held, kept for the session
 const slotOwner = new Map();               // slot -> the name that last held it, ditto
 let freedSlots = [];                       // slots vacated, longest-vacated first
-let recolouredNames = new Set();           // names that took over ANOTHER entity's slot this draw
+let recoloredNames = new Set();           // names that took over ANOTHER entity's slot this draw
 function seriesColor(slot){
   return getComputedStyle(document.documentElement).getPropertyValue(`--series-${slot + 1}`).trim();
 }
@@ -1267,7 +1270,7 @@ function seriesColor(slot){
 // A drill replaces all eight at once — nothing carries over, so nothing is marked there: a
 // change of subject is not a swap.
 function assignSeriesColors(names){
-  recolouredNames = new Set();
+  recoloredNames = new Set();
   for (const name of [...seriesColorAssignment.keys()]){
     if (names.includes(name)) continue;
     const slot = seriesColorAssignment.get(name);
@@ -1286,7 +1289,7 @@ function assignSeriesColors(names){
       ?? free.find(s => !slotOwner.has(s))
       ?? freedSlots.find(s => free.includes(s))
       ?? free[0];
-    if (carriedOver && slotOwner.has(slot) && slotOwner.get(slot) !== name) recolouredNames.add(name);
+    if (carriedOver && slotOwner.has(slot) && slotOwner.get(slot) !== name) recoloredNames.add(name);
     seriesColorAssignment.set(name, slot);
     slotMemory.set(name, slot);
     slotOwner.set(slot, name);
@@ -1479,27 +1482,33 @@ function levelValue(v, j){
 // zero or missing cannot be indexed at all and is drawn as a gap rather than as a spike.
 const INDEX_BASE_FLOOR = 5;   // openings; below this an index is arithmetic, not a reading
 
+// The one place that decides a series' index base, so the chart, the legend and the KPI tiles
+// cannot disagree about it. They did: the chart gated on the first measured level while
+// trendDelta gated on the mean of the first three, so [4, 20, 30, ...] was drawn as a gap and
+// labelled "not indexed" in the legend while the tile above it read "Biggest riser +233.3%".
+// Returns null when there is no usable base.
+function indexBase(s){
+  const base = s.points.map((v, j) => levelValue(v, j)).find(v => v != null);
+  return base != null && base >= INDEX_BASE_FLOOR ? base : null;
+}
+
 function seriesValues(s){
   const level = s.points.map((v, j) => levelValue(v, j));
-  if (trendUnit !== 'index') return level;
-  // The first MEASURED level, not the first truthy one. `find(v => v)` skipped a real
-  // measurement of zero and indexed off a later point, so a family sitting at 0 early was
+  if (trendUnit !== 'change') return level;
+  // The base is the first MEASURED level, not the first truthy one: `find(v => v)` skipped a
+  // real measurement of zero and indexed off a later point, so a family sitting at 0 early was
   // drawn starting at 0 rather than 100, spiked to 800, and dragged the axis to 0-800 —
-  // crushing every other line into ~24px. That is the exact pathology ADR-0118 removed.
-  const base = level.find(v => v != null);
-  // A base of zero cannot be indexed at all, and a base of two openings turns one posting
-  // into +50%. Below the floor the series is drawn as a gap and says so in the legend,
-  // rather than producing a four-digit percentage nobody should read.
-  if (base == null || base < INDEX_BASE_FLOOR) return level.map(() => null);
+  // crushing every other line into ~24px. That is the exact pathology ADR-0118 removed. A base
+  // under the floor is no base: two openings would turn one posting into +50%.
+  const base = indexBase(s);
+  if (base == null) return level.map(() => null);
   return level.map(v => (v == null ? null : v / base * 100));
 }
 
-// Whether a series can be indexed in the current window at all — the legend uses this to say
-// why a row has no line rather than leaving the reader to wonder.
+// Whether a series can be indexed in the current window — the legend uses this to say why a
+// row has no line, and the KPI tiles use it to avoid headlining one.
 function hasIndexBase(s){
-  if (trendUnit !== 'index') return true;
-  const base = s.points.map((v, j) => levelValue(v, j)).find(v => v != null);
-  return base != null && base >= INDEX_BASE_FLOOR;
+  return trendUnit !== 'change' || indexBase(s) != null;
 }
 
 // A series' movement across the window, in the displayed unit. Averages the first and last
@@ -1587,7 +1596,7 @@ function niceAxis(hi){
 // One precision for the whole axis, unlike fmtLevel's per-value choice.
 function fmtAxis(v, dec){
   if (trendUnit === 'share') return v.toFixed(dec) + '%';
-  if (trendUnit === 'index') return v.toFixed(dec);   // an index is a bare number, not a count
+  if (trendUnit === 'change') return v.toFixed(dec);   // an index is a bare number, not a count
   return v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
@@ -1595,7 +1604,7 @@ function fmtAxis(v, dec){
 // numbers, so both are given rather than making the reader guess which one they are looking at.
 function rowText(r){
   const lvl = r.value == null ? '—' : fmtLevel(r.value);
-  return trendUnit === 'index' && r.index != null ? `${lvl} · ${r.index.toFixed(0)}` : lvl;
+  return trendUnit === 'change' && r.index != null ? `${lvl} · ${r.index.toFixed(0)}` : lvl;
 }
 
 // The legend, table and tooltip always speak the level, whatever the plot is drawing.
@@ -1673,7 +1682,7 @@ function drawTrends(){
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
-    return `<li class="charted${recolouredNames.has(s.name) ? ' recoloured' : ''}${off ? ' off' : ''}${noBase ? ' nobase' : ''}"
+    return `<li class="charted${recoloredNames.has(s.name) ? ' recolored' : ''}${off ? ' off' : ''}${noBase ? ' nobase' : ''}"
       ><span class="row" data-name="${esc(s.name)}" role="button" tabindex="0"
       >${swatchHtml(c, slot)}
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
@@ -1729,14 +1738,14 @@ function drawTrends(){
   // on the first screen every visitor sees. Computed here, before the axis and before
   // end-label placement, because both have to account for it.
   const refVals = [];
-  if (trendUnit === 'index' && d.totals){
+  if (trendUnit === 'change' && d.totals){
     const rb = d.totals.find(v => v != null);
     if (rb) d.totals.forEach(t => refVals.push(t == null ? null : t / rb * 100));
   }
   const refLast = [...refVals].reverse().find(v => v != null) ?? null;
 
   let axis;
-  if (trendUnit === 'index'){
+  if (trendUnit === 'change'){
     // Indexed lines cluster around 100 and the interesting part is how far they stray, so the
     // axis frames the data rather than the origin. 100 is always inside it: it is the baseline
     // every line starts from, and an axis that cropped it would hide the comparison.
@@ -1788,7 +1797,7 @@ function drawTrends(){
   // families end above 100 largely because of it. Without this line the reader cannot tell
   // "this role is hiring more" from "we scraped more", and since Change is the default view
   // that distinction is on the first screen every visitor sees.
-  let refPath = '', pen = 'M';
+  let refPath = '', pen = 'M';   // the reference series computed above
   refVals.forEach((v, j) => {
     if (v == null){ pen = 'M'; return; }
     refPath += `${pen}${x(j).toFixed(1)},${y(v).toFixed(1)} `;
@@ -1798,7 +1807,7 @@ function drawTrends(){
   // Under Change, 100 is where every line starts, so it is a datum and not just another tick:
   // whether a line sits above or below it IS the reading. It gets a stronger rule than the
   // grid, drawn first so the series cross over it.
-  if (trendUnit === 'index'){
+  if (trendUnit === 'change'){
     const yb = y(100);
     svg += `<line class="baseline" x1="${PAD_L}" y1="${yb.toFixed(1)}"
              x2="${(W - PAD_R + 6).toFixed(1)}" y2="${yb.toFixed(1)}"/>`;
@@ -1827,9 +1836,9 @@ function drawTrends(){
     });
   }
 
-  // Drawn before the series: it is context to read them against, not one of them. Dashed
-  // because dashing should mean exactly this — a reference, not a measurement — which is also
-  // why the gridlines stay solid.
+  // Drawn before the series: context to read them against, not one of them. Dashed because
+  // dashing should mean exactly this — a reference, not a measurement — which is also why the
+  // gridlines stay solid.
   if (refPath){
     svg += `<path class="ref-line" d="${refPath.trim()}" fill="none"/>`;
     // Labelled at its own end, in the gutter beside the series labels. It used to be printed
@@ -1919,7 +1928,7 @@ function drawTrends(){
   el('trends-chart').setAttribute('aria-label',
     `Line chart. ${trendMetric === 'new' ? 'Openings first seen in the last 7 days' : 'All live openings'}`
     + ` by ${grouping}, as ${trendUnit === 'share' ? 'a share of the index'
-        : trendUnit === 'index' ? 'an index against each category’s own count at the window’s start'
+        : trendUnit === 'change' ? 'an index against each category’s own count at the window’s start'
         : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
@@ -1951,8 +1960,8 @@ function drawTrends(){
     ? 'Openings first seen in the last 7 days, re-measured every pipeline run.'
     : (trendUnit === 'share'
       ? 'Each line is a category’s share of all live openings in the index — immune to the index itself growing or shrinking.'
-      : trendUnit === 'index'
-      ? `Each line starts at 100 — its own count of live openings at ${stampLabel(d.stamps[0], true)} — so categories of very different size become comparable shapes. 120 means a fifth more openings than at the start, not 120 openings; the count itself is in the legend and the table. The index grows as coverage does, and a run that adds a board lifts every line without a job having been posted — so read a family against the others, not on its own. Move the window and every line is re-based to the new start.`
+      : trendUnit === 'change'
+      ? `Each line starts at 100 — its own count of live openings at ${stampLabel(d.stamps[0], true)}, or at its own first measurement if it has none there — so categories of very different size become comparable shapes. 120 means a fifth more openings than at the start, not 120 openings; the count itself is in the legend and the table. The index grows as coverage does, and a run that adds a board lifts every line without a job having been posted — so read a family against the dashed line, which is the whole index on the same base. Move the window and every line is re-based to the new start.`
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
@@ -1991,7 +2000,11 @@ function legendColumnHeight(host){
 // tile size. Nothing here wears a hue — direction is the arrow glyph, as in the legend.
 function buildKpis(d, charted, measured){
   const host = el('trends-kpi'); if (!host) return false;
-  const moves = charted.map(s => ({ label: s.label, dl: trendDelta(s.points) }))
+  // A tile must never headline a series the chart refuses to draw. It did: a family based at 4
+  // openings was a gap on the plot and "not indexed" in the legend, while the tile above read
+  // "Biggest riser +233.3%" — the same tile class the floor was added to stop.
+  const moves = charted.filter(hasIndexBase)
+    .map(s => ({ label: s.label, dl: trendDelta(s.points) }))
     .filter(m => m.dl != null).sort((a, b) => b.dl - a.dl);
   // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
   // metric only, so that subtraction reports the stock figure whatever the Measure says —
@@ -2261,7 +2274,7 @@ trendSeg('trends-metric', 'metric', v => {
   trendMetric = v;
   // Keep the reader's unit across the metric switch; only move them off Share, which is the
   // one unit "new" cannot express.
-  setUnit(v === 'new' && trendUnit === 'share' ? 'index' : trendUnit, v === 'new');
+  setUnit(v === 'new' && trendUnit === 'share' ? 'change' : trendUnit, v === 'new');
   loadTrends(trendDrill);
 });
 trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });

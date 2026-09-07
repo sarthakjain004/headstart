@@ -19,11 +19,13 @@
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
      against this file's own --raise dark / near-white light chart surfaces; see
      docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
-     mechanism, so these are read by SLOT, never re-ordered per chart. Re-measured against the
-     ADR-0116 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
-     light, i.e. the ground change is not what decides it. The light figure is under 3:1 and was
-     before this change too — a pre-existing gap, called out in ADR-0116 rather than inherited
-     silently. */
+     mechanism, so these are read by SLOT, never re-ordered per chart. Re-derived 2026-09-07
+     against the ADR-0116 surfaces, because the figures here had drifted from the palette they
+     describe: worst series-vs-surface contrast is 3.19 dark (--series-6 #008300 on --raise) and
+     2.17 light (--series-4 #EDA100 on white). Neither is slot 7, so ADR-0118's re-step of that
+     slot did not move either number. The light figure is under 3:1 and was before ADR-0116 too
+     — a pre-existing gap, called out there rather than inherited silently; its relief is the
+     table view. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
   --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
@@ -706,8 +708,8 @@ textarea:focus{ border-color:var(--accent); }
 .trends-legend .row.on{ background:var(--rule); }
 /* A slot that changed hands mid-session: the row fades in, so a reader who learned this colour
    as another category sees that something happened rather than silently mis-reading it. */
-.trends-legend .recoloured .row{ animation:trend-recolour .45s ease-out; }
-@keyframes trend-recolour{ from{ opacity:0; transform:translateX(-4px); } to{ opacity:1; transform:none; } }
+.trends-legend .recolored .row{ animation:trend-recolor .45s ease-out; }
+@keyframes trend-recolor{ from{ opacity:0; transform:translateX(-4px); } to{ opacity:1; transform:none; } }
 /* Hidden by the toggle: the row stays, so the way back is where the way out was. */
 .trends-legend .off .row{ opacity:.5; }
 .trends-legend .off .nm{ text-decoration:line-through; }
@@ -748,7 +750,6 @@ textarea:focus{ border-color:var(--accent); }
    alignment, both flagged by the design research doc §6. */
 .trends-grid .axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
 
-.axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
 
 /* min-width:0 because the panel is a flex column below 760px (the chart sits above the
    controls there): without it the full grid's 471 nowrap columns set this item's minimum and

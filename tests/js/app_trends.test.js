@@ -74,6 +74,7 @@ function loadApp() {
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
     + ' niceAxis: niceAxis, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
+    + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
@@ -463,20 +464,48 @@ test('a series measured at zero early is not indexed off a later point', () => {
   const zero = { name: 'zerostart', label: 'zerostart', points: [0, 0, 5, 10, 20, 40], latest: 40 };
   t.set({ ...f, series: [zero, ...f.series], stamps: [1, 2, 3, 4, 5, 6].map(String),
           totals: [100, 100, 100, 100, 100, 100] }, null);
-  t.setUnit('index', false);
+  t.setUnit('change', false);
   const vals = t.seriesValues(zero);
   assert.ok(vals.every(v => v === null),
     `a base below the floor must yield no line, got ${JSON.stringify(vals)}`);
+  // Not just "all null" — that outcome is also what the floor produces, so assert the base
+  // SELECTION too. The bug picked 5 (the first truthy value) and plotted point 0 at 0/5*100.
+  const high = { name: 'high', label: 'high', points: [0, 0, 50, 100], latest: 100 };
+  t.set({ ...f, series: [high, ...f.series], stamps: ['1', '2', '3', '4'],
+          totals: [100, 100, 100, 100] }, null);
+  assert.deepEqual(t.seriesValues(high), [null, null, null, null],
+    'a measured zero is the base, so this series has none — it must not index off the 50');
 });
 
-test('a healthy series still indexes to 100 at its first measured point', () => {
+test('a tile never headlines a series the chart refuses to draw', () => {
+  const { t, nodes } = loadApp();
+  const f = fixture();
+  // Base 4 is under the floor, but the mean of the first three (4+20+30)/3 = 18 is over it —
+  // so the chart drew a gap while the tile read "Biggest riser +233.3%". Two gates, two
+  // different quantities.
+  const low = { name: 'low', label: 'low', points: [4, 20, 30, 40], latest: 40 };
+  t.set({ ...f, series: [low, ...f.series], stamps: ['1', '2', '3', '4'],
+          totals: [100, 100, 100, 100] }, null);
+  t.setUnit('change', false);
+  assert.equal(t.hasIndexBase(low), false);
+  t.draw();
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('>low<'),
+    'a series with no index base must not appear in a KPI tile');
+});
+
+test('a healthy series indexes its RAW COUNT to 100, not its share', () => {
   const { t } = loadApp();
   const f = fixture();
   const ok = { name: 'ok', label: 'ok', points: [8, 9, 12, 16], latest: 16 };
+  // `totals` MUST vary. With a flat denominator, index-of-count and index-of-share are the
+  // same numbers, so the test cannot fail if share-indexing came back — and indexing the count
+  // was an explicit product decision (ADR-0118), which makes it exactly the thing to pin.
+  // Doubling the denominator halves every share: index-of-share would be [100, 75, 75, 67].
   t.set({ ...f, series: [ok, ...f.series], stamps: ['1', '2', '3', '4'],
-          totals: [100, 100, 100, 100] }, null);
-  t.setUnit('index', false);
-  assert.deepEqual(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200]);
+          totals: [100, 150, 200, 300] }, null);
+  t.setUnit('change', false);
+  assert.deepEqual(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200],
+    'the base is the count, so a growing denominator must not move the line');
 });
 
 test('a delta carries its sign in the number, not only in the arrow', () => {

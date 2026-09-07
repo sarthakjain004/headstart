@@ -99,11 +99,17 @@ are real. Nothing about what is *counted* changes — only what is drawn.
 
 The empty band is gone and the six smaller families become readable, which is the point.
 
-Indexing is sensitive to its base. A family whose first measurement is unusually low or high will
-show an exaggerated line for the whole window, and a family with no measurement at the first stamp
-has no base at all — its line starts from its own first measured point, indexed there, which is
-correct but means two lines can begin at 100 in different places. The window control makes this
-adjustable rather than fixed, and the caveat block says so.
+Indexing is sensitive to its base, and the base is a family's first **measured** level in the
+window — not its first non-zero one. A family with no measurement at the first stamp therefore
+starts from its own first measured point, indexed there, so two lines can begin at 100 at
+different x positions. The window control makes the base adjustable rather than fixed.
+
+**A base under five openings is not a base.** Below that floor a family is drawn as a gap and its
+legend row reads "not indexed", rather than turning one posting into +50% or, at a base of zero,
+an unbounded spike that drags the axis with it. The same floor gates the KPI tiles, so a tile can
+never headline a family the chart is refusing to draw — the two ran on different quantities at
+first (the first measured level against the mean of the first three), and a family based at four
+openings was simultaneously a gap on the plot and "Biggest riser +233.3%" above it.
 
 Because the base is a count, **the chart inherits the index's own growth** — the confound the Share
 unit exists to remove. This is the deliberate trade above, not an oversight, but it means a rising
