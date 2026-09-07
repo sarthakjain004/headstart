@@ -1,0 +1,16 @@
+HTTP/2 302 
+date: Mon, 07 Sep 2026 14:15:01 GMT
+location: http://search.jobvite.com?invalid=1
+server: cloudflare
+access-control-allow-origin: https://app.jobvite.com
+x-jobvite-proxy: true
+cf-cache-status: DYNAMIC
+set-cookie: AWSALBAPP-0=_remove_; Expires=Mon, 14 Sep 2026 14:15:01 GMT; Path=/
+set-cookie: AWSALBAPP-1=_remove_; Expires=Mon, 14 Sep 2026 14:15:01 GMT; Path=/
+set-cookie: AWSALBAPP-2=_remove_; Expires=Mon, 14 Sep 2026 14:15:01 GMT; Path=/
+set-cookie: AWSALBAPP-3=_remove_; Expires=Mon, 14 Sep 2026 14:15:01 GMT; Path=/
+set-cookie: __cf_bm=h6EbwUp0I2irLFN6.mhmztbmPGiy1IHkUe4.Mu8_aZU-1788790501.371261-1.0.1.1-hUaYUF7e.WyKRwnX2bYQFCrSl5h0lYo0y.UuVWaCaLXBb4VVOoOhUxWI0N0pDIUxNVmr02aQYjiJdYFZHkg0jigSbWe3EswCWWky22Ib.RVRgXpbHd3TqJZVyBp9p7mo; HttpOnly; SameSite=None; Secure; Path=/; Domain=jobvite.com; Expires=Mon, 07 Sep 2026 14:45:01 GMT
+cf-ray: a37652b98b807ff5-MAA
+
+--- following the chain ---
+final=https://www.jobvite.com/support/job-seeker-support/?invalid=1 code=200 redirects=4 bytes=174671

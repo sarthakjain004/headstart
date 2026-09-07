@@ -88,7 +88,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>119,748 live rows of 184,452<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>125,011 live rows of 188,302<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -159,28 +159,28 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 119,748 live *rows* reduce to 87,646 **Scrapable Boards** a run can even
+that matters. The 125,011 live *rows* reduce to 88,103 **Scrapable Boards** a run can even
 consider (measured 2026-09-06; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 119,748 | a row, not a board — 6,617 of them are duplicate spellings |
-| − `registry.DISABLED_ATS` | −25,416 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
+| live rows in the ledger | 125,011 | a row, not a board — 6,619 of them are duplicate spellings |
+| − `registry.DISABLED_ATS` | −30,220 | **all of it `join`** — German-SMB boards at ~1 tech job in ~10k |
 | − `config.EXCLUDED_BOARDS` | −45 | vendor test/sandbox boards, confirmed by reading their postings |
 | − alias ledger | −23 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
-| − case-variant dedupe | −6,615 | `company/External` and `company/external` are one board (ADR-0023) |
+| − case-variant dedupe | −6,617 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −3 | real boards withheld for now — Accenture's and EY's outrun any shard budget, and SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs |
-| = **Scrapable Board** | **87,646** | |
+| = **Scrapable Board** | **88,103** | |
 
 That order matters: excluding before deduping reads −45 and −6,615, deduping first reads −43 and
-−6,617, because two excluded boards were themselves duplicates. Both land on 87,646.
+−6,617, because two excluded boards were themselves duplicates. Both land on 88,103.
 
 The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
 serving one board share no key to collapse on, so it takes a live probe to find them
 (`scripts/validate/dedupe_boards.py`, ADR-0111).
 
-Of those, **55,393 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
-the 32,253 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
+Of those, **55,807 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+the 32,296 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
@@ -234,8 +234,8 @@ than scraped. Its scraper class and tests stay intact; re-enable by removing it 
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **184,452 ledger rows**: 119,748 live, 57,224 dead, 7,480 unknown —
-rows, not boards; they collapse to 113,131 Unique Boards (CONTEXT.md §Counting Boards). Of the
+liveness pipeline has probed **188,302 ledger rows**: 125,011 live, 56,185 dead, 7,106 unknown —
+rows, not boards; they collapse to 118,392 Unique Boards (CONTEXT.md §Counting Boards). Of the
 23 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
 nothing indexed yet, `zwayam` (2026-08-27) and `icims` (2026-09-08) were added since the last
 pipeline run and have nothing indexed yet, and

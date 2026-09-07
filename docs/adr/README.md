@@ -122,3 +122,4 @@ supersedes it and note the supersession in both.
 | [0116](0116-a-quiet-palette-and-a-scanning-layout.md) | A quiet palette, and a layout built for scanning | 2026-09-07 |
 | [0117](0117-the-salary-bracket-compares-across-currencies.md) | The salary bracket compares across currencies, at a dated rate | 2026-09-07 |
 | [0118](0118-a-fact-can-wear-a-derivations-column.md) | A fact can wear a derivation's column — but then it isn't a fact anymore | 2026-09-07 |
+| [0119](0119-the-trends-chart-plots-change-not-level.md) | The trends chart plots change, not level | 2026-09-07 |

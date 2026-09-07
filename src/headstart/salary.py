@@ -380,6 +380,16 @@ _FIELD_PARSERS = {
     "personio": _field_range_currency_interval,
     "rippling": _field_range_currency_interval,
     "smartrecruiters": _field_range_currency_interval,
+    # jazzhr: "20-25 USD HOUR" / "110000-140000 USD YEAR" / "33.78 CAD HOUR" (assembled by
+    # jazzhr.py's own `_salary_field()` from the detail page's schema.org `baseSalary`
+    # MonetaryAmount — currency + unitText + minValue/maxValue, structured, never free text).
+    # Registered rather than left on `_field_generic` because the period is a BARE unit word:
+    # `_field_generic` uses the phrase-only `_period_multiplier`, so it read every hourly figure
+    # as annual and the plausibility floor then correctly rejected it. Measured on the 393 real
+    # baseSalary values in the 2026-09-07 sample: 198 parse via `_field_generic`, 368 via this
+    # one; the 25 that still decline are the bound rejecting a tenant's own data-entry error
+    # (an hourly rate typed under `unitText: YEAR`, e.g. "35-60 USD YEAR").
+    "jazzhr": _field_range_currency_interval,
     "keka": _field_keka,
     "darwinbox": _field_darwinbox,
 }
