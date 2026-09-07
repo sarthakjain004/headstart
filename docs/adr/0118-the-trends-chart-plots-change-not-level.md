@@ -55,15 +55,35 @@ that has grown a fifth reaches 120; one that has fallen a fifth reaches 80. The 
 This is the standard remedy for several series of different magnitude sharing one axis, and it is
 what the dataviz skill prescribes over the alternative that tempts everyone — a second y-scale,
 which invents a correlation that is not in the data. Here it does three things at once: it fills
-the plot, it puts all nine families on a footing where their shapes are directly comparable, and it
+the plot, it puts every family on a footing where their shapes are directly comparable, and it
 makes the chart answer the heading above it.
 
+### It indexes the raw count, not the share
+
+The base is a family's count of live openings at the window's first measurement. The alternative —
+indexing the *share* — was considered and rejected, and the choice matters enough to record, because
+the two answer different questions:
+
+- **Index of count** answers *are there more of these jobs than there were.* That is the literal
+  reading of "which tech roles are growing", and it is the question a person searching for work is
+  actually asking.
+- **Index of share** answers *did this family gain ground on the others.* It is immune to the index
+  itself growing, which is a real advantage, but it is a relative measure wearing the clothes of an
+  absolute one.
+
+**The cost is real and is not hidden.** Our index grows as scraping coverage grows: a run that adds
+a board lifts every family's count at once, without a single job having been posted. On a count
+index that shows up as every line stepping up together. The caption says so in as many words, and
+says what to do about it — read a family against the others rather than on its own. The Share unit
+remains one click away for the reader who wants the confound removed rather than disclosed.
+
 **What indexing costs, and where the cost is paid.** An indexed line cannot tell you that
-software-engineering is a fifth of the index while java-development is a fortieth — the two now
-start in the same place. That magnitude does not disappear; it moves to the surfaces that were
-already carrying it and carry it better as text: the legend's share column, the table view, and the
-tooltip. A chart that shows nine shapes and a legend that shows nine levels between them say
-everything the old single chart was trying to say in one channel and failing.
+software-engineering holds tens of thousands of openings while java-development holds a few
+thousand — the two now start in the same place. That magnitude does not disappear; it moves to the
+surfaces that were already carrying it and carry it better as text: the legend's value column, the
+table view, and the tooltip, which under Change reads level and index together. Because both the
+plot and the legend delta now stand on counts, the sign and rough size of a line's movement and the
+number printed beside its name agree, which they would not if the two used different bases.
 
 **Share and Count remain.** Indexing is a third unit alongside them, not a replacement. A reader who
 wants levels selects them and gets the old axis, empty band and all — which is the honest chart for
@@ -84,6 +104,12 @@ show an exaggerated line for the whole window, and a family with no measurement 
 has no base at all — its line starts from its own first measured point, indexed there, which is
 correct but means two lines can begin at 100 in different places. The window control makes this
 adjustable rather than fixed, and the caveat block says so.
+
+Because the base is a count, **the chart inherits the index's own growth** — the confound the Share
+unit exists to remove. This is the deliberate trade above, not an oversight, but it means a rising
+line is never on its own evidence that a role is hiring more: it is evidence that its count rose,
+which a coverage change can also produce. Anyone quoting a number off this chart should say which
+unit it came from.
 
 **The ADR-0057 caveat gets more load-bearing, not less.** A family's line moving is still not the
 same as jobs opening or closing: a job can move between families when its text is filled in later,

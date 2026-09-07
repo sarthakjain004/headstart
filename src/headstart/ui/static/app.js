@@ -1442,7 +1442,7 @@ function setTrendsBusy(on){
 // plot, magnitudes in the text beside it.
 function levelValue(v, j){
   if (v == null) return null;
-  if (trendUnit === 'count') return v;
+  if (trendUnit !== 'share') return v;      // Count and Change both stand on raw openings
   const t = trendData.totals[j];
   return t ? v / t * 100 : null;
 }
@@ -1450,6 +1450,13 @@ function levelValue(v, j){
 // What the PLOT draws for a series. Under Share and Count that is the level. Under Change each
 // series is divided by its own first measured level and multiplied by 100, so every line starts
 // together at 100 and traces its own movement (ADR-0118).
+//
+// Change indexes the raw COUNT, not the share. That is a deliberate choice with a cost: the
+// index grows as scraping coverage does, so a run that adds a board lifts every line at once
+// without a single job having been posted. Indexing the share would cancel that, at the price
+// of answering a different question — "did this family gain ground on the others" rather than
+// "are there more of these jobs than there were". The second is the question the panel's
+// heading asks, so it is the one the chart answers, and the caption carries the caveat.
 //
 // Indexing is per-series, which is why this takes a series and not a point: the same raw number
 // means a different plotted value depending on where its family started. A family whose base is
@@ -1494,7 +1501,7 @@ function stampLabel(ts, terse){
 // out of the name beside it — every legend label ellipsized the moment Count was selected. The
 // tooltip and the table still carry the exact figure, so nothing is lost, only shortened.
 function fmtCompact(v){
-  if (trendUnit !== 'count') return fmtLevel(v);   // Change reports the level too
+  if (trendUnit === 'share') return fmtLevel(v);
   const n = Math.round(v);
   if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
   if (n >= 1e4) return Math.round(n / 1e3) + 'k';
@@ -1551,7 +1558,7 @@ function rowText(r){
 
 // The legend, table and tooltip always speak the level, whatever the plot is drawing.
 function fmtLevel(v){
-  if (trendUnit === 'count') return Math.round(v).toLocaleString();
+  if (trendUnit !== 'share') return Math.round(v).toLocaleString();
   return v >= 10 ? v.toFixed(0) + '%' : v.toFixed(1) + '%';
 }
 
@@ -1818,7 +1825,7 @@ function drawTrends(){
   el('trends-chart').setAttribute('aria-label',
     `Line chart. ${trendMetric === 'new' ? 'Openings first seen in the last 7 days' : 'All live openings'}`
     + ` by ${grouping}, as ${trendUnit === 'share' ? 'a share of the index'
-        : trendUnit === 'index' ? 'an index against each category’s own share at the window’s start'
+        : trendUnit === 'index' ? 'an index against each category’s own count at the window’s start'
         : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
@@ -1851,7 +1858,7 @@ function drawTrends(){
     : (trendUnit === 'share'
       ? 'Each line is a category’s share of all live openings in the index — immune to the index itself growing or shrinking.'
       : trendUnit === 'index'
-      ? `Each line starts at 100 — its own share at ${stampLabel(d.stamps[0], true)} — so categories of very different size become comparable shapes. 120 means the category holds a fifth more of the index than it did then, not that it has 120 openings; the share it actually holds is in the legend and the table. Move the window and every line is re-based to the new start.`
+      ? `Each line starts at 100 — its own count of live openings at ${stampLabel(d.stamps[0], true)} — so categories of very different size become comparable shapes. 120 means a fifth more openings than at the start, not 120 openings; the count itself is in the legend and the table. The index grows as coverage does, and a run that adds a board lifts every line without a job having been posted — so read a family against the others, not on its own. Move the window and every line is re-based to the new start.`
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
