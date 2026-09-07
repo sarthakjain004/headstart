@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 # requests: headstart.ingest.state_fetch's ranged/whole-file downloader (ADR-0085). It used to
 # arrive transitively via huggingface_hub, which moved to httpx in 1.0 — so the pipeline installed
 # no `requests` at all and every state fetch died on ModuleNotFoundError. Declared, not assumed.
-dependencies = ["curl_cffi>=0.7", "requests"]
+dependencies = ["curl_cffi>=0.7", "requests>=2.32"]
 
 [project.optional-dependencies]
 # ruff is version-pinned: its formatter output can shift between releases, so an

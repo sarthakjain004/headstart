@@ -53,6 +53,35 @@ per-company web research). Full research, endpoint probes, and provenance:
   (Ericsson-class, DWR-RPC) remain the known gap** — their sitemap isn't RMK-shaped, so liveness
   marks them `dead` and they're skipped, never mis-scraped.
 
+- **iCIMS** ✅ DONE (2026-09-08) — `scrapers/icims.py`, wired through liveness (2,040 live /
+  1,583 hiring boards in `data/validate/liveness/icims.csv`, 143,964 jobs reachable). Slug = the
+  board host. **One surface only: `/sitemap.xml`.** The paginated `/jobs/search` HTML is
+  deliberately not implemented — on 380 boards `robots.txt` predicted sitemap availability
+  perfectly, and the boards returning 403 were *exactly* the boards serving `Disallow: /`, so the
+  HTML walk would only ever crawl tenants that opted out. That also deletes pagination, per-tenant
+  page size and the unreliable "Page N of M" string. Three measured traps are wired into the code
+  rather than documented. **`datePosted` is fabricated on 22% of boards** and real on the rest —
+  measured over 54 random hiring boards, two fetches 3.5s apart: 12 move by the elapsed time
+  (`now - 2y`), 42 state a stable date. The two split cleanly on the millisecond field (42/42 real
+  end `.000Z`, 0/12 fabricated do), so `posted_at` prefers the board's own date via `_stated_date`
+  and falls back to the sitemap's `<lastmod>` only where it fabricates. Do **not** revert to
+  lastmod-only: that was the first version of this scraper, generalised from a single board, and
+  it served dates up to 2,437 days late. (`validThrough` is fabricated everywhere and stays out of
+  `_LD_KEEP`.) `baseSalary` puts min/max **directly on the node** (a spec-correct parser reads
+  every one as null) and never states `unitText`, so the period is inferred from magnitude and
+  emitted as the `hourly`/`yearly` spelling `salary.extract()` can actually read — and a node with
+  a **ceiling but no floor is refused**, because no spelling makes `extract` read a lone figure as
+  a maximum and emitting one serves a job's ceiling as its floor. A detail fetch missing
+  `in_iframe=1` returns an 80 KB branded wrapper with **no JSON-LD at all** — a silent empty, not
+  an error. No JSON API exists (a
+  browser HAR shows 6 XHR calls, all third-party). No rate limit found (conc 16 / 15.2 req/s, flat
+  latency, zero non-200s) and UA-agnostic. Discovery is wired into both `cc_miner.py` and
+  `wayback_feeder.py`; the URL-format census and the discriminator (every one of the
+  ledger's 2,040 live rows has a hyphen in its tenant label, and the vendor's own ~120
+  infrastructure hosts are mostly single words) are in `docs/icims/`. The ledger holds tenant
+  hosts only: `careers.icims.com`, `www.icims.com` and the `*.i.icims.com` archival mirrors are
+  filtered out by that same rule, all of them `jobs=0`.
+
 **Highest ROI first — fingerprinter gaps, ZERO new scraper** (already-supported ATSes whose board
 sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` mining — 79% of the
 316 were opaque to no-JS curl, so these are a lower bound):
@@ -86,7 +115,7 @@ sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` 
   `docs/discovery/shared-cert-tenant-rosters.md`.
 - **Phenom** — M, but poor discoverability (no enumerable pattern, curated seed needed). Mastercard/Adobe India GCCs. After Eightfold.
 - **PeopleStrong** (201 hosts, still no scraper — Angular SPA XHR), **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, S, low yield) — opportunistic.
-- Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal. **iCIMS** = opportunistic-only (alive but HTML/JSP-only, non-enumerable, India tenants are GCC boards not IT majors).
+- Verified **dead-ends** (do not build): **Oracle Taleo** (declining, ~1 live India tenant — GCCs migrated to Oracle Cloud HCM which we support), greythr/qandle/beehive (login-only HRMS), HirePro, iSmartRecruit, Recruit CRM/Ceipal.
 
 Single-company unlocks (web research; a manual slug, not worth a scraper each):
 - **Trakstar Hire** (`{slug}.hire.trakstar.com`) — ShareChat, MediBuddy, Exotel, Drip Capital (4).

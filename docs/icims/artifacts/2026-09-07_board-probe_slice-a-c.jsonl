@@ -1,0 +1,837 @@
+{"host": "1stheritage-attainfinance.icims.com", "status": "EMPTY"}
+{"host": "1stheritage-curo.icims.com", "status": "EMPTY"}
+{"host": "1stheritage-smcredit.icims.com", "status": "EMPTY"}
+{"host": "7bar-careers-gmr.icims.com", "pages": 11, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "8thavecajobs-postholdings.icims.com", "status": "NOT_BOARD"}
+{"host": "8thavehrjobs-postholdings.icims.com", "status": "NOT_BOARD"}
+{"host": "abudhabi-nyu.icims.com", "pages": 3, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "academic-rockefelleruniversity.icims.com", "status": "NOT_BOARD"}
+{"host": "academiccareers-udst.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "access2care-careers-gmr.icims.com", "pages": 8, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "access2carecareers-amr.icims.com", "pages": 8, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "accesssolutions-skyclimber.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "aces-everwatchsolutions.icims.com", "status": "EMPTY"}
+{"host": "achievers-blackhawknetwork.icims.com", "status": "EMPTY"}
+{"host": "acip-generalrv.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "additional-janusintl.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "admcareers-redcoats.icims.com", "pages": 3, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "administrative-usta.icims.com", "status": "EMPTY"}
+{"host": "administrators-ocps.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "adminjobs-sutterhealth.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "admiralsecuritycareers-redcoats.icims.com", "pages": 8, "n_locopts": 24, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "adprocessequipment-gray.icims.com", "status": "EMPTY"}
+{"host": "advancedmanufacturing-careers.icims.com", "status": "EMPTY"}
+{"host": "advantagecarecareers-ahrc.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "advcareers-mastec.icims.com", "status": "NOT_BOARD"}
+{"host": "advocatesinc.icims.com", "status": "NOT_BOARD"}
+{"host": "afitstaffing-eimagine.icims.com", "status": "EMPTY"}
+{"host": "afscareers-epikafleet.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "aidatlanta-aidshealth.icims.com", "status": "EMPTY"}
+{"host": "aiplogistics-trimac.icims.com", "status": "EMPTY"}
+{"host": "aircom-airmethods.icims.com", "status": "EMPTY"}
+{"host": "aircomfort-solutionstulsa.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "airevac-careers-gmr.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "airevac-lifeteam-amgh.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "airmed-international-amgh.icims.com", "status": "NOT_BOARD"}
+{"host": "airmedcare-network-amgh.icims.com", "status": "NOT_BOARD"}
+{"host": "airmedcarenetwork-careers-gmr.icims.com", "status": "NOT_BOARD"}
+{"host": "airmedinternational-careers-gmr.icims.com", "status": "NOT_BOARD"}
+{"host": "airportcenterparking-tlrgc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "alabamaexternal-mobisalabamallc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "alexleecareers-alexlee.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "allcareers-nikkiso.icims.com", "pages": 3, "n_locopts": 32, "india_opts": [["13228-13240-Vadodara", "GJ Vadodara IN"], ["13228-13248-Pune", "MH Pune IN"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "allcareers-pennrose.icims.com", "pages": 3, "n_locopts": 28, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "allcareers-quanta.icims.com", "pages": 70, "n_locopts": 218, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "allcareers-spokanetribecasino.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": false, "status": "OK"}
+{"host": "alleganynursingandrehab-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "alliedhealth-beaumonthospital.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "alljobs-amica.icims.com", "pages": 6, "n_locopts": 29, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "alljobs-learnbehavioral.icims.com", "pages": 29, "n_locopts": 340, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "alljobs-therapypartnersolutions.icims.com", "pages": 4, "n_locopts": 83, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "allstar-puzzlehr.icims.com", "status": "EMPTY"}
+{"host": "alphapaving-paveamerica.icims.com", "status": "EMPTY"}
+{"host": "alternacs-paychex.icims.com", "status": "EMPTY"}
+{"host": "alurecareers-renovo.icims.com", "status": "EMPTY"}
+{"host": "amazinglashstudio-wellbizbrands.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "amecareers-appliedmedical.icims.com", "status": "NOT_BOARD"}
+{"host": "amecarrieres-appliedmedical.icims.com", "status": "NOT_BOARD"}
+{"host": "americanbancsharesmortgage-puzzlehr.icims.com", "status": "EMPTY"}
+{"host": "americas-cookmedical.icims.com", "pages": 5, "n_locopts": 32, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "amp-uscareers.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "amr-careers-gmr.icims.com", "pages": 9, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "amtcareers-endeavorair.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": false, "status": "OK"}
+{"host": "analystcareers-analysisgroup.icims.com", "pages": 1, "n_locopts": 14, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "anzcareers-delawarenorth.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "ap-retail-footlocker.icims.com", "status": "NOT_BOARD"}
+{"host": "apac-blackhawknetwork.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [["13228-13245-Bengaluru", "IN-KA-Bengaluru"], ["13228-13246-Kozhikode (Calicut)", "IN-KL-Kozhikode (Calicut)"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apac-careers-insmed.icims.com", "status": "EMPTY"}
+{"host": "apac-cookmedical.icims.com", "pages": 1, "n_locopts": 9, "india_opts": [["13228--Delhi", "India-Delhi"], ["13228--Hyderabad", "India-Hyderabad"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apac-external-aitworldwide.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [["13228--Hyderabad", "Hyderabad IN"], ["13228-13248-Mumbai", "MH Mumbai IN"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apac-jbtc.icims.com", "status": "NOT_BOARD"}
+{"host": "apaccareers-appliedmedical.icims.com", "status": "NOT_BOARD"}
+{"host": "apaccareers-avispl.icims.com", "status": "NOT_BOARD"}
+{"host": "apaccareers-cecoenviro.icims.com", "status": "EMPTY"}
+{"host": "apaccareers-trinseo.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apacjobs-mayerbrown.icims.com", "status": "EMPTY"}
+{"host": "apcjobs-sutterhealth.icims.com", "pages": 2, "n_locopts": 31, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apdintake-austintexas.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "app-baycaremedicalgroup.icims.com", "pages": 2, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "app-career-curanahealth.icims.com", "pages": 4, "n_locopts": 203, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "applicants-educatorsally.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "application-chesterton.icims.com", "status": "EMPTY"}
+{"host": "application-oneblood.icims.com", "pages": 5, "n_locopts": 26, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apply-arco.icims.com", "status": "HTTP_503"}
+{"host": "apply-fastenterprises.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apply-karsun-llc.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apply-servicon.icims.com", "pages": 5, "n_locopts": 34, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "apply-xanterra.icims.com", "status": "NOT_BOARD"}
+{"host": "applycareers-empowerpharmacy.icims.com", "status": "NOT_BOARD"}
+{"host": "applyjobs-octa.icims.com", "status": "NOT_BOARD"}
+{"host": "applyocbus-octa.icims.com", "status": "NOT_BOARD"}
+{"host": "applyuniversity-octa.icims.com", "status": "NOT_BOARD"}
+{"host": "arbor-metals.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "arc-2wglobal.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "arc-onesolutions.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "arena-spa.icims.com", "status": "EMPTY"}
+{"host": "arh.icims.com", "status": "NOT_BOARD"}
+{"host": "aristacare-kphhealthcareservices.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "arma-gdit.icims.com", "status": "NOT_BOARD"}
+{"host": "artemisarc-aptiveresources.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "as-canada-careersfrench.icims.com", "status": "EMPTY"}
+{"host": "ascensionjobs1-ascension.icims.com", "pages": 63, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "asia-associatecareers-lw.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "asiacareers-celanese.icims.com", "pages": 2, "n_locopts": 16, "india_opts": [["13228--Hyderabad", "IN-Hyderabad"], ["13228-13238-Silvassa", "IN-DN-Silvassa"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "asl-departmentdirectorwagedisplay.icims.com", "pages": 3, "n_locopts": 37, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "asl-frontlinewagedisplay.icims.com", "pages": 32, "n_locopts": 99, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "asphaltsealandrepair-paveamerica.icims.com", "status": "EMPTY"}
+{"host": "aspire-skywest.icims.com", "status": "NOT_BOARD"}
+{"host": "associatecareers-analysisgroup.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "associatecareers-lw.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "associates-brightviewseniorliving.icims.com", "pages": 7, "n_locopts": 53, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "astrioncareers-astrion.icims.com", "status": "NOT_BOARD"}
+{"host": "aswocareers-wilson.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "atcareers-jaggaer.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "ate-crashchampions.icims.com", "pages": 1, "n_locopts": 41, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "atlanticdetroitdieselallison-kirbycorp.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "atriahomecare-atria.icims.com", "status": "NOT_BOARD"}
+{"host": "atriaretirementcanada-atria.icims.com", "status": "NOT_BOARD"}
+{"host": "attorney-ebglaw.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "aucareers-wd40company.icims.com", "status": "EMPTY"}
+{"host": "aujscareers-aus.icims.com", "pages": 3, "n_locopts": 39, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "aureuscareers-medicalsolutions.icims.com", "status": "HTTP_403"}
+{"host": "austincareers-tistatech.icims.com", "status": "NOT_BOARD"}
+{"host": "australia-aon.icims.com", "status": "NOT_BOARD"}
+{"host": "australia-geosyntec.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "australia-kleinfelder.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "austria-careers-aitworldwide.icims.com", "status": "NOT_BOARD"}
+{"host": "autismspectrum-learnbehavioral.icims.com", "pages": 8, "n_locopts": 97, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "auxiliary-fisd.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "avamere.icims.com", "status": "NOT_BOARD"}
+{"host": "baca-learnbehavioral.icims.com", "pages": 1, "n_locopts": 16, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "banffjaspercollection-pursuit.icims.com", "status": "EMPTY"}
+{"host": "bbrauncareers-bbraun.icims.com", "status": "EMPTY"}
+{"host": "bbrauninternal-bbraun.icims.com", "status": "EMPTY"}
+{"host": "beaumontcareers-beaumonthospital.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "behavioralconcepts-learnbehavioral.icims.com", "pages": 4, "n_locopts": 47, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "beitzelcareers-beitzelpillar.icims.com", "pages": 2, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "belgium-careers-aitworldwide.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "belltowerskillednursing-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "beluxenglish-equans.icims.com", "status": "NOT_BOARD"}
+{"host": "beluxfrench-equans.icims.com", "status": "NOT_BOARD"}
+{"host": "bennettsvillehrc-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "berlinnursingandrehab-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "bi-incorporated-geogroup.icims.com", "pages": 2, "n_locopts": 44, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "bicon-bi-conservices.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "bigbolt-puzzlehr.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "birdsongcareers-demant.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "blackjack-paveamerica.icims.com", "status": "EMPTY"}
+{"host": "blades-goauto.icims.com", "status": "EMPTY"}
+{"host": "bluecrane-runway.icims.com", "status": "EMPTY"}
+{"host": "bluecurbllc-paveamerica.icims.com", "status": "EMPTY"}
+{"host": "bncollege.icims.com", "status": "NOT_BOARD"}
+{"host": "bned.icims.com", "status": "NOT_BOARD"}
+{"host": "bonobos-guideshop.icims.com", "pages": 4, "n_locopts": 25, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "bowheadcareers-uicalaska.icims.com", "pages": 6, "n_locopts": 95, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "brafasco-externalenglish-hdsupplyca.icims.com", "status": "EMPTY"}
+{"host": "braintrust-everwatchsolutions.icims.com", "status": "EMPTY"}
+{"host": "brazilcareers-cabot.icims.com", "status": "NOT_BOARD"}
+{"host": "bremondnursing-careers-fundltc.icims.com", "status": "EMPTY"}
+{"host": "brident-westerndental.icims.com", "status": "NOT_BOARD"}
+{"host": "bridgecrestsuites-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "brines-refrigeration.icims.com", "status": "EMPTY"}
+{"host": "brookvillecareers-ahrc.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "brotherspaving-paveamerica.icims.com", "status": "EMPTY"}
+{"host": "brownfieldcare-careers-fundltc.icims.com", "status": "EMPTY"}
+{"host": "brpcareers-se.icims.com", "status": "NOT_BOARD"}
+{"host": "bughouse-rollins.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "bulkpluslogistics-trimac.icims.com", "status": "EMPTY"}
+{"host": "bulkpluslogisticsf-trimac.icims.com", "status": "NOT_BOARD"}
+{"host": "c1-india.icims.com", "status": "EMPTY"}
+{"host": "ca-careers-fbmsales.icims.com", "pages": 1, "n_locopts": 10, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "ca-corix.icims.com", "pages": 1, "n_locopts": 15, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "ca-eng-lifescan.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "ca-fr-lifescan.icims.com", "status": "NOT_BOARD"}
+{"host": "ca-iconixww.icims.com", "pages": 1, "n_locopts": 15, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "ca-readingmathcorps.icims.com", "status": "NOT_BOARD"}
+{"host": "ca-retail-footlocker.icims.com", "status": "NOT_BOARD"}
+{"host": "cabincrew-riyadhair.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "cacareers-gdms.icims.com", "status": "EMPTY"}
+{"host": "cacareers-groupedynamite.icims.com", "status": "NOT_BOARD"}
+{"host": "cacareers-lennox.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "cacareersfrench-lafarge-na.icims.com", "status": "NOT_BOARD"}
+{"host": "cacoop-gdms.icims.com", "status": "EMPTY"}
+{"host": "cae-erac.icims.com", "pages": 4, "n_locopts": 11, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "caemployees-napanasonic.icims.com", "status": "NOT_BOARD"}
+{"host": "caenglish-edf-re.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "caf-erac.icims.com", "pages": 2, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "cafrench-edf-re.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "caicareers-mastec.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "calhounconvalescentcenter-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "californiaoregon-harleymarine.icims.com", "pages": 3, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "campus-corgan.icims.com", "status": "EMPTY"}
+{"host": "campus-eidebailly.icims.com", "status": "NOT_BOARD"}
+{"host": "campus-firstcitizens.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "campus-hcsgcorp.icims.com", "pages": 4, "n_locopts": 37, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "campus-libertymutual.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "campus-us-corgan.icims.com", "pages": 1, "n_locopts": 16, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "campuscanada-amd.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "campuscareers-orrick.icims.com", "status": "NOT_BOARD"}
+{"host": "canada-appliedsystems.icims.com", "pages": 1, "n_locopts": 10, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canada-canoncareers.icims.com", "status": "NOT_BOARD"}
+{"host": "canada-careers-buspatrol.icims.com", "status": "NOT_BOARD"}
+{"host": "canada-careers-carollo.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canada-careers-ryder.icims.com", "status": "EMPTY"}
+{"host": "canada-english-avisonyoung.icims.com", "pages": 1, "n_locopts": 189, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canada-envoyair.icims.com", "status": "EMPTY"}
+{"host": "canada-gatx.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "canada-geosyntec.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canada-mohawk.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canada-omnihotels.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canada-pursuitcollection.icims.com", "status": "EMPTY"}
+{"host": "canada-sunriseseniorliving.icims.com", "status": "EMPTY"}
+{"host": "canadacareers-acuren.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-amd.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-americanstandard.icims.com", "status": "NOT_BOARD"}
+{"host": "canadacareers-asm.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-avispl.icims.com", "status": "NOT_BOARD"}
+{"host": "canadacareers-fujifilm.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-hines.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-hrblock.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-kellerfoundations.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadacareers-shriners.icims.com", "status": "EMPTY"}
+{"host": "canadaengcareers-oslrs.icims.com", "pages": 7, "n_locopts": 85, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadaenglishexternal-keurigdrpepper.icims.com", "status": "NOT_BOARD"}
+{"host": "canadafrcareers-oslrs.icims.com", "pages": 1, "n_locopts": 29, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canadiancareers-paperworksindustries.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "cancareers-keysight.icims.com", "status": "NOT_BOARD"}
+{"host": "cancareers-stifel.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "cancareers-yelp.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canisiusuniversity-puzzlehr.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "canjobs-ctg.icims.com", "status": "NOT_BOARD"}
+{"host": "canoneusainc-puzzlehr.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "cantonoakstexas-careers-fundltc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "cardpool-blackhawknetwork.icims.com", "status": "EMPTY"}
+{"host": "career-ajinomotofoods.icims.com", "pages": 4, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-celanese.icims.com", "pages": 5, "n_locopts": 19, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-goldbeltshareholder.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-joevsmartshop.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "career-oceansideserviceinc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-opportunities-thezenith.icims.com", "pages": 1, "n_locopts": 21, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-portal-wolfandco.icims.com", "pages": 1, "n_locopts": 21, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-realalloy.icims.com", "pages": 2, "n_locopts": 10, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-schwab.icims.com", "pages": 6, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "career-serviceone.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "career-tradeupmidwestregion.icims.com", "status": "EMPTY"}
+{"host": "careercenter-boston.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careerhub-clarkson.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careerhub-flatironcorp.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careerportaln-vistacommunityclinic.icims.com", "pages": 4, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careerportalp-vistacommunityclinic.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-2020companies.icims.com", "status": "EMPTY"}
+{"host": "careers-2cworkforcesolutions.icims.com", "status": "EMPTY"}
+{"host": "careers-2wglobal.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-360care.icims.com", "pages": 7, "n_locopts": 224, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-42northdental.icims.com", "status": "EMPTY"}
+{"host": "careers-48forty.icims.com", "pages": 7, "n_locopts": 133, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-4mbc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-4s.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-7bar.icims.com", "pages": 11, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-aaalife.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aacr.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aadermatology.icims.com", "pages": 4, "n_locopts": 54, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aarding-cecoenviro.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-abacusplumbing.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-abacustech.icims.com", "pages": 6, "n_locopts": 24, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-abilegroup.icims.com", "pages": 2, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-abmay.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-abogadaalexandra.icims.com", "status": "EMPTY"}
+{"host": "careers-absolutefix.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-absoluteservices.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-academyair.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-acadiahealthcare.icims.com", "pages": 41, "n_locopts": 194, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-accentcare.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-accoy.icims.com", "pages": 2, "n_locopts": 21, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-acehome.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aceroschools.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-aci.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-acrotech-aurobindousa.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-actalentservices.icims.com", "pages": 10, "n_locopts": 78, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-actslife.icims.com", "pages": 11, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-addison.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-adl.icims.com", "pages": 1, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-adlittle.icims.com", "pages": 3, "n_locopts": 29, "india_opts": [["13228--Gurugram, Haryana", "Gurugram, Haryana IN"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-adr.icims.com", "status": "EMPTY"}
+{"host": "careers-ads-pipe.icims.com", "pages": 6, "n_locopts": 45, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-adspipe.icims.com", "pages": 6, "n_locopts": 45, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-adstra.icims.com", "status": "EMPTY"}
+{"host": "careers-advancedphysicaltherapy.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-advancemgt.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-advancial.icims.com", "status": "EMPTY"}
+{"host": "careers-advantagesmollan.icims.com", "status": "EMPTY"}
+{"host": "careers-adventhealthglr.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-advocatesinc.icims.com", "pages": 14, "n_locopts": 66, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aegisliving.icims.com", "status": "EMPTY"}
+{"host": "careers-aei.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aeieng.icims.com", "status": "EMPTY"}
+{"host": "careers-aerotek.icims.com", "pages": 12, "n_locopts": 146, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-afcu.icims.com", "pages": 1, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-affiniuscapital.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-affordablecare.icims.com", "pages": 2, "n_locopts": 29, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-afitstaffing.icims.com", "status": "EMPTY"}
+{"host": "careers-afms.icims.com", "status": "EMPTY"}
+{"host": "careers-agapecare.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-ahmchealth.icims.com", "pages": 22, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-ahnneighborhood.icims.com", "pages": 2, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ahrc.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-aidshealth.icims.com", "pages": 1, "n_locopts": 213, "india_opts": [["13228--", "India"], ["13228--New Delhi", "India-New Delhi"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aidt.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-aiicfl.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-aimbridge.icims.com", "status": "EMPTY"}
+{"host": "careers-airamericaac.icims.com", "status": "EMPTY"}
+{"host": "careers-aireon.icims.com", "status": "EMPTY"}
+{"host": "careers-airmethods.icims.com", "pages": 7, "n_locopts": 216, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-airpartner.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-airservicesheatingac.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-airtechofhouston.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-airtempairconditioning.icims.com", "status": "EMPTY"}
+{"host": "careers-aisinsurance.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aithomedelivery.icims.com", "pages": 5, "n_locopts": 162, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aitworldwide.icims.com", "pages": 3, "n_locopts": 25, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ajinomotofoods.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-ajiusa.icims.com", "pages": 1, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-akahillc.icims.com", "pages": 3, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-akima.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-alaskausa.icims.com", "pages": 6, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-albania-titanmaterials.icims.com", "status": "EMPTY"}
+{"host": "careers-albany.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-albat.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-alc.icims.com", "status": "EMPTY"}
+{"host": "careers-alcami.icims.com", "pages": 2, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-alegeus.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aleragroup.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-alivamab.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-allegisgroup.icims.com", "pages": 2, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-allegispartners.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-allhoursplumbingslc.icims.com", "status": "EMPTY"}
+{"host": "careers-alliedconsultants.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-allison.icims.com", "pages": 1, "n_locopts": 11, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-allnativegroup.icims.com", "pages": 3, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-allproplumbers.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-allspringglobal.icims.com", "pages": 1, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-allwayscaring.icims.com", "pages": 13, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-alo.icims.com", "status": "EMPTY"}
+{"host": "careers-alphaomegahospice.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-alpinehomecare.icims.com", "pages": 1, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-altadis.icims.com", "status": "EMPTY"}
+{"host": "careers-altapointe.icims.com", "pages": 6, "n_locopts": 14, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-altorfer.icims.com", "pages": 5, "n_locopts": 28, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-altushospice.icims.com", "pages": 1, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aluminumdynamics.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-alumus.icims.com", "pages": 2, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ambest.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-amd.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-americafirst.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-americanaddictioncenters.icims.com", "pages": 3, "n_locopts": 14, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-americancareercollege.icims.com", "pages": 2, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-americanfoodsgroup.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-americanhouse.icims.com", "pages": 10, "n_locopts": 52, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-americanseniorbenefits.icims.com", "pages": 6, "n_locopts": 91, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-americanstandard.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-americansystems.icims.com", "pages": 7, "n_locopts": 62, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ameritfleet.icims.com", "pages": 15, "n_locopts": 193, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-amivero.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ammechanical.icims.com", "status": "HTTP_503"}
+{"host": "careers-ampact.icims.com", "pages": 1, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-amr.icims.com", "pages": 9, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-amtrustgroup.icims.com", "pages": 8, "n_locopts": 32, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-amyx.icims.com", "pages": 6, "n_locopts": 21, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-analexarcfield.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-andersonairllc.icims.com", "status": "EMPTY"}
+{"host": "careers-anothersource.icims.com", "pages": 2, "n_locopts": 15, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-anumber1air.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-anz-merlinentertainments.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-apac-berkley.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [["13228-13240-Gandhinagar", "IN-GJ-Gandhinagar"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-apac-eagleview.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-apac-sazerac.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-apderm.icims.com", "pages": 2, "n_locopts": 25, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aperturagtx.icims.com", "status": "EMPTY"}
+{"host": "careers-apetito.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-apexservicepartners.icims.com", "pages": 1, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-apha.icims.com", "status": "EMPTY"}
+{"host": "careers-aphage.icims.com", "status": "EMPTY"}
+{"host": "careers-aphl.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-apogeeusa.icims.com", "pages": 4, "n_locopts": 20, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-apolloretail.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-appleairli.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-applevalleydentalgroup-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-application-racker.icims.com", "pages": 3, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-appliedsystems.icims.com", "pages": 3, "n_locopts": 13, "india_opts": [["13228-13245-Bengaluru", "IN-KA-Bengaluru"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-applusna.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-applususa.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-aprilaire.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-aprilhousing.icims.com", "status": "EMPTY"}
+{"host": "careers-aptar.icims.com", "status": "EMPTY"}
+{"host": "careers-aptiveresources.icims.com", "pages": 5, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-aquafinswimschool.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-araglegal.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-arccorp.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-arco.icims.com", "status": "HTTP_503"}
+{"host": "careers-arcocanada.icims.com", "status": "HTTP_503"}
+{"host": "careers-arcticairav.icims.com", "status": "EMPTY"}
+{"host": "careers-arcwoodenviro.icims.com", "pages": 3, "n_locopts": 46, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ardent-eagle.icims.com", "pages": 1, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ardenteagle.icims.com", "pages": 1, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-arh.icims.com", "pages": 18, "n_locopts": 20, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-arizonacollege.icims.com", "pages": 2, "n_locopts": 33, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-arrow.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-arrowtransportation.icims.com", "pages": 2, "n_locopts": 17, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ars.icims.com", "pages": 14, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-artemisgoldinc.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-arteriorshome.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-asc.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": false, "status": "OK"}
+{"host": "careers-ascensionwisconsinhospital.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ashp.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-ashton.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-asm.icims.com", "pages": 11, "n_locopts": 175, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-asnconstructors.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-aspirationscare.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-aspireindiana.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-assemblyapac.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-assemblyeu.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-assemblyglobalmena.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-assemblyna.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-assertiotx.icims.com", "pages": 1, "n_locopts": 10, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-assurancepower.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-astoria.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-astralatauburn.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-astralatfranklin.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-atarabio.icims.com", "status": "EMPTY"}
+{"host": "careers-atcc.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-atchleyair.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-athletico.icims.com", "pages": 19, "n_locopts": 279, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-atipt.icims.com", "pages": 22, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-atl.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-atlantarehab.icims.com", "pages": 1, "n_locopts": 16, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-atlas-aerospace.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-atlasvanlinescanada.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-atlasworldgroupinc.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-atrion.icims.com", "pages": 2, "n_locopts": 11, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-attainfinance.icims.com", "pages": 4, "n_locopts": 65, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-audacy.icims.com", "pages": 10, "n_locopts": 50, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-audtalent.icims.com", "status": "EMPTY"}
+{"host": "careers-aurobindousa.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-aurora.icims.com", "pages": 2, "n_locopts": 36, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-austinpcc.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-austintexasems.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-avamere.icims.com", "status": "EMPTY"}
+{"host": "careers-avancecare.icims.com", "pages": 2, "n_locopts": 14, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-avantus.icims.com", "pages": 4, "n_locopts": 20, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-avian.icims.com", "pages": 2, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-avionyx.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-avisonyounguk.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-avon.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-avondale.icims.com", "pages": 2, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-axaltacs.icims.com", "status": "EMPTY"}
+{"host": "careers-axient.icims.com", "status": "EMPTY"}
+{"host": "careers-axsomair.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-axway.icims.com", "pages": 3, "n_locopts": 21, "india_opts": [["13228--Noida", "IN-Noida"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-azaircond.icims.com", "status": "EMPTY"}
+{"host": "careers-bags.icims.com", "status": "EMPTY"}
+{"host": "careers-bakerbrothersplumbing.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-baldwinhvac.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bancorpbank.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bancroft.icims.com", "pages": 11, "n_locopts": 41, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bandq.icims.com", "pages": 9, "n_locopts": 116, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bank-cffc.icims.com", "pages": 1, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-banknewport.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bankonitusa.icims.com", "pages": 1, "n_locopts": 10, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bannerlife.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-banyanglobal.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-baptistemergencyhospital.icims.com", "pages": 3, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-baptisthealthal.icims.com", "pages": 8, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-baptistneighborhoodhospital.icims.com", "pages": 3, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-barkerservices.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-barrios.icims.com", "pages": 3, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-barstowhvac.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bartonassociates.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bartonhealthcarestaffing.icims.com", "status": "EMPTY"}
+{"host": "careers-bartwest.icims.com", "pages": 2, "n_locopts": 17, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bassettservices.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-baycenter.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-bayfronthealth.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-baylorscottandwhiteeh.icims.com", "pages": 5, "n_locopts": 11, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bbd.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bcbg.icims.com", "status": "EMPTY"}
+{"host": "careers-bcferries.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bcore.icims.com", "pages": 2, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bdobelgium.icims.com", "pages": 8, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bdsmktg.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bdssolutions.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-beaconspecialized.icims.com", "status": "HTTP_503"}
+{"host": "careers-beavercreeklodge.icims.com", "status": "EMPTY"}
+{"host": "careers-beazer.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-becket-ymca.icims.com", "status": "EMPTY"}
+{"host": "careers-beebehealthcare.icims.com", "pages": 4, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-beechacres.icims.com", "status": "EMPTY"}
+{"host": "careers-beehiveinsurance.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-beelineimage.icims.com", "pages": 5, "n_locopts": 36, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-behavioral-innovations.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-belardiwong.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-benaroyaresearch.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-benefitcosmeticsuk.icims.com", "pages": 5, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-benjaminmoore.icims.com", "pages": 1, "n_locopts": 20, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bergaila.icims.com", "status": "HTTP_403"}
+{"host": "careers-bergelectric.icims.com", "pages": 1, "n_locopts": 19, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bergmannpc.icims.com", "status": "EMPTY"}
+{"host": "careers-berkeys.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-berkley.icims.com", "pages": 11, "n_locopts": 104, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-berkleycaregroup.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bernhard.icims.com", "pages": 10, "n_locopts": 72, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-berrydunn.icims.com", "pages": 5, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-besthomeservices.icims.com", "status": "EMPTY"}
+{"host": "careers-bestmsls.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bethelpointe.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-betterbuzzcoffee.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-beyondsoft.icims.com", "pages": 2, "n_locopts": 24, "india_opts": [["13228--India", "IN-India"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bgca.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bhcpns.icims.com", "status": "EMPTY"}
+{"host": "careers-bhg.icims.com", "status": "EMPTY"}
+{"host": "careers-bhmcny.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-bhshealth.icims.com", "pages": 31, "n_locopts": 36, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-biberk.icims.com", "status": "EMPTY"}
+{"host": "careers-bigbearai.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-bigsmiles.icims.com", "pages": 3, "n_locopts": 27, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bimart.icims.com", "pages": 3, "n_locopts": 40, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-biocarbonsolutions.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bissell.icims.com", "status": "EMPTY"}
+{"host": "careers-bjc.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-bklynlibrary.icims.com", "status": "EMPTY"}
+{"host": "careers-blackhawk.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blackhawknetwork.icims.com", "pages": 2, "n_locopts": 14, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blainsupply.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-blanchard.icims.com", "pages": 1, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blarneycastleoil.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blazeair.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bluegracegroup.icims.com", "pages": 2, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bluehawaiian.icims.com", "pages": 1, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bluehawk.icims.com", "pages": 1, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blueheron.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blueridgedentalgroup-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-blueridgehealth.icims.com", "status": "EMPTY"}
+{"host": "careers-blueridgeorthodontics-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-bluesprigpediatrics.icims.com", "pages": 8, "n_locopts": 103, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-blupeak.icims.com", "status": "EMPTY"}
+{"host": "careers-blythedale.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bncollege.icims.com", "pages": 5, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bncsystems.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bned.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bnh.icims.com", "pages": 4, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-boafit.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-bobsacandheat.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bocusa.icims.com", "pages": 2, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bodeansbaking.icims.com", "status": "EMPTY"}
+{"host": "careers-bohemianhotelsavannah.icims.com", "status": "EMPTY"}
+{"host": "careers-boothes.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bosselman.icims.com", "pages": 13, "n_locopts": 73, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bostonpizza.icims.com", "pages": 11, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bottomline.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-boudreaupipeline.icims.com", "status": "EMPTY"}
+{"host": "careers-boydstire.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-boyneresorts.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-bradfordexchange.icims.com", "status": "EMPTY"}
+{"host": "careers-brakemax.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-brandesassociates.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-breakthroughphysicaltherapy.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-brehotels.icims.com", "status": "EMPTY"}
+{"host": "careers-brewers.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bridgenext.icims.com", "status": "EMPTY"}
+{"host": "careers-bridgesource.icims.com", "status": "EMPTY"}
+{"host": "careers-bridgewater.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brightonhospice.icims.com", "pages": 3, "n_locopts": 62, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brightspring.icims.com", "pages": 41, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-brightviewhealth.icims.com", "pages": 2, "n_locopts": 43, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brightviewseniorliving.icims.com", "pages": 6, "n_locopts": 48, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brinkmannconstructors.icims.com", "pages": 3, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-briteboxelectrical.icims.com", "status": "EMPTY"}
+{"host": "careers-brmi.icims.com", "pages": 2, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brodersachse.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bronxcare.icims.com", "pages": 3, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-brookdalecc.icims.com", "pages": 3, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brookhavenhospice.icims.com", "pages": 1, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brookings.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brookline.icims.com", "status": "EMPTY"}
+{"host": "careers-brooksbrothers.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brownheatingandcooling.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brownref.icims.com", "status": "EMPTY"}
+{"host": "careers-brucestire.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bruniandcampisi.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bruno.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-brutonknowles.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-bryantpt.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-btd.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-buckeye.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-buckinghamcompanies.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-budhvac.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-buffalojeans.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-buildingandearth.icims.com", "pages": 3, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-buildon.icims.com", "status": "EMPTY"}
+{"host": "careers-buspatrol.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-busybeeschildcare.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-buzziunicemusa.icims.com", "pages": 4, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-bwfed.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-c1.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-ca-kaizenauto.icims.com", "pages": 1, "n_locopts": 8, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cacu.icims.com", "pages": 1, "n_locopts": 22, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cadence-education.icims.com", "pages": 10, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cadence-mcshane.icims.com", "status": "EMPTY"}
+{"host": "careers-cadent.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cadmusgroup.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cajunusa.icims.com", "pages": 7, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-calamp.icims.com", "status": "EMPTY"}
+{"host": "careers-caliberautocare.icims.com", "status": "EMPTY"}
+{"host": "careers-califiafarms.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-calihanpork.icims.com", "status": "EMPTY"}
+{"host": "careers-callballthatsall.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-callbuck.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-calldougs.icims.com", "status": "EMPTY"}
+{"host": "careers-calldreamteam.icims.com", "status": "EMPTY"}
+{"host": "careers-callhero.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-calljazz.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-calltheb.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-calmainefoods.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-calspan.icims.com", "pages": 2, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cambrex.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cambrianhomecare.icims.com", "pages": 3, "n_locopts": 93, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-campero.icims.com", "pages": 7, "n_locopts": 88, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-campusapts.icims.com", "pages": 12, "n_locopts": 18, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-canada-cecoenviro.icims.com", "status": "EMPTY"}
+{"host": "careers-canada-secure.icims.com", "pages": 1, "n_locopts": 25, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-canada-shermco.icims.com", "pages": 1, "n_locopts": 19, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-canfieldph.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cannacabana.icims.com", "pages": 3, "n_locopts": 88, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-canyonranch.icims.com", "status": "EMPTY"}
+{"host": "careers-capbluecross.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-capreit.icims.com", "pages": 3, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-capreitcareers.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-caprelo.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-captrust.icims.com", "pages": 2, "n_locopts": 56, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carcare.icims.com", "status": "EMPTY"}
+{"host": "careers-carecentrix.icims.com", "status": "EMPTY"}
+{"host": "careers-careforth.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-caregiverhomes.icims.com", "pages": 2, "n_locopts": 41, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carehospice.icims.com", "pages": 1, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carenethealthcare.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-carepartners.icims.com", "pages": 3, "n_locopts": 144, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carepointhealth.icims.com", "pages": 5, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-carle.icims.com", "pages": 11, "n_locopts": 19, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carltonshoreshrc.icims.com", "status": "EMPTY"}
+{"host": "careers-carolinaconditions.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carolinas-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-carolinasdentist-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-carollo.icims.com", "pages": 6, "n_locopts": 59, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-carousel.icims.com", "pages": 2, "n_locopts": 11, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-casademontecristo.icims.com", "pages": 1, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-casamonica.icims.com", "status": "EMPTY"}
+{"host": "careers-cascade-management.icims.com", "pages": 5, "n_locopts": 34, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cascadesdental-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-casella.icims.com", "pages": 8, "n_locopts": 78, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-castlegroup.icims.com", "pages": 5, "n_locopts": 42, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-catalystbrand.icims.com", "pages": 2, "n_locopts": 13, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-catapultsolutions.icims.com", "status": "EMPTY"}
+{"host": "careers-catawba-ymca.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-catholiceldercare.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cayuseholdings.icims.com", "pages": 3, "n_locopts": 31, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cbc-nybloodcenter.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cbcare.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cbps.icims.com", "pages": 6, "n_locopts": 48, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccac-ont.icims.com", "status": "EMPTY"}
+{"host": "careers-ccacac.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccf.icims.com", "pages": 8, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cck.icims.com", "status": "EMPTY"}
+{"host": "careers-ccmsi.icims.com", "pages": 4, "n_locopts": 27, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccmyersservice.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccr-ch.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-ccr-cz.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccr-fr.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccr-ge.icims.com", "pages": 1, "n_locopts": 15, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccr.icims.com", "pages": 1, "n_locopts": 19, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccs-medical.icims.com", "pages": 1, "n_locopts": 12, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccsusa.icims.com", "status": "EMPTY"}
+{"host": "careers-ccsww.icims.com", "pages": 6, "n_locopts": 23, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-ccwestmi.icims.com", "pages": 1, "n_locopts": 15, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cecinc.icims.com", "pages": 10, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cedarfallsutilities.icims.com", "status": "EMPTY"}
+{"host": "careers-celldex.icims.com", "pages": 3, "n_locopts": 21, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cellularsales.icims.com", "pages": 20, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-centersusa.icims.com", "pages": 3, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-centralhealth.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-centralmainehealthcare-ph.icims.com", "status": "EMPTY"}
+{"host": "careers-centralmarket.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-centralnm-ymca.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-centralstatesfunds.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-centrastate.icims.com", "pages": 4, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-centricbrands.icims.com", "pages": 15, "n_locopts": 37, "india_opts": [["14293-14307-Gurugram", "IN-Haryana-Gurugram"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-centricbrandsasia.icims.com", "pages": 5, "n_locopts": 15, "india_opts": [["14293-14307-Gurugram", "IN-HR-Gurugram"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-centricbrandseurope.icims.com", "status": "EMPTY"}
+{"host": "careers-cfasupply.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cfins.icims.com", "pages": 4, "n_locopts": 29, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cfr.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cfsny.icims.com", "pages": 1, "n_locopts": 26, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chai.icims.com", "pages": 9, "n_locopts": 21, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-championac.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-championcomfortexperts.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-champmove.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-changegrowlive.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-channellandsonsac.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-channelpartners.icims.com", "pages": 10, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-chaplain.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-chapmanbros.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-charontech.icims.com", "status": "EMPTY"}
+{"host": "careers-charter.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-chasebrass.icims.com", "pages": 10, "n_locopts": 33, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chc.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chcbrazil.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chccnj.icims.com", "pages": 2, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chccrew.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chemtradelogistics.icims.com", "pages": 3, "n_locopts": 17, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chenega.icims.com", "pages": 21, "n_locopts": 128, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chesapeakedentalspecialists-lightwavedental.icims.com", "status": "HTTP_403"}
+{"host": "careers-chestnut.icims.com", "pages": 4, "n_locopts": 32, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chickfila.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-chimerix.icims.com", "status": "EMPTY"}
+{"host": "careers-chn-cecoenviro.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chordsdp.icims.com", "pages": 2, "n_locopts": 40, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-christianacarenh.icims.com", "pages": 2, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-christiancare.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-christianhvac.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chrysalis.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-chsamerica.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-chsi.icims.com", "pages": 5, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chsli.icims.com", "pages": 21, "n_locopts": 41, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-chugach.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-chumashcareers.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cielotalent.icims.com", "status": "EMPTY"}
+{"host": "careers-cipd.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-circare.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-circuscircus.icims.com", "status": "EMPTY"}
+{"host": "careers-cis.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cisecurity.icims.com", "status": "EMPTY"}
+{"host": "careers-citizensenergygroup.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-citrin.icims.com", "pages": 3, "n_locopts": 25, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-citynational.icims.com", "pages": 3, "n_locopts": 11, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-civetta.icims.com", "status": "EMPTY"}
+{"host": "careers-civilianmedicaljobs.icims.com", "pages": 5, "n_locopts": 276, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cjmc.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cjsheatingandair.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-clarkson.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-clearwaterliving.icims.com", "status": "EMPTY"}
+{"host": "careers-clearygottlieb.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-clsliving.icims.com", "pages": 2, "n_locopts": 28, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-clydecapitalgroup.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-clydeinc.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cmdelectric.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cmhshealth.icims.com", "pages": 6, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cmsnextech.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cnb.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cnhind.icims.com", "status": "EMPTY"}
+{"host": "careers-coastalhomeservicesinc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cobank.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cobbemc.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-codev.icims.com", "pages": 1, "n_locopts": 5, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-coegipartners.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cohenco.icims.com", "status": "EMPTY"}
+{"host": "careers-cohencpa.icims.com", "status": "EMPTY"}
+{"host": "careers-collaborationbetterstheworldvi.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [["13228--", "India"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-collierscomfort.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-colliersengineering.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-colliersprojects.icims.com", "pages": 3, "n_locopts": 118, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-collinscomfort.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-colonialoaks.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-colonialoaksretirement.icims.com", "status": "EMPTY"}
+{"host": "careers-columbuszoo.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-comcastspectacor.icims.com", "pages": 68, "n_locopts": 181, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-comed.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-comfortmasterinc.icims.com", "status": "EMPTY"}
+{"host": "careers-comfortwave.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-commitent.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-commonsecuritization.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-commonspirit.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-commonwealth.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-commonwealthdentalclinic.icims.com", "status": "HTTP_403"}
+{"host": "careers-commtrans.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-communitymedical.icims.com", "pages": 7, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-communityoutreach.icims.com", "pages": 1, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-compasswater-cecoenviro.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-complexcaresolutions.icims.com", "status": "EMPTY"}
+{"host": "careers-compsych.icims.com", "pages": 1, "n_locopts": 7, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-conciergenursing.icims.com", "pages": 2, "n_locopts": 40, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-concoracredit.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-concord.icims.com", "pages": 1, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-concorde.icims.com", "pages": 5, "n_locopts": 20, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-condadocollection.icims.com", "pages": 4, "n_locopts": 4, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-conehealth.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-confluenthealth.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-connection.icims.com", "pages": 6, "n_locopts": 34, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-connectionsarizona.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-connectionshs.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-connectiverx.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-conorcommercial-mcshane.icims.com", "status": "EMPTY"}
+{"host": "careers-consilio-skye.icims.com", "pages": 1, "n_locopts": 3, "india_opts": [["13228--Bangalore", "IN-Bangalore"], ["13228-13242-Gurgaon", "IN-HR-Gurgaon"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-consilio.icims.com", "pages": 3, "n_locopts": 15, "india_opts": [["13228--Bangalore", "IN-Bangalore"], ["13228-13230-Hyderabad, Telangana", "IN-AP-Hyderabad, Telangana"], ["13228-13242-Gurgaon", "IN-HR-Gurgaon"], ["13228-13248-", "IN-MH"]], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-consoreng.icims.com", "pages": 3, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-constellationenergy.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-constructconnect.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-containerstore.icims.com", "pages": 9, "n_locopts": 77, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-contecinc.icims.com", "pages": 1, "n_locopts": 6, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-continuumhospice.icims.com", "pages": 2, "n_locopts": 9, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-continuumservices.icims.com", "pages": 3, "n_locopts": 26, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-controlsystems.icims.com", "pages": 1, "n_locopts": 15, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-convergeone.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-conwayregional.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-coolray.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-coolrayal.icims.com", "status": "EMPTY"}
+{"host": "careers-coolsys.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cooltoday.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cooperhealth.icims.com", "pages": 83, "n_locopts": 26, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cooperparry.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-coopersautorepair.icims.com", "pages": 1, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-copperknoll.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-coraltreehospitality.icims.com", "pages": 8, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cordobacorp.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-corgan.icims.com", "status": "EMPTY"}
+{"host": "careers-cort.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-coteelectric.icims.com", "status": "EMPTY"}
+{"host": "careers-cotesmechanical.icims.com", "status": "EMPTY"}
+{"host": "careers-cotiviti.icims.com", "pages": 2, "n_locopts": 0, "india_opts": [], "has_facet": false, "card_loc": true, "status": "OK"}
+{"host": "careers-cougarmechanical.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-councilofindustry.icims.com", "pages": 3, "n_locopts": 19, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-country-fair.icims.com", "pages": 8, "n_locopts": 37, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-covenanteyes.icims.com", "status": "EMPTY"}
+{"host": "careers-covenanthealth.icims.com", "pages": 58, "n_locopts": 16, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-coventbridge.icims.com", "pages": 1, "n_locopts": 56, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-coventry.icims.com", "status": "NOT_BOARD"}
+{"host": "careers-cpicardgroup.icims.com", "pages": 3, "n_locopts": 10, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cpiplumbing.icims.com", "pages": 1, "n_locopts": 2, "india_opts": [], "has_facet": true, "card_loc": true, "status": "OK"}
+{"host": "careers-cplusa.icims.com", "status": "EMPTY"}
+{"host": "careers-cpm.icims.com", "status": "EMPTY"}
+{"host": "www.allcareers-aramark.icims.com", "status": "ERR", "err": "SSLError"}
