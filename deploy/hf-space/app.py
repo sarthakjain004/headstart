@@ -913,6 +913,9 @@ def index():
         keyword_scopes=scopes,
         keyword_default_scope=search.KEYWORD_DEFAULT_SCOPE,
         has_description=_searcher.has_description,
+        # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
+        # served table, the same rule `run` applies to the value the control would send
+        has_min_salary=_searcher.has_min_salary_annual,
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
         currencies=_searcher.currencies,

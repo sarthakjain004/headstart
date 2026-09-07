@@ -50,6 +50,7 @@ function loadApp() {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
       addEventListener() {},
+      querySelector: () => null,
       querySelectorAll: () => [],
       // seriesColor() reads categorical-slot custom properties off :root at draw time (a theme
       // flip repaints correctly instead of freezing on a hardcoded hex array — see app.js). The

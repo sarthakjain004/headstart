@@ -90,6 +90,17 @@ async function loadCoverage(){
       : '<p class="aside">The index carries none of these fields yet.</p>';
 }
 
+const DENSITY_KEY = 'hs.dense';
+function applyDensity(on){
+  const box = document.querySelector('.content'), btn = el('density');
+  if (box) box.classList.toggle('dense', on);
+  if (btn){ btn.setAttribute('aria-pressed', String(on)); btn.textContent = on ? 'Comfortable' : 'Compact'; }
+}
+function flipDensity(){
+  const on = !document.querySelector('.content').classList.contains('dense');
+  try { localStorage.setItem(DENSITY_KEY, on ? '1' : ''); } catch(e){}
+  applyDensity(on);
+}
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
@@ -115,8 +126,9 @@ function toggleRail(){
   const open = rail.classList.toggle('open');
   const btn = el('filtersbtn');
   if (btn) btn.setAttribute('aria-expanded', String(open));
-  // The panel opens above the button that was just pressed (ADR-0114 puts it over the
-  // results), so without this the rows shift down and the filters land off-screen.
+  // The panel now opens directly BELOW its button, so nothing moves under the cursor. This
+  // only brings its far end into view when the button was already near the bottom of the
+  // screen — on a phone the panel is uncapped and taller than the viewport.
   if (open) rail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -166,6 +178,7 @@ const matchPct = s => Math.round(Math.max(0, Math.min(1, (s - .60) / .25)) * 100
 // remote); reusing those hues here would have made lime mean both "strong match" and "salary".
 // Weak matches fade toward the muted ink so a scan shows where the good results stop.
 const tone = s => `color-mix(in srgb, var(--aqua) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
+const busy = on => el('results').setAttribute('aria-busy', String(!!on));
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
   '<div class="shim" style="width:30%; margin-top:10px"></div>' +
@@ -215,7 +228,7 @@ const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
   const f = currentFilters(), box = el('active');
-  // The panel is closed by default now (ADR-0114), so the button has to carry how many
+  // The panel is closed by default now (ADR-0115), so the button has to carry how many
   // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
   const btn = el('filtersbtn'), n = Object.keys(f).length;
   if (btn){
@@ -270,6 +283,7 @@ async function fetchPage(){
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
+  busy(true);
   el('pager').innerHTML = '';
   el('kind').textContent = '';   // never describe the previous search's rows over the new ones
   el('n').textContent = q ? 'searching…' : 'loading…';
@@ -280,8 +294,9 @@ async function fetchPage(){
   drawSortNote();
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
-  catch(e){ el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+  catch(e){ busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
             el('n').textContent = ''; el('kind').textContent = ''; return; }
+  busy(false);
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
     el('n').textContent = ''; el('kind').textContent = ''; return; }
@@ -358,10 +373,15 @@ function drawCount(shown, facets){
 // max_k * max_page, which this page cannot see — PAGE_SIZE * MAX_PAGE is a different number
 // (400 against 2,000) and printing it would state the caveat with the wrong figure. The fact is
 // what the user needs: this is newest among their best matches, not a global date sort.
+const SORT_NOTES = {
+  seen:    ['most recently added first', 'newest among your best matches — not a global date sort'],
+  posted:  ['newest by the employer’s date first', 'newest among your best matches — not a global date sort'],
+  salary:  ['highest stated salary first — jobs with none come last',
+            'best-paid among your best matches — not a global salary sort'],
+};
 function drawSortNote(){
-  const sort = el('sort').value, q = el('q').value.trim();
-  el('sortnote').textContent = sort === 'rel' ? ''
-    : (q ? 'newest among your best matches — not a global date sort' : 'newest first');
+  const note = SORT_NOTES[el('sort').value];
+  el('sortnote').textContent = !note ? '' : note[el('q').value.trim() ? 1 : 0];
 }
 
 // When a search returns nothing, name the one filter that costs the most rather than telling
@@ -492,27 +512,36 @@ function drawPager(rowCount, facets){
     `<button class="ghost" ${hasNext?'':'disabled'} onclick="goToPage(${page+1})">Next ›</button>`;
 }
 
-function draw(rows, target){
-  // No client-side reorder any more. It only ever sorted the twenty rows already fetched,
-  // which reads as "sort my results" and is not: the server now orders the whole result set
-  // (issue #275), so by the time rows arrive they are already in the asked-for order.
-  rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
-  el(target || 'results').innerHTML = rows.map((r,i) => {
-    // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
-    // match ring would otherwise show a misleading "0%" rather than "not applicable".
-    const ranked = r.score != null;
-    const s = Number(r.score) || 0, pct = matchPct(s);
-    return `
-    <div class="card${ranked?' ranked':''}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
+/* ---- ONE result card, rendered by Search, Matches and Saved alike.
+   Saved used to build its own: a `.hd` wrapper no stylesheet has carried since the row layout
+   landed, the salary as a wrapped grey pill rather than in the pay column, no tags row, no
+   external-link glyph. Measured, its content ended 140px short of the search card's and the
+   same job read as two different things depending on which tab you found it on. A Saved
+   record is mapped onto this row shape in renderSaved rather than this function growing a
+   second branch — the card knows about rows, not about where they came from.
+
+   `extra` carries the two facts only a Saved row has: whether the posting has closed, and
+   when it was starred. ---- */
+function jobCard(r, i){
+  // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
+  // match ring would otherwise show a misleading "0%" rather than "not applicable".
+  const ranked = r.score != null;
+  const s = Number(r.score) || 0, pct = matchPct(s);
+  const hidden = r.id && dismissed.has(r.id);
+  const cls = ['card', ranked && 'ranked', r.closed && 'gone', hidden && 'dismissed'].filter(Boolean).join(' ');
+  return `
+    <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
         <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
         <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
         <div class="tags">
+          ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
           ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
           ${r.remote? '<span class="tag rem">remote</span>':''}
           ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
           ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
           ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
+          ${age(r.starred_at)? '<span class="tag mono">saved '+age(r.starred_at)+'</span>':''}
           ${r.ats? '<span class="src" title="Read directly from this company\'s '+esc(r.ats)+' board \u2014 not a repost">via '+esc(r.ats)+'</span>':''}
         </div>
       </div>
@@ -525,9 +554,24 @@ function draw(rows, target){
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
           <div class="v" aria-hidden="true">${pct}%</div>
-        </div>` : ''}
-      ${starBtn(r.id)}
-    </div>`; }).join('');
+        </div>`
+      // The column stays reserved on an unranked row rather than collapsing. Dropping it moved
+      // the star 76px between a browse and a search and left a 107px ragged right edge against
+      // the ranked rows' 31 — the aligned columns are the whole point of the row layout, and
+      // they cannot align across two different grids.
+      : '<div class="match" aria-hidden="true"></div>'}
+      ${starBtn(r.id, r.starred_at ? true : undefined)}
+      ${r.starred_at ? '' : dismissBtn(r.id)}
+    </div>`;
+}
+
+function draw(rows, target){
+  // No client-side reorder any more. It only ever sorted the twenty rows already fetched,
+  // which reads as "sort my results" and is not: the server now orders the whole result set
+  // (issue #275), so by the time rows arrive they are already in the asked-for order.
+  rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
+  el(target || 'results').innerHTML = rows.map(jobCard).join('');
+  if (!target) drawHidden(rows);
 }
 
 /* ---- Saved sets (ADR-0043): the Matches tab runs one live; "Save this search" creates
@@ -688,6 +732,49 @@ async function saveSearch(){
    fields, so the Saved tab survives the index churn and marks evicted postings "closed".
    Stars flip optimistically — an HF write is ~1s, too slow for a click — and revert with
    a message if the server refuses. ---- */
+/* ---- Dismissed rows. Every result leaves for the employer's own board, so the return trip
+   lands on a list with no memory of what has already been dealt with — the main cost of the
+   loop. `:visited` on the title says "opened"; this says "done with". Browser-local on
+   purpose: it is a scanning aid over one session's list, not a preference worth an account
+   round trip, and storage can throw outright in a private window. Rows are hidden rather than
+   dropped, so the server's own "showing 1-20 of N" stays true and one click puts them back.
+   ---- */
+const DISMISS_KEY = 'hs.dismissed';
+let revealDismissed = false;
+const dismissed = new Set((() => {
+  try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]'); } catch(e){ return []; }
+})());
+function saveDismissed(){
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...dismissed])); } catch(e){}
+}
+const dismissBtn = id => !id ? '' :
+  `<button class="dismiss" data-dismiss="${esc(id)}" title="Hide this job"
+    aria-label="Hide this job from the results">\u00d7</button>`;
+
+// The count of what is hidden, beside the result count that no longer matches what is on
+// screen. Written on every draw, including when it is zero — a stale "3 hidden" is worse
+// than none.
+function drawHidden(rows){
+  const node = el('hidden'), box = el('results'); if (!node || !box) return;
+  const n = rows.filter(r => r.id && dismissed.has(r.id)).length;
+  node.innerHTML = !n ? '' :
+    `${n} hidden <button class="linkish" onclick="toggleDismissed()">` +
+    `${revealDismissed ? 'hide again' : 'show'}</button>`;
+  box.classList.toggle('reveal', revealDismissed);
+}
+function toggleDismissed(){
+  revealDismissed = !revealDismissed;
+  drawHidden([...drawnRows.values()]);
+}
+function dismissRow(id){
+  if (dismissed.has(id)) dismissed.delete(id); else dismissed.add(id);
+  saveDismissed();
+  document.querySelectorAll('[data-dismiss]').forEach(b => {
+    if (b.dataset.dismiss === id) b.closest('.card').classList.toggle('dismissed', dismissed.has(id));
+  });
+  drawHidden([...drawnRows.values()]);
+}
+
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
 let mySaved = null;                        // server-truth list, newest star first
 const savedByJob = new Map();              // job id → saved record
@@ -739,23 +826,20 @@ function renderSaved(){
   }
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
   el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
-  box.innerHTML = jobs.map((j,i) => `
-    <div class="card${j.open === false ? ' gone' : ''}" style="animation-delay:${Math.min(i,12)*35}ms">
-      <div class="hd">
-        <div style="flex:1; min-width:0">
-          <a class="title" href="${esc(safeUrl(j.url))}" target="_blank" rel="noopener">${esc(j.title)}</a>
-          <div class="org">${esc(j.company)}${j.location? ' <span>·</span> '+esc(j.location) : ''}</div>
-        </div>
-        ${starBtn(j.job_id, true)}
-      </div>
-      <div class="tags">
-        ${j.open === false ? '<span class="tag closed">closed</span>' : ''}
-        ${j.remote ? '<span class="tag rem">remote</span>' : ''}
-        ${j.salary ? '<span class="tag pay">'+esc(j.salary)+'</span>' : ''}
-        ${age(j.starred_at) ? '<span class="tag mono">saved '+age(j.starred_at)+'</span>' : ''}
-      </div>
-    </div>`).join('');
+  box.innerHTML = jobs.map(savedRow).map(jobCard).join('');
 }
+
+// A stored star, in the shape jobCard reads. The record is a display copy taken at star time
+// (SavedJob, alerts/store.py), so it carries no score and none of the derived columns — the
+// card renders whichever tags it can and leaves the rest out, exactly as it does for a search
+// row whose board published no salary. `open` is the server's own key for "still in the
+// index"; `closed` is what the card shows, and they are opposites, so the flip happens here
+// rather than being read the wrong way round somewhere downstream.
+const savedRow = j => ({
+  id: j.job_id, title: j.title, company: j.company, location: j.location,
+  url: j.url, remote: j.remote, salary: j.salary, starred_at: j.starred_at,
+  closed: j.open === false, score: null,
+});
 
 async function toggleStar(jobId){
   const existing = savedByJob.get(jobId);
@@ -826,10 +910,11 @@ const PROFILE_FIELDS = { query:'pquery', title:'ptitle', years:'pyears', skills:
 function fillProfileForm(p){
   for (const [key, cid] of Object.entries(PROFILE_FIELDS))
     el(cid).value = p[key] == null ? '' : p[key];
-  el('pparses').textContent = p.parses_left > 0
-    ? `${p.parses_left} of ${p.parses_left + p.parses_used} résumé reads left`
+  const left = typeof p.parses_left === 'number' ? p.parses_left : null;
+  el('pparses').textContent = left === null ? ''
+    : left > 0 ? `${left} of ${left + (p.parses_used || 0)} résumé reads left`
     : 'No résumé reads left — edit by hand below.';
-  el('pparse').disabled = !(p.parses_left > 0);
+  el('pparse').disabled = left === 0;
 }
 
 function readProfileForm(){
@@ -1045,6 +1130,10 @@ async function loadTrends(family){
   // dimmed, rather than the panel blanking — a filter change must never read as "it broke"
   // while the round trip is in flight, and a genuine failure must never look like a dead toggle.
   if (el('trends-viz')) el('trends-viz').classList.add('loading');
+  // First open only: a refetch keeps the previous chart up, dimmed, which is already the
+  // right answer (a filter change must never read as "it broke"). With nothing to keep, a
+  // skeleton in the same grid holds the same space rather than letting the panel jump.
+  setTrendsBusy(!trendData);
   let r;
   try { r = await fetch('/trends' + (q.size ? '?' + q : '')); }
   catch(e){ showTrendsError('That request didn’t go through.'); return; }
@@ -1063,12 +1152,22 @@ async function loadTrends(family){
 // no explanation. Now only the chart/legend area is replaced; the header, toggles and Retry stay
 // reachable, and Retry replays the exact same request `loadTrends` just made.
 function showTrendsError(msg){
+  setTrendsBusy(false);
   if (el('trends-viz')){ el('trends-viz').classList.remove('loading'); el('trends-viz').hidden = true; }
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
 function hideTrendsError(){
+  setTrendsBusy(false);
   if (el('trends-error')) el('trends-error').hidden = true;
   if (el('trends-viz')){ el('trends-viz').hidden = false; el('trends-viz').classList.remove('loading'); }
+}
+// The skeleton swaps for the chart rather than sitting above it, so nothing moves when the
+// data lands; aria-busy is what says "working" to a screen reader, which a shimmer cannot.
+function setTrendsBusy(on){
+  const skel = el('trends-skel'), viz = el('trends-viz'), sec = el('trends');
+  if (sec) sec.setAttribute('aria-busy', String(!!on));
+  if (skel) skel.hidden = !on;
+  if (viz && on) viz.hidden = true;
 }
 
 // A series' value in the displayed unit: share of the index for stock, else the raw count.
@@ -1254,7 +1353,9 @@ function drawTrends(){
   // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
-  el('trends-empty').textContent = runs < 2
+  el('trends-empty').textContent = runs === 0
+    ? 'No measurements inside this window — widen the dates, or clear them to see the whole history.'
+    : runs < 2
     ? (trendAtsSelected()
         ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
         : 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.')
@@ -1264,6 +1365,9 @@ function drawTrends(){
       // a deploy and the next pipeline run the first exists without the second.
       ? 'These roles have not been measured yet — they appear after the next pipeline run.'
       : '');
+  // An axis with no lines under it is the "broken chart" reading the message above exists to
+  // replace, so with nothing measured the message stands on its own.
+  if (el('trends-viz')) el('trends-viz').hidden = runs === 0;
   const nt = d.non_tech.filter(v => v != null).pop();
   const parts = [];
   // "7 days" mirrors role_trends.NEW_WINDOW_DAYS — change one and this sentence starts lying.
@@ -1544,6 +1648,10 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button[data-star]');
   if (b) toggleStar(b.dataset.star);
 });
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-dismiss]');
+  if (b) dismissRow(b.dataset.dismiss);
+});
 // Whole-row click, without an overlay. A real element is never covered, so text stays
 // selectable and every title/tooltip underneath stays reachable. Three guards: a drag that
 // selected text is not a click, anything already interactive handles itself, and a modified
@@ -1585,6 +1693,7 @@ if (el('matches-controls')){
     rerun();
   });
 }
+try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
 showTab(currentTab());

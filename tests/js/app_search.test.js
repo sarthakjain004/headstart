@@ -13,10 +13,17 @@ const vm = require('node:vm');
 const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'static', 'app.js');
 
 function fakeEl() {
+  const classes = new Set();
   return {
     innerHTML: '', textContent: '', hidden: false, style: {}, value: '', checked: false,
     querySelectorAll: () => [],
     setAttribute() {}, getAttribute: () => null, addEventListener() {},
+    classList: {
+      add: c => classes.add(c), remove: c => classes.delete(c),
+      contains: c => classes.has(c),
+      toggle(c, on) { const want = on === undefined ? !classes.has(c) : !!on;
+                      if (want) classes.add(c); else classes.delete(c); return want; },
+    },
   };
 }
 
@@ -39,6 +46,7 @@ function loadApp(respond, cfg = {}) {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
       addEventListener() {},
+      querySelector: () => null,
       querySelectorAll: () => [],
     },
     // app.js reads the page's config off `window.CFG` (the template sets it), so the stub
@@ -137,10 +145,18 @@ test('an empty page 1 shows "nothing matched"; an empty later page shows "no mor
 test('a browsed row (score: null) renders no match ring; a ranked row does', async () => {
   const { t, nodes } = loadApp(() => [job('a', { score: null }), job('b', { score: 0.77 })]);
   await t.go();
-  const cards = nodes.results.innerHTML.split('<div class="card"').slice(1);
+  const cards = nodes.results.innerHTML.split('<div class="card').slice(1);
   assert.strictEqual(cards.length, 2);
-  assert.ok(!cards[0].includes('class="match"'));
-  assert.ok(cards[1].includes('class="match"'));
+  assert.ok(!cards[0].includes('class="ring"'));
+  assert.ok(cards[1].includes('class="ring"'));
+});
+
+test('an unranked row still reserves the match column, so the star column never moves', async () => {
+  // The columns landing at the same x on every row is what the row layout buys; two grids —
+  // one with the match track and one without — cannot align across a browse and a search.
+  const { t, nodes } = loadApp(() => [job('a', { score: null })]);
+  await t.go();
+  assert.ok(nodes.results.innerHTML.includes('<div class="match" aria-hidden="true"></div>'));
 });
 
 test('an invalid-filter response (non-array) shows the filter error, not a crash', async () => {
@@ -149,23 +165,25 @@ test('an invalid-filter response (non-array) shows the filter error, not a crash
   assert.ok(nodes.results.innerHTML.includes("isn't valid"));
 });
 
-test('a description-only (Tier-2) salary still renders a pay tag', async () => {
+test('a description-only (Tier-2) salary still reaches the pay column', async () => {
   // `salary` (the raw display string) is only ever populated from a scraper's own structured
   // field — most of this initiative's own measured salary coverage is Tier-2, description-
   // mined (ADR-0082), which only ever reaches min_salary_annual/max_salary_annual/
-  // salary_currency. A Job with those set but salary null must still show a pay tag.
+  // salary_currency. A Job with those set but salary null must still show its pay.
   const { t, nodes } = loadApp(() => [
     job('a', { salary: null, min_salary_annual: 90000, max_salary_annual: 110000, salary_currency: 'EUR' }),
   ]);
   await t.go();
-  assert.ok(nodes.results.innerHTML.includes('class="tag pay"'));
-  assert.ok(nodes.results.innerHTML.includes('EUR 90,000–110,000/yr'));
+  assert.ok(nodes.results.innerHTML.includes('<div class="pay">EUR 90,000–110,000/yr</div>'));
 });
 
-test('a row with no salary signal at all renders no pay tag', async () => {
+test('a row with no salary signal at all still renders the pay column, as an em dash', async () => {
+  // The column is reserved either way: an empty cell keeps every other row's pay on the same
+  // x, and "we were not told" is a different answer from "this pays nothing".
   const { t, nodes } = loadApp(() => [job('a', { salary: null })]);
   await t.go();
-  assert.ok(!nodes.results.innerHTML.includes('class="tag pay"'));
+  assert.ok(!nodes.results.innerHTML.includes('<div class="pay">EUR'));
+  assert.ok(nodes.results.innerHTML.includes('class="nopay"'));
 });
 
 

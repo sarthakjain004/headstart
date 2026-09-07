@@ -38,114 +38,27 @@
 </div>
 {% endif %}
 
-{# The filter panel sits above the results and spans the full width, collapsed by
-   default. It is the same <aside id="rail"> as before, moved rather than rebuilt: every
-   control id is unchanged, so the filter/facet/saved-set JavaScript is untouched. #}
-  <aside class="rail" id="rail">
-    {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
-       Query ranks. The options are rendered from headstart.search.keyword_scope_options(), never
-       written here by hand, so a new scope is a map entry and nothing in this file. A scope that
-       needs the description column is DISABLED (not hidden, unlike the first-seen control) until
-       that column exists: the option and the reason it is off stay visible. #}
-    <div class="set">
-      <h2>Keywords</h2>
-      <div class="f"><label for="kw">Must contain</label>
-        <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
-        <span class="tip">Every word (up to five) must appear. Matches inside words too — "java"
-          also finds JavaScript.</span></div>
-      <div class="f"><label for="kwin">Look in</label>
-        <select id="kwin" onchange="go()">
-          {% for value, label, needs_description in keyword_scopes %}
-          <option value="{{ value }}"{% if value == keyword_default_scope %} selected{% endif %}{% if needs_description and not has_description %} disabled{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-        <span class="tip" id="kwnote" role="status"></span></div>
-    </div>
-
-    <div class="set">
-      <h2>Role</h2>
-      <div class="f"><label for="etype">Employment type</label>
-        <select id="etype"><option value="">Any</option>
-          <option value="full-time">Full-time</option><option value="part-time">Part-time</option>
-          <option value="contract">Contract</option><option value="internship">Internship</option>
-        </select></div>
-      <div class="f"><label for="maxyears">Your experience (years)</label>
-        <input id="maxyears" type="number" min="0" placeholder="Any">
-        <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
-          requirement are kept.</span></div>
-      <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
-      <span class="tip">Some boards carry a real remote setting and we use it; the rest are read
-        from how the employer worded the location. Either way a role described as remote only in
-        the body text can be missed.</span>
-      <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
-      {% if currencies %}
-      <div class="f"><label for="salcur">Salary bracket (annual)</label>
-        <div class="bracket">
-          <select id="salcur" aria-label="Salary currency">
-            {% for c in currencies %}<option value="{{ c }}"{% if c == 'USD' %} selected{% endif %}>{{ c }}</option>{% endfor %}
-          </select>
-          <input id="salmin" type="number" min="0" step="1000" placeholder="Min" aria-label="Minimum salary">
-          <input id="salmax" type="number" min="0" step="1000" placeholder="Max" aria-label="Maximum salary">
-        </div>
-        <span class="tip">Compared within one currency — salaries are period-normalised but
-          never FX-converted, so a bracket only means something inside a single currency.
-          Only jobs whose salary is known can match.</span></div>
-      {% endif %}
-    </div>
-
-    <div class="set">
-      <h2>Where</h2>
-      <div class="f"><label for="india">India — city or region</label>
-        <span class="tip">India has a gazetteer behind it, so picking a city also matches its
-          neighbourhoods and alternative spellings. Location below matches text anywhere in the
-          world, just without that expansion. The index is worldwide either way.</span>
-        <select id="india"><option value="">Anywhere</option>
-          <option value="india">All India</option>
-          {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select></div>
-      <div class="f"><label for="location">Location</label>
-        <input id="location" type="text" placeholder="e.g. Berlin"></div>
-      <div class="f"><label for="company">Company</label>
-        <input id="company" type="text" placeholder="e.g. Binance"></div>
-    </div>
-
-    <div class="set">
-      <h2>Freshness</h2>
-      <div class="f"><label for="posted">Posted by the employer</label>
-        <select id="posted"><option value="">Any time</option>
-          {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select>
-        <span class="tip">Their date, in their format. Jobs without one are hidden by this
-          filter rather than kept, and so are any whose date is written in a shape we cannot
-          compare against a cutoff — so it keeps somewhat fewer than the Data tab's
-          posting-date figure would suggest.</span></div>
-      {% if has_first_seen %}
-      <div class="f"><label for="seen">First seen by HeadStart</label>
-        <select id="seen"><option value="">Any time</option>
-          {% for value, label in seen_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select></div>
-      {% endif %}
-      <div class="f"><label for="ats">ATS provider</label>
-        <select id="ats"><option value="">Any</option>
-          {% for a in atses %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
-        </select></div>
-    </div>
-
-    <button class="clear" onclick="clearAll()">Clear all filters</button>
-  </aside>
 
 <main>
     <div class="toolbar">
       <button class="ghost filters-btn" id="filtersbtn" onclick="toggleRail()" aria-expanded="false" aria-controls="rail">Filters</button>
       <span class="n" id="n"></span>
       <span class="note sortnote" id="sortnote" role="status"></span>
+      {# What the × on a row did with it. The rows are hidden rather than dropped, so the
+         count beside this stays the server's own answer and one click puts them back. #}
+      <span class="note" id="hidden" role="status"></span>
       <span class="spacer"></span>
       <label class="note" for="sort">Sort</label>
       <select id="sort" onchange="go()">
         <option value="rel">Best match</option>
         {% if has_first_seen %}<option value="seen">Newest first seen</option>{% endif %}
         <option value="posted">Newest posted</option>
+        {# Dark until the ADR-0082 salary columns exist on the served table, exactly like the
+           first-seen options above — the server whitelists the same condition. #}
+        {% if has_min_salary %}<option value="salary">Highest salary</option>{% endif %}
       </select>
+      <button class="ghost" id="density" onclick="flipDensity()" aria-pressed="false"
+              title="Tighter rows, same fields">Compact</button>
       {% if sets_on %}
       <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
       {% endif %}
@@ -157,6 +70,103 @@
       <span class="note" id="savemsg" role="status"></span>
     </div>
     {% endif %}
+  {# Below the Filters button that opens it and above the results it narrows, collapsed by
+       default. Placed after `.saverow` rather than immediately after the toolbar so the
+       "Save this search" input stays next to the button that reveals it — with the panel
+       between them, an open panel put 340px of controls in the gap. #}
+    <aside class="rail" id="rail">
+      {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
+         Query ranks. The options are rendered from headstart.search.keyword_scope_options(), never
+         written here by hand, so a new scope is a map entry and nothing in this file. A scope that
+         needs the description column is DISABLED (not hidden, unlike the first-seen control) until
+         that column exists: the option and the reason it is off stay visible. #}
+      <div class="set">
+        <h2>Keywords</h2>
+        <div class="f"><label for="kw">Must contain</label>
+          <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
+          <span class="tip">Every word (up to five) must appear. Matches inside words too — "java"
+            also finds JavaScript.</span></div>
+        <div class="f"><label for="kwin">Look in</label>
+          <select id="kwin" onchange="go()">
+            {% for value, label, needs_description in keyword_scopes %}
+            <option value="{{ value }}"{% if value == keyword_default_scope %} selected{% endif %}{% if needs_description and not has_description %} disabled{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <span class="tip" id="kwnote" role="status"></span></div>
+      </div>
+
+      <div class="set">
+        <h2>Role</h2>
+        <div class="f"><label for="etype">Employment type</label>
+          <select id="etype"><option value="">Any</option>
+            <option value="full-time">Full-time</option><option value="part-time">Part-time</option>
+            <option value="contract">Contract</option><option value="internship">Internship</option>
+          </select></div>
+        <div class="f"><label for="maxyears">Your experience (years)</label>
+          <input id="maxyears" type="number" min="0" placeholder="Any">
+          <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
+            requirement are kept.</span></div>
+        <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
+        <span class="tip">Some boards carry a real remote setting and we use it; the rest are read
+          from how the employer worded the location. Either way a role described as remote only in
+          the body text can be missed.</span>
+        <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
+        {% if currencies %}
+        <div class="f"><label for="salcur">Salary bracket (annual)</label>
+          <div class="bracket">
+            <select id="salcur" aria-label="Salary currency">
+              {% for c in currencies %}<option value="{{ c }}"{% if c == 'USD' %} selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+            <input id="salmin" type="number" min="0" step="1000" placeholder="Min" aria-label="Minimum salary">
+            <input id="salmax" type="number" min="0" step="1000" placeholder="Max" aria-label="Maximum salary">
+          </div>
+          <span class="tip">Compared within one currency — salaries are period-normalised but
+            never FX-converted, so a bracket only means something inside a single currency.
+            Only jobs whose salary is known can match.</span></div>
+        {% endif %}
+      </div>
+
+      <div class="set">
+        <h2>Where</h2>
+        <div class="f"><label for="india">India — city or region</label>
+          <span class="tip">India has a gazetteer behind it, so picking a city also matches its
+            neighbourhoods and alternative spellings. Location below matches text anywhere in the
+            world, just without that expansion. The index is worldwide either way.</span>
+          <select id="india"><option value="">Anywhere</option>
+            <option value="india">All India</option>
+            {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></div>
+        <div class="f"><label for="location">Location</label>
+          <input id="location" type="text" placeholder="e.g. Berlin"></div>
+        <div class="f"><label for="company">Company</label>
+          <input id="company" type="text" placeholder="e.g. Binance"></div>
+      </div>
+
+      <div class="set">
+        <h2>Freshness</h2>
+        <div class="f"><label for="posted">Posted by the employer</label>
+          <select id="posted"><option value="">Any time</option>
+            {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+          <span class="tip">Their date, in their format. Jobs without one are hidden by this
+            filter rather than kept, and so are any whose date is written in a shape we cannot
+            compare against a cutoff — so it keeps somewhat fewer than the Data tab's
+            posting-date figure would suggest.</span></div>
+        {% if has_first_seen %}
+        <div class="f"><label for="seen">First seen by HeadStart</label>
+          <select id="seen"><option value="">Any time</option>
+            {% for value, label in seen_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></div>
+        {% endif %}
+        <div class="f"><label for="ats">ATS provider</label>
+          <select id="ats"><option value="">Any</option>
+            {% for a in atses %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+          </select></div>
+      </div>
+
+      <button class="clear" onclick="clearAll()">Clear all filters</button>
+    </aside>
+
     <div class="active" id="active"></div>
     {# Says what the list below actually is. A no-Query browse and a ranked search look
        identical apart from the match rings, and a user who cannot tell them apart reads the

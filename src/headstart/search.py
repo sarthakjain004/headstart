@@ -167,7 +167,22 @@ RESULT_COLUMNS = (
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
 # ranking a vector search already applies and asking for it means adding no ordering at all.
-SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
+#
+# `salary` orders by `min_salary_annual`, the ADR-0082 derived column — so it covers the
+# description-mined salaries too, not only the boards that publish a structured field. Unlike
+# `posted` it needs no shape guard: the column is a real number or NULL, and NULLs sort last
+# rather than leaking to the top of a descending order the way a non-ISO date string does.
+SORT_COLUMNS = {
+    "posted": "posted_at",
+    "seen": "first_seen",
+    "salary": "min_salary_annual",
+}
+
+#: Sort columns holding a number rather than a string. The distinction only matters on the
+#: ranked path, which re-orders its window in Python: a missing value has to stand in as
+#: something the rest of the column can be compared against, and `None or ""` would put a
+#: `str` in a tuple beside `float`s and raise `TypeError` on the first comparison.
+_NUMERIC_SORTS = frozenset({"min_salary_annual"})
 
 # The salary bracket's currency when a request names none (issue #275). ADR-0084 says the picker
 # "defaults to USD", and 86.5% of the Jobs carrying a salary are USD (measured 2026-08-25), so
@@ -802,6 +817,8 @@ class JobSearch:
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
         if sort == "first_seen" and not self.has_first_seen:
             sort = None  # same dark-until-migrated rule as the filters above
+        if sort == "min_salary_annual" and not self.has_min_salary_annual:
+            sort = None  # likewise: the ADR-0082 columns arrive by migration
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
         # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same
         # reasoning for `page`, new in ADR-0074: page=1 is the default, not a falsy no-op.
@@ -879,8 +896,16 @@ class JobSearch:
             # matches" — the alternative, scanning by date, answers a question the user did
             # not ask by throwing their query away.
             window = search.limit(self.max_k * self.max_page).to_list()
+            # `reverse=True`, so the stand-in for a missing value has to be the smallest thing
+            # in its own type — `""` for the date columns, -inf for a numeric one — which puts
+            # rows that have no value last either way.
+            missing = float("-inf") if sort in _NUMERIC_SORTS else ""
             window.sort(
-                key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True
+                key=lambda r: (
+                    missing if r.get(sort) is None else r.get(sort),
+                    r.get("id") or "",
+                ),
+                reverse=True,
             )
             rows = window[offset : offset + k]
         else:

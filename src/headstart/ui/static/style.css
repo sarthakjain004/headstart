@@ -1,7 +1,7 @@
 /* ---- tokens. Every colour and size below is named here and used through the token,
        so the light theme is a token swap rather than a second stylesheet.
 
-       Palette: "quiet dossier" (ADR-0114). Warm paper and warm charcoal rather than blue-black,
+       Palette: "quiet dossier" (ADR-0115). Warm paper and warm charcoal rather than blue-black,
        one restrained accent, and no gradient or glow anywhere. The reasoning is about the user's
        state, not taste: job searching is a long, repetitive, high-rejection scanning task, usually
        done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
@@ -17,9 +17,9 @@
      against this file's own --raise dark / near-white light chart surfaces; see
      docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
      mechanism, so these are read by SLOT, never re-ordered per chart. Re-measured against the
-     ADR-0114 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
+     ADR-0115 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
      light, i.e. the ground change is not what decides it. The light figure is under 3:1 and was
-     before this change too — a pre-existing gap, called out in ADR-0114 rather than inherited
+     before this change too — a pre-existing gap, called out in ADR-0115 rather than inherited
      silently. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
   --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
@@ -29,6 +29,11 @@
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:ui-serif,"Iowan Old Style",Georgia,serif;
   --step:.18s cubic-bezier(.2,.7,.3,1);
+  /* One content width for every panel (D1). A row's own needs set it — a ~74ch text measure
+     plus the pay/match/star columns — and it lives here as a token because Search, Matches
+     and Saved must not each pick their own: they render the same card, so a card that is
+     880px on one tab and 1276px on another is the same component at two sizes. */
+  --measure:880px;
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
@@ -63,6 +68,12 @@ body{
 }
 
 .shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:18px 22px 72px; }
+/* Bounded here rather than on `main`, which is Search's element alone: constraining that one
+   left Matches and Saved rendering the SAME card at the shell's full 1276px, with the content
+   ending at 918 and 427px of empty card after it. The masthead, tab strip and footer keep the
+   shell width — they are chrome that spans the page, not content to be read across. Data's
+   `.doc` sets its own, narrower prose measure and is unaffected. */
+.content{ max-width:var(--measure); }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
@@ -109,7 +120,7 @@ body{
 .icon-btn:hover{ transform:translateY(-1px); border-color:var(--accent); color:var(--accent); }
 #who{ max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0114).
+/* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0115).
        The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
        it costs one row and returns the width to the results. ---- */
 .tabs{ display:flex; gap:2px; margin:0 0 16px; border-bottom:1px solid var(--rule);
@@ -193,13 +204,8 @@ textarea:focus{ border-color:var(--violet); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
 
-/* ---- search layout: filter panel above, results below (ADR-0114).
-       The results column is bounded to what a row actually needs — a 74ch text measure plus
-       the pay/match/star columns. Left at the full 1276px the card was a wide empty shell
-       with its content packed into the left two thirds; the width the restructure freed is
-       spent on aligning those columns, not on stretching the box around them. ---- */
-main{ max-width:880px; }
-/* The filter panel (ADR-0114). Above the results rather than beside them, full width, and
+/* ---- search layout: filter panel above, results below (ADR-0115). ---- */
+/* The filter panel (ADR-0115). Above the results rather than beside them, full width, and
    closed until asked for — so the default view is the thing the user came for. Open, the
    groups flow into as many columns as the width allows rather than one tall column. */
 .rail{ display:none; background:var(--raise); border:1px solid var(--rule);
@@ -211,12 +217,11 @@ main{ max-width:880px; }
 .rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
   color:var(--ink-3); margin:0 0 10px; }
 /* Each group is a column of the panel grid, so the vertical rules that separated them in a
-   single stacked column would now draw between unrelated things. */
+   single stacked column would now draw between unrelated things. The stacked-column rule that
+   used to follow this one undid it — measured, three of the four heads sat at y=320 against
+   Keywords' 285, under a stray rule. */
 .set + .set{ margin-top:0; padding-top:0; border-top:0; }
 .clear{ grid-column:1/-1; justify-self:start; }
-.rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
-  color:var(--ink-3); margin:0 0 10px; }
-.set + .set{ margin-top:18px; padding-top:16px; border-top:1px solid var(--rule); }
 .f{ display:flex; flex-direction:column; gap:5px; margin-bottom:11px; }
 .f:last-child{ margin-bottom:0; }
 .f label{ font-size:12px; color:var(--ink-2); font-weight:500; }
@@ -225,7 +230,7 @@ main{ max-width:880px; }
 .set > .tip{ display:block; margin:-4px 0 11px 25px; }
 .f select,.f input{ width:100%; padding:9px 11px; border-radius:var(--r-md); font:inherit;
   font-size:13px; background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
-  outline:none; transition:border-color var(--step); }
+  transition:border-color var(--step); }
 .f select:focus,.f input:focus{ border-color:var(--accent); }
 .sw{ display:flex; align-items:center; gap:9px; color:var(--ink-2); font-size:13px;
   cursor:pointer; user-select:none; margin-bottom:9px; }
@@ -244,8 +249,7 @@ main{ max-width:880px; }
 .toolbar .n{ font:500 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); }
 .toolbar .spacer{ flex:1; }
 .toolbar select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
-  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
-.filters-btn{ display:none; }
+  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; }
 .filters-btn{ display:inline-block; }
 /* A filter that is applied but out of sight needs to announce itself on the control that
    hides it. */
@@ -260,7 +264,7 @@ main{ max-width:880px; }
 .pill button:hover{ color:var(--coral); }
 @keyframes pop{ from{ opacity:0; transform:scale(.86); } to{ opacity:1; transform:none; } }
 
-/* ---- result cards (ADR-0114). A row, not a box: the whole point of the full width is that
+/* ---- result cards (ADR-0115). A row, not a box: the whole point of the full width is that
        salary and match land at the SAME x on every row, so the eye scans one column down the
        page instead of re-reading each card left to right. The text block is bounded to a
        readable measure (the skill's 65-75ch rule); the freed width goes to alignment, not to
@@ -282,6 +286,10 @@ main{ max-width:880px; }
 .card .who{ min-width:0; }
 .card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:15.5px;
   letter-spacing:-.01em; line-height:1.3; }
+/* Every result leaves the site for the employer's own board, so returning to a fifty-row
+   list with no memory of what you already opened is the main cost of the loop. Ink-2 rather
+   than a new hue: "already seen" is a de-emphasis, not a category. */
+.card a.title:visited{ color:var(--ink-2); }
 .card a.title:hover{ color:var(--accent); }
 .card a.title .ext{ width:11px; height:11px; margin-left:5px; vertical-align:baseline;
   color:var(--ink-3); }
@@ -298,6 +306,22 @@ main{ max-width:880px; }
 /* 44x44: the most-repeated control on the page was a 34x23 hit area. */
 .card .star{ width:44px; height:44px; display:grid; place-items:center; font-size:17px; }
 .card .nopay{ color:var(--ink-3); font-weight:400; }
+.card .dismiss{ position:absolute; top:3px; right:6px; width:22px; height:22px; padding:0;
+  background:none; border:0; cursor:pointer; line-height:1; font-size:15px; color:var(--ink-3);
+  opacity:0; transition:opacity var(--step), color var(--step); }
+.card:hover .dismiss, .card:focus-within .dismiss{ opacity:1; }
+.card .dismiss:hover{ color:var(--coral); }
+/* No hover to reveal it on, so it is simply there. */
+@media (hover:none){ .card .dismiss{ opacity:.7; } }
+/* Hidden by default, and shown dimmed while "show" is on — so undoing one is a click on the
+   row it was, not a hunt through a settings list. */
+#results:not(.reveal) .card.dismissed{ display:none; }
+/* .75, not the .45 this started at: opacity on the card composites every child against the
+   page ground, and .45 took the `.org` line to 2.58:1 dark / 2.37 light — a revealed row is
+   still text somebody is reading. Measured, .75 is the floor that clears 4.5 in both themes
+   (4.81 / 4.82 on that same weakest line). */
+.card.dismissed{ opacity:.75; }
+.card.dismissed .dismiss{ opacity:1; color:var(--accent); }
 
 /* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
    colour-blindness. pathLength=100 on the circles makes the dasharray a straight percent. */
@@ -311,7 +335,6 @@ main{ max-width:880px; }
 .match .v{ position:absolute; inset:0; display:grid; place-items:center;
   font:600 12px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--accent)); }
 
-.card:not(.ranked){ grid-template-columns:minmax(0,30rem) 190px 44px; }
 .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center; }
 .tag{ font:500 11px var(--sans); padding:2px 8px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
@@ -347,6 +370,16 @@ main{ max-width:880px; }
   animation:shim 1.2s linear infinite; }
 @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
 
+/* ---- compact rows (B7). The ui-ux-pro-max design-system generator models density as the
+       spacing scale alone (its dense tier roughly halves every step), so this touches padding,
+       row gap and the ring's diameter and leaves the content untouched. ---- */
+.dense .card{ padding:7px 16px 7px 18px; margin-bottom:4px; }
+.dense .card .org{ margin-top:0; }
+.dense .card .tags{ margin-top:4px; gap:5px; }
+.dense .card .match, .dense .card .ring{ width:40px; height:40px; }
+.dense .card .star{ height:34px; }
+.dense .kind, .dense .active{ margin-bottom:8px; }
+
 /* ---- the Matches tab (ADR-0043): saved-set strip + live results ---- */
 .matches-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
 .matches-head h2{ font:600 16px var(--sans); letter-spacing:-.01em; margin:0; }
@@ -368,10 +401,10 @@ main{ max-width:880px; }
 .saverow input{ flex:1; max-width:340px; }
 .matches-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
 .matches-controls select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
-  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
+  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; }
 .matches-controls input[type="date"]{ padding:7px 9px; border-radius:var(--r-md); font:inherit;
   font-size:12.5px; background:var(--raise); color:var(--ink); border:1px solid var(--rule);
-  outline:none; color-scheme:dark light; }
+  color-scheme:dark light; }
 /* the native picker follows the SITE theme when the toggle has forced one, not the OS */
 :root[data-theme="dark"] .matches-controls input[type="date"]{ color-scheme:dark; }
 :root[data-theme="light"] .matches-controls input[type="date"]{ color-scheme:light; }
@@ -458,6 +491,11 @@ main{ max-width:880px; }
    width, so text/gridlines never stretch non-uniformly the way a fixed height + width:100% +
    preserveAspectRatio="none" used to (a real bug on a narrow sidebar or a very wide monitor). */
 #trends-chart{ width:100%; aspect-ratio:720/260; height:auto; display:block; overflow:visible; }
+/* The same aspect-ratio as the chart it replaces, so the panel holds its height across the
+   swap — a skeleton that reserves the wrong space is its own layout shift. */
+.trends-skel[hidden]{ display:none !important; }
+.trends-skel .shim{ height:auto; aspect-ratio:720/260; border-radius:var(--r-md); }
+.trends-skel .shim:last-child{ aspect-ratio:auto; height:260px; }
 #trends-hitrect{ cursor:crosshair; }
 .crosshair-line{ stroke:var(--rule-2); stroke-width:1; }
 .ch-dot{ pointer-events:none; }
@@ -514,7 +552,12 @@ main{ max-width:880px; }
 .trends-table th[scope="row"]{ text-align:left; color:var(--ink); font-weight:500;
   font-variant-numeric:normal; position:sticky; left:0; background:var(--raise); }
 
-@media (max-width:760px){ .trends-grid{ grid-template-columns:1fr; } }
+@media (max-width:760px){
+  .trends-grid{ grid-template-columns:1fr; }
+  /* One column, so the panel is as tall as its controls and the page scrolls it — a nested
+     scroller inside a phone-height box hides more than the cap saves. */
+  .rail.open{ max-height:none; overflow:visible; }
+}
 
 /* running text, so it gets a measure — 1180px of prose is unreadable */
 .foot{ max-width:62ch; margin:46px auto 0; text-align:center; color:var(--ink-3);
@@ -542,11 +585,21 @@ main{ max-width:880px; }
 @media (max-width:560px){
   .shell{ padding:18px 14px 60px; }
   .count, #who{ display:none; }        /* the index size is context, not a control */
-  .searchbar{ flex-direction:column; }
-  .go{ padding:15px; width:100%; }
-  .hint{ gap:6px; }
+  /* Beside the field, not stacked under it. The stacked form was chosen when the button kept
+     its 30px side padding and squeezed the field to about fifteen characters; trimming the
+     padding buys the row back without that. */
+  .go{ padding:0 16px; }
+  /* The example queries cost a whole row above the first job, and the placeholder inside the
+     field already carries one. They stay on every wider screen, where the row is free. */
+  .hint{ display:none; }
+  /* The spacer pushes Sort to the right edge, so on a phone every control after it starts a
+     new line. Packed left instead, with the three status texts sent to the end: the result
+     count alone is wider than the screen, and sitting second in the DOM it broke the row
+     before any control had been placed. `order` only — the `width:100%` that used to go with
+     it is what forced the count onto a line nothing else could share. */
   .toolbar{ gap:8px 10px; }
-    .toolbar .n{ order:3; width:100%; }
+  .toolbar .spacer{ display:none; }
+  .toolbar .n, .toolbar .sortnote, #hidden{ order:9; }
   .card{ padding:14px 15px; }
   .card a.title{ font-size:15px; }
 }

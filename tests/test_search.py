@@ -765,7 +765,11 @@ def test_bracket_stays_dark_until_the_salary_columns_exist():
 def test_sort_is_whitelisted_to_a_column():
     from headstart.search import SORT_COLUMNS
 
-    assert SORT_COLUMNS == {"posted": "posted_at", "seen": "first_seen"}
+    assert SORT_COLUMNS == {
+        "posted": "posted_at",
+        "seen": "first_seen",
+        "salary": "min_salary_annual",
+    }
     searcher, table = _searcher()
     searcher.run({"q": "", "sort": "; DROP TABLE jobs; --"})
     # unknown value == no sort at all, i.e. the ordinary browse ordering
@@ -957,7 +961,9 @@ def test_the_two_sort_paths_break_ties_in_opposite_directions():
     from headstart.search import JobSearch
 
     src = inspect.getsource(JobSearch.run)
-    assert 'key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True' in src
+    assert "missing if r.get(sort) is None else r.get(sort)," in src
+    assert 'r.get("id") or "",' in src
+    assert "reverse=True," in src
     assert '{"column_name": "id", "ascending": True}' in src
 
 
