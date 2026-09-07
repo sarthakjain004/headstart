@@ -49,6 +49,18 @@ _WD_NON_SITE = {
     "static",
     "images",
     "favicon.ico",
+    # The same well-known files `cc_miner.WELL_KNOWN_FILES` rejects. That miner captured 2,401
+    # Boards named `robots` before anyone noticed, because its pattern drops the extension; this
+    # feeder keeps it, so both spellings are listed. Two producers, one rule — keep them in step.
+    "robots.txt",
+    "robots",
+    "llms.txt",
+    "llms",
+    "llms-full.txt",
+    "sitemap.xml",
+    "sitemap",
+    "security.txt",
+    "ads.txt",
 }
 STYLES: tuple[Style, ...] = get_args(Style)
 

@@ -196,10 +196,18 @@ ATS_PATTERNS = {
         "kind": "workday",
         # groups: (host, site); a leading locale (en-US) is skipped. Rebuilt to the canonical
         # board URL https://{host}/{site} that WorkdayScraper.slug_from expects.
-        # The locale prefix comes in both forms — `/en-US/Site` and bare `/es/Site` — and only the
-        # hyphenated one was skipped, so a Spanish board yielded the site "es". Consume either.
+        # Only the hyphenated locale (`/en-US/Site`) is skipped, deliberately. Widening this to a
+        # bare `[a-z]{2}/` to also catch `/es/Site` looks obviously right and is wrong: a Workday
+        # deep link is `{host}/{site}/job/{...}`, so on a genuine two-letter *site* the wider
+        # pattern consumes the site and captures the path marker instead — measured,
+        # `howard.../hu/job/...` went from the correct `hu` to `job` (dropped by BLOCK, so the
+        # Board became undiscoverable) and `browardcollege.../pt/details/...` minted a phantom
+        # Board `details`. Counted on the ledger this change ships: 69 live rows carry a two-letter
+        # site across 58 distinct Boards, 6 of them a site that is itself an ISO-639-1 code.
+        # A bare `/es` with nothing
+        # after it stays a junk row and the liveness checker settles it as dead — one probe.
         "patterns": [
-            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}(?:-[A-Z]{2})?/)?([a-zA-Z0-9_-]+)",
+            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)",
         ],
     },
     "oracle": {
@@ -295,8 +303,9 @@ BLOCK = {
 #: Path segments that name a well-known FILE, never a Workday career site. The workday pattern
 #: reads the segment after the host as the site, and `[a-zA-Z0-9_-]+` cannot match the dot — so
 #: `https://x.wd1.myworkdayjobs.com/robots.txt` was captured as the board `.../robots`. Measured on
-#: the 2026-08 crawl: **426 of 514 new workday rows (83%) were this**, and every one probed
-#: returned 404 or 500. They then sit in the ledger as `unknown` and are re-probed forever.
+#: the 2026-08 crawl: **426 of 514 new workday rows (83%) were this**, and 20 of 20 sampled
+#: returned 404. Purged from the ledger: 1,975 rows — 1,549 already settled `dead` (90-day
+#: TTL) and 426 `unknown` (3-day TTL, so those really were re-probed every run).
 WELL_KNOWN_FILES = {
     "robots",
     "llms",
@@ -314,10 +323,10 @@ WELL_KNOWN_FILES = {
     "opensearch",
 }
 #: Deliberately NOT extended to bare language codes. `.../es` with nothing after it is almost
-#: always a locale root, but the name alone cannot prove it: measured on the live ledger, six such
-#: rows are `live` with real job counts — `howard.../hu` (141 jobs, Howard University),
-#: `browardcollege.../pt` (137), `talkingrain.../tr` (8). Blocking two-letter sites would have
-#: deleted them. The regex above already recovers the real case (`/es/Alsa` -> `Alsa`); a bare
+#: always a locale root, but the name alone cannot prove it: on the ledger this change ships, six
+#: `live` rows have a site that is itself an ISO-639-1 code, with real job counts —
+#: `howard.../hu` (141 jobs, Howard University), `browardcollege.../pt` (137),
+#: `talkingrain.../tr` (8). Blocking two-letter sites would have deleted them. The regex above already recovers the real case (`/es/Alsa` -> `Alsa`); a bare
 #: locale root that survives is left for the liveness checker to settle as dead, which costs one
 #: probe and risks nothing.
 

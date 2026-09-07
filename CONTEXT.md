@@ -80,7 +80,7 @@ A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488
 _Avoid_: calling this "unique" — the 25,557 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 23 genuinely are not distinct Boards, they are one Board reached by two names.
 
 **Hiring Board** — 54,224:
-A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 31,796 are live but empty.
+A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 31,839 are live but empty.
 
 **Slice** — 20,000:
 The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boards` into a **Head** (6,000, the top-scored) and a **Tail** (14,000). The Tail is random over everything not in the Head — *except* that ADR-0062 reserves a share of it for Boards with unsettled descriptions, so it is not purely random. Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
