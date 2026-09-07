@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from headstart.experience import extract
+from headstart.remote import extract as extract_remote
 from headstart.salary import extract as extract_salary
 from headstart.search import DOC_PREFIX
 
@@ -110,6 +111,20 @@ def build_doc(job: dict) -> str:
 # on it; facts refresh unconditionally. One shared counter for both families (simpler than two
 # watermarks; the wasted recompute on an unrelated bump is cheap regex work, not network/LLM cost
 # — revisit only if that stops being true).
+#
+# `remote` is a fourth family with a different shape (ADR-0118 amends ADR-0061's fact/derivation
+# table for it): its raw ATS-native value IS a fact, but the served column holds
+# `headstart.remote.extract`'s overlay on top of that fact rather than the fact itself, and —
+# unlike every field above — is deliberately EXCLUDED from `update_meta.FACT_FIELDS`
+# (`_FACT_WITH_OVERLAY`), so it is NOT refreshed unconditionally every run the way `location` or
+# `salary` are. Only a sweep or an explicit re-derive queue entry touches it, same cadence as
+# every derivation below — a bug caught in review: including it in the unconditional per-run
+# resync let a JD-derived `True` silently revert to the raw fact's current value on the very next
+# ordinary re-scrape, since an ordinary run holds no description text to re-derive from. The
+# overlay itself still needs no separate "was this field already correct" guard the way
+# experience/salary's `_rederive_without_text` does — it is one-directional (`False`/`None` ->
+# `True` only, see `remote`'s module docstring), so recomputing it fresh each sweep can only
+# confirm or improve on the stored value, never downgrade it.
 # v2: Tier 2 answers with the smallest stated requirement rather than the first (ADR-0079).
 # v3: added the salary cascade (min_salary_annual/max_salary_annual/salary_currency/salary_source).
 # v4: covers 10 salary.py-changing commits since v3 that none bumped this despite each measurably
@@ -167,7 +182,20 @@ def build_doc(job: dict) -> str:
 # to 20 LPA") shifts which `lo` the match captures, not just adds a `hi` — but that shape does
 # not occur in real postings: verified against 526 local LPA-bearing records with zero
 # disagreements between old and new.
-DERIVATIONS_VERSION = 7
+#
+# v8: added `headstart.remote.extract` — the JD-supersedes-field overlay described above. Not a
+# fix to an existing derivation; a new fourth family sharing this counter for the first time
+# (ADR-0118). Measured against the live served table (335,543 rows) joined to the full
+# description store (493,629 JDs, 98.1% coverage): AT LEAST 7,439 already-indexed rows have
+# `remote` False or None today while the JD confidently says remote (818 where the field was
+# None -- 94% on Ashby, whose `workplaceType` field goes unset even at companies, like ClickHouse
+# and Redis, that describe themselves as remote-first in the JD text; 6,621 where the field says
+# False outright, concentrated on greenhouse and zoho) -- a lower bound, taken against an earlier
+# version of `remote._REMOTE_EXPLICIT` that missed the "this is a remote position" word order
+# (fixed after measuring, pinned by `test_this_is_a_remote_position`); a sweep on real data would
+# find at least this many. A sweep is required to reach any of them, since a fix landing here
+# reaches new Jobs for free but not rows already stored before it shipped.
+DERIVATIONS_VERSION = 8
 
 
 def to_meta(job: dict) -> dict:
@@ -179,7 +207,10 @@ def to_meta(job: dict) -> dict:
     ``salary_currency`` come from the salary cascade (field, then description — no seniority
     tier, see ``headstart.salary``'s module docstring) with ``salary_source`` alongside; all four
     are None when nothing matched, and None is never treated as exclusionary. ``employment_type``
-    / ``salary`` stay raw strings — display-only (ADR-0019).
+    / ``salary`` stay raw strings — display-only (ADR-0019). ``remote`` is the scraper's own
+    field UNLESS the description confidently reads as remote, in which case that wins — see
+    ``headstart.remote``'s module docstring; one-directional, so this can only ever turn a
+    False/None field into True, never the reverse.
 
     The derived fields are re-computable from the facts beside them, which is what lets
     ``update_meta`` repair them in place later; see :data:`DERIVATIONS_VERSION`.
@@ -190,6 +221,7 @@ def to_meta(job: dict) -> dict:
     # and `embed_plan` skips by id — so without this the degradation is permanent and invisible.
     # Planner-only: see PLANNER_ONLY_FIELDS.
     meta["has_description"] = bool((job.get("description") or "").strip())
+    meta["remote"] = extract_remote(job.get("remote"), job.get("description"))
     span = extract(job.get("experience"), job.get("description"), job.get("title"))
     meta["min_years"] = span.min_years if span else None
     meta["max_years"] = span.max_years if span else None
