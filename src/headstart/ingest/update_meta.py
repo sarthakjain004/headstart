@@ -23,6 +23,13 @@ store does not hold are left alone — recomputing without the text a value came
 downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, so they carry no
 ``has_description``).
 
+**``remote`` is both** — a Fact (each scraper's own ATS-native field, re-observed above like any
+other) with a Derivation overlaid on top of it (``headstart.remote.extract``, ADR-0061 v8): if
+the JD confidently reads as remote, that wins over whatever the just-refreshed fact says. That
+overlay needs no "text the store doesn't hold" guard the way the cascade above does — it is
+one-directional (can only turn False/None into True), so recomputing it without text simply
+returns the fact unchanged rather than risking a downgrade.
+
 **The re-derivation queue** (ADR-0062) is the other half of that: when a run finally supplies one of
 those descriptions, the row is still carrying numbers derived without it, and no version has moved.
 ``update_descriptions`` appends the ids to ``data/state/pending_rederive.txt``; this module runs the
@@ -57,6 +64,7 @@ from headstart.experience import extract, from_field, from_seniority
 from headstart.ingest import PENDING_REDERIVE_PATH, REPO_ROOT, read_id_list
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS
 from headstart.ingest.update_descriptions import read_store
+from headstart.remote import extract as extract_remote
 from headstart.salary import extract as extract_salary
 from headstart.salary import from_field as salary_from_field
 from headstart.scrapers import registry
@@ -236,6 +244,11 @@ def refresh_row(
     # trigger it (unlike experience's).
     salary_inputs_moved = facts_changed and row.get("salary") != meta.get("salary")
 
+    # `remote`'s own input: the Facts pass above just refreshed `row["remote"]` to this run's raw
+    # ATS field (it is in FACT_FIELDS), so a change there is the trigger — same shape as
+    # `inputs_moved`/`salary_inputs_moved`, keyed on the field the overlay actually reads.
+    remote_inputs_moved = facts_changed and row.get("remote") != meta.get("remote")
+
     changed = False
     if sweep or rederive or inputs_moved:
         if (
@@ -273,6 +286,17 @@ def refresh_row(
                 row.get(f) != derived_salary[f] for f in SALARY_DERIVED_FIELDS
             )
             row.update(derived_salary)
+
+    # `remote`'s overlay (headstart.remote, ADR-0061 v8). No `_KEEP`-style "don't downgrade
+    # without text" guard needed: `extract` is one-directional (False/None -> True only) and a
+    # missing description just returns `row["remote"]` unchanged, so calling it unconditionally
+    # here — rather than only when `row["id"] in descriptions`, unlike experience/salary above —
+    # is always safe and never loses information.
+    if sweep or rederive or remote_inputs_moved:
+        new_remote = extract_remote(row.get("remote"), descriptions.get(row["id"]))
+        if new_remote != row.get("remote"):
+            changed = True
+        row["remote"] = new_remote
 
     return row, facts_changed, changed
 

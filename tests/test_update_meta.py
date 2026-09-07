@@ -157,6 +157,67 @@ def test_changed_experience_field_rederives_without_a_sweep():
     assert (row["min_years"], row["experience_source"]) == (2, "field")
 
 
+# --- remote: JD supersedes the field, one direction only (ADR-0061 v8) ---------------------------
+
+
+def test_sweep_lets_the_jd_supersede_a_false_field():
+    meta = _meta(remote=False)
+    row, _, derived_changed = um.refresh_row(
+        meta, None, {"greenhouse:acme:1": "This is a remote position."}, sweep=True
+    )
+    assert derived_changed
+    assert row["remote"] is True
+
+
+def test_sweep_never_lets_the_jd_turn_true_into_false():
+    # one-directional: an onsite-reading JD must never override an existing True field. The
+    # experience fields are nulled out here so the (irrelevant) "#LI-Onsite" text re-deriving
+    # them to None-vs-None doesn't itself trip derived_changed and mask what's being tested.
+    meta = _meta(remote=True, min_years=None, max_years=None, experience_source=None)
+    row, _, derived_changed = um.refresh_row(
+        meta, None, {"greenhouse:acme:1": "#LI-Onsite"}, sweep=True
+    )
+    assert not derived_changed
+    assert row["remote"] is True
+
+
+def test_sweep_with_no_held_description_leaves_remote_alone():
+    meta = _meta(remote=False)
+    row, _, derived_changed = um.refresh_row(meta, None, {}, sweep=True)
+    assert not derived_changed
+    assert row["remote"] is False
+
+
+def test_a_facts_refresh_that_flips_remote_rederives_without_a_sweep():
+    # the raw field is the cascade's other input, so a Board editing it (e.g. the ATS's own
+    # workplaceType flips from unset to False) must re-run the overlay even off a version bump
+    meta = _meta(remote=None)
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["remote"] = False
+    row, facts_changed, derived_changed = um.refresh_row(
+        meta, facts, {"greenhouse:acme:1": "This is a remote position."}, sweep=False
+    )
+    assert facts_changed and derived_changed
+    assert (
+        row["remote"] is True
+    )  # the fresh fact (False) is immediately superseded by the JD
+
+
+def test_a_facts_refresh_with_no_remote_change_does_not_rederive():
+    meta = _meta(remote=False)
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["location"] = (
+        "Berlin, edited"  # some other fact moves; remote itself does not
+    )
+    row, facts_changed, derived_changed = um.refresh_row(
+        meta, facts, {"greenhouse:acme:1": "This is a remote position."}, sweep=False
+    )
+    assert facts_changed and not derived_changed
+    assert (
+        row["remote"] is False
+    )  # no sweep, no remote-input drift -> overlay never runs
+
+
 # --- the watermark -------------------------------------------------------------------------------
 
 
