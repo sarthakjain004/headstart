@@ -73,7 +73,7 @@ function loadApp() {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
-    + ' niceAxis: niceAxis, fmtAxis: fmtAxis,'
+    + ' niceAxis: niceAxis, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
@@ -450,4 +450,42 @@ test('a category that drops off and comes back reclaims the colour it had', () =
   t.draw();
   assert.equal(t.colorSlot(qa), qaWas, 'a returning name must get its own colour back');
   assert.equal(t.colorSlot(dev), devWas);
+});
+
+/* Both of these shipped and were caught by review, not by a test — so they get one each. */
+
+test('a series measured at zero early is not indexed off a later point', () => {
+  const { t } = loadApp();
+  const f = fixture();
+  // A real measurement of zero, then growth. `find(v => v)` skipped the zero and indexed off
+  // the 5, so the first point plotted at 0/5*100 = 0, the line spiked to 800, and the axis
+  // stretched to 0-800 — crushing every other series into a few pixels.
+  const zero = { name: 'zerostart', label: 'zerostart', points: [0, 0, 5, 10, 20, 40], latest: 40 };
+  t.set({ ...f, series: [zero, ...f.series], stamps: [1, 2, 3, 4, 5, 6].map(String),
+          totals: [100, 100, 100, 100, 100, 100] }, null);
+  t.setUnit('index', false);
+  const vals = t.seriesValues(zero);
+  assert.ok(vals.every(v => v === null),
+    `a base below the floor must yield no line, got ${JSON.stringify(vals)}`);
+});
+
+test('a healthy series still indexes to 100 at its first measured point', () => {
+  const { t } = loadApp();
+  const f = fixture();
+  const ok = { name: 'ok', label: 'ok', points: [8, 9, 12, 16], latest: 16 };
+  t.set({ ...f, series: [ok, ...f.series], stamps: ['1', '2', '3', '4'],
+          totals: [100, 100, 100, 100] }, null);
+  t.setUnit('index', false);
+  assert.deepEqual(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200]);
+});
+
+test('a delta carries its sign in the number, not only in the arrow', () => {
+  const { t } = loadApp();
+  // The flat glyph has one shape and two signs: -0.28% and +0.89% both rendered "→ 0.3%" /
+  // "→ 0.9%", and the "biggest faller" tile printed a flat arrow with no minus anywhere.
+  assert.match(t.deltaText(-0.282), /−0\.3%/);
+  assert.match(t.deltaText(0.893), /\+0\.9%/);
+  assert.notEqual(t.deltaText(-0.282), t.deltaText(0.282));
+  assert.match(t.deltaText(-22), /↓ −22\.0%/);
+  assert.match(t.deltaText(118.2), /↑ \+118\.2%/);
 });

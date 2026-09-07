@@ -1667,16 +1667,20 @@ function drawTrends(){
     // exists.
     const hasRoles = !trendDrill && (d.watch_parents || []).includes(s.name);
     const off = hiddenSeries.has(s.name);
+    // A family too small at the window's start to index has no line, so the row says why
+    // rather than leaving a swatch pointing at nothing.
+    const noBase = !hasIndexBase(s);
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
-    return `<li class="charted${recolouredNames.has(s.name) ? ' recoloured' : ''}${off ? ' off' : ''}"
+    return `<li class="charted${recolouredNames.has(s.name) ? ' recoloured' : ''}${off ? ' off' : ''}${noBase ? ' nobase' : ''}"
       ><span class="row" data-name="${esc(s.name)}" role="button" tabindex="0"
       >${swatchHtml(c, slot)}
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Named roles are tracked inside this category">▸ roles</span>' : ''}
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
-      <span class="dl ${deltaClass(dl)}">${deltaText(dl)}</span></span>
+      ${noBase ? '<span class="dl flat" title="Too few openings at the start of this window to index">not indexed</span>'
+               : `<span class="dl ${deltaClass(dl)}">${deltaText(dl)}</span>`}</span>
       <button class="vis" type="button" data-hide="${esc(s.name)}" aria-pressed="${off}"
         title="${off ? 'Show' : 'Hide'} this line" aria-label="${off ? 'Show' : 'Hide'} ${esc(s.label)}"
         >${off ? '○' : '●'}</button></li>`;
