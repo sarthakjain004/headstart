@@ -33,13 +33,23 @@ import json
 from pathlib import Path
 from typing import Any
 
-# Two layouts, one module: `config/fx_rates.json` in the repo, and a flat `fx_rates.json`
-# beside app.py in the Space image (deploy-space.yml copies it there). Checked in that order
-# rather than branching on an environment guess.
-_CANDIDATES = (
-    Path(__file__).resolve().parents[2] / "config" / "fx_rates.json",
-    Path(__file__).resolve().parent / "fx_rates.json",
-)
+
+def _candidates() -> tuple[Path, ...]:
+    """Where the rate table might be, nearest first.
+
+    Two layouts, one module: a flat `fx_rates.json` beside `app.py` in the Space image, and
+    `config/fx_rates.json` in the repo. Walked rather than indexed, and computed lazily rather
+    than at import: this module lives at `/app/fx.py` in the Space, whose path has only two
+    ancestors, so a hardcoded `parents[2]` raised `IndexError` **at import time** — before the
+    guarded read below could fall back — and took the whole Space down with it. Nothing here
+    may raise on a path shallower than it expects.
+    """
+    here = Path(__file__).resolve()
+    return (
+        here.parent / "fx_rates.json",
+        *(ancestor / "config" / "fx_rates.json" for ancestor in here.parents),
+    )
+
 
 #: Parsed once. ``False`` distinguishes "tried and failed" from "not tried yet", so a malformed
 #: file is not re-read on every request.
@@ -57,7 +67,7 @@ def table(path: Path | None = None) -> dict[str, Any] | None:
         return _CACHE  # type: ignore[return-value]
     result: dict[str, Any] | None
     try:
-        found = path or next((c for c in _CANDIDATES if c.exists()), None)
+        found = path or next((c for c in _candidates() if c.exists()), None)
         if found is None:
             raise FileNotFoundError("no fx_rates.json on either known path")
         raw = json.loads(found.read_text())
