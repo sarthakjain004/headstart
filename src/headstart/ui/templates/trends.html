@@ -48,12 +48,12 @@
     <span class="ctl" id="trends-unit-ctl">
       <span class="ctl-label" id="trends-lbl-unit">Unit</span>
       <span class="seg" id="trends-unit" role="radiogroup" aria-labelledby="trends-lbl-unit">
-        <button data-unit="share" role="radio" aria-checked="true" tabindex="0">Share</button>
+        {# Change is the DEFAULT (ADR-0118) and this markup is the first-paint state — nothing
+           calls setUnit before the first draw, so these three attributes must agree with
+           app.js's `trendUnit` initialiser or the group checks one button and draws another. #}
+        <button data-unit="share" role="radio" aria-checked="false" tabindex="-1">Share</button>
         <button data-unit="count" role="radio" aria-checked="false" tabindex="-1">Count</button>
-        {# Change indexes every family's COUNT to 100 at the window's first measurement
-           (ADR-0118), so families of very different size become comparable shapes. It rides on
-           raw openings, so index growth lifts every line — the caption says so. #}
-        <button data-unit="index" role="radio" aria-checked="false" tabindex="-1">Change</button>
+        <button data-unit="index" role="radio" aria-checked="true" tabindex="0">Change</button>
       </span>
       {# "New this week" used to grey this group out and explain itself only in a `title`. A
          control that can never be used here is replaced by the answer and its one-line why. #}
@@ -86,6 +86,10 @@
     <span id="trends-error-msg"></span>
     <button class="ghost" id="trends-retry" type="button">Retry</button>
   </div>
+  {# The chart's space while there is no chart. Reserving it inside the alert drew a 360px
+     alert-tinted void around six words; the panel still must not collapse under the reader,
+     so a neutral box holds the height and the alert stays the size of its message. #}
+  <div class="trends-void" id="trends-void" hidden aria-hidden="true"></div>
   {# The headline figures, above the plot: the two movers a reader scans for, and the two
      totals that say what the shares are shares OF. #}
   <div class="trends-kpi" id="trends-kpi" hidden></div>

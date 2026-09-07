@@ -1214,11 +1214,16 @@ async function onGoogleCredential(resp){
 }
 /* ---- role trends (ADR-0040/0051). The ledger is one count per (metric, family, band) per
    pipeline run; this draws a line per series and ranks them by size. Two measures ("All
-   openings" = live stock, "New this week" = rows first seen inside the flow window) and two
-   units (share of the index, absolute count). Share is the default on stock because raw stock
-   counts move with our coverage — a night the index grows 1.5% lifts every category ~1.5%
-   and says nothing about the market; a share only moves when categories move RELATIVE to each
-   other. "New" is charted as counts: its meaning ("312 fresh AI/ML roles") IS the number.
+   openings" = live stock, "New this week" = rows first seen inside the flow window) and three
+   units: Change (each family's own count indexed to 100 at the window's start), Share (of the
+   whole index) and Count (raw openings). Change is the default (ADR-0118) — the panel's
+   heading asks which roles are GROWING, and only an indexed axis answers that for eight
+   families whose latest counts differ by 7x. Its one cost is that raw counts move with our
+   coverage, so the plot draws the whole index's own growth as a dashed reference line and the
+   caption says to read a family against it. Share removes the confound instead, for a reader
+   who wants that rather than disclosure; Count is the literal level. Only Share is meaningless
+   against "New this week" — a share of "new" openings over all live ones has no reading — so
+   only Share is withdrawn there, never the whole group.
 
    Redesigned 2026-08-20 against the dataviz skill's method and
    docs/product/2026-08-20_trends-ui-design-research.md (WAI-ARIA APG, FT/Datawrapper/NN·g).
@@ -1230,7 +1235,10 @@ async function onGoogleCredential(resp){
    category (the "recolor-on-filter" failure mode: a reader who learned "AI/ML is violet" must
    not have it turn blue because a filter changed who's biggest). ---- */
 let trendData = null, trendDrill = null;
-let trendMetric = 'stock', trendUnit = 'share', trendSplit = 'bands';
+// trendUnit must agree with the aria-checked/tabindex the Unit radiogroup ships in
+// trends.html — nothing calls setUnit before the first paint, so the markup IS the initial
+// state and a drift here would check one button and draw another unit.
+let trendMetric = 'stock', trendUnit = 'index', trendSplit = 'bands';
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
@@ -1411,15 +1419,23 @@ function showTrendsError(msg){
   if (el('trends-viz')){ el('trends-viz').classList.remove('loading'); el('trends-viz').hidden = true; }
   // Everything that describes data goes with the data. The tiles, the table and the "how to
   // read this" block used to survive a failed fetch, so a panel with no chart still carried
-  // 190 words about how to read one.
+  // 190 words about how to read one. The scope line goes with them: "24 categories · 471
+  // measurements" under a "didn't load" banner describes the payload that is NOT on screen.
   ['trends-kpi', 'trends-table-wrap', 'trends-chart-note'].forEach(id => {
     if (el(id)) el(id).hidden = true;
   });
+  if (el('trends-scope')) el('trends-scope').textContent = '';
+  // The chart's space, held by a neutral box rather than by the alert itself. The alert used
+  // to carry `min-height:min(46vh,360px)`, which drew a 360px alert-tinted void around six
+  // words; the panel still must not collapse under the reader, so the space is reserved next
+  // to the message instead of inside it.
+  if (el('trends-void')) el('trends-void').hidden = false;
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
 function hideTrendsError(){
   setTrendsBusy(false);
   if (el('trends-error')) el('trends-error').hidden = true;
+  if (el('trends-void')) el('trends-void').hidden = true;
   if (el('trends-chart-note')) el('trends-chart-note').hidden = false;
   if (el('trends-table-wrap')) el('trends-table-wrap').hidden = !tableView;
   if (el('trends-viz')){ el('trends-viz').hidden = tableView; el('trends-viz').classList.remove('loading'); }
@@ -1461,12 +1477,29 @@ function levelValue(v, j){
 // Indexing is per-series, which is why this takes a series and not a point: the same raw number
 // means a different plotted value depending on where its family started. A family whose base is
 // zero or missing cannot be indexed at all and is drawn as a gap rather than as a spike.
+const INDEX_BASE_FLOOR = 5;   // openings; below this an index is arithmetic, not a reading
+
 function seriesValues(s){
   const level = s.points.map((v, j) => levelValue(v, j));
   if (trendUnit !== 'index') return level;
-  const base = level.find(v => v);
-  if (!base) return level.map(() => null);
+  // The first MEASURED level, not the first truthy one. `find(v => v)` skipped a real
+  // measurement of zero and indexed off a later point, so a family sitting at 0 early was
+  // drawn starting at 0 rather than 100, spiked to 800, and dragged the axis to 0-800 —
+  // crushing every other line into ~24px. That is the exact pathology ADR-0118 removed.
+  const base = level.find(v => v != null);
+  // A base of zero cannot be indexed at all, and a base of two openings turns one posting
+  // into +50%. Below the floor the series is drawn as a gap and says so in the legend,
+  // rather than producing a four-digit percentage nobody should read.
+  if (base == null || base < INDEX_BASE_FLOOR) return level.map(() => null);
   return level.map(v => (v == null ? null : v / base * 100));
+}
+
+// Whether a series can be indexed in the current window at all — the legend uses this to say
+// why a row has no line rather than leaving the reader to wonder.
+function hasIndexBase(s){
+  if (trendUnit !== 'index') return true;
+  const base = s.points.map((v, j) => levelValue(v, j)).find(v => v != null);
+  return base != null && base >= INDEX_BASE_FLOOR;
 }
 
 // A series' movement across the window, in the displayed unit. Averages the first and last
@@ -1478,7 +1511,9 @@ function trendDelta(points){
   const k = Math.min(3, Math.floor(seen.length / 2)) || 1;
   const head = seen.slice(0, k).reduce((a, b) => a + b) / k;
   const tail = seen.slice(-k).reduce((a, b) => a + b) / k;
-  if (!head) return null;
+  // A percentage off a head of one or two openings is arithmetic, not a reading: it produced
+  // a "Biggest riser +1300.0%" headline off a category that went from 1 opening to 14.
+  if (!head || (trendUnit !== 'share' && head < INDEX_BASE_FLOOR)) return null;
   return (tail - head) / head * 100;
 }
 
@@ -1518,9 +1553,16 @@ function fmtCompact(v){
 // the top tenth of the plot and hand back the empty band ADR-0118 exists to remove.
 function niceBounds(min, max){
   const span = Math.max(max - min, Math.abs(max) * 0.02, 1e-6);
-  const want = span / 5;
+  // Six gaps, not five. A two-sided axis pays the rounding twice — once at each end — so the
+  // slack a zero-based axis only takes at the top is doubled here. Measured on this window
+  // (data 84.6-219.4): five gaps framed it 60-240 and gave a quarter of the plot to nothing;
+  // six frames it 75-225, which is 10%.
+  const want = span / 6;
   const mag = Math.pow(10, Math.floor(Math.log10(want || 1)));
-  const mult = [1, 2, 2.5, 5, 10].find(m => want <= m * mag) ?? 10;
+  // 3 and 4 are in the ladder here, unlike the zero-based axis: an indexed range of 84.6-219.4
+  // wants a step near 27, and a ladder of 1/2/2.5/5/10 jumps it to 50 — framing 135 units of
+  // data in a 200-unit axis and handing back a third of the plot as dead space.
+  const mult = [1, 2, 2.5, 3, 4, 5, 10].find(m => want <= m * mag) ?? 10;
   const step = mult * mag;
   const bot = Math.floor(min / step) * step, top = Math.ceil(max / step) * step;
   const dec = Math.max(0, (mult === 2.5 ? 1 : 0) - Math.round(Math.log10(mag)));
@@ -1570,7 +1612,11 @@ function fmtLevel(v){
 function deltaClass(dl){ return dl == null ? 'flat' : dl > 1 ? 'up' : dl < -1 ? 'down' : 'flat'; }
 function deltaText(dl){
   if (dl == null) return '—';
-  return `${dl > 1 ? '↑' : dl < -1 ? '↓' : '→'} ${Math.abs(dl).toFixed(1)}%`;
+  // The sign is IN the number. It used to live only in the arrow, which has three states and
+  // two signs — so on a 7-day window five rows reading -0.28%, +0.89%, -0.09%, +0.49% and
+  // +0.76% all rendered `→ 0.x%`, and the "Biggest faller" tile printed `→ 0.3%`.
+  const glyph = dl > 1 ? '↑' : dl < -1 ? '↓' : '→';
+  return `${glyph} ${dl < 0 ? '−' : '+'}${Math.abs(dl).toFixed(1)}%`;
 }
 
 // Shared by every place that flips a radiogroup button's checked state — keeps the three call
@@ -1671,6 +1717,20 @@ function drawTrends(){
   // A hidden series leaves the plot AND the scale — rescaling is the point of hiding one.
   const drawn = charted.filter(s => !hiddenSeries.has(s.name));
   const vals = drawn.flatMap(s => seriesValues(s)).filter(v => v != null);
+  // The whole index's own growth, indexed on the same base as the series (ADR-0118). Count
+  // indexing rides on raw openings, so a run that adds a board lifts every family at once:
+  // over this window `totals` runs 277,754 -> 335,355, +20.7%, and 7 of 8 families end above
+  // 100 largely because of it. Without this line a reader cannot tell "this role is hiring
+  // more" from "we scraped more" — and since Change is the default view, that distinction is
+  // on the first screen every visitor sees. Computed here, before the axis and before
+  // end-label placement, because both have to account for it.
+  const refVals = [];
+  if (trendUnit === 'index' && d.totals){
+    const rb = d.totals.find(v => v != null);
+    if (rb) d.totals.forEach(t => refVals.push(t == null ? null : t / rb * 100));
+  }
+  const refLast = [...refVals].reverse().find(v => v != null) ?? null;
+
   let axis;
   if (trendUnit === 'index'){
     // Indexed lines cluster around 100 and the interesting part is how far they stray, so the
@@ -1679,7 +1739,9 @@ function drawTrends(){
     // No extra padding: niceBounds already rounds outward to a whole step, and doing both
     // stacked two slacks on top of each other — data spanning 78-185 was framed 50-200, which
     // is a quarter of the plot height given to nothing.
-    axis = niceBounds(Math.min(100, ...vals), Math.max(100, ...vals));
+    const all = vals.concat(refVals.filter(v => v != null));
+    axis = niceBounds(all.reduce((a, b) => Math.min(a, b), 100),
+                      all.reduce((a, b) => Math.max(a, b), 100));
   } else {
     let hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
     // Datawrapper's line-chart guidance: extend the axis to 100% once a share reading comes
@@ -1703,15 +1765,32 @@ function drawTrends(){
     return null;
   }).filter(Boolean).sort((a, b) => a.y - b.y);
   const CLEAR = 15;
+  // The reference line always gets its label, so the series labels are the ones that move: an
+  // endpoint has to clear it as well as its neighbours. Without this the two overprinted.
+  const refY = refLast == null ? null : y(refLast);
   const labelled = W < 640 ? [] : ends
     .filter((e, i) => (i === 0 || e.y - ends[i-1].y >= CLEAR)
-                   && (i === ends.length - 1 || ends[i+1].y - e.y >= CLEAR))
+                   && (i === ends.length - 1 || ends[i+1].y - e.y >= CLEAR)
+                   && (refY == null || Math.abs(e.y - refY) >= CLEAR))
     .sort((a, b) => b.v - a.v).slice(0, 3);
   const GUTTER = 140;
   const PAD_R = labelled.length ? GUTTER : 14;
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - PAD_R) / (d.stamps.length - 1));
 
   let svg = '';
+  // The whole index's own growth, indexed on the same base as the series (ADR-0118). Count
+  // indexing rides on raw openings, so a run that adds a board lifts every family at once:
+  // measured over this fixture's window `totals` runs 277,754 -> 335,355, +20.7%, and 7 of 8
+  // families end above 100 largely because of it. Without this line the reader cannot tell
+  // "this role is hiring more" from "we scraped more", and since Change is the default view
+  // that distinction is on the first screen every visitor sees.
+  let refPath = '', pen = 'M';
+  refVals.forEach((v, j) => {
+    if (v == null){ pen = 'M'; return; }
+    refPath += `${pen}${x(j).toFixed(1)},${y(v).toFixed(1)} `;
+    pen = 'L';
+  });
+
   // Under Change, 100 is where every line starts, so it is a datum and not just another tick:
   // whether a line sits above or below it IS the reading. It gets a stronger rule than the
   // grid, drawn first so the series cross over it.
@@ -1742,6 +1821,17 @@ function drawTrends(){
       svg += `<text class="axis-label" x="${x(ti).toFixed(1)}" y="${H - 6}"
                text-anchor="${anchor}">${stampLabel(d.stamps[ti], terse)}</text>`;
     });
+  }
+
+  // Drawn before the series: it is context to read them against, not one of them. Dashed
+  // because dashing should mean exactly this — a reference, not a measurement — which is also
+  // why the gridlines stay solid.
+  if (refPath){
+    svg += `<path class="ref-line" d="${refPath.trim()}" fill="none"/>`;
+    // Labelled at its own end, in the gutter beside the series labels. It used to be printed
+    // at the 100 datum, where eight lines ran straight through the words.
+    if (refY != null && PAD_R > 20) svg += `<text class="ref-label" x="${(W - PAD_R + 10).toFixed(1)}"
+             y="${(refY + 3.5).toFixed(1)}">whole index</text>`;
   }
 
   const geomSeries = [];   // color + per-index resolved value, read by the hover layer below
@@ -2082,6 +2172,10 @@ function renderTrendsTables(){
 }
 
 function toggleTrendsTable(force){
+  // Not while the panel is showing a failure. The toggle used to reveal the table built from
+  // the last SUCCESSFUL fetch, so a "that didn't load" banner sat directly above a full set of
+  // numbers — the one arrangement that makes the error look like the lie.
+  if (el('trends-error') && !el('trends-error').hidden) return;
   tableView = force ?? !tableView;
   if (el('trends-table-toggle')) el('trends-table-toggle').setAttribute('aria-pressed', tableView);
   if (el('trends-viz')) el('trends-viz').hidden = tableView;

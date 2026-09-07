@@ -549,8 +549,14 @@ textarea:focus{ border-color:var(--accent); }
    was the live case: the by-level/by-role group carries `hidden` at the top level and was on
    screen anyway, a drill control offered where there is nothing to drill. */
 .seg[hidden]{ display:none !important; }
-.trends-error[hidden], .trends-grid[hidden], .trends-table-wrap[hidden], .trends-kpi[hidden]{
+.trends-error[hidden], .trends-grid[hidden], .trends-table-wrap[hidden], .trends-kpi[hidden],
+.trends-void[hidden]{
   display:none !important; }
+/* Holds the chart's height when there is no chart, so the panel does not collapse under the
+   reader at the moment it has least to say. Neutral on purpose: the alert above carries the
+   message, and a second tinted box would read as a second failure. */
+.trends-void{ min-height:min(38vh, 300px); border-radius:var(--r-md);
+  background:var(--raise-2); margin-top:12px; }
 
 /* The exact window, one hairline below the presets that answer the question (dataviz skill,
    palette.md § Filter controls). */
@@ -608,7 +614,7 @@ textarea:focus{ border-color:var(--accent); }
    so the page jumped under the reader at the moment it had least to say for itself. The
    message keeps a reading measure of its own. */
 .trends-error{ display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:12px; text-align:center; padding:24px; margin:14px 0 0; min-height:min(46vh, 360px);
+  gap:12px; text-align:center; padding:18px 24px; margin:14px 0 0;
   background:color-mix(in srgb, var(--alert) 4%, var(--raise-2));
   border:1px solid color-mix(in srgb, var(--alert) 45%, transparent); border-radius:var(--r-md);
   color:var(--ink-2); font-size:13px; }
@@ -724,6 +730,9 @@ textarea:focus{ border-color:var(--accent); }
    survives every CVD, greyscale print and forced-colors mode. */
 .up, .down{ color:var(--ink-2); } .flat{ color:var(--ink-3); }
 .trends-grid .gridline{ stroke:var(--rule); stroke-width:1; }
+.trends-grid .ref-line{ stroke:var(--ink-3); stroke-width:1.5; stroke-dasharray:6 4;
+  stroke-linecap:round; opacity:.8; }
+.trends-grid .ref-label{ fill:var(--ink-3); font:500 11px var(--sans); }
 /* The 100 datum under Change. Stronger than the grid because it is not a tick: whether a line
    sits above or below it is the whole reading. Still an ink token, never a series colour. */
 .trends-grid .baseline{ stroke:var(--rule-2); stroke-width:1.5; }
