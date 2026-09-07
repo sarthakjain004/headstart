@@ -132,6 +132,14 @@ URL_SHAPES = {
     # `status_ok` is not evidence of a good link for this ATS — only the shape is (Next.js is the
     # one generation where a bad route would actually 404).
     "zwayam": r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$",
+    # scraper: f"https://{slug}.applytojob.com/apply/{key}" (jazzhr.py `_detail_url`). The board
+    # links to /apply/{key}/{Title-Slug}, but the title slug is decorative — verified live
+    # 2026-09-07 that /apply/{key} alone serves the posting (200 on 1,526 of 1,527 fetched that
+    # way, the one miss a transport timeout) and that a WRONG title slug 200s too, so the key is
+    # the whole route. A key that no longer exists answers 410, which is what makes this link
+    # checkable at all. Keys are 10 alphanumerics on most tenants and a long hex string on a few
+    # (both real: `/apply/KqDYKxUH4p/…` and `/apply/07350d2d7f03…/…`), hence the loose class.
+    "jazzhr": r"https://[\w-]+\.applytojob\.com/apply/[A-Za-z0-9]+",
 }
 
 
