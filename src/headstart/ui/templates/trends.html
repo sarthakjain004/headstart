@@ -1,42 +1,98 @@
 <section class="trends" id="trends">
   <div class="trends-head">
     <h2>Which tech roles are growing</h2>
+    {# A real way out of the drill. The only exit used to be the sentence "click to go back"
+       at 12.5px inside the scope note — an instruction standing in for a control. #}
+    <nav class="trends-crumb" id="trends-crumb" hidden aria-label="Chart level">
+      <button type="button" id="trends-back">All categories</button>
+      <span aria-hidden="true">›</span>
+      <span id="trends-crumb-here"></span>
+    </nav>
     <span class="note" id="trends-scope"></span>
-    <span class="trends-toggles">
-      <span class="seg" id="trends-metric" role="radiogroup" aria-label="Measure">
-        <button data-metric="stock" role="radio" aria-checked="true" tabindex="0">All openings</button>
-        <button data-metric="new" role="radio" aria-checked="false" tabindex="-1">New this week</button>
+    {# Demoted from a bordered button to a text toggle: it switches how the same data is
+       rendered, and the border gave it the same weight as the filters that change the data. #}
+    <button class="text-toggle" id="trends-table-toggle" type="button" aria-pressed="false"
+      ><span class="glyph" aria-hidden="true">▤</span>Table view</button>
+  </div>
+
+  {# One left-aligned filter row, date range first (dataviz skill, interaction.md § Filters).
+     Every group carries a VISIBLE micro-label — an aria-label alone left a sighted reader to
+     infer what "Share / Count" was the unit of. #}
+  <div class="trends-controls">
+    <span class="ctl">
+      <span class="ctl-label" id="trends-lbl-range">Date range</span>
+      <span class="seg" id="trends-range" role="radiogroup" aria-labelledby="trends-lbl-range">
+        <button data-days="7" role="radio" aria-checked="false" tabindex="-1">7 days</button>
+        <button data-days="30" role="radio" aria-checked="false" tabindex="-1">30 days</button>
+        <button data-days="90" role="radio" aria-checked="false" tabindex="-1">90 days</button>
+        <button data-days="all" role="radio" aria-checked="true" tabindex="0">All</button>
       </span>
-      <span class="seg" id="trends-unit" role="radiogroup" aria-label="Unit">
-        <button data-unit="share" role="radio" aria-checked="true" tabindex="0">Share</button>
-        <button data-unit="count" role="radio" aria-checked="false" tabindex="-1">Count</button>
-      </span>
-      <span class="seg" id="trends-split" role="radiogroup" aria-label="Drill" hidden>
-        <button data-split="bands" role="radio" aria-checked="true" tabindex="0">By level</button>
-        <button data-split="roles" role="radio" aria-checked="false" tabindex="-1">By role</button>
-      </span>
-      <button class="ghost" id="trends-table-toggle" type="button" aria-pressed="false">Table view</button>
+    </span>
+    <span class="ctl">
+      <span class="ctl-label" id="trends-lbl-src">Source</span>
       <span class="ats-pick" id="trends-ats">
-        <button class="ghost" id="trends-ats-trigger" type="button"
-                aria-haspopup="true" aria-expanded="false">All ATS ▾</button>
+        <button class="ghost" id="trends-ats-trigger" type="button" aria-haspopup="true"
+                aria-expanded="false" aria-describedby="trends-lbl-src">All ATS ▾</button>
         <div class="ats-pick-menu" id="trends-ats-menu" hidden>
           {% for a in atses %}<label><input type="checkbox" value="{{ a }}" checked> {{ a }}</label>{% endfor %}
         </div>
       </span>
     </span>
+    <span class="ctl">
+      <span class="ctl-label" id="trends-lbl-measure">Measure</span>
+      <span class="seg" id="trends-metric" role="radiogroup" aria-labelledby="trends-lbl-measure">
+        <button data-metric="stock" role="radio" aria-checked="true" tabindex="0">All openings</button>
+        <button data-metric="new" role="radio" aria-checked="false" tabindex="-1">New this week</button>
+      </span>
+    </span>
+    <span class="ctl" id="trends-unit-ctl">
+      <span class="ctl-label" id="trends-lbl-unit">Unit</span>
+      <span class="seg" id="trends-unit" role="radiogroup" aria-labelledby="trends-lbl-unit">
+        {# Change is the DEFAULT (ADR-0119) and this markup is the first-paint state — nothing
+           calls setUnit before the first draw, so these three attributes must agree with
+           app.js's `trendUnit` initialiser or the group checks one button and draws another. #}
+        <button data-unit="share" role="radio" aria-checked="false" tabindex="-1">Share</button>
+        <button data-unit="count" role="radio" aria-checked="false" tabindex="-1">Count</button>
+        <button data-unit="change" role="radio" aria-checked="true" tabindex="0">Change</button>
+      </span>
+      {# "New this week" used to grey this group out and explain itself only in a `title`. A
+         control that can never be used here is replaced by the answer and its one-line why. #}
+      <span class="ctl-static" id="trends-unit-static" hidden>Share is off here — a share of
+        “new” openings over all live ones has no reading.</span>
+    </span>
+    <span class="ctl" id="trends-split-ctl" hidden>
+      <span class="ctl-label" id="trends-lbl-split">Break down by</span>
+      <span class="seg" id="trends-split" role="radiogroup" aria-labelledby="trends-lbl-split" hidden>
+        <button data-split="bands" role="radio" aria-checked="true" tabindex="0">Level</button>
+        <button data-split="roles" role="radio" aria-checked="false" tabindex="-1">Role</button>
+      </span>
+    </span>
   </div>
-  <div class="trends-range">
-    <label class="note" for="trends-since">Window</label>
-    <input type="datetime-local" id="trends-since" aria-label="From">
-    <span class="note">–</span>
-    <input type="datetime-local" id="trends-until" aria-label="To">
-    <button class="ghost" id="trends-range-clear">Clear</button>
-  </div>
+  {# Two 365px datetime-locals, at minute precision, led the filter row of a chart whose axis
+     is measured in days. The presets above answer the question; the exact range is still
+     here, one hairline down (dataviz skill, palette.md § Filter controls). #}
+  <details class="trends-custom">
+    <summary>Custom range</summary>
+    <div class="trends-range">
+      <input type="datetime-local" id="trends-since" aria-label="From">
+      <span class="note" aria-hidden="true">–</span>
+      <input type="datetime-local" id="trends-until" aria-label="To">
+      <button class="ghost" id="trends-range-clear" type="button">Clear</button>
+    </div>
+  </details>
+
   <div class="trends-note" id="trends-empty"></div>
   <div class="trends-error" id="trends-error" hidden>
     <span id="trends-error-msg"></span>
     <button class="ghost" id="trends-retry" type="button">Retry</button>
   </div>
+  {# The chart's space while there is no chart. Reserving it inside the alert drew a 360px
+     alert-tinted void around six words; the panel still must not collapse under the reader,
+     so a neutral box holds the height and the alert stays the size of its message. #}
+  <div class="trends-void" id="trends-void" hidden aria-hidden="true"></div>
+  {# The headline figures, above the plot: the two movers a reader scans for, and the two
+     totals that say what the shares are shares OF. #}
+  <div class="trends-kpi" id="trends-kpi" hidden></div>
   {# The loading state. Same grid as the chart below it, so the panel does not jump when the
      data lands — the skeleton IS the reserved space rather than an extra block above it.
      aria-hidden because #trends carries aria-busy, which is what actually announces the wait. #}
@@ -46,17 +102,42 @@
   </div>
   <div class="trends-grid" id="trends-viz">
     <div class="trends-chart-wrap">
+      {# tabindex + the keydown handler in app.js are the keyboard path to the values: arrows
+         walk the crosshair, Home/End jump to the ends, and #trends-readout speaks each stop.
+         The aria-label is written by drawTrends — a static one goes stale the moment Measure,
+         Unit, the ATS selection or the drill changes. #}
       <svg id="trends-chart" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"
-           role="img" aria-label="Open roles over time by category"></svg>
+           role="img" tabindex="0" aria-label="Open roles over time by category"></svg>
       <div class="trends-tooltip" id="trends-tooltip" hidden></div>
     </div>
     <ul class="trends-legend" id="trends-legend"></ul>
   </div>
+  <div class="sr" id="trends-readout" role="status" aria-live="polite"></div>
   <div class="trends-table-wrap" id="trends-table-wrap" hidden>
-    <table class="trends-table" id="trends-table"></table>
+    {# One row per series, not one column per measurement. This is both the chart's a11y twin
+       and the documented contrast relief for the three light-mode slots under 3:1, so it has
+       to be readable — 471 columns of 12.5px numerals was neither. #}
+    <div class="trends-scroll"><table class="trends-table" id="trends-table"></table></div>
+    <details class="trends-full" id="trends-full">
+      <summary>Every measurement, one column each</summary>
+      <div class="trends-scroll"><table class="trends-table" id="trends-full-table"></table></div>
+    </details>
   </div>
+  <!-- The two caveats read as one thing — how to read this chart — so they sit in one
+       bounded block rather than as loose grey prose orphaned under a full-width plot. The
+       reassignment caveat is 190 words and was the tallest block on the panel at 390px, so
+       it collapses on a phone; above 1100px it sits beside the caption and stays open. The
+       text inside is unchanged, because it is the honesty the chart depends on and
+       shortening it would cost meaning. -->
+  <div class="chart-note" id="trends-chart-note">
   <div class="note" id="trends-foot"></div>
-  <p class="kind">A family's line moving is not the same as jobs opening or closing. Each job's
+  {# Open by default. ADR-0119's own Consequences say this caveat "gets more load-bearing, not
+     less" under an indexed chart — folding it shut was the one change that contradicted the
+     ADR it shipped with. On a wide panel it sits beside the caption rather than under it, so
+     being open costs no height at all. #}
+  <details class="note-more" open>
+    <summary>How to read this</summary>
+    <p class="kind">A family's line moving is not the same as jobs opening or closing. Each job's
     family is worked out from the meaning of its text, and that text can be filled in later — so
     a job can move between families without changing at all, which looks exactly like one
     closing here and another opening there. One investigated decline turned out to be mostly
@@ -64,4 +145,6 @@
     single step. Watch-listed roles are matched by title instead and are not affected.
     <a href="{{ repo }}/blob/main/docs/adr/0057-record-family-assignments-and-report-reassignment.md"
        target="_blank" rel="noopener">ADR-0057</a></p>
+  </details>
+  </div>
 </section>
