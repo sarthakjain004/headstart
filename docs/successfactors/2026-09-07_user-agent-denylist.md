@@ -80,6 +80,7 @@ Then the string itself, which is where it gets specific:
 | User-Agent | Result |
 |---|---|
 | `headstart/0.1 (job-board reader)` | **403** |
+| **`headstart/0.1`** — the string now shipped | **200** |
 | `headstart/0.1 (job-board)` | 200 |
 | `headstart/0.1 (reader)` | 200 |
 | `headstart/0.1 (job board reader)` — space, not hyphen | 200 |
@@ -119,7 +120,7 @@ error`, 2 of 2 attempts on each of four candidates:
 | `headstart/0.1 (github.com/…)` | **curl (92)** |
 | `headstart/0.1 (contact …@…)` | **curl (92)** |
 | `headstart/0.1 (a/b)` | ok |
-| `headstart/0.1 (contact: sarthak)` | ok |
+| `headstart/0.1 (contact: maintainer)` | ok |
 | a long domainless phrase | ok |
 | `headstart/0.1` | ok |
 
@@ -147,10 +148,42 @@ Measured on 8 of that Board's real pages, same session, one string each:
 | old UA — 403 | **5.57 s** | ~32.9 min |
 | new UA — 200 | **1.35 s** | ~8.0 min |
 
-**4.1x faster.** The intuition misses the retry ladder: 403 is in `http.TRANSIENT`, so every
-refusal cost several attempts with backoff, while a served page is fetched once. The old model
-reproduces the observed cost — 2,127 x 5.57 s / 6 workers is ~1,975 s against the 1,614 s the run
-logged — so the floor **shrinks**, and item 1 of the review's ranked scope holds.
+**4.1x faster on this sample.** The intuition misses the retry ladder: 403 is in `http.TRANSIENT`,
+so every refusal cost several attempts with backoff, while a served page is fetched once.
+(`_DETAIL_WORKERS = 6`, and `successfactors` sets no `detail_streams`, so 6 is the width on both
+the sync and async paths.)
+
+**Read this as a direction, not a number.** It is n=8, one Board, one session, **from a laptop** —
+and per-page latency is exactly the quantity that varies by vantage, which is the whole reason the
+in-Actions probe below is still worth running. Only the *old* arm can be reconciled against
+production at all, and it overshoots: 32.9 min projected against the 1,614 s (26.9 min) the run
+logged, 22% high. The 1.35 s served-page figure has no production counterpart yet, by definition —
+no run has ever fetched these pages successfully. What the sample supports is the **sign**: the
+floor shrinks rather than grows, so item 1 of the review's ranked scope is not undermined. The
+magnitude wants the next real run to confirm it.
+
+## Pending: the Actions vantage
+
+**This is not settled, and nothing above should be read as settling it.** Every measurement in this
+document — the bisection, the 16/16 recovery, the per-ATS sweep, the floor sample — was taken from
+one laptop and one egress address. Production runs from GitHub Actions.
+
+That matters more here than it usually would, because the *first* theory of this bug was an egress
+wall, and it was discarded on the strength of laptop evidence alone. If the SuccessFactors policy
+scores address and User-Agent together rather than either alone, the new string could clear a
+laptop and still be refused on a runner — and the symptom would be exactly what it was before: 102
+Boards at 0 jobs, silently, with a green run.
+
+`.github/workflows/probe-successfactors-ua.yml` exists to answer that, with two replicas because
+one runner is one address:
+
+```
+gh workflow run probe-successfactors-ua.yml
+```
+
+**It has not been run.** `workflow_dispatch` requires the workflow file on the default branch, so it
+cannot be dispatched until this change merges. Dispatch it immediately afterwards and record the
+result here; until then this document's claims are laptop-vantage claims.
 
 ## Verification
 

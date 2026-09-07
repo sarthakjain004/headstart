@@ -123,9 +123,9 @@ the wrong answer.)
 > `python-requests/2.32.3` are all served on the same URL. The vantage was never the variable, and
 > the bug reproduced on a laptop in about thirty seconds once a harness ran the real code path.
 >
-> Both dead theories are kept above rather than edited away, because the failure mode they share is the
-> point: each was plausible, each was reasoned from real evidence, and each cost more than the
-> measurement that killed it would have.
+> The markup theory is kept above in full, and this block records the egress one rather than
+> restating it, because the failure mode they share is the point: each was plausible, each was
+> reasoned from real evidence, and each cost more than the measurement that killed it would have.
 
 ### Timing: this is recent
 
@@ -369,7 +369,7 @@ visible in the Actions UI instead of buried.
 
 | # | Change | Evidence | Payoff |
 |---|---|---|---|
-| 1 | ~~Diagnose the SuccessFactors zero-yield class, then fix~~ **DONE** — one denylisted User-Agent literal, not an egress wall ([writeup](../successfactors/2026-09-07_user-agent-denylist.md)) | §1 | ~56,120 postings/run unblocked; te.com's detail pass measured **4.1x faster**, not slower |
+| 1 | ~~Diagnose the SuccessFactors zero-yield class, then fix~~ **FIXED, verification pending** — one denylisted User-Agent literal, not an egress wall ([writeup](../successfactors/2026-09-07_user-agent-denylist.md)). All evidence is laptop-vantage; the in-Actions probe cannot run until the fix merges | §1 | up to 56,120 postings/run **unblocked** — reaching the index also needs the listing to work in CI and the tech gate to keep them (~13.2%, so on the order of 7,400 tech jobs) |
 | 2 | Make the ADR-0064 gate read measured `jobs`, not a carried score | §2 | Would have caught this in one run; ~127 board-min/run and the critical path |
 | 3 | Widen `workday` listing-page concurrency | §4 — 74/75 shard-runs, 2.18× for free | Directly cuts the largest stage's Σ work |
 | 4 | Per-host circuit breaker on repeated timeouts | §3a | ~1,600 board-s saved in one outage; bounds any future one |

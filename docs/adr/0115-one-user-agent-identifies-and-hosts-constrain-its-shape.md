@@ -1,8 +1,9 @@
 # ADR-0115: One User-Agent, chosen to identify — and its shape is set by hosts, not by taste
 
-- **Status:** Accepted
-- **Date:** 2026-09-07
-- **Supersedes:** nothing. First ADR on the subject.
+**Status:** accepted · **Date:** 2026-09-07 · **Relates to:** ADR-0063 (the spare egress this
+string cannot fall back on, since `successfactors` sets no `egress_fallback_on`), ADR-0064 (the
+value gate that would otherwise have dropped the affected Boards), ADR-0056 (darwinbox's browser
+escalation — the one place a non-`headstart` agent is legitimately sent)
 
 ## Context
 
@@ -35,7 +36,8 @@ anyone would predict.
 
 **One shared agent, and it identifies rather than impersonates.** No `Mozilla/`, no `Chrome/`. A
 browser string would work, and it is refused anyway: an honest agent was *measured* sufficient
-(bare `headstart/0.1` clears the SuccessFactors policy on its own), so impersonation would buy
+(bare `headstart/0.1` is served 200 by the SuccessFactors policy — it is a row in the
+bisection table of the writeup above, not an inference from the variants around it), so impersonation would buy
 nothing and cost the honesty. Identification is also what makes a block legible to whoever imposed
 it — a host that decides it dislikes us can say so about a name.
 
@@ -46,7 +48,7 @@ intersection is narrow:
    specifically.
 2. **No domain and no email.** zwayam's edge answers `curl (92) HTTP/2 stream error` to any agent
    carrying one — measured 2 of 2 attempts on each of four candidates, while `(a/b)`,
-   `(contact: sarthak)` and a long domainless phrase were served. **This is what forbids the
+   `(contact: maintainer)` and a long domainless phrase were served. **This is what forbids the
    contact URL**, which is the part of this ADR most likely to be re-proposed by someone who has
    not read it.
 3. **Not a stock tool default.** zwayam **blackholes** `curl`'s and `python-requests`' own defaults
@@ -61,10 +63,12 @@ a problem that no longer existed. A future host that genuinely cannot take the s
 one — with its measurement in the file, the way `egress_fallback_on` and `detail_streams` diverge
 per scraper today.
 
-**Moving it requires a per-ATS sweep first.** `scripts/validate/user_agent_sweep.py` runs the real
-`fetch_raw()` + `parse()` against a live Board per ATS under both strings. This is not ceremony:
-the first candidate replacement passed every SuccessFactors check and **broke zwayam**, and only
-running every scraper found it.
+**Moving it requires a sweep first.** `scripts/validate/user_agent_sweep.py` runs the real
+`fetch_raw()` + `parse()` against live Boards under both strings. This is not ceremony: the first
+candidate replacement passed every SuccessFactors check and **broke zwayam**, and only scraping
+under both strings found it. The sweep covers 20 of the 22 registered ATSes and **prints the ones
+it cannot reach** — `oracle` and `sensehq` have no liveness ledger, so no Board to sample; a
+verdict from it is evidence about 20 ATSes, not proof about all of them.
 
 ## Consequences
 

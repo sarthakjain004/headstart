@@ -90,7 +90,7 @@ reads a timeout as a transient fault retries forever. This repo's own `headstart
 "Any non-stock agent works" was too strong, and re-measuring on 2026-09-07 found the second half
 of the rule: this host also **rejects any User-Agent carrying a domain or an email**, with
 `curl (92) HTTP/2 stream error` — 2 of 2 attempts on each of `(+https://github.com/…)`,
-`(+github.com/…)`, `(github.com/…)` and an `@`-address, while `(a/b)`, `(contact: sarthak)` and a
+`(+github.com/…)`, `(github.com/…)` and an `@`-address, while `(a/b)`, `(contact: maintainer)` and a
 long domainless phrase were all served. That is half of why the shared agent is bare rather than
 carrying a contact URL; the other half is a SuccessFactors denylist on the string it used to be
 (`docs/successfactors/2026-09-07_user-agent-denylist.md`).

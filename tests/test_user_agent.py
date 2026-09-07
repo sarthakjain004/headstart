@@ -36,14 +36,35 @@ from headstart.scrapers.base import USER_AGENT
 #: The exact string a SuccessFactors edge policy denylists. Never send it again, from anywhere.
 DENYLISTED = "headstart/0.1 (job-board reader)"
 
-#: A domain or an email anywhere in the string is what zwayam's edge rejects.
+#: A hostname or a bare IPv4 — the shapes that go looking like a host. Applied to the agent's
+#: *note* only; see :func:`_carries_a_host` for why that split matters.
 #:
-#: Deny by *shape*, not by a TLD allowlist. The first draft listed nine TLDs, which was wrong in
-#: both directions: only ``.com`` was ever measured, so the other eight were asserted rather than
-#: observed, and a real contact URL on ``.sh``/``.app``/``.uk`` would have sailed through the test
-#: and still broken zwayam — while ``headstart/0.1.dev`` would have been failed for nothing. A
-#: hostname label has to start with a letter, which is what keeps the version number out.
-_LOOKS_LIKE_HOST = re.compile(r"://|@|\b[a-z][\w-]*\.[a-z]{2,}\b", re.IGNORECASE)
+#: Deny by shape, never by a TLD allowlist. The first draft listed nine TLDs with only ``.com``
+#: measured, so a contact URL on ``.sh`` or ``.app`` would have passed the test and still broken
+#: zwayam. The second draft required a hostname label to start with a **letter**, which quietly
+#: excluded ``1password.com`` and ``3m.com`` — both real — and every bare IP.
+_HOSTISH = re.compile(
+    r"\b(?:\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9][\w-]*\.[a-z]{2,})\b", re.IGNORECASE
+)
+
+
+def _carries_a_host(agent: str) -> bool:
+    """True when ``agent`` carries a domain, an IP or an email — what zwayam's edge rejects.
+
+    The host shapes are looked for in the **note** only (everything after the first space), never
+    in the product token. That split is the whole reason this is a function rather than one regex:
+    a version is dot-separated too, so a whole-string scan cannot tell ``headstart/0.1-rc.dev``
+    from a hostname, and an earlier draft rejected it for nothing. Splitting on the first space
+    removes the ambiguity instead of trying to out-regex it — ``headstart/<version>`` is a shape we
+    control, and everything a host could hide in lives in the note.
+
+    ``://`` and ``@`` are checked across the whole string: neither can appear in a version, and a
+    scheme or an address is disqualifying wherever it sits.
+    """
+    if "://" in agent or "@" in agent:
+        return True
+    return bool(_HOSTISH.search(agent.partition(" ")[2]))
+
 
 #: Agents zwayam blackholes outright — it times out on these rather than refusing them.
 _STOCK_PREFIXES = (
@@ -65,7 +86,7 @@ def test_the_agent_carries_no_domain_or_email():
 
     Putting one back reinstates ``curl (92) HTTP/2 stream error`` on every zwayam Board.
     """
-    assert not _LOOKS_LIKE_HOST.search(USER_AGENT), (
+    assert not _carries_a_host(USER_AGENT), (
         f"{USER_AGENT!r} carries a hostname or email; zwayam's edge rejects those"
     )
 
@@ -80,14 +101,19 @@ def test_the_agent_carries_no_domain_or_email():
         ("headstart/0.1 (contact someone@example.com)", True),
         # and the four that were served
         ("headstart/0.1 (a/b)", False),
-        ("headstart/0.1 (contact: sarthak)", False),
+        ("headstart/0.1 (contact: maintainer)", False),
         ("headstart/0.1 (a job board reader that is quite long indeed yes)", False),
         ("headstart/0.1", False),
-        # a version number is not a hostname — the TLD-allowlist draft failed this one
+        # a version is not a hostname, however it is punctuated — earlier drafts failed both
         ("headstart/0.1.dev", False),
-        # ...and these are hostnames the allowlist draft would have let through
+        ("headstart/0.1-rc.dev", False),
+        # hostnames the TLD-allowlist draft would have let through
         ("headstart/0.1 (+https://headstart.sh)", True),
         ("headstart/0.1 (headstart.app)", True),
+        # ...and hosts the letter-first draft missed: a digit-leading label, and a bare IP
+        ("headstart/0.1 (1password.com)", True),
+        ("headstart/0.1 (3m.com)", True),
+        ("headstart/0.1 (93.184.216.34)", True),
     ],
 )
 def test_the_host_detector_agrees_with_what_zwayam_actually_did(candidate, rejected):
@@ -98,7 +124,7 @@ def test_the_host_detector_agrees_with_what_zwayam_actually_did(candidate, rejec
     they are the two directions the first draft of this regex got wrong, kept so it cannot
     regress to a TLD allowlist without saying so.
     """
-    assert bool(_LOOKS_LIKE_HOST.search(candidate)) is rejected
+    assert _carries_a_host(candidate) is rejected
 
 
 def test_the_agent_is_not_a_stock_tool_default():
@@ -149,8 +175,9 @@ _MAY_NAME_THE_DENYLISTED_STRING = frozenset(
     {
         "tests/test_user_agent.py",  # this file — DENYLISTED, and the parametrised cases
         "src/headstart/scrapers/base.py",  # the comment explaining why the value moved
-        "src/headstart/scrapers/zwayam.py",  # its own docstring's account of the same episode
         "scripts/bench/probe_successfactors_detail.py",  # the harness that found it
+        # the probe workflow's own header, explaining what it is probing for
+        ".github/workflows/probe-successfactors-ua.yml",
     }
 )
 
@@ -168,19 +195,74 @@ def test_the_denylisted_literal_survives_nowhere_in_the_tree():
     are excluded deliberately: `docs/` records what was measured and *must* keep quoting it.
     """
     root = Path(__file__).resolve().parents[1]
-    offenders = sorted(
-        str(relative)
-        for path in root.rglob("*.py")
-        # Any dotted directory covers `.git`, `.venv` and — the one that actually bit — the agent
-        # worktrees under `.claude/`, which are full checkouts of other branches and so hold
-        # dozens of legitimate copies of the old string. `experiment/` is R&D capture, not source.
-        if not any(part.startswith(".") for part in path.relative_to(root).parts)
-        and "experiment" not in path.parts
-        and (relative := path.relative_to(root).as_posix())
-        not in _MAY_NAME_THE_DENYLISTED_STRING
-        and DENYLISTED in path.read_text(encoding="utf-8", errors="replace")
+    scanned, offenders = 0, []
+    # `.py` and the workflow formats together: a User-Agent inlined into a workflow's `curl` would
+    # be invisible to a Python-only scan, and this branch's own probe workflow names the literal.
+    for pattern in ("*.py", "*.yml", "*.yaml"):
+        for path in root.rglob(pattern):
+            relative = path.relative_to(root)
+            # Every check below is on the RELATIVE path. An earlier version tested `"experiment"
+            # not in path.parts` — absolute — so a clone living under any directory of that name
+            # skipped the entire tree and passed vacuously. Hence `scanned`, asserted at the end.
+            if any(
+                part.startswith(".") and part != ".github"
+                for part in relative.parts[:-1]
+            ):
+                # `.git`, `.venv`, and the agent worktrees under `.claude/`. `.github` is
+                # exempted or the `*.yml` patterns above would match nothing at all — every
+                # workflow lives under a dotted directory, which is the only place they can live.
+                continue
+            if "experiment" in relative.parts:
+                continue  # R&D capture, not source
+            scanned += 1
+            key = relative.as_posix()
+            if key in _MAY_NAME_THE_DENYLISTED_STRING:
+                continue
+            if DENYLISTED in path.read_text(encoding="utf-8", errors="replace"):
+                offenders.append(key)
+    assert scanned > 100, (
+        f"the scan only reached {scanned} file(s) — it is not looking where it thinks it is, "
+        "and would pass no matter what the tree contained"
     )
-    assert not offenders, (
-        f"the denylisted User-Agent literal reappeared in: {offenders}. "
+    assert not sorted(offenders), (
+        f"the denylisted User-Agent literal reappeared in: {sorted(offenders)}. "
         "SuccessFactors answers that exact string 403; use `base.USER_AGENT`."
+    )
+
+
+def test_the_allowlist_does_not_outlive_what_it_excuses():
+    """An allowlist entry that no longer names the string is a hole nobody can see.
+
+    `zwayam.py` was on this list and then stopped containing the literal when its docstring was
+    rewritten; the entry survived, silently excusing a file from a check it no longer needed and
+    would not have failed. Left alone, the same entry excuses a *real* reintroduction later.
+    """
+    root = Path(__file__).resolve().parents[1]
+    stale = sorted(
+        name
+        for name in _MAY_NAME_THE_DENYLISTED_STRING
+        if not (root / name).exists()
+        or DENYLISTED not in (root / name).read_text(encoding="utf-8", errors="replace")
+    )
+    assert not stale, (
+        f"these no longer contain the denylisted literal (or are gone) and should leave "
+        f"_MAY_NAME_THE_DENYLISTED_STRING: {stale}"
+    )
+
+
+def test_the_standalone_scripts_copy_tracks_the_shared_agent():
+    """The one hand-synced copy the module scan is structurally blind to.
+
+    `confirm_smartrecruiters_boards.py` is deliberately standalone — urllib only, no `headstart`
+    import and no sys.path setup — so it keeps its own `UA` literal with a comment asking whoever
+    moves `base.USER_AGENT` to move this too. A comment is not a check, and the tree scan above
+    only hunts the *old* string, so nothing would notice the next time they diverge. This does.
+    """
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "scripts/validate/confirm_smartrecruiters_boards.py"
+    ).read_text(encoding="utf-8")
+    assert f'UA = "{USER_AGENT}"' in source, (
+        "scripts/validate/confirm_smartrecruiters_boards.py's hand-synced UA has drifted from "
+        f"base.USER_AGENT ({USER_AGENT!r})"
     )
