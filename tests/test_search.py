@@ -776,6 +776,50 @@ def test_sort_is_whitelisted_to_a_column():
     assert table.last_order[0]["column_name"] == "first_seen"
 
 
+def test_sorting_by_salary_orders_by_the_derived_column_with_nulls_last():
+    """ "Highest salary" orders by `min_salary_annual`, the ADR-0082 column — so it reaches the
+    description-mined figures too, not just the boards that publish a structured field. Unlike
+    `posted` it needs no shape guard: the column is a number or NULL, and NULLs go last.
+    """
+    searcher, table = _searcher()
+    searcher.run({"q": "", "sort": "salary"})
+    assert table.last_order == [
+        {"column_name": "min_salary_annual", "ascending": False, "nulls_first": False},
+        {"column_name": "id", "ascending": True},
+    ]
+    assert "min_salary_annual" not in (table.last_where or "")
+
+
+def test_sorting_a_ranked_window_by_salary_puts_the_unpriced_rows_last():
+    """The ranked path re-orders its window in Python, and that is where a numeric sort column
+    bites: `r.get(sort) or ""` would put a `str` in a tuple beside `float`s and raise TypeError
+    on the first comparison between two rows. A row with no salary sorts last, matching the
+    browse path's `nulls_first: False`.
+    """
+    rows = [
+        {**_ROW, "id": "a", "min_salary_annual": 90_000.0},
+        {**_ROW, "id": "b", "min_salary_annual": None},
+        {**_ROW, "id": "c", "min_salary_annual": 250_000.0},
+    ]
+    table = _Table(rows)
+    searcher = JobSearch(_Model(), table)
+    out = searcher.run({"q": "backend", "sort": "salary", "k": "3"})
+    assert [r["id"] for r in out] == ["c", "a", "b"]
+
+
+def test_the_salary_sort_is_dark_until_the_column_exists():
+    """Same dark-until-migrated rule the first-seen sort follows (ADR-0031): the ADR-0082
+    columns arrive by migration, and `order_by` on a column the table lacks fails planning.
+    """
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(
+        names=["id", "ats", "title", "url", "posted_at"]
+    )
+    searcher = JobSearch(_Model(), table)
+    searcher.run({"q": "", "sort": "salary"})
+    assert table.last_order == [{"column_name": "id", "ascending": True}]
+
+
 def test_sorting_by_posted_shape_guards_the_ordering():
     """`posted_at` is a raw per-ATS string and a non-ISO form sorts ABOVE every ISO date.
 

@@ -120,6 +120,19 @@
             <input id="salmin" type="number" min="0" step="1000" placeholder="Min" aria-label="Minimum salary">
             <input id="salmax" type="number" min="0" step="1000" placeholder="Max" aria-label="Maximum salary">
           </div>
+          {# Two native <input type="range"> stacked over one track, not a div you drag: the
+             native control brings keyboard operation, touch handling and the slider role with
+             it, and a hand-rolled one would have to re-implement all three worse. They are a
+             convenience over the two number inputs above, which stay the values everything
+             else reads — so a figure past the slider's top end is still typeable. Their own
+             positions are indices into SALARY_STOPS, which is why each carries an
+             aria-valuetext: aria-valuenow here is "stop 24", not a salary. #}
+          <div class="slider" id="salslider">
+            <div class="slider-track"><div class="slider-fill" id="salfill"></div></div>
+            <input type="range" id="salrmin" min="0" step="1" value="0" aria-label="Minimum salary">
+            <input type="range" id="salrmax" min="0" step="1" aria-label="Maximum salary">
+          </div>
+          <span class="slider-read" id="salread"></span>
           <span class="tip">Compared within one currency — salaries are period-normalised but
             never FX-converted, so a bracket only means something inside a single currency.
             Only jobs whose salary is known can match.</span></div>

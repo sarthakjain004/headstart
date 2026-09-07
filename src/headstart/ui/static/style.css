@@ -211,9 +211,14 @@ textarea:focus{ border-color:var(--violet); }
 .rail{ display:none; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
 .rail.open{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-  gap:4px 24px; align-items:start; max-height:min(46vh,340px); overflow-y:auto; }
-/* Capped on purpose. Open, this panel used to run ~900px and push every result off screen,
-   so changing a filter showed the user nothing — the one moment they most need to see rows. */
+  gap:4px 24px; align-items:start; }
+/* Uncapped, and that is the trade being made rather than an omission. The 46vh cap it had was
+   written while the panel sat ABOVE its own button: it kept the results on screen, but measured
+   at 1440x950 it put 761px of controls in a 338px box with no scrollbar to say so — 55% of the
+   panel, including the salary bracket and "Clear all filters", behind a scroller nothing marked.
+   Now that the panel opens BELOW the toolbar, the Filters button stays put at the top of the
+   page whatever the panel does, so shutting it is one click on a control that never moves —
+   which is a cheaper way back to the rows than discovering a hidden scroll region. */
 .rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
   color:var(--ink-3); margin:0 0 10px; }
 /* Each group is a column of the panel grid, so the vertical rules that separated them in a
@@ -554,9 +559,6 @@ textarea:focus{ border-color:var(--violet); }
 
 @media (max-width:760px){
   .trends-grid{ grid-template-columns:1fr; }
-  /* One column, so the panel is as tall as its controls and the page scrolls it — a nested
-     scroller inside a phone-height box hides more than the cap saves. */
-  .rail.open{ max-height:none; overflow:visible; }
 }
 
 /* running text, so it gets a measure — 1180px of prose is unreadable */
@@ -619,6 +621,37 @@ textarea:focus{ border-color:var(--violet); }
    100% basis makes each part demand the whole line and wrap every time. */
 .bracket select{ flex:0 0 5.5em; width:auto; }
 .bracket input{ flex:1 1 5em; min-width:0; width:auto; }
+
+/* The bracket's slider. Two native ranges stacked on one track: each input is transparent and
+   `pointer-events:none` so it cannot swallow clicks meant for the other's thumb, and only the
+   thumbs take the pointer back. `.f select,.f input` would otherwise give these a border, a
+   background and 9px of padding — the whole reason this block is more specific than it looks.
+   Widths are overridden per part rather than by unsetting the rule, so a new control added to
+   the rail still inherits the shared shape. */
+.slider{ position:relative; height:28px; margin-top:12px; }
+.slider-track{ position:absolute; left:9px; right:9px; top:12px; height:4px;
+  border-radius:var(--r-pill); background:var(--rule); }
+.slider-fill{ position:absolute; top:0; height:100%; border-radius:var(--r-pill);
+  background:var(--accent); }
+.slider input[type="range"]{ position:absolute; left:0; top:0; width:100%; height:28px;
+  margin:0; padding:0; border:0; background:none; appearance:none; -webkit-appearance:none;
+  pointer-events:none; }
+.slider input[type="range"]::-webkit-slider-thumb{ -webkit-appearance:none; pointer-events:auto;
+  width:18px; height:18px; border-radius:50%; background:var(--raise);
+  border:2px solid var(--accent); cursor:grab; box-shadow:var(--shadow); }
+.slider input[type="range"]::-moz-range-thumb{ pointer-events:auto; width:14px; height:14px;
+  border-radius:50%; background:var(--raise); border:2px solid var(--accent); cursor:grab; }
+/* The element is 100% wide and mostly empty, so the page's own outline would ring the whole
+   track rather than the control the user is actually moving. Replaced on the thumb, not
+   removed — an unreplaced `outline:none` is the defect this file just finished fixing
+   everywhere else. */
+.slider input[type="range"]:focus{ outline:none; }
+.slider input[type="range"]:focus-visible::-webkit-slider-thumb{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.slider input[type="range"]:focus-visible::-moz-range-thumb{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.slider-read{ display:block; margin-top:2px; font:500 12px var(--mono);
+  font-variant-numeric:tabular-nums; color:var(--ink-2); }
 
 /* A switch's count, in its own node so appending markup to the label can never displace it. */
 .sw .fcount{ color:var(--ink-3); }

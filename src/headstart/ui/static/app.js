@@ -227,6 +227,7 @@ const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears',
   etype:'etype', india:'india', location:'location', company:'company',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
+  syncSalarySlider();
   const f = currentFilters(), box = el('active');
   // The panel is closed by default now (ADR-0115), so the button has to carry how many
   // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
@@ -240,6 +241,92 @@ function drawActive(){
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }
+/* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
+   stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
+   applySetToControls), so the slider is an input method for them and never a second source of
+   truth. It writes into them and fires `input`, which is what the number fields would fire if
+   a hand had typed there.
+
+   Traffic is one-way on the read side: a typed figure MOVES the handle but is never rewritten
+   by it. Salary asks for exact numbers, and a slider that rounded 137,000 up to its nearest
+   stop the moment focus left the field would be editing the user's filter behind them. It also
+   keeps the promise the number fields make on their own — a figure past the top of the scale
+   is still reachable by typing it.
+
+   The stops are round numbers, closer together where the salaries are: annual pay is heavily
+   skewed, and an even 0-500k track would spend four fifths of its length on a range almost
+   nothing sits in. The printed range is always the true value out of the number fields, never
+   the stop the handle is resting on.
+
+   The top of the scale is "no maximum", not "the most anyone here pays" — nothing in the
+   client has measured that, and a number implying it would be an invented bound. ---- */
+const SALARY_STOPS = (() => {
+  const out = [];
+  for (let v = 0; v < 100000; v += 5000) out.push(v);
+  for (let v = 100000; v < 200000; v += 10000) out.push(v);
+  for (let v = 200000; v <= 500000; v += 25000) out.push(v);
+  return out;
+})();
+const SAL_TOP = SALARY_STOPS.length - 1;
+// The stop nearest a typed figure — nearest, not floor, so 137,000 rests on 140,000 rather
+// than sliding back to 130,000. Anything past the top end parks on the top.
+const salStop = v => {
+  let best = 0;
+  SALARY_STOPS.forEach((stop, i) => {
+    if (Math.abs(stop - v) < Math.abs(SALARY_STOPS[best] - v)) best = i;
+  });
+  return best;
+};
+const salFmt = n => Number(n).toLocaleString();
+
+// Position the handles, the fill and the read-out from whatever `#salmin`/`#salmax` now hold.
+// Called on every fetch (via drawActive) as well as on direct edits, so every path that can
+// change those fields — Clear all, a removed chip, a saved set, the Profile hand-off — leaves
+// the slider agreeing with them without each one having to know it exists.
+function syncSalarySlider(){
+  const lo = el('salrmin'), hi = el('salrmax'); if (!lo || !hi) return;
+  lo.max = String(SAL_TOP); hi.max = String(SAL_TOP);
+  const minV = el('salmin').value, maxV = el('salmax').value;
+  const li = minV === '' ? 0 : salStop(Number(minV));
+  const ri = maxV === '' ? SAL_TOP : salStop(Number(maxV));
+  lo.value = String(Math.min(li, ri));
+  hi.value = String(Math.max(li, ri));
+  // With both handles at the same stop the one underneath is unreachable; lift whichever is
+  // at the far end so there is always a thumb on top to drag back.
+  lo.style.zIndex = Number(lo.value) >= SAL_TOP ? '4' : '';
+  const pct = i => (i / SAL_TOP) * 100;
+  const fill = el('salfill');
+  if (fill){
+    fill.style.left = pct(Number(lo.value)) + '%';
+    fill.style.width = (pct(Number(hi.value)) - pct(Number(lo.value))) + '%';
+  }
+  // The screen reader hears the salary, not the index the range actually holds.
+  lo.setAttribute('aria-valuetext', minV === '' ? 'no minimum' : salFmt(minV));
+  hi.setAttribute('aria-valuetext', maxV === '' ? 'no maximum' : salFmt(maxV));
+  const cur = el('salcur') ? el('salcur').value : '';
+  const read = el('salread');
+  if (read){
+    read.textContent = (minV === '' && maxV === '') ? 'Any salary'
+      : `${cur} ${minV === '' ? 'any' : salFmt(minV)} \u2013 ${maxV === '' ? 'no maximum' : salFmt(maxV)}`;
+  }
+}
+
+// A dragged handle writes the stop it landed on into the number field it stands for, then
+// searches — `input` so anything watching those fields sees the change the way it would see
+// a keystroke. Blank, not 0 / the top stop: an end-stop means "unbounded", and 0 is a real
+// minimum the server would compile into a clause.
+function salSlide(which){
+  const lo = el('salrmin'), hi = el('salrmax');
+  let li = Number(lo.value), ri = Number(hi.value);
+  if (li > ri){ if (which === 'min') li = ri; else ri = li; }   // handles never cross
+  lo.value = String(li); hi.value = String(ri);
+  el('salmin').value = li === 0 ? '' : String(SALARY_STOPS[li]);
+  el('salmax').value = ri === SAL_TOP ? '' : String(SALARY_STOPS[ri]);
+  for (const id of ['salmin', 'salmax'])
+    el(id).dispatchEvent(new Event('input', { bubbles: true }));
+  syncSalarySlider();
+}
+
 const BRACKET = ['salary_min', 'salary_max', 'salary_currency'];
 function dropFilter(key){
   // The currency picker has a default, not an empty state, so there is nothing to blank on it.
@@ -665,6 +752,7 @@ function applySetToControls(s){
     const c = el(CONTROL[key]); if (!c) continue;
     if (c.type === 'checkbox') c.checked = value === 'true'; else c.value = value;
   }
+  syncSalarySlider();
 }
 
 async function handleSetAction(act, id){
@@ -1637,6 +1725,19 @@ if (el('trends-legend')) {
     const row = e.target.closest('.row[role="button"]');
     if (row){ hoveredSeries = null; applyEmphasis(); }
   });
+}
+if (el('salrmin')){
+  // `input` for the live fill and read-out while a thumb is moving, `change` for the search —
+  // one request per drag rather than one per pixel.
+  el('salrmin').addEventListener('input', () => salSlide('min'));
+  el('salrmax').addEventListener('input', () => salSlide('max'));
+  el('salrmin').addEventListener('change', go);
+  el('salrmax').addEventListener('change', go);
+  // Typing moves the handle; it never moves the typed figure back.
+  ['salmin', 'salmax'].forEach(id => el(id).addEventListener('input', syncSalarySlider));
+  // The currency names what the range is expressed in, so only the read-out's label changes —
+  // the numbers themselves are not this control's to rewrite.
+  if (el('salcur')) el('salcur').addEventListener('change', syncSalarySlider);
 }
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');

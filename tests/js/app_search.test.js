@@ -17,7 +17,8 @@ function fakeEl() {
   return {
     innerHTML: '', textContent: '', hidden: false, style: {}, value: '', checked: false,
     querySelectorAll: () => [],
-    setAttribute() {}, getAttribute: () => null, addEventListener() {},
+    setAttribute(k, v) { this[k] = v; }, getAttribute: k => null, addEventListener() {},
+    dispatchEvent() {},
     classList: {
       add: c => classes.add(c), remove: c => classes.delete(c),
       contains: c => classes.has(c),
@@ -54,6 +55,7 @@ function loadApp(respond, cfg = {}) {
     window: { addEventListener() {}, location: { hash: '' }, CFG: cfg },
     location: { hash: '' },
     console, CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
+    Event: class { constructor(type) { this.type = type; } },
     fetch: url => {
       fetches.push(String(url));
       return Promise.resolve({ json: () => Promise.resolve(respond(String(url))) });
@@ -61,7 +63,9 @@ function loadApp(respond, cfg = {}) {
   };
   ctx.globalThis = ctx;
   const src = fs.readFileSync(APP_JS, 'utf8')
-    + '\n;globalThis.__t = { go, goToPage, page: () => page };';
+    + '\n;globalThis.__t = { go, goToPage, page: () => page, jobCard, savedRow,'
+    + ' salStop, SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
+    + ' dismiss: dismissRow, dismissed };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, t: ctx.__t, ctx };
 }
@@ -247,4 +251,86 @@ test('a failed /facets replaces a stale note with the plain fact, never leaves t
   await t.go();
   assert.doesNotMatch(nodes.kwnote.textContent, /42 of the 100/);   // not stale
   assert.match(nodes.kwnote.textContent, /not every job has one/);
+});
+
+
+// ── One card for Search, Matches and Saved ───────────────────────────────────────────────────
+
+test('a saved job renders through the same card as a search result', async () => {
+  // Saved used to build its own markup and drifted: no external-link glyph, the salary as a
+  // tag rather than in the pay column, a `.hd` wrapper no stylesheet has carried since the row
+  // layout landed. The record's shape is SavedJob.to_dict() plus the route's `open`.
+  const { t } = loadApp(() => []);
+  const html = t.jobCard(t.savedRow({
+    id: 'r1', job_id: 'greenhouse:acme:7', title: 'Backend Engineer', company: 'Acme',
+    location: 'Berlin', url: 'https://example.test/x', remote: true,
+    salary: 'EUR 90,000/yr', starred_at: '2026-09-01T00:00:00+00:00', open: true,
+  }), 0);
+  assert.ok(html.includes('<div class="pay">EUR 90,000/yr</div>'));
+  assert.ok(html.includes('class="ext"'));                       // it leaves for the employer
+  assert.ok(html.includes("opens on the employer's own board"));
+  assert.ok(html.includes('class="tag rem"'));
+  assert.ok(html.includes('class="star on"'));
+});
+
+test('a saved job the index has dropped is marked closed — from `open`, not a `closed` key', async () => {
+  // The server answers `open: false`; nothing in the payload is called `closed`. Reading the
+  // wrong key here is silent — the tag simply never appears, under a caption promising it.
+  const { t } = loadApp(() => []);
+  const rec = { job_id: 'lever:acme:1', title: 'X', company: 'Y', url: 'https://example.test/x',
+                location: '', remote: false, salary: '', starred_at: '', open: false };
+  assert.ok(t.jobCard(t.savedRow(rec), 0).includes('class="tag closed"'));
+  assert.ok(t.jobCard(t.savedRow({ ...rec, open: true }), 0).includes('class="tag closed"') === false);
+});
+
+test('a dismissed row is marked, not dropped — the server\'s own count stays true', async () => {
+  const { t, nodes } = loadApp(() => [job('a'), job('b')]);
+  await t.go();
+  t.dismissed.add('a');
+  await t.go();
+  const cards = nodes.results.innerHTML.split('<div class="card').slice(1);
+  assert.strictEqual(cards.length, 2, 'both rows are still rendered');
+  assert.ok(cards[0].includes('dismissed'));
+  assert.ok(!cards[1].includes('dismissed'));
+  t.dismissed.delete('a');
+});
+
+// ── The salary bracket's slider ──────────────────────────────────────────────────────────────
+
+test('a typed figure rests on the nearest stop, and one past the scale parks on the top', () => {
+  const { t } = loadApp(() => []);
+  const top = t.SALARY_STOPS.length - 1;
+  assert.strictEqual(t.SALARY_STOPS[t.salStop(137000)], 140000);   // nearest, not floor
+  assert.strictEqual(t.salStop(0), 0);
+  assert.strictEqual(t.salStop(9_000_000), top);
+  assert.strictEqual(t.SALARY_STOPS[top], 500000);
+});
+
+test('the slider follows the number fields and never rewrites what was typed', () => {
+  const { t, nodes } = loadApp(() => []);
+  nodes.salmin.value = '137000';
+  nodes.salmax.value = '';
+  t.sync();
+  assert.strictEqual(nodes.salmin.value, '137000', 'the typed figure is untouched');
+  assert.strictEqual(nodes.salrmin.value, String(t.salStop(137000)));
+  assert.strictEqual(nodes.salrmax.value, String(t.SALARY_STOPS.length - 1));
+  assert.ok(nodes.salread.textContent.includes('137,000'));
+  assert.ok(nodes.salread.textContent.includes('no maximum'));
+});
+
+test('the handles cannot cross, and an end stop means unbounded rather than zero', () => {
+  const { t, nodes } = loadApp(() => []);
+  nodes.salrmin.value = '30';
+  nodes.salrmax.value = '12';
+  t.slide('min');
+  assert.strictEqual(nodes.salrmin.value, '12');
+  assert.strictEqual(nodes.salrmax.value, '12');
+
+  nodes.salrmin.value = '0';
+  nodes.salrmax.value = String(t.SALARY_STOPS.length - 1);
+  t.slide('max');
+  // Blank, not "0" and not "500000": a bound the server would compile into a clause is a
+  // different filter from no bound at all.
+  assert.strictEqual(nodes.salmin.value, '');
+  assert.strictEqual(nodes.salmax.value, '');
 });
