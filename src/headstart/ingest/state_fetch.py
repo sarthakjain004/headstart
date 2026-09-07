@@ -3,10 +3,11 @@
 
     python -m headstart.ingest.state_fetch 'data/embeddings/jobs/*' 'data/lancedb/*'
 
-``snapshot_download(local_dir=…)`` does **not** raise when the Hub is unreachable: it warns
-(``Returning existing local_dir … as remote repo cannot be accessed``) and returns the local path.
-Every state dir is gitignored, so on a CI runner that fallback yields an *empty* state — which is
-indistinguishable, to everything downstream, from a legitimate first run.
+Originally built around ``huggingface_hub.snapshot_download(local_dir=…)``, which does **not**
+raise when the Hub is unreachable: it warns (``Returning existing local_dir … as remote repo
+cannot be accessed``) and returns the local path. Every state dir is gitignored, so on a CI runner
+that fallback yields an *empty* state — which is indistinguishable, to everything downstream, from
+a legitimate first run.
 
 That is how run 30304173982 (2026-07-27) lost its prior state to a transient ``429 Too Many
 Requests``: the fetch step logged success in 1s (20s and 14s either side), ``embed_merge`` wrote a
@@ -15,10 +16,14 @@ bootstrapped an empty table. Only a *second* 429, on the upload 80s later, stopp
 from replacing the served one. Nothing in the chain was wrong on its own; no step ever asked whether
 the state it was building on had actually been fetched.
 
-So ask. The remote listing is the missing fact, and it fails closed where the download does not:
-``remote_files`` raises on a 429 rather than falling back, and raises again if the Hub answers
-without a ``siblings`` list at all. Requiring exactly what the Hub reports also needs no bootstrap
-opt-out — a first run matches nothing, requires nothing, and proceeds.
+So ask, independent of whether the download itself would have told the truth. The remote listing is
+the missing fact, and it fails closed where a silent download would not: :func:`_siblings` raises on
+a 429 rather than falling back, and raises again if the Hub answers without a ``siblings`` list at
+all. Requiring exactly what the Hub reports also needs no bootstrap opt-out — a first run matches
+nothing, requires nothing, and proceeds. ``snapshot_download`` itself is gone from the download path
+as of 2026-09-07 (:func:`_download`, ADR-0085) — a single HTTP stream per file stalled hard on
+whichever file in a pattern set was largest, 68-84% of ``merge``'s wall time in three measured runs
+— but this listen-then-verify design does not depend on which download mechanism is under it.
 
 What the listing cannot rule on is an empty *match*: a first run and an emptied or mistyped
 ``HF_DATASET`` look identical to it. ADR-0095 gives the dataset a witness that survives a failed
@@ -171,8 +176,9 @@ def remote_files(repo: str, token: str | None) -> list[str]:
     """Every file in the dataset repo, from a **single** Hub API request.
 
     ``list_repo_files`` goes through ``list_repo_tree(recursive=True)``, which pages at ~1,000
-    entries, so it costs ``ceil(files / 1000)`` ``/tree/`` requests. ``repo_info(expand=["siblings"])``
-    answers from ``/api/datasets/{id}`` in exactly one, whatever the file count.
+    entries, so it costs ``ceil(files / 1000)`` ``/tree/`` requests. ``repo_info(files_metadata=True)``
+    answers from ``/api/datasets/{id}`` in exactly one, whatever the file count — see
+    :func:`_siblings` for why that parameter rather than ``expand=["siblings"]``.
 
     Be honest about the size of that: the repo's file count sawtooths with compaction — measured
     2026-08-11, 1,601 files before and **42** after — so the saving is 1 request per fetch at the
@@ -190,16 +196,29 @@ def remote_files(repo: str, token: str | None) -> list[str]:
     fetch claim success having downloaded nothing. That is precisely the empty-state-reads-as-a-
     first-run failure this module exists to prevent (ADR-0030), so treat it as a failed attempt.
     """
+    return [s.rfilename for s in _siblings(repo, token)]
+
+
+def _siblings(repo: str, token: str | None) -> list[Any]:
+    """The listing behind :func:`remote_files`, with sizes — same one request, same fail-closed
+    guard. Kept private and separate so callers that only need names (``remote_files``, tested and
+    used standalone) don't carry the size-bearing shape, while :func:`fetch_state` can read sizes
+    off this directly without a second Hub request for the same listing.
+
+    ``files_metadata=True`` is what carries size: ``expand=["siblings"]`` alone reports every
+    sibling's ``size`` as ``None`` (verified live against this dataset, 2026-09-07) and the two
+    are mutually exclusive on ``repo_info``, so this replaces rather than adds to that call.
+    """
     from huggingface_hub import repo_info
 
     siblings = repo_info(
-        repo, repo_type="dataset", expand=["siblings"], token=token
+        repo, repo_type="dataset", files_metadata=True, token=token
     ).siblings
     if siblings is None:
         raise RuntimeError(
             f"Hub returned no `siblings` listing for {repo} — refusing to read that as an empty repo"
         )
-    return [s.rfilename for s in siblings]
+    return siblings
 
 
 def remote_matches(repo_files: list[str], patterns: list[str]) -> set[str]:
@@ -214,16 +233,160 @@ def absent_locally(wanted: set[str], root: str | Path) -> list[str]:
     return sorted(f for f in wanted if not (Path(root) / f).exists())
 
 
-def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
-    from huggingface_hub import snapshot_download
+# ADR-0085's finding, applied here rather than only in scripts/fetch/pull_lancedb.py: a single
+# HTTP stream stalls hard on a large file (measured 0.16 MB/s there against 2.17 MB/s aggregated
+# across four concurrent ranged GETs) while short flows are fine. `snapshot_download` fetches each
+# file as one stream, so it paid that stall on whichever file in a `wanted` set was largest —
+# 68-84% of the entire `merge` job's wall time across three 2026-09-07 runs
+# (docs/pipeline/2026-09-07_four-run-review-post-ua-fix.md §3), always the last one to two files.
+# Below this size a single stream is fine (every run's small files landed in seconds); at or above
+# it, fetch as concurrent ranged chunks instead.
+_BIG_FILE_BYTES = 100_000_000
+_CHUNK_BYTES = 32_000_000
+_DOWNLOAD_WORKERS = 6
+# pull_lancedb.py measured 120 of 2,834 file fetches failing at this same concurrency and all
+# recovering on retry — routine 429/network blips, not absent files. A couple of quick inner
+# attempts absorb those cheaply; without them, one blip on any single chunk aborts the whole
+# ranged fetch and pays fetch_state's much slower 30-300s outer backoff for what a 2s retry here
+# would have fixed.
+_INNER_ATTEMPTS = 3
+_INNER_BACKOFF_S = 2.0
 
+
+def _get_with_retry(url: str, headers: dict[str, str], timeout: tuple[float, float]):
+    import requests
+
+    last: Exception = RuntimeError(
+        "unreachable"
+    )  # _INNER_ATTEMPTS >= 1 always overwrites this
+    for attempt in range(_INNER_ATTEMPTS):
+        try:
+            r = requests.get(
+                url, headers=headers, timeout=timeout, allow_redirects=True
+            )
+            r.raise_for_status()
+            return r
+        except (requests.RequestException, OSError) as exc:
+            last = exc
+            if attempt + 1 < _INNER_ATTEMPTS:
+                time.sleep(_INNER_BACKOFF_S * (attempt + 1))
+    raise last
+
+
+def _fetch_whole(url: str, dest: Path, headers: dict[str, str]) -> None:
+    """One small file, whole-body GET, written ``.tmp`` then renamed.
+
+    The rename is the point: a kill mid-write leaves a ``.tmp``, never a short file at the real
+    path — which the retry loop's next attempt would otherwise find with ``.exists()`` and skip,
+    silently landing a truncated file as if it were complete.
+    """
+    tmp = dest.with_name(dest.name + ".tmp")
+    r = _get_with_retry(url, headers, timeout=(15, 60))
+    with open(tmp, "wb") as fh:
+        fh.write(r.content)
+    tmp.rename(dest)
+
+
+def _chunk_path(dest: Path, i: int) -> Path:
+    return dest.with_name(f"{dest.name}.c{i:04d}")
+
+
+def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> None:
+    """One large file, fetched as concurrent ranged chunks then concatenated (ADR-0085).
+
+    Chunk boundaries are absolute (``i``'s range never depends on progress), so a chunk file
+    already at its full size is skipped — free resumption across this function's own retries
+    within :func:`fetch_state`'s outer attempt loop, which is the only resumption this needs: a CI
+    runner is a single process, so there is no "next run" to resume across.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    plan = [
+        (i, off, min(off + _CHUNK_BYTES, size))
+        for i, off in enumerate(range(0, size, _CHUNK_BYTES))
+    ]
+
+    def fetch_chunk(spec: tuple[int, int, int]) -> None:
+        i, lo, hi = spec
+        cf = _chunk_path(dest, i)
+        want = hi - lo
+        if cf.exists() and cf.stat().st_size == want:
+            return
+        r = _get_with_retry(
+            url, dict(headers, Range=f"bytes={lo}-{hi - 1}"), timeout=(20, 90)
+        )
+        if len(r.content) != want:
+            raise OSError(
+                f"chunk {i} of {dest.name}: got {len(r.content)} bytes, wanted {want}"
+            )
+        cf.write_bytes(r.content)
+
+    with ThreadPoolExecutor(max_workers=_DOWNLOAD_WORKERS) as pool:
+        for fut in as_completed([pool.submit(fetch_chunk, c) for c in plan]):
+            fut.result()  # re-raises on the pool's thread — same failure surface as a plain GET
+
+    tmp = dest.with_name(dest.name + ".tmp")
+    with open(tmp, "wb") as fh:
+        for i, _, _ in plan:
+            cf = _chunk_path(dest, i)
+            fh.write(cf.read_bytes())
+            cf.unlink()
+    if tmp.stat().st_size != size:
+        raise OSError(
+            f"{dest.name}: assembled {tmp.stat().st_size} bytes, remote reports {size}"
+        )
+    tmp.rename(dest)
+
+
+def _download(
+    repo: str, siblings: list[Any], wanted: set[str], token: str | None, root: Path
+) -> None:
+    """Fetch every ``wanted`` file under ``root`` — the download-side twin of
+    ``scripts/fetch/pull_lancedb.py``, folded in here so ``join``/``merge``'s big pulls
+    (``data/lancedb/*``, ``data/embeddings/jobs/*``) get the same treatment, not just a
+    LanceDB-only ops script. Raises on any failure exactly as ``snapshot_download`` did, so
+    :func:`fetch_state`'s retry/backoff/rate-limit handling needs no changes to keep working —
+    ``requests.HTTPError`` carries ``.response`` the same shape ``reason_for``/``reset_after``
+    already read generically off any exception.
+    """
+    if not wanted:
+        return  # a pattern with no remote match — nothing to fetch, no Hub call needed for it
+
+    from huggingface_hub import hf_hub_url
+
+    sizes = {s.rfilename: (getattr(s, "size", None) or 0) for s in siblings}
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    small = [p for p in wanted if sizes.get(p, 0) < _BIG_FILE_BYTES]
+    big = [p for p in wanted if sizes.get(p, 0) >= _BIG_FILE_BYTES]
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def fetch_small(path: str) -> None:
+        dest = root / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _fetch_whole(hf_hub_url(repo, path, repo_type="dataset"), dest, headers)
+
+    with ThreadPoolExecutor(max_workers=_DOWNLOAD_WORKERS) as pool:
+        for fut in as_completed([pool.submit(fetch_small, p) for p in small]):
+            fut.result()
+
+    for path in big:
+        dest = root / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _fetch_ranged(
+            hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
+        )
+
+
+def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
     spent = 0  # seconds slept so far, against _WAIT_BUDGET
     began = time.monotonic()  # the whole fetch, across every attempt and every wait
     for attempt in range(1, _ATTEMPTS + 1):
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
         try:
-            listing = remote_files(repo, token)
+            siblings = _siblings(repo, token)
+            listing = [s.rfilename for s in siblings]
             wanted = remote_matches(listing, patterns)
             # A pattern that matches nothing is the one case the listing cannot rule on: a genuine
             # first run and an emptied or mistyped `HF_DATASET` look identical to it. ADR-0030 says
@@ -252,13 +415,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                         "first run"
                     )
                     break
-            snapshot_download(
-                repo,
-                repo_type="dataset",
-                local_dir=str(REPO_ROOT),
-                allow_patterns=patterns,
-                token=token,
-            )
+            _download(repo, siblings, wanted, token, REPO_ROOT)
             absent = absent_locally(wanted, REPO_ROOT)
             if not absent:
                 # the seconds are the point: HF download variance is what makes the merge
