@@ -245,8 +245,9 @@ function currentFilters(){
   if (el('seen') && el('seen').value) f.seen_within = el('seen').value;
   if (el('salmin') && el('salmin').value) f.salary_min = el('salmin').value;
   if (el('salmax') && el('salmax').value) f.salary_max = el('salmax').value;
-  // Only meaningful alongside a bound: salaries are never FX-converted, so the currency
-  // scopes a bracket rather than filtering on its own (matches build_filter's own guard).
+  // Only meaningful alongside a bound: the currency says what the bracket's two numbers are
+  // counted in, and the server restates them in every other currency from there (ADR-0117) —
+  // so on its own it filters nothing, which is build_filter's own guard too.
   if (el('salcur') && (f.salary_min || f.salary_max)) f.salary_currency = el('salcur').value;
   return f;
 }
@@ -254,7 +255,15 @@ const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your exp
   kw:'Keyword', kw_in:'Look in',
   ats:'ATS provider', etype:'Type', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤',
-  salary_min:'Salary from', salary_max:'Salary to', salary_currency:'Currency' };
+  salary_min:'Salary from', salary_max:'Salary to' };
+// A chip should read as the sentence the user set, in the units the read-out and the results
+// use: "Salary from USD 60,000", not the raw "60000" out of the number field. The currency has
+// no chip of its own — it is not a filter, it is what both bounds are counted in, and a third
+// chip repeating it would also inflate the count on the Filters button by one.
+const chipValue = (key, value, f) =>
+  (key === 'salary_min' || key === 'salary_max')
+    ? `${f.salary_currency || ''} ${salFmt(value)}`.trim()
+    : (value === 'true' ? 'yes' : value);
 // `salary_currency` is deliberately absent: it has a default (USD) rather than an empty
 // state, so clearAll() blanking it would leave the picker showing nothing. Clearing the two
 // bounds already switches the bracket off, which is what "clear" has to mean here.
@@ -266,9 +275,11 @@ const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears',
 function drawActive(){
   syncSalarySlider();
   const f = currentFilters(), box = el('active');
+  // Everything but the currency, which both bracket chips print for themselves.
+  const shown = Object.entries(f).filter(([k]) => k !== 'salary_currency');
   // The panel is closed by default now (ADR-0116), so the button has to carry how many
   // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
-  const btn = el('filtersbtn'), n = Object.keys(f).length;
+  const btn = el('filtersbtn'), n = shown.length;
   if (btn){
     btn.textContent = n ? `Filters (${n})` : 'Filters';
     btn.classList.toggle('has', n > 0);
@@ -280,8 +291,8 @@ function drawActive(){
   if (fxnote) fxnote.textContent = (f.salary_currency && FX && FX.as_of)
     ? `Other currencies are converted at rates from ${FX.as_of} \u2014 currency conversion, not cost of living.`
     : '';
-  box.innerHTML = Object.entries(f).map(([k,v]) =>
-    `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(v === 'true' ? 'yes' : v)}` +
+  box.innerHTML = shown.map(([k,v]) =>
+    `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(chipValue(k, v, f))}` +
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }

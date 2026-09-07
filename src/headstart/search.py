@@ -423,10 +423,11 @@ def _salary_clauses(
         # the feature stays dark until then rather than 500ing.
         filters.append("min_salary_annual IS NOT NULL")
 
-    # The salary bracket (issue #275) is scoped to ONE currency, and that is not a UI nicety:
-    # salary is period-normalised but deliberately never FX-converted (ADR-0082), so comparing
-    # a bare number across currencies would rank 60,000 INR beside 60,000 USD as equals. The
-    # currency therefore comes first and is whitelisted against what the table actually holds,
+    # The salary bracket (issue #275) is stated in ONE currency the user picks, and that is not
+    # a UI nicety: salary is period-normalised but stored in the employer's own currency
+    # (ADR-0082), so a bare number compared across currencies would rank 60,000 INR beside
+    # 60,000 USD as equals. That currency is what the bounds are converted FROM further down
+    # (ADR-0117); it comes first and is whitelisted against what the table actually holds,
     # exactly like `ats` — never interpolated from free text. Without one the bracket does not
     # apply unscoped, because an unscoped bracket is the wrong answer, not a looser one — it
     # takes :data:`SALARY_DEFAULT_CURRENCY` instead.

@@ -42,11 +42,13 @@
 <main>
     <div class="toolbar">
       <button class="ghost filters-btn" id="filtersbtn" onclick="toggleRail()" aria-expanded="false" aria-controls="rail">Filters</button>
-      <span class="n" id="n"></span>
-      <span class="note sortnote" id="sortnote" role="status"></span>
-      {# What the × on a row did with it. The rows are hidden rather than dropped, so the
-         count beside this stays the server's own answer and one click puts them back. #}
-      <span class="note" id="hidden" role="status"></span>
+      {# Beside Filters rather than after the sort controls: last in the row it was the item
+         the flex wrap pushed onto a second line of its own, 48px below everything else in a
+         toolbar that then measured 86px tall. It also belongs with Filters — both act on the
+         query the user has built, where Sort and Compact act on the rows that came back. #}
+      {% if sets_on %}
+      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
+      {% endif %}
       <span class="spacer"></span>
       <label class="note" for="sort">Sort</label>
       <select id="sort" onchange="go()">
@@ -59,9 +61,6 @@
       </select>
       <button class="ghost" id="density" onclick="flipDensity()" aria-pressed="false"
               title="Tighter rows, same fields">Compact</button>
-      {% if sets_on %}
-      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
-      {% endif %}
     </div>
     {% if sets_on %}
     <div class="row saverow" id="saverow" style="display:none">
@@ -182,6 +181,17 @@
       <button class="clear" onclick="clearAll()">Clear all filters</button>
     </aside>
 
+    {# The three status texts, below the controls rather than among them: in the toolbar row
+       they were ~300px of prose between the buttons, and whichever control fell off the end
+       wrapped alone onto a second line. Here they also sit directly above the rows they
+       describe. #}
+    <div class="status">
+      <span class="n" id="n"></span>
+      <span class="note sortnote" id="sortnote" role="status"></span>
+      {# What the × on a row did with it. The rows are hidden rather than dropped, so the
+         count beside this stays the server's own answer and one click puts them back. #}
+      <span class="note" id="hidden" role="status"></span>
+    </div>
     <div class="active" id="active"></div>
     {# Says what the list below actually is. A no-Query browse and a ranked search look
        identical apart from the match rings, and a user who cannot tell them apart reads the
