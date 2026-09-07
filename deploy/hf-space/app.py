@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import facets  # facet counts — synced from src/headstart/facets.py (ADR-0084)
+import fx  # synced from src/headstart/fx.py by deploy-space.yml (ADR-0117)
 import geo  # India gazetteer — synced from src/headstart/geo.py by deploy-space.yml
 import lancedb
 import llm_router  # synced from src/headstart/llm_router.py by deploy-space.yml (ADR-0032)
@@ -869,6 +870,21 @@ def coverage():
     return jsonify(_searcher.coverage())
 
 
+def _fx_as_of() -> str | None:
+    """The date on the committed rate table, or None when it cannot be read (ADR-0117)."""
+    return (fx.table() or {}).get("as_of")
+
+
+def _fx_converts(currencies: list[str]) -> bool:
+    """Whether a bracket can actually cross a currency boundary here.
+
+    Two served currencies must both carry a rate; with fewer, `build_filter` compiles the
+    single-currency clause and any copy promising conversion would be describing nothing.
+    """
+    rates = (fx.table() or {}).get("rates") or {}
+    return len([c for c in currencies if c in rates]) > 1
+
+
 @app.route("/")
 def index():
     if _AUTH_ON and not session.get("email"):
@@ -902,6 +918,12 @@ def index():
             # it the fallback is `id`, which is not a date at all. The line naming what the
             # user is looking at must not claim "newest first" on the second one.
             "has_first_seen": _searcher.has_first_seen,
+            # The salary bracket's rate table (ADR-0117), so the page can print what a row
+            # in another currency comes to in the one the user asked in — the SAME table the
+            # where-clause was compiled from, never a second lookup, so the label beside a row
+            # cannot disagree with the query that returned it. `None` when the table is
+            # unreadable, and the page then converts nothing, exactly as `build_filter` does.
+            "fx": fx.table(),
         },
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,
@@ -913,9 +935,19 @@ def index():
         keyword_scopes=scopes,
         keyword_default_scope=search.KEYWORD_DEFAULT_SCOPE,
         has_description=_searcher.has_description,
+        # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
+        # served table, the same rule `run` applies to the value the control would send
+        has_min_salary=_searcher.has_min_salary_annual,
         # the salary bracket's currency picker (issue #275) — only the currencies the served
         # table actually carries, and the same list `build_filter` whitelists against
         currencies=_searcher.currencies,
+        # The salary bracket converts across currencies (ADR-0117); the rail prints the date
+        # of the rates it used, so a stale table is visible rather than silent.
+        # Both facts, because the tip needs the second one: `as_of` says the table parsed,
+        # but conversion only happens where the served currencies HAVE rates. Guarding the
+        # claim on the date let a deployment with no comparable currencies still promise it.
+        fx_as_of=_fx_as_of(),
+        fx_converts=_fx_converts(_searcher.currencies),
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,

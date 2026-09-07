@@ -1,6 +1,6 @@
 # ADR-0084: Facet counts are filter-shaped, not query-shaped
 
-**Status:** Accepted · **Date:** 2026-08-25 · **Extends ADR-0031's filter vocabulary and ADR-0074's addressable window; scoped by ADR-0082's no-FX rule**
+**Status:** Accepted · **Date:** 2026-08-25 · **Extends ADR-0031's filter vocabulary and ADR-0074's addressable window; scoped by ADR-0082's no-FX rule — narrowed to storage only by [ADR-0117](0117-the-salary-bracket-compares-across-currencies.md), which converts the bracket's bounds across currencies**
 
 ## Context
 

@@ -37,6 +37,13 @@
     <span id="trends-error-msg"></span>
     <button class="ghost" id="trends-retry" type="button">Retry</button>
   </div>
+  {# The loading state. Same grid as the chart below it, so the panel does not jump when the
+     data lands — the skeleton IS the reserved space rather than an extra block above it.
+     aria-hidden because #trends carries aria-busy, which is what actually announces the wait. #}
+  <div class="trends-grid trends-skel" id="trends-skel" hidden aria-hidden="true">
+    <div class="shim"></div>
+    <div class="shim"></div>
+  </div>
   <div class="trends-grid" id="trends-viz">
     <div class="trends-chart-wrap">
       <svg id="trends-chart" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"

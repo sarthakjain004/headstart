@@ -119,3 +119,5 @@ supersedes it and note the supersession in both.
 | [0113](0113-publish-the-indexs-own-limits-in-the-product.md) | Publish the index's own limits in the product, measured live | 2026-09-07 |
 | [0114](0114-a-board-states-its-company-name-in-its-page-title.md) | A Board states its company name in its page title — read it, don't infer it | 2026-09-07 |
 | [0115](0115-one-user-agent-identifies-and-hosts-constrain-its-shape.md) | One User-Agent, chosen to identify — and its shape is set by hosts, not by taste | 2026-09-07 |
+| [0116](0116-a-quiet-palette-and-a-scanning-layout.md) | A quiet palette, and a layout built for scanning | 2026-09-07 |
+| [0117](0117-the-salary-bracket-compares-across-currencies.md) | The salary bracket compares across currencies, at a dated rate | 2026-09-07 |

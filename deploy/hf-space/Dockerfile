@@ -25,12 +25,15 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # geo.py, llm_router.py, profile_extract.py, the two role JSONs and the alerts/ package are
 # not in the repo's deploy/hf-space/ — deploy-space.yml copies them in from src/headstart/ and
 # config/ (single source of truth, where their tests live) before pushing to the Space.
+# `fx_rates.json` is here for the same reason as the role JSONs: `fx.py` reads it from beside
+# itself in this image (ADR-0117), and without it the salary bracket quietly stops comparing
+# across currencies instead of failing loudly.
 # Both role JSONs must be COPYed, not merely synced: app.py reads them from beside itself
 # inside the image. Without role_families.json every trend series renders as its slug
 # (ADR-0040); without role_watchlist.json `_watch_meta` returns {} and `watch_parents` is
 # empty, so the by-role drill stays hidden on every family (ADR-0051) — the same bug as #115,
 # one file later.
-COPY app.py facets.py geo.py llm_router.py profile_extract.py role_families.json role_watchlist.json search.py start.sh .
+COPY app.py facets.py fx.py fx_rates.json geo.py llm_router.py profile_extract.py role_families.json role_watchlist.json search.py start.sh .
 COPY alerts ./alerts
 # Synced from src/headstart/ui/ by deploy-space.yml, like the modules above.
 COPY templates ./templates

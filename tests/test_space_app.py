@@ -157,12 +157,16 @@ def _space_app(state, env=None):
     import headstart.alerts.identity as _identity
     import headstart.alerts.store as _store
     import headstart.facets as _facets
+    import headstart.fx as _fx
     import headstart.profile_extract as _profile_extract
     import headstart.search as _search
 
     stubs["alerts"] = _module("alerts", access=_access, identity=_identity)
     stubs["alerts.store"] = _store
     stubs["facets"] = _facets
+    # The real module, not a stub: it reads a committed table off disk and the app only asks
+    # it for a date (ADR-0117). Faking it would test the fake.
+    stubs["fx"] = _fx
     stubs["profile_extract"] = _profile_extract
     stubs["search"] = _search
     # Every stubbed name is restored, including the two above — leaving a fake `alerts` in
@@ -1244,6 +1248,49 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     )
 
 
+def test_the_page_hands_the_browser_the_rate_table_and_its_date(app):
+    """The card labels convert client-side (ADR-0117), so the page needs the rates — the SAME
+    table `build_filter` compiled the query from, handed over on window.CFG rather than
+    fetched again, so a figure beside a row cannot disagree with the query that returned it.
+    The date rides with them: a rate without its date is the defect the table exists to avoid,
+    and the Data tab prints it in prose as well."""
+    import json
+
+    from headstart import fx
+
+    page = app.app.test_client().get("/").data.decode()
+    cfg = json.loads(re.search(r"window\.CFG = (.*?);</script>", page).group(1))
+    table = fx.table()
+    assert cfg["fx"]["rates"] == table["rates"]
+    assert cfg["fx"]["as_of"] == table["as_of"]
+    assert table["as_of"] in page
+
+
+def test_the_data_tab_discloses_the_conversion_and_never_a_dateless_rate(app):
+    """The one approximation on that page that changes which jobs come back rather than only
+    how many carry a field. With no table there is no conversion to disclose, and the page has
+    to say that instead — printing an empty date would be worse than saying nothing."""
+    tpl = app.app.jinja_env.get_template("data.html")
+    converted = " ".join(
+        tpl.render(
+            atses=["greenhouse"], repo="https://example.test", fx_as_of="2024-06-01"
+        ).split()
+    )
+    assert "dated <b>2024-06-01</b>" in converted
+    assert "not purchasing power" in converted
+    assert (
+        "left out of a converted bracket rather than compared one-to-one" in converted
+    )
+    assert "0117-the-salary-bracket-compares-across-currencies.md" in converted
+    # No table: the bracket degrades to a single currency, and the page says so rather than
+    # advertising a conversion that is not happening.
+    degraded = " ".join(
+        tpl.render(atses=["greenhouse"], repo="https://example.test").split()
+    )
+    assert "Nothing here converts one." in degraded
+    assert "dated" not in degraded
+
+
 def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
     """Forgetting `auth_on` alone must not make the page claim nothing is stored.
 
@@ -1265,3 +1312,63 @@ def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
     bare = tpl.render(atses=["greenhouse"], repo="https://example.test")
     assert "Nothing." in bare
     assert "the key your saved work hangs off" not in bare
+
+
+def test_the_salary_tip_does_not_promise_conversion_without_rates(app, monkeypatch):
+    """ADR-0117 falls back to one currency when the rate table is unreadable — and the copy
+    beside the control has to fall back with it.
+
+    The first version guarded only the date, so a deployment with no rates still told the user
+    that other currencies "are converted so they still match", describing something that was
+    not happening. Both branches are reachable, so both are asserted."""
+    tpl = app.app.jinja_env.get_template("search.html")
+    ctx = {
+        "currencies": ["USD", "INR"],
+        "keyword_scopes": [("title", "Job title", False)],
+        "keyword_default_scope": "title",
+        "has_description": True,
+        "india_opts": [],
+        "posted_opts": [],
+        "seen_opts": [],
+        "atses": ["greenhouse"],
+        "has_first_seen": True,
+    }
+    with_rates = tpl.render(fx_as_of="2024-06-01", fx_converts=True, **ctx)
+    assert "converted so they" in " ".join(with_rates.split())
+    assert "2024-06-01" in with_rates
+
+    # Two ways to reach the fallback, and the copy has to hold for both: no table at all, and
+    # a table whose rates do not cover the currencies this deployment serves. `fx_converts` is
+    # what `build_filter` effectively keys on, so it is what the claim is guarded by — guarding
+    # on the date alone let the second case promise a conversion that was not happening.
+    for rendered in (
+        tpl.render(**ctx),
+        tpl.render(fx_as_of="2024-06-01", fx_converts=False, **ctx),
+    ):
+        flat = " ".join(rendered.split())
+        assert "Compared inside one currency only" in flat
+        assert "are converted" not in flat
+
+
+def test_the_door_and_the_app_share_one_palette():
+    """The door inlines its own copy of the tokens (the wall gates /static), and that copy
+    has already drifted once: two critique rounds lifted the app's surfaces for contrast and
+    the door kept the old values, so signing in changed the background and the door held on
+    to a contrast defect the app had fixed. Pinned rather than trusted to discipline."""
+    ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
+    css = (ui / "static" / "style.css").read_text()
+    door = (ui / "templates" / "signin.html").read_text()
+    for token in (
+        "--ground",
+        "--raise",
+        "--raise-2",
+        "--rule",
+        "--rule-2",
+        "--ink",
+        "--ink-2",
+    ):
+        for value in re.findall(rf"{re.escape(token)}:(#[0-9A-Fa-f]{{6}})", door):
+            assert f"{token}:{value}" in css, (
+                f"the door sets {token}:{value}, which style.css does not — the two token "
+                "blocks must move together"
+            )

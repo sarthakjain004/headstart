@@ -715,10 +715,22 @@ def test_currency_is_whitelisted_against_the_table_never_interpolated():
     # Never interpolated: an unrecognised value falls back to the default rather than reaching
     # the clause — ADR-0084's "whitelisted like `ats`", and `ats` ignores what it does not know.
     # The bound it scopes still applies, which is the whole point of the default.
+    where = _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
+    assert "DROP TABLE" not in where
     assert (
-        _bracket(salary_currency="'; DROP TABLE jobs; --", salary_min=1)
-        == "salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 1"
+        "salary_currency = 'USD' AND COALESCE(max_salary_annual, min_salary_annual) >= 1"
+        in where
     )
+    # Every currency named in the clause came from the table's own whitelist, never from the
+    # request — the cross-currency expansion (ADR-0117) widened what is emitted, not what is
+    # trusted.
+    import re
+
+    assert set(re.findall(r"salary_currency = '([^']+)'", where)) <= {
+        "USD",
+        "INR",
+        "EUR",
+    }
     assert _bracket(salary_currency="XXX", salary_min=1) == _bracket(salary_min=1)
     # With no bound there is no bracket to scope, so a currency alone still compiles nothing —
     # ADR-0084's rule that picking one must not cut the result set to the ~28.5% carrying a salary.
@@ -765,11 +777,59 @@ def test_bracket_stays_dark_until_the_salary_columns_exist():
 def test_sort_is_whitelisted_to_a_column():
     from headstart.search import SORT_COLUMNS
 
-    assert SORT_COLUMNS == {"posted": "posted_at", "seen": "first_seen"}
+    assert SORT_COLUMNS == {
+        "posted": "posted_at",
+        "seen": "first_seen",
+        "salary": "min_salary_annual",
+    }
     searcher, table = _searcher()
     searcher.run({"q": "", "sort": "; DROP TABLE jobs; --"})
     # unknown value == no sort at all, i.e. the ordinary browse ordering
     assert table.last_order[0]["column_name"] == "first_seen"
+
+
+def test_sorting_by_salary_orders_by_the_derived_column_with_nulls_last():
+    """ "Highest salary" orders by `min_salary_annual`, the ADR-0082 column — so it reaches the
+    description-mined figures too, not just the boards that publish a structured field. Unlike
+    `posted` it needs no shape guard: the column is a number or NULL, and NULLs go last.
+    """
+    searcher, table = _searcher()
+    searcher.run({"q": "", "sort": "salary"})
+    assert table.last_order == [
+        {"column_name": "min_salary_annual", "ascending": False, "nulls_first": False},
+        {"column_name": "id", "ascending": True},
+    ]
+    assert "min_salary_annual" not in (table.last_where or "")
+
+
+def test_sorting_a_ranked_window_by_salary_puts_the_unpriced_rows_last():
+    """The ranked path re-orders its window in Python, and that is where a numeric sort column
+    bites: `r.get(sort) or ""` would put a `str` in a tuple beside `float`s and raise TypeError
+    on the first comparison between two rows. A row with no salary sorts last, matching the
+    browse path's `nulls_first: False`.
+    """
+    rows = [
+        {**_ROW, "id": "a", "min_salary_annual": 90_000.0},
+        {**_ROW, "id": "b", "min_salary_annual": None},
+        {**_ROW, "id": "c", "min_salary_annual": 250_000.0},
+    ]
+    table = _Table(rows)
+    searcher = JobSearch(_Model(), table)
+    out = searcher.run({"q": "backend", "sort": "salary", "k": "3"})
+    assert [r["id"] for r in out] == ["c", "a", "b"]
+
+
+def test_the_salary_sort_is_dark_until_the_column_exists():
+    """Same dark-until-migrated rule the first-seen sort follows (ADR-0031): the ADR-0082
+    columns arrive by migration, and `order_by` on a column the table lacks fails planning.
+    """
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(
+        names=["id", "ats", "title", "url", "posted_at"]
+    )
+    searcher = JobSearch(_Model(), table)
+    searcher.run({"q": "", "sort": "salary"})
+    assert table.last_order == [{"column_name": "id", "ascending": True}]
 
 
 def test_sorting_by_posted_shape_guards_the_ordering():
@@ -957,7 +1017,9 @@ def test_the_two_sort_paths_break_ties_in_opposite_directions():
     from headstart.search import JobSearch
 
     src = inspect.getsource(JobSearch.run)
-    assert 'key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True' in src
+    assert "missing if r.get(sort) is None else r.get(sort)," in src
+    assert 'r.get("id") or "",' in src
+    assert "reverse=True," in src
     assert '{"column_name": "id", "ascending": True}' in src
 
 
@@ -976,3 +1038,54 @@ def test_internship_does_not_claim_international():
     clause = ETYPE_CLAUSES["internship"]
     assert "LIKE '%intern%'" in clause
     assert "NOT LIKE '%international%'" in clause
+
+
+# ── The salary bracket compares across currencies (ADR-0117) ──────────────────────────────
+
+
+def test_a_usd_bracket_also_matches_the_same_money_in_other_currencies():
+    """The defect this fixes: picking USD used to drop every INR job, silently."""
+    where = _bracket(salary_currency="USD", salary_min=100_000, salary_max=200_000)
+    # The user's own currency keeps the numbers they typed, unrounded.
+    assert (
+        "salary_currency = 'USD' AND "
+        "COALESCE(max_salary_annual, min_salary_annual) >= 100000 AND "
+        "min_salary_annual <= 200000"
+    ) in where
+    # …and the same money is asked for in the others, at the committed rate.
+    assert "salary_currency = 'INR'" in where
+    assert "8300000" in where  # 100k USD at the table's 83.0
+    assert where.startswith("((") and " OR " in where
+
+
+def test_a_converted_bound_rounds_outward_so_a_boundary_job_is_never_dropped():
+    where = _bracket(salary_currency="USD", salary_max=200_000)
+    # 200000 * 83 = 16,600,000 exactly; the ceiling still goes up rather than down, because
+    # the rule has to hold for the rates that do not divide evenly.
+    assert "min_salary_annual <= 16600001" in where
+
+
+def test_a_currency_with_no_rate_is_left_out_rather_than_compared_at_one_to_one():
+    where = build_filter(
+        salary_currency="USD",
+        salary_min=100_000,
+        currencies=["USD", "INR", "XTS"],  # XTS is not in config/fx_rates.json
+        atses=["greenhouse"],
+        has_first_seen=True,
+        has_description=True,
+        has_min_salary_annual=True,
+    )
+    assert "XTS" not in where
+    assert "salary_currency = 'INR'" in where
+
+
+def test_without_a_rate_table_the_bracket_falls_back_to_one_currency(monkeypatch):
+    """Degrading to the older, narrower answer is recoverable; a wrong one is not."""
+    from headstart import fx
+
+    monkeypatch.setattr(fx, "table", lambda: None)
+    where = _bracket(salary_currency="USD", salary_min=100_000)
+    assert where == (
+        "salary_currency = 'USD' AND "
+        "COALESCE(max_salary_annual, min_salary_annual) >= 100000"
+    )

@@ -16,7 +16,7 @@ from pathlib import Path
 import lancedb
 from flask import Flask, jsonify, render_template, request
 
-from headstart import facets, geo
+from headstart import facets, fx, geo
 from headstart.search import (
     KEYWORD_DEFAULT_SCOPE,
     PROD_TABLE,
@@ -41,6 +41,21 @@ app = Flask(
 )
 
 
+def _fx_as_of() -> str | None:
+    """The date on the committed rate table, or None when it cannot be read (ADR-0117)."""
+    return (fx.table() or {}).get("as_of")
+
+
+def _fx_converts(currencies: list[str]) -> bool:
+    """Whether a bracket can actually cross a currency boundary here.
+
+    Two served currencies must both carry a rate; with fewer, `build_filter` compiles the
+    single-currency clause and any copy promising conversion would be describing nothing.
+    """
+    rates = (fx.table() or {}).get("rates") or {}
+    return len([c for c in currencies if c in rates]) > 1
+
+
 @app.route("/")
 def index():
     return render_template(
@@ -49,6 +64,12 @@ def index():
             "google_client_id": "",
             # The Data tab's browse line reads this to name the ordering actually in force.
             "has_first_seen": _searcher.has_first_seen,
+            # The salary bracket's rate table (ADR-0117), so the page can print what a row
+            # in another currency comes to in the one the user asked in — the SAME table the
+            # where-clause was compiled from, never a second lookup, so the label beside a row
+            # cannot disagree with the query that returned it. `None` when the table is
+            # unreadable, and the page then converts nothing, exactly as `build_filter` does.
+            "fx": fx.table(),
         },
         # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
@@ -59,6 +80,13 @@ def index():
         india_opts=geo.dropdown_options(),
         has_first_seen=_searcher.has_first_seen,
         currencies=_searcher.currencies,
+        # The salary bracket converts across currencies (ADR-0117); the rail prints the date
+        # of the rates it used, so a stale table is visible rather than silent.
+        # Both facts, because the tip needs the second one: `as_of` says the table parsed,
+        # but conversion only happens where the served currencies HAVE rates. Guarding the
+        # claim on the date let a deployment with no comparable currencies still promise it.
+        fx_as_of=_fx_as_of(),
+        fx_converts=_fx_converts(_searcher.currencies),
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,

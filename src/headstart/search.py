@@ -31,8 +31,9 @@ from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 try:  # in the repo, a package member; in the Space image, a flat sibling module
-    from headstart import geo
+    from headstart import fx, geo
 except ImportError:  # pragma: no cover - exercised only in the deployed Space
+    import fx  # type: ignore[no-redef]
     import geo  # type: ignore[no-redef]
 
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
@@ -167,7 +168,22 @@ RESULT_COLUMNS = (
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
 # ranking a vector search already applies and asking for it means adding no ordering at all.
-SORT_COLUMNS = {"posted": "posted_at", "seen": "first_seen"}
+#
+# `salary` orders by `min_salary_annual`, the ADR-0082 derived column — so it covers the
+# description-mined salaries too, not only the boards that publish a structured field. Unlike
+# `posted` it needs no shape guard: the column is a real number or NULL, and NULLs sort last
+# rather than leaking to the top of a descending order the way a non-ISO date string does.
+SORT_COLUMNS = {
+    "posted": "posted_at",
+    "seen": "first_seen",
+    "salary": "min_salary_annual",
+}
+
+#: Sort columns holding a number rather than a string. The distinction only matters on the
+#: ranked path, which re-orders its window in Python: a missing value has to stand in as
+#: something the rest of the column can be compared against, and `None or ""` would put a
+#: `str` in a tuple beside `float`s and raise `TypeError` on the first comparison.
+_NUMERIC_SORTS = frozenset({"min_salary_annual"})
 
 # The salary bracket's currency when a request names none (issue #275). ADR-0084 says the picker
 # "defaults to USD", and 86.5% of the Jobs carrying a salary are USD (measured 2026-08-25), so
@@ -407,10 +423,11 @@ def _salary_clauses(
         # the feature stays dark until then rather than 500ing.
         filters.append("min_salary_annual IS NOT NULL")
 
-    # The salary bracket (issue #275) is scoped to ONE currency, and that is not a UI nicety:
-    # salary is period-normalised but deliberately never FX-converted (ADR-0082), so comparing
-    # a bare number across currencies would rank 60,000 INR beside 60,000 USD as equals. The
-    # currency therefore comes first and is whitelisted against what the table actually holds,
+    # The salary bracket (issue #275) is stated in ONE currency the user picks, and that is not
+    # a UI nicety: salary is period-normalised but stored in the employer's own currency
+    # (ADR-0082), so a bare number compared across currencies would rank 60,000 INR beside
+    # 60,000 USD as equals. That currency is what the bounds are converted FROM further down
+    # (ADR-0117); it comes first and is whitelisted against what the table actually holds,
     # exactly like `ats` — never interpolated from free text. Without one the bracket does not
     # apply unscoped, because an unscoped bracket is the wrong answer, not a looser one — it
     # takes :data:`SALARY_DEFAULT_CURRENCY` instead.
@@ -453,18 +470,62 @@ def _salary_clauses(
     else:
         currency = None
     if currency in currencies:
-        filters.append(f"salary_currency = '{currency}'")
-        if salary_min is not None:
-            # The job's TOP of range clears the user's floor: a 90k-140k posting answers
-            # "at least 100k". `max_salary_annual` is null on single-figure postings, so
-            # COALESCE falls back to the one number there is rather than dropping the row.
+        # The bracket is compared ACROSS currencies (ADR-0117), not within the one picked.
+        # Pinning `salary_currency = 'USD'` made a USD range silently drop every INR job —
+        # fewer results, no stated reason. Each currency present in the table gets the user's
+        # bounds restated in its own units, and the whole thing ORs together; the numbers in
+        # the where-clause stay the employer's own, so nothing is rewritten in the index.
+        #
+        # A currency with no rate is left OUT rather than compared at 1:1, and if the table
+        # is unavailable entirely this falls back to the single-currency clause that predates
+        # ADR-0117 — a narrower answer, never a wrong one.
+        fx_table = fx.table()
+        rates = (fx_table or {}).get("rates") or {}
+        comparable = [c for c in currencies if c in rates] if currency in rates else []
+        for_currencies = comparable or [currency]
+        arms = []
+        for other in for_currencies:
+            bounds = []
+            for is_floor, value, template in (
+                # The job's TOP of range clears the user's floor: a 90k-140k posting answers
+                # "at least 100k". `max_salary_annual` is null on single-figure postings, so
+                # COALESCE falls back to the one number there is rather than dropping the row.
+                (
+                    True,
+                    salary_min,
+                    "COALESCE(max_salary_annual, min_salary_annual) >= {}",
+                ),
+                # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
+                # test rather than containment: a band wider than the user's still qualifies.
+                (False, salary_max, "min_salary_annual <= {}"),
+            ):
+                if value is None:
+                    continue
+                if other == currency:
+                    # The user's own currency is not converted, so it keeps the number they
+                    # typed exactly — rounding it would move a bound nobody asked to move.
+                    bounds.append(template.format(int(value)))
+                    continue
+                here = fx.convert(float(value), currency, other, rates)
+                if here is None:
+                    bounds = []
+                    break
+                # Converted bounds round OUTWARD — floor down, ceiling up — so arithmetic can
+                # never drop a job sitting exactly on the boundary the user asked for. Keyed on
+                # `is_floor`, not on `value is salary_min`: Python interns small ints, so a range
+                # whose two ends are equal and under 257 made both bounds the same object and
+                # rounded the ceiling inward — the exact opposite of the guarantee above.
+                bounds.append(template.format(int(here) if is_floor else int(here) + 1))
+            if bounds:
+                arms.append(" AND ".join([f"salary_currency = '{other}'", *bounds]))
+        if arms:
             filters.append(
-                f"COALESCE(max_salary_annual, min_salary_annual) >= {int(salary_min)}"
+                "(" + " OR ".join(f"({arm})" for arm in arms) + ")"
+                if len(arms) > 1
+                else arms[0]
             )
-        if salary_max is not None:
-            # ...and its BOTTOM sits under the ceiling, so the two together are an overlap
-            # test rather than containment: a band wider than the user's still qualifies.
-            filters.append(f"min_salary_annual <= {int(salary_max)}")
+        else:
+            filters.append(f"salary_currency = '{currency}'")
     return filters
 
 
@@ -802,6 +863,8 @@ class JobSearch:
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
         if sort == "first_seen" and not self.has_first_seen:
             sort = None  # same dark-until-migrated rule as the filters above
+        if sort == "min_salary_annual" and not self.has_min_salary_annual:
+            sort = None  # likewise: the ADR-0082 columns arrive by migration
         # `is None`, not `or`: the old route's `int(raw or 20)` gave k=0 → 1 row, and an
         # `or` on the parsed int would silently turn k=0 into the default 20 instead. Same
         # reasoning for `page`, new in ADR-0074: page=1 is the default, not a falsy no-op.
@@ -879,8 +942,16 @@ class JobSearch:
             # matches" — the alternative, scanning by date, answers a question the user did
             # not ask by throwing their query away.
             window = search.limit(self.max_k * self.max_page).to_list()
+            # `reverse=True`, so the stand-in for a missing value has to be the smallest thing
+            # in its own type — `""` for the date columns, -inf for a numeric one — which puts
+            # rows that have no value last either way.
+            missing = float("-inf") if sort in _NUMERIC_SORTS else ""
             window.sort(
-                key=lambda r: ((r.get(sort) or ""), r.get("id") or ""), reverse=True
+                key=lambda r: (
+                    missing if r.get(sort) is None else r.get(sort),
+                    r.get("id") or "",
+                ),
+                reverse=True,
             )
             rows = window[offset : offset + k]
         else:
