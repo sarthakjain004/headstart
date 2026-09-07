@@ -4,7 +4,9 @@ The property under test is the one whose absence cost run 30304173982 its state:
 lists files that the fetch then fails to deliver, the caller must be told, not left with an empty
 dir that reads as a legitimate first run. The remote listing is what makes that decidable, so the
 two pure halves — which remote files a pattern set asks for, and which of those failed to land —
-are tested directly; the download itself is I/O.
+are tested directly. The download step itself (ADR-0085's chunked/ranged fetch, replacing
+`snapshot_download`) is tested too, against a real local HTTP server rather than a mock of
+`requests` — see the section near the bottom of this file.
 
 The rest is what the Hub tells us and how we answer it (ADR-0033's amendment): the one-line failure
 `reason_for` publishes to an annotation, the window `reset_after` reads out of a 429, and
@@ -58,6 +60,11 @@ def hub(monkeypatch):
         raise _EntryNotFound("published_dirs.json")
 
     module.hf_hub_download = _no_witness  # type: ignore[attr-defined]
+    # `_download` builds each file's URL through this — a fake shape is enough for tests that
+    # mock `_fetch_whole`/`_fetch_ranged` themselves and never actually dereference the URL.
+    module.hf_hub_url = (  # type: ignore[attr-defined]
+        lambda repo, filename, repo_type=None: f"fake://{repo}/{filename}"
+    )
     monkeypatch.setitem(sys.modules, "huggingface_hub", module)
     monkeypatch.setitem(sys.modules, "huggingface_hub.errors", errors)
     return module
@@ -258,12 +265,12 @@ def _fake_hub(
             "I", (), {"siblings": [type("S", (), {"rfilename": listing[0]})()]}
         )()
 
-    def snapshot_download(*a, **k):
-        (tmp_path / listing[0]).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / listing[0]).write_bytes(payload)
+    def fake_download(repo, siblings, wanted, token, root) -> None:
+        (root / listing[0]).parent.mkdir(parents=True, exist_ok=True)
+        (root / listing[0]).write_bytes(payload)
 
     hub.repo_info = repo_info
-    hub.snapshot_download = snapshot_download
+    monkeypatch.setattr(sf, "_download", fake_download)
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sf.time, "sleep", slept.append)
     return slept
@@ -405,7 +412,7 @@ def _empty_hub(hub, monkeypatch, tmp_path):
     waits the real 450s budget, which reads as a hung suite rather than a failing test.
     """
     hub.repo_info = lambda *a, **k: type("I", (), {"siblings": []})()
-    hub.snapshot_download = lambda *a, **k: None
+    monkeypatch.setattr(sf, "_download", lambda *a, **k: None)
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
 
@@ -489,11 +496,11 @@ def test_one_surviving_root_does_not_hide_a_wiped_sibling(
         "I", (), {"siblings": [type("S", (), {"rfilename": listing[0]})()]}
     )()
 
-    def snapshot_download(*a, **k):
-        (tmp_path / listing[0]).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / listing[0]).write_text("x", encoding="utf-8")
+    def fake_download(repo, siblings, wanted, token, root) -> None:
+        (root / listing[0]).parent.mkdir(parents=True, exist_ok=True)
+        (root / listing[0]).write_text("x", encoding="utf-8")
 
-    hub.snapshot_download = snapshot_download
+    monkeypatch.setattr(sf, "_download", fake_download)
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
     _witness(hub, tmp_path, ["data/embeddings/jobs", "data/lancedb"])
@@ -532,7 +539,6 @@ def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
         return type("I", (), {"siblings": []})()
 
     hub.repo_info = repo_info
-    hub.snapshot_download = lambda *a, **k: None
     monkeypatch.setattr(sf, "REPO_ROOT", tmp_path)
 
     with caplog.at_level("INFO"):
@@ -541,3 +547,258 @@ def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
     line = next(r.message for r in caplog.records if r.message.startswith("fetched "))
     assert "0 file(s), 0 MB" in line
     assert "MB/s" not in line
+
+
+# --- the download step itself (ADR-0085): real HTTP against a local Range-aware server ---
+# `requests` is not a base dependency (only [alerts] pulls it in transitively via
+# huggingface_hub), so these importorskip rather than faking it the way `hub` fakes
+# huggingface_hub — a real byte-serving server exercises the actual chunk/concat logic, which a
+# mock of `requests.get` would only be able to assert was *called*, not that it round-trips bytes
+# correctly.
+requests = pytest.importorskip("requests")
+
+import http.server
+import threading
+from contextlib import contextmanager
+from typing import ClassVar
+
+
+class _RangeHandler(http.server.BaseHTTPRequestHandler):
+    payload: bytes = b""
+    # class-level so the test can read what was requested after the server stops
+    requested_ranges: ClassVar[list[str]] = []
+
+    def do_GET(self) -> None:
+        rng = self.headers.get("Range")
+        _RangeHandler.requested_ranges.append(rng or "")
+        body = self.payload
+        status = 200
+        if rng:
+            lo, hi = rng.removeprefix("bytes=").split("-")
+            body = self.payload[int(lo) : int(hi) + 1]
+            status = 206
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a) -> None:  # silence the default stderr access log
+        pass
+
+
+@contextmanager
+def _serve(payload: bytes):
+    """A localhost HTTP server that serves `payload`, honouring `Range`, for one test's duration.
+
+    Yields `(url, requested_ranges)` — `requested_ranges` is the live list the handler appends
+    to, so a test asserting "this chunk was never re-fetched" reads it after the download call.
+    """
+    _RangeHandler.payload = payload
+    _RangeHandler.requested_ranges = []
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _RangeHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/f", _RangeHandler.requested_ranges
+    finally:
+        server.shutdown()
+        thread.join()
+
+
+def test_fetch_whole_lands_the_exact_bytes(tmp_path: Path) -> None:
+    payload = b"a small state file" * 100
+    with _serve(payload) as (url, _):
+        dest = tmp_path / "out.bin"
+        sf._fetch_whole(url, dest, len(payload), {})
+        assert dest.read_bytes() == payload
+        assert not dest.with_name(
+            dest.name + ".tmp"
+        ).exists()  # renamed, not left behind
+
+
+def test_fetch_whole_skips_a_file_that_already_landed(tmp_path: Path) -> None:
+    """The resumability fix: `fetch_state`'s outer retry re-calls `_download` with the *full*
+    `wanted` set, so a file already on disk from a prior attempt must not be re-fetched — a
+    request to a server that isn't even running proves it never tried."""
+    dest = tmp_path / "out.bin"
+    dest.write_bytes(b"already here")
+    sf._fetch_whole(
+        "http://127.0.0.1:1/unreachable", dest, 999, {}
+    )  # would raise if called
+    assert dest.read_bytes() == b"already here"
+
+
+def test_fetch_whole_raises_when_the_body_is_short(tmp_path: Path, monkeypatch) -> None:
+    """The size-check `pull_lancedb.py`'s `fetch_small` has and this path had dropped: a
+    truncated small file must not silently rename into place as if it had landed complete."""
+    monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
+    with _serve(b"short") as (url, _):
+        with pytest.raises(OSError, match="got 5 bytes, wanted 999"):
+            sf._fetch_whole(url, tmp_path / "out.bin", 999, {})
+        assert not (tmp_path / "out.bin").exists()
+
+
+def test_fetch_whole_raises_on_a_4xx_so_the_retry_loop_sees_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    hits = {"n": 0}
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            hits["n"] += 1
+            self.send_response(403)
+            self.end_headers()
+
+        def log_message(self, *a) -> None:
+            pass
+
+    monkeypatch.setattr(
+        sf.time, "sleep", lambda _s: None
+    )  # skip _get_with_retry's real waits
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(requests.HTTPError) as exc_info:
+            sf._fetch_whole(
+                f"http://127.0.0.1:{server.server_port}/f", tmp_path / "out.bin", 0, {}
+            )
+        # the same shape `reason_for`/`reset_after` already read off any exception generically
+        assert exc_info.value.response.status_code == 403
+        assert (
+            hits["n"] == sf._INNER_ATTEMPTS
+        )  # every inner attempt spent, none skipped
+    finally:
+        server.shutdown()
+        thread.join()
+
+
+def test_fetch_ranged_reassembles_a_multi_chunk_file_byte_exact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    payload = bytes(range(97)) + bytes(
+        range(97)
+    )  # 194 bytes, not a multiple of the chunk size
+    monkeypatch.setattr(sf, "_CHUNK_BYTES", 32)  # forces 7 chunks over 194 bytes
+    with _serve(payload) as (url, ranges):
+        dest = tmp_path / "big.bin"
+        sf._fetch_ranged(url, dest, len(payload), {})
+        assert dest.read_bytes() == payload
+        assert len(ranges) == 7  # ceil(194 / 32)
+        assert not list(
+            tmp_path.glob("big.bin.c*")
+        )  # chunk files cleaned up after concat
+
+
+def test_fetch_ranged_skips_a_chunk_already_complete_on_disk(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The free-resumption property: a chunk file already at its full size is never re-requested."""
+    payload = b"x" * 50
+    monkeypatch.setattr(sf, "_CHUNK_BYTES", 20)  # 3 chunks: 20, 20, 10
+    dest = tmp_path / "big.bin"
+    sf._chunk_path(dest, 0).write_bytes(
+        b"x" * 20
+    )  # chunk 0 pre-landed, e.g. from a prior attempt
+    with _serve(payload) as (url, ranges):
+        sf._fetch_ranged(url, dest, len(payload), {})
+        assert dest.read_bytes() == payload
+        requested = {r for r in ranges if r}
+        assert "bytes=0-19" not in requested  # chunk 0 was never re-fetched
+        assert "bytes=20-39" in requested
+        assert "bytes=40-49" in requested
+
+
+def test_fetch_ranged_skips_a_file_that_already_landed(tmp_path: Path) -> None:
+    """Same resumability property as `_fetch_whole`, at the file level: a big file that already
+    completed must not be re-fetched just because some other file in the same `_download` batch
+    failed and `fetch_state`'s outer loop retried the whole set."""
+    dest = tmp_path / "big.bin"
+    dest.write_bytes(b"already here, complete")
+    sf._fetch_ranged(
+        "http://127.0.0.1:1/unreachable", dest, 999, {}
+    )  # would raise if called
+    assert dest.read_bytes() == b"already here, complete"
+
+
+def test_download_does_not_refetch_a_file_that_already_landed(
+    hub, tmp_path: Path
+) -> None:
+    """The bug this closes, end to end: `_download` used to be called with the *full* `wanted`
+    set on every outer retry with no filter for what had already landed, so a transient failure
+    on one file would silently re-download every other file in the batch from scratch —
+    including a multi-hundred-MB one this whole change exists to make cheap to retry around.
+
+    `_fetch_whole` is real here, not mocked — `hub.hf_hub_url` (from the `hub` fixture) returns
+    an unreachable `fake://` URL, so if the skip check inside `_fetch_whole` did not fire, this
+    would raise `requests.exceptions.InvalidSchema` rather than pass quietly.
+    """
+    (tmp_path / "landed.bin").write_bytes(b"already complete")
+    siblings = [type("S", (), {"rfilename": "landed.bin", "size": 17})()]
+    sf._download("repo", siblings, {"landed.bin"}, None, tmp_path)  # must not raise
+    assert (tmp_path / "landed.bin").read_bytes() == b"already complete"
+
+
+def test_fetch_ranged_raises_when_a_chunk_comes_back_short(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A server that silently truncates a range must not land a corrupt file."""
+
+    class _ShortHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(206)
+            body = b"y" * 5  # always short of whatever was asked for
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a) -> None:
+            pass
+
+    monkeypatch.setattr(sf, "_CHUNK_BYTES", 20)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ShortHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(OSError, match="chunk 0"):
+            sf._fetch_ranged(
+                f"http://127.0.0.1:{server.server_port}/f", tmp_path / "big.bin", 20, {}
+            )
+    finally:
+        server.shutdown()
+        thread.join()
+
+
+def test_download_routes_small_and_big_files_by_measured_size(
+    hub, tmp_path: Path, monkeypatch
+) -> None:
+    """The size split itself, isolated from any real network call."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        sf,
+        "_fetch_whole",
+        lambda url, dest, size, headers: calls.append(f"whole:{dest.name}:{size}"),
+    )
+    monkeypatch.setattr(
+        sf,
+        "_fetch_ranged",
+        lambda url, dest, size, headers: calls.append(f"ranged:{dest.name}:{size}"),
+    )
+    siblings = [
+        type("S", (), {"rfilename": "small.txt", "size": 100})(),
+        type("S", (), {"rfilename": "huge.bin", "size": sf._BIG_FILE_BYTES})(),
+    ]
+    sf._download("repo", siblings, {"small.txt", "huge.bin"}, None, tmp_path)
+    assert sorted(calls) == [
+        f"ranged:huge.bin:{sf._BIG_FILE_BYTES}",
+        "whole:small.txt:100",
+    ]
+
+
+def test_download_does_nothing_for_an_empty_wanted_set(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No Hub call at all when there is nothing to fetch — see the guard in `_download` itself;
+    a pattern the repo has no files for must not require `huggingface_hub.hf_hub_url` to exist."""
+    monkeypatch.delitem(sys.modules, "huggingface_hub", raising=False)
+    sf._download("repo", [], set(), None, tmp_path)  # must not raise
