@@ -1393,10 +1393,12 @@ function trendDelta(points){
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function stampLabel(ts){
+function stampLabel(ts, terse){
   const d = new Date(ts);
   if (isNaN(d)) return '';
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+  const day = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  if (terse) return day;   // a narrow axis drops the clock rather than letting labels touch
+  return `${day} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 
 function fmtValue(v){
@@ -1414,7 +1416,21 @@ function setRadioChecked(btn, on){
 
 function drawTrends(){
   const d = trendData; if (!d) return;
-  const W = 720, H = 260, PAD_L = 44, PAD_B = 18, PAD_T = 8;
+  // Measured from the box it is drawn into rather than fixed at 720: the chart used to
+  // ignore the width the page had, so on a wide display every one of the 471 stamps was
+  // squeezed into a 720-unit space and then scaled up, which is what made the line work
+  // look coarse. The height is derived from the measured width and capped, because a plot
+  // that grows without limit on an ultrawide monitor becomes a letterbox slot.
+  const host = el('trends-chart') && el('trends-chart').parentElement;  // .trends-chart-wrap — the legend is a sibling column, not part of the plot
+  // 1 SVG unit == 1 CSS pixel wherever the container allows it, so the axis type renders at
+  // the size the stylesheet asks for. A floor above the real container width does not make a
+  // phone's chart bigger — it makes the whole viewBox scale down, and 12px labels arrive as
+  // 6px. The floor is only a guard against a zero/undetached measurement.
+  const W = Math.max(280, Math.round(host && host.clientWidth ? host.clientWidth : 720));
+  // Landscape where there is room; never shorter than the y-axis needs, never so tall on an
+  // ultrawide monitor that the plot becomes a letterbox slot.
+  const H = Math.max(200, Math.min(460, Math.round(W * 0.36)));
+  const PAD_L = 46, PAD_B = 22, PAD_T = 10, PAD_R = 14;
   const { charted, other, shown } = chartedAndOther(d);
 
   assignSeriesColors(charted.map(s => s.name));   // Other is a bucket, not an entity — no slot
@@ -1427,23 +1443,34 @@ function drawTrends(){
   // headroom exists. Left alone otherwise — most shares here are single digits, and forcing
   // every chart to a 0-100 scale would flatten the small-value comparisons this page is for.
   if (trendUnit === 'share' && hi > 80) hi = 100;
-  const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - 6) / (d.stamps.length - 1));
+  const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - PAD_R) / (d.stamps.length - 1));
   const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (hi - lo));
 
   let svg = '';
   for (let g = 0; g <= 4; g++){                       // horizontal gridlines + y labels
     const v = hi * g / 4, yy = y(v);
-    svg += `<line class="gridline" x1="${PAD_L}" y1="${yy}" x2="${W}" y2="${yy}"/>`;
+    svg += `<line class="gridline" x1="${PAD_L}" y1="${yy}" x2="${(W - PAD_R + 6).toFixed(1)}" y2="${yy}"/>`;
     svg += `<text class="axis-label" x="0" y="${yy+3}">${fmtValue(v)}</text>`;
   }
-  // Time axis: first / middle / last measurement, so the window is visible on the chart
-  // itself rather than inferred. Sparse on purpose — 19 stamps don't need 19 ticks.
+  // Time axis. Still sparse — a tick per stamp would be 471 of them — but the count now
+  // follows the width the plot actually got: three ticks across a 1,500px window left the
+  // reader interpolating four weeks between two marks. ~260px of breathing room per tick,
+  // clamped so a narrow column keeps the original first/middle/last.
   if (d.stamps.length > 1){
-    const ticks = [0, Math.floor((d.stamps.length - 1) / 2), d.stamps.length - 1];
-    for (const [ti, anchor] of [[ticks[0],'start'],[ticks[1],'middle'],[ticks[2],'end']]){
-      svg += `<text class="axis-label" x="${x(ti).toFixed(1)}" y="${H-4}"
-               text-anchor="${anchor}">${stampLabel(d.stamps[ti])}</text>`;
-    }
+    const plotW = W - PAD_L - PAD_R;
+    // On a phone even three "Aug 11 12:57" labels run into each other, so the clock is
+    // dropped first and the count second — an axis whose labels touch is worse than a
+    // coarser one.
+    const terse = plotW < 420;
+    const per = terse ? 150 : 260;
+    const nTicks = Math.max(2, Math.min(7, Math.floor(plotW / per) + 1));
+    const ticks = Array.from({ length: nTicks }, (_, k) =>
+      Math.round(k * (d.stamps.length - 1) / (nTicks - 1)));
+    ticks.forEach((ti, k) => {
+      const anchor = k === 0 ? 'start' : k === nTicks - 1 ? 'end' : 'middle';
+      svg += `<text class="axis-label" x="${x(ti).toFixed(1)}" y="${H - 6}"
+               text-anchor="${anchor}">${stampLabel(d.stamps[ti], terse)}</text>`;
+    });
   }
 
   const geomSeries = [];   // color + per-index resolved value, read by the hover layer below
@@ -1463,14 +1490,9 @@ function drawTrends(){
       pen = 'L';
     });
     path = path.trim();
-    // Soft area fill under the line — a wash, never a saturated block (dataviz skill,
-    // marks-and-anatomy.md). Skipped for Other: a gray wash under a gray line reads as murk,
-    // not signal, and Other already carries no identity worth reinforcing with a fill.
-    if (path && !isOther){
-      const areaPath = `${path} L${x(s.points.length-1).toFixed(1)},${y(lo).toFixed(1)} ` +
-                        `L${(first ?? PAD_L).toFixed(1)},${y(lo).toFixed(1)} Z`;
-      svg += `<path d="${areaPath}" fill="${c}" opacity=".10" stroke="none"/>`;
-    }
+    // No area fill. The skill's wash is for a *single* series; eight of them overlapping
+    // in the narrow band where the small categories run compounded into brown murk that
+    // read as a stacked chart the data is not. The line alone carries the series.
     svg += `<path class="series-line" data-name="${esc(s.name)}" d="${path}" fill="none" stroke="${c}"
              stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     if (lastPt) svg += `<circle class="series-end" data-name="${esc(s.name)}" cx="${lastPt[0].toFixed(1)}"
@@ -1487,6 +1509,12 @@ function drawTrends(){
     ${geomSeries.map(s => `<circle class="ch-dot" r="4" fill="${s.color}" stroke="var(--raise)" stroke-width="2"/>`).join('')}
   </g>`;
   svg += `<rect id="trends-hitrect" x="0" y="0" width="${W}" height="${H}" fill="transparent" pointer-events="all"/>`;
+  // The viewBox has to follow the geometry we just drew in. It used to be a static
+  // `0 0 720 260` in the template, so the moment the plot was measured from its container
+  // every coordinate landed in a space twice the box's width — lines over the caption,
+  // legend across the plot. Set both together, always.
+  el('trends-chart').setAttribute('viewBox', `0 0 ${W} ${H}`);
+  el('trends-chart').style.aspectRatio = `${W} / ${H}`;
   el('trends-chart').innerHTML = svg;
   const dotEls = [...el('trends-chart').querySelectorAll('.ch-dot')];
   lastGeom = { x, y, W, stamps: d.stamps, series: geomSeries, dotEls };

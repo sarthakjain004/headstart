@@ -25,7 +25,7 @@
      before this change too — a pre-existing gap, called out in ADR-0116 rather than inherited
      silently. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
-  --series-5:#D55181; --series-6:#008300; --series-7:#B07AD9; --series-8:#E66767;
+  --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
   --shadow:0 10px 28px rgba(0,0,0,.30);
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -50,7 +50,7 @@
     --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
     --accent:#4F46E5; --pay:#047857; --remote:#0369A1; --alert:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
-    --series-5:#E87BA4; --series-6:#008300; --series-7:#7E3AA8; --series-8:#E34948;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
   }
 }
@@ -59,7 +59,7 @@
     --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
     --accent:#4F46E5; --pay:#047857; --remote:#0369A1; --alert:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
-    --series-5:#E87BA4; --series-6:#008300; --series-7:#7E3AA8; --series-8:#E34948;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
 }
 
@@ -517,6 +517,14 @@ textarea:focus{ border-color:var(--accent); }
 :root[data-theme="dark"] .trends-range input[type="datetime-local"]{ color-scheme:dark; }
 :root[data-theme="light"] .trends-range input[type="datetime-local"]{ color-scheme:light; }
 .trends-note{ color:var(--ink-3); font-size:12.5px; }
+/* The chart's two caveats, as one bounded block. Loose under a full-width plot they read as
+   leftover text; given an edge and a surface they read as the note they are — which matters,
+   because the second one is the reassignment caveat that keeps a reader from misreading a
+   line's fall as jobs closing. */
+.chart-note{ margin-top:26px; padding:14px 18px; background:var(--raise-2);
+  border-left:2px solid var(--rule-2); border-radius:0 var(--r-md) var(--r-md) 0; }
+.chart-note #trends-foot{ margin:0 0 8px; max-width:74ch; line-height:1.5; }
+.chart-note .kind{ margin:0; }
 /* [hidden] overrides display, matching .panel[hidden] above — an author `display` rule beats
    the UA stylesheet's [hidden]{display:none} at equal specificity, so every element toggled via
    .hidden needs this same escape hatch or `hidden=true` silently does nothing visible. */
@@ -536,7 +544,7 @@ textarea:focus{ border-color:var(--accent); }
   font-size:12.5px; color:var(--ink-2); cursor:pointer; }
 .ats-pick-menu label:hover{ background:var(--raise-2); color:var(--ink-1); }
 
-.trends-grid{ display:grid; grid-template-columns:1fr 232px; gap:18px; align-items:start;
+.trends-grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(232px, 292px); gap:24px; align-items:start;
   margin-top:14px; transition:opacity .2s ease; }
 .trends-grid.loading{ opacity:.55; }
 .trends-chart-wrap{ position:relative; }
@@ -544,6 +552,8 @@ textarea:focus{ border-color:var(--accent); }
    width, so text/gridlines never stretch non-uniformly the way a fixed height + width:100% +
    preserveAspectRatio="none" used to (a real bug on a narrow sidebar or a very wide monitor). */
 #trends-chart{ width:100%; aspect-ratio:720/260; height:auto; display:block; overflow:visible; }
+/* drawTrends overrides the ratio inline once it has measured the column; this value only
+   holds the space for the skeleton and the very first paint. */
 /* The same aspect-ratio as the chart it replaces, so the panel holds its height across the
    swap — a skeleton that reserves the wrong space is its own layout shift. */
 .trends-skel[hidden]{ display:none !important; }
@@ -566,8 +576,8 @@ textarea:focus{ border-color:var(--accent); }
 .trends-tooltip .tt-name{ color:var(--ink-2); flex:1; white-space:nowrap; overflow:hidden;
   text-overflow:ellipsis; }
 
-.trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;
-  max-height:260px; overflow-y:auto; }
+.trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px;
+  align-self:stretch; overflow-y:auto; }
 /* The row's box lives on the inner `.row`, not the <li>: only `.row` carries role="button", so
    the <li> keeps its implicit `listitem` and the <ul> stays a list for assistive tech. */
 .trends-legend li{ display:flex; }
@@ -597,6 +607,8 @@ textarea:focus{ border-color:var(--accent); }
 /* 12px floor + tabular-nums (Datawrapper's legibility rule) — was 10px with no numeric
    alignment, both flagged by the design research doc §6. */
 .trends-grid .axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
+
+.axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
 
 .trends-table-wrap{ margin-top:14px; overflow-x:auto; }
 .trends-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
