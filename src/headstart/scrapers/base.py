@@ -297,7 +297,7 @@ class BaseScraper(ABC):
 
     def board_page(self) -> str | None:
         """The page whose ``<title>`` carries this Board's company name, or None for an ATS with
-        no such page. Overridden by the five scrapers `headstart.company_name` has evidence for;
+        no such page. Overridden by the six scrapers `headstart.company_name` has evidence for;
         everything else keeps serving its slug, exactly as before."""
         return None
 

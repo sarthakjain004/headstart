@@ -132,6 +132,14 @@ URL_SHAPES = {
     # `status_ok` is not evidence of a good link for this ATS — only the shape is (Next.js is the
     # one generation where a bad route would actually 404).
     "zwayam": r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$",
+    # scraper: f"https://jobs.jobvite.com/{slug}/job/{id}" (jobvite.py `_detail_url`). Every
+    # tenant is on that one host — a jobvite Board is a path, never a subdomain or a customer
+    # domain — so unlike eightfold/successfactors this can anchor the host. The id is Jobvite's
+    # own opaque 8-char EId. Verified live 2026-09-07 on four boards spanning all five row
+    # templates (barracuda-networks-inc, nutanix, agscareer, samtec-sp): all 200, each with its
+    # job title in the page `<title>`, so `title_on_page` bites here rather than reading false
+    # off a client-rendered page.
+    "jobvite": r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+",
 }
 
 
