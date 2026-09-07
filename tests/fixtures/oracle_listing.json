@@ -1,0 +1,402 @@
+{
+ "items": [
+  {
+   "SearchId": 1,
+   "Keyword": null,
+   "CorrectedKeyword": null,
+   "UseExactKeywordFlag": false,
+   "SuggestedKeyword": null,
+   "ExecuteSpellCheckFlag": true,
+   "Location": null,
+   "LocationId": null,
+   "Radius": 0,
+   "RadiusUnit": "MI",
+   "SelectedTitlesFacet": null,
+   "SelectedCategoriesFacet": null,
+   "SelectedPostingDatesFacet": null,
+   "SelectedLocationsFacet": null,
+   "LastSelectedFacet": null,
+   "Facets": "TITLES;LOCATIONS;LOCATION_LEVEL1;LOCATION_LEVEL2;LOCATION_LEVEL3;CATEGORIES;POSTING_DATES;WORK_LOCATIONS;FLEX_FIELDS;ORGANIZATIONS;WORKPLACE_TYPES",
+   "Offset": 0,
+   "Limit": 200,
+   "SortBy": "RELEVANCY",
+   "TotalJobsCount": 2,
+   "Latitude": null,
+   "Longitude": null,
+   "SiteNumber": null,
+   "JobFamilyId": null,
+   "PostingStartDate": null,
+   "PostingEndDate": null,
+   "SelectedWorkLocationsFacet": null,
+   "RequisitionId": null,
+   "CandidateNumber": null,
+   "WorkLocationZipCode": null,
+   "WorkLocationCountryCode": null,
+   "SelectedFlexFieldsFacets": null,
+   "OrganizationId": null,
+   "SelectedOrganizationsFacet": null,
+   "UserTargetFacetName": null,
+   "UserTargetFacetInputTerm": null,
+   "HotJobFlag": null,
+   "WorkplaceType": null,
+   "SelectedWorkplaceTypesFacet": null,
+   "BotQRShortCode": null,
+   "requisitionList": [
+    {
+     "Id": "1859",
+     "Title": "Content Associate",
+     "PostedDate": "2026-09-03",
+     "PostingEndDate": null,
+     "Language": "US",
+     "PrimaryLocationCountry": "MA",
+     "GeographyId": 300000000228882,
+     "HotJobFlag": false,
+     "WorkplaceTypeCode": "ORA_REMOTE",
+     "JobFamily": null,
+     "JobFunction": null,
+     "WorkerType": null,
+     "ContractType": null,
+     "ManagerLevel": null,
+     "JobSchedule": null,
+     "JobShift": null,
+     "JobType": null,
+     "StudyLevel": null,
+     "DomesticTravelRequired": null,
+     "InternationalTravelRequired": null,
+     "WorkDurationYears": null,
+     "WorkDurationMonths": null,
+     "WorkHours": null,
+     "WorkDays": null,
+     "LegalEmployer": null,
+     "BusinessUnit": null,
+     "Department": null,
+     "Organization": null,
+     "BusinessUnitId": 300000001794101,
+     "LegalEmployerId": 300000001794026,
+     "OrganizationId": 300001151548084,
+     "MediaThumbURL": null,
+     "ShortDescriptionStr": "Help create content solutions that support business goals and positive end-user experiences. Working closely with subject matter experts and team members, you'll contribute to content development and quality assurance activities.",
+     "PrimaryLocation": "Morocco",
+     "Distance": 7,
+     "TrendingFlag": true,
+     "BeFirstToApplyFlag": false,
+     "Relevancy": 7,
+     "WorkplaceType": "Remote",
+     "ExternalQualificationsStr": null,
+     "ExternalResponsibilitiesStr": null
+    },
+    {
+     "Id": "1383",
+     "Title": "IT Support Technician",
+     "PostedDate": "2026-06-25",
+     "PostingEndDate": null,
+     "Language": "US",
+     "PrimaryLocationCountry": "FR",
+     "GeographyId": 100000923313844,
+     "HotJobFlag": false,
+     "WorkplaceTypeCode": "ORA_ON_SITE",
+     "JobFamily": null,
+     "JobFunction": null,
+     "WorkerType": null,
+     "ContractType": null,
+     "ManagerLevel": null,
+     "JobSchedule": null,
+     "JobShift": null,
+     "JobType": null,
+     "StudyLevel": null,
+     "DomesticTravelRequired": null,
+     "InternationalTravelRequired": null,
+     "WorkDurationYears": null,
+     "WorkDurationMonths": null,
+     "WorkHours": null,
+     "WorkDays": null,
+     "LegalEmployer": null,
+     "BusinessUnit": null,
+     "Department": null,
+     "Organization": null,
+     "BusinessUnitId": 300001074542255,
+     "LegalEmployerId": 300000331290726,
+     "OrganizationId": 300000931182999,
+     "MediaThumbURL": null,
+     "ShortDescriptionStr": "Contribute to critical IT environments by providing end-to-end support, from incident management to resolution, within a structured international context. You\u2019ll collaborate with IT teams and users, handling level 1 and 2 support, access management, workstation configuration, and the continuous improvement of tools and practices.",
+     "PrimaryLocation": "Lyon, Auvergne-Rhone-Alpes, France",
+     "Distance": 2,
+     "TrendingFlag": false,
+     "BeFirstToApplyFlag": false,
+     "Relevancy": 2,
+     "WorkplaceType": "On-site",
+     "ExternalQualificationsStr": null,
+     "ExternalResponsibilitiesStr": null
+    }
+   ],
+   "categoriesFacet": [
+    {
+     "Id": 300000904959797,
+     "Name": "IT - Development",
+     "TotalCount": 57
+    },
+    {
+     "Id": 300000904959785,
+     "Name": "Engineering",
+     "TotalCount": 6
+    },
+    {
+     "Id": 300000904959791,
+     "Name": "Project/Program Management",
+     "TotalCount": 6
+    },
+    {
+     "Id": 300000904959779,
+     "Name": "IT - Administration",
+     "TotalCount": 3
+    },
+    {
+     "Id": 300000904959803,
+     "Name": "Sales",
+     "TotalCount": 3
+    },
+    {
+     "Id": 300000904959782,
+     "Name": "Data Science and Business Intelligence",
+     "TotalCount": 2
+    },
+    {
+     "Id": 300000904959770,
+     "Name": "Communications & Marketing",
+     "TotalCount": 1
+    },
+    {
+     "Id": 300000904959776,
+     "Name": "Talent Acquisition",
+     "TotalCount": 1
+    },
+    {
+     "Id": 300000904959806,
+     "Name": "Learning",
+     "TotalCount": 1
+    },
+    {
+     "Id": 300000904959809,
+     "Name": "Transformation",
+     "TotalCount": 1
+    }
+   ],
+   "locationsFacet": [
+    {
+     "Id": 300000000228588,
+     "Name": "Canada",
+     "TotalCount": 55
+    },
+    {
+     "Id": 300000001609387,
+     "Name": "QC, Canada",
+     "TotalCount": 49
+    },
+    {
+     "Id": 300000000229164,
+     "Name": "United States",
+     "TotalCount": 13
+    },
+    {
+     "Id": 300000000228786,
+     "Name": "India",
+     "TotalCount": 10
+    },
+    {
+     "Id": 300000212322044,
+     "Name": "TX, United States",
+     "TotalCount": 10
+    },
+    {
+     "Id": 100000922113973,
+     "Name": "Montr\u00e9al, QC, Canada",
+     "TotalCount": 10
+    },
+    {
+     "Id": 300000212370589,
+     "Name": "Austin, TX, United States",
+     "TotalCount": 10
+    },
+    {
+     "Id": 300000000228696,
+     "Name": "France",
+     "TotalCount": 8
+    },
+    {
+     "Id": 100000944961966,
+     "Name": "Telangana, India",
+     "TotalCount": 8
+    },
+    {
+     "Id": 100000944974903,
+     "Name": "Hyderabad, Telangana, India",
+     "TotalCount": 8
+    }
+   ],
+   "postingDatesFacet": [
+    {
+     "Id": 7,
+     "Name": "Less than 7 days",
+     "TotalCount": 13
+    },
+    {
+     "Id": 30,
+     "Name": "Less than 30 days",
+     "TotalCount": 24
+    },
+    {
+     "Id": 31,
+     "Name": "Greater than 30 days",
+     "TotalCount": 66
+    }
+   ],
+   "titlesFacet": [],
+   "workLocationsFacet": [
+    {
+     "Id": 300001067243066,
+     "Name": "Montreal - boul. Ren\u00e9-L\u00e9vesque",
+     "TotalCount": 44
+    },
+    {
+     "Id": 300001002512340,
+     "Name": "Austin - Texas",
+     "TotalCount": 10
+    },
+    {
+     "Id": 300000964441199,
+     "Name": "Hyderabad",
+     "TotalCount": 7
+    },
+    {
+     "Id": 300000001791543,
+     "Name": "Quebec - boul. Lebourgneuf",
+     "TotalCount": 4
+    },
+    {
+     "Id": 300000124065584,
+     "Name": "Pickering - Bayly Street",
+     "TotalCount": 4
+    },
+    {
+     "Id": 300000216390844,
+     "Name": "Alpharetta",
+     "TotalCount": 3
+    },
+    {
+     "Id": 300000925014546,
+     "Name": "York - Toronto",
+     "TotalCount": 2
+    },
+    {
+     "Id": 300001112290510,
+     "Name": "Bengaluru",
+     "TotalCount": 2
+    },
+    {
+     "Id": 300000001791704,
+     "Name": "Toronto - Yonge Street",
+     "TotalCount": 1
+    },
+    {
+     "Id": 300000001791859,
+     "Name": "Montreal - boul. Robert-Bourassa",
+     "TotalCount": 1
+    }
+   ],
+   "flexFieldsFacet": [],
+   "organizationsFacet": [
+    {
+     "Id": 300001016532594,
+     "Name": "QC - Financial Services",
+     "TotalCount": 27
+    },
+    {
+     "Id": 300001016532569,
+     "Name": "QC - Innovation and Technology",
+     "TotalCount": 9
+    },
+    {
+     "Id": 300000931182999,
+     "Name": "IN - France",
+     "TotalCount": 8
+    },
+    {
+     "Id": 300001111765822,
+     "Name": "EA - Salesforce",
+     "TotalCount": 8
+    },
+    {
+     "Id": 300000931181000,
+     "Name": "MS - ERP",
+     "TotalCount": 6
+    },
+    {
+     "Id": 300000931184527,
+     "Name": "ON - Engineering",
+     "TotalCount": 5
+    },
+    {
+     "Id": 300000931184555,
+     "Name": "ON - Digital Applications",
+     "TotalCount": 4
+    },
+    {
+     "Id": 300001016532464,
+     "Name": "EA - OR ERP Delivery",
+     "TotalCount": 4
+    },
+    {
+     "Id": 300001016532544,
+     "Name": "EA - OR HCM Delivery",
+     "TotalCount": 4
+    },
+    {
+     "Id": 300000931181170,
+     "Name": "MS - Division SGA",
+     "TotalCount": 3
+    }
+   ],
+   "workplaceTypesFacet": [
+    {
+     "Id": "ORA_HYBRID",
+     "Name": "Hybrid",
+     "TotalCount": 63
+    },
+    {
+     "Id": "ORA_REMOTE",
+     "Name": "Remote",
+     "TotalCount": 16
+    },
+    {
+     "Id": "ORA_ON_SITE",
+     "Name": "On-site",
+     "TotalCount": 11
+    }
+   ]
+  }
+ ],
+ "count": 1,
+ "hasMore": false,
+ "limit": 200,
+ "offset": 0,
+ "links": [
+  {
+   "rel": "self",
+   "href": "https://effx.fa.ca2.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions",
+   "name": "recruitingCEJobRequisitions",
+   "kind": "collection"
+  },
+  {
+   "rel": "action",
+   "href": "https://effx.fa.ca2.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions/action/getRequisitionsLocationCoordinates",
+   "name": "getRequisitionsLocationCoordinates",
+   "kind": "other"
+  },
+  {
+   "rel": "action",
+   "href": "https://effx.fa.ca2.oraclecloud.com:443/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions/action/getRequisitionDetailsForMap",
+   "name": "getRequisitionDetailsForMap",
+   "kind": "other"
+  }
+ ]
+}

@@ -88,7 +88,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>122,971 live rows of 181,979<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>124,070 live rows of 183,086<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -159,28 +159,28 @@ their own schedules.
 ### Which boards a run picks
 
 A run does not scrape every board it could, and the ledger's headline number is not the number
-that matters. The 122,971 live *rows* reduce to 86,063 **Scrapable Boards** a run can even
+that matters. The 124,070 live *rows* reduce to 87,161 **Scrapable Boards** a run can even
 consider (measured 2026-09-06; the terms are defined in `CONTEXT.md` §Counting Boards):
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 122,971 | a row, not a board — 6,619 of them are duplicate spellings |
+| live rows in the ledger | 124,070 | a row, not a board — 6,619 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −30,220 | `join` 25,488 (German-SMB, ~1 tech job in ~10k), `jazzhr` 4,298 and `jobvite` 434 (shipped disabled on storage cost) |
-| − `config.EXCLUDED_BOARDS` | −45 | vendor test/sandbox boards, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −46 | vendor test/sandbox boards, confirmed by reading their postings — Oracle's 78,431-posting load-test instance is the newest |
 | − alias ledger | −23 | one company, two hostnames — `basf.jobs` and `basf-se.jobs2web.com` are one board (ADR-0111) |
 | − case-variant dedupe | −6,617 | `company/External` and `company/external` are one board (ADR-0023) |
 | − `config.PARKED_BOARDS` | −3 | real boards withheld for now — Accenture's and EY's outrun any shard budget, and SmartRecruiters' `AdeebaEServicesPvtLtd` cost 24 min a run for 136 tech jobs |
-| = **Scrapable Board** | **86,063** | |
+| = **Scrapable Board** | **87,161** | |
 
-That order matters: excluding before deduping reads −45 and −6,617, deduping first reads −43 and
-−6,619, because two excluded boards were themselves duplicates. Both land on 86,063.
+That order matters: excluding before deduping reads −46 and −6,617, deduping first reads −44 and
+−6,619, because two excluded boards were themselves duplicates. Both land on 87,161.
 
 The alias row is the one stage that is not derivable from the ledger's own text: two hostnames
 serving one board share no key to collapse on, so it takes a live probe to find them
 (`scripts/validate/dedupe_boards.py`, ADR-0111).
 
-Of those, **54,224 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
-the 31,839 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
+Of those, **55,214 are currently hiring** — `load_active_companies` defaults to `min_jobs=1`, so
+the 31,947 live-but-empty boards are skipped as having nothing to read. `pick_boards` takes a
 slice of
 `--max-boards` (default **20,000**) and splits it **30/70**: the top 30% by board-priority score —
 a sticky EWMA of each board's tech-job yield, kept in `data/state/board_priority.csv` (ADR-0022) —
@@ -237,8 +237,8 @@ and liveness ledgers; re-enable by removing the name from that set.
 Each scraper reads a Board and normalizes its raw postings into `Job` records; all HTTP routes
 through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so the same stack
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
-liveness pipeline has probed **181,979 ledger rows**: 122,971 live, 51,902 dead, 7,106 unknown —
-rows, not boards; they collapse to 116,352 Unique Boards (CONTEXT.md §Counting Boards). Of the
+liveness pipeline has probed **183,086 ledger rows**: 124,070 live, 51,905 dead, 7,111 unknown —
+rows, not boards; they collapse to 117,451 Unique Boards (CONTEXT.md §Counting Boards). Of the
 24 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
 nothing indexed yet, `zwayam` was added 2026-08-27 and has not run in the pipeline yet, and
 `join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will

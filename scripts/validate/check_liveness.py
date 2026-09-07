@@ -1708,8 +1708,43 @@ def p_jazzhr(t, u):
     return LIVE, len(set(_JAZZHR_ROW.findall(body)))
 
 
+def p_oracle(t, u):
+    """The requisition listing, the same surface `OracleScraper.url()` reads.
+
+    **No `siteNumber`.** It is a filter, not an address: a site number narrows the board to one
+    of the tenant's sites, and omitting it returns the whole host — the exact union of every
+    site, verified across all 596 hosts with a hiring board (docs/oracle/). Probing with the
+    scraper's old hardcoded `CX_1` would have under-counted 929 of 1,331 hiring boards, and
+    under-counted *silently*, since a wrong site still answers 200 with a valid envelope.
+
+    `TotalJobsCount` is the count rather than `len(requisitionList)`: the page is capped at 200
+    and 199 boards exceed it, so the list length would record every large board as exactly 200.
+
+    **There is no definitive DEAD signal beyond DNS and 404/410**, so nothing else is treated as
+    one. Measured on four hosts that are certainly not tenants: one answered 503 and three timed
+    out — both classic transients, and a wildcard DNS record means the host resolves either way.
+    Settling either as DEAD would bury real boards on a bad afternoon, so a nonexistent tenant
+    stays UNKNOWN here and is re-probed. That is the status-is-not-a-mechanism rule; a 503 from
+    this API means "ask again", not "gone".
+    """
+    return _classify(
+        f"https://{t}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
+        f"?onlyData=true&expand=requisitionList&finder=findReqs;limit=1,offset=0",
+        lambda b: _oracle_total(b),
+    )
+
+
+def _oracle_total(body):
+    try:
+        items = json.loads(body).get("items") or []
+    except Exception:  # noqa: BLE001 — an unparseable body is UNKNOWN, not a verdict
+        return None
+    return (items[0].get("TotalJobsCount") or 0) if items else None
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
+    "oracle": p_oracle,
     "lever": p_lever,
     "ashby": p_ashby,
     "recruitee": p_recruitee,
