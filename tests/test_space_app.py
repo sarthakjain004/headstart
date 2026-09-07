@@ -1248,6 +1248,49 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     )
 
 
+def test_the_page_hands_the_browser_the_rate_table_and_its_date(app):
+    """The card labels convert client-side (ADR-0117), so the page needs the rates — the SAME
+    table `build_filter` compiled the query from, handed over on window.CFG rather than
+    fetched again, so a figure beside a row cannot disagree with the query that returned it.
+    The date rides with them: a rate without its date is the defect the table exists to avoid,
+    and the Data tab prints it in prose as well."""
+    import json
+
+    from headstart import fx
+
+    page = app.app.test_client().get("/").data.decode()
+    cfg = json.loads(re.search(r"window\.CFG = (.*?);</script>", page).group(1))
+    table = fx.table()
+    assert cfg["fx"]["rates"] == table["rates"]
+    assert cfg["fx"]["as_of"] == table["as_of"]
+    assert table["as_of"] in page
+
+
+def test_the_data_tab_discloses_the_conversion_and_never_a_dateless_rate(app):
+    """The one approximation on that page that changes which jobs come back rather than only
+    how many carry a field. With no table there is no conversion to disclose, and the page has
+    to say that instead — printing an empty date would be worse than saying nothing."""
+    tpl = app.app.jinja_env.get_template("data.html")
+    converted = " ".join(
+        tpl.render(
+            atses=["greenhouse"], repo="https://example.test", fx_as_of="2024-06-01"
+        ).split()
+    )
+    assert "dated <b>2024-06-01</b>" in converted
+    assert "not purchasing power" in converted
+    assert (
+        "left out of a converted bracket rather than compared one-to-one" in converted
+    )
+    assert "0117-the-salary-bracket-compares-across-currencies.md" in converted
+    # No table: the bracket degrades to a single currency, and the page says so rather than
+    # advertising a conversion that is not happening.
+    degraded = " ".join(
+        tpl.render(atses=["greenhouse"], repo="https://example.test").split()
+    )
+    assert "Nothing here converts one." in degraded
+    assert "dated" not in degraded
+
+
 def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
     """Forgetting `auth_on` alone must not make the page claim nothing is stored.
 

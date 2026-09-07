@@ -167,6 +167,43 @@ const payLabel = r => {
     : fmt(r.min_salary_annual) + '+';
   return cur + range + '/yr';
 };
+/* ---- the bracket's rates, client-side (ADR-0117). The SAME table the server compiled the
+   query with, handed over on window.CFG rather than fetched: one table and one as_of, so the
+   figure printed beside a row can never disagree with the where-clause that returned it. Absent
+   — the server could not read the table either — means nothing is converted here, which is the
+   same fail-safe direction `fx.table()` takes. ---- */
+const FX = CFG.fx || null;
+// Rates are units-per-base, so the base cancels — the mirror of headstart.fx.convert.
+const fxConvert = (amount, frm, to) => {
+  const rates = (FX && FX.rates) || {};
+  const a = rates[(frm || '').toUpperCase()], b = rates[(to || '').toUpperCase()];
+  return (a && b) ? amount / a * b : null;
+};
+// The currency the Search bracket is asking in, set by `draw` and read by `jobCard`. Only the
+// Search list gets it: a Matches row is drawn from its own saved query, and labelling it with
+// a currency picked on another tab would answer a question nobody asked there. (The Saved list
+// cannot show one at all — `savedRow` carries no derived salary columns.)
+let convTo = '';
+// "≈ USD 34,000–51,000" — why a row priced in another currency is in a converted bracket at
+// all. Built from the ADR-0082 annual columns, never from `r.salary`: that string is the
+// board's own text, in the board's own period, and converting it would restate a number this
+// page never normalised. Rounded to the nearest thousand and prefixed ≈, because the rates
+// are approximate and dated and a figure to the rupee would claim a precision they have not
+// got. The date itself rides on `#fxnote` beside the results, not on every row.
+const convLabel = r => {
+  if (!convTo || !FX || r.min_salary_annual == null) return '';
+  const from = (r.salary_currency || '').toUpperCase();
+  if (!from || from === convTo) return '';
+  const lo = fxConvert(Number(r.min_salary_annual), from, convTo);
+  if (lo == null) return '';
+  // Three significant figures, never finer than a thousand: rounded to the nearest 1,000 a
+  // rupee figure came out as "14,940,000", six figures of precision the rates have not got.
+  const k = n => { const step = Math.max(1000, Math.pow(10, Math.floor(Math.log10(n)) - 2));
+                   return Math.round(n / step) * step; };
+  const hi = (r.max_salary_annual != null && r.max_salary_annual !== r.min_salary_annual)
+    ? fxConvert(Number(r.max_salary_annual), from, convTo) : null;
+  return '\u2248 ' + convTo + ' ' + salFmt(k(lo)) + (hi != null ? '\u2013' + salFmt(k(hi)) : '');
+};
 // The Match ring (ADR-0042): raw cosine lives in a narrow band (a strong on-topic query
 // tops out ≈0.78; an absurd one still scores ≈0.66), so the displayed % stretches it
 // through two fixed anchors — 0.60 → 0%, 0.85 → 100% — tuned once against real queries
@@ -236,6 +273,13 @@ function drawActive(){
     btn.textContent = n ? `Filters (${n})` : 'Filters';
     btn.classList.toggle('has', n > 0);
   }
+  // A converted figure has to carry the date of the rates that made it (ADR-0117), and the
+  // rail's own tip saying so is behind a panel that is closed by default. Written on every
+  // draw, like #sortnote and #kind, so it can never describe a bracket that is no longer set.
+  const fxnote = el('fxnote');
+  if (fxnote) fxnote.textContent = (f.salary_currency && FX && FX.as_of)
+    ? `Other currencies are converted at rates from ${FX.as_of} \u2014 currency conversion, not cost of living.`
+    : '';
   box.innerHTML = Object.entries(f).map(([k,v]) =>
     `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(v === 'true' ? 'yes' : v)}` +
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
@@ -635,7 +679,7 @@ function jobCard(r, i, canHide){
           ${r.ats? '<span class="src" title="Read directly from this company\'s '+esc(r.ats)+' board \u2014 not a repost">via '+esc(r.ats)+'</span>':''}
         </div>
       </div>
-      <div class="pay">${payLabel(r)? esc(payLabel(r)) : '<span class="nopay" title="This board did not publish one">\u2014</span>'}</div>
+      <div class="pay">${payLabel(r)? esc(payLabel(r)) : '<span class="nopay" title="This board did not publish one">\u2014</span>'}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
       ${ranked? `<div class="match" role="img"
              aria-label="Match ${pct} percent \u2014 how close this job is to your search, on a fixed scale that gives the same job the same number every time"
              title="Match strength \u2014 semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
@@ -656,6 +700,8 @@ function jobCard(r, i, canHide){
 }
 
 function draw(rows, target){
+  // Only the Search list is labelled with the bracket's currency — see `convTo`.
+  convTo = target ? '' : (currentFilters().salary_currency || '');
   // No client-side reorder any more. It only ever sorted the twenty rows already fetched,
   // which reads as "sort my results" and is not: the server now orders the whole result set
   // (issue #275), so by the time rows arrive they are already in the asked-for order.

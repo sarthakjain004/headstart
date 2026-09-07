@@ -49,6 +49,12 @@ def index():
             "google_client_id": "",
             # The Data tab's browse line reads this to name the ordering actually in force.
             "has_first_seen": _searcher.has_first_seen,
+            # The salary bracket's rate table (ADR-0117), so the page can print what a row
+            # in another currency comes to in the one the user asked in — the SAME table the
+            # where-clause was compiled from, never a second lookup, so the label beside a row
+            # cannot disagree with the query that returned it. `None` when the table is
+            # unreadable, and the page then converts nothing, exactly as `build_filter` does.
+            "fx": fx.table(),
         },
         # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.

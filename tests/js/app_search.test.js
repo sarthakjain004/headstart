@@ -302,6 +302,54 @@ test('a dismissed row is marked, not dropped — the server\'s own count stays t
   t.dismissed.delete('a');
 });
 
+// ── The bracket's cross-currency labels (ADR-0117) ───────────────────────────────────────────
+
+/** The rate table as index() puts it on CFG — the same object `headstart.fx.table()` returns. */
+const FX = { fx: { base: 'USD', as_of: '2024-06-01', rates: { USD: 1.0, INR: 83.0 } } };
+const inrJob = () => job('a', { salary: null, min_salary_annual: 2800000,
+                                max_salary_annual: 4200000, salary_currency: 'INR' });
+
+test('a row priced in another currency says what it comes to in the bracket\'s currency', async () => {
+  const { t, nodes } = loadApp(() => [inrJob()], { ...SCOPES, ...FX });
+  set(nodes, 'salmin', '60000');
+  set(nodes, 'salcur', 'USD');
+  await t.go();
+  // Three significant figures, never finer than a thousand: the rates are approximate and
+  // dated, and 2,800,000 / 83 = 33,734.94 printed to the dollar would claim otherwise.
+  assert.match(nodes.results.innerHTML, /≈ USD 34,000–51,000/);
+  // …and the date of those rates is on the page beside them, not only inside the filter panel.
+  assert.match(nodes.fxnote.textContent, /rates from 2024-06-01/);
+  assert.match(nodes.fxnote.textContent, /not cost of living/);
+});
+
+test('nothing is converted without a bracket, or without a rate table', async () => {
+  // No bound set: the picker has a default, so reading it alone would label every row on a
+  // page nobody filtered by pay.
+  const { t, nodes } = loadApp(() => [inrJob()], { ...SCOPES, ...FX });
+  set(nodes, 'salcur', 'USD');
+  await t.go();
+  assert.ok(!nodes.results.innerHTML.includes('class="conv"'));
+  assert.strictEqual(nodes.fxnote.textContent, '');
+
+  // No table — the server could not read it either, so its own bracket did not convert
+  // anything. Printing a conversion here would describe a query that never ran.
+  const { t: t2, nodes: n2 } = loadApp(() => [inrJob()], SCOPES);
+  set(n2, 'salmin', '60000');
+  set(n2, 'salcur', 'USD');
+  await t2.go();
+  assert.ok(!n2.results.innerHTML.includes('class="conv"'));
+  assert.strictEqual(n2.fxnote.textContent, '');
+});
+
+test('a row already in the bracket\'s currency is left alone', async () => {
+  const { t, nodes } = loadApp(() => [job('a', { salary: null, min_salary_annual: 120000,
+    max_salary_annual: 160000, salary_currency: 'USD' })], { ...SCOPES, ...FX });
+  set(nodes, 'salmin', '60000');
+  set(nodes, 'salcur', 'USD');
+  await t.go();
+  assert.ok(!nodes.results.innerHTML.includes('class="conv"'));
+});
+
 // ── The salary bracket's slider ──────────────────────────────────────────────────────────────
 
 test('a typed figure rests on the nearest stop, and one past the scale parks on the top', () => {

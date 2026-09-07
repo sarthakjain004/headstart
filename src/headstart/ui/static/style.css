@@ -664,6 +664,19 @@ textarea:focus{ border-color:var(--violet); }
 .slider-read{ display:block; margin-top:2px; font:500 12px var(--mono);
   font-variant-numeric:tabular-nums; color:var(--ink-2); }
 
+/* The converted figure under a row's own pay (ADR-0117) — its own line, quieter than the
+   employer's number and never in place of it: the board's figure is the fact, this is an
+   approximation of it at a dated rate.
+
+   --ink-2, not the --ink-3 the other quiet marks on a card use: a hovered card swaps to
+   --raise-2, where --ink-3 measures 4.04 in dark and this is a figure to be read, not a glyph.
+   Quieter than the employer's own number either way — that one is --ink at 12.94. */
+.pay .conv{ display:block; margin-top:2px; color:var(--ink-2); font-size:11.5px;
+  font-weight:500; font-variant-numeric:tabular-nums; }
+/* The rates' date, above the results it applies to. */
+.fxnote{ display:block; margin:-6px 0 12px; color:var(--ink-3); font-size:12px; }
+.fxnote:empty{ display:none; }   /* no bracket, no line, and no gap where one would be */
+
 /* A switch's count, in its own node so appending markup to the label can never displace it. */
 .sw .fcount{ color:var(--ink-3); }
 

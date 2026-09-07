@@ -903,6 +903,12 @@ def index():
             # it the fallback is `id`, which is not a date at all. The line naming what the
             # user is looking at must not claim "newest first" on the second one.
             "has_first_seen": _searcher.has_first_seen,
+            # The salary bracket's rate table (ADR-0117), so the page can print what a row
+            # in another currency comes to in the one the user asked in — the SAME table the
+            # where-clause was compiled from, never a second lookup, so the label beside a row
+            # cannot disagree with the query that returned it. `None` when the table is
+            # unreadable, and the page then converts nothing, exactly as `build_filter` does.
+            "fx": fx.table(),
         },
         njobs=f"{_table.count_rows():,}",
         atses=_searcher.atses,

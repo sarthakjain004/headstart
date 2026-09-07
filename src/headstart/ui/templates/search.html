@@ -187,6 +187,10 @@
        identical apart from the match rings, and a user who cannot tell them apart reads the
        missing ring as a bug rather than as "this was never ranked" (ADR-0074). #}
     <p class="kind" id="kind" role="status"></p>
+    {# The rates' own date, next to the rows that were converted at them (ADR-0117). The rail
+       carries the full caveat, but it is closed by default — and a converted figure with no
+       date beside it is precisely the defect the dated table exists to avoid. #}
+    <p class="note fxnote" id="fxnote" role="status"></p>
     {# tabindex="-1" so the skip link above actually MOVES focus here. Without it WebKit
        scrolls the results into view and leaves the tab position back in the filter rail. #}
     <div id="results" tabindex="-1" aria-live="polite"></div>
