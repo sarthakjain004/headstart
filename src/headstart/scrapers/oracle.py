@@ -1,5 +1,9 @@
 """Oracle Recruiting Cloud (HCM) scraper.
 
+Adapted from jobhive's Oracle scraper (kalil0321/ats-scrapers, MIT). Little of that original
+survives this rewrite, but the attribution does: it is the licence term, not a description of how
+much code is left.
+
 Each Oracle tenant sits on its own pod host, so the ``slug`` is that host
 (``fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com``). The public CandidateExperience REST API returns
 requisitions under ``items[0].requisitionList``, and the pagination params live *inside* the
@@ -38,11 +42,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import log
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
-
-_log = log.get(__name__)
 
 #: The API's own maximum `limit`. Requesting more is silently clamped to it — 300, 500 and 1000
 #: all return 200 rows and echo `"limit": 200`.
@@ -86,7 +87,6 @@ class OracleScraper(BaseScraper):
 
     ats = "oracle"
     detail_workers = _DETAIL_WORKERS
-    detail_streams = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(self, slug: str, company: str | None = None) -> None:
@@ -106,6 +106,11 @@ class OracleScraper(BaseScraper):
         URL's host and fall back to the tenant.
         """
         host = url.split("://", 1)[-1].split("/", 1)[0].strip()
+        # A pool row that is a bare label with no URL either (23 of them: `akamai`, `chubb`,
+        # `cummins`) has no host to recover, and falls through to the tenant — which will not
+        # resolve. That is deliberate and currently unreachable: those rows are unprobeable, so
+        # the ledger has no such entry and `load_active_companies` can never build one. Guarding
+        # it here would be error handling for a case that cannot arrive.
         return host or tenant
 
     def url(self) -> str:
@@ -170,7 +175,7 @@ class OracleScraper(BaseScraper):
             if self.async_fanout_enabled():
                 fetched = self.fan_out_async(ids, self._detail_async)
             else:
-                fetched = self.fan_out(ids, self._detail, workers=_DETAIL_WORKERS)
+                fetched = self.fan_out(ids, self._detail, workers=self.detail_workers)
             # Reported, not marked truncated: a missing detail payload costs this Job its
             # description and derived fields, but the Job itself is still listed and still
             # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).

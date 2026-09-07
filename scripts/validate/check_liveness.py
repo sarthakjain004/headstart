@@ -1730,7 +1730,7 @@ def p_oracle(t, u):
     return _classify(
         f"https://{t}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
         f"?onlyData=true&expand=requisitionList&finder=findReqs;limit=1,offset=0",
-        lambda b: _oracle_total(b),
+        _oracle_total,
     )
 
 
@@ -1744,7 +1744,6 @@ def _oracle_total(body):
 
 PROBES = {
     "greenhouse": p_greenhouse,
-    "oracle": p_oracle,
     "lever": p_lever,
     "ashby": p_ashby,
     "recruitee": p_recruitee,
@@ -1766,6 +1765,7 @@ PROBES = {
     "zwayam": p_zwayam,
     "jazzhr": p_jazzhr,
     "jobvite": p_jobvite,
+    "oracle": p_oracle,
 }
 
 

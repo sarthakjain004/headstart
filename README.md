@@ -236,9 +236,10 @@ through one pooled, thread-local `curl_cffi` client that impersonates Chrome, so
 serves plain JSON APIs and the TLS-fingerprinted (Cloudflare / DataDome) boards (ADR-0002). The
 liveness pipeline has probed **189,409 ledger rows**: 126,110 live, 56,188 dead, 7,111 unknown —
 rows, not boards; they collapse to 119,491 Unique Boards (CONTEXT.md §Counting Boards). Of the
-23 scrapers, 19 have rows in the index — `oracle` and `sensehq` are single-company unlocks with
-nothing indexed yet, `zwayam` (2026-08-27) and `icims` (2026-09-08) were added since the last
-pipeline run and have nothing indexed yet, and
+23 scrapers, 19 have rows in the index — `sensehq` is a single-company unlock with nothing
+indexed yet, `zwayam` (2026-08-27), `icims` (2026-09-08) and `oracle` (2026-09-08, which had a
+scraper but no ledger until then) were added since the last pipeline run and have nothing indexed
+yet, and
 `join`'s remaining 1,093 rows are a residue of the era before it was disabled: no slice will
 scrape them again, so they leave by eviction rather than refresh.
 

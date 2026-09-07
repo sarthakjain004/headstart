@@ -55,8 +55,10 @@ distribution is smooth with no spike at any value, and the most common exact len
 times in 536 samples. `models.html_to_text` renders it cleanly (6,027 HTML → 2,818 text).
 
 The detail payload also carries what the listing does not: `JobSchedule` 80.6%, `Category`
-76.2%, `JobFunction` 45.0%, `WorkplaceType` 27.8%, plus `requisitionFlexFields` whose prompts
-include Minimum/Maximum Salary and Pay Range.
+76.2%, `JobFunction` 45.0%, `WorkplaceType` 27.8%, plus `requisitionFlexFields` (26.0%) whose
+prompts include Minimum/Maximum Salary and Pay Range. `JobType` is **0.7%** even here, which is
+why `employment_type` reads `JobSchedule` first and `JobGrade`/`JobLevel` (1.6%/1.0%) are not
+read at all.
 
 **The listing can never carry it.** `expand=all` on the listing does not add
 `ExternalDescriptionStr` — the key is absent at every expand tried. A detail pass is therefore
@@ -130,8 +132,28 @@ to Jobvite's 7.0%. But India is the **#2 country both overall (3,596 rows) and f
 16.2% of all tech rows) — a far better India share than BambooHR (0 of 294), iCIMS (~0.6%) or
 JazzHR. Titles are real: "Software Engineer (iOS)", "Senior Machine Learning Engineer", "SDET".
 
-1,331 hiring boards carry **198,269 postings** in total. At 7.3% that is roughly 14,000 tech
-jobs — against a served table of ~287k rows.
+**Two posting totals appear in this document and they count different things.** The 1,331
+hiring boards and **198,269 postings** above come from the exploratory sweep: 670 hosts (only
+those carrying an oraclecloud host in the pool's URL column), counted *per site*, so a
+multi-site host contributes several boards. The committed ledger counts **991 hiring Boards**
+and **395,265 postings** because it probes 1,107 hosts — every pool row whose host is
+recoverable, including the bare-label rows — and counts each host **once, unfiltered**, which
+is the number the scraper will actually read. The ledger figure is the one to quote; the sweep's
+is kept here because the per-site breakdown is what established §3.
 
-Wiring it is a separate decision from fixing the scraper, and carries a real cost: descriptions
-require one detail call per posting.
+Net of Oracle's own 78,431-posting load-test instance (excluded in `config.EXCLUDED_BOARDS`,
+content-confirmed) that is **316,834 postings**. At 7.3% tech, roughly 23,000 tech jobs against
+a served table of ~287k rows.
+
+Wiring it carries a real cost: descriptions require one detail call per posting, and that cost
+has not been measured against the pipeline's wall-clock budget. One line in `DISABLED_ATS` holds
+the ATS back if it proves too expensive, without reverting anything.
+
+**Not carried into the scraper.** `requisitionFlexFields` (26.0% of detail payloads) includes
+prompts named Minimum Salary, Maximum Salary, Pay Range and Salary, so a salary field is
+reachable here. It is deliberately not read: the prompts are tenant-defined free text with no
+shared vocabulary, the values are unnormalised, and `salary.extract()`'s contract wants a period
+and a currency this data does not state. That is its own pass, with its own measurement — and
+per ADR-0061 it would need a `DERIVATIONS_VERSION` bump, which this change does not (no field
+`extract()` derives changes for already-scraped input; oracle has no already-scraped input at
+all).
