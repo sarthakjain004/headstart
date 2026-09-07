@@ -146,6 +146,39 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.eightfold\.ai"],
     },
+    "icims": {
+        # The scraper's slug IS the board host (`career-celanese.icims.com`), so `host` kind —
+        # `icims.py.slug_from` normalises any capture back to the host anyway.
+        #
+        # Two filters, both measured 2026-09-08 rather than guessed, because `tenant_from`'s
+        # `host` branch does NOT apply BLOCK and `icims.com` domain-matching returns the vendor's
+        # own ~120 infrastructure hosts alongside the tenants:
+        #  * **the label must contain a hyphen.** All 2,040 live boards in
+        #    `data/validate/liveness/icims.csv` do (zero exceptions), while the vendor's
+        #    infra is overwhelmingly single-word — `login`, `dev`, `social`, `api`, `staging`,
+        #    `marketplace`, `webservices`, `talent`, and `careers`/`jobs` bare. Note the bare
+        #    words are exactly the ones a tenant prefix extends: `careers-acadiahealthcare` and
+        #    `jobs-collaborationbetterstheworld` are real boards, so this cannot be a word list.
+        #  * **not a hyphenated infra prefix.** 42 infra hosts do carry a hyphen (`api-us-east-1`,
+        #    `social-test`, `login-community`, `developer-community-dev`, `postman-tools`…). Each
+        #    prefix below was checked against the live ledger and drops 0 live boards.
+        # Anything that slips through is self-correcting but not free: `probe_icims.py` reads
+        # `/sitemap.xml`, which an infra host 403s or 404s, so it lands as a dead ledger row.
+        #
+        # Anchored to a host boundary like eightfold, which also strips a `www.` prefix:
+        # `www.careers-blarneycastleoil.icims.com` is a real tenant archived under `www.`, and
+        # storing both spellings is the duplicate-Board class CLAUDE.md documents.
+        "targets": ["icims.com"],
+        "kind": "host",
+        "patterns": [
+            (
+                r"(?://|%2f|\.)"
+                r"(?!(?:api|social|login|developer|postman|analytics|mobile|billing|agents"
+                r"|nexpose|brandit|customers|forms|monitoring|mta|design|jobs-inhouse)-)"
+                r"([a-z0-9][a-z0-9-]*-[a-z0-9][a-z0-9-]*\.icims\.com)"
+            )
+        ],
+    },
     "keka": {
         "targets": ["keka.com"],
         "kind": "label",

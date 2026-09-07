@@ -122,6 +122,14 @@ URL_SHAPES = {
     # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
     # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
     "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
+    # icims.py ships the sitemap's own <loc>, query stripped: /jobs/{id}/{title-slug}/job.
+    # Host-agnostic on purpose. All 35 sampled boards keep job URLs on their own *.icims.com
+    # host (0 exceptions, 2026-09-07), but that sample cannot settle the question: the tenant
+    # roster was enumerated by a Wayback CDX sweep OF icims.com, so a vanity-hosted tenant is
+    # invisible to it by construction. Anchoring on the vendor domain is what flagged real
+    # eightfold rows, so the path — which is fixed by iCIMS' own routing — carries the check.
+    # The trailing anchor matters: an `in_iframe=1` link would be a serving bug, not a variant.
+    "icims": r"https://[^/]+/jobs/\d+/[^/]+/job$",
     # run_wellfound*.py build f"https://wellfound.com/jobs/{id}-{slug}".rstrip("-"), so the
     # slug is optional when a listing has none. Verified against all 6,462 rows of
     # data/jobs/wellfound.csv (zero non-matching). Wellfound was served with NO shape entry
