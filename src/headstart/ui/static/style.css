@@ -7,12 +7,15 @@
        done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
        eye-fatigue across a forty-minute session, and — for this product specifically — the neon
        "AI startup" register contradicts what the product now says about itself on the Data tab.
-       Hue is spent on exceptions (new, pays, remote), never on chrome. ---- */
+       Hue is spent on exceptions (pay, remote, alert), never on chrome. ---- */
 :root{
-  --ground:#0A0B0D; --raise:#1F2329; --raise-2:#272C34; --rule:#333944; --rule-2:#464D5A;
+  --ground:#0A0B0D; --raise:#1F2329; --raise-2:#272C34; --rule:#3A4150; --rule-2:#4A5265;
   --ink:#F2F4F7; --ink-2:#AAB2BF; --ink-3:#8A93A1;
-  --accent:#818CF8; --violet:#C4B5FD; --amber:#FBBF24; --lime:#34D399;
-  --coral:#FB7185;
+  /* Four hues, each named for the one thing it means. The names are the point: a token
+     called --lime that paints an emerald, or --violet that paints a sky blue, is a stale
+     name and those are defects here. There is deliberately no yellow and no fifth hue for
+     `new` — recency is the brand's own accent at low tint, not a colour of its own. */
+  --accent:#7683F4; --pay:#34D399; --remote:#38BDF8; --alert:#FB7185;
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
      against this file's own --raise dark / near-white light chart surfaces; see
      docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
@@ -22,18 +25,19 @@
      before this change too — a pre-existing gap, called out in ADR-0116 rather than inherited
      silently. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
-  --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
+  --series-5:#D55181; --series-6:#008300; --series-7:#B07AD9; --series-8:#E66767;
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
   --shadow:0 10px 28px rgba(0,0,0,.30);
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:ui-serif,"Iowan Old Style",Georgia,serif;
   --step:.18s cubic-bezier(.2,.7,.3,1);
-  /* One content width for every panel (D1). A row's own needs set it — a ~74ch text measure
-     plus the pay/match/star columns — and it lives here as a token because Search, Matches
-     and Saved must not each pick their own: they render the same card, so a card that is
-     880px on one tab and 1276px on another is the same component at two sizes. */
-  --measure:1080px;
+  /* One content width for the whole page (D1). A row's own needs set it — a ~74ch text
+     measure plus the pay/match/star columns — and it is now applied ONCE, to .shell, rather
+     than to each panel: Search, Matches and Saved render the same card, so a card that is
+     880px on one tab and 1276px on another is the same component at two sizes. --shell-pad
+     is the shell's own gutter, named so the two cannot drift apart in the calc below. */
+  --measure:1150px; --shell-pad:26px;
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
@@ -42,20 +46,20 @@
    replaces, which sat at 3.5:1 and failed AA for the rail's caveats. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme]){
-    --ground:#E6E9EE; --raise:#FFFFFF; --raise-2:#EDEFF3; --rule:#DCE0E7; --rule-2:#BFC5D0;
+    --ground:#E6E9EE; --raise:#FFFFFF; --raise-2:#EDEFF3; --rule:#CDD3DC; --rule-2:#B4BCC9;
     --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
-    --accent:#4F46E5; --violet:#6D28D9; --amber:#8A5A00; --lime:#046C4E; --coral:#BE2D42;
+    --accent:#4F46E5; --pay:#047857; --remote:#0369A1; --alert:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
-    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#7E3AA8; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
   }
 }
 :root[data-theme="light"]{
-    --ground:#E6E9EE; --raise:#FFFFFF; --raise-2:#EDEFF3; --rule:#DCE0E7; --rule-2:#BFC5D0;
+    --ground:#E6E9EE; --raise:#FFFFFF; --raise-2:#EDEFF3; --rule:#CDD3DC; --rule-2:#B4BCC9;
     --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
-    --accent:#4F46E5; --violet:#6D28D9; --amber:#8A5A00; --lime:#046C4E; --coral:#BE2D42;
+    --accent:#4F46E5; --pay:#047857; --remote:#0369A1; --alert:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
-    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#7E3AA8; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
 }
 
@@ -67,29 +71,22 @@ body{
   transition:background .3s ease, color .3s ease;
 }
 
-/* 924 = the one content measure (880) plus this padding, so the masthead, the tabs, the cards
-   and the footer all start and end on the same two x's. At 1320 the shell was 396px wider than
-   anything inside it could ever be: `.content` is capped at --measure and had no margin, so
-   every panel sat hard against the left edge with a 418px void on the right while the footer,
-   centred on the shell, sat 198px away from the column it belongs to. */
-/* Fluid to a ceiling. A fixed 924px cap left a 2692px display showing more background than
-   product; a percentage keeps the page filling the screen it is given, and the ceiling stops
-   the masthead drifting apart on an ultrawide. The RESULT rows are bounded separately by
-   --measure — past roughly 1100px a row stops gaining information and starts gaining the dead
-   air that three critique rounds were spent removing. */
-.shell{ position:relative; z-index:1; max-width:min(1560px, 94vw); margin:0 auto;
-  padding:18px 26px 72px; }
-/* Bounded here rather than on `main`, which is Search's element alone: constraining that one
-   left Matches and Saved rendering the SAME card at the shell's full 1276px, with the content
-   ending at 918 and 427px of empty card after it. The masthead, tab strip and footer keep the
-   shell width — chrome that spans the page rather than content to be read across — which now
-   lands on the same two x's as this, because the shell is capped at exactly this measure plus
-   its padding. Data's `.doc` sets its own, narrower prose measure and is unaffected. */
-/* The filter panel, tab strip and toolbar span the shell; only the result rows are held to
-   a readable measure. Capping `.content` held everything to one narrow ribbon, which on a
-   wide display read as a page starved of its own screen. */
-.content{ margin-inline:auto; }
-main, .doc, .saved, .profile, .matches{ max-width:var(--measure); }
+/* Fluid to a ceiling, and the ceiling IS the content measure. Every block on the page —
+   masthead, tab strip, search bar, toolbar, filter panel, cards, trends, the Data document —
+   is a descendant of this element and none of them sets a width of its own any more, so they
+   all start and end on the same two x's at every viewport. That is the whole point of doing
+   it here. Capping the PANELS instead (`main`/`.saved`/`.matches`/`.doc` at --measure) is what
+   this replaces, and it was measured giving one page three right edges at once: at 1800 Search
+   ended at 1654, Saved and Matches at 1226 and Data at 807, and at 1440 the search bar ran
+   222px past the toolbar and cards directly beneath it. Past the ultrawide breakpoint the
+   ceiling lifts and the extra width buys a SECOND COLUMN of results rather than wider rows —
+   see the min-width:1720px block. */
+.shell{ position:relative; z-index:1;
+  max-width:min(calc(var(--measure) + 2 * var(--shell-pad)), 94vw); margin:0 auto;
+  padding:18px var(--shell-pad) 72px; }
+/* Deliberately not a narrowing rule: the one measure lives on .shell, and a second cap here
+   is exactly how the ragged right edge got in last time. */
+.content{ max-width:100%; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
@@ -169,7 +166,7 @@ main, .doc, .saved, .profile, .matches{ max-width:var(--measure); }
   transition:border-color var(--step), box-shadow var(--step); }
 .field input::placeholder{ color:var(--ink-3); }
 .field input:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--rule-2); }
-.go{ padding:0 30px; border:0; border-radius:var(--r-xl); cursor:pointer; color:#04121A;
+.go{ padding:0 30px; border:0; border-radius:var(--r-xl); cursor:pointer; color:var(--ground);
   font:700 15px/1 var(--sans); letter-spacing:.01em;
   background:var(--accent);
   transition:transform var(--step), box-shadow var(--step), filter var(--step); }
@@ -198,7 +195,7 @@ main, .doc, .saved, .profile, .matches{ max-width:var(--measure); }
 .feature summary{ list-style:none; cursor:pointer; padding:14px 16px; display:flex; gap:11px;
   align-items:center; user-select:none; }
 .feature summary::-webkit-details-marker{ display:none; }
-/* the accent, not violet — violet on its own means "remote" on a result tag (ADR-0116) */
+/* the accent, not --remote — that hue on its own means "remote" on a result tag (ADR-0116) */
 .feature .dot{ width:8px; height:8px; border-radius:50%; flex:none;
   background:var(--accent); }
 .feature .ttl{ font-weight:600; font-size:14px; }
@@ -208,15 +205,15 @@ main, .doc, .saved, .profile, .matches{ max-width:var(--measure); }
 textarea{ width:100%; padding:12px 14px; resize:vertical; font:inherit; font-size:13.5px;
   background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
   border-radius:var(--r-md); outline:none; transition:border-color var(--step); }
-textarea:focus{ border-color:var(--violet); }
+textarea:focus{ border-color:var(--accent); }
 .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
 .row input{ padding:10px 12px; background:var(--raise-2); color:var(--ink);
   border:1px solid var(--rule); border-radius:var(--r-md); font:inherit; width:170px; outline:none; }
-.row input:focus{ border-color:var(--violet); }
+.row input:focus{ border-color:var(--accent); }
 .ghost{ padding:10px 18px; border-radius:var(--r-md); cursor:pointer; font:600 13.5px var(--sans);
   background:var(--raise-2); color:var(--ink); border:1px solid var(--rule-2);
   transition:border-color var(--step), transform var(--step); }
-.ghost:hover{ border-color:var(--violet); transform:translateY(-1px); }
+.ghost:hover{ border-color:var(--accent); transform:translateY(-1px); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
 
@@ -272,10 +269,12 @@ textarea:focus{ border-color:var(--violet); }
   border-radius:50%; background:#fff; transition:transform var(--step); }
 .sw input:checked{ background:var(--accent); }
 .sw input:checked::after{ transform:translateX(15px); }
-.clear{ width:100%; margin-top:14px; padding:9px; border-radius:var(--r-md); cursor:pointer;
+/* Capped and pushed right. Spanning every column of the panel, this was a 1090px-wide button
+   at 2692 — a destructive action given more visual weight than anything it clears. */
+.clear{ width:100%; max-width:220px; margin:14px 0 0 auto; padding:9px; border-radius:var(--r-md); cursor:pointer;
   background:transparent; border:1px solid var(--rule); color:var(--ink-3); font:inherit;
   font-size:12.5px; transition:border-color var(--step), color var(--step); }
-.clear:hover{ border-color:var(--coral); color:var(--coral); }
+.clear:hover{ border-color:var(--alert); color:var(--alert); }
 
 .toolbar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
 /* The counts and caveats, on their own line under the controls. Inside the toolbar the result
@@ -299,16 +298,21 @@ textarea:focus{ border-color:var(--violet); }
 .pill b{ color:var(--ink); font-weight:600; }
 .pill button{ background:none; border:0; color:var(--ink-3); cursor:pointer; font-size:14px;
   line-height:1; padding:0; }
-.pill button:hover{ color:var(--coral); }
+.pill button:hover{ color:var(--alert); }
 @keyframes pop{ from{ opacity:0; transform:scale(.86); } to{ opacity:1; transform:none; } }
 
 /* ---- result cards (ADR-0116). A row, not a box: the whole point of the full width is that
-       salary and match land at the SAME x on every row, so the eye scans one column down the
+       salary and match land at the SAME x on every row. The text column is fluid rather than
+       a fixed 30rem packed left: now that the card box is as wide as the shell, `30rem` plus
+       `justify-content:start` left the pay/match/star columns ~320px short of the card's own
+       right edge — an aligned rail that lined up with nothing, inside a visibly empty card.
+       Fluid, they sit on the box edge, which is the one x every other block also ends on.
+       Salary and match land at the SAME x on every row, so the eye scans one column down the
        page instead of re-reading each card left to right. The text block is bounded to a
        readable measure (the skill's 65-75ch rule); the freed width goes to alignment, not to
        stretching one line of text across 1276px. ---- */
 .card{ position:relative; display:grid; align-items:center; gap:0 20px;
-  grid-template-columns:minmax(0,30rem) 190px 56px 44px; justify-content:start;
+  grid-template-columns:minmax(0,1fr) 190px 56px 44px;
   background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-lg); padding:13px 16px 13px 18px; margin-bottom:8px; overflow:hidden;
   animation:rise .3s cubic-bezier(.2,.7,.3,1) both;
@@ -348,7 +352,7 @@ textarea:focus{ border-color:var(--violet); }
   background:none; border:0; cursor:pointer; line-height:1; font-size:15px; color:var(--ink-3);
   opacity:0; transition:opacity var(--step), color var(--step); }
 .card:hover .dismiss, .card:focus-within .dismiss{ opacity:1; }
-.card .dismiss:hover{ color:var(--coral); }
+.card .dismiss:hover{ color:var(--alert); }
 /* No hover to reveal it on, so it is simply there. */
 @media (hover:none){ .card .dismiss{ opacity:.7; } }
 /* Hidden by default, and shown dimmed while "show" is on — so undoing one is a click on the
@@ -373,20 +377,28 @@ textarea:focus{ border-color:var(--violet); }
 .ring-fill{ stroke:var(--tone,var(--accent)); stroke-linecap:round;
   stroke-dasharray:0 100; animation:ringfill .6s .1s cubic-bezier(.2,.7,.3,1) forwards; }
 @keyframes ringfill{ to{ stroke-dasharray:var(--p,50) 100; } }
+/* --ink, not --tone. The ring beside it carries the ramp; this is 12px/600 text and has to
+   clear 4.5:1 at EVERY point on that ramp, which it did not — measured 4.34:1 against the
+   card at a 100% match once the accent went to #6E7BF2. Colour was redundant here anyway:
+   the number already states the value, and leaving the hue to the ring keeps the figure
+   equally legible whether the match is strong or weak. */
 .match .v{ position:absolute; inset:0; display:grid; place-items:center;
-  font:600 12px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--accent)); }
+  font:600 12px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink); }
 
 .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center; }
 .tag{ font:500 11px var(--sans); padding:2px 8px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
 .card:hover .tag{ background:var(--ground); }
 .tag.mono{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
-/* Two hues, not four. Amber says "arrived recently", violet says "remote" — the two facts a
-   scanner filters on. Everything else is neutral, and provenance is plain text. */
-.tag.new{ background:color-mix(in srgb, var(--amber) 15%, transparent); color:var(--amber);
-  border-color:color-mix(in srgb, var(--amber) 32%, transparent); font-weight:600; }
-.tag.rem{ background:color-mix(in srgb, var(--violet) 15%, transparent); color:var(--violet);
-  border-color:color-mix(in srgb, var(--violet) 32%, transparent); }
+/* Two chips carry hue, and they are the two facts a scanner filters on. `new` is the accent
+   at low tint rather than a colour of its own: recency is a brand-level signal, and the
+   amber that used to say it was the last warm thing in a cooled palette — the one hue that
+   read as "yellow" against everything else. `remote` keeps a real second hue, 36 degrees
+   off the accent, so the two chips stay tellable apart. Everything else is neutral. */
+.tag.new{ background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent);
+  border-color:color-mix(in srgb, var(--accent) 34%, transparent); font-weight:600; }
+.tag.rem{ background:color-mix(in srgb, var(--remote) 15%, transparent); color:var(--remote);
+  border-color:color-mix(in srgb, var(--remote) 32%, transparent); }
 .card .src{ font:500 11px var(--sans); color:var(--ink-3); }
 
 .pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
@@ -437,7 +449,7 @@ textarea:focus{ border-color:var(--violet); }
 .set-chip .mail-on{ color:var(--accent); }
 .set-tools{ display:inline-flex; align-items:center; }
 .set-tools button{ font-size:11.5px; color:var(--ink-3); padding:5px 6px; }
-.set-tools [data-act="del"]:hover{ color:var(--coral); }
+.set-tools [data-act="del"]:hover{ color:var(--alert); }
 .saverow{ margin-bottom:12px; }
 .saverow input{ flex:1; max-width:340px; }
 .matches-controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -458,10 +470,10 @@ textarea:focus{ border-color:var(--violet); }
 .star{ background:none; border:0; cursor:pointer; font-size:19px; line-height:1;
   color:var(--ink-3); padding:2px 4px; border-radius:var(--r-md); align-self:flex-start;
   transition:color var(--step), transform var(--step); }
-.star:hover{ color:var(--amber); transform:scale(1.12); }
-.star.on{ color:var(--amber); }
-.tag.closed{ background:color-mix(in srgb, var(--coral) 15%, transparent); color:var(--coral);
-  border-color:color-mix(in srgb, var(--coral) 32%, transparent); font-weight:600; }
+.star:hover{ color:var(--accent); transform:scale(1.12); }
+.star.on{ color:var(--accent); }
+.tag.closed{ background:color-mix(in srgb, var(--alert) 15%, transparent); color:var(--alert);
+  border-color:color-mix(in srgb, var(--alert) 32%, transparent); font-weight:600; }
 .card.gone a.title{ color:var(--ink-2); }  /* the copy outlived the posting — dim, don't hide */
 
 /* ---- the Profile tab (ADR-0041): one AI read fills it, hands edit it ---- */
@@ -479,9 +491,9 @@ textarea:focus{ border-color:var(--violet); }
 .pfield input{ width:100%; padding:10px 12px; border-radius:var(--r-md); font:inherit;
   font-size:13.5px; background:var(--ground); color:var(--ink); border:1px solid var(--rule);
   outline:none; }
-.pfield input:focus{ border-color:var(--violet); }
+.pfield input:focus{ border-color:var(--accent); }
 .profile-card .go{ padding:12px 24px; }  /* .go's height comes from the searchbar's flex elsewhere */
-.ghost.danger:hover{ border-color:var(--coral); color:var(--coral); }
+.ghost.danger:hover{ border-color:var(--alert); color:var(--alert); }
 
 /* ---- role trends (ADR-0040/0051), its own tab since the shell landed. Redesigned 2026-08-20
    against the dataviz skill's mark/interaction specs and the WAI-ARIA radiogroup pattern —
@@ -510,8 +522,8 @@ textarea:focus{ border-color:var(--violet); }
    .hidden needs this same escape hatch or `hidden=true` silently does nothing visible. */
 .trends-error[hidden], .trends-grid[hidden], .trends-table-wrap[hidden]{ display:none !important; }
 .trends-error{ display:flex; align-items:center; gap:10px; padding:14px 16px; margin:10px 0 0;
-  background:color-mix(in srgb, var(--coral) 10%, transparent);
-  border:1px solid color-mix(in srgb, var(--coral) 30%, transparent); border-radius:var(--r-md);
+  background:color-mix(in srgb, var(--alert) 10%, transparent);
+  border:1px solid color-mix(in srgb, var(--alert) 30%, transparent); border-radius:var(--r-md);
   color:var(--ink-2); font-size:13px; }
 .trends-error button{ margin-left:auto; flex:none; }
 /* ATS picker (ADR-0075): the app's first popover, scoped to this one control */
@@ -580,7 +592,7 @@ textarea:focus{ border-color:var(--violet); }
 .trends-legend .ct{ color:var(--ink-2); font-variant-numeric:tabular-nums; }
 .trends-legend .dl{ font-variant-numeric:tabular-nums; font-size:11.5px; min-width:44px;
   text-align:right; }
-.up{ color:var(--lime); } .down{ color:var(--coral); } .flat{ color:var(--ink-3); }
+.up{ color:var(--pay); } .down{ color:var(--alert); } .flat{ color:var(--ink-3); }
 .trends-grid .gridline{ stroke:var(--rule); stroke-width:1; }
 /* 12px floor + tabular-nums (Datawrapper's legibility rule) — was 10px with no numeric
    alignment, both flagged by the design research doc §6. */
@@ -621,15 +633,26 @@ textarea:focus{ border-color:var(--violet); }
 }
 
 /* Ultrawide: spend the width on MORE jobs, not wider ones (ADR-0116's rule that full width
-   is worth having only if it buys density). Past ~1500px a single column leaves hundreds of
-   pixels of background either side, and stretching the row instead just re-grows the dead air
-   three critique rounds were spent removing. Two columns double what a scan sees per screen;
-   pay still aligns down each column, which is the property that made the row layout worth it.
-   The text column becomes fluid here so a card fits its narrower share. */
-@media (min-width:1560px){
-  main{ max-width:none; }
-  #results{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px;
-    align-items:start; }
+   is worth having only if it buys density), and lift the shell's ceiling to pay for it —
+   1560px on a 2692px display left 42% of the screen as background, which is the complaint
+   this block exists to answer.
+   The trigger is a VIEWPORT width but the thing that has to be wide enough is the shell, so
+   it fires at 1720 rather than 1560: at 1560 the shell was 94vw = 1466 and a card halved from
+   1080 to 700 in one pixel of viewport. At 1720 the shell is already 1582.
+   Column-major, not row-major. Filling by rows put ranks 1 and 2 side by side, so reading
+   straight down the left column gave 1, 3, 5 — the scan no longer followed the ranking it
+   was sorted by. Flowing down the columns puts 1-10 in the left and 11-20 in the right, so a
+   vertical scan follows rank and each column keeps its own aligned pay rail.
+   --rows comes from app.js, counted off the rows actually rendered rather than PAGE_SIZE: a
+   short last page then splits evenly instead of filling one 10-deep column and leaving a tall
+   empty one beside it. The columns are auto rather than a fixed repeat(2,…) for the same
+   reason — a one-result page gets a single full-width row, not a half-width card beside a
+   void. */
+@media (min-width:1720px){
+  .shell{ max-width:min(2100px, 92vw); }
+  #results, #matches-results, #saved-results{ display:grid; grid-auto-flow:column;
+    grid-template-rows:repeat(var(--rows,10), min-content);
+    grid-auto-columns:minmax(0,1fr); gap:0 14px; align-items:start; }
   .card{ grid-template-columns:minmax(0,1fr) 178px 52px 44px; gap:0 14px; }
   .card .pay{ font-size:12.5px; white-space:nowrap; }
 }
@@ -751,12 +774,16 @@ textarea:focus{ border-color:var(--violet); }
 /* An inline "remove it" inside the empty state — a button, because it acts, but it should
    read as part of the sentence rather than as another control competing with the rail. */
 .linkish{ background:none; border:0; padding:0; cursor:pointer; font:inherit;
-  color:var(--violet); text-decoration:underline; }
+  color:var(--accent); text-decoration:underline; }
 .linkish:hover{ opacity:.8; }
 
 /* ---- the Data tab (ADR-0112). Running prose, so it gets a measure and a type scale of its
        own — the rest of this page is controls and cards, which want neither. ---- */
-.doc{ max-width:70ch; }
+/* The document spans the shell like every other block — its section rules are what draw the
+   page's right edge on this tab — and the measure moves inside, onto the running text alone.
+   Capping `.doc` itself ended Data 400px inside every other tab on the same screen. */
+.doc{ max-width:none; }
+.doc-hd p, .doc-sec p, .doc-list li, .cov-row{ max-width:72ch; }
 .doc-hd h2{ font:600 22px/1.25 var(--serif); margin:0 0 8px; letter-spacing:-.01em; }
 .doc-hd p{ color:var(--ink-2); font-size:14.5px; margin:0 0 30px; text-wrap:pretty; }
 .doc-sec{ border-top:1px solid var(--rule); padding-top:22px; margin-bottom:26px; }

@@ -210,12 +210,23 @@ const convLabel = r => {
 // and revisited only when the embedding model changes. Display only: ranking stays on the
 // raw score, and the same job shows the same % wherever it appears.
 const matchPct = s => Math.round(Math.max(0, Math.min(1, (s - .60) / .25)) * 100);
-// Match strength is a QUANTITY, so it gets a sequential ramp — one hue, increasing intensity —
-// not four different hues. Hue is reserved for categories (amber = new, lime = pays, violet =
-// remote); reusing those hues here would have made lime mean both "strong match" and "salary".
+// Match strength is a QUANTITY, so it gets a sequential ramp — one hue, increasing LIGHTNESS.
+// Mixed toward `--rule`, not `--ink-3`: measured, accent-into-ink-3 gave a luminance ratio of
+// 0.96 across the whole 0-100 range — the ring changed hue and not brightness, which the eye
+// does not read at 12px. Against `--rule` the ratio is 1.81, and the 45% floor keeps the
+// dimmest ring at 2.62:1 on the card. The percentage NUMBER stays `--ink`, so the ring is a
+// redundant encoding rather than the only carrier of the value.
+// not four different hues. Hue is reserved for categories (--remote, --pay, --alert); reusing
+// one here would have made a category colour mean "strong match" as well as what it names.
 // Weak matches fade toward the muted ink so a scan shows where the good results stop.
-const tone = s => `color-mix(in srgb, var(--accent) ${25 + matchPct(s) * .75}%, var(--ink-3))`;
+const tone = s => `color-mix(in srgb, var(--accent) ${45 + matchPct(s) * .55}%, var(--rule))`;
 const busy = on => el('results').setAttribute('aria-busy', String(!!on));
+// The ultrawide card grids flow COLUMN-major so a vertical scan follows rank, which means each
+// one has to be told how deep its column is. Counted off what was actually rendered, never
+// PAGE_SIZE: a short last page (or a one-line empty state) otherwise fills a full 10-deep
+// column and leaves a tall empty one beside it. Halved because the block opens two columns.
+const setResultRows = (n, id) => { const box = el(id || 'results');
+  if (box) box.style.setProperty('--rows', Math.max(1, Math.ceil(n / 2))); };
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
   '<div class="shim" style="width:30%; margin-top:10px"></div>' +
@@ -455,6 +466,7 @@ async function fetchPage(){
   for (const [key, value] of Object.entries(currentFilters())) p.set(key, value);
   if (el('sort').value !== 'rel') p.set('sort', el('sort').value);
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
+  setResultRows(3);
   busy(true);
   el('pager').innerHTML = '';
   el('kind').textContent = '';   // never describe the previous search's rows over the new ones
@@ -467,10 +479,12 @@ async function fetchPage(){
   let rows;
   try { rows = await (await fetch('/search?'+p)).json(); }
   catch(e){ busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+            setResultRows(1);
             el('n').textContent = ''; el('kind').textContent = ''; return; }
   busy(false);
   if(!Array.isArray(rows)){
     el('results').innerHTML = '<div class="empty">One of the filters isn\'t valid — clear it and try again.</div>';
+    setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
   const facets = await facetsPromise;
   drawKeywordNote(facets);
@@ -480,6 +494,7 @@ async function fetchPage(){
       ? '<div class="empty"><div class="big">Nothing matched</div>' + whyNothing(facets) + '</div>'
       : '<div class="empty"><div class="big">No more jobs</div>' +
         'You\'ve reached the end of these results.</div>';
+    setResultRows(1);
     el('n').textContent = page === 1 ? '0 results' : '';
     drawPager(0, facets);
     return; }
@@ -750,6 +765,7 @@ function draw(rows, target){
   // `(r, i) => …`, never a bare `rows.map(jobCard)`: map passes the array as a third argument,
   // which would land on `canHide` and quietly put a × on every list.
   el(target || 'results').innerHTML = rows.map((r, i) => jobCard(r, i, !target)).join('');
+  setResultRows(rows.length, target);
   if (!target) drawHidden(rows);
 }
 
@@ -774,6 +790,7 @@ function renderSets(){
   if (!mySets.length){
     strip.innerHTML = '';
     el('matches-msg').textContent = '';
+    setResultRows(1, 'matches-results');
     el('matches-results').innerHTML =
       '<div class="empty"><div class="big">No saved sets yet</div>' +
       'Search for a role, tune the filters, then hit "Save this search" — it lands here ' +
@@ -1000,12 +1017,14 @@ function renderSaved(){
   if (!box || mySaved == null) return;
   if (!mySaved.length){
     el('saved-msg').textContent = '';
+    setResultRows(1, 'saved-results');
     box.innerHTML = '<div class="empty"><div class="big">Nothing saved yet</div>' +
       'Hit the ☆ on any result to keep it here — the copy stays even after the posting closes.</div>';
     return;
   }
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
   el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
+  setResultRows(jobs.length, 'saved-results');
   box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
 }
 
