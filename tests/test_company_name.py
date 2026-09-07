@@ -65,7 +65,7 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         # exactly the slug: nothing gained
         ("lever", "cargo-partner", "cargo-partner"),
         ("ashby", "telli Jobs", "telli"),
-        # An ATS with no patterns resolves nothing — the central decision of ADR-0112. These
+        # An ATS with no patterns resolves nothing — the central decision of ADR-0114. These
         # names are ordinary and clean: no separator, no label, no hostname, so nothing else in
         # `from_title` would refuse them and only the pattern gate can be what does. Without
         # such a row, deleting that gate left the whole suite green.

@@ -28,7 +28,7 @@ class CompanyRef:
 # one entry covers a Board that appears under several casings (smartrecruiters Dev2/dev2).
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
-        # Ashby's turn, found late (ADR-0112) by reading board titles rather than slugs:
+        # Ashby's turn, found late (ADR-0114) by reading board titles rather than slugs:
         # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
         # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").
         # Its siblings `ashby:bento` and `ripplehire:tenant1` name themselves just as plainly
@@ -118,7 +118,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "ripplehire:itcinfotech",  # 631 postings; titles itself "ITC Infotech Demo"
         "ripplehire:labs-axisqa",  # 1,226 postings; RippleHire's own QA tenant for Axis
         # 486 postings served as "Mphasis" — more than the genuine `ripplehire:mphasis`
-        # board's 189, with titles repeating verbatim. ADR-0112 declined to list it on
+        # board's 189, with titles repeating verbatim. ADR-0114 declined to list it on
         # 2026-09-07 because it 502'd and exposed no title; it answers 200 now, so the
         # evidence that was missing then exists. A QA tenant wearing a real employer's
         # name is the one thing a title rule cannot catch.
@@ -127,7 +127,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "ripplehire:qa1-tataaia",  # 209 postings, company "qa1-tataaia"
         "ripplehire:qa1-ust-app",  # 300 postings, company "qa1-ust-app"; "software developement"
         "ripplehire:rhsandbox",  # 649 postings; RippleHire's own sandbox tenant
-        # 502 postings. Found because ADR-0112 made it *stop* looking fake: its board titles
+        # 502 postings. Found because ADR-0114 made it *stop* looking fake: its board titles
         # itself "Mphasis Careers | …", so the served company became "Mphasis" — a QA tenant
         # impersonating the real employer, where the slug had at least shown what it was.
         "ripplehire:tenant1-mph",

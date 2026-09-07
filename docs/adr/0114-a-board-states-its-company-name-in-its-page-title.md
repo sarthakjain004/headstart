@@ -1,4 +1,4 @@
-# ADR-0112: A Board states its company name in its page title — read it, don't infer it
+# ADR-0114: A Board states its company name in its page title — read it, don't infer it
 
 **Status:** accepted · **Date:** 2026-09-07 · **Relates to:** ADR-0031 (the filter compiler that
 serves `company`), ADR-0007 (the typed Job projection), ADR-0063 (the spare egress this request

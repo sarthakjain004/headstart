@@ -89,7 +89,7 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 #: A separator still present after the wrapper came off means the title had a shape this does not
 #: model, and half a slogan is a worse company name than the slug. Mostly it bites **lever**,
 #: whose pattern matches anything, so "Acme | Careers" reaches here and is refused — but not only
-#: lever: `ripplehire:7-eleven-gsc` loses a real name to the `" - "` in "7 - Eleven" (ADR-0112
+#: lever: `ripplehire:7-eleven-gsc` loses a real name to the `" - "` in "7 - Eleven" (ADR-0114
 #: §Known misses). (An earlier version
 #: of this comment cited eightfold's "Kraft Heinz Careers – Explore Careers…", which never gets
 #: this far: no eightfold pattern matches it, so the loop below rejects it first.)
@@ -133,7 +133,7 @@ _PAGE_LABEL = re.compile(
 #: test pins both ends, against that name and a 70-character lever title. That title —
 #: "Succession Planning for Railroads Investing in the Next Generation LLC" — is a legal
 #: entity name, not the sentence an earlier draft called it, so the cap is refusing a real
-#: name here rather than prose. Recorded as a known miss in ADR-0112.
+#: name here rather than prose. Recorded as a known miss in ADR-0114.
 _MAX_LEN = 60
 
 #: Per ATS, the names its *own* branding goes by. A board page that fails to render its tenant

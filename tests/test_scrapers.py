@@ -7717,7 +7717,7 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
 
 
 def test_the_title_fetch_is_one_attempt_and_never_walls_its_ats(monkeypatch):
-    """ADR-0112 sells both of these as why one extra request per Board is safe, and deleting
+    """ADR-0114 sells both of these as why one extra request per Board is safe, and deleting
     either left the whole suite green.
 
     `attempts=1`: a display name is the most optional thing a scrape fetches, so it must not

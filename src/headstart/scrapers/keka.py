@@ -81,7 +81,7 @@ class KekaScraper(BaseScraper):
         Most keka Boards render their ``<title>`` client-side and serve nothing to read, but
         where one exists the wrapper is as uniform as eightfold's, and every keka Board serves a
         slug today, so it is all upside. The measured rate is deliberately **not** repeated here:
-        `headstart.company_name` holds it and ADR-0112 restates it as the spec of record, and
+        `headstart.company_name` holds it and ADR-0114 restates it as the spec of record, and
         three copies of it had already drifted apart before this docstring stopped being a fourth.
 
         :meth:`_tenant_uuid` GETs this same URL, but only for the portals whose

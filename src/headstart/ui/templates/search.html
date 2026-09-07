@@ -6,6 +6,10 @@
     </div>
     <button class="go" onclick="go()">Search</button>
   </div>
+  {# Second stop in the tab order, because `#q` autofocuses and the ~20-control filter rail
+     sits between it and the first job link. A skip link at the top of the document would be
+     unreachable by forward tabbing for exactly that reason. #}
+  <a class="skip" href="#results">Skip the filters, go to results</a>
   <div class="hint">
     <span>Try:</span>
     <button class="chip" onclick="tryIt(this)">backend engineer at a climate startup</button>
@@ -68,6 +72,9 @@
         <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
           requirement are kept.</span></div>
       <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
+      <span class="tip">Some boards carry a real remote setting and we use it; the rest are read
+        from how the employer worded the location. Either way a role described as remote only in
+        the body text can be missed.</span>
       <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
       {% if currencies %}
       <div class="f"><label for="salcur">Salary bracket (annual)</label>
@@ -87,6 +94,9 @@
     <div class="set">
       <h2>Where</h2>
       <div class="f"><label for="india">India — city or region</label>
+        <span class="tip">India has a gazetteer behind it, so picking a city also matches its
+          neighbourhoods and alternative spellings. Location below matches text anywhere in the
+          world, just without that expansion. The index is worldwide either way.</span>
         <select id="india"><option value="">Anywhere</option>
           <option value="india">All India</option>
           {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
@@ -102,7 +112,11 @@
       <div class="f"><label for="posted">Posted by the employer</label>
         <select id="posted"><option value="">Any time</option>
           {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select></div>
+        </select>
+        <span class="tip">Their date, in their format. Jobs without one are hidden by this
+          filter rather than kept, and so are any whose date is written in a shape we cannot
+          compare against a cutoff — so it keeps somewhat fewer than the Data tab's
+          posting-date figure would suggest.</span></div>
       {% if has_first_seen %}
       <div class="f"><label for="seen">First seen by HeadStart</label>
         <select id="seen"><option value="">Any time</option>
@@ -142,7 +156,13 @@
     </div>
     {% endif %}
     <div class="active" id="active"></div>
-    <div id="results" aria-live="polite"></div>
+    {# Says what the list below actually is. A no-Query browse and a ranked search look
+       identical apart from the match rings, and a user who cannot tell them apart reads the
+       missing ring as a bug rather than as "this was never ranked" (ADR-0074). #}
+    <p class="kind" id="kind" role="status"></p>
+    {# tabindex="-1" so the skip link above actually MOVES focus here. Without it WebKit
+       scrolls the results into view and leaves the tab position back in the filter rail. #}
+    <div id="results" tabindex="-1" aria-live="polite"></div>
     <div class="pager" id="pager"></div>
   </main>
 </div>

@@ -289,7 +289,7 @@ class BaseScraper(ABC):
         exactly as it was: no ``board_page``, a request that raises, a title this ATS's patterns
         cannot read. What that guarantees is narrower than "only ever an upgrade": a slug is never
         replaced by a *non-name*, but a Board can state a name less recognisable than its own slug
-        (`ripplehire:ltimindtree` serves "LTM"). ADR-0112 §Consequences has the measured cases.
+        (`ripplehire:ltimindtree` serves "LTM"). ADR-0114 §Consequences has the measured cases.
         """
         # A real name outranks a page title — but "different from the slug" is not the same
         # question. The ledger itself holds "wipro" and "citi", so the first draft's
