@@ -17,7 +17,7 @@ function currentTab(){
 }
 function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
-  document.querySelectorAll('.side [data-tab]').forEach(a =>
+  document.querySelectorAll('.tabs [data-tab]').forEach(a =>
     a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false'));
   if (name === 'trends' && el('trends') && !trendData) loadTrends(null);
   if (name === 'matches' && el('sets-strip')){
@@ -113,9 +113,9 @@ async function signOut(){
 function toggleRail(){
   const rail = el('rail');
   const open = rail.classList.toggle('open');
-  // The rail sits before <main> in the DOM, so on a stacked phone layout it opens ABOVE the
-  // button that was just tapped. Without this the content jumps and the filters are off-screen.
-  if (open) rail.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  // The panel opens above the button that was just pressed (ADR-0114 puts it over the
+  // results), so without this the rows shift down and the filters land off-screen.
+  if (open) rail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 const age = d => {

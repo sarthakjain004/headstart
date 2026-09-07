@@ -1,19 +1,30 @@
 /* ---- tokens. Every colour and size below is named here and used through the token,
-       so the light theme is a token swap rather than a second stylesheet. ---- */
+       so the light theme is a token swap rather than a second stylesheet.
+
+       Palette: "quiet dossier" (ADR-0114). Warm paper and warm charcoal rather than blue-black,
+       one restrained accent, and no gradient or glow anywhere. The reasoning is about the user's
+       state, not taste: job searching is a long, repetitive, high-rejection scanning task, usually
+       done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
+       eye-fatigue across a forty-minute session, and — for this product specifically — the neon
+       "AI startup" register contradicts what the product now says about itself on the Data tab.
+       Hue is spent on exceptions (new, pays, remote), never on chrome. ---- */
 :root{
-  --ground:#0E1220; --raise:#161B2C; --raise-2:#1D2337; --rule:#252C42; --rule-2:#333B57;
-  --ink:#EEF1F8; --ink-2:#A8B0C6; --ink-3:#6F7896;
-  --aqua:#12D6B4; --violet:#8B5CF6; --amber:#F59E0B; --lime:#A3E635;
-  --coral:#FB7185;
+  --ground:#171614; --raise:#201E1B; --raise-2:#2A2724; --rule:#38342F; --rule-2:#4B463F;
+  --ink:#F2EFE9; --ink-2:#BDB6AA; --ink-3:#8E877B;
+  --accent:#5FBFB0; --violet:#A99BE0; --amber:#E0A526; --lime:#A9CC6B;
+  --coral:#E58374;
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
-     against this file's own --raise dark / #FFFFFF light chart surfaces — six-checks PASS in
-     both modes; see docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is
-     the CVD-safety mechanism, so these are read by SLOT, never re-ordered per chart. */
+     against this file's own --raise dark / near-white light chart surfaces; see
+     docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
+     mechanism, so these are read by SLOT, never re-ordered per chart. Re-measured against the
+     ADR-0114 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
+     light, i.e. the ground change is not what decides it. The light figure is under 3:1 and was
+     before this change too — a pre-existing gap, called out in ADR-0114 rather than inherited
+     silently. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
   --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
-  --glow:rgba(18,214,180,.22);
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
-  --shadow:0 18px 44px rgba(0,0,0,.42);
+  --shadow:0 10px 28px rgba(0,0,0,.30);
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:ui-serif,"Iowan Old Style",Georgia,serif;
@@ -21,25 +32,26 @@
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
-   `:not([data-theme])` is what lets the toggle beat the OS in BOTH directions. Amber and lime
-   are darkened here: at 11.5px on a tinted chip the dark-theme values missed WCAG AA. */
+   `:not([data-theme])` is what lets the toggle beat the OS in BOTH directions. Every pairing
+   below is contrast-checked in both modes; --ink-3 in particular is darker than the value it
+   replaces, which sat at 3.5:1 and failed AA for the rail's caveats. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme]){
-    --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
-    --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
-    --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+    --ground:#F7F5F0; --raise:#FFFDF8; --raise-2:#EFEBE3; --rule:#DFD9CD; --rule-2:#C7BFAF;
+    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#6E685D;
+    --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
-    --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
+    --shadow:0 8px 22px rgba(40,34,24,.08);
   }
 }
 :root[data-theme="light"]{
-    --ground:#F6F7FB; --raise:#FFFFFF; --raise-2:#F1F3F9; --rule:#E2E6F0; --rule-2:#CDD4E4;
-    --ink:#131726; --ink-2:#4C5570; --ink-3:#7A83A0;
-    --aqua:#00806B; --violet:#5B34D6; --amber:#8A5800; --lime:#3F6B0A; --coral:#C03249;
+    --ground:#F7F5F0; --raise:#FFFDF8; --raise-2:#EFEBE3; --rule:#DFD9CD; --rule-2:#C7BFAF;
+    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#6E685D;
+    --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
-    --glow:rgba(0,128,107,.16); --shadow:0 14px 34px rgba(20,28,54,.10);
+    --shadow:0 8px 22px rgba(40,34,24,.08);
 }
 
 *{ box-sizing:border-box; }
@@ -49,14 +61,6 @@ body{
   -webkit-font-smoothing:antialiased;
   transition:background .3s ease, color .3s ease;
 }
-/* slow ambient wash behind the header — the only purely decorative motion on the page */
-.aura{ position:fixed; inset:-30% -10% auto -10%; height:70vh; pointer-events:none; z-index:0;
-  background:
-    radial-gradient(46% 52% at 22% 12%, var(--glow), transparent 70%),
-    radial-gradient(38% 46% at 78% 4%, rgba(139,92,246,.16), transparent 72%);
-  filter:blur(6px); animation:drift 22s ease-in-out infinite alternate; }
-@keyframes drift{ from{ transform:translate3d(-2%,-1%,0) scale(1); }
-                  to{ transform:translate3d(3%,2%,0) scale(1.08); } }
 
 .shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:26px 22px 80px; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
@@ -64,7 +68,7 @@ body{
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
    tabbing forward. Visible only when focused, as a skip link should be. */
 .skip{ position:absolute; left:-9999px; z-index:9;
-  background:var(--raise); color:var(--ink); border:1px solid var(--aqua);
+  background:var(--raise); color:var(--ink); border:1px solid var(--accent);
   padding:11px 18px; border-radius:var(--r-md); font:600 14px var(--sans);
   text-decoration:none; }
 /* Revealed as a fixed overlay at the top of the viewport — the conventional pattern, and the
@@ -82,8 +86,7 @@ body{
 .top-right{ grid-area:right; }
 .brand{ grid-area:brand; display:flex; align-items:center; gap:11px; }
 .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-  background:linear-gradient(135deg,var(--aqua),var(--violet));
-  box-shadow:0 0 0 1px rgba(255,255,255,.10) inset, 0 8px 20px var(--glow); }
+  background:var(--accent); }
 .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
   border-radius:50%; background:var(--ground); }
 .brand h1{ font:600 21px/1 var(--serif); letter-spacing:-.01em; margin:0; }
@@ -94,35 +97,33 @@ body{
 .tagline{ grid-area:tagline; margin:0; color:var(--ink-2); font-size:12px; line-height:1.35;
   text-wrap:pretty; }
 .brand h1 em{ font-style:normal;
-  background:linear-gradient(100deg,var(--aqua),var(--violet)); -webkit-background-clip:text;
-  background-clip:text; color:transparent; }
+  color:var(--accent); }
 .top-right{ display:flex; align-items:center; gap:10px; }
 .count{ font:500 12px/1 var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2);
   white-space:nowrap;
   background:var(--raise); border:1px solid var(--rule); padding:8px 12px; border-radius:var(--r-pill); }
-.count b{ color:var(--aqua); }
+.count b{ color:var(--accent); }
 .icon-btn{ width:36px; height:36px; border-radius:var(--r-md); border:1px solid var(--rule);
   background:var(--raise); color:var(--ink-2); cursor:pointer; font-size:15px; line-height:1;
   transition:transform var(--step), border-color var(--step), color var(--step); }
-.icon-btn:hover{ transform:translateY(-1px); border-color:var(--aqua); color:var(--aqua); }
+.icon-btn:hover{ transform:translateY(-1px); border-color:var(--accent); color:var(--accent); }
 #who{ max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* ---- the shell: sidebar nav + tab panels (ADR-0042) ---- */
-.layout{ display:grid; grid-template-columns:184px 1fr; gap:24px; align-items:start; }
-.side{ position:sticky; top:20px; display:flex; flex-direction:column; gap:4px; }
-.nav-item{ display:flex; align-items:center; gap:8px; padding:10px 13px; border-radius:var(--r-md);
+/* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0114).
+       The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
+       it costs one row and returns the width to the results. ---- */
+.tabs{ display:flex; gap:2px; margin:0 0 20px; border-bottom:1px solid var(--rule);
+  overflow-x:auto; scrollbar-width:none; }
+.tabs::-webkit-scrollbar{ display:none; }
+.nav-item{ display:flex; align-items:center; gap:8px; padding:10px 14px; white-space:nowrap;
   color:var(--ink-2); text-decoration:none; font-size:14px; font-weight:500;
-  border:1px solid transparent;
-  transition:color var(--step), background var(--step), border-color var(--step); }
-.nav-item:hover{ color:var(--ink); background:var(--raise); }
-.nav-item[aria-current="page"]{ color:var(--ink); background:var(--raise);
-  border-color:var(--rule); position:relative; }
-.nav-item[aria-current="page"]::before{ content:""; position:absolute; left:0; top:9px; bottom:9px;
-  width:3px; border-radius:var(--r-pill);
-  background:linear-gradient(180deg,var(--aqua),var(--violet)); }
+  border-bottom:2px solid transparent; margin-bottom:-1px;
+  transition:color var(--step), border-color var(--step); }
+.nav-item:hover{ color:var(--ink); }
+.nav-item[aria-current="page"]{ color:var(--ink); border-bottom-color:var(--accent); }
 .nav-item.soon{ color:var(--ink-3); cursor:default; }
-.nav-item.soon:hover{ background:transparent; color:var(--ink-3); }
-.chip-soon{ margin-left:auto; font:600 9.5px/1 var(--sans); letter-spacing:.08em;
+.nav-item.soon:hover{ color:var(--ink-3); }
+.chip-soon{ font:600 9.5px/1 var(--sans); letter-spacing:.08em;
   text-transform:uppercase; color:var(--ink-3); border:1px solid var(--rule);
   padding:3px 6px; border-radius:var(--r-pill); }
 .panel[hidden]{ display:none !important; }
@@ -135,19 +136,19 @@ body{
   background:var(--raise); color:var(--ink); border:1px solid var(--rule-2); outline:none;
   transition:border-color var(--step), box-shadow var(--step); }
 .field input::placeholder{ color:var(--ink-3); }
-.field input:focus{ border-color:var(--aqua); box-shadow:0 0 0 4px var(--glow); }
+.field input:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--rule-2); }
 .go{ padding:0 30px; border:0; border-radius:var(--r-xl); cursor:pointer; color:#04121A;
   font:700 15px/1 var(--sans); letter-spacing:.01em;
-  background:linear-gradient(120deg,var(--aqua),var(--lime));
+  background:var(--accent);
   transition:transform var(--step), box-shadow var(--step), filter var(--step); }
-.go:hover{ transform:translateY(-2px); box-shadow:0 12px 30px var(--glow); filter:saturate(1.15); }
+.go:hover{ transform:translateY(-2px); filter:brightness(1.06); }
 .go:active{ transform:translateY(0); }
 .hint{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
   color:var(--ink-3); font-size:12.5px; }
 .chip{ border:1px dashed var(--rule-2); background:transparent; color:var(--ink-2);
   padding:6px 12px; border-radius:var(--r-pill); font:inherit; font-size:12.5px; cursor:pointer;
   transition:border-color var(--step), color var(--step), transform var(--step); }
-.chip:hover{ border-color:var(--aqua); color:var(--aqua); transform:translateY(-1px); }
+.chip:hover{ border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
 
 /* ---- the two AI features, promoted out of footnotes ---- */
 /* auto-fit, not 1fr 1fr: when only one panel is configured the other is absent from the
@@ -163,7 +164,7 @@ body{
 .feature summary::-webkit-details-marker{ display:none; }
 /* the brand gradient, not flat violet — violet on its own means "remote" on a result tag */
 .feature .dot{ width:8px; height:8px; border-radius:50%; flex:none;
-  background:linear-gradient(135deg,var(--aqua),var(--violet)); box-shadow:0 0 12px var(--glow); }
+  background:var(--accent); }
 .feature .ttl{ font-weight:600; font-size:14px; }
 .feature .sub{ color:var(--ink-3); font-size:12.5px; margin-left:auto; }
 .feature .body{ padding:0 16px 16px; }
@@ -183,12 +184,20 @@ textarea:focus{ border-color:var(--violet); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
 
-/* ---- search layout: sticky filter rail + results ---- */
-.grid{ display:grid; grid-template-columns:260px 1fr; gap:22px; align-items:start; }
-@media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
-.rail{ position:sticky; top:20px; background:var(--raise); border:1px solid var(--rule);
-  border-radius:var(--r-lg); padding:16px; }
-@media (max-width:900px){ .rail{ position:static; display:none; } .rail.open{ display:block; } }
+/* ---- search layout: filter panel above, results at full width (ADR-0114) ---- */
+/* The filter panel (ADR-0114). Above the results rather than beside them, full width, and
+   closed until asked for — so the default view is the thing the user came for. Open, the
+   groups flow into as many columns as the width allows rather than one tall column. */
+.rail{ display:none; background:var(--raise); border:1px solid var(--rule);
+  border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
+.rail.open{ display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  gap:10px 26px; align-items:start; }
+.rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
+  color:var(--ink-3); margin:0 0 10px; }
+/* Each group is a column of the panel grid, so the vertical rules that separated them in a
+   single stacked column would now draw between unrelated things. */
+.set + .set{ margin-top:0; padding-top:0; border-top:0; }
+.clear{ grid-column:1/-1; justify-self:start; }
 .rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
   color:var(--ink-3); margin:0 0 10px; }
 .set + .set{ margin-top:18px; padding-top:16px; border-top:1px solid var(--rule); }
@@ -201,14 +210,14 @@ textarea:focus{ border-color:var(--violet); }
 .f select,.f input{ width:100%; padding:9px 11px; border-radius:var(--r-md); font:inherit;
   font-size:13px; background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
   outline:none; transition:border-color var(--step); }
-.f select:focus,.f input:focus{ border-color:var(--aqua); }
+.f select:focus,.f input:focus{ border-color:var(--accent); }
 .sw{ display:flex; align-items:center; gap:9px; color:var(--ink-2); font-size:13px;
   cursor:pointer; user-select:none; margin-bottom:9px; }
 .sw input{ appearance:none; width:36px; height:21px; border-radius:var(--r-pill); flex:none;
   background:var(--rule-2); position:relative; cursor:pointer; transition:background var(--step); margin:0; }
 .sw input::after{ content:""; position:absolute; top:3px; left:3px; width:15px; height:15px;
   border-radius:50%; background:#fff; transition:transform var(--step); }
-.sw input:checked{ background:linear-gradient(120deg,var(--aqua),var(--lime)); }
+.sw input:checked{ background:var(--accent); }
 .sw input:checked::after{ transform:translateX(15px); }
 .clear{ width:100%; margin-top:14px; padding:9px; border-radius:var(--r-md); cursor:pointer;
   background:transparent; border:1px solid var(--rule); color:var(--ink-3); font:inherit;
@@ -221,7 +230,7 @@ textarea:focus{ border-color:var(--violet); }
 .toolbar select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
   color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
 .filters-btn{ display:none; }
-@media (max-width:900px){ .filters-btn{ display:inline-block; } }
+.filters-btn{ display:inline-block; }
 .active{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
 .pill{ display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:5px 10px;
   border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule-2);
@@ -239,17 +248,17 @@ textarea:focus{ border-color:var(--violet); }
   transition:border-color var(--step), transform var(--step), box-shadow var(--step); }
 .card:hover{ transform:translateY(-2px); border-color:var(--rule-2); box-shadow:var(--shadow); }
 .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
-  background:var(--tone,var(--aqua)); opacity:.85; }
+  background:var(--tone,var(--accent)); opacity:.85; }
 @keyframes rise{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
 .card .hd{ display:flex; align-items:flex-start; gap:14px; }
 .card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:16px;
   letter-spacing:-.01em; line-height:1.35; }
-.card a.title:hover{ color:var(--aqua); }
+.card a.title:hover{ color:var(--accent); }
 /* The link leaves for the employer's own board, which is the product's central claim — so
    the card marks it rather than making the reader hover and parse a URL. */
 .card a.title .ext{ width:11px; height:11px; margin-left:5px; vertical-align:baseline;
   color:var(--ink-3); }
-.card a.title:hover .ext{ color:var(--aqua); }
+.card a.title:hover .ext{ color:var(--accent); }
 .sr{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip-path:inset(50%); white-space:nowrap; border:0; }
 .card .org{ color:var(--ink-2); font-size:13px; margin-top:3px; }
@@ -260,11 +269,11 @@ textarea:focus{ border-color:var(--violet); }
 .ring{ width:44px; height:44px; display:block; transform:rotate(-90deg); }
 .ring circle{ fill:none; stroke-width:3.5; }
 .ring-track{ stroke:var(--rule); }
-.ring-fill{ stroke:var(--tone,var(--aqua)); stroke-linecap:round;
+.ring-fill{ stroke:var(--tone,var(--accent)); stroke-linecap:round;
   stroke-dasharray:0 100; animation:ringfill .7s .1s cubic-bezier(.2,.7,.3,1) forwards; }
 @keyframes ringfill{ to{ stroke-dasharray:var(--p,50) 100; } }
 .match .v{ position:absolute; inset:0; display:grid; place-items:center;
-  font:600 10.5px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--aqua)); }
+  font:600 10.5px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--accent)); }
 .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:11px; }
 .tag{ font:500 11.5px var(--sans); padding:4px 10px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
@@ -278,7 +287,7 @@ textarea:focus{ border-color:var(--violet); }
 /* Provenance, not a category — so no hue of its own (those are spoken for: amber=new,
    lime=pays, violet=remote). It stays the neutral chip and earns its weight from the word. */
 .tag.src::before{ content:""; display:inline-block; width:4px; height:4px; border-radius:50%;
-  background:var(--aqua); margin-right:6px; vertical-align:1.5px; }
+  background:var(--accent); margin-right:6px; vertical-align:1.5px; }
 
 .pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
 .pager .ghost{ padding:8px 16px; }
@@ -288,7 +297,7 @@ textarea:focus{ border-color:var(--violet); }
 .kind{ margin:0 0 12px; color:var(--ink-2); font-size:12.5px; line-height:1.5;
   max-width:74ch; text-wrap:pretty; }
 .kind a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
-.kind a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+.kind a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
 .empty{ text-align:center; padding:56px 24px; color:var(--ink-2); max-width:56ch;
   margin-inline:auto; }
@@ -308,13 +317,13 @@ textarea:focus{ border-color:var(--violet); }
 .set-chip{ display:inline-flex; align-items:center; gap:2px; border:1px solid var(--rule);
   background:var(--raise); border-radius:var(--r-pill); padding:3px 6px 3px 4px;
   transition:border-color var(--step); }
-.set-chip.active{ border-color:var(--aqua); box-shadow:0 0 0 3px var(--glow); }
+.set-chip.active{ border-color:var(--accent); box-shadow:0 0 0 3px transparent; }
 .set-chip button{ background:none; border:0; cursor:pointer; font:inherit; color:var(--ink-2);
   padding:5px 7px; border-radius:var(--r-pill); font-size:13px;
   transition:color var(--step), background var(--step); }
 .set-chip button:hover{ color:var(--ink); background:var(--raise-2); }
 .set-chip .set-name{ font-weight:600; color:var(--ink); }
-.set-chip .mail-on{ color:var(--aqua); }
+.set-chip .mail-on{ color:var(--accent); }
 .set-tools{ display:inline-flex; align-items:center; }
 .set-tools button{ font-size:11.5px; color:var(--ink-3); padding:5px 6px; }
 .set-tools [data-act="del"]:hover{ color:var(--coral); }
@@ -475,16 +484,10 @@ textarea:focus{ border-color:var(--violet); }
   font-size:12.5px; line-height:1.6; text-wrap:pretty; }
 .foot a{ color:var(--ink-2); text-decoration:none; white-space:nowrap;
   border-bottom:1px solid var(--rule-2); }
-.foot a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+.foot a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
-/* ---- narrow screens. The sidebar becomes a horizontal tab row above the content. ---- */
-@media (max-width:900px){
-  .layout{ grid-template-columns:1fr; gap:16px; }
-  .side{ position:static; flex-direction:row; overflow-x:auto; gap:6px; padding-bottom:2px; }
-  .nav-item{ white-space:nowrap; padding:8px 12px; }
-  .nav-item[aria-current="page"]::before{ display:none; }
-  .chip-soon{ margin-left:6px; }
-}
+/* The tab strip is horizontal at every width now, so it needs no breakpoint of its own —
+   it simply scrolls when the tabs outgrow the viewport. */
 
 /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
    shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
@@ -500,7 +503,7 @@ textarea:focus{ border-color:var(--violet); }
   .card a.title{ font-size:15px; }
 }
 
-:focus-visible{ outline:2px solid var(--aqua); outline-offset:2px; border-radius:4px; }
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important;
     transition-duration:.001ms !important; }
@@ -565,14 +568,14 @@ textarea:focus{ border-color:var(--violet); }
    blue, which is both off-system and unreadable on the dark ground. Set as a quiet citation:
    the aqua measures 10.04:1 dark / 4.56:1 light against the page ground, and the rule
    underneath keeps it identifiable as a link without colour being the only signal. */
-.doc-sec a{ color:var(--aqua); text-decoration:none; font-weight:500; white-space:nowrap;
-  border-bottom:1px solid color-mix(in srgb, var(--aqua) 42%, transparent); }
-.doc-sec a:hover{ border-bottom-color:var(--aqua); }
+.doc-sec a{ color:var(--accent); text-decoration:none; font-weight:500; white-space:nowrap;
+  border-bottom:1px solid color-mix(in srgb, var(--accent) 42%, transparent); }
+.doc-sec a:hover{ border-bottom-color:var(--accent); }
 
 .doc-ft{ border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3);
   font-size:13px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
 .doc-ft a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
-.doc-ft a:hover{ color:var(--aqua); border-bottom-color:var(--aqua); }
+.doc-ft a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
 /* Coverage bars. A share of the index, so one hue at varying length — never a category
    palette, and never red/green, which would read as pass/fail on facts that are neither. */
@@ -582,7 +585,7 @@ textarea:focus{ border-color:var(--violet); }
 .cov-bar{ height:7px; border-radius:var(--r-pill); background:var(--rule); overflow:hidden;
   margin-top:6px; }
 .cov-bar span{ display:block; height:100%; border-radius:var(--r-pill);
-  background:var(--aqua); }
+  background:var(--accent); }
 .cov-txt{ color:var(--ink-2); font-size:14px; line-height:1.45; }
 .cov-txt b{ color:var(--ink); font:600 14px var(--mono); font-variant-numeric:tabular-nums;
   margin-right:2px; }

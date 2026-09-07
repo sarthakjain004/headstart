@@ -38,7 +38,9 @@
 </div>
 {% endif %}
 
-<div class="grid">
+{# The filter panel sits above the results and spans the full width, collapsed by
+   default. It is the same <aside id="rail"> as before, moved rather than rebuilt: every
+   control id is unchanged, so the filter/facet/saved-set JavaScript is untouched. #}
   <aside class="rail" id="rail">
     {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
        Query ranks. The options are rendered from headstart.search.keyword_scope_options(), never
@@ -132,7 +134,7 @@
     <button class="clear" onclick="clearAll()">Clear all filters</button>
   </aside>
 
-  <main>
+<main>
     <div class="toolbar">
       <button class="ghost filters-btn" onclick="toggleRail()">Filters</button>
       <span class="n" id="n"></span>
@@ -164,5 +166,4 @@
        scrolls the results into view and leaves the tab position back in the filter rail. #}
     <div id="results" tabindex="-1" aria-live="polite"></div>
     <div class="pager" id="pager"></div>
-  </main>
-</div>
+</main>
