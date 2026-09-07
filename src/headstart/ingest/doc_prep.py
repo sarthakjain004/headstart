@@ -112,13 +112,19 @@ def build_doc(job: dict) -> str:
 # watermarks; the wasted recompute on an unrelated bump is cheap regex work, not network/LLM cost
 # — revisit only if that stops being true).
 #
-# `remote` is a fourth family with a different shape: it is *also* a fact (each scraper's own
-# ATS-native field, in FACT_FIELDS, refreshed unconditionally on every run — see
-# `update_meta.refresh_row`), but `headstart.remote.extract` then overlays a one-directional JD
-# check ON TOP of that just-refreshed fact, gated on this same version counter. That overlay is
-# always safe to redo (it can only move `False`/`None` -> `True`, never take a `True` away — see
-# `remote`'s module docstring), so it needs no separate "was this field already correct" guard the
-# way experience/salary's `_rederive_without_text` does.
+# `remote` is a fourth family with a different shape (ADR-0118 amends ADR-0061's fact/derivation
+# table for it): its raw ATS-native value IS a fact, but the served column holds
+# `headstart.remote.extract`'s overlay on top of that fact rather than the fact itself, and —
+# unlike every field above — is deliberately EXCLUDED from `update_meta.FACT_FIELDS`
+# (`_FACT_WITH_OVERLAY`), so it is NOT refreshed unconditionally every run the way `location` or
+# `salary` are. Only a sweep or an explicit re-derive queue entry touches it, same cadence as
+# every derivation below — a bug caught in review: including it in the unconditional per-run
+# resync let a JD-derived `True` silently revert to the raw fact's current value on the very next
+# ordinary re-scrape, since an ordinary run holds no description text to re-derive from. The
+# overlay itself still needs no separate "was this field already correct" guard the way
+# experience/salary's `_rederive_without_text` does — it is one-directional (`False`/`None` ->
+# `True` only, see `remote`'s module docstring), so recomputing it fresh each sweep can only
+# confirm or improve on the stored value, never downgrade it.
 # v2: Tier 2 answers with the smallest stated requirement rather than the first (ADR-0079).
 # v3: added the salary cascade (min_salary_annual/max_salary_annual/salary_currency/salary_source).
 # v4: covers 10 salary.py-changing commits since v3 that none bumped this despite each measurably
@@ -178,13 +184,17 @@ def build_doc(job: dict) -> str:
 # disagreements between old and new.
 #
 # v8: added `headstart.remote.extract` — the JD-supersedes-field overlay described above. Not a
-# fix to an existing derivation; a new fourth family sharing this counter for the first time.
-# Measured against the live served table (335,543 rows) joined to the full description store
-# (493,629 JDs, 98.1% coverage): 7,439 already-indexed rows have `remote` False or None today
-# while the JD confidently says remote (818 where the field was None -- 94% on Ashby, whose
-# `workplaceType` field goes unset even at companies, like ClickHouse and Redis, that describe
-# themselves as remote-first in the JD text; 6,621 where the field says False outright,
-# concentrated on greenhouse and zoho) -- this bump is what lets the sweep reach all of them.
+# fix to an existing derivation; a new fourth family sharing this counter for the first time
+# (ADR-0118). Measured against the live served table (335,543 rows) joined to the full
+# description store (493,629 JDs, 98.1% coverage): AT LEAST 7,439 already-indexed rows have
+# `remote` False or None today while the JD confidently says remote (818 where the field was
+# None -- 94% on Ashby, whose `workplaceType` field goes unset even at companies, like ClickHouse
+# and Redis, that describe themselves as remote-first in the JD text; 6,621 where the field says
+# False outright, concentrated on greenhouse and zoho) -- a lower bound, taken against an earlier
+# version of `remote._REMOTE_EXPLICIT` that missed the "this is a remote position" word order
+# (fixed after measuring, pinned by `test_this_is_a_remote_position`); a sweep on real data would
+# find at least this many. A sweep is required to reach any of them, since a fix landing here
+# reaches new Jobs for free but not rows already stored before it shipped.
 DERIVATIONS_VERSION = 8
 
 

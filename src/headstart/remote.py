@@ -9,9 +9,16 @@ confidently says the role is remote, that wins, regardless of what the field sai
 does the reverse — a JD that reads as onsite or hybrid never overrides an existing field value,
 even a wrong one, because that direction has no positive-only escape hatch (a bad onsite call
 would permanently suppress a job with nothing to recover it) and was scoped out of this pass.
-This makes the cascade idempotent and safe to re-run every time the field itself refreshes: it
-can only ever move ``False``/``None`` -> ``True``, never take a ``True`` away, so applying it
-twice or applying it to an already-derived value is a no-op rather than compounding drift.
+Idempotent, since it can only ever move ``False``/``None`` -> ``True``, never take a ``True``
+away — re-calling it on its own prior output is always a no-op, never compounding drift.
+
+That one-directional guarantee is also *why* the served ``remote`` column can safely be a
+derivation living in a fact's column, with no separate raw-field column of its own (ADR-0061 v8
+/ ADR-0118): re-deriving from an already-superseded value can only confirm it, never undo it.
+It is NOT, however, safe to call this on every pipeline run the way the scraper's own raw field
+is refreshed — see ``update_meta._FACT_WITH_OVERLAY`` and its neighbouring comment for why
+``remote`` is deliberately excluded from the ordinary per-run fact resync and only re-derived on
+a version sweep or an explicit re-derive queue entry.
 
 **Built by reading ~115 real job descriptions sampled across all 19 ATSes in the description
 store**, not by guessing patterns from memory — a naive ``"remote" in text.lower()`` check is
@@ -41,12 +48,19 @@ lowest hit rate of any ATS before it existed.
 
 Measured 2026-09-07 against the live served table (335,543 rows) joined to the full ADR-0050
 description store (493,629 JDs, 98.1% coverage of served rows): of jobs where the field is
-``False`` or ``None``, the JD confidently says remote for 7,439 of them — 818 where the field
-had nothing at all (94% on Ashby, where recruiters routinely leave ``workplaceType`` unset even
-on companies, like ClickHouse and Redis, that describe themselves as remote-first in the JD
+``False`` or ``None``, the JD confidently said remote for at least 7,439 of them — 818 where the
+field had nothing at all (94% on Ashby, where recruiters routinely leave ``workplaceType`` unset
+even on companies, like ClickHouse and Redis, that describe themselves as remote-first in the JD
 text), and 6,621 where the field says ``False`` outright (concentrated on greenhouse and zoho).
+A lower bound, not a live count: taken against an earlier version of ``_REMOTE_EXPLICIT`` that
+missed the "this **is a** remote position" word order (fixed after, and pinned by
+:func:`test_this_is_a_remote_position`) — a version sweep on real data would find at least this
+many, almost certainly more.
+
 Full methodology, the reading notes behind every pattern, and known remaining false-positive
-modes: ``experiment/jd-remote-detection/LOG.md``.
+modes: ``experiment/jd-remote-detection/LOG.md`` — local and untracked, like ``docs/LLM_API.md``
+(``experiment/`` is gitignored repo-wide), so it exists only in a working tree that ran this
+investigation, not in a fresh clone or CI.
 """
 
 from __future__ import annotations
