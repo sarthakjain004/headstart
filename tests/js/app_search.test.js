@@ -334,3 +334,13 @@ test('the handles cannot cross, and an end stop means unbounded rather than zero
   assert.strictEqual(nodes.salmin.value, '');
   assert.strictEqual(nodes.salmax.value, '');
 });
+
+test('the hide control is drawn on the Search list only', async () => {
+  // `rows.map(jobCard)` would pass the array itself as the third argument and put a × on every
+  // list — including Saved, where the gesture is unstarring and a second control for the same
+  // intent would disagree with it about which list the row is in.
+  const { t, nodes } = loadApp(() => [job('a')]);
+  await t.go();
+  assert.ok(nodes.results.innerHTML.includes('data-dismiss='));
+  assert.ok(!t.jobCard(job('a'), 0, false).includes('data-dismiss='));
+});

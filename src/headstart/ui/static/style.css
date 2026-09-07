@@ -325,7 +325,10 @@ textarea:focus{ border-color:var(--violet); }
    page ground, and .45 took the `.org` line to 2.58:1 dark / 2.37 light — a revealed row is
    still text somebody is reading. Measured, .75 is the floor that clears 4.5 in both themes
    (4.81 / 4.82 on that same weakest line). */
-.card.dismissed{ opacity:.75; }
+/* `animation:none` is load-bearing: `.card`'s entry animation is `both`-filled, so its final
+   keyframe keeps `opacity:1` applied for the life of the row and the declaration below never
+   showed. Measured 1, not .75, before this line. */
+.card.dismissed{ opacity:.75; animation:none; }
 .card.dismissed .dismiss{ opacity:1; color:var(--accent); }
 
 /* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
@@ -500,7 +503,9 @@ textarea:focus{ border-color:var(--violet); }
    swap — a skeleton that reserves the wrong space is its own layout shift. */
 .trends-skel[hidden]{ display:none !important; }
 .trends-skel .shim{ height:auto; aspect-ratio:720/260; border-radius:var(--r-md); }
-.trends-skel .shim:last-child{ aspect-ratio:auto; height:260px; }
+/* The legend column has no aspect of its own — it stretches to the chart's row, so the two
+   halves of the skeleton are exactly as tall as the two halves they stand in for. */
+.trends-skel .shim:last-child{ aspect-ratio:auto; align-self:stretch; }
 #trends-hitrect{ cursor:crosshair; }
 .crosshair-line{ stroke:var(--rule-2); stroke-width:1; }
 .ch-dot{ pointer-events:none; }
@@ -629,6 +634,12 @@ textarea:focus{ border-color:var(--violet); }
    Widths are overridden per part rather than by unsetting the rule, so a new control added to
    the rail still inherits the shared shape. */
 .slider{ position:relative; height:28px; margin-top:12px; }
+/* --rule, checked rather than assumed: what has to clear 3:1 on a slider is the part that
+   identifies the control and its state — the thumb (6.76 dark / 7.38 light against the panel)
+   and the filled span against the track behind it (4.68 / 4.96). The track against the panel
+   is 1.45 / 1.49, which is the same decorative separation every 1px --rule border on this page
+   already is, not a state anyone reads. Moving it to --rule-2 or --ink-3 buys that boundary at
+   the cost of the fill, which drops to 3.35 and 1.46 respectively — a worse trade. */
 .slider-track{ position:absolute; left:9px; right:9px; top:12px; height:4px;
   border-radius:var(--r-pill); background:var(--rule); }
 .slider-fill{ position:absolute; top:0; height:100%; border-radius:var(--r-pill);

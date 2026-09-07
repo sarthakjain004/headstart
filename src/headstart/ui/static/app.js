@@ -126,10 +126,10 @@ function toggleRail(){
   const open = rail.classList.toggle('open');
   const btn = el('filtersbtn');
   if (btn) btn.setAttribute('aria-expanded', String(open));
-  // The panel now opens directly BELOW its button, so nothing moves under the cursor. This
-  // only brings its far end into view when the button was already near the bottom of the
-  // screen — on a phone the panel is uncapped and taller than the viewport.
-  if (open) rail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // Deliberately no scrollIntoView. It was here because the panel used to open ABOVE its own
+  // button and take it off screen; now the panel opens directly below and its top is already
+  // in view, and `block:'nearest'` on a 761px panel scrolls the page 179px on every click —
+  // moving the page under the cursor, which is the thing this whole change was about.
 }
 
 const age = d => {
@@ -607,9 +607,12 @@ function drawPager(rowCount, facets){
    record is mapped onto this row shape in renderSaved rather than this function growing a
    second branch — the card knows about rows, not about where they came from.
 
-   `extra` carries the two facts only a Saved row has: whether the posting has closed, and
-   when it was starred. ---- */
-function jobCard(r, i){
+   A Saved row carries the two facts only it has — whether the posting has closed, and when it
+   was starred — and `canHide` is the one thing about the row that is about WHERE it is being
+   drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
+   "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
+   one intent would disagree about which list the row is in. ---- */
+function jobCard(r, i, canHide){
   // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
   // match ring would otherwise show a misleading "0%" rather than "not applicable".
   const ranked = r.score != null;
@@ -648,7 +651,7 @@ function jobCard(r, i){
       // they cannot align across two different grids.
       : '<div class="match" aria-hidden="true"></div>'}
       ${starBtn(r.id, r.starred_at ? true : undefined)}
-      ${r.starred_at ? '' : dismissBtn(r.id)}
+      ${canHide ? dismissBtn(r.id) : ''}
     </div>`;
 }
 
@@ -657,7 +660,9 @@ function draw(rows, target){
   // which reads as "sort my results" and is not: the server now orders the whole result set
   // (issue #275), so by the time rows arrive they are already in the asked-for order.
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
-  el(target || 'results').innerHTML = rows.map(jobCard).join('');
+  // `(r, i) => …`, never a bare `rows.map(jobCard)`: map passes the array as a third argument,
+  // which would land on `canHide` and quietly put a × on every list.
+  el(target || 'results').innerHTML = rows.map((r, i) => jobCard(r, i, !target)).join('');
   if (!target) drawHidden(rows);
 }
 
@@ -914,7 +919,7 @@ function renderSaved(){
   }
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
   el('saved-msg').textContent = jobs.length + ' saved job' + (jobs.length===1?'':'s');
-  box.innerHTML = jobs.map(savedRow).map(jobCard).join('');
+  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
 }
 
 // A stored star, in the shape jobCard reads. The record is a display copy taken at star time
