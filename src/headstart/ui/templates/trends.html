@@ -57,8 +57,8 @@
       </span>
       {# "New this week" used to grey this group out and explain itself only in a `title`. A
          control that can never be used here is replaced by the answer and its one-line why. #}
-      <span class="ctl-static" id="trends-unit-static" hidden>Counts — a share of “new”
-        openings over all live ones has no reading.</span>
+      <span class="ctl-static" id="trends-unit-static" hidden>Share is off here — a share of
+        “new” openings over all live ones has no reading.</span>
     </span>
     <span class="ctl" id="trends-split-ctl" hidden>
       <span class="ctl-label" id="trends-lbl-split">Break down by</span>
@@ -130,7 +130,11 @@
        chart depends on and shortening it would cost meaning. -->
   <div class="chart-note" id="trends-chart-note">
   <div class="note" id="trends-foot"></div>
-  <details class="note-more">
+  {# Open by default. ADR-0118's own Consequences say this caveat "gets more load-bearing, not
+     less" under an indexed chart — folding it shut was the one change that contradicted the
+     ADR it shipped with. On a wide panel it sits beside the caption rather than under it, so
+     being open costs no height at all. #}
+  <details class="note-more" open>
     <summary>How to read this</summary>
     <p class="kind">A family's line moving is not the same as jobs opening or closing. Each job's
     family is worked out from the meaning of its text, and that text can be filled in later — so

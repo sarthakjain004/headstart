@@ -610,6 +610,14 @@ textarea:focus{ border-color:var(--accent); }
 .chart-note .note-more > summary::before{ content:"▸ "; }
 .chart-note .note-more[open] > summary::before{ content:"▾ "; }
 .chart-note .kind{ margin:8px 0 0; max-width:74ch; }
+/* Two columns where there is room. The caption block used 640px of a 1940px panel, so the
+   ADR-0057 caveat can be visible for free rather than folded to save height — which is what
+   ADR-0118 asks for when it says that caveat gets more load-bearing under an indexed chart. */
+@media (min-width:1100px){
+  .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start; }
+  .chart-note #trends-foot, .chart-note .note-more{ margin:0; max-width:none; }
+  .chart-note .kind{ margin:6px 0 0; max-width:none; }
+}
 /* An empty state, not a strip: a failed fetch used to collapse the panel from 808px to 500px,
    so the page jumped under the reader at the moment it had least to say for itself. The
    message keeps a reading measure of its own. */
@@ -788,20 +796,27 @@ textarea:focus{ border-color:var(--accent); }
 }
 
 @media (max-width:760px){
-  .trends-grid{ grid-template-columns:1fr; }
-  /* The plot goes above the controls. A phone showed four rows of toggles, a two-line date
-     window and a caveat block before the chart it was all about; the thing being filtered
-     should not be the last thing on the screen. */
+  /* `display:contents` so the chart and the legend become orderable siblings of everything
+     else. As one grid block they moved together, which forced the filter row below BOTH — on
+     an 844px phone the Unit toggle sat at y=937, under a nine-row legend and off the screen.
+     The controls belong between the plot and the legend: still above the thing they filter's
+     detail, still reachable without scrolling past it. */
+  .trends-grid{ display:contents; }
   .trends{ display:flex; flex-direction:column; }
   .trends-head{ order:0; }
   .trends-note, .trends-error{ order:1; }
   .trends-kpi{ order:2; }
-  .trends-skel, .trends-grid{ order:3; }
-  #trends-readout, .trends-table-wrap{ order:4; }
-  .trends-controls{ order:5; margin:16px 0 0; }
-  .trends-custom{ order:6; }
-  .chart-note{ order:7; }
+  .trends-skel, .trends-chart-wrap{ order:3; }
+  .trends-controls{ order:4; margin:14px 0 0; }
+  .trends-custom{ order:5; }
+  .trends-legend{ order:6; margin-top:14px; }
+  #trends-readout, .trends-table-wrap{ order:7; }
+  .chart-note{ order:8; }
   .text-toggle{ margin-left:0; }
+  /* `display:contents` drops the grid box that used to carry these, so they move to the
+     children the reader actually sees. */
+  .trends-grid.loading > *{ opacity:.55; }
+  .trends-grid[hidden] > *{ display:none !important; }
 }
 
 /* running text, so it gets a measure — 1180px of prose is unreadable */

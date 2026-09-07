@@ -2240,19 +2240,28 @@ function trendSeg(id, attr, apply){
 // cannot use, and is given no visible reason for. The group is replaced by the answer and its
 // one-line why instead. `disabled` stays on the buttons underneath: `hidden` keeps them off
 // the screen, and `disabled` keeps them off the tab order in every browser.
-function setUnit(value, locked){
+function setUnit(value, shareLocked){
   trendUnit = value;
   const seg = el('trends-unit'); if (!seg) return;
-  seg.hidden = locked;
-  if (el('trends-unit-static')) el('trends-unit-static').hidden = !locked;
+  // Only SHARE is withdrawn under "New this week" — a share of "new" openings over all live
+  // ones has no reading. Count and Change both do: "312 fresh AI/ML roles" is a number, and
+  // indexing those counts is the only way to compare eight families running from 8.4k down to
+  // 961. Hiding the whole group took Change away in the view that needs it most, and since
+  // Change is now the default (ADR-0118) it also meant the metric toggle silently changed the
+  // unit under the reader.
+  if (el('trends-unit-static')) el('trends-unit-static').hidden = !shareLocked;
   seg.querySelectorAll('button').forEach(b => {
-    b.disabled = locked;
+    const off = shareLocked && b.dataset.unit === 'share';
+    b.disabled = off;
+    b.hidden = off;
     setRadioChecked(b, b.dataset.unit === value);
   });
 }
 trendSeg('trends-metric', 'metric', v => {
   trendMetric = v;
-  setUnit(v === 'new' ? 'count' : 'share', v === 'new');
+  // Keep the reader's unit across the metric switch; only move them off Share, which is the
+  // one unit "new" cannot express.
+  setUnit(v === 'new' && trendUnit === 'share' ? 'index' : trendUnit, v === 'new');
   loadTrends(trendDrill);
 });
 trendSeg('trends-unit', 'unit', v => { setUnit(v, false); drawTrends(); });
