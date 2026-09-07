@@ -71,6 +71,10 @@ from headstart import (  # needs src on sys.path first
 from headstart.models import (  # one host rule, shared with the scrapers
     host_of,
 )
+from headstart.scrapers.jobvite import (  # board url + counter parse, single source
+    JobviteScraper,
+    total_of,
+)
 from headstart.scrapers.registry import SCRAPERS  # slug_from, per ATS
 from headstart.scrapers.workday import (  # the DC list, single source of truth
     INSTANCES as _WD_INSTANCES,
@@ -918,6 +922,10 @@ def _drop_alias_duplicates(ats: str, rows: list[dict], ledger_dir: Path) -> list
 _ZOHO_JOBS = re.compile(r'value="([^"]*)"\s+id="jobs"')
 _TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _WD_URL = re.compile(r"^https://([^.]+)\.(wd\d+)\.myworkdayjobs\.com/([^/?#]+)")
+#: Any posting link on a jobvite board page. Deliberately not slug-anchored: the probe only
+#: needs to know whether the page lists anything, and five row templates put the link in
+#: different elements (JobviteScraper's module docstring).
+_JOBVITE_JOB = re.compile(r"/job/[A-Za-z0-9]+")
 
 
 def _is_dns(exc):
@@ -1567,6 +1575,55 @@ def p_join(t, u):
     )
 
 
+def p_jobvite(t, u):
+    """One GET of the board, deliberately NOT following redirects.
+
+    Jobvite answers a departed tenant with ``302 Location: http://search.jobvite.com?invalid=1``,
+    and that chain ends on a 174 KB marketing page with a **200** — so a redirect-following probe
+    records a dead tenant as LIVE with zero jobs, which is the shape that keeps a gone Board in
+    the scrape list forever. Measured across the whole 517-tenant pool 2026-09-07: 83 tenants
+    redirect (78 ``invalid=1``, one to an ``app.jobvite.com`` login wall, four to the customer's
+    own domain) and **not one of the 434 live boards does**, so on this ATS any 3xx is definitive.
+
+    The count is the board's own pagination counter (``1-50 of 2,831``), which page 0 already
+    carries — so a full board costs exactly one request. A live board with no counter at all is
+    the empty board: 33 of the 434 serve that, a 200 with no postings and no counter, so it is
+    LIVE with 0 rather than unparseable. The URL and the counter parse are imported from
+    ``JobviteScraper`` so the probe and the scrape cannot drift.
+    """
+    try:
+        r = _fetch(
+            "GET",
+            JobviteScraper(t).url(),
+            headers={"Accept": "text/html"},
+            allow_redirects=False,
+        )
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code in (301, 302, 303, 307, 308):
+        # The tenant is gone, login-walled, or has moved its career site off the Jobvite-hosted
+        # surface. All three mean there is no public board here to read.
+        return DEAD, None
+    if r.status_code in (404, 410):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    page = r.content.decode("utf-8", "replace")
+    if _JOBVITE_JOB.search(page):
+        return LIVE, total_of(page) or len(set(_JOBVITE_JOB.findall(page)))
+    # No posting links: an empty board, which is live and hiring nobody. Guarded on the job-link
+    # regex rather than on the counter alone so a template that ever drops the counter still
+    # reports its postings.
+    return LIVE, 0
+
+
 def p_zwayam(t, u):
     """One POST to the shared API, which selects the Board by hostname (`t`).
 
@@ -1614,6 +1671,43 @@ def p_zwayam(t, u):
     return LIVE, data.get("totalCount", 0)
 
 
+_JAZZHR_ROW = re.compile(rb'id="row_job_(\w+)"')
+
+
+def p_jazzhr(t, u):
+    """The embed listing, the same surface `JazzHRScraper.url()` reads.
+
+    Read the SHAPE, never the status: a departed tenant answers **200**, not 404. Measured over
+    a 1,000-tenant random sample of the pool, 2026-09-07 — every one of the 1,000 answered 200
+    at the transport layer, and the 75 dead ones split into the vendor's own
+    "JazzHR - Inactive Career Page" on the wildcard host (66) and a 302 to its job-seeker
+    marketing page (9, followed by `_get` into another 200). Neither renders the `jobs_table`
+    shell, and a slug that was never a tenant behaves identically (wildcard DNS resolves, then
+    302s), so a 200 without the shell is the only definitive DEAD signal here — the freshteam
+    and zoho soft-404 precedent.
+
+    The count is the number of DISTINCT `row_job` ids, not the raw match count: the same page
+    renders every posting twice, once in a desktop `<tr>` table and once in a mobile `<div>`
+    list (60 elements for 30 postings on `10pearls`).
+
+    Cross-checked against an independent career-page (`/apply/`) harvest of the same 1,000
+    tenants: 923 live/live, 75 dead/dead, zero contradictions. The two rows that differed were
+    one transport timeout (correctly UNKNOWN here) and one empty board the career-page harvest
+    miscounted.
+    """
+    status, body = _get(f"https://{t}.applytojob.com/apply/jobs")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    if b'id="jobs_table"' not in body:
+        return (
+            DEAD,
+            None,
+        )  # a 200 that is not a board: inactive tenant, or the vendor's page
+    return LIVE, len(set(_JAZZHR_ROW.findall(body)))
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -1635,6 +1729,8 @@ PROBES = {
     "eightfold": p_eightfold,
     "successfactors": p_successfactors,
     "zwayam": p_zwayam,
+    "jazzhr": p_jazzhr,
+    "jobvite": p_jobvite,
 }
 
 

@@ -10,6 +10,8 @@ from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
+from headstart.scrapers.jazzhr import JazzHRScraper
+from headstart.scrapers.jobvite import JobviteScraper
 from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
 from headstart.scrapers.lever import LeverScraper
@@ -53,6 +55,8 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         EightfoldScraper,
         SuccessFactorsScraper,
         ZwayamScraper,
+        JazzHRScraper,
+        JobviteScraper,
     )
 }
 
@@ -61,7 +65,15 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 # (German-SMB boards; ~1 tech job in ~10k), so scraping it is pure noise for a tech-only index —
 # disabled 2026-07-07 pending non-English/non-tech expansion. The scraper class and its tests stay
 # intact (get_scraper("join", ...) still works); re-enable by removing it from this set.
-DISABLED_ATS: frozenset[str] = frozenset({"join"})
+#
+# jazzhr and jobvite are disabled on arrival (2026-09-07), on cost rather than correctness. Both
+# are complete, tested, and ship a liveness ledger, so removing them here really is all it takes:
+# 3,684 jazzhr and 401 jobvite Hiring Boards are waiting. They stay off on storage, this
+# pipeline's binding constraint: jazzhr is 3,684 Boards x 27.5 jobs = ~100k detail fetches at a
+# measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,100 tech Jobs; jobvite is 23,461 postings
+# = ~1.5-2 GB for 7.0% = ~1,640. Neither showed a measurable India presence. The inputs to both
+# sums (jobs/board, tech share, page size) are in docs/jazzhr/ and docs/jobvite/.
+DISABLED_ATS: frozenset[str] = frozenset({"join", "jazzhr", "jobvite"})
 
 
 def detail_pass_atses() -> frozenset[str]:
