@@ -117,3 +117,4 @@ supersedes it and note the supersession in both.
 | [0111](0111-duplicate-boards-resolve-the-board-surface.md) | A duplicate Board is found by resolving its Board surface, not by comparing its key | 2026-09-07 |
 | [0112](0112-the-door-earns-the-sign-in-before-it-asks.md) | The door earns the sign-in before it asks for it | 2026-09-07 |
 | [0113](0113-publish-the-indexs-own-limits-in-the-product.md) | Publish the index's own limits in the product, measured live | 2026-09-07 |
+| [0114](0114-a-board-states-its-company-name-in-its-page-title.md) | A Board states its company name in its page title — read it, don't infer it | 2026-09-07 |
