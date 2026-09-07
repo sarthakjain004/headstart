@@ -1,0 +1,95 @@
+# Settle, from the vantage production actually uses, whether the new User-Agent clears the
+# SuccessFactors edge policy.
+#
+# `docs/successfactors/2026-09-07_user-agent-denylist.md` bisected the 403 to one exact literal —
+# `headstart/0.1 (job-board reader)` refused, while `(job-board)`, `(reader)`, `curl/8.7.1` and
+# `python-requests/2.32.3` are all served. That diagnosis needed no runner. What it cannot answer is
+# whether the policy is **also** keyed on the source address, because every sample behind it came
+# from one laptop IP.
+#
+# That gap matters more than it usually would. The FIRST theory of this bug was an egress wall, and
+# it was discarded on laptop evidence alone. If the policy scores address and User-Agent together,
+# the new string clears a laptop and is still refused on a runner — and the symptom is what it was
+# before: 102 Boards at 0 jobs, silently, with a green run. This is the check that would catch that
+# before another five runs of it.
+#
+# Manual only. It fetches a few dozen job pages from three tenants — a rounding error against one
+# production pass over the same Boards — but it is a diagnostic, not a guard, and does not belong
+# on a schedule.
+#
+# Two replicas, because one runner is one egress address and the whole residual question is whether
+# the verdict is a property of that address. A single sample cannot tell "runners are served" from
+# "this runner was served".
+#
+# DIRECT ONLY, deliberately. An earlier draft carried the ~60-line Cloudflare WARP install from
+# `probe-workday-400.yml` so it could also probe through the spare egress (ADR-0063). That was
+# cut: `successfactors` sets no `egress_fallback_on`, so production has no spare-egress route for
+# this ATS anyway, and a positive WARP result would need its own change to act on. `direct` is the
+# route production really takes and therefore the only arm that answers the question asked. If the
+# answer turns out to be "refused from Actions", adding the WARP arm back is the obvious next step
+# and can carry its own justification then.
+name: probe-successfactors-ua
+
+on:
+  workflow_dispatch:
+    inputs:
+      n:
+        description: job pages fetched per board
+        default: "12"
+      suspects:
+        description: Boards the old literal was refused on (comma-separated hosts)
+        default: careers.te.com,jobs.l3harris.com
+      controls:
+        description: A Board that served fine throughout — without it a failure proves nothing
+        default: careers.bureauveritas.com
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # hang detector; the fetches themselves are seconds
+    strategy:
+      fail-fast: false # one replica's bad luck must not cancel the other sample
+      matrix:
+        replica: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      # Base deps only. `curl_cffi` — the whole request path this probes — is a top-level
+      # dependency; the `[scrape]` extra is pydoll for darwinbox's browser escalation (ADR-0056),
+      # which nothing here touches. Copying it from probe-workday-400.yml, which has a browser
+      # arm, would install a browser stack to fetch HTML.
+      - run: pip install -e .
+      - name: Probe
+        # Inputs arrive through `env:` rather than being interpolated into the script. `${{ }}` is
+        # substituted into the shell source before bash sees it, so a value carrying shell
+        # metacharacters would run as code; an env var is only ever data. Dispatch inputs come from
+        # someone with write access, so this is hygiene rather than a live hole — but it costs one
+        # line, and the alternative reads as though the question was never asked.
+        env:
+          N: ${{ github.event.inputs.n }}
+          SUSPECTS: ${{ github.event.inputs.suspects }}
+          CONTROLS: ${{ github.event.inputs.controls }}
+        run: |
+          # OUT first, before anything that can fail: the upload step globs `$OUT.*`, and an unset
+          # OUT would make that `.*` — every dotfile in the workspace, uploaded in place of the
+          # result nobody would notice was missing.
+          out="probe-successfactors-ua_${{ github.run_id }}_replica-${{ matrix.replica }}"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+          python -u scripts/bench/probe_successfactors_detail.py \
+            --n "$N" \
+            --arms direct \
+            --suspects "$SUSPECTS" \
+            --controls "$CONTROLS" \
+            --out "$out.json" 2>&1 | tee "$out.log"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: probe-successfactors-ua-replica-${{ matrix.replica }}
+          path: ${{ env.OUT }}.*
+          retention-days: 30

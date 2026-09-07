@@ -36,8 +36,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http  # needs src on sys.path first
+from headstart.scrapers.base import USER_AGENT as UA
 
-UA = "headstart/0.1 (job-board reader)"
 PORTALS = ["app.eightfold.ai", "app-eu.eightfold.ai", "app-wu.eightfold.ai"]
 _OWN_GROUP = "volkscience.com"  # portal default -> a hit here is Eightfold's own board
 _LOCK = threading.Lock()

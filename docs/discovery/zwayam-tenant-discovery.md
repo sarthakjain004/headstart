@@ -85,8 +85,15 @@ a daemon restart moves the address).
 
 **What actually breaks the request is the User-Agent.** `curl/8.7.1` and `python-requests`'s own
 default both **hang** rather than answering — no status, just a read timeout — so a caller that
-reads a timeout as a transient fault retries forever. Any non-stock agent works, including this
-repo's own `headstart/0.1 (job-board reader)`.
+reads a timeout as a transient fault retries forever. This repo's own `headstart/0.1` works.
+
+"Any non-stock agent works" was too strong, and re-measuring on 2026-09-07 found the second half
+of the rule: this host also **rejects any User-Agent carrying a domain or an email**, with
+`curl (92) HTTP/2 stream error` — 2 of 2 attempts on each of `(+https://github.com/…)`,
+`(+github.com/…)`, `(github.com/…)` and an `@`-address, while `(a/b)`, `(contact: maintainer)` and a
+long domainless phrase were all served. That is half of why the shared agent is bare rather than
+carrying a contact URL; the other half is a SuccessFactors denylist on the string it used to be
+(`docs/successfactors/2026-09-07_user-agent-denylist.md`).
 
 **`Origin`/`Referer` are ignored.** Omitting them returns the right Board, and sending another
 tenant's Origin still returns the one named in `domain`. Earlier notes here called them part of the

@@ -39,8 +39,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from headstart import http  # needs src on sys.path first
+from headstart.scrapers.base import USER_AGENT as UA
 
-UA = "headstart/0.1 (job-board reader)"
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
 _CHILD_SITEMAP = re.compile(
     r"<loc>\s*([^<\s]*sitemap[^<\s]*\.xml[^<\s]*)\s*</loc>", re.IGNORECASE
