@@ -91,6 +91,22 @@ def test_slug_from_prefers_the_url_host_over_a_non_host_tenant():
     assert OracleScraper.slug_from(HOST, "") == HOST
 
 
+def test_slug_from_strips_a_query_string_off_the_url():
+    """Goes through `models.host_of` rather than a local split. That shared definition exists
+    because the scraper, the liveness prober and the ledger repair must agree, and the one time
+    they did not, a query string surviving into the slug recorded 312 Personio boards live with
+    zero jobs.
+
+    The query must follow the **host directly** to test anything: with a path in between, a
+    naive `split("/")` already drops it, which is why every oracle ledger row survives a local
+    split today and why this looked untestable at first. No row has this shape yet — the point
+    is to pin it before one does."""
+    assert (
+        OracleScraper.slug_from("x", "https://eeih.fa.us2.oraclecloud.com?utm_source=a")
+        == "eeih.fa.us2.oraclecloud.com"
+    )
+
+
 def test_the_detail_url_quotes_the_id_and_omits_the_site():
     """`ById` with a quoted id is what the careers UI itself calls; the plausible-looking
     `findReqDetailById` returns HTTP 400. `siteNumber` is ignored on this endpoint — 454

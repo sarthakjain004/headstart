@@ -42,7 +42,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart.models import Job, html_to_text, is_remote
+from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 #: The API's own maximum `limit`. Requesting more is silently clamped to it — 300, 500 and 1000
@@ -105,13 +105,18 @@ class OracleScraper(BaseScraper):
         tenant, which for the second shape is not a host and cannot be fetched — so prefer the
         URL's host and fall back to the tenant.
         """
-        host = url.split("://", 1)[-1].split("/", 1)[0].strip()
+        # `models.host_of`, not a local split: that function exists because this rule has to
+        # hold in the scraper, the liveness prober and the ledger repair at once, and the one
+        # time they disagreed it cost 312 boards recorded live with zero jobs. A hand-rolled
+        # version here dropped its `?query` split and the lowercasing the casing-duplicate rule
+        # depends on. Same shape icims and zwayam use.
+        #
         # A pool row that is a bare label with no URL either (23 of them: `akamai`, `chubb`,
         # `cummins`) has no host to recover, and falls through to the tenant — which will not
         # resolve. That is deliberate and currently unreachable: those rows are unprobeable, so
         # the ledger has no such entry and `load_active_companies` can never build one. Guarding
         # it here would be error handling for a case that cannot arrive.
-        return host or tenant
+        return host_of(url) or tenant.strip().lower()
 
     def url(self) -> str:
         # No `siteNumber`: it filters the Board down to one site, and omitting it returns the
@@ -227,9 +232,11 @@ class OracleScraper(BaseScraper):
         # straight from the endpoint looks like, and `tests/fixtures/oracle_fa-etqo_cx2.json`
         # is exactly that. `fetch_raw` never returns it, so this branch is unreachable in
         # production; it exists so a captured fixture can stay as captured rather than being
-        # doctored into the internal shape. jazzhr and zoho keep the same fork for the same
-        # reason. A reviewer reasonably read it as dead code — it is not free, and if the
-        # fixture ever goes, this should go with it.
+        # doctored into the internal shape. jazzhr and zoho carry a similar fork but a *weaker*
+        # precedent than that sounds: theirs keys on the base class's own `str` raw, a shape
+        # generic callers really do produce. This one keys on a shape nothing now produces, so
+        # a reviewer reading it as dead code is right on the mechanics — it is kept for the
+        # fixture alone, and should go when the fixture does.
         if "requisitionList" in raw:
             reqs, details = raw["requisitionList"], raw.get("details") or {}
         else:
