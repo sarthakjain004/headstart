@@ -215,8 +215,16 @@ textarea:focus{ border-color:var(--violet); }
    groups flow into as many columns as the width allows rather than one tall column. */
 .rail{ display:none; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
-.rail.open{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-  gap:4px 24px; align-items:start; }
+/* Balanced columns, not grid tracks. The five groups are wildly different heights (214 to
+   403px measured), and a grid gives every column the height of the tallest thing in its row:
+   four tracks left the panel 824px tall and half empty, and splitting Pay out of Role made it
+   858 by starting a second row for one group. Multi-column fills in order to whatever height
+   makes all five fit, so a short group and a tall one share a column instead of one padding
+   out the other. */
+.rail.open{ display:block; columns:4 190px; column-gap:24px; }
+/* A group is one block or it is nothing — a filter split down the middle of a column is worse
+   than an uneven column. */
+.rail.open .set{ break-inside:avoid; margin-bottom:16px; }
 /* Uncapped, and that is the trade being made rather than an omission. The 46vh cap it had was
    written while the panel sat ABOVE its own button: it kept the results on screen, but measured
    at 1440x950 it put 761px of controls in a 338px box with no scrollbar to say so — 55% of the
@@ -231,7 +239,10 @@ textarea:focus{ border-color:var(--violet); }
    used to follow this one undid it — measured, three of the four heads sat at y=320 against
    Keywords' 285, under a stray rule. */
 .set + .set{ margin-top:0; padding-top:0; border-top:0; }
-.clear{ grid-column:1/-1; justify-self:start; }
+/* `display:block` is not cosmetic: a spanner has to be block-level, and a <button> is
+   inline-block by default, so without it the rule computes to `all` and is ignored — the
+   button lands inside whichever column it fell in, 192px wide. */
+.clear{ column-span:all; display:block; }
 .f{ display:flex; flex-direction:column; gap:5px; margin-bottom:11px; }
 .f:last-child{ margin-bottom:0; }
 .f label{ font-size:12px; color:var(--ink-2); font-weight:500; }

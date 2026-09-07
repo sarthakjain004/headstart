@@ -109,6 +109,13 @@
         <span class="tip">Some boards carry a real remote setting and we use it; the rest are read
           from how the employer worded the location. Either way a role described as remote only in
           the body text can be missed.</span>
+      </div>
+
+      {# Pay is its own group, not the tail of Role. It is by far the tallest thing in the
+         panel — a currency, two bounds, a slider, its scale and two caveats — and sitting
+         inside Role it made one column 729px tall next to a 214px one. #}
+      <div class="set">
+        <h2>Pay</h2>
         <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
         {% if currencies %}
         <div class="f"><label for="salcur">Salary bracket (annual)</label>
