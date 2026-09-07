@@ -81,7 +81,9 @@ what says no stray link is mistaken for a posting.
 ### The 6 "short" boards are not short
 
 Verified page by page: the counter is stable across every page and the last page is reached. The
-gap is Jobvite serving one posting in **two pagination slots** — `cascade` returns 71 slots and 70
+gap is Jobvite serving one posting in **two pagination slots** — re-measured on `fprs`,
+1,933 slots across 39 pages against 1,896 distinct ids (37 duplicated). `cascade` was the original
+example at 71 slots and 70
 distinct ids, `oPSIAfwJ` on both pages. So `distinct < total` must **not** drive
 `mark_truncated`; only stopping with a next link still on offer does.
 

@@ -84,6 +84,7 @@ import json
 import re
 from typing import Any
 
+from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
@@ -210,9 +211,9 @@ def _salary_field(base: Any) -> str | None:
 def _rows(listing: str) -> list[tuple[str, str, str | None, str | None]]:
     """``(key, title, location, department)`` per posting on the ``/apply/jobs`` table.
 
-    A page with the table shell but no rows is a live board with nothing open and returns ``[]``;
-    a page without the shell at all is a departed tenant and returns ``[]`` too — telling those
-    apart is ``check_liveness.p_jazzhr``'s job, not this function's, and neither is an error here.
+    A page with the table shell but no rows is a live board with nothing open and returns ``[]``.
+    A page *without* the shell is a departed tenant, and :meth:`JazzHRScraper._listing` raises on
+    it rather than letting it reach here — see the reasoning there.
     """
     rows: list[tuple[str, str, str | None, str | None]] = []
     for chunk in _ROW.findall(listing):
@@ -248,6 +249,29 @@ class JazzHRScraper(BaseScraper):
         ``scripts/eval/verify_filters.py`` asserts."""
         return f"https://{self.slug}.applytojob.com/apply/{key}"
 
+    def _listing(self) -> str:
+        """The board's ``/apply/jobs`` page, or a raise if this tenant has departed.
+
+        A departed JazzHR tenant does not 404 — it answers **200** with a parked or job-seeker
+        page carrying no ``jobs_table`` shell (75 of 1,000 tenants measured,
+        `docs/jazzhr/2026-09-07_liveness-probe-1000-tenants.txt`). Parsing that yields zero rows,
+        which is indistinguishable from a live board with nothing open, and a whole-and-empty
+        Board is the shape that deletes a company's postings: ADR-0083 withholds the eviction for
+        exactly one scrape, then ``sync`` evicts every row.
+
+        The liveness probe already tells the two apart on this same marker, but it runs on its own
+        TTL cadence — a tenant that departs between sweeps reaches the scrape with a stale `live`
+        verdict, which is precisely when this guard has to be the one that fires. Raising here
+        makes it a Board error, so ADR-0053 drops the Board out of the eviction scope instead.
+        `jobvite._page` takes the same position on its own 302-to-200 dead tenants.
+        """
+        listing = self._get()
+        if 'id="jobs_table"' not in listing:
+            raise http.RequestsError(
+                f"{self.url()} -> 200 without the jobs_table shell; tenant departed"
+            )
+        return listing
+
     def fetch_raw(self) -> Any:
         # Every listed posting gets its detail page, with no ADR-0048 `needs_detail` skip. That
         # optimisation is only safe where the detail fetch supplies the description and nothing
@@ -257,7 +281,7 @@ class JazzHRScraper(BaseScraper):
         # fields that had values. Zoho hit exactly this and made the same call for the same
         # reason (`zoho.py fetch_raw` — gating on description presence made Salary structurally
         # invisible on ~60% of its jobs).
-        listing = self._get()
+        listing = self._listing()
         keys = [key for key, *_ in _rows(listing)]
         details: dict[str, str] = {}
         if keys:

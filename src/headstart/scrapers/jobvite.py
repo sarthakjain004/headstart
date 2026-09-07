@@ -38,10 +38,23 @@ posting.
 
 **A short walk is not what ``distinct ids < counter total`` means.** All 6 short boards were
 verified page by page: the counter is stable across every page, the last page is reached, and the
-shortfall is Jobvite serving one posting in two slots (``cascade``: 71 slots, 70 distinct, id
-``oPSIAfwJ`` on both pages). So the count is *not* wired to :meth:`~BaseScraper.mark_truncated` —
+shortfall is Jobvite serving one posting in two slots. Re-measured 2026-09-07 on ``fprs``, which
+is large enough that the effect is unmistakable: the counter says 1,933, the walk visits 1,933
+slots across 39 pages, and **1,896 ids are distinct — 37 postings appear twice**. (These are
+point-in-time counts on a live board; an earlier note cited ``cascade`` at 71/70 and its own
+capture recorded 71/69, which is board churn, not disagreement about the mechanism.) So the count
+is *not* wired to :meth:`~BaseScraper.mark_truncated` —
 only actually stopping with a next link still on offer is (ADR-0053; its exclusion has no drain,
 so a wrong mark is permanent).
+
+**ADR-0111's alias dedupe does not apply here, and deliberately gets no override.** Every Board is
+a path on one host, so :meth:`BaseScraper.alias_key`'s default returns ``jobs.jobvite.com`` for all
+of them — which is the degenerate case its own docstring describes: the key is not itself a live
+slug, so ``board_aliases.resolve`` labels the whole ledger ``migrated`` and returns nothing. Inert,
+not wrong. Overriding it to return the slug would make every Board its own key and return nothing
+just the same, so it would be code that buys no behaviour. The duplication Jobvite *does* have —
+parent tenants that also serve their subsidiaries' postings, ~2.5% of rows — is not aliasing
+between hostnames and is left to ADR-0023's duplicate prune, which is the mechanism for it.
 
 **A dead tenant answers 302, and following it looks exactly like an empty board.** Jobvite sends
 ``Location: http://search.jobvite.com?invalid=1``, which lands on a 174 KB marketing page with a
@@ -56,7 +69,7 @@ Jobvite-hosted surface; the destination renders its listing client-side and serv
 
 **Fields come from a per-job detail pass** (ADR-0050), which is where every field except the id
 lives. Most pages carry a schema.org ``JobPosting`` JSON-LD block; some tenants' templates emit
-none at all (nutanix), so ``_posting`` falls back to the rendered ``jv-header`` /
+none at all (nutanix), so ``_fetch_posting`` falls back to the rendered ``jv-header`` /
 ``jv-job-detail-meta`` / ``jv-job-detail-description`` blocks — the same shape trakstar needed for
 the same reason (#179). ``hiringOrganization`` is polymorphic: a bare string on most tenants, an
 ``{"@type":"Organization","name":…}`` object on others, so both are read. ``baseSalary`` is a
@@ -80,7 +93,6 @@ ADR-0023's duplicate-prune case, so nothing is done about it here beyond saying 
 
 from __future__ import annotations
 
-import html as _html
 import json
 import re
 from typing import Any
@@ -122,13 +134,6 @@ _HTML_DESCRIPTION = re.compile(
 #: separator is an empty ``<span class="jv-inline-separator">``, so it survives tag-stripping only
 #: if the split happens first.
 _SEPARATOR = re.compile(r"<span class='jv-inline-separator'></span>")
-_TAGS = re.compile(r"<[^>]+>")
-_WS = re.compile(r"\s+")
-
-
-def _text(value: str | None) -> str:
-    """Tag-stripped, entity-decoded, single-spaced text."""
-    return _WS.sub(" ", _TAGS.sub(" ", _html.unescape(value or ""))).strip()
 
 
 def total_of(page: str) -> int | None:
@@ -140,7 +145,7 @@ def total_of(page: str) -> int | None:
     match = _PAGINATION.search(page)
     if not match:
         return None
-    numbers = _NUMBER.findall(_text(match.group(1)))
+    numbers = _NUMBER.findall(html_to_text(match.group(1)))
     return int(numbers[-1].replace(",", "")) if numbers else None
 
 
@@ -230,7 +235,7 @@ class JobviteScraper(BaseScraper):
         if self.async_fanout_enabled():
             fetched = self.fan_out_async(ids, self._posting_async)
         else:
-            fetched = self.fan_out(ids, self._posting, workers=_DETAIL_WORKERS)
+            fetched = self.fan_out(ids, self._fetch_posting, workers=_DETAIL_WORKERS)
         missing = self.report_detail_gaps(fetched, "detail pages")
         if missing:
             # Load-bearing detail pass: the listing carries no title, so `parse` cannot build a
@@ -330,7 +335,7 @@ class JobviteScraper(BaseScraper):
         if not title:
             return None
         heading = title.group(1)
-        text = _text(heading.split("<", 1)[0]) or _text(heading)
+        text = html_to_text(heading.split("<", 1)[0]) or html_to_text(heading)
         posting: dict[str, Any] = {"title": text}
         description = _HTML_DESCRIPTION.search(page)
         if description:
@@ -339,7 +344,7 @@ class JobviteScraper(BaseScraper):
         if meta:
             # "Category | City, Region | Req.Num.: N" — the department is the first segment and
             # the place the second; a trailing requisition number is not either of them.
-            segments = [_text(s) for s in _SEPARATOR.split(meta.group(1))]
+            segments = [html_to_text(s) for s in _SEPARATOR.split(meta.group(1))]
             segments = [s for s in segments if s and not s.startswith("Req.Num.")]
             if segments:
                 posting["industry"] = segments[0]
@@ -347,7 +352,7 @@ class JobviteScraper(BaseScraper):
                 posting["_location"] = segments[1]
         return posting
 
-    def _posting(self, job_id: str) -> dict | None:
+    def _fetch_posting(self, job_id: str) -> dict | None:
         """GET one detail page and return its posting (None on failure). Sync path."""
         try:
             response = http.fetch(
@@ -362,7 +367,7 @@ class JobviteScraper(BaseScraper):
         return self._posting_of(response.text) if response.status_code == 200 else None
 
     async def _posting_async(self, session: Any, job_id: str) -> dict | None:
-        """Same as :meth:`_posting` over the shared multiplexed ``AsyncSession``."""
+        """Same as :meth:`_fetch_posting` over the shared multiplexed ``AsyncSession``."""
         try:
             response = await http.fetch_async(
                 session,
@@ -392,7 +397,7 @@ class JobviteScraper(BaseScraper):
                     ats=self.ats,
                     company=_organization(posting.get("hiringOrganization"))
                     or self.company,
-                    title=_text(posting.get("title")),
+                    title=html_to_text(posting.get("title")),
                     location=location,
                     remote=is_remote(location),
                     department=(posting.get("industry") or "").strip() or None,

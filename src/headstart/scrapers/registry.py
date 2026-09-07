@@ -66,21 +66,12 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 # disabled 2026-07-07 pending non-English/non-tech expansion. The scraper class and its tests stay
 # intact (get_scraper("join", ...) still works); re-enable by removing it from this set.
 #
-# jazzhr and jobvite are disabled on arrival (2026-09-07), on cost rather than correctness — both
-# were built and measured end to end, and both measurements argued against turning them on:
-#
-#   jazzhr   4,647 pool / ~4,070 hiring Boards, 27.5 jobs each, tech share **5.1%** (1,126 of
-#            22,287 titles over 1,000 tenants). No detail-pass skip is possible — the detail page
-#            is the only source of datePosted, employment type, experience and salary — so a cold
-#            sweep is ~103k fetches, ~11 GB, for ~5,700 tech Jobs.
-#   jobvite  517 pool / 434 live / 401 hiring, 23,461 postings, tech share **7.0%** (1,642 of
-#            23,436 over 400 boards). ~24k detail fetches, ~1.5-2 GB, for ~1,640 tech Jobs.
-#
-# Storage is this pipeline's documented binding constraint (a full run already rewrites ~1.86 GB
-# of LFS), and both are US/EU SMB boards with no measurable India presence — 0 India-located jobs
-# in the samples. Neither is throttled: 6,100 and 7,582 requests respectively drew zero
-# 403/429/5xx, and a 25-worker burst at ~15 req/s answered 80/80 on both, so re-enabling is a
-# one-line change here whenever the storage budget or the scope makes them worth their bytes.
+# jazzhr and jobvite are disabled on arrival (2026-09-07), on cost rather than correctness. Both
+# are complete, tested, and ship a liveness ledger, so removing them here really is all it takes:
+# 3,636 jazzhr and 401 jobvite Hiring Boards are waiting. They stay off because a cold sweep is
+# ~11 GB for ~5,700 tech Jobs (jazzhr, 5.1% tech share) and ~1.5-2 GB for ~1,640 (jobvite, 7.0%),
+# against a pipeline whose binding constraint is storage — and neither had a measurable India
+# presence. The full measurements are in docs/jazzhr/ and docs/jobvite/.
 DISABLED_ATS: frozenset[str] = frozenset({"join", "jazzhr", "jobvite"})
 
 

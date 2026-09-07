@@ -65,19 +65,19 @@ Count distinct keys, never lines — both files carry case-variants.
 
 Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,619 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 45 Boards from the raw live rows but only **43** from the deduped set, because two of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −45 / −6,617. Both reconcile; neither is quotable without saying which order it used.
 
-**Ledger row** — 176,815:
+**Ledger row** — 181,979:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
 
-**Live row** — 118,239:
+**Live row** — 122,917:
 A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre every deliberate exclusion.
 _Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
 
-**Unique Board** — 111,620:
+**Unique Board** — 116,298:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist. **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 600 Scraped Boards are absent from it, because a Board read months ago may have gone Dead since and left the live set.
 
 **Scrapable Board** — 86,063:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−43 vendor test Boards), the alias ledger (−23 Boards published under a second hostname, ADR-0111) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 25,557 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 23 genuinely are not distinct Boards, they are one Board reached by two names.
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−30,166, all of it `join`), `config.EXCLUDED_BOARDS` (−43 vendor test Boards), the alias ledger (−23 Boards published under a second hostname, ADR-0111) and `config.PARKED_BOARDS` (−3). Computed by `load_active_companies(min_jobs=0)` — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 30,235 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 23 genuinely are not distinct Boards, they are one Board reached by two names.
 
 **Hiring Board** — 54,224:
 A Scrapable Board with at least one open posting (`load_active_companies(min_jobs=1)`, the function's default). The other 31,839 are live but empty.
