@@ -24,6 +24,15 @@ obtain for the thousands of unaffiliated companies it reads — a board over the
 loses the excess here, not from a defect in this file. See docs/salary-extraction/zoho.md's
 "Post-merge correction" section for the full writeup and the open question of whether pursuing a
 fix (a headless browser, or per-tenant API access) is worth its cost.
+
+**There is a second listing surface this scraper does not read** (2026-09-07): an RSS feed at
+`/jobs/{Portal}/rss`, named by the tenant's own `robots.txt`, which the investigation above never
+checked. It does *not* beat the ceiling — 9 of the 10 at-ceiling boards have it disabled and the
+tenth returns fewer items than its widget — so the paragraph above stands. What it does show is
+that the widget can omit jobs for reasons unrelated to the cap: a majority of small boards that
+have a feed serve fewer jobs from the widget than from the feed, by up to 9x. So the count this
+file returns is not a reliable board size at the small end. See
+docs/zoho/2026-09-07_the-rss-second-listing-surface.md.
 """
 
 from __future__ import annotations

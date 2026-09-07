@@ -271,6 +271,17 @@ designed.
 Neither calls `mark_truncated` — the widget exposes no true total to compare against — so everything
 past the ceiling is invisible in both directions: not scraped, and not flagged as unscraped.
 
+**UPDATE (zoho only).** Zoho exposes a second listing surface — an RSS feed at `/jobs/{Portal}/rss`,
+found via `robots.txt`. On `2coms` the union of widget and feed is 768-769 against a widget stuck at
+750, so that board demonstrably has more jobs than its widget serves. That **corroborates**
+truncation; it does not prove it, because the same investigation found a widget-omission mechanism
+independent of the cap (a board serving 1 job from its widget and 9 from its feed), which explains
+the excess equally well. Three things therefore keep this open: the two mechanisms are not yet
+separated, only 1 of the 10 at-ceiling boards has a working feed at all, and `mark_truncated` on a
+board that hits the ceiling every run means permanent ADR-0053 exclusion, which has no drain.
+See [the writeup](../zoho/2026-09-07_the-rss-second-listing-surface.md).
+**freshteam was not investigated** — its three boards are untouched by any of this.
+
 ### 3e. Eightfold
 
 15–17 boards per run fall back to the sitemap (`the PCSX API did not answer`) — steady, not a trend.
@@ -435,7 +446,10 @@ a dead dial and `mark_walled` keep their annotation.
 | 5 | ~~Let a durable `CertificateVerifyError` count as a gone-strike~~ **WITHDRAWN as specified — the boards are alive.** Re-probed: all four serve a real sitemap behind the broken cert; one is a duplicate of a Board already live, one redirects to a valid-cert host. A gone-strike would record a false fact and bury the coverage. Options recorded ([writeup](../successfactors/2026-09-07_durable-tls-failures-are-not-gone.md)) | §3b | 35 postings, ~24 s/run — and a blind spot in ADR-0111's dedupe |
 | 6 | ~~Demote spare-egress rotation lines to info~~ **DONE (#368)** | §6 | 92–94% of the annotation stream gone (censused over two full runs); the ~380 warnings/run that carry a finding now visible |
 | 7 | ~~Narrow `eightfold` detail concurrency~~ **WITHDRAWN — same confound as item 3.** "27/73 say narrowing is free" compares walled groups at 12 against unwalled ones at 25, so it may only say "a walled eightfold fan-out is slower", which is trivially true. Needs a controlled probe at eightfold's real ceiling before any change | §4 | unknown until measured |
-| 8 | Paginate past the zoho 750 / freshteam 1000 ceilings, or `mark_truncated` | §3d | 8 boards permanently and silently short |
+| 8a | ~~Paginate past the **zoho** 750 ceiling~~ **WITHDRAWN — measured, no route exists.** The server ignores every query string; pagination *and* facet variants return a byte-identical id set. The newly-found RSS surface does not beat it either ([writeup](../zoho/2026-09-07_the-rss-second-listing-surface.md)) | §3d | **zero** |
+| 8b | **`mark_truncated` for zoho — still open.** §3d skipped it because "the widget exposes no true total to compare against". The RSS gets closer: on `2coms` the union is **768-769 > 750**. But that *corroborates* truncation rather than proving it — the same sweep found widget omission on a 1-job board, a mechanism independent of the cap that explains the excess equally well. Separating the two is the blocker; also, all 10 at-ceiling boards were probed and only `2coms` has a feed, and `mark_truncated` here means permanent ADR-0053 exclusion, which has no drain | §3d | blocked on separating two mechanisms |
+| 8c | **freshteam 1000 ceiling — NOT investigated.** `simera-talent`, `abnhire`, `kalam` are untouched by any of the above; this row exists so they keep a tracking entry rather than being closed by a zoho-only result | §3d | unmeasured |
+| 8d | **Zoho has a second listing surface the scraper never used** — an RSS feed found via `robots.txt`, which the 2026-08-22 investigation never checked. Not a ceiling fix. Its value is that **56% of small boards (widget ≤ 3) that have a feed are under-reporting**, by up to 9× ([writeup](../zoho/2026-09-07_the-rss-second-listing-surface.md)) | new | +1.7% jobs, but board sizes wrong at the small end; needs a full sweep before any scraper change |
 
 Items 1 and 2 are the same incident seen from two sides: one is why the pipeline is losing 56,000
 postings a run, the other is why nothing noticed.
