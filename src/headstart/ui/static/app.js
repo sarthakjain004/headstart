@@ -1740,9 +1740,12 @@ if (el('salrmin')){
   el('salrmax').addEventListener('change', go);
   // Typing moves the handle; it never moves the typed figure back.
   ['salmin', 'salmax'].forEach(id => el(id).addEventListener('input', syncSalarySlider));
-  // The currency names what the range is expressed in, so only the read-out's label changes —
-  // the numbers themselves are not this control's to rewrite.
-  if (el('salcur')) el('salcur').addEventListener('change', syncSalarySlider);
+  // The currency is part of the where-clause, not a label on it (ADR-0117): the bounds are
+  // restated in it before anything is compared, so changing it changes which jobs match.
+  // Bound to `syncSalarySlider` alone, it relabelled the read-out and left the previous
+  // currency's results on screen underneath — USD rows under an INR heading. `go()` redraws
+  // the read-out and the chips on its way through drawActive, so this is the whole fix.
+  if (el('salcur')) el('salcur').addEventListener('change', go);
 }
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');

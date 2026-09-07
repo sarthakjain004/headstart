@@ -14,10 +14,17 @@ const APP_JS = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui', 'stati
 
 function fakeEl() {
   const classes = new Set();
+  const handlers = {};
   return {
     innerHTML: '', textContent: '', hidden: false, style: {}, value: '', checked: false,
     querySelectorAll: () => [],
-    setAttribute(k, v) { this[k] = v; }, getAttribute: k => null, addEventListener() {},
+    setAttribute(k, v) { this[k] = v; }, getAttribute: k => null,
+    // Listeners are RECORDED rather than dropped, and `fire` replays one — the only way to
+    // test that a control is wired to the right thing. A no-op addEventListener made every
+    // binding at the foot of app.js untestable, which is how a currency picker that never
+    // re-searched shipped.
+    addEventListener(type, fn) { (handlers[type] ||= []).push(fn); },
+    fire(type) { (handlers[type] || []).forEach(fn => fn.call(this, { type })); },
     dispatchEvent() {},
     classList: {
       add: c => classes.add(c), remove: c => classes.delete(c),
@@ -316,6 +323,22 @@ test('the slider follows the number fields and never rewrites what was typed', (
   assert.strictEqual(nodes.salrmax.value, String(t.SALARY_STOPS.length - 1));
   assert.ok(nodes.salread.textContent.includes('137,000'));
   assert.ok(nodes.salread.textContent.includes('no maximum'));
+});
+
+test('changing the currency re-runs the search — the label and the results cannot disagree', async () => {
+  // The bracket is compared ACROSS currencies (ADR-0117), so the picker is part of the
+  // where-clause: switching it while a bound is set has to re-query. It used to only relabel
+  // the read-out, leaving the previous currency's rows on screen under the new currency's name.
+  const { t, nodes, fetches } = loadApp(() => []);
+  await t.go();
+  set(nodes, 'salmin', '60000');
+  set(nodes, 'salcur', 'INR');
+  fetches.length = 0;
+  nodes.salcur.fire('change');
+  await new Promise(r => setTimeout(r, 0));
+  const search = fetches.filter(u => u.startsWith('/search?')).at(-1);
+  assert.ok(search, `no /search after the currency changed: ${fetches}`);
+  assert.strictEqual(qs(search).salary_currency, 'INR');
 });
 
 test('the handles cannot cross, and an end stop means unbounded rather than zero', () => {
