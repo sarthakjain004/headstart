@@ -609,11 +609,33 @@ def test_fetch_whole_lands_the_exact_bytes(tmp_path: Path) -> None:
     payload = b"a small state file" * 100
     with _serve(payload) as (url, _):
         dest = tmp_path / "out.bin"
-        sf._fetch_whole(url, dest, {})
+        sf._fetch_whole(url, dest, len(payload), {})
         assert dest.read_bytes() == payload
         assert not dest.with_name(
             dest.name + ".tmp"
         ).exists()  # renamed, not left behind
+
+
+def test_fetch_whole_skips_a_file_that_already_landed(tmp_path: Path) -> None:
+    """The resumability fix: `fetch_state`'s outer retry re-calls `_download` with the *full*
+    `wanted` set, so a file already on disk from a prior attempt must not be re-fetched — a
+    request to a server that isn't even running proves it never tried."""
+    dest = tmp_path / "out.bin"
+    dest.write_bytes(b"already here")
+    sf._fetch_whole(
+        "http://127.0.0.1:1/unreachable", dest, 999, {}
+    )  # would raise if called
+    assert dest.read_bytes() == b"already here"
+
+
+def test_fetch_whole_raises_when_the_body_is_short(tmp_path: Path, monkeypatch) -> None:
+    """The size-check `pull_lancedb.py`'s `fetch_small` has and this path had dropped: a
+    truncated small file must not silently rename into place as if it had landed complete."""
+    monkeypatch.setattr(sf.time, "sleep", lambda _s: None)
+    with _serve(b"short") as (url, _):
+        with pytest.raises(OSError, match="got 5 bytes, wanted 999"):
+            sf._fetch_whole(url, tmp_path / "out.bin", 999, {})
+        assert not (tmp_path / "out.bin").exists()
 
 
 def test_fetch_whole_raises_on_a_4xx_so_the_retry_loop_sees_it(
@@ -639,7 +661,7 @@ def test_fetch_whole_raises_on_a_4xx_so_the_retry_loop_sees_it(
     try:
         with pytest.raises(requests.HTTPError) as exc_info:
             sf._fetch_whole(
-                f"http://127.0.0.1:{server.server_port}/f", tmp_path / "out.bin", {}
+                f"http://127.0.0.1:{server.server_port}/f", tmp_path / "out.bin", 0, {}
             )
         # the same shape `reason_for`/`reset_after` already read off any exception generically
         assert exc_info.value.response.status_code == 403
@@ -687,6 +709,36 @@ def test_fetch_ranged_skips_a_chunk_already_complete_on_disk(
         assert "bytes=40-49" in requested
 
 
+def test_fetch_ranged_skips_a_file_that_already_landed(tmp_path: Path) -> None:
+    """Same resumability property as `_fetch_whole`, at the file level: a big file that already
+    completed must not be re-fetched just because some other file in the same `_download` batch
+    failed and `fetch_state`'s outer loop retried the whole set."""
+    dest = tmp_path / "big.bin"
+    dest.write_bytes(b"already here, complete")
+    sf._fetch_ranged(
+        "http://127.0.0.1:1/unreachable", dest, 999, {}
+    )  # would raise if called
+    assert dest.read_bytes() == b"already here, complete"
+
+
+def test_download_does_not_refetch_a_file_that_already_landed(
+    hub, tmp_path: Path
+) -> None:
+    """The bug this closes, end to end: `_download` used to be called with the *full* `wanted`
+    set on every outer retry with no filter for what had already landed, so a transient failure
+    on one file would silently re-download every other file in the batch from scratch —
+    including a multi-hundred-MB one this whole change exists to make cheap to retry around.
+
+    `_fetch_whole` is real here, not mocked — `hub.hf_hub_url` (from the `hub` fixture) returns
+    an unreachable `fake://` URL, so if the skip check inside `_fetch_whole` did not fire, this
+    would raise `requests.exceptions.InvalidSchema` rather than pass quietly.
+    """
+    (tmp_path / "landed.bin").write_bytes(b"already complete")
+    siblings = [type("S", (), {"rfilename": "landed.bin", "size": 17})()]
+    sf._download("repo", siblings, {"landed.bin"}, None, tmp_path)  # must not raise
+    assert (tmp_path / "landed.bin").read_bytes() == b"already complete"
+
+
 def test_fetch_ranged_raises_when_a_chunk_comes_back_short(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -725,7 +777,7 @@ def test_download_routes_small_and_big_files_by_measured_size(
     monkeypatch.setattr(
         sf,
         "_fetch_whole",
-        lambda url, dest, headers: calls.append(f"whole:{dest.name}"),
+        lambda url, dest, size, headers: calls.append(f"whole:{dest.name}:{size}"),
     )
     monkeypatch.setattr(
         sf,
@@ -737,7 +789,10 @@ def test_download_routes_small_and_big_files_by_measured_size(
         type("S", (), {"rfilename": "huge.bin", "size": sf._BIG_FILE_BYTES})(),
     ]
     sf._download("repo", siblings, {"small.txt", "huge.bin"}, None, tmp_path)
-    assert sorted(calls) == [f"ranged:huge.bin:{sf._BIG_FILE_BYTES}", "whole:small.txt"]
+    assert sorted(calls) == [
+        f"ranged:huge.bin:{sf._BIG_FILE_BYTES}",
+        "whole:small.txt:100",
+    ]
 
 
 def test_download_does_nothing_for_an_empty_wanted_set(

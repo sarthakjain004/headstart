@@ -45,6 +45,7 @@ import argparse
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -253,7 +254,9 @@ _INNER_ATTEMPTS = 3
 _INNER_BACKOFF_S = 2.0
 
 
-def _get_with_retry(url: str, headers: dict[str, str], timeout: tuple[float, float]):
+def _get_with_retry(
+    url: str, headers: dict[str, str], timeout: tuple[float, float]
+) -> Any:
     import requests
 
     last: Exception = RuntimeError(
@@ -273,18 +276,31 @@ def _get_with_retry(url: str, headers: dict[str, str], timeout: tuple[float, flo
     raise last
 
 
-def _fetch_whole(url: str, dest: Path, headers: dict[str, str]) -> None:
+def _fetch_whole(url: str, dest: Path, size: int, headers: dict[str, str]) -> None:
     """One small file, whole-body GET, written ``.tmp`` then renamed.
 
+    Skips outright if ``dest`` already landed. ``fetch_state``'s outer retry loop re-calls
+    :func:`_download` with the **full** ``wanted`` set on every attempt, so without this a
+    transient failure on any one file would re-fetch every file that had already succeeded —
+    including a big one :func:`_fetch_ranged` just spent minutes on, which is what this whole
+    change exists to make cheap to retry around.
+
     The rename is the point: a kill mid-write leaves a ``.tmp``, never a short file at the real
-    path — which the retry loop's next attempt would otherwise find with ``.exists()`` and skip,
-    silently landing a truncated file as if it were complete.
+    path — which the ``.exists()`` check above would otherwise find and skip, silently landing a
+    truncated file as if it were complete. ``size`` closes the same hole for the body itself: a
+    body shorter than the Hub reported must not rename into place undetected —
+    :func:`absent_locally` only checks existence, never length.
     """
+    if dest.exists():
+        return
     tmp = dest.with_name(dest.name + ".tmp")
     r = _get_with_retry(url, headers, timeout=(15, 60))
+    if size and len(r.content) != size:
+        raise OSError(f"{dest.name}: got {len(r.content)} bytes, wanted {size}")
     with open(tmp, "wb") as fh:
         fh.write(r.content)
     tmp.rename(dest)
+    _log.info(f"  landed {dest.name} ({len(r.content) / 1e6:.1f} MB)")
 
 
 def _chunk_path(dest: Path, i: int) -> Path:
@@ -294,17 +310,19 @@ def _chunk_path(dest: Path, i: int) -> Path:
 def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> None:
     """One large file, fetched as concurrent ranged chunks then concatenated (ADR-0085).
 
-    Chunk boundaries are absolute (``i``'s range never depends on progress), so a chunk file
-    already at its full size is skipped — free resumption across this function's own retries
-    within :func:`fetch_state`'s outer attempt loop, which is the only resumption this needs: a CI
-    runner is a single process, so there is no "next run" to resume across.
+    Skips outright if ``dest`` already landed — see :func:`_fetch_whole`'s docstring for why
+    that matters across ``fetch_state``'s outer retries. Chunk boundaries are absolute (``i``'s
+    range never depends on progress), so a chunk file already at its full size is skipped too —
+    free resumption *within* one call to this function if it was interrupted mid-transfer.
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    if dest.exists():
+        return
 
     plan = [
         (i, off, min(off + _CHUNK_BYTES, size))
         for i, off in enumerate(range(0, size, _CHUNK_BYTES))
     ]
+    _log.info(f"  fetching {dest.name} ({size / 1e6:.0f} MB, {len(plan)} chunks)")
 
     def fetch_chunk(spec: tuple[int, int, int]) -> None:
         i, lo, hi = spec
@@ -322,8 +340,10 @@ def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> N
         cf.write_bytes(r.content)
 
     with ThreadPoolExecutor(max_workers=_DOWNLOAD_WORKERS) as pool:
-        for fut in as_completed([pool.submit(fetch_chunk, c) for c in plan]):
+        futures = [pool.submit(fetch_chunk, c) for c in plan]
+        for done, fut in enumerate(as_completed(futures), start=1):
             fut.result()  # re-raises on the pool's thread — same failure surface as a plain GET
+            _log.info(f"    {done}/{len(plan)} chunks ({dest.name})")
 
     tmp = dest.with_name(dest.name + ".tmp")
     with open(tmp, "wb") as fh:
@@ -336,6 +356,7 @@ def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> N
             f"{dest.name}: assembled {tmp.stat().st_size} bytes, remote reports {size}"
         )
     tmp.rename(dest)
+    _log.info(f"  landed {dest.name} ({size / 1e6:.0f} MB)")
 
 
 def _download(
@@ -359,12 +380,12 @@ def _download(
     small = [p for p in wanted if sizes.get(p, 0) < _BIG_FILE_BYTES]
     big = [p for p in wanted if sizes.get(p, 0) >= _BIG_FILE_BYTES]
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
     def fetch_small(path: str) -> None:
         dest = root / path
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _fetch_whole(hf_hub_url(repo, path, repo_type="dataset"), dest, headers)
+        _fetch_whole(
+            hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
+        )
 
     with ThreadPoolExecutor(max_workers=_DOWNLOAD_WORKERS) as pool:
         for fut in as_completed([pool.submit(fetch_small, p) for p in small]):
