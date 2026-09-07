@@ -196,18 +196,27 @@ ATS_PATTERNS = {
         "kind": "workday",
         # groups: (host, site); a leading locale (en-US) is skipped. Rebuilt to the canonical
         # board URL https://{host}/{site} that WorkdayScraper.slug_from expects.
-        # Only the hyphenated locale (`/en-US/Site`) is skipped, deliberately. Widening this to a
-        # bare `[a-z]{2}/` to also catch `/es/Site` looks obviously right and is wrong: a Workday
-        # deep link is `{host}/{site}/job/{...}`, so on a genuine two-letter *site* the wider
-        # pattern consumes the site and captures the path marker instead — measured,
-        # `howard.../hu/job/...` went from the correct `hu` to `job` (dropped by BLOCK, so the
-        # Board became undiscoverable) and `browardcollege.../pt/details/...` minted a phantom
-        # Board `details`. Counted on the ledger this change ships: 69 live rows carry a two-letter
-        # site across 58 distinct Boards, 6 of them a site that is itself an ISO-639-1 code.
-        # A bare `/es` with nothing
-        # after it stays a junk row and the liveness checker settles it as dead — one probe.
+        # Two things this pattern must not do, both measured on the 2026-08 crawl.
+        #
+        # It must not treat a dotted filename as a site. `[a-zA-Z0-9_-]+` cannot match a dot, so
+        # without the trailing lookahead `.../robots.txt` captured the Board `.../robots` — 426 of
+        # 514 new workday rows (83%), 1,975 in the ledger, 20 of 20 sampled returning 404. The
+        # lookahead refuses to stop *before* a dot, which rejects the whole open set of
+        # well-known files (`sitemap.xml`, `apple-touch-icon.png`, `sw.js`) rather than a list
+        # someone has to keep extending — the same reasoning `wayback_feeder` states for its own
+        # `FILE_SUFFIXES` check.
+        #
+        # And it must skip only the *hyphenated* locale. Widening to a bare `[a-z]{2}/` to also
+        # catch `/es/Site` looks obviously right and is wrong: a Workday deep link is
+        # `{host}/{site}/job/{...}`, so on a genuine two-letter site the wider pattern eats the
+        # site and captures the path marker — `howard.../hu/job/...` went from `hu` to `job`
+        # (dropped by BLOCK, so the Board became undiscoverable) and `browardcollege.../pt/details/...`
+        # minted a phantom Board `details`. `load_active_companies(min_jobs=0)` counts 100
+        # Scrapable Boards with a two-letter Workday site, 7 of them an ISO-639-1 code. The cost
+        # of staying narrow is that a bare `/es` survives as a junk row, which the liveness
+        # checker settles as dead — one probe.
         "patterns": [
-            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)",
+            r"https?://([a-z0-9-]+\.wd\d+\.myworkdayjobs\.com)/(?:[a-z]{2}-[A-Z]{2}/)?([a-zA-Z0-9_-]+)(?![a-zA-Z0-9_.-])",
         ],
     },
     "oracle": {
@@ -300,36 +309,6 @@ BLOCK = {
     "wday",
     "cxs",
 }
-#: Path segments that name a well-known FILE, never a Workday career site. The workday pattern
-#: reads the segment after the host as the site, and `[a-zA-Z0-9_-]+` cannot match the dot — so
-#: `https://x.wd1.myworkdayjobs.com/robots.txt` was captured as the board `.../robots`. Measured on
-#: the 2026-08 crawl: **426 of 514 new workday rows (83%) were this**, and 20 of 20 sampled
-#: returned 404. Purged from the ledger: 1,975 rows — 1,549 already settled `dead` (90-day
-#: TTL) and 426 `unknown` (3-day TTL, so those really were re-probed every run).
-WELL_KNOWN_FILES = {
-    "robots",
-    "llms",
-    "llms-full",
-    "sitemap",
-    "sitemap_index",
-    "sitemapindex",
-    "favicon",
-    "humans",
-    "security",
-    "ads",
-    "app-ads",
-    "manifest",
-    "browserconfig",
-    "opensearch",
-}
-#: Deliberately NOT extended to bare language codes. `.../es` with nothing after it is almost
-#: always a locale root, but the name alone cannot prove it: on the ledger this change ships, six
-#: `live` rows have a site that is itself an ISO-639-1 code, with real job counts —
-#: `howard.../hu` (141 jobs, Howard University), `browardcollege.../pt` (137),
-#: `talkingrain.../tr` (8). Blocking two-letter sites would have deleted them. The regex above already recovers the real case (`/es/Alsa` -> `Alsa`); a bare
-#: locale root that survives is left for the liveness checker to settle as dead, which costs one
-#: probe and risks nothing.
-
 INFRA = BLOCK  # back-compat alias: probe_ats.py filters subdomain labels against cc_miner.INFRA
 
 
@@ -416,7 +395,7 @@ def tenant_from(kind, match):
     if kind == "workday":
         host, site = match.group(1), match.group(2)
         low = site.lower()
-        if low in BLOCK or low in WELL_KNOWN_FILES or len(site) < 2:
+        if low in BLOCK or len(site) < 2:
             return None
         board = f"https://{host}/{site}"
         return board, board  # canonical board URL (what slug_from reads)
