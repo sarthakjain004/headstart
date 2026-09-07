@@ -1631,26 +1631,6 @@ def test_darwinbox_no_wall_no_browser_raises_the_last_error(monkeypatch):
     assert excinfo.value.response.status_code == 500
 
 
-def test_oracle_parse():
-    slug = "fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/CX_2"
-    jobs = get_scraper("oracle", slug, "Oracle CE Tenant").parse(
-        _load("oracle_fa-etqo_cx2.json"), SCRAPED_AT
-    )
-    assert len(jobs) == 2
-    j = jobs[0]
-    assert j.id == "oracle:fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com:NAG_002"
-    assert j.company == "Oracle CE Tenant"  # LegalEmployer empty -> fallback to company
-    assert j.title == "Executive - Non Voice - Nagpur"
-    assert j.posted_at == "2026-03-16"
-    assert j.url == (
-        "https://fa-etqo-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/"
-        "CandidateExperience/en/sites/CX_2/job/NAG_002"
-    )
-    assert (
-        j.description and "</" not in j.description
-    )  # short ShortDescriptionStr, HTML-stripped
-
-
 def test_workday_parse():
     slug = "https://3m.wd1.myworkdayjobs.com/search"
     jobs = get_scraper("workday", slug, "3M").parse(

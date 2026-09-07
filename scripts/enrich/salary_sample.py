@@ -83,8 +83,9 @@ from headstart.scrapers.trakstar import _codes_from
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / "data" / "validate" / "liveness"
 ARTIFACTS_ROOT = ROOT / "experiment" / "salary-extraction"
-#: Fallback candidate-tenant source for an ATS with no liveness ledger at all (oracle,
-#: sensehq — see docs/salary-extraction/README.md's own processing-order note). Raw
+#: Fallback candidate-tenant source for an ATS with no liveness ledger at all (sensehq —
+#: see docs/salary-extraction/README.md's own processing-order note; oracle gained one on
+#: 2026-09-08 and no longer needs this path). Raw
 #: discovery output (Common Crawl / fingerprint mining), never liveness-checked — dead
 #: candidates simply error during the normal per-board fetch, the same as any other ATS's
 #: occasional dead board.

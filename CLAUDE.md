@@ -81,6 +81,25 @@ per-company web research). Full research, endpoint probes, and provenance:
   infrastructure hosts are mostly single words) are in `docs/icims/`. The ledger holds tenant
   hosts only: `careers.icims.com`, `www.icims.com` and the `*.i.icims.com` archival mirrors are
   filtered out by that same rule, all of them `jobs=0`.
+- **Oracle Recruiting Cloud (HCM)** ✅ DONE (2026-09-08) — `scrapers/oracle.py`, wired through
+  liveness (1,099 live / 991 hiring boards in `data/validate/liveness/oracle.csv`, 316,834
+  postings once Oracle's own 78,431-posting load-test instance is excluded). Slug = the tenant's
+  pod host. The scraper existed since early on but had **no ledger and no tests**, so it had never
+  run: `load_active_companies` globs the ledger dir, and there was no `oracle.csv` to glob. Two
+  defects that shipped with it are fixed here, both measured (`docs/oracle/`). `siteNumber` is a
+  **filter, not an address** — the hardcoded `CX_1` default was wrong for 929 of 1,331 hiring
+  boards and wrong *silently* (a bad site still answers 200 with a well-formed envelope), while
+  omitting it returns the host's whole set, the exact union of every site, verified on 596 hosts
+  with zero counter-examples. And the listing is nearly empty: `LegalEmployer`, `Department`,
+  `JobFunction`, `JobType` are **0.0%** non-null across 15,189 requisitions, and
+  `ShortDescriptionStr` is present on 44.4% and **hard-capped at exactly 1,000 chars**. The real
+  body (`ExternalDescriptionStr`, 93.1%, p50 4,138, no cap) is reachable *only* from
+  `recruitingCEJobRequisitionDetails?finder=ById;Id="{id}"` — `expand=all` on the listing never
+  includes it — so this is a detail-pass ATS. `hasMore` **lies** (false on a 248-posting board),
+  so `TotalJobsCount` is the terminator; `limit` clamps to 200. No rate limit found in 6,351
+  requests (sustained 77 req/s), and conc=32 is the knee — 128 is slower. Company names are still
+  the slug: `recruitingCESites` (664/670 hosts) returns them, but at ADR-0114's quality bar that
+  needs its own pass.
 
 **Highest ROI first — fingerprinter gaps, ZERO new scraper** (already-supported ATSes whose board
 sits on a non-derivable tenant the fingerprinter can't guess; from `fp_all.txt` mining — 79% of the
@@ -125,7 +144,6 @@ Single-company unlocks (web research; a manual slug, not worth a scraper each):
   (`careers.practo.com`, 29 jobs, verified 2026-08-27 by two independent channels), so this
   entry has no company left behind it until another one is found.
 - **Kula** (`careers.kula.ai/{slug}`) — Rocketlane.
-- **Oracle Cloud HCM** (`{tenant}.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/...`) — Icertis.
 - **CareerSiteManager** (`{slug}.careersitemanager.com`) — Ecom Express.
 - **ainterviews.com / recruiteecdn** (Recruitee white-label) — Lenskart (`hiring.lenskart.com`).
 

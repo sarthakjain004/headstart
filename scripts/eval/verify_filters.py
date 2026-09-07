@@ -109,12 +109,18 @@ URL_SHAPES = {
     # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
     # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
     "successfactors": r"https://[^/]+/job/.+/\d+/?",
-    # from the scraper's construction (oracle.py: /hcmUI/CandidateExperience/en/sites/{site}/job/{id});
-    # ZERO indexed rows today (single-company unlock, Icertis) so no live sample to verify against —
-    # the shape is source-derived only, and the first indexed row will exercise it.
-    "oracle": r"https://[^/]+/hcmUI/CandidateExperience/.+/job/\d+",
+    # scraper: f"https://{slug}/hcmUI/CandidateExperience/en/sites/CX_1/job/{id}" where the slug
+    # is the tenant's own pod host (fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com,
+    # chevron.fa.us2.oraclecloud.com — ten regional pods, so nothing narrower to anchor on).
+    # The site segment stays loose because it is cosmetic: browser-verified 2026-09-08, the app
+    # redirects any site — including a nonexistent one — to CX_1 and resolves the job by id.
+    # Was `.+/job/\d+`, written from the scraper's source when oracle had no indexed rows to
+    # check against. The id is NOT numeric: of 10,115 sampled live 2026-09-08, 47 carry
+    # underscores (MY_SCA_173_2411) and many are letter-prefixed (N122008), so `\d+` would have
+    # flagged real rows the moment the first one was indexed.
+    "oracle": r"https://[^/]+/hcmUI/CandidateExperience/[a-z]{2}/sites/[^/]+/job/[A-Za-z0-9_]+",
     # from the scraper's construction (sensehq.py: {slug}.sensehq.com/careers/jobs/{id});
-    # ZERO indexed rows today — source-derived only, same caveat as oracle.
+    # ZERO indexed rows today — source-derived only, same caveat oracle's entry used to carry.
     "sensehq": r"https://[\w-]+\.sensehq\.com/careers/jobs/\d+",
     # icims.py ships the sitemap's own <loc>, query stripped: /jobs/{id}/{title-slug}/job.
     # Host-agnostic on purpose. All 35 sampled boards keep job URLs on their own *.icims.com
