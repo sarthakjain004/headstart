@@ -50,9 +50,13 @@ first two. That is a quality bar, not a cost one.
 `<title>`, and a full 819-Board census settled it at **92 names from 101 titles — ~11%** (the rest
 render client-side), every one in a wrapper eightfold's patterns already read ("Careers at Skylark
 Drones", "Entropik Careers"). It is wired. Be clear about the size: those 92 Boards carry
-**1,964 ledger jobs**. Deliberately an absolute number rather than a share — the obvious
-denominator does not survive contact, because 15,262 of the 53,812 Hiring Boards do not join to a
-ledger row on `(ats, tenant)`, so any "% of all ledger jobs" silently drops 28% of the Boards. It earns its place not on volume but on cost and floor — the page returns in
+**1,964 ledger jobs**. An absolute number rather than a share, but not for the reason an
+earlier draft of this line gave. It claimed 15,262 Hiring Boards "do not join to a ledger row",
+which cannot be true — `load_active_companies` *builds* each Board from a ledger row. The join
+that failed was keyed on the raw `tenant` column while a Board's slug is `scraper.slug_from(tenant,
+url)`; the gap was in the key, not the data. The real reason to prefer the absolute is duller: the
+denominator moves with which ATSes are enabled (`DISABLED_ATS` alone swings it by ~19,000 Boards),
+so a percentage quoted today misleads tomorrow. For scale, it is well under 0.1%. It earns its place not on volume but on cost and floor — the page returns in
 0.12s, and *every* keka Board serves a slug today, so the downside is a request that yields
 nothing eight times in nine.
 Successfactors stays out on a different and firmer ground: its titles are real but heterogeneous

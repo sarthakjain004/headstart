@@ -122,6 +122,12 @@ def test_a_board_that_calls_itself_a_demo_is_refused():
     # Boards, one of which was serving three template postings
     assert from_title("ashby", "Kraken Sandbox Jobs", "krakensandbox") is None
     assert from_title("ashby", "Bento Setup Sandbox Jobs", "bento") is None
+    # The marker must be *trailing*: dropping the rule's `$` refused this, and dropping its
+    # leading `\s` refused any name whose final syllable merely ends in the marker.
+    assert (
+        from_title("ashby", "Acme Demo Solutions Jobs", "acme") == "Acme Demo Solutions"
+    )
+    assert from_title("ashby", "Videmo Jobs", "videmo") == "Videmo"
     assert (
         from_title("ripplehire", "Tata Steel Ltd Careers | x", "tatasteel")
         == "Tata Steel Ltd"

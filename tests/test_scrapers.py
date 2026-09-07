@@ -7696,7 +7696,7 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
     Without this, adding a sixth ATS to one side and not the other is silent, and the test above
     keeps the name "every" while covering less than every.
     """
-    from headstart.company_name import PATTERNS
+    from headstart.company_name import _VENDOR_ALIASES, PATTERNS
     from headstart.scrapers.base import BaseScraper
     from headstart.scrapers.registry import SCRAPERS
 
@@ -7710,6 +7710,10 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
     )
     covered = {row[0] for row in _RESOLVE_ROWS}
     assert covered == set(PATTERNS), "every wired ATS needs a row in the resolve test"
+    assert set(_VENDOR_ALIASES) == set(PATTERNS), (
+        "every wired ATS needs a vendor-alias entry, or its board page can serve the platform's "
+        "own branding as the employer"
+    )
 
 
 def test_the_title_fetch_is_one_attempt_and_never_walls_its_ats(monkeypatch):

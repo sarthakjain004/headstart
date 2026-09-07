@@ -25,7 +25,7 @@ lever            ``{Name}`` — no wrapper at all              ~88% (352/400)
 keka             ``Careers at {Name}`` / ``{Name} Careers``  ~11% (92 of 819)
 ===============  ==========================================  =====================
 
-Keka is the odd row and worth reading twice: only about one Board in nine serves a ``<title>`` at
+Keka is the odd row and worth reading twice: only about one Board in eight serves a ``<title>`` at
 all (the rest render it client-side), but where one exists the wrapper is as uniform as
 eightfold's, and *every* keka Board serves a slug today — so that ~11% is pure upside for one
 cheap request. The first draft excluded keka on a stated **0/30**, which was simply wrong; the
@@ -106,14 +106,14 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #:   * the whole string — `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as
 #:     their company before this branch caught it
 #:
-#: Shapes this deliberately does **not** catch, because none has been observed across the 3,690
-#: lever and keka Hiring Boards swept and this module only ever rejects a shape someone really serves: a medial token ("Acme
+#: Shapes this deliberately does **not** catch, because none has been observed across every
+#: lever and keka Hiring Board (2,998) and this module only ever rejects a shape someone really serves: a medial token ("Acme
 #: Careers Portal"), a leading token in another phrasing ("Jobs at Acme", "Careers Acme"), and
 #: the singular ("Acme Career"). If one shows up, add it — do not pre-empt it.
 #:
 #: Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are
-#: real employers a `\b`-bounded rule would refuse. Measured across all 3,690 lever and keka
-#: Hiring Boards, it fires six times: three page labels it exists for, and three real employers it costs
+#: real employers a `\b`-bounded rule would refuse. Measured across every lever and keka Hiring
+#: Board (2,998), it fires six times: three page labels it exists for, and three real employers it costs
 #: — `lever:pmaconsultants` ("PMA Consultants Careers", 29 postings), `lever:bananajobs` ("Banana
 #: Jobs") and `lever:assurance` ("Assurance Careers") — which keep their slug. That is the deliberate trade: stripping the word
 #: instead would turn "Destination Careers" into "Destination", a confident wrong name, where
@@ -160,8 +160,10 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
 #: because the fake-tenant hunt had been run against ripplehire alone. A later ashby census found
 #: both. "Never observed" is a statement about where you looked.
 #:
-#: Anchored, not matched anywhere: "Sandbox VR" and "Test Rite Group" are real employers a loose
-#: rule refused. `uat`/`qa` stay out, still unobserved — but on the evidence above, expect them.
+#: Anchored to a *trailing* marker, and the leading ``\s`` is what carries that: "Sandbox VR" is a
+#: real employer, and a rule matching the word anywhere refused it. ("Test Rite Group", cited here
+#: in an earlier draft, is spared for a duller reason — "test" is not in this rule at all.)
+#: `uat`/`qa` stay out, still unobserved — but on the evidence above, expect them.
 #:
 #: This does not only guard future Boards: `ripplehire:tenant1` is live and Scrapable today, and
 #: is refused here rather than by the blocklist (it serves 0 postings, so ADR-0034's
@@ -183,7 +185,8 @@ def looks_like_slug(name: str | None) -> bool:
     text = (name or "").strip()
     if not text:
         return True
-    return " " not in text and bool(re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", text))
+    # No separate space test: the character class already excludes whitespace.
+    return bool(re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", text))
 
 
 def title_of(page: str | None) -> str | None:
@@ -217,13 +220,15 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
             break
     else:
         return None
-    if not text or len(text) > _MAX_LEN:
+    # No emptiness test: `text` was stripped before matching and every pattern needs a character.
+    if len(text) > _MAX_LEN:
         return None
     if any(separator in text for separator in _SEPARATORS) or _PAGE_LABEL.search(text):
         return None
-    # A hostname — "webfx.com" — but only when written like one. The regex is deliberately
-    # case-sensitive, which alone spares "Character.AI"; the lowercase test earns its place on
-    # names with a lowercase TLD, where "Sprout.ai" would otherwise be read as a domain.
+    # A hostname — "webfx.com" — but only when written like one. The `text == text.lower()` guard
+    # is what spares "Character.AI": it short-circuits, so nothing mixed-case ever reaches the
+    # regex and the regex's own case-sensitivity decides nothing. The guard also earns its place
+    # on a lowercase TLD, where "Sprout.ai" would otherwise be read as a domain.
     if text == text.lower() and re.fullmatch(r"[\w.-]+\.[a-z]{2,}", text):
         return None
     # Only an EXACT echo is worthless. Case and spacing are the whole point — "aida" becomes

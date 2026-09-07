@@ -28,6 +28,13 @@ class CompanyRef:
 # one entry covers a Board that appears under several casings (smartrecruiters Dev2/dev2).
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
+        # Ashby's turn, found late (ADR-0112) by reading board titles rather than slugs:
+        # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
+        # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").
+        # Its siblings `ashby:bento` and `ripplehire:tenant1` name themselves just as plainly
+        # but serve 0 postings, so there is no content to confirm and nothing to remove —
+        # `company_name._PLACEHOLDER` refuses their names instead.
+        "ashby:krakensandbox",
         # Zwayam's own demo/QA tenants, confirmed by reading their board content on 2026-08-27
         # rather than inferred from the slug — the same bar the darwinbox entries below were held
         # to. `testcompany.cluster3` is the worst of them and the reason this entry exists: it is
@@ -92,10 +99,6 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # either way to exclude) — exactly the false-positive risk this list's own rule warns
         # against.
         "keka:csdemo",  # 681 postings
-        "ashby:krakensandbox",  # 3 postings; content-confirmed "Basic Job Template",
-        # "Admin Assistant Testing" — Kraken's sandbox tenant, found by reading titles
-        # (ADR-0112). Its siblings `ashby:bento` and `ripplehire:tenant1` are left alone:
-        # both serve 0 postings, so there is no content to confirm and nothing to remove.
         "keka:salesdemo",  # 153 postings
         # Lever's own demo/sandbox/QA tenants (found during lever's salary-extraction pass,
         # 2026-08-22, reading real board content — not from the slug alone, per this list's own
