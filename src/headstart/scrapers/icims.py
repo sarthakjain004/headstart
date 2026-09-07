@@ -15,13 +15,19 @@ string in one go. The sitemap is also never the shorter list: across 46 fully-pa
 missed nothing the listing had, and on `hmi-esp-harvard` it held 109 where the listing advertised
 no pagination at all and looked like 20.
 
-**`datePosted` is fabricated per request.** The same posting fetched twice, three seconds apart,
-returned `datePosted` values three seconds apart — it is `now - 2 years`, and `validThrough` is
-`now + 1 year`. Both are generated at render time and mean nothing. The sitemap's `<lastmod>` is
-the only real date iCIMS publishes, which is why `posted_at` is carried on the *listing* record
-and why :data:`_LD_KEEP` has no date key: the fabricated value is not ignored downstream, it never
-reaches :meth:`parse` at all. (`lastmod` is a last-*modified* date standing in for a first-posted
-one. It is the best available, not the same thing.)
+**`datePosted` is fabricated on some boards and real on most.** On 22% of boards it is generated
+at render time as `now - 2 years` — the same posting fetched twice, 3.5s apart, returns values
+3.5s apart — and `validThrough` is `now + 1 year` on every board measured. But 42 of 54 randomly
+sampled hiring boards publish a **real, stable** date, and the two are separable in a single
+fetch by the millisecond field alone (:data:`_ANCHORED_MS`): 42/42 real end `.000Z`, 0/12
+fabricated do. So `posted_at` prefers the board's own date through :func:`_stated_date` and falls
+back to the sitemap's `<lastmod>` only where the board fabricates.
+
+The fallback is not equivalent, which is why it is second: `lastmod` is a last-*modified* stamp,
+and where both a real `datePosted` and a `lastmod` existed it ran 0-2,437 days later
+(`careers-goaheadlondon`: really posted 2020-01-02, last modified 2026-09-04). An earlier version
+of this scraper discarded `datePosted` outright on the strength of a single board — celanese, one
+of the fabricating minority — and served every Job a `lastmod` in its place.
 
 **A detail fetch without `in_iframe=1` returns the branded wrapper**: HTTP 200, ~80 KB, no JSON-LD
 whatsoever. It fails as "no data", not as an error, so :func:`_ld_fields` returning None is treated
@@ -57,11 +63,11 @@ _SITEMAP_CAP = (
 )  # runaway guard; the largest sitemap measured is ~1.5 MB
 _DETAIL_WORKERS = 16
 
-#: The JSON-LD keys this scraper is willing to see. An allowlist rather than a blocklist so the
-#: fabricated `datePosted`/`validThrough` are absent from the value `parse` receives — putting the
-#: fabricated date back requires editing this frozenset, which `test_icims.py` asserts against,
-#: rather than merely forgetting a rule. `directApply` is omitted for a different reason: it was
-#: True on 207 of 207 sampled postings, so it carries no information.
+#: The JSON-LD keys this scraper is willing to see. An allowlist rather than a blocklist, so a
+#: field nobody vetted cannot reach `parse` by appearing in a future response. `validThrough` is
+#: excluded because it is fabricated on every board measured; `datePosted` is admitted but passed
+#: through :func:`_stated_date`, which is where the fabrication is filtered. `directApply` is
+#: omitted for a different reason: it was True on 207 of 207 sampled postings, so it says nothing.
 _LD_KEEP = frozenset(
     {
         "title",
@@ -71,8 +77,18 @@ _LD_KEEP = frozenset(
         "occupationalCategory",
         "baseSalary",
         "jobLocationType",
+        "datePosted",
     }
 )
+
+#: A fabricated `datePosted` carries sub-second milliseconds; a real one is midnight- or
+#: hour-anchored and ends `.000Z`. Measured over 54 random hiring boards, two fetches 3.5s apart:
+#: 12 boards fabricate (the value moves by the elapsed time and sits at `now - 2 years`) and 42
+#: state a real, stable date — and the split is exactly the millisecond field, 42/42 real ending
+#: `.000Z` against 0/12 fabricated. A fabricated value landing on `.000` by chance is possible
+#: (~1 in 1,000) and costs one Job a wrong date; the alternative, discarding every board's real
+#: date, cost 78% of them one — measured up to 2,437 days off on `careers-goaheadlondon`.
+_ANCHORED_MS = re.compile(r"\.000Z$", re.IGNORECASE)
 
 _SITEMAP_URL = re.compile(
     r"<url>\s*<loc>([^<]+)</loc>\s*(?:<lastmod>([^<]+)</lastmod>)?", re.IGNORECASE
@@ -194,8 +210,11 @@ class ICIMSScraper(BaseScraper):
                     remote=remote,
                     department=fields.get("department"),
                     url=item["url"],
-                    # Sitemap `<lastmod>` only. The JSON-LD's own date is generated per request.
-                    posted_at=item.get("posted_at"),
+                    # The board's own `datePosted` when it states a real one, else the
+                    # sitemap's `<lastmod>`. Neither alone is right: 22% of boards fabricate
+                    # the JSON-LD date, and `lastmod` is a last-*modified* stamp that ran up
+                    # to 2,437 days later than the real posting date where both existed.
+                    posted_at=fields.get("posted_at") or item.get("posted_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
@@ -277,6 +296,7 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
                 "department": kept.get("occupationalCategory"),
                 "employment_type": employment,
                 "salary": _salary(kept.get("baseSalary")),
+                "posted_at": _stated_date(kept.get("datePosted")),
                 "remote": True
                 if kept.get("jobLocationType") == "TELECOMMUTE"
                 else None,
@@ -310,19 +330,45 @@ def _ld_location(node: dict[str, Any]) -> str | None:
     return joined or None
 
 
+def _stated_date(value: Any) -> str | None:
+    """``datePosted`` when the board states a real one, else None.
+
+    22% of boards generate it per request as ``now - 2 years`` — the same posting fetched twice
+    seconds apart moves by the elapsed time. Those are rejected here on the millisecond field
+    (see :data:`_ANCHORED_MS`) so a fabricated date can never reach ``Job.posted_at``, while the
+    78% of boards that publish a genuine date keep it.
+
+    Returning None is not a loss: :meth:`ICIMSScraper.parse` falls back to the sitemap's
+    ``<lastmod>``, which is what every Job used before this filter existed.
+    """
+    if not isinstance(value, str) or not _ANCHORED_MS.search(value.strip()):
+        return None
+    return value.strip()
+
+
 def _salary(node: Any) -> str | None:
     """``baseSalary`` as a string ``headstart.salary`` can actually read, or None.
 
-    Two measured quirks, both handled here and nowhere else. iCIMS puts `minValue`/`maxValue`
-    **directly on the node** rather than under `value` as schema.org specifies, so both shapes are
-    read — a spec-correct parser sees null on every real iCIMS posting. And `unitText` is never
-    present, so the period comes from magnitude (:data:`_HOURLY_CEILING`).
+    iCIMS puts `minValue`/`maxValue` **directly on the node** rather than under `value` as
+    schema.org specifies, so both shapes are read — a spec-correct parser sees null on every real
+    iCIMS posting. `unitText` is never present, so the period comes from magnitude
+    (:data:`_HOURLY_CEILING`).
 
-    The spelling matters and is not free choice: `salary.extract()` reads `"USD 30.00 hourly"` and
-    `"USD 95000-125000 yearly"`, but returns None for `"USD 30.00/hour"`. Since 35 of the 55
-    measured figures are hourly, the slash spelling would null the majority case while annual
-    salaries landed — so the period word is appended, never a slash. There is one return site and
-    the period is always part of it, so a bare number cannot be emitted.
+    The spelling is load-bearing: `salary.extract()` reads `"USD 30 hourly"` and
+    `"USD 95000-125000 yearly"` but returns None for `"USD 30.00/hour"`, and 35 of the 55 measured
+    figures are hourly — the slash spelling would null the majority case while annual salaries
+    landed. So the period word is appended, never a slash.
+
+    Three shapes are refused rather than guessed at, each found in the 56 captured nodes:
+
+    * **A maximum with no minimum** (2/56). No spelling makes `extract` read a lone figure as a
+      ceiling — `"up to X"`, `"max X"` and `"0-X"` all land in `min_annual` or parse to None — so
+      emitting one would serve a job's ceiling as its floor and match a `min_salary` filter it
+      should fail. Losing 3.6% beats that.
+    * **Figures straddling the period boundary** (`{"minValue": 16.9, "maxValue": 39520}`, 1/56).
+      No single period fits both, so the node states no coherent range.
+    * **Neither bound present** — a currency-only node (the remainder of the 27% carrying
+      `baseSalary`) states no amount at all.
     """
     if not isinstance(node, dict):
         return None
@@ -332,17 +378,23 @@ def _salary(node: Any) -> str | None:
     hi = _number(source.get("maxValue"))
     if lo is None and hi is None:
         lo = _number(source.get("value"))
-    figures = [n for n in (lo, hi) if n is not None]
-    if not figures:
-        return None
-    period = "hourly" if max(figures) <= _HOURLY_CEILING else "yearly"
+    if lo is None:
+        return None  # a ceiling alone would be served as a floor
+    if hi is not None and (lo <= _HOURLY_CEILING) != (hi <= _HOURLY_CEILING):
+        return None  # one bound hourly, the other annual — no period fits
+    period = "hourly" if lo <= _HOURLY_CEILING else "yearly"
     currency = node.get("currency") or node.get("salaryCurrency")
-    amount = (
-        f"{lo:g}-{hi:g}"
-        if lo is not None and hi is not None and lo != hi
-        else f"{figures[0]:g}"
-    )
+    amount = f"{_fmt(lo)}-{_fmt(hi)}" if hi is not None and hi != lo else _fmt(lo)
     return f"{currency} {amount} {period}" if currency else f"{amount} {period}"
+
+
+def _fmt(n: float) -> str:
+    """A figure written without rounding it.
+
+    `f"{n:g}"` collapses to 6 significant digits, turning 149780.8 into 149781 — small, but it is
+    a silent edit of a number a company published.
+    """
+    return str(int(n)) if n == int(n) else f"{n:.2f}".rstrip("0").rstrip(".")
 
 
 def _number(value: Any) -> float | None:

@@ -24,6 +24,7 @@ from headstart.scrapers.icims import (
     _public_url,
     _salary,
     _sitemap_rows,
+    _stated_date,
 )
 from headstart.scrapers.registry import get_scraper
 
@@ -117,25 +118,77 @@ def test_parse_drops_a_job_whose_page_did_not_arrive() -> None:
 # --- dates: trap (a) -----------------------------------------------------------------------
 
 
-def test_the_ld_allowlist_has_no_date_key() -> None:
-    """`datePosted`/`validThrough` are fabricated per request, so they must not be readable.
+def test_validThrough_is_not_readable_and_datePosted_is_filtered() -> None:
+    """`validThrough` is fabricated on every board measured, so it is not in the allowlist.
 
-    This asserts the allowlist rather than the behaviour, because the allowlist is the mechanism:
-    putting a date back requires editing `_LD_KEEP`, which fails here.
+    `datePosted` *is* allowlisted — 78% of boards state a real one — but only reaches a Job
+    through `_stated_date`, which is where the fabricating 22% are rejected.
     """
-    assert "datePosted" not in _LD_KEEP
     assert "validThrough" not in _LD_KEEP
+    assert "datePosted" in _LD_KEEP
 
 
-def test_fabricated_datePosted_never_reaches_the_job() -> None:
-    """The fixture's own JSON-LD still carries the fabricated date; posted_at must ignore it."""
-    page = _FIXTURE["pages"][_FIXTURE["wrapper_for_id"]]
-    assert '"datePosted"' in page, (
-        "fixture should still contain the field we refuse to read"
+def test_stated_date_rejects_a_fabricated_datePosted() -> None:
+    """The fabricated value carries sub-second ms; 0 of 12 fabricating boards ended `.000Z`."""
+    assert _stated_date("2024-09-07T19:20:40.774Z") is None
+    assert _stated_date("2024-09-07T18:18:43.622Z") is None
+    assert _stated_date(None) is None
+    assert _stated_date(12345) is None
+
+
+def test_stated_date_keeps_a_real_datePosted() -> None:
+    """A real date is midnight- or hour-anchored; 42 of 42 real ones ended `.000Z`."""
+    assert _stated_date("2026-09-04T04:00:00.000Z") == "2026-09-04T04:00:00.000Z"
+    assert _stated_date("2020-01-02T00:00:00.000Z") == "2020-01-02T00:00:00.000Z"
+    assert _stated_date("  2026-08-24T23:00:00.000Z  ") == "2026-08-24T23:00:00.000Z"
+
+
+def test_posted_at_prefers_the_boards_own_date_over_lastmod() -> None:
+    """Where a board states a real date, `lastmod` must not override it.
+
+    On `careers-goaheadlondon` the two differ by 2,437 days, so this is the difference between
+    serving a 2020 posting as 2020 and serving it as last week.
+    """
+    scraper = get_scraper("icims", _HOST)
+    real = [
+        {
+            "id": "1",
+            "url": "https://h/jobs/1/a/job",
+            "posted_at": "2026-09-04T17:15:18-04:00",  # the sitemap's lastmod
+            "fields": {"title": "T", "posted_at": "2020-01-02T00:00:00.000Z"},
+        }
+    ]
+    assert scraper.parse(real, _SCRAPED_AT)[0].posted_at == "2020-01-02T00:00:00.000Z"
+
+
+def test_posted_at_falls_back_to_lastmod_where_the_board_fabricates() -> None:
+    """`_stated_date` returns None for the fabricating 22%, and lastmod carries those Jobs."""
+    scraper = get_scraper("icims", _HOST)
+    fabricating = [
+        {
+            "id": "1",
+            "url": "https://h/jobs/1/a/job",
+            "posted_at": "2026-09-04T17:15:18-04:00",
+            "fields": {"title": "T", "posted_at": None},
+        }
+    ]
+    assert (
+        scraper.parse(fabricating, _SCRAPED_AT)[0].posted_at
+        == "2026-09-04T17:15:18-04:00"
     )
-    fields = _ld_fields(page)
-    assert "posted_at" not in fields
-    assert not any("date" in k.lower() for k in fields)
+
+
+def test_the_fixture_board_states_real_dates_and_they_win() -> None:
+    """End-to-end on the real capture: this board is one of the 78% that state a real date.
+
+    Its `datePosted` values are hour-anchored (`2026-09-02T04:00:00.000Z`) and differ from the
+    sitemap's `lastmod`, so this asserts the preference on real data rather than a constructed
+    dict — and it fails if `_stated_date` ever starts rejecting genuine dates.
+    """
+    page = _FIXTURE["pages"][_FIXTURE["wrapper_for_id"]]
+    assert '"datePosted"' in page
+    stated = _ld_fields(page)["posted_at"]
+    assert stated is not None and stated.endswith(".000Z")
 
     jobs = get_scraper("icims", _HOST).parse(_raw_from_fixture(), _SCRAPED_AT)
     lastmods = {
@@ -143,8 +196,16 @@ def test_fabricated_datePosted_never_reaches_the_job() -> None:
         for job_id, _, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"], _HOST)
     }
     assert jobs
+    differed = 0
     for job in jobs:
-        assert job.posted_at == lastmods[job.id.rsplit(":", 1)[1]]
+        job_id = job.id.rsplit(":", 1)[1]
+        assert job.posted_at.endswith(".000Z"), (
+            "the board's own date must win over lastmod"
+        )
+        differed += job.posted_at != lastmods[job_id]
+    assert differed, (
+        "fixture should contain a Job whose real date differs from its lastmod"
+    )
 
 
 # --- salary: trap (b) ----------------------------------------------------------------------
@@ -170,6 +231,30 @@ def test_salary_infers_period_from_magnitude() -> None:
         _salary({"minValue": 70000, "maxValue": 70000, "currency": "USD"})
         == "USD 70000 yearly"
     )
+
+
+def test_salary_refuses_a_ceiling_with_no_floor() -> None:
+    """2 of 56 captured nodes state only `maxValue`.
+
+    No spelling makes `salary.extract` read a lone figure as a ceiling, so emitting one would
+    serve a job's maximum as its minimum and match a `min_salary` filter it should fail.
+    """
+    assert _salary({"maxValue": 149780.8, "currency": "USD"}) is None
+    assert _salary({"minValue": 149780.8, "currency": "USD"}) == "USD 149780.8 yearly"
+
+
+def test_salary_refuses_figures_straddling_the_period_boundary() -> None:
+    """`{"minValue": 16.9, "maxValue": 39520}` is real, captured, and states no coherent range."""
+    assert _salary({"minValue": 16.9, "maxValue": 39520, "currency": "USD"}) is None
+    assert _salary({"minValue": 16.9, "maxValue": 39.5, "currency": "USD"}) == (
+        "USD 16.9-39.5 hourly"
+    )
+
+
+def test_salary_does_not_round_the_figure() -> None:
+    """`f"{n:g}"` collapses to 6 significant digits, silently editing a published number."""
+    assert _salary({"minValue": 149780.8, "currency": "USD"}) == "USD 149780.8 yearly"
+    assert _salary({"minValue": 70000.0, "currency": "USD"}) == "USD 70000 yearly"
 
 
 def test_salary_is_none_without_a_figure() -> None:
