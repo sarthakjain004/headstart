@@ -44,7 +44,7 @@ def _raw_from_fixture() -> list[dict]:
             "posted_at": lastmod,
             "fields": _ld_fields(_FIXTURE["pages"][job_id]),
         }
-        for job_id, url, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"], _HOST)
+        for job_id, url, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"])
         if job_id in _FIXTURE["pages"]
     ]
 
@@ -53,7 +53,7 @@ def _raw_from_fixture() -> list[dict]:
 
 
 def test_sitemap_rows_reads_id_url_and_lastmod() -> None:
-    rows = _sitemap_rows(_FIXTURE["sitemap_xml"], _HOST)
+    rows = _sitemap_rows(_FIXTURE["sitemap_xml"])
     assert rows, "fixture sitemap should list postings"
     for job_id, url, lastmod in rows:
         assert job_id.isdigit()
@@ -67,7 +67,7 @@ def test_sitemap_rows_skips_non_posting_urls() -> None:
     non_postings = [u for u in locs if not re.search(r"/jobs/\d+/[^/]*/job", u)]
     assert non_postings, "fixture should contain a non-posting URL to skip"
 
-    kept = {url for _, url, _ in _sitemap_rows(_FIXTURE["sitemap_xml"], _HOST)}
+    kept = {url for _, url, _ in _sitemap_rows(_FIXTURE["sitemap_xml"])}
     assert kept.isdisjoint(non_postings)
     assert len(kept) == len(locs) - len(non_postings)
 
@@ -77,7 +77,7 @@ def test_sitemap_rows_dedupes_repeated_ids() -> None:
         "<url><loc>https://h.icims.com/jobs/1/a/job</loc><lastmod>2026-01-01</lastmod></url>"
         "<url><loc>https://h.icims.com/jobs/1/a-renamed/job</loc><lastmod>2026-02-02</lastmod></url>"
     )
-    rows = _sitemap_rows(xml, "h.icims.com")
+    rows = _sitemap_rows(xml)
     assert [r[0] for r in rows] == ["1"]
     assert rows[0][2] == "2026-01-01", "first occurrence wins"
 
@@ -192,8 +192,7 @@ def test_the_fixture_board_states_real_dates_and_they_win() -> None:
 
     jobs = get_scraper("icims", _HOST).parse(_raw_from_fixture(), _SCRAPED_AT)
     lastmods = {
-        job_id: lastmod
-        for job_id, _, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"], _HOST)
+        job_id: lastmod for job_id, _, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"])
     }
     assert jobs
     differed = 0

@@ -58,9 +58,6 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 _log = log.get(__name__)
 
-_SITEMAP_CAP = (
-    30 * 1024 * 1024
-)  # runaway guard; the largest sitemap measured is ~1.5 MB
 _DETAIL_WORKERS = 16
 
 #: The JSON-LD keys this scraper is willing to see. An allowlist rather than a blocklist, so a
@@ -137,7 +134,7 @@ class ICIMSScraper(BaseScraper):
         # opt-out boards. It is a settled answer, not a transient one, so it raises like any other
         # non-200 and the Board earns a liveness verdict rather than looking empty.
         response.raise_for_status()
-        listed = _sitemap_rows(response.text[:_SITEMAP_CAP], self.slug)
+        listed = _sitemap_rows(response.text)
         _log.info(f"{self.slug}: sitemap -> {len(listed)} job pages to fetch")
         if not listed:
             return []
@@ -224,7 +221,7 @@ class ICIMSScraper(BaseScraper):
         return jobs
 
 
-def _sitemap_rows(xml: str, host: str) -> list[tuple[str, str, str | None]]:
+def _sitemap_rows(xml: str) -> list[tuple[str, str, str | None]]:
     """``(job_id, public_url, lastmod)`` per posting, deduped, in sitemap order.
 
     Non-job entries are skipped: all 35 sitemaps sampled carry at least one non-posting URL
@@ -242,7 +239,6 @@ def _sitemap_rows(xml: str, host: str) -> list[tuple[str, str, str | None]]:
             continue
         seen.add(job_id)
         rows.append((job_id, _public_url(loc.strip()), (lastmod or "").strip() or None))
-    _ = host  # host is the caller's own slug; kept in the signature for symmetry with parse
     return rows
 
 

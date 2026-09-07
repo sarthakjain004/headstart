@@ -22,9 +22,10 @@ surface the scraper actually reads:
 | | measured 2026-09-08 |
 |---|---|
 | tenants probed (full Wayback roster) | 6,430 |
-| **live boards** | **2,055** |
+| non-tenant hosts filtered out (vendor infra + `.i.` mirrors, all `jobs=0`) | 107 |
+| **live boards** | **2,040** |
 | **Hiring Boards** (`min_jobs>=1`) | **1,583** |
-| live but empty | 472 |
+| live but empty | 457 |
 | **jobs reachable** | **143,964** |
 | jobs per board | median 9, p90 133, max 8,477 |
 
@@ -84,12 +85,42 @@ All sitemaps sampled carry at least one non-posting URL — `/jobs/intro` on 15 
 `/jobs/search` on the rest — so the job-path match, not a name-based exclusion, is what separates
 them.
 
+## `datePosted`: fabricated on 22% of boards, real on the rest
+
+The first version of this scraper discarded `datePosted` entirely, on the strength of **one**
+board (`career-celanese`) whose value moved between two fetches three seconds apart. That
+generalisation was wrong, and it shipped: every Job was served the sitemap's `lastmod` instead.
+
+Re-measured over **54 random hiring boards**, two fetches 3.5s apart each:
+
+| | boards |
+|---|---|
+| `datePosted` moves between fetches (fabricated `now - 2y`) | 12 |
+| `datePosted` stable — a real posting date | **42** |
+
+The two are separable in a **single fetch** by the millisecond field alone: **42/42 real values end
+`.000Z`** (midnight- or hour-anchored), **0/12 fabricated ones do** (they carry live sub-second ms).
+`_stated_date` encodes exactly that, and `posted_at` falls back to `lastmod` only where the board
+fabricates.
+
+The fallback is not equivalent, which is why it is second. Where both a real `datePosted` and a
+`lastmod` existed, they diverged by 0–2,437 days:
+
+| board | real `datePosted` | sitemap `lastmod` | error if lastmod is used |
+|---|---|---|---|
+| `careers-goaheadlondon` | 2020-01-02 | 2026-09-04 | 2,437 days |
+| `careers-greenstreet` | 2026-07-01 | 2026-09-02 | 63 days |
+| `careers-hk-merlinentertainments` | 2026-07-15 | 2026-08-26 | 42 days |
+| `australia-kleinfelder` | 2026-08-25 | 2026-08-25 | 0 days |
+
+`validThrough` is fabricated on every board measured and stays out of `_LD_KEEP` entirely.
+
 ## The tenant discriminator
 
 `icims.com` domain-matching returns the vendor's ~120 infrastructure hosts alongside real
 tenants, and `cc_miner.tenant_from`'s `host` branch does not apply `BLOCK`. Two measured filters:
 
-- **The label must contain a hyphen.** 1,499 of 1,499 live boards do — 100%, zero exceptions —
+- **The label must contain a hyphen.** All 2,040 live boards in the ledger do — zero exceptions —
   while infra is overwhelmingly single-word (`login`, `dev`, `social`, `api`, `staging`,
   `marketplace`, `webservices`, `talent`). This cannot be a word list: the bare words are exactly
   the ones a real tenant prefix extends (`careers-acadiahealthcare`, `jobs-collaborationbetterstheworld`).

@@ -153,8 +153,8 @@ ATS_PATTERNS = {
         # Two filters, both measured 2026-09-08 rather than guessed, because `tenant_from`'s
         # `host` branch does NOT apply BLOCK and `icims.com` domain-matching returns the vendor's
         # own ~120 infrastructure hosts alongside the tenants:
-        #  * **the label must contain a hyphen.** 1,499 of 1,499 live boards in
-        #    `data/validate/liveness/icims.csv` do (100%, zero exceptions), while the vendor's
+        #  * **the label must contain a hyphen.** All 2,040 live boards in
+        #    `data/validate/liveness/icims.csv` do (zero exceptions), while the vendor's
         #    infra is overwhelmingly single-word — `login`, `dev`, `social`, `api`, `staging`,
         #    `marketplace`, `webservices`, `talent`, and `careers`/`jobs` bare. Note the bare
         #    words are exactly the ones a tenant prefix extends: `careers-acadiahealthcare` and

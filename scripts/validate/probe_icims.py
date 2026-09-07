@@ -25,6 +25,8 @@ import requests
 from headstart.scrapers.base import USER_AGENT
 
 _JOB_LOC = re.compile(r"<loc>[^<]*/jobs/(\d+)/[^<]*/job[^<]*</loc>", re.IGNORECASE)
+#: Status codes that answer the question. Everything else is retried rather than believed.
+_SETTLED = frozenset({403, 404})
 _local = threading.local()
 
 # The prior census saw 827 ConnectionErrors (53%) at concurrency 6 with no retries, every one of
@@ -40,6 +42,18 @@ def _session() -> requests.Session:
     return _local.s
 
 
+def _row(tenant: str, status: str, jobs: object, why: str = "") -> dict[str, object]:
+    row: dict[str, object] = {
+        "tenant": tenant,
+        "url": f"https://{tenant}",
+        "status": status,
+        "jobs": jobs,
+    }
+    if why:
+        row["why"] = why
+    return row
+
+
 def probe(tenant: str) -> dict[str, object]:
     url = f"https://{tenant}/sitemap.xml"
     last = ""
@@ -53,26 +67,19 @@ def probe(tenant: str) -> dict[str, object]:
             continue
         if r.status_code == 200:
             jobs = len(set(_JOB_LOC.findall(r.text)))
-            return {
-                "tenant": tenant,
-                "url": f"https://{tenant}",
-                "status": "live",
-                "jobs": jobs,
-            }
-        # 403 == the tenant's own Disallow: / (47/47 measured). 404 == retired tenant.
-        return {
-            "tenant": tenant,
-            "url": f"https://{tenant}",
-            "status": "dead",
-            "jobs": "",
-        }
-    return {
-        "tenant": tenant,
-        "url": f"https://{tenant}",
-        "status": "dead",
-        "jobs": "",
-        "why": last,
-    }
+            return _row(tenant, "live", jobs)
+        # 403 and 404 are settled answers: 403 is the tenant's own `Disallow: /` (47/47 measured)
+        # and 404 is a retired tenant. Anything else — 429, 5xx, a gateway hiccup — says nothing
+        # about the Board and is retried, because a status code does not imply its mechanism and
+        # writing `dead` on one transient 503 would evict a live Board from every future Slice.
+        if r.status_code in _SETTLED:
+            return _row(tenant, "dead", "")
+        last = f"HTTP {r.status_code}"
+        if attempt + 1 < _ATTEMPTS:
+            time.sleep(1.5 * (attempt + 1))
+    # Never seen a settled answer. `unknown` keeps the Board out of the scrape list without
+    # asserting it is gone — `liveness.load` treats it as not-live, and the next probe re-decides.
+    return _row(tenant, "unknown", "", last)
 
 
 def main() -> int:
