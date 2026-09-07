@@ -1312,3 +1312,34 @@ def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
     bare = tpl.render(atses=["greenhouse"], repo="https://example.test")
     assert "Nothing." in bare
     assert "the key your saved work hangs off" not in bare
+
+
+def test_the_salary_tip_does_not_promise_conversion_without_rates(app, monkeypatch):
+    """ADR-0117 falls back to one currency when the rate table is unreadable — and the copy
+    beside the control has to fall back with it.
+
+    The first version guarded only the date, so a deployment with no rates still told the user
+    that other currencies "are converted so they still match", describing something that was
+    not happening. Both branches are reachable, so both are asserted."""
+    tpl = app.app.jinja_env.get_template("search.html")
+    ctx = {
+        "currencies": ["USD", "INR"],
+        "keyword_scopes": [("title", "Job title", False)],
+        "keyword_default_scope": "title",
+        "has_description": True,
+        "india_opts": [],
+        "posted_opts": [],
+        "seen_opts": [],
+        "atses": ["greenhouse"],
+        "has_first_seen": True,
+    }
+    with_rates = tpl.render(fx_as_of="2024-06-01", **ctx)
+    assert "converted so they" in " ".join(with_rates.split())
+    assert "2024-06-01" in with_rates
+
+    without = tpl.render(
+        **ctx
+    )  # fx.table() returned None, so no date reaches the template
+    flat = " ".join(without.split())
+    assert "Compared inside one currency only" in flat
+    assert "are converted" not in flat

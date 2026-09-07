@@ -145,10 +145,17 @@
              reader reading two bare numbers between them adds nothing. #}
           <div class="slider-caps" aria-hidden="true"><span id="salcap0"></span><span id="salcap1"></span></div>
           <span class="slider-read" id="salread"></span>
-          <span class="tip">Jobs priced in other currencies are converted so they still match{% if fx_as_of %},
-            at approximate rates from {{ fx_as_of }}{% endif %}. That is currency conversion, not
+          {# Both branches, because both are reachable: with no rate table `build_filter` falls
+             back to comparing inside one currency (ADR-0117), and a sentence promising
+             conversion would then be describing something that is not happening. The date is
+             not an optional decoration on the first branch — it is what makes an approximate
+             rate checkable, so the two cannot be separated. #}
+          <span class="tip">{% if fx_as_of %}Jobs priced in other currencies are converted so they
+            still match, at approximate rates from {{ fx_as_of }}. That is currency conversion, not
             cost of living — the same figure buys very different lives in different places, so read
-            a converted salary as "roughly this much money", not as a comparable offer. Only jobs
+            a converted salary as "roughly this much money", not as a comparable offer.{% else %}Compared
+            inside one currency only: no conversion rates are available to this deployment, so a
+            bracket set in one currency will not match jobs priced in another.{% endif %} Only jobs
             whose salary is known can match.</span></div>
         {% endif %}
       </div>
