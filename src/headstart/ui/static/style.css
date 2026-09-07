@@ -9,10 +9,10 @@
        "AI startup" register contradicts what the product now says about itself on the Data tab.
        Hue is spent on exceptions (new, pays, remote), never on chrome. ---- */
 :root{
-  --ground:#131211; --raise:#2A2724; --raise-2:#353128; --rule:#454039; --rule-2:#5C554C;
-  --ink:#F2EFE9; --ink-2:#BDB6AA; --ink-3:#968F82;
-  --accent:#5FBFB0; --violet:#A99BE0; --amber:#E0A526; --lime:#A9CC6B;
-  --coral:#E58374;
+  --ground:#0A0B0D; --raise:#1F2329; --raise-2:#272C34; --rule:#333944; --rule-2:#464D5A;
+  --ink:#F2F4F7; --ink-2:#AAB2BF; --ink-3:#8A93A1;
+  --accent:#818CF8; --violet:#C4B5FD; --amber:#FBBF24; --lime:#34D399;
+  --coral:#FB7185;
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
      against this file's own --raise dark / near-white light chart surfaces; see
      docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
@@ -33,7 +33,7 @@
      plus the pay/match/star columns — and it lives here as a token because Search, Matches
      and Saved must not each pick their own: they render the same card, so a card that is
      880px on one tab and 1276px on another is the same component at two sizes. */
-  --measure:880px;
+  --measure:1080px;
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
@@ -42,18 +42,18 @@
    replaces, which sat at 3.5:1 and failed AA for the rail's caveats. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme]){
-    --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
-    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#635D52;
-    --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
+    --ground:#E6E9EE; --raise:#FFFFFF; --raise-2:#EDEFF3; --rule:#DCE0E7; --rule-2:#BFC5D0;
+    --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
+    --accent:#4F46E5; --violet:#6D28D9; --amber:#8A5A00; --lime:#046C4E; --coral:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
   }
 }
 :root[data-theme="light"]{
-    --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
-    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#635D52;
-    --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
+    --ground:#E6E9EE; --raise:#FFFFFF; --raise-2:#EDEFF3; --rule:#DCE0E7; --rule-2:#BFC5D0;
+    --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
+    --accent:#4F46E5; --violet:#6D28D9; --amber:#8A5A00; --lime:#046C4E; --coral:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
@@ -72,14 +72,24 @@ body{
    anything inside it could ever be: `.content` is capped at --measure and had no margin, so
    every panel sat hard against the left edge with a 418px void on the right while the footer,
    centred on the shell, sat 198px away from the column it belongs to. */
-.shell{ position:relative; z-index:1; max-width:924px; margin:0 auto; padding:18px 22px 72px; }
+/* Fluid to a ceiling. A fixed 924px cap left a 2692px display showing more background than
+   product; a percentage keeps the page filling the screen it is given, and the ceiling stops
+   the masthead drifting apart on an ultrawide. The RESULT rows are bounded separately by
+   --measure — past roughly 1100px a row stops gaining information and starts gaining the dead
+   air that three critique rounds were spent removing. */
+.shell{ position:relative; z-index:1; max-width:min(1560px, 94vw); margin:0 auto;
+  padding:18px 26px 72px; }
 /* Bounded here rather than on `main`, which is Search's element alone: constraining that one
    left Matches and Saved rendering the SAME card at the shell's full 1276px, with the content
    ending at 918 and 427px of empty card after it. The masthead, tab strip and footer keep the
    shell width — chrome that spans the page rather than content to be read across — which now
    lands on the same two x's as this, because the shell is capped at exactly this measure plus
    its padding. Data's `.doc` sets its own, narrower prose measure and is unaffected. */
-.content{ max-width:var(--measure); margin-inline:auto; }
+/* The filter panel, tab strip and toolbar span the shell; only the result rows are held to
+   a readable measure. Capping `.content` held everything to one narrow ribbon, which on a
+   wide display read as a page starved of its own screen. */
+.content{ margin-inline:auto; }
+main, .doc, .saved, .profile, .matches{ max-width:var(--measure); }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
@@ -608,6 +618,20 @@ textarea:focus{ border-color:var(--violet); }
   .card .pay{ grid-area:pay; text-align:left; align-self:center; }
   .card .match{ grid-area:match; }
   .card .star{ grid-area:star; }
+}
+
+/* Ultrawide: spend the width on MORE jobs, not wider ones (ADR-0116's rule that full width
+   is worth having only if it buys density). Past ~1500px a single column leaves hundreds of
+   pixels of background either side, and stretching the row instead just re-grows the dead air
+   three critique rounds were spent removing. Two columns double what a scan sees per screen;
+   pay still aligns down each column, which is the property that made the row layout worth it.
+   The text column becomes fluid here so a card fits its narrower share. */
+@media (min-width:1560px){
+  main{ max-width:none; }
+  #results{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px;
+    align-items:start; }
+  .card{ grid-template-columns:minmax(0,1fr) 178px 52px 44px; gap:0 14px; }
+  .card .pay{ font-size:12.5px; white-space:nowrap; }
 }
 
 /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
