@@ -724,6 +724,9 @@ textarea:focus{ border-color:var(--accent); }
    survives every CVD, greyscale print and forced-colors mode. */
 .up, .down{ color:var(--ink-2); } .flat{ color:var(--ink-3); }
 .trends-grid .gridline{ stroke:var(--rule); stroke-width:1; }
+/* The 100 datum under Change. Stronger than the grid because it is not a tick: whether a line
+   sits above or below it is the whole reading. Still an ink token, never a series colour. */
+.trends-grid .baseline{ stroke:var(--rule-2); stroke-width:1.5; }
 /* 12px floor + tabular-nums (Datawrapper's legibility rule) — was 10px with no numeric
    alignment, both flagged by the design research doc §6. */
 .trends-grid .axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }

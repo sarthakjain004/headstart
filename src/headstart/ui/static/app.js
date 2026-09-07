@@ -1433,20 +1433,40 @@ function setTrendsBusy(on){
   if (viz && on) viz.hidden = true;
 }
 
-// A series' value in the displayed unit: share of the index for stock, else the raw count.
-// Share divides by that stamp's WHOLE table (families + non-tech), so index growth cancels.
-function trendValue(v, j){
+// A series' LEVEL at a stamp: share of the index for stock, else the raw count. Share divides
+// by that stamp's WHOLE table (families + non-tech), so index growth cancels.
+//
+// This is not always what the chart plots — under Change the plot is indexed (seriesValues
+// below) — but it is always what the legend, the table and the tooltip report, because those
+// are the magnitude surfaces. ADR-0118 splits the work that way on purpose: shapes on the
+// plot, magnitudes in the text beside it.
+function levelValue(v, j){
   if (v == null) return null;
-  if (trendUnit !== 'share') return v;
+  if (trendUnit === 'count') return v;
   const t = trendData.totals[j];
   return t ? v / t * 100 : null;
+}
+
+// What the PLOT draws for a series. Under Share and Count that is the level. Under Change each
+// series is divided by its own first measured level and multiplied by 100, so every line starts
+// together at 100 and traces its own movement (ADR-0118).
+//
+// Indexing is per-series, which is why this takes a series and not a point: the same raw number
+// means a different plotted value depending on where its family started. A family whose base is
+// zero or missing cannot be indexed at all and is drawn as a gap rather than as a spike.
+function seriesValues(s){
+  const level = s.points.map((v, j) => levelValue(v, j));
+  if (trendUnit !== 'index') return level;
+  const base = level.find(v => v);
+  if (!base) return level.map(() => null);
+  return level.map(v => (v == null ? null : v / base * 100));
 }
 
 // A series' movement across the window, in the displayed unit. Averages the first and last
 // up-to-3 measured points rather than comparing two single runs — one noisy measurement at
 // either end must not swing the headline number.
 function trendDelta(points){
-  const seen = points.map((v, j) => trendValue(v, j)).filter(v => v != null);
+  const seen = points.map((v, j) => levelValue(v, j)).filter(v => v != null);
   if (seen.length < 2) return null;
   const k = Math.min(3, Math.floor(seen.length / 2)) || 1;
   const head = seen.slice(0, k).reduce((a, b) => a + b) / k;
@@ -1469,16 +1489,12 @@ function stampLabel(ts, terse){
   return `${day} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
 }
 
-function fmtValue(v){
-  if (trendUnit === 'share') return v >= 10 ? v.toFixed(0) + '%' : v.toFixed(1) + '%';
-  return Math.round(v).toLocaleString();
-}
 
 // The legend's own rendering of a value. Under Count, `45,174` is six characters taken straight
 // out of the name beside it — every legend label ellipsized the moment Count was selected. The
 // tooltip and the table still carry the exact figure, so nothing is lost, only shortened.
 function fmtCompact(v){
-  if (trendUnit === 'share') return fmtValue(v);
+  if (trendUnit !== 'count') return fmtLevel(v);   // Change reports the level too
   const n = Math.round(v);
   if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
   if (n >= 1e4) return Math.round(n / 1e3) + 'k';
@@ -1490,6 +1506,22 @@ function fmtCompact(v){
 // step, and every label prints at the precision that step needs. Dividing the data max by four
 // gave `0.0% / 6.8% / 14% / 20% / 27%` — five labels at three precisions, which read as five
 // unrelated numbers rather than one scale. Returns the top of the axis and its tick values.
+// The same nice-number stepping over a range that need not start at zero. Change is the case
+// that needs it: indexed values sit around 100, so a zero-based axis would put every line in
+// the top tenth of the plot and hand back the empty band ADR-0118 exists to remove.
+function niceBounds(min, max){
+  const span = Math.max(max - min, Math.abs(max) * 0.02, 1e-6);
+  const want = span / 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(want || 1)));
+  const mult = [1, 2, 2.5, 5, 10].find(m => want <= m * mag) ?? 10;
+  const step = mult * mag;
+  const bot = Math.floor(min / step) * step, top = Math.ceil(max / step) * step;
+  const dec = Math.max(0, (mult === 2.5 ? 1 : 0) - Math.round(Math.log10(mag)));
+  const ticks = [];
+  for (let k = 0; bot + k * step <= top + step / 1e6; k++) ticks.push(bot + k * step);
+  return { bot, top, ticks, dec };
+}
+
 function niceAxis(hi){
   const want = hi / 5;                                    // the smallest step that fits ~5 gaps
   const mag = Math.pow(10, Math.floor(Math.log10(want || 1)));
@@ -1500,13 +1532,27 @@ function niceAxis(hi){
   const dec = Math.max(0, (mult === 2.5 ? 1 : 0) - Math.round(Math.log10(mag)));
   const ticks = [];
   for (let k = 0; k * step <= top + step / 1e6; k++) ticks.push(k * step);
-  return { top, ticks, dec };
+  return { bot: 0, top, ticks, dec };
 }
 
-// One precision for the whole axis, unlike fmtValue's per-value choice.
+// One precision for the whole axis, unlike fmtLevel's per-value choice.
 function fmtAxis(v, dec){
   if (trendUnit === 'share') return v.toFixed(dec) + '%';
+  if (trendUnit === 'index') return v.toFixed(dec);   // an index is a bare number, not a count
   return v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+// A hover row's reading. Under Change the plotted number and the magnitude are different
+// numbers, so both are given rather than making the reader guess which one they are looking at.
+function rowText(r){
+  const lvl = r.value == null ? '—' : fmtLevel(r.value);
+  return trendUnit === 'index' && r.index != null ? `${lvl} · ${r.index.toFixed(0)}` : lvl;
+}
+
+// The legend, table and tooltip always speak the level, whatever the plot is drawing.
+function fmtLevel(v){
+  if (trendUnit === 'count') return Math.round(v).toLocaleString();
+  return v >= 10 ? v.toFixed(0) + '%' : v.toFixed(1) + '%';
 }
 
 // Direction rides an ARROW, not a hue. --alert (#FB7185) sits Delta E 5.7 from --series-8
@@ -1561,7 +1607,7 @@ function drawTrends(){
     const c = seriesColor(slot);
     const dl = trendDelta(s.points);
     const j = d.stamps.length - 1;
-    const latest = s.latest == null ? null : trendValue(s.latest, j);
+    const latest = s.latest == null ? null : levelValue(s.latest, j);
     // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
     // top level. Without it the split toggle only appears after drilling in, which means the
     // one place that advertises the feature is the one place you reach by already knowing it
@@ -1590,16 +1636,14 @@ function drawTrends(){
     // not a new special case. The hide button is a sibling, not a child of that row.
     const dl = trendDelta(other.points);
     const j = d.stamps.length - 1;
-    const latest = other.points[j] == null ? null : trendValue(other.points[j], j);
-    const off = hiddenSeries.has('__other__');
-    legendRows.push(`<li class="other${off ? ' off' : ''}"><span class="row" data-name="__other__"
-      >${swatchHtml('var(--ink-3)', 'other')}
-      <span class="nm" title="${esc(other.label)}">${esc(other.label)}</span>
+    const latest = other.points[j] == null ? null : levelValue(other.points[j], j);
+    // No hide toggle and no swatch: since ADR-0118 Other is on neither the plot nor its scale,
+    // so there is no line to hide and no colour to key. The row is a reconciliation figure —
+    // it says where the rest of the index went — and it reads as one.
+    legendRows.push(`<li class="other"><span class="row" data-name="__other__"
+      ><span class="nm" title="${esc(other.label)}">${esc(other.label)}</span>
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
-      <span class="dl ${deltaClass(dl)}">${deltaText(dl)}</span></span>
-      <button class="vis" type="button" data-hide="__other__" aria-pressed="${off}"
-        title="${off ? 'Show' : 'Hide'} this line" aria-label="${off ? 'Show' : 'Hide'} other categories"
-        >${off ? '○' : '●'}</button></li>`);
+      <span class="dl ${deltaClass(dl)}">${deltaText(dl)}</span></span></li>`);
   }
   el('trends-legend').innerHTML = legendRows.join('');
 
@@ -1613,18 +1657,32 @@ function drawTrends(){
   const H = Math.max(240, legendH, Math.min(520, Math.max(Math.round(W * 0.36), Math.min(viewportH, Math.round(W * 0.8)))));
   const PAD_L = 46, PAD_B = 22, PAD_T = 10;
 
+  // Other is not drawn (ADR-0118). It is a reconciliation bucket, not a category: it was the
+  // topmost line at 27% and, because the maximum is taken across everything drawn, it alone
+  // set the scale that squashed the eight real categories. It keeps its legend and table rows,
+  // so the share it accounts for is still on screen — it just stops dictating the axis.
   // A hidden series leaves the plot AND the scale — rescaling is the point of hiding one.
-  const drawn = shown.filter(s => !hiddenSeries.has(s.name));
-  const vals = drawn.flatMap(s => s.points.map((v, j) => trendValue(v, j))).filter(v => v != null);
-  const lo = 0;
-  let hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
-  // Datawrapper's line-chart guidance: extend the axis to 100% once a share reading comes
-  // close to it, so the reader sees the true ceiling rather than an axis that implies more
-  // headroom exists. Left alone otherwise — most shares here are single digits, and forcing
-  // every chart to a 0-100 scale would flatten the small-value comparisons this page is for.
-  if (trendUnit === 'share' && hi > 80) hi = 100;
-  const axis = niceAxis(hi);
-  const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / (axis.top - lo));
+  const drawn = charted.filter(s => !hiddenSeries.has(s.name));
+  const vals = drawn.flatMap(s => seriesValues(s)).filter(v => v != null);
+  let axis;
+  if (trendUnit === 'index'){
+    // Indexed lines cluster around 100 and the interesting part is how far they stray, so the
+    // axis frames the data rather than the origin. 100 is always inside it: it is the baseline
+    // every line starts from, and an axis that cropped it would hide the comparison.
+    // No extra padding: niceBounds already rounds outward to a whole step, and doing both
+    // stacked two slacks on top of each other — data spanning 78-185 was framed 50-200, which
+    // is a quarter of the plot height given to nothing.
+    axis = niceBounds(Math.min(100, ...vals), Math.max(100, ...vals));
+  } else {
+    let hi = Math.max(trendUnit === 'share' ? 0.1 : 1, ...vals);
+    // Datawrapper's line-chart guidance: extend the axis to 100% once a share reading comes
+    // close to it, so the reader sees the true ceiling rather than an axis that implies more
+    // headroom exists. Left alone otherwise — most shares here are single digits, and forcing
+    // every chart to a 0-100 scale would flatten the small-value comparisons this page is for.
+    if (trendUnit === 'share' && hi > 80) hi = 100;
+    axis = niceAxis(hi);
+  }
+  const y = v => PAD_T + (H - PAD_T - PAD_B) * (1 - (v - axis.bot) / (axis.top - axis.bot));
 
   // Direct end-labels, but only where endpoints actually separate (dataviz skill,
   // marks-and-anatomy.md: "When end-labels collide, don't stack them"). Labelling all nine
@@ -1633,7 +1691,7 @@ function drawTrends(){
   // them, and only when the plot is wide enough to hold a gutter. y does not depend on PAD_R,
   // so the decision can be made before the gutter is reserved.
   const ends = drawn.map(s => {
-    const vs = s.points.map((v, j) => trendValue(v, j));
+    const vs = seriesValues(s);
     for (let j = vs.length - 1; j >= 0; j--) if (vs[j] != null) return { s, v: vs[j], y: y(vs[j]) };
     return null;
   }).filter(Boolean).sort((a, b) => a.y - b.y);
@@ -1647,6 +1705,14 @@ function drawTrends(){
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - PAD_R) / (d.stamps.length - 1));
 
   let svg = '';
+  // Under Change, 100 is where every line starts, so it is a datum and not just another tick:
+  // whether a line sits above or below it IS the reading. It gets a stronger rule than the
+  // grid, drawn first so the series cross over it.
+  if (trendUnit === 'index'){
+    const yb = y(100);
+    svg += `<line class="baseline" x1="${PAD_L}" y1="${yb.toFixed(1)}"
+             x2="${(W - PAD_R + 6).toFixed(1)}" y2="${yb.toFixed(1)}"/>`;
+  }
   axis.ticks.forEach(v => {                          // horizontal gridlines + y labels
     const yy = y(v);
     svg += `<line class="gridline" x1="${PAD_L}" y1="${yy.toFixed(1)}" x2="${(W - PAD_R + 6).toFixed(1)}" y2="${yy.toFixed(1)}"/>`;
@@ -1674,10 +1740,9 @@ function drawTrends(){
   const geomSeries = [];   // color + per-index resolved value, read by the hover layer below
   svg += '<g id="lines-layer">';
   drawn.forEach(s => {
-    const isOther = s.name === '__other__';
-    const slot = isOther ? 'other' : seriesColorAssignment.get(s.name);
-    const c = isOther ? 'var(--ink-3)' : seriesColor(slot);
-    const values = s.points.map((v, j) => trendValue(v, j));
+    const slot = seriesColorAssignment.get(s.name);
+    const c = seriesColor(slot);
+    const values = seriesValues(s);
     // break the path at gaps rather than bridging them — an unmeasured run is not a value
     let path = '', pen = 'M', lastPt = null;
     values.forEach((u, j) => {
@@ -1695,19 +1760,22 @@ function drawTrends(){
              stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     if (lastPt) svg += `<circle class="series-end" data-name="${esc(s.name)}" cx="${lastPt[0].toFixed(1)}"
              cy="${lastPt[1].toFixed(1)}" r="4" fill="${c}" stroke="var(--raise)" stroke-width="2"/>`;
-    geomSeries.push({ name: s.name, label: s.label, color: c, values });
+    // Both, on purpose: `values` is what the line was drawn from and so is what the
+    // crosshair dot must sit on, while `levels` is the magnitude the tooltip reports.
+    // Under Change those differ, and reading a value off the wrong one would put the
+    // dot somewhere the line is not, or announce an index as if it were a share.
+    geomSeries.push({ name: s.name, label: s.label, color: c, values,
+                      levels: s.points.map((v, j) => levelValue(v, j)) });
   });
   svg += '</g>';
   // The chosen end-labels, each tied to its own line by a leader. Text wears an ink token, not
   // the series colour (dataviz skill: a light categorical hue is illegible as label text) — the
   // coloured leader and dot beside it carry the identity.
   labelled.forEach(e => {
-    const c = e.s.name === '__other__' ? 'var(--ink-3)' : seriesColor(seriesColorAssignment.get(e.s.name));
+    const c = seriesColor(seriesColorAssignment.get(e.s.name));
     const x0 = W - PAD_R, tx = x0 + 10;
     const fits = Math.floor((W - tx - 2) / 5.9);
-    // "Other (16 smaller categories)" is the legend's phrasing, not a label that belongs at
-    // the end of a line — the aggregate's own name is Other.
-    const full = e.s.name === '__other__' ? 'Other' : e.s.label;
+    const full = e.s.label;
     const text = full.length > fits ? full.slice(0, Math.max(1, fits - 1)) + '…' : full;
     svg += `<line class="end-leader" x1="${(x0 + 4).toFixed(1)}" y1="${e.y.toFixed(1)}"
              x2="${(tx - 2).toFixed(1)}" y2="${e.y.toFixed(1)}" stroke="${c}"/>`;
@@ -1749,7 +1817,9 @@ function drawTrends(){
   const atsPick = trendAtsSelected();
   el('trends-chart').setAttribute('aria-label',
     `Line chart. ${trendMetric === 'new' ? 'Openings first seen in the last 7 days' : 'All live openings'}`
-    + ` by ${grouping}, as ${trendUnit === 'share' ? 'a share of the index' : 'a count'}`
+    + ` by ${grouping}, as ${trendUnit === 'share' ? 'a share of the index'
+        : trendUnit === 'index' ? 'an index against each category’s own share at the window’s start'
+        : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
     + ' Arrow keys read the values; Table view lists them all.');
@@ -1780,6 +1850,8 @@ function drawTrends(){
     ? 'Openings first seen in the last 7 days, re-measured every pipeline run.'
     : (trendUnit === 'share'
       ? 'Each line is a category’s share of all live openings in the index — immune to the index itself growing or shrinking.'
+      : trendUnit === 'index'
+      ? `Each line starts at 100 — its own share at ${stampLabel(d.stamps[0], true)} — so categories of very different size become comparable shapes. 120 means the category holds a fifth more of the index than it did then, not that it has 120 openings; the share it actually holds is in the legend and the table. Move the window and every line is re-based to the new start.`
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further rows sit in non-tech categories and are excluded here.`);
   el('trends-foot').textContent = parts.join(' ');
@@ -1874,7 +1946,7 @@ function positionHoverLayer(index, opts){
     const v = s.values[index], dot = dotEls[i];
     if (v == null){ if (dot) dot.style.display = 'none'; return; }
     if (dot){ dot.style.display = ''; dot.setAttribute('cx', x(index)); dot.setAttribute('cy', y(v)); }
-    rows.push({ label: s.label, color: s.color, value: v,
+    rows.push({ label: s.label, color: s.color, value: s.levels[index], index: v,
       dy: (opts && opts.py != null) ? Math.abs(y(v) - opts.py) : null });
   });
   // Nine rows in one tooltip is a list to search, not a readout. The row the pointer is
@@ -1883,7 +1955,7 @@ function positionHoverLayer(index, opts){
   rows.forEach((r, i) => { if (r.dy != null && r.dy < best){ best = r.dy; near = i; } });
   if (opts && opts.announce && el('trends-readout')){
     el('trends-readout').textContent = rows.length
-      ? `${stampLabel(stamps[index])}. ` + rows.map(r => `${r.label} ${fmtValue(r.value)}`).join(', ')
+      ? `${stampLabel(stamps[index])}. ` + rows.map(r => `${r.label} ${rowText(r)}`).join(', ')
       : `${stampLabel(stamps[index])}. Nothing measured.`;
   }
   if (!tip) return;
@@ -1899,7 +1971,7 @@ function positionHoverLayer(index, opts){
     rows.forEach((r, i) => {
       const row = document.createElement('div'); row.className = 'tt-row' + (i === near ? ' near' : '');
       const key = document.createElement('span'); key.className = 'tt-key'; key.style.background = r.color;
-      const val = document.createElement('span'); val.className = 'tt-val'; val.textContent = fmtValue(r.value);
+      const val = document.createElement('span'); val.className = 'tt-val'; val.textContent = rowText(r);
       const nm = document.createElement('span'); nm.className = 'tt-name'; nm.textContent = r.label;
       row.append(key, val, nm); tip.appendChild(row);
     });
@@ -1970,9 +2042,9 @@ function buildTrendsTable(){
   const head = '<tr><th scope="col">Category</th><th scope="col">Latest</th>'
     + '<th scope="col">Change over window</th><th scope="col">Start</th>'
     + '<th scope="col">Min</th><th scope="col">Max</th></tr>';
-  const cell = v => `<td>${v == null ? '—' : esc(fmtValue(v))}</td>`;
+  const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
   const body = rows.map(s => {
-    const vals = s.points.map((v, j) => trendValue(v, j)).filter(v => v != null);
+    const vals = s.points.map((v, j) => levelValue(v, j)).filter(v => v != null);
     const dl = trendDelta(s.points);
     return `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s)
       + cell(vals.length ? vals[vals.length - 1] : null)
@@ -1992,7 +2064,7 @@ function buildTrendsFull(){
   const head = '<tr><th scope="col">Category</th>' +
     d.stamps.map(ts => `<th scope="col">${esc(stampLabel(ts))}</th>`).join('') + '</tr>';
   const body = rows.map(s => `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s) +
-    s.points.map((v, j) => { const u = trendValue(v, j); return `<td>${u == null ? '—' : esc(fmtValue(u))}</td>`; }).join('') +
+    s.points.map((v, j) => { const u = levelValue(v, j); return `<td>${u == null ? '—' : esc(fmtLevel(u))}</td>`; }).join('') +
     '</tr>').join('');
   return `<thead>${head}</thead><tbody>${body}</tbody>`;
 }

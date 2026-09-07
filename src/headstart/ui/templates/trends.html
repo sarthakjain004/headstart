@@ -50,6 +50,9 @@
       <span class="seg" id="trends-unit" role="radiogroup" aria-labelledby="trends-lbl-unit">
         <button data-unit="share" role="radio" aria-checked="true" tabindex="0">Share</button>
         <button data-unit="count" role="radio" aria-checked="false" tabindex="-1">Count</button>
+        {# Change indexes every family to 100 at the window's first measurement (ADR-0118), so
+           nine families of very different size become nine comparable shapes. #}
+        <button data-unit="index" role="radio" aria-checked="false" tabindex="-1">Change</button>
       </span>
       {# "New this week" used to grey this group out and explain itself only in a `title`. A
          control that can never be used here is replaced by the answer and its one-line why. #}
