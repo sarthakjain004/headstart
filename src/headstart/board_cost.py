@@ -33,7 +33,7 @@ from statistics import median
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
 # Schema lives here, next to its reader, so adding a column is one edit rather than two files.
-SHARD_FIELDS = ("board", "seconds", "jobs", "unfinished")
+SHARD_FIELDS = ("board", "seconds", "jobs", "unfinished", "errored")
 SHARD_HEADER = ",".join(SHARD_FIELDS) + "\n"
 
 
@@ -48,13 +48,26 @@ class ShardCost:
     # same way: an EWMA would record less than the kill proved, which is how a Board too big to
     # finish kept a price low enough to be packed again every run (ADR-0064).
     unfinished: bool = False
+    # True when the Board's scrape RAISED. `seconds` is still a real measurement — `harvest` times
+    # it in a `finally` on purpose, so a Board that burns an hour and then fails is priced for it —
+    # but `jobs` is not: `harvest` initialises `n_fresh = 0` before the try and records it
+    # regardless of outcome, so an errored Board writes a 0 that means "we never found out", not
+    # "there was nothing". Nothing distinguished those until ADR-0116 made the difference
+    # load-bearing, and `run_one`'s own comment had already named the hazard: "the value gate would
+    # drop it forever, on a Board that failed instantly".
+    errored: bool = False
 
 
 def shard_row(
-    board_key: str, seconds: float, jobs: int, *, unfinished: bool = False
+    board_key: str,
+    seconds: float,
+    jobs: int,
+    *,
+    unfinished: bool = False,
+    errored: bool = False,
 ) -> str:
     """One ``board_cost.csv`` line, newline included."""
-    return f"{board_key},{seconds:.3f},{jobs},{int(unfinished)}\n"
+    return f"{board_key},{seconds:.3f},{jobs},{int(unfinished)},{int(errored)}\n"
 
 
 # EWMA weight on this run's seconds. Lower than board_priority's 0.7 because wall time carries
@@ -66,7 +79,16 @@ FALLBACK_SECONDS = 5.0  # last resort: no measurement anywhere, not even for the
 @dataclass(frozen=True, slots=True)
 class BoardCost:
     seconds: float  # EWMA of measured scrape wall time
-    jobs: int  # postings the last measured scrape returned (diagnostic only)
+    # Fresh postings the last **complete** scrape returned, or None when no complete scrape has
+    # ever measured this Board. Not "all postings": `harvest` counts ids not already seen this
+    # shard, so a Board whose every id was a duplicate records 0 after a healthy read.
+    #
+    # None is not decoration. This was `int`, and a 0 meant four different things — a real empty
+    # Board, a raise, a first-ever budget kill, and a full dedupe. That was harmless while the
+    # field was diagnostic; ADR-0116 made it a control input for the value gate, and a guard
+    # cannot rest on a value with four meanings. The same empty-CSV-field idea the liveness
+    # ledger already uses for an unknown count.
+    jobs: int | None
     updated_at: str  # ISO date of the last run that measured this Board
 
 
@@ -135,7 +157,7 @@ def load(path: str | Path) -> dict[str, BoardCost]:
         for row in csv.DictReader(fh):
             cost = BoardCost(
                 seconds=float(row["seconds"]),
-                jobs=int(row["jobs"]),
+                jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
                 updated_at=row["updated_at"],
             )
             key = _rekeyed(row["board"])
@@ -153,7 +175,14 @@ def save(path: str | Path, rows: dict[str, BoardCost]) -> None:
         writer = csv.writer(fh)
         writer.writerow(FIELDS)
         for board, c in sorted(rows.items(), key=lambda kv: (-kv[1].seconds, kv[0])):
-            writer.writerow([board, f"{c.seconds:.3f}", c.jobs, c.updated_at])
+            writer.writerow(
+                [
+                    board,
+                    f"{c.seconds:.3f}",
+                    "" if c.jobs is None else c.jobs,
+                    c.updated_at,
+                ]
+            )
 
 
 def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
@@ -162,7 +191,8 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
     Tolerates a truncated final line: a shard killed mid-write by its time budget can leave one,
     and dropping just that row is strictly better than losing the shard's whole measurement set.
     A fragment written before the ``unfinished`` column existed reads as all-measured, which is
-    what it was — the column is absent, not false.
+    what it was — the column is absent, not false. ``errored`` is read the same way and for the
+    same reason, one column later.
     """
     path = Path(path)
     if not path.exists():
@@ -184,6 +214,7 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
                     seconds=float(row["seconds"]),
                     jobs=int(row["jobs"]),
                     unfinished=bool(int(flag or 0)),
+                    errored=bool(int(row.get("errored") or 0)),
                 )
             except (TypeError, ValueError):
                 continue  # half-written tail row
@@ -211,6 +242,14 @@ def update(
     for the Board this matters for that is the difference between being re-packed every run and
     being priced honestly (ADR-0064). Its ``jobs`` count is left as it was, because the Board
     banked no complete listing this run and a 0 there would erase what the last full scrape saw.
+
+    **An errored Board is the same case and was not being treated as one.** Its seconds are a real
+    measurement — deliberately, so a Board that burns an hour before failing is priced for it — but
+    `harvest` records ``n_fresh`` as 0 whatever the outcome, so its ``jobs`` says "we never found
+    out", not "there was nothing". That 0 used to be written straight over the last good count. It
+    now carries the previous value exactly as the unfinished branch does, and where there is no
+    previous value it writes **None**: a Board whose only measurement failed has no known yield,
+    and saying so is the whole reason ADR-0116's veto can be trusted.
     """
     today = today or datetime.now(UTC).strftime("%Y-%m-%d")
     rows = dict(prev)
@@ -220,20 +259,24 @@ def update(
         ):  # never measured (or a clock artifact) — don't poison the EWMA
             continue
         before = prev.get(board)
+        # Neither an unfinished nor an errored run learned this Board's yield, so neither may
+        # overwrite a count that a complete run did learn. They differ only in how the SECONDS
+        # are treated: a kill proves a floor, a failure is a real elapsed measurement.
+        known_jobs = before.jobs if before else None
         if now.unfinished:
             floor = max(now.seconds, before.seconds) if before else now.seconds
-            rows[board] = BoardCost(
-                seconds=floor,
-                jobs=before.jobs if before else now.jobs,
-                updated_at=today,
-            )
+            rows[board] = BoardCost(seconds=floor, jobs=known_jobs, updated_at=today)
             continue
         blended = (
             now.seconds
             if before is None
             else current_weight * now.seconds + (1 - current_weight) * before.seconds
         )
-        rows[board] = BoardCost(seconds=blended, jobs=now.jobs, updated_at=today)
+        rows[board] = BoardCost(
+            seconds=blended,
+            jobs=known_jobs if now.errored else now.jobs,
+            updated_at=today,
+        )
     return rows
 
 

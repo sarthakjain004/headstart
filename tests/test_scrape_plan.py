@@ -308,19 +308,68 @@ def test_a_zero_yield_board_under_the_floor_is_still_left_alone():
     assert gated == {}
 
 
-def test_a_budget_killed_boards_stale_job_count_is_not_read_as_zero_yield():
-    """The one way this veto could evict a healthy giant, and why it cannot.
+def test_an_incomplete_measurement_cannot_gate_a_board_it_never_read():
+    """The way this veto could have evicted healthy giants — closed at the ledger, and pinned here
+    through the REAL `board_cost.update` rather than a hand-built row.
 
-    `board_cost.update` deliberately keeps the PREVIOUS ``jobs`` for a Board whose shard was killed
-    mid-scrape — "a 0 there would erase what the last full scrape saw" — and only raises the
-    seconds. So a `jobs` of 0 in the ledger is always a *completed* scrape that found nothing,
-    never a scrape we stopped reading. This pins the consequence: an unfinished giant keeps the
-    count from its last full pass and is judged on the ratio, exactly as before.
+    An earlier version of this test asserted the safety property against a `BoardCost` it
+    constructed itself, so it passed without the ledger doing anything and would have passed on
+    `main`. It also rested on a false premise: only the *unfinished* branch preserved the count,
+    while an **errored** Board wrote its `n_fresh = 0` straight over the last good one — and errors
+    run 19-40 a run. `run_one`'s own comment had already named the consequence: "the value gate
+    would drop it forever, on a Board that failed instantly".
+
+    Both incomplete outcomes now leave the count alone, so both survive the gate on their ratio.
     """
+    from headstart.board_cost import BoardCost, ShardCost, update
+
+    prev = {
+        "workday:walmart": BoardCost(
+            seconds=2670.0, jobs=15476, updated_at="2026-08-17"
+        ),
+        "workday:target": BoardCost(seconds=2600.0, jobs=9000, updated_at="2026-08-17"),
+    }
+    after = update(
+        prev,
+        {
+            # burned an hour, then raised
+            "workday:walmart": ShardCost(seconds=3600.0, jobs=0, errored=True),
+            # killed by the shard's time budget mid-fetch
+            "workday:target": ShardCost(seconds=3600.0, jobs=0, unfinished=True),
+        },
+        today="2026-08-18",
+    )
+    assert after["workday:walmart"].jobs == 15476
+    assert after["workday:target"].jobs == 9000
+
     gated = ps._gated_boards(
-        ["workday:walmart"],
-        {"workday:walmart": _cost(4000.0, "2026-08-18", jobs=15476)},
-        {"workday:walmart": 903.9},
+        ["workday:walmart", "workday:target"],
+        after,
+        {"workday:walmart": 903.9, "workday:target": 400.0},
         today="2026-08-18",
     )
     assert gated == {}
+
+
+def test_a_board_with_no_known_yield_is_judged_on_its_ratio_not_vetoed():
+    """`jobs=None` means "no complete scrape has ever measured this Board", which is not zero.
+
+    A Board whose only sighting failed, or whose first sighting was a budget kill, lands here. The
+    veto must not fire on it — that would turn one bad first run into a fortnight's exclusion — so
+    it falls through to ADR-0064's ratio exactly as before this change.
+    """
+    from headstart.board_cost import BoardCost
+
+    unknown = {
+        "workday:new": BoardCost(seconds=1200.0, jobs=None, updated_at="2026-09-07")
+    }
+    assert (
+        ps._gated_boards(
+            ["workday:new"], unknown, {"workday:new": 500.0}, today="2026-09-07"
+        )
+        == {}
+    )
+    # ...and still gated when the ratio itself is poor, so the fall-through is not an escape hatch
+    assert ps._gated_boards(
+        ["workday:new"], unknown, {"workday:new": 1.0}, today="2026-09-07"
+    )

@@ -53,16 +53,29 @@ was one of 102 such Boards, and the gate held every one of them (ADR-0115).
 returned no jobs, its tech-per-minute is zero regardless of what score the priority ledger still
 remembers.
 
-Three things make this the small fix rather than a re-plumbing:
+It was meant to be a one-expression change and it is not, because the field it reads had to be
+made trustworthy first. Three things shape it:
 
-- **The units need no reinterpretation.** `board_cost.jobs` counts *all* postings, not tech ones,
-  so it cannot be substituted into a tech-per-minute threshold. As a **veto** it needs no
-  conversion: tech jobs are a subset of all jobs, so a completed scrape that found no jobs found no
-  tech ones either. Zero is zero in both units.
-- **A zero there always means a completed scrape.** `board_cost.update` deliberately keeps the
-  *previous* count for a Board whose shard was killed mid-scrape — *"a 0 there would erase what the
-  last full scrape saw"* — and only ever raises its seconds. So the veto cannot fire on a giant we
-  merely stopped reading, which is the one way it could have evicted a healthy Board.
+- **The units need no reinterpretation.** `board_cost.jobs` is not tech jobs — it is the count of
+  *fresh* postings the scrape returned, deduped against the ids already seen in that shard — so it
+  cannot be substituted into a tech-per-minute threshold. As a **veto** it needs no conversion:
+  tech jobs are a subset of all jobs, so a scrape that found no jobs found no tech ones either.
+  Zero is zero in every one of those units.
+- **A zero has to *mean* zero first, and it did not.** The first draft of this ADR asserted that a
+  `jobs` of 0 always came from a completed scrape, on the strength of `board_cost.update`'s
+  unfinished branch. **That was false, and two independent reviews caught it.** `harvest` sets
+  `n_fresh = 0` *before* the try and records it whatever happens, so a 0 meant four different
+  things: a genuinely empty Board, a scrape that **raised**, a first-ever budget kill, and a
+  healthy scrape whose every id was already seen this shard. Board errors run 19-40 a run, so a
+  veto on that field would have sidelined any giant that failed once for a fortnight — the exact
+  hazard `harvest.run_one`'s own comment already names: *"the value gate would drop it forever, on
+  a Board that failed instantly."*
+
+  So the ledger had to be made honest before the gate could read it. `ShardCost` now carries
+  `errored` beside `unfinished`; neither an errored nor an unfinished run may overwrite a count a
+  complete run learned; and where no complete run ever has, `BoardCost.jobs` is **None** rather
+  than 0 — the same empty-CSV-field idea `liveness.py` already uses for an unknown count. A 0
+  reaching the gate is now a finding, and None falls through to the ratio.
 - **It rides ADR-0064's existing floor.** Only Boards already over `_GATE_FLOOR_S` (15 min) are
   considered. A Board that returns nothing in 30 s is not a makespan problem, and dropping it would
   make this a value gate rather than the makespan gate ADR-0064 argues for — it would also retire
@@ -70,11 +83,19 @@ Three things make this the small fix rather than a re-plumbing:
 
 ## Consequences
 
-Measured against the live ledgers on 2026-09-07 (88,225 rows): gated **72 → 78**, six Boards newly
-gated, **128 board-minutes** per full pass reclaimed, and **nothing previously gated is released**.
+Measured against the live ledgers on 2026-09-07 (88,225 rows): **+6 Boards gated, 128.2
+board-minutes** per full pass reclaimed, **nothing previously gated released**. The *delta* is the
+claim; the absolute count moves with the ledger between runs (72 → 78 on one pull of it, 70 → 76 on
+another an hour earlier), so quoting an absolute here would be stale by the time it is read.
 The six are exactly the Boards that set the makespan — `careers.te.com`, `jobs.l3harris.com`,
 `southasiacareers.deloitte.com`, `careers-inc.nttdata.com`, `jobs.scotiabank.com`,
 `corningjobs.corning.com`.
+
+**Residual case, named rather than solved.** A Board whose every posting id was already seen
+earlier in the same shard records a real 0 from a healthy scrape, because `harvest` counts *fresh*
+ids. That is a true duplicate contributing nothing new, so gating it is defensible — but which of
+the pair gets gated depends on scrape order. ADR-0111 resolves duplicate Boards upstream and the
+14-day recheck bounds the cost, so this is documented rather than special-cased.
 
 **The interaction with ADR-0115 is the part to understand before reading those six as a win.** They
 returned zero because of the User-Agent denylist, which is now fixed. Once any run scrapes them
@@ -103,6 +124,8 @@ carrying one that was never reached.
 - **`min(score, k · row.jobs)`.** A softer veto that also caps an inflated score on a Board whose
   yield merely *fell*. Rejected as tuning without evidence: no measurement says what `k` should be,
   and the zero case is the one that was actually observed to cost 631 board-minutes a run.
+- **Trust `board_cost.jobs` as it was.** Rejected on review: the field meant four things, and a
+  guard resting on a value with four meanings is the failure mode CLAUDE.md cites from #77.
 - **Fix `update_ledgers.priority` instead.** The right fix, and still open (above). Rejected *for
   now* because it changes what every reader of the priority ledger sees, which wants its own
   measurement pass rather than riding along with an incident fix.

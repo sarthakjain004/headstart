@@ -146,12 +146,18 @@ def _gated_boards(
         # setting the whole scrape stage's makespan. ADR-0116 has the reasoning; ADR-0115's
         # writeup has the episode that exposed it.
         #
-        # The Board's own measured `jobs` is the half that stayed current, so it gets a veto. Units
-        # are safe without reinterpreting the threshold: tech jobs are a subset of all jobs, so a
-        # completed scrape that found **no** jobs found no tech ones either. And a 0 here always
-        # means a completed scrape — `board_cost.update` keeps the previous count for a
-        # budget-killed Board on purpose, since "a 0 there would erase what the last full scrape
-        # saw".
+        # The Board's own measured `jobs` is the half that stayed current, so it gets a veto.
+        # Units are safe without reinterpreting the threshold: tech jobs are a subset of all jobs,
+        # so a scrape that found **no** jobs found no tech ones either.
+        #
+        # What makes the veto safe is that `board_cost` now says whether a 0 is a *finding*. It
+        # used to mean four things — a real empty Board, a raise, a first-ever budget kill, and a
+        # scrape whose every id was a duplicate — because `harvest` records `n_fresh = 0`
+        # regardless of outcome. An errored or unfinished run no longer overwrites a known count,
+        # and where none was ever known the ledger writes **None**. So a 0 reaching here is a
+        # complete run that found nothing, and None — never measured — falls through to the ratio.
+        # A guard on the old field would have gated any giant that failed once for a fortnight;
+        # `run_one`'s own comment names that hazard, and errors run 19-40 a run.
         tech_per_min = (
             0.0 if row.jobs == 0 else scores.get(key, 0.0) / (row.seconds / 60)
         )
@@ -325,11 +331,21 @@ def main() -> int:
         # way that stays honest is if the list is in front of whoever reads the run — a Board
         # gated in error is invisible everywhere else, because nothing downstream misses it.
         worst = sorted(gated.items(), key=lambda kv: kv[1])
+
+        # Say *which* rule dropped each one. A Board vetoed for returning nothing and a Board with
+        # a genuinely poor ratio both print `0.00/min`, and they want opposite remedies — the
+        # first is usually a scraper or origin fault worth chasing, the second is the gate working
+        # as designed. ADR-0064 requires this list precisely because "a Board gated in error is
+        # invisible everywhere else"; an ambiguous entry only half-honours that.
+        def _why(key: str, rate: float) -> str:
+            row = cost_rows.get(key)
+            reason = " — measured 0 jobs" if row is not None and row.jobs == 0 else ""
+            return f"{key} ({rate:.2f}/min{reason})"
+
         _log.warning(
             f"value gate: skipped {len(gated)} Board(s) costing over "
             f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
-            f"jobs/min — "
-            + observability.named_sample([f"{k} ({d:.2f}/min)" for k, d in worst])
+            f"jobs/min — " + observability.named_sample([_why(k, d) for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
     companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)

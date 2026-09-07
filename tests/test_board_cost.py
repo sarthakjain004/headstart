@@ -8,6 +8,8 @@ of a shard's torn final row.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from headstart.board_cost import (
     BoardCost,
     ShardCost,
@@ -218,3 +220,89 @@ def test_one_update_run_migrates_the_whole_ledger(tmp_path):
     )
     save(path, load(path))
     assert path.read_text().splitlines()[1].startswith("workday:x/s,")
+
+
+def test_an_errored_scrape_does_not_erase_the_last_known_job_count():
+    """`harvest` records `n_fresh = 0` whatever the outcome, so an errored Board's 0 means "we
+    never found out", not "there was nothing".
+
+    It used to be written straight over the last good count. That was harmless while `jobs` was
+    diagnostic; ADR-0116 made it the value gate's veto input, and `run_one`'s own comment had
+    already named the consequence — "the value gate would drop it forever, on a Board that failed
+    instantly". Errors run 19-40 a run, so this is not a corner.
+    """
+    prev = {
+        "workday:big": BoardCost(seconds=1000.0, jobs=4321, updated_at="2026-09-01")
+    }
+    rows = update(
+        prev,
+        {"workday:big": ShardCost(seconds=1200.0, jobs=0, errored=True)},
+        today="2026-09-07",
+    )
+    assert rows["workday:big"].jobs == 4321  # the count survives
+    assert (
+        rows["workday:big"].seconds > 1000.0
+    )  # the seconds are still real and still blend
+
+
+def test_a_board_whose_only_measurement_failed_has_no_known_yield():
+    """No prior row and a failed run means the yield is *unknown*, which is not the same as zero.
+
+    Writing 0 here is what would let one bad first run gate a Board for a fortnight. None says the
+    true thing, and ADR-0116's veto only fires on a measured 0.
+    """
+    rows = update(
+        {},
+        {"workday:new": ShardCost(seconds=1200.0, jobs=0, errored=True)},
+        today="2026-09-07",
+    )
+    assert rows["workday:new"].jobs is None
+
+
+def test_a_first_ever_budget_kill_also_leaves_the_yield_unknown():
+    """The unfinished twin of the case above — a giant killed mid-scrape on its first sighting.
+
+    `jobs=before.jobs if before else now.jobs` used to write the kill's own 0 here, which reads as
+    a measured empty Board when it is the opposite: a Board too big to finish.
+    """
+    rows = update(
+        {},
+        {"workday:giant": ShardCost(seconds=3300.0, jobs=0, unfinished=True)},
+        today="2026-09-07",
+    )
+    assert rows["workday:giant"].jobs is None
+    assert rows["workday:giant"].seconds == 3300.0
+
+
+def test_an_unknown_job_count_survives_the_csv_round_trip(tmp_path):
+    """None has to reach the next run's planner, which reads this back off the dataset.
+
+    An empty field, the same way the liveness ledger already writes an unknown count — not a
+    sentinel, which would be one more value with two meanings.
+    """
+    path = tmp_path / "board_cost.csv"
+    save(
+        path,
+        {
+            "a:known": BoardCost(seconds=10.0, jobs=7, updated_at="2026-09-07"),
+            "b:unknown": BoardCost(seconds=20.0, jobs=None, updated_at="2026-09-07"),
+        },
+    )
+    back = load(path)
+    assert back["a:known"].jobs == 7
+    assert back["b:unknown"].jobs is None
+
+
+def test_a_fragment_without_the_errored_column_reads_as_not_errored():
+    """A shard fragment written before this column existed is a complete measurement, and the
+    column's absence must not be read as a torn row — the same contract `unfinished` already has.
+    """
+    path = Path(__file__).parent / "_legacy_cost_fragment.csv"
+    path.write_text("board,seconds,jobs,unfinished\na:b,12.5,3,0\n", encoding="utf-8")
+    try:
+        rows = read_shard_rows(path)
+        assert rows["a:b"] == ShardCost(
+            seconds=12.5, jobs=3, unfinished=False, errored=False
+        )
+    finally:
+        path.unlink()
