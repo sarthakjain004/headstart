@@ -18,7 +18,28 @@ from headstart.models import Job
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
 #: this same literal locally, which is a set of strings that can silently disagree.
-USER_AGENT = "headstart/0.1 (job-board reader)"
+#:
+#: This string is load-bearing, not cosmetic, and it is bare on purpose — two hosts have been
+#: measured rejecting a *specific* shape of it, and the intersection of what they accept is
+#: narrow. Full measurements: `docs/successfactors/2026-09-07_user-agent-denylist.md`.
+#:
+#: **SuccessFactors** denylists the previous value, ``headstart/0.1 (job-board reader)``, as an
+#: **exact literal**. On `careers.te.com`, 2026-09-07: that string returns 403 (a 111-byte
+#: ``{"error":{"status-code":"403","message":"Policy ID: ..."}}``) while
+#: ``headstart/0.1 (job-board)``, ``headstart/0.1 (reader)``, ``curl/8.7.1`` and even
+#: ``python-requests/2.32.3`` all return 200 on the same URL — a denylist entry, not a heuristic.
+#: It cost 102 Boards their whole detail pass: 0 jobs each across five consecutive runs, 56,120
+#: postings listed and none ingested, and the log could not say so because ``_job_fields`` maps a
+#: 403 and an unparseable 200 onto the same ``None``.
+#:
+#: **zwayam** rejects any User-Agent carrying a domain or an email — ``(+https://github.com/…)``,
+#: ``(+github.com/…)``, ``(github.com/…)`` and an ``@``-address all fail with ``curl (92) HTTP/2
+#: stream error``, 2 of 2 attempts each — so a contact URL cannot live here either.
+#:
+#: And it must stay **non-stock**: zwayam blackholes ``curl``'s and ``python-requests``'s own
+#: defaults, which **time out** rather than answering, so a caller treating a timeout as transient
+#: retries forever. ``headstart/0.1`` is the value measured clear of all three constraints.
+USER_AGENT = "headstart/0.1"
 _T = TypeVar("_T")
 _R = TypeVar("_R")
 
