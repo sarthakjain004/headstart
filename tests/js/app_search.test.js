@@ -71,7 +71,7 @@ function loadApp(respond, cfg = {}) {
   ctx.globalThis = ctx;
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, page: () => page, jobCard, savedRow,'
-    + ' salStop, SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
+    + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
     + ' dismiss: dismissRow, dismissed };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, t: ctx.__t, ctx };
@@ -351,6 +351,28 @@ test('a row already in the bracket\'s currency is left alone', async () => {
 });
 
 // ── The salary bracket's slider ──────────────────────────────────────────────────────────────
+
+test('the scale is restated in the bracket\'s currency, at a one-significant-figure rate', () => {
+  // 0-500,000 is a USD ladder. Left at those numbers an INR bracket topped out at ₹5,00,000,
+  // below entry-level pay in the market this index covers best. The rate is rounded to one
+  // significant figure (83 → 80) so every stop stays a round number in the currency printed.
+  const { t, nodes } = loadApp(() => [], { ...SCOPES, ...FX });
+  set(nodes, 'salcur', 'INR');
+  t.sync();
+  assert.strictEqual(t.stops()[t.stops().length - 1], 40000000);
+  assert.strictEqual(nodes.salcap1.textContent, '40,000,000+');
+  set(nodes, 'salcur', 'USD');
+  t.sync();
+  assert.strictEqual(t.stops()[t.stops().length - 1], 500000);
+  assert.strictEqual(nodes.salcap1.textContent, '500,000+');
+});
+
+test('with no rate table the scale stays as written, rather than guessing a factor', () => {
+  const { t, nodes } = loadApp(() => [], SCOPES);
+  set(nodes, 'salcur', 'INR');
+  t.sync();
+  assert.strictEqual(t.stops()[t.stops().length - 1], 500000);
+});
 
 test('a typed figure rests on the nearest stop, and one past the scale parks on the top', () => {
   const { t } = loadApp(() => []);

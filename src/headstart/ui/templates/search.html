@@ -131,6 +131,12 @@
             <input type="range" id="salrmin" min="0" step="1" value="0" aria-label="Minimum salary">
             <input type="range" id="salrmax" min="0" step="1" aria-label="Maximum salary">
           </div>
+          {# The scale the handles move along. Written by syncSalarySlider rather than typed
+             here, because the stops are rebuilt when the currency changes and a hard-coded
+             "500,000+" would then name a figure the track no longer reaches. aria-hidden: the
+             ranges already announce their own value through aria-valuetext, and a screen
+             reader reading two bare numbers between them adds nothing. #}
+          <div class="slider-caps" aria-hidden="true"><span id="salcap0"></span><span id="salcap1"></span></div>
           <span class="slider-read" id="salread"></span>
           <span class="tip">Jobs priced in other currencies are converted so they still match{% if fx_as_of %},
             at approximate rates from {{ fx_as_of }}{% endif %}. That is currency conversion, not

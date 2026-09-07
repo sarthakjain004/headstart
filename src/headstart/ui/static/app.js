@@ -315,14 +315,36 @@ function drawActive(){
 
    The top of the scale is "no maximum", not "the most anyone here pays" — nothing in the
    client has measured that, and a number implying it would be an invented bound. ---- */
-const SALARY_STOPS = (() => {
+const BASE_STOPS = (() => {
   const out = [];
   for (let v = 0; v < 100000; v += 5000) out.push(v);
   for (let v = 100000; v < 200000; v += 10000) out.push(v);
   for (let v = 200000; v <= 500000; v += 25000) out.push(v);
   return out;
 })();
-const SAL_TOP = SALARY_STOPS.length - 1;
+const SAL_TOP = BASE_STOPS.length - 1;
+/* The ladder above is drawn in the rate table's base currency (USD). Left at those numbers it
+   was unusable in every other one: in INR the whole track topped out at ₹5,00,000 — below
+   entry-level pay in the market this index covers best — so the handles could only ever park
+   at the far right and the control said nothing.
+
+   So the scale is restated in whichever currency the bracket is in, at the rate rounded to ONE
+   significant figure — 83 → 80, 0.79 → 0.8. The rounding is the point: every stop then stays a
+   round number in the currency it is printed in (₹4,00,000 steps, not ₹4,15,000), and the top
+   of the scale means "no maximum" rather than a converted figure anyone should read. The exact
+   rates are the server's business; these only decide where a handle can rest, and a figure
+   between two stops is still reachable by typing it into the number field. */
+const oneSig = x => { const p = Math.pow(10, Math.floor(Math.log10(x))); return Math.round(x / p) * p; };
+let SALARY_STOPS = BASE_STOPS;
+let stopsCurrency = '';
+function useStops(cur){
+  cur = (cur || '').toUpperCase();
+  if (cur === stopsCurrency) return;
+  stopsCurrency = cur;
+  const rate = FX ? fxConvert(1, FX.base, cur) : null;
+  const scale = rate ? oneSig(rate) : 1;   // no table, or no rate for it: the base ladder
+  SALARY_STOPS = scale === 1 ? BASE_STOPS : BASE_STOPS.map(v => Math.round(v * scale));
+}
 // The stop nearest a typed figure — nearest, not floor, so 137,000 rests on 140,000 rather
 // than sliding back to 130,000. Anything past the top end parks on the top.
 const salStop = v => {
@@ -340,6 +362,8 @@ const salFmt = n => Number(n).toLocaleString();
 // the slider agreeing with them without each one having to know it exists.
 function syncSalarySlider(){
   const lo = el('salrmin'), hi = el('salrmax'); if (!lo || !hi) return;
+  // Before anything is read off the stops: the scale belongs to the currency now picked.
+  useStops(el('salcur') ? el('salcur').value : '');
   lo.max = String(SAL_TOP); hi.max = String(SAL_TOP);
   const minV = el('salmin').value, maxV = el('salmax').value;
   const li = minV === '' ? 0 : salStop(Number(minV));
@@ -354,7 +378,13 @@ function syncSalarySlider(){
   if (fill){
     fill.style.left = pct(Number(lo.value)) + '%';
     fill.style.width = (pct(Number(hi.value)) - pct(Number(lo.value))) + '%';
+    // Coloured only once a bound exists: at rest the span covers the whole track, and in
+    // --accent that reads as an applied filter on a search nobody has filtered.
+    fill.classList.toggle('on', minV !== '' || maxV !== '');
   }
+  // The ends of the scale, from the stops themselves — so a rebuilt scale relabels itself.
+  if (el('salcap0')) el('salcap0').textContent = salFmt(SALARY_STOPS[0]);
+  if (el('salcap1')) el('salcap1').textContent = salFmt(SALARY_STOPS[SAL_TOP]) + '+';
   // The screen reader hears the salary, not the index the range actually holds.
   lo.setAttribute('aria-valuetext', minV === '' ? 'no minimum' : salFmt(minV));
   hi.setAttribute('aria-valuetext', maxV === '' ? 'no maximum' : salFmt(maxV));

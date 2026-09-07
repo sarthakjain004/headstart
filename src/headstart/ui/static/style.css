@@ -67,13 +67,18 @@ body{
   transition:background .3s ease, color .3s ease;
 }
 
-.shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:18px 22px 72px; }
+/* 924 = the one content measure (880) plus this padding, so the masthead, the tabs, the cards
+   and the footer all start and end on the same two x's. At 1320 the shell was 396px wider than
+   anything inside it could ever be: `.content` is capped at --measure and had no margin, so
+   every panel sat hard against the left edge with a 418px void on the right while the footer,
+   centred on the shell, sat 198px away from the column it belongs to. */
+.shell{ position:relative; z-index:1; max-width:924px; margin:0 auto; padding:18px 22px 72px; }
 /* Bounded here rather than on `main`, which is Search's element alone: constraining that one
    left Matches and Saved rendering the SAME card at the shell's full 1276px, with the content
    ending at 918 and 427px of empty card after it. The masthead, tab strip and footer keep the
    shell width — they are chrome that spans the page, not content to be read across. Data's
    `.doc` sets its own, narrower prose measure and is unaffected. */
-.content{ max-width:var(--measure); }
+.content{ max-width:var(--measure); margin-inline:auto; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
@@ -650,8 +655,17 @@ textarea:focus{ border-color:var(--violet); }
    the cost of the fill, which drops to 3.35 and 1.46 respectively — a worse trade. */
 .slider-track{ position:absolute; left:9px; right:9px; top:12px; height:4px;
   border-radius:var(--r-pill); background:var(--rule); }
+/* Neutral until a bound is actually set. Painted --accent from the start, a full-width
+   coloured span said "this filter is on" on a page nobody had filtered. --rule-2 against the
+   --rule track is deliberately near-invisible (1.4:1) and needs no 3:1: with no bound set it
+   states nothing, and the moment one is, the span becomes --accent at 4.68 / 4.96. */
 .slider-fill{ position:absolute; top:0; height:100%; border-radius:var(--r-pill);
-  background:var(--accent); }
+  background:var(--rule-2); }
+.slider-fill.on{ background:var(--accent); }
+/* The ends of the scale, so the track's span is a fact rather than a guess. --ink-3 on the
+   panel: 4.63 dark / 6.53 light. */
+.slider-caps{ display:flex; justify-content:space-between; margin-top:1px;
+  font:500 11px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-3); }
 .slider input[type="range"]{ position:absolute; left:0; top:0; width:100%; height:28px;
   margin:0; padding:0; border:0; background:none; appearance:none; -webkit-appearance:none;
   pointer-events:none; }
