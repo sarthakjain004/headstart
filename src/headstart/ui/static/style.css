@@ -37,8 +37,8 @@
    replaces, which sat at 3.5:1 and failed AA for the rail's caveats. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme]){
-    --ground:#F1EEE7; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
-    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#6E685D;
+    --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
+    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#635D52;
     --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
@@ -46,8 +46,8 @@
   }
 }
 :root[data-theme="light"]{
-    --ground:#F1EEE7; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
-    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#6E685D;
+    --ground:#EAE6DC; --raise:#FFFFFF; --raise-2:#E9E5DC; --rule:#DAD3C6; --rule-2:#BEB5A4;
+    --ink:#1C1A17; --ink-2:#4A463F; --ink-3:#635D52;
     --accent:#1F5F5B; --violet:#5B4A9E; --amber:#8A5A00; --lime:#3F6B0A; --coral:#A33A2E;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
@@ -198,7 +198,7 @@ textarea:focus{ border-color:var(--violet); }
        the pay/match/star columns. Left at the full 1276px the card was a wide empty shell
        with its content packed into the left two thirds; the width the restructure freed is
        spent on aligning those columns, not on stretching the box around them. ---- */
-main{ max-width:1080px; }
+main{ max-width:880px; }
 /* The filter panel (ADR-0114). Above the results rather than beside them, full width, and
    closed until asked for — so the default view is the thing the user came for. Open, the
    groups flow into as many columns as the width allows rather than one tall column. */
@@ -266,18 +266,15 @@ main{ max-width:1080px; }
        readable measure (the skill's 65-75ch rule); the freed width goes to alignment, not to
        stretching one line of text across 1276px. ---- */
 .card{ position:relative; display:grid; align-items:center; gap:0 20px;
-  grid-template-columns:minmax(0,74ch) 190px 56px 44px; justify-content:start;
+  grid-template-columns:minmax(0,30rem) 190px 56px 44px; justify-content:start;
   background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-lg); padding:13px 16px 13px 18px; margin-bottom:8px; overflow:hidden;
   animation:rise .3s cubic-bezier(.2,.7,.3,1) both;
   transition:border-color var(--step), background var(--step); }
 .card:hover{ border-color:var(--rule-2); background:var(--raise-2); }
-/* The whole row navigates, not just the title anchor. The overlay is on the link itself so
-   it stays one real <a> — keyboard, middle-click and "open in new tab" all keep working —
-   and the star is lifted above it so it stays independently clickable. */
+/* The whole row navigates (handled in app.js, not by an overlay — an overlay made titles
+   unselectable and hid every tooltip beneath it). */
 .card{ cursor:pointer; }
-.card a.title::after{ content:""; position:absolute; inset:0; z-index:1; }
-.card .star{ position:relative; z-index:2; }
 .card:focus-within{ border-color:var(--accent); }
 .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
   background:var(--tone,var(--accent)); opacity:.8; }
@@ -314,6 +311,7 @@ main{ max-width:1080px; }
 .match .v{ position:absolute; inset:0; display:grid; place-items:center;
   font:600 12px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--accent)); }
 
+.card:not(.ranked){ grid-template-columns:minmax(0,30rem) 190px 44px; }
 .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center; }
 .tag{ font:500 11px var(--sans); padding:2px 8px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }

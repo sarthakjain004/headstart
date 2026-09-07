@@ -477,6 +477,9 @@ function countYears(options){
 // A short page (fewer than PAGE_SIZE rows) is how "no next page" is known — there is no
 // total-count query on the server (ADR-0074), so this is the only signal available.
 function drawPager(rowCount, facets){
+  // Nothing to page through. The pager used to render "Prev · Page 1 · Next" over an empty
+  // result set, offering navigation through zero rows.
+  if (!rowCount && page === 1){ el('pager').innerHTML = ''; return; }
   const total = facets && typeof facets.total === 'number' ? facets.total : null;
   // A short page still means "no next page"; the total, new in issue #275, additionally rules
   // out a next page whose rows exist but sit past what ADR-0074 lets pagination address.
@@ -500,7 +503,7 @@ function draw(rows, target){
     const ranked = r.score != null;
     const s = Number(r.score) || 0, pct = matchPct(s);
     return `
-    <div class="card" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
+    <div class="card${ranked?' ranked':''}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
         <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
         <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
@@ -522,7 +525,7 @@ function draw(rows, target){
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
           <div class="v" aria-hidden="true">${pct}%</div>
-        </div>` : '<div class="match"></div>'}
+        </div>` : ''}
       ${starBtn(r.id)}
     </div>`; }).join('');
 }
@@ -1540,6 +1543,18 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-star]');
   if (b) toggleStar(b.dataset.star);
+});
+// Whole-row click, without an overlay. A real element is never covered, so text stays
+// selectable and every title/tooltip underneath stays reachable. Three guards: a drag that
+// selected text is not a click, anything already interactive handles itself, and a modified
+// click keeps the browser's own open-in-new-tab behaviour.
+document.addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (!card || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (e.target.closest('a, button, input, select, textarea, label')) return;
+  if (String(window.getSelection())) return;
+  const link = card.querySelector('a.title');
+  if (link) window.open(link.href, '_blank', 'noopener');
 });
 if (el('pparse')){
   el('pparse').addEventListener('click', parseResume);
