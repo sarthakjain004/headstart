@@ -58,6 +58,8 @@ or acquiring entity can displace a familiar brand (`keka:abcoffee` -> "Brewbay I
 `lever:silhouette` -> "DNAM Brands", `lever:developintelligence` -> "Pluralsight"). Each of those
 is the company's own claim about itself, which is the best source available here; an earlier draft
 of this paragraph asserted no Board could end up worse, and a 452-Board sweep found otherwise.
+The narrower floor — never a *non-name* — has itself been falsified twice by wider sweeps and
+repaired twice (see `_PAGE_LABEL`), so treat it as a claim under test, not a proof.
 """
 
 from __future__ import annotations
@@ -95,18 +97,24 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 
 #: Same idea as `_SEPARATORS`, for a wrapper word rather than a wrapper character. Every pattern
 #: above strips one wrapper; text that *still* carries one means the title wore it twice, and what
-#: is left is a page label, not a name. Two live shapes, and it took both ends to cover them:
-#: `lever:destinationknot` serves "Destination Careers" (trailing), and `keka:enpro` serves
-#: "Careers at Careers at Enpro Industries" — the pattern strips one "Careers at", and while this
-#: was tail-anchored the other reached users as the employer.
+#: is left is a page label, not a name.
 #:
-#: Anchored at both ends rather than matching anywhere, because "Jobsoid" and "Careers24 Group"
-#: are names. It costs recall: a real employer whose title genuinely ends this way is refused and
-#: keeps its slug. Two in 1,519 live lever and keka Boards — `lever:pmaconsultants` ("PMA
-#: Consultants Careers", 29 postings) and `lever:bananajobs` ("Banana Jobs"). That is the
-#: deliberate trade. Stripping the word instead would turn "Destination Careers" into
+#: Three live shapes, found one at a time, each after the previous fix shipped:
+#:   * trailing — `lever:destinationknot` serves "Destination Careers"
+#:   * leading  — `keka:enpro` serves "Careers at Careers at Enpro Industries"
+#:   * the whole string — `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as
+#:     their company before this branch caught it
+#: Those three exhaust the positions a token can occupy, so unlike the first two fixes this one
+#: closes the set rather than adding the next case someone happens to find.
+#:
+#: Anchored rather than matching anywhere, because "Jobsoid" and "Careers24 Group" are names. It
+#: costs recall: two in 1,519 live lever and keka Boards — `lever:pmaconsultants` ("PMA
+#: Consultants Careers", 29 postings) and `lever:bananajobs` ("Banana Jobs") — keep their slug.
+#: That is the deliberate trade. Stripping the word instead would turn "Destination Careers" into
 #: "Destination", a confident wrong name, where refusing costs only a missed upgrade.
-_PAGE_LABEL = re.compile(r"^careers?\s+at\s+|\s(?:careers|jobs)$", re.IGNORECASE)
+_PAGE_LABEL = re.compile(
+    r"^careers?\s+at\s+|^(?:careers?|jobs?)$|\s(?:careers|jobs)$", re.IGNORECASE
+)
 
 #: Long enough for "Financial Software and Systems Ltd", short enough to reject a sentence — the
 #: test pins both ends, against that name and the 70-character lever title that is a whole

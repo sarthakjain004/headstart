@@ -87,7 +87,11 @@ displacing a familiar brand: `eightfold:gotinder.eightfold.ai` -> "Match Group",
 -> "Brewbay Innovations", `lever:silhouette` -> "DNAM Brands", `lever:developintelligence` ->
 "Pluralsight", `eightfold:grupobimbo.eightfold.ai` -> "Bimbo Bakeries USA".
 
-The narrowed floor held across all 418 names that sweep resolved: not one was a non-name.
+The floor — never a *non-name* — is the claim this ADR actually makes, and it has been falsified
+twice by measurement and repaired twice, most recently by a 1,971-Board sweep that found
+`lever:schmidt-entities` serving "jobs". Both repairs are pinned by tests. State it as a claim
+that has survived its latest attempt, not as one nothing could break: 1,111 names resolved in that
+sweep and, after the fix, none is a non-name.
 
 That last class is the same shape as the `hiringOrganization` field Workday is excluded over, so
 the distinction has to be stated rather than assumed. It is this: Workday's legal entity varies
@@ -99,11 +103,19 @@ Board is not. An earlier draft of this ADR asserted no Board could end up worse.
 **A page label is never a company name.** `lever:destinationknot` titles itself "Destination
 Careers" — the page-label shape this ADR refuses Workday's `og:title` over, arriving through the
 front door. Every pattern that models "{Name} Careers" strips it, so a title still ending that way
-means the title wore the wrapper twice and what is left is a label. Anchored at **both** ends,
-because both happen: `lever:destinationknot` serves "Destination Careers" (trailing, reachable
-because lever's pattern matches anything) and `keka:enpro` serves "Careers at Careers at Enpro
-Industries" (leading, which a tail-only rule served to users as the employer until round 6 caught
-it). Anchored rather than matching anywhere, because "Jobsoid" and "Careers24 Group" are names.
+means the title wore the wrapper twice and what is left is a label. Three live shapes, and they
+were found one at a time, each after the previous fix had already shipped:
+
+- **trailing** — `lever:destinationknot` serves "Destination Careers", reachable because lever's
+  pattern matches anything.
+- **leading** — `keka:enpro` serves "Careers at Careers at Enpro Industries"; the pattern strips
+  one wrapper and a tail-only rule served the survivor as the employer.
+- **the whole string** — `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as
+  their company before this branch caught it.
+
+Those three exhaust the positions a token can occupy, which is why this one closes the set instead
+of adding the next case someone happens to trip over. Anchored rather than matching anywhere,
+because "Jobsoid" and "Careers24 Group" are names.
 
 It costs recall, and the honest number is not zero: across 400 lever and all 819 keka Boards it
 refused `enpro`, and an independent 700-Board lever sweep refused `lever:pmaconsultants` ("PMA
