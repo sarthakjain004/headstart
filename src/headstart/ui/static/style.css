@@ -19,13 +19,15 @@
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
      against this file's own --raise dark / near-white light chart surfaces; see
      docs/product/2026-08-20_trends-ui-design-research.md). A fixed hue order is the CVD-safety
-     mechanism, so these are read by SLOT, never re-ordered per chart. Re-measured against the
-     ADR-0116 surfaces: worst series-vs-surface contrast moved 3.46 -> 3.36 dark and 2.17 -> 2.13
-     light, i.e. the ground change is not what decides it. The light figure is under 3:1 and was
-     before this change too — a pre-existing gap, called out in ADR-0116 rather than inherited
-     silently. */
+     mechanism, so these are read by SLOT, never re-ordered per chart. Re-derived 2026-09-07
+     against the ADR-0116 surfaces, because the figures here had drifted from the palette they
+     describe: worst series-vs-surface contrast is 3.19 dark (--series-6 #008300 on --raise) and
+     2.17 light (--series-4 #EDA100 on white). Neither is slot 7, so ADR-0119's re-step of that
+     slot did not move either number. The light figure is under 3:1 and was before ADR-0116 too
+     — a pre-existing gap, called out there rather than inherited silently; its relief is the
+     table view. */
   --series-1:#3987E5; --series-2:#D95926; --series-3:#199E70; --series-4:#C98500;
-  --series-5:#D55181; --series-6:#008300; --series-7:#B07AD9; --series-8:#E66767;
+  --series-5:#D55181; --series-6:#008300; --series-7:#9085E9; --series-8:#E66767;
   --r-xl:20px; --r-lg:14px; --r-md:10px; --r-pill:999px;
   --shadow:0 10px 28px rgba(0,0,0,.30);
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -50,7 +52,7 @@
     --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
     --accent:#4F46E5; --pay:#047857; --remote:#0369A1; --alert:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
-    --series-5:#E87BA4; --series-6:#008300; --series-7:#7E3AA8; --series-8:#E34948;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
   }
 }
@@ -59,7 +61,7 @@
     --ink:#14161A; --ink-2:#4B5262; --ink-3:#5E6675;
     --accent:#4F46E5; --pay:#047857; --remote:#0369A1; --alert:#BE2D42;
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
-    --series-5:#E87BA4; --series-6:#008300; --series-7:#7E3AA8; --series-8:#E34948;
+    --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
 }
 
@@ -498,7 +500,6 @@ textarea:focus{ border-color:var(--accent); }
 /* ---- role trends (ADR-0040/0051), its own tab since the shell landed. Redesigned 2026-08-20
    against the dataviz skill's mark/interaction specs and the WAI-ARIA radiogroup pattern —
    see docs/product/2026-08-20_trends-ui-design-research.md. ---- */
-.trends-toggles{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; align-items:center; }
 .seg{ display:inline-flex; border:1px solid var(--rule); border-radius:9px; overflow:hidden; }
 .seg button{ appearance:none; border:0; background:none; color:var(--ink-2); font:inherit;
   font-size:12px; padding:4px 10px; cursor:pointer; }
@@ -507,108 +508,316 @@ textarea:focus{ border-color:var(--accent); }
 .seg button:disabled{ cursor:not-allowed; color:var(--ink-3); }
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-xl); }
-.trends-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
-.trends-head h2{ font-size:16px; margin:0; letter-spacing:-.01em; }
-.trends-range{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.trends-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+/* A real type scale, not one pixel of separation. The section heading was 16px against 15px
+   body text, so the panel read as one undifferentiated block; 20/15/12.5/11/10.5 is the ramp
+   everything below now sits on. */
+.trends-head h2{ font:650 20px/1.25 var(--sans); margin:0; letter-spacing:-.015em; }
+/* The way out of a drill, as a control rather than the sentence "click to go back" set in
+   12.5px grey at the end of the scope note. */
+.trends-crumb{ display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink-3); }
+.trends-crumb[hidden]{ display:none !important; }
+.trends-crumb button{ appearance:none; border:0; background:none; padding:2px 6px; margin-left:-6px;
+  border-radius:7px; font:inherit; color:var(--ink-2); cursor:pointer; }
+.trends-crumb button:hover{ background:var(--raise-2); color:var(--ink); }
+.trends-crumb button::before{ content:"← "; }
+#trends-crumb-here{ color:var(--ink); }
+/* A view switch, not a filter: it changes how the same numbers are drawn. As a bordered
+   .ghost it carried the same weight as the controls that change what the numbers ARE. */
+.text-toggle{ appearance:none; border:0; background:none; margin-left:auto; padding:4px 8px;
+  border-radius:8px; font:600 12px var(--sans); color:var(--ink-2); cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; }
+.text-toggle:hover{ background:var(--raise-2); color:var(--ink); }
+.text-toggle[aria-pressed="true"]{ background:var(--raise-2); color:var(--ink); }
+.text-toggle .glyph{ font-size:13px; line-height:1; }
+
+/* One left-aligned filter row above the chart it scopes (dataviz skill, interaction.md). The
+   toggles used to sit in the heading with `margin-left:auto`, which at 390px wrapped them into
+   four ragged right-aligned rows and pushed the plot below the fold. */
+.trends-controls{ display:flex; align-items:flex-end; gap:8px 18px; flex-wrap:wrap;
+  margin-bottom:10px; }
+.ctl{ display:flex; flex-direction:column; gap:4px; }
+.ctl[hidden]{ display:none !important; }
+/* The visible half of the label. aria-label alone told a screen reader what "Share / Count"
+   was the unit of and left everyone else to guess. */
+.ctl-label{ font:600 10.5px/1 var(--sans); letter-spacing:.07em; text-transform:uppercase;
+  color:var(--ink-3); }
+.ctl-static{ font-size:12px; color:var(--ink-3); max-width:34ch; line-height:1.35;
+  padding:2px 0; }
+.ctl-static[hidden]{ display:none !important; }
+/* [hidden] overrides display, matching .panel[hidden] above — an author `display` rule beats
+   the UA stylesheet's [hidden]{display:none} at equal specificity, so every element toggled via
+   `hidden` needs this same escape hatch or `hidden=true` silently does nothing visible. .seg
+   was the live case: the by-level/by-role group carries `hidden` at the top level and was on
+   screen anyway, a drill control offered where there is nothing to drill. */
+.seg[hidden]{ display:none !important; }
+.trends-error[hidden], .trends-grid[hidden], .trends-table-wrap[hidden], .trends-kpi[hidden],
+.trends-void[hidden]{
+  display:none !important; }
+/* Holds the chart's height when there is no chart, so the panel does not collapse under the
+   reader at the moment it has least to say. Neutral on purpose: the alert above carries the
+   message, and a second tinted box would read as a second failure. */
+.trends-void{ min-height:min(38vh, 300px); border-radius:var(--r-md);
+  background:var(--raise-2); margin-top:12px; }
+
+/* The exact window, one hairline below the presets that answer the question (dataviz skill,
+   palette.md § Filter controls). */
+.trends-custom{ margin-bottom:12px; border-top:1px solid var(--rule); padding-top:8px; }
+.trends-custom > summary{ cursor:pointer; font-size:11.5px; color:var(--ink-3); list-style:none;
+  padding:2px 0; width:max-content; }
+.trends-custom > summary::-webkit-details-marker{ display:none; }
+.trends-custom > summary::before{ content:"▸ "; }
+.trends-custom[open] > summary::before{ content:"▾ "; }
+.trends-custom > summary:hover{ color:var(--ink-2); }
+.trends-range{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0 2px; }
 .trends-range input[type="datetime-local"]{ padding:7px 9px; border-radius:var(--r-md);
   font:inherit; font-size:12.5px; background:var(--raise); color:var(--ink);
   border:1px solid var(--rule); outline:none; color-scheme:dark light; }
 /* the native picker follows the SITE theme when the toggle has forced one, not the OS */
 :root[data-theme="dark"] .trends-range input[type="datetime-local"]{ color-scheme:dark; }
 :root[data-theme="light"] .trends-range input[type="datetime-local"]{ color-scheme:light; }
+.trends-range .ghost{ padding:6px 14px; font-size:12.5px; }
 .trends-note{ color:var(--ink-3); font-size:12.5px; }
-/* [hidden] overrides display, matching .panel[hidden] above — an author `display` rule beats
-   the UA stylesheet's [hidden]{display:none} at equal specificity, so every element toggled via
-   .hidden needs this same escape hatch or `hidden=true` silently does nothing visible. */
-.trends-error[hidden], .trends-grid[hidden], .trends-table-wrap[hidden]{ display:none !important; }
-.trends-error{ display:flex; align-items:center; gap:10px; padding:14px 16px; margin:10px 0 0;
-  background:color-mix(in srgb, var(--alert) 10%, transparent);
-  border:1px solid color-mix(in srgb, var(--alert) 30%, transparent); border-radius:var(--r-md);
+
+/* The tiles above the plot (dataviz skill, marks-and-anatomy.md § Figures). Proportional
+   figures, not tabular: tabular-nums pads every digit to the width of a `0`, which reads
+   loose at tile size and is for columns that must align vertically, not standalone values. */
+/* The row is capped rather than the tracks: on a 2,000px display four 1fr tiles came out
+   430px wide, most of it air around a two-digit number. A definite max inside minmax() is
+   what auto-fit counts repetitions with, so `minmax(130px, 250px)` collapses to ONE column at
+   390px — measured, not assumed. 1fr keeps the count honest and --measure caps the row. */
+.trends-kpi{ display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));
+  max-width:1040px; gap:10px; margin:14px 0 4px; }
+.kpi{ padding:10px 12px; background:var(--raise-2); border:1px solid var(--rule);
+  border-radius:var(--r-md); display:flex; flex-direction:column; gap:3px; min-width:0; }
+.kpi-label{ font:600 10.5px/1 var(--sans); letter-spacing:.07em; text-transform:uppercase;
+  color:var(--ink-3); }
+.kpi-value{ font:600 16px/1.3 var(--sans); color:var(--ink);
+  font-variant-numeric:proportional-nums; overflow-wrap:anywhere; }
+.kpi-delta, .kpi-note{ font-size:11.5px; }
+.kpi-note{ color:var(--ink-3); }
+
+/* The chart's two caveats, as one bounded block. Loose under a full-width plot they read as
+   leftover text; given an edge and a surface they read as the note they are — which matters,
+   because the second one is the reassignment caveat that keeps a reader from misreading a
+   line's fall as jobs closing. That caveat is 190 words, and at 390px it was the tallest thing
+   on the panel, so it folds to one summary line. The words behind it are untouched. */
+.chart-note{ margin-top:26px; padding:14px 18px; background:var(--raise-2);
+  border-left:2px solid var(--rule-2); border-radius:0 var(--r-md) var(--r-md) 0; }
+.chart-note #trends-foot{ margin:0; max-width:74ch; line-height:1.5; }
+.chart-note .note-more{ margin-top:8px; }
+.chart-note .note-more > summary{ cursor:pointer; font:600 12px var(--sans); color:var(--ink-2);
+  list-style:none; width:max-content; }
+.chart-note .note-more > summary::-webkit-details-marker{ display:none; }
+.chart-note .note-more > summary::before{ content:"▸ "; }
+.chart-note .note-more[open] > summary::before{ content:"▾ "; }
+.chart-note .kind{ margin:8px 0 0; max-width:74ch; }
+/* Two columns where there is room. The caption block used 640px of a 1940px panel, so the
+   ADR-0057 caveat can be visible for free rather than folded to save height — which is what
+   ADR-0119 asks for when it says that caveat gets more load-bearing under an indexed chart. */
+@media (min-width:1100px){
+  .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start; }
+  .chart-note #trends-foot, .chart-note .note-more{ margin:0; max-width:none; }
+  .chart-note .kind{ margin:6px 0 0; max-width:none; }
+}
+/* An empty state, not a strip: a failed fetch used to collapse the panel from 808px to 500px,
+   so the page jumped under the reader at the moment it had least to say for itself. The
+   message keeps a reading measure of its own. */
+.trends-error{ display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:12px; text-align:center; padding:18px 24px; margin:14px 0 0;
+  background:color-mix(in srgb, var(--alert) 4%, var(--raise-2));
+  border:1px solid color-mix(in srgb, var(--alert) 45%, transparent); border-radius:var(--r-md);
   color:var(--ink-2); font-size:13px; }
-.trends-error button{ margin-left:auto; flex:none; }
+#trends-error-msg{ max-width:46ch; }
+.trends-error button{ flex:none; }
 /* ATS picker (ADR-0075): the app's first popover, scoped to this one control */
 .ats-pick{ position:relative; }
-.ats-pick .ghost{ padding:4px 10px; font-size:12px; font-weight:600; border-radius:9px; }
-.ats-pick-menu{ position:absolute; z-index:10; top:calc(100% + 6px); right:0; min-width:180px;
+.ats-pick .ghost{ padding:5px 10px; font-size:12px; font-weight:600; border-radius:9px; }
+.ats-pick-menu{ position:absolute; z-index:10; top:calc(100% + 6px); left:0; min-width:180px;
   max-height:260px; overflow-y:auto; padding:8px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-md); box-shadow:var(--shadow); }
 .ats-pick-menu label{ display:flex; align-items:center; gap:7px; padding:4px 6px; border-radius:7px;
   font-size:12.5px; color:var(--ink-2); cursor:pointer; }
 .ats-pick-menu label:hover{ background:var(--raise-2); color:var(--ink-1); }
 
-.trends-grid{ display:grid; grid-template-columns:1fr 232px; gap:18px; align-items:start;
+.trends-grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(232px, 292px); gap:24px; align-items:start;
   margin-top:14px; transition:opacity .2s ease; }
 .trends-grid.loading{ opacity:.55; }
 .trends-chart-wrap{ position:relative; }
-/* aspect-ratio keeps the rendered box proportional to the 720x260 viewBox at any container
-   width, so text/gridlines never stretch non-uniformly the way a fixed height + width:100% +
-   preserveAspectRatio="none" used to (a real bug on a narrow sidebar or a very wide monitor). */
-#trends-chart{ width:100%; aspect-ratio:720/260; height:auto; display:block; overflow:visible; }
+/* aspect-ratio keeps the rendered box proportional to the viewBox at any container width, so
+   text/gridlines never stretch non-uniformly the way a fixed height + width:100% +
+   preserveAspectRatio="none" used to (a real bug on a narrow sidebar or a very wide monitor).
+   drawTrends overrides the ratio inline once it has measured the column and worked out how
+   much height the panel can spare; this value only holds the space for the skeleton and the
+   very first paint. */
+#trends-chart{ width:100%; aspect-ratio:720/300; height:auto; display:block; overflow:visible; }
+#trends-chart:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
 /* The same aspect-ratio as the chart it replaces, so the panel holds its height across the
    swap — a skeleton that reserves the wrong space is its own layout shift. */
 .trends-skel[hidden]{ display:none !important; }
-.trends-skel .shim{ height:auto; aspect-ratio:720/260; border-radius:var(--r-md); }
+.trends-skel .shim{ height:auto; aspect-ratio:720/300; border-radius:var(--r-md); }
 /* The legend column has no aspect of its own — it stretches to the chart's row, so the two
    halves of the skeleton are exactly as tall as the two halves they stand in for. */
 .trends-skel .shim:last-child{ aspect-ratio:auto; align-self:stretch; }
 #trends-hitrect{ cursor:crosshair; }
 .crosshair-line{ stroke:var(--rule-2); stroke-width:1; }
 .ch-dot{ pointer-events:none; }
+/* Direct end-labels for the two or three endpoints that separate cleanly. The text wears an
+   ink token, never the series colour — a light categorical hue is illegible as label text
+   (dataviz skill); the leader and the end dot carry the identity instead. */
+.end-label{ fill:var(--ink-2); font-size:11.5px; }
+.end-leader{ stroke-width:1; opacity:.7; }
 
-.trends-tooltip{ position:absolute; z-index:5; pointer-events:none; min-width:150px; max-width:220px;
+.trends-tooltip{ position:absolute; z-index:5; pointer-events:none; min-width:150px;
+  max-width:min(300px, 92%);
   padding:8px 10px; background:var(--raise); border:1px solid var(--rule-2); border-radius:var(--r-md);
   box-shadow:var(--shadow); font-size:11.5px; }
 .trends-tooltip .tt-date{ color:var(--ink-3); font-size:10.5px; margin-bottom:5px;
   text-transform:uppercase; letter-spacing:.04em; }
 .trends-tooltip .tt-row{ display:flex; align-items:center; gap:6px; padding:2px 0; }
+/* Nine rows is a list to search. The one the pointer is beside is lifted out of it. */
+.trends-tooltip .tt-row.near{ background:var(--raise-2); border-radius:5px;
+  margin:0 -5px; padding:2px 5px; }
+.trends-tooltip .tt-row.near .tt-name{ color:var(--ink); }
 .trends-tooltip .tt-key{ width:10px; height:2px; border-radius:1px; flex:none; }
 .trends-tooltip .tt-val{ font-variant-numeric:tabular-nums; font-weight:600; color:var(--ink); }
 .trends-tooltip .tt-name{ color:var(--ink-2); flex:1; white-space:nowrap; overflow:hidden;
   text-overflow:ellipsis; }
 
-.trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;
-  max-height:260px; overflow-y:auto; }
+.trends-legend{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px;
+  align-self:stretch; overflow-y:auto; }
 /* The row's box lives on the inner `.row`, not the <li>: only `.row` carries role="button", so
-   the <li> keeps its implicit `listitem` and the <ul> stays a list for assistive tech. */
-.trends-legend li{ display:flex; }
-.trends-legend .row{ display:flex; align-items:center; gap:8px; padding:4px 6px; width:100%;
-  border-radius:8px; font-size:12.5px; transition:opacity .15s ease, background var(--step); }
+   the <li> keeps its implicit `listitem` and the <ul> stays a list for assistive tech. The
+   hide toggle is the <li>'s second child for the same reason — a control nested inside another
+   control is unreachable for half the assistive tech that meets it. */
+.trends-legend li{ display:flex; align-items:stretch; }
+/* margin:0 resets the global `.row` (the filter rail's form row, line 209), whose margin-top
+   leaks in here on the class name alone. It was invisible while the row was the li's only
+   child — it just spaced the rows out — and became a 10px misalignment the moment the row got
+   the hide toggle as a sibling. */
+.trends-legend .row{ display:flex; align-items:center; gap:8px; padding:4px 6px; margin:0;
+  flex:1; min-width:0; border-radius:8px 0 0 8px; font-size:12.5px;
+  transition:background var(--step); }
 .trends-legend .charted .row{ background:var(--raise-2); cursor:pointer; }
 .trends-legend .charted .row:hover, .trends-legend .charted .row:focus-visible{ background:var(--rule); }
-/* Hover-highlight de-emphasis (dataviz skill §2): a row for a series that isn't the one
-   currently focused fades, mirroring the chart's own dimmed lines. */
-.trends-legend .row.dim{ opacity:.4; }
+/* Hover de-emphasis (dataviz skill §2). Measured: `opacity:.4` on the whole row put its label
+   at ~1.6:1 against the surface, so the un-focused rows stopped being readable rather than
+   becoming secondary. The line-key fades and the focused row lifts its own surface; the text
+   never moves. The chart's own lines still dim to .25 — there, opacity IS the encoding. */
+.trends-legend .row.dim .swatch{ opacity:.3; }
+.trends-legend .row.on{ background:var(--rule); }
+/* A slot that changed hands mid-session: the row fades in, so a reader who learned this colour
+   as another category sees that something happened rather than silently mis-reading it. */
+.trends-legend .recolored .row{ animation:trend-recolor .45s ease-out; }
+@keyframes trend-recolor{ from{ opacity:0; transform:translateX(-4px); } to{ opacity:1; transform:none; } }
+/* Hidden by the toggle: the row stays, so the way back is where the way out was. */
+.trends-legend .off .row{ opacity:.5; }
+.trends-legend .off .nm{ text-decoration:line-through; }
+.trends-legend .vis{ appearance:none; border:0; flex:none; width:26px;
+  display:flex; align-items:center; justify-content:center; border-radius:0 8px 8px 0;
+  background:var(--raise-2); color:var(--ink-3); font-size:11px; line-height:1; cursor:pointer; }
+.trends-legend .other .vis{ background:none; }
+.trends-legend .vis:hover{ background:var(--rule); color:var(--ink); }
 /* The Other row: one honest aggregate, not N real-looking categories that quietly do nothing on
-   click. A hairline separates it from the real, individually-charted categories above it. */
-.trends-legend .other{ margin-top:2px; padding-top:2px; border-top:1px dashed var(--rule); }
+   click. A hairline separates it from the real, individually-charted categories above it —
+   solid, because a dashed rule is chart furniture's own vocabulary for "estimated". */
+.trends-legend .other{ margin-top:4px; padding-top:4px; border-top:1px solid var(--rule); }
 .trends-legend .other .row{ cursor:default; }
-/* A short stroke, not a dot, so the swatch mirrors the mark it stands for (a line). */
-.trends-legend .swatch{ width:12px; height:3px; border-radius:2px; flex:none; }
+/* A short stroke, not a dot, so the key mirrors the mark it stands for (a line). */
+.trends-legend .swatch, .trends-table .swatch{ width:14px; height:4px; flex:none; overflow:visible; }
+.trends-table .swatch{ margin-right:7px; vertical-align:middle; }
 .trends-legend .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Marks a category whose drill holds named roles — muted, so it reads as an affordance rather
    than competing with the number beside it. flex:none so it never steals width from .nm. */
 .trends-legend .drill{ flex:none; color:var(--ink-3); font-size:11px; letter-spacing:.02em; }
 .trends-legend .charted .row:hover .drill{ color:var(--ink-2); }
 .trends-legend .ct{ color:var(--ink-2); font-variant-numeric:tabular-nums; }
-.trends-legend .dl{ font-variant-numeric:tabular-nums; font-size:11.5px; min-width:44px;
+.trends-legend .dl{ font-variant-numeric:tabular-nums; font-size:11.5px; min-width:52px;
   text-align:right; }
-.up{ color:var(--pay); } .down{ color:var(--alert); } .flat{ color:var(--ink-3); }
+/* The delta wears ink, not a hue. --alert (#FB7185) sits Delta E 5.7 from --series-8 (#E66767),
+   2.8 under a tritan simulation, and the two land on the SAME legend row — a red figure beside
+   a red line-key read as one object. The arrow glyph is the direction channel now, and it
+   survives every CVD, greyscale print and forced-colors mode. */
+.up, .down{ color:var(--ink-2); } .flat{ color:var(--ink-3); }
 .trends-grid .gridline{ stroke:var(--rule); stroke-width:1; }
+.trends-grid .ref-line{ stroke:var(--ink-3); stroke-width:1.5; stroke-dasharray:6 4;
+  stroke-linecap:round; opacity:.8; }
+.trends-grid .ref-label{ fill:var(--ink-3); font:500 11px var(--sans); }
+/* The 100 datum under Change. Stronger than the grid because it is not a tick: whether a line
+   sits above or below it is the whole reading. Still an ink token, never a series colour. */
+.trends-grid .baseline{ stroke:var(--rule-2); stroke-width:1.5; }
 /* 12px floor + tabular-nums (Datawrapper's legibility rule) — was 10px with no numeric
    alignment, both flagged by the design research doc §6. */
 .trends-grid .axis-label{ fill:var(--ink-3); font-size:12px; font-variant-numeric:tabular-nums; }
 
-.trends-table-wrap{ margin-top:14px; overflow-x:auto; }
+
+/* min-width:0 because the panel is a flex column below 760px (the chart sits above the
+   controls there): without it the full grid's 471 nowrap columns set this item's minimum and
+   scrolled the whole PAGE sideways instead of scrolling inside .trends-scroll. */
+.trends-table-wrap{ margin-top:14px; min-width:0; }
+/* Both tables scroll inside their own box. Six nowrap columns do not fit 294px of phone and
+   the page must never be the thing that scrolls sideways. */
+.trends-scroll{ overflow-x:auto; }
 .trends-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
 .trends-table th, .trends-table td{ padding:7px 10px; text-align:right; border-bottom:1px solid var(--rule);
   font-variant-numeric:tabular-nums; white-space:nowrap; }
 .trends-table thead th{ color:var(--ink-3); font-weight:600; font-size:11px; text-transform:uppercase;
   letter-spacing:.03em; }
+.trends-table thead th:first-child{ text-align:left; }
 .trends-table th[scope="row"]{ text-align:left; color:var(--ink); font-weight:500;
   font-variant-numeric:normal; position:sticky; left:0; background:var(--raise); }
+/* Other gets the rule the legend gives it, in the table too. */
+.trends-table tr.other th, .trends-table tr.other td{ border-top:1px solid var(--rule-2); }
+/* The full time grid, behind a disclosure: 471 columns is a data dump, not a table view. */
+.trends-full{ margin-top:14px; border-top:1px solid var(--rule); padding-top:8px; }
+.trends-full > summary{ cursor:pointer; font-size:11.5px; color:var(--ink-3); list-style:none;
+  width:max-content; padding:2px 0; }
+.trends-full > summary::-webkit-details-marker{ display:none; }
+.trends-full > summary::before{ content:"▸ "; }
+.trends-full[open] > summary::before{ content:"▾ "; }
+.trends-full .trends-scroll{ margin-top:8px; }
+
+/* The texture channel (dataviz skill, marks-and-anatomy.md § Texture / palette.md). Where hue
+   is gone — full-severity CVD, greyscale print, forced-colors — identity has to ride something
+   else. The skill's 45/135-degree hatch fills a shape; these marks are 2px strokes with no
+   fill (the area washes were removed deliberately), so the equivalent channel for a LINE is
+   its dash pattern. One rule set covers both the plot and the legend, because the legend key
+   is the same `data-slot`-carrying <line> the chart draws. Never on by default. */
+@media (forced-colors: active), print{
+  /* Slots are 0-based, as `data-slot` writes them. Slot 0 stays solid: one unbroken line is
+     itself a pattern, and the eight have to be told apart from each other, not from nothing. */
+  [data-slot="1"]{ stroke-dasharray:7 4; }
+  [data-slot="2"]{ stroke-dasharray:1.5 4; }
+  [data-slot="3"]{ stroke-dasharray:13 4 2 4; }
+  [data-slot="4"]{ stroke-dasharray:3 3; }
+  [data-slot="5"]{ stroke-dasharray:16 5; }
+  [data-slot="6"]{ stroke-dasharray:9 3 1.5 3; }
+  [data-slot="7"]{ stroke-dasharray:5 6; }
+  [data-slot="other"]{ stroke-dasharray:2 6; }
+}
 
 @media (max-width:760px){
-  .trends-grid{ grid-template-columns:1fr; }
+  /* `display:contents` so the chart and the legend become orderable siblings of everything
+     else. As one grid block they moved together, which forced the filter row below BOTH — on
+     an 844px phone the Unit toggle sat at y=937, under a nine-row legend and off the screen.
+     The controls belong between the plot and the legend: still above the thing they filter's
+     detail, still reachable without scrolling past it. */
+  .trends-grid{ display:contents; }
+  .trends{ display:flex; flex-direction:column; }
+  .trends-head{ order:0; }
+  .trends-note, .trends-error{ order:1; }
+  .trends-kpi{ order:2; }
+  .trends-skel, .trends-chart-wrap{ order:3; }
+  .trends-controls{ order:4; margin:14px 0 0; }
+  .trends-custom{ order:5; }
+  .trends-legend{ order:6; margin-top:14px; }
+  #trends-readout, .trends-table-wrap{ order:7; }
+  .chart-note{ order:8; }
+  .text-toggle{ margin-left:0; }
+  /* `display:contents` drops the grid box that used to carry these, so they move to the
+     children the reader actually sees. */
+  .trends-grid.loading > *{ opacity:.55; }
+  .trends-grid[hidden] > *{ display:none !important; }
 }
 
 /* running text, so it gets a measure — 1180px of prose is unreadable */

@@ -73,6 +73,8 @@ function loadApp() {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
+    + ' niceAxis: niceAxis, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'
+    + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' set: (d, drill) => { trendData = d; trendDrill = drill || null; } };';
@@ -147,7 +149,9 @@ test('the Other row sums every series past CHART_MAX', () => {
   assert.match(other, /Other \(2 smaller categories\)/);
   const ct = other.match(/<span class="ct">([^<]+)<\/span>/);
   assert.ok(ct, 'Other row should render a count value');
-  assert.equal(Number(ct[1].replace(/,/g, '')), 3000);   // 2000 + 1000, not just the label text
+  // The legend compacts counts — `45,174` is six characters taken out of the label beside it —
+  // so this reads the compact form. Still the SUM (2000 + 1000), not the label text.
+  assert.equal(ct[1], '3.0k');
 });
 
 test('clicking a marked row opens the roles split it advertised', () => {
@@ -175,9 +179,11 @@ test('charted rows are real buttons; the Other row is not interactive', () => {
   assert.match(charted, /tabindex="0"/);
   assert.doesNotMatch(other, /role="button"/);
   assert.doesNotMatch(other, /tabindex/);
-  // Scoped to these rows, not the whole legend: a future real toggle must not fail this.
-  assert.doesNotMatch(charted, /aria-pressed/);
-  assert.doesNotMatch(other, /aria-pressed/);
+  // Scoped to the drill row itself, not the whole <li>: the hide toggle that now sits beside
+  // it IS a real aria-pressed button, and what this asserts is that the drill row is not one.
+  const drillPart = s => s.split('<button class="vis"')[0];
+  assert.doesNotMatch(drillPart(charted), /aria-pressed/);
+  assert.doesNotMatch(drillPart(other), /aria-pressed/);
   // The role belongs on the inner .row so the <li> keeps its implicit `listitem`.
   assert.match(charted, /<span class="row"[^>]*role="button"/);
 });
@@ -381,4 +387,134 @@ test('a short history with no ATS filter keeps the generic pipeline-is-new messa
   t.draw();
   assert.doesNotMatch(nodes['trends-empty'].textContent, /ATS selection/);
   assert.match(nodes['trends-empty'].textContent, /pipeline has run a few more times/);
+});
+
+// ---- the y axis --------------------------------------------------------------------------
+
+test('the y axis rounds up to a whole nice step, so the top tick is never the data max', () => {
+  const { t } = loadApp();
+  // 27.0% used to be divided by four into 0.0 / 6.8 / 13.5 / 20.3 / 27.0.
+  const a = t.niceAxis(27);
+  assert.equal(a.top % (a.ticks[1] - a.ticks[0]), 0);
+  assert.ok(a.top >= 27, 'the axis must contain the data');
+  assert.ok(a.ticks.length >= 4 && a.ticks.length <= 7, `got ${a.ticks.length} ticks`);
+  assert.equal(a.ticks[0], 0);
+  assert.equal(a.ticks[a.ticks.length - 1], a.top);
+});
+
+test('the step is a nice number in both units, not a division of the data max', () => {
+  const { t } = loadApp();
+  // 1 / 2 / 2.5 / 5 x 10^n — the mantissa is what makes a tick readable at a glance.
+  for (const hi of [27, 45174, 0.34, 6.8, 992]){
+    const a = t.niceAxis(hi);
+    const step = a.ticks[1] - a.ticks[0];
+    const mantissa = step / Math.pow(10, Math.floor(Math.log10(step)));
+    assert.ok([1, 2, 2.5, 5].some(m => Math.abs(m - mantissa) < 1e-9),
+      `hi=${hi} gave step ${step} (mantissa ${mantissa})`);
+  }
+});
+
+test('every label on one axis prints at the same precision', () => {
+  const { t } = loadApp();
+  t.setUnit('share', false);
+  const a = t.niceAxis(27);
+  const decimals = a.ticks.map(v => (t.fmtAxis(v, a.dec).match(/\.(\d+)/) || ['', ''])[1].length);
+  assert.equal(new Set(decimals).size, 1, `mixed precisions: ${a.ticks.map(v => t.fmtAxis(v, a.dec))}`);
+});
+
+// ---- colour slots ------------------------------------------------------------------------
+
+test('a category that drops off and comes back reclaims the colour it had', () => {
+  // Eight slots and twenty-four families means a slot has to change hands eventually, but a
+  // name RETURNING must not be handed a different one — the reader who learned it is still in
+  // the same session. Two names leave and come back RE-RANKED, so allocating by rank order
+  // (what the previous allocator did) hands them each other's colour and fails here; only
+  // per-name memory gets both right.
+  const { t } = loadApp();
+  const f = fixture();
+  t.set(f, null);
+  t.draw();
+  const qa = f.series[3].name, dev = f.series[4].name;
+  const qaWas = t.colorSlot(qa), devWas = t.colorSlot(dev);
+  assert.notEqual(qaWas, devWas);
+
+  const without = { ...f, series: f.series.filter(s => s.name !== qa && s.name !== dev) };
+  t.set(without, null);
+  t.draw();                                              // ai-ml + data-science take the two
+  assert.equal(t.colorSlot(qa), undefined);
+  assert.equal(t.colorSlot(dev), undefined);
+
+  // back, with devops now out-ranking qa-test
+  const swapped = { ...f, series: [f.series[0], f.series[1], f.series[2], f.series[4],
+                                   f.series[3], ...f.series.slice(5)] };
+  t.set(swapped, null);
+  t.draw();
+  assert.equal(t.colorSlot(qa), qaWas, 'a returning name must get its own colour back');
+  assert.equal(t.colorSlot(dev), devWas);
+});
+
+/* Both of these shipped and were caught by review, not by a test — so they get one each. */
+
+test('a series measured at zero early is not indexed off a later point', () => {
+  const { t } = loadApp();
+  const f = fixture();
+  // A real measurement of zero, then growth. `find(v => v)` skipped the zero and indexed off
+  // the 5, so the first point plotted at 0/5*100 = 0, the line spiked to 800, and the axis
+  // stretched to 0-800 — crushing every other series into a few pixels.
+  const zero = { name: 'zerostart', label: 'zerostart', points: [0, 0, 5, 10, 20, 40], latest: 40 };
+  t.set({ ...f, series: [zero, ...f.series], stamps: [1, 2, 3, 4, 5, 6].map(String),
+          totals: [100, 100, 100, 100, 100, 100] }, null);
+  t.setUnit('change', false);
+  const vals = t.seriesValues(zero);
+  assert.ok(vals.every(v => v === null),
+    `a base below the floor must yield no line, got ${JSON.stringify(vals)}`);
+  // Not just "all null" — that outcome is also what the floor produces, so assert the base
+  // SELECTION too. The bug picked 5 (the first truthy value) and plotted point 0 at 0/5*100.
+  const high = { name: 'high', label: 'high', points: [0, 0, 50, 100], latest: 100 };
+  t.set({ ...f, series: [high, ...f.series], stamps: ['1', '2', '3', '4'],
+          totals: [100, 100, 100, 100] }, null);
+  assert.deepEqual(t.seriesValues(high), [null, null, null, null],
+    'a measured zero is the base, so this series has none — it must not index off the 50');
+});
+
+test('a tile never headlines a series the chart refuses to draw', () => {
+  const { t, nodes } = loadApp();
+  const f = fixture();
+  // Base 4 is under the floor, but the mean of the first three (4+20+30)/3 = 18 is over it —
+  // so the chart drew a gap while the tile read "Biggest riser +233.3%". Two gates, two
+  // different quantities.
+  const low = { name: 'low', label: 'low', points: [4, 20, 30, 40], latest: 40 };
+  t.set({ ...f, series: [low, ...f.series], stamps: ['1', '2', '3', '4'],
+          totals: [100, 100, 100, 100] }, null);
+  t.setUnit('change', false);
+  assert.equal(t.hasIndexBase(low), false);
+  t.draw();
+  assert.ok(!nodes['trends-kpi'].innerHTML.includes('>low<'),
+    'a series with no index base must not appear in a KPI tile');
+});
+
+test('a healthy series indexes its RAW COUNT to 100, not its share', () => {
+  const { t } = loadApp();
+  const f = fixture();
+  const ok = { name: 'ok', label: 'ok', points: [8, 9, 12, 16], latest: 16 };
+  // `totals` MUST vary. With a flat denominator, index-of-count and index-of-share are the
+  // same numbers, so the test cannot fail if share-indexing came back — and indexing the count
+  // was an explicit product decision (ADR-0119), which makes it exactly the thing to pin.
+  // Doubling the denominator halves every share: index-of-share would be [100, 75, 75, 67].
+  t.set({ ...f, series: [ok, ...f.series], stamps: ['1', '2', '3', '4'],
+          totals: [100, 150, 200, 300] }, null);
+  t.setUnit('change', false);
+  assert.deepEqual(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200],
+    'the base is the count, so a growing denominator must not move the line');
+});
+
+test('a delta carries its sign in the number, not only in the arrow', () => {
+  const { t } = loadApp();
+  // The flat glyph has one shape and two signs: -0.28% and +0.89% both rendered "→ 0.3%" /
+  // "→ 0.9%", and the "biggest faller" tile printed a flat arrow with no minus anywhere.
+  assert.match(t.deltaText(-0.282), /−0\.3%/);
+  assert.match(t.deltaText(0.893), /\+0\.9%/);
+  assert.notEqual(t.deltaText(-0.282), t.deltaText(0.282));
+  assert.match(t.deltaText(-22), /↓ −22\.0%/);
+  assert.match(t.deltaText(118.2), /↑ \+118\.2%/);
 });
