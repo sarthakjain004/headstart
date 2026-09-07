@@ -76,8 +76,9 @@ body{
 /* Bounded here rather than on `main`, which is Search's element alone: constraining that one
    left Matches and Saved rendering the SAME card at the shell's full 1276px, with the content
    ending at 918 and 427px of empty card after it. The masthead, tab strip and footer keep the
-   shell width — they are chrome that spans the page, not content to be read across. Data's
-   `.doc` sets its own, narrower prose measure and is unaffected. */
+   shell width — chrome that spans the page rather than content to be read across — which now
+   lands on the same two x's as this, because the shell is capped at exactly this measure plus
+   its padding. Data's `.doc` sets its own, narrower prose measure and is unaffected. */
 .content{ max-width:var(--measure); margin-inline:auto; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
