@@ -49,6 +49,20 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # (1), are left for the same reason.
         "zwayam:testcompany.cluster3.openings.co",
         "zwayam:zhirematetest.openings.co",
+        # Oracle's own load-test instance, and by far the largest "board" the oracle ledger
+        # holds: 78,431 claimed postings, 20% of that ledger's entire volume. Confirmed by
+        # content on 2026-09-08, not by the slug (which is an opaque four-letter pod label and
+        # hints at nothing): its titles are "HasProspect", "TEST Manager", "Test Director",
+        # "ZBEN QA Manager_031219", "volume testng req using template" and
+        # "Auto_Engineer-1_User3", and one site is named "Candidate Experience Site_031219".
+        # Left in the ledger as `live` because it genuinely is; it just is not an employer.
+        "oracle:eubt.fa.us6.oraclecloud.com",
+        # Deliberately NOT excluded despite a "-test" slug, on the same content-over-slug rule:
+        # `eczy-test.fa.us2.oraclecloud.com` reports TotalJobsCount 4,947 while serving zero
+        # rows, so there is no content to confirm anything. That shape is handled rather than
+        # excluded — `OracleScraper._listing` marks such a Board truncated, which keeps its rows
+        # out of the eviction scope (ADR-0053) instead of reading them as delisted. Five smaller
+        # Boards share it (7, 5, 1, 1, 1 claimed postings); 985 of 991 serve real rows.
         "darwinbox:training",  # company "training"; "Ali marketing Executive", "SK_Jr. Associate"
         # More of Darwinbox's own demo/QA/training tenants (found during darwinbox's salary-
         # extraction pass, 2026-08-22, reading real board content — not from the slug alone).
