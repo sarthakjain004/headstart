@@ -181,9 +181,25 @@ one runner is one address:
 gh workflow run probe-successfactors-ua.yml
 ```
 
-**It has not been run.** `workflow_dispatch` requires the workflow file on the default branch, so it
-cannot be dispatched until this change merges. Dispatch it immediately afterwards and record the
-result here; until then this document's claims are laptop-vantage claims.
+### Answered — run [34102929112](https://github.com/sarthakjain004/headstart/actions/runs/34102929112), 2026-09-07, immediately after the fix merged
+
+**The Actions vantage is not walled, and the fix holds there.** Two replicas on two different
+egress addresses (`52.159.229.73`, `172.184.247.2`), 12 pages each from three tenants:
+
+| arm | role | board | parsed | 200-unparsed | statuses |
+|---|---|---|---|---|---|
+| direct | suspect | `careers.te.com` | 12 | 0 | `{'200': 12}` |
+| direct | suspect | `jobs.l3harris.com` | 12 | 0 | `{'200': 12}` |
+| direct | control | `careers.bureauveritas.com` | 12 | 0 | `{'200': 12}` |
+
+Identical across both replicas, so the verdict is not a property of one runner. The policy is keyed
+on the User-Agent alone; address plays no part. The egress theory is now falsified from the vantage
+it was a theory about, rather than only from a laptop.
+
+**And the floor gain is bigger in production than the laptop sample projected.** Actions served
+these pages at **0.3-0.4 s** against the laptop's 1.35 s — so the 8.0 min projection above is
+conservative, and `careers.te.com`'s 2,127-page pass should land nearer 2 min at 6-wide, against
+the ~27 min it burned returning nothing. Confirm against the first real run that scrapes it.
 
 ## Verification
 
