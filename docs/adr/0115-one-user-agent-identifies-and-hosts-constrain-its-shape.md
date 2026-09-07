@@ -66,9 +66,11 @@ per scraper today.
 **Moving it requires a sweep first.** `scripts/validate/user_agent_sweep.py` runs the real
 `fetch_raw()` + `parse()` against live Boards under both strings. This is not ceremony: the first
 candidate replacement passed every SuccessFactors check and **broke zwayam**, and only scraping
-under both strings found it. The sweep covers 20 of the 22 registered ATSes and **prints the ones
-it cannot reach** — `oracle` and `sensehq` have no liveness ledger, so no Board to sample; a
-verdict from it is evidence about 20 ATSes, not proof about all of them.
+under both strings found it. The sweep covers every registered ATS that has a liveness ledger and
+**prints the ones it cannot reach** — at the time of writing that was 20 of 22, the gaps being
+`oracle` and `sensehq`, which had no ledger and so no Board to sample. `oracle` gained one on
+2026-09-08; `sensehq` remains the gap. Either way a verdict from it is evidence about the ATSes it
+reached, not proof about all of them — read the header it prints rather than this sentence.
 
 ## Consequences
 

@@ -15,9 +15,10 @@ regional pods, and a Playwright HAR of the real careers UI.
 
 ## 0. The scraper is not wired to anything
 
-There is no `data/validate/liveness/oracle.csv`. `config.load_active_companies` globs
-`{ledger_dir}/*.csv`, so **oracle has never been scraped in production** — it is registered in
-`SCRAPERS`, absent from `DISABLED_ATS`, and unreachable all the same. It also has no test file.
+**Before the change this document accompanies**, there was no `data/validate/liveness/oracle.csv`.
+`config.load_active_companies` globs `{ledger_dir}/*.csv`, so **oracle had never been scraped in
+production** — it was registered in `SCRAPERS`, absent from `DISABLED_ATS`, and unreachable all
+the same. The same change adds the ledger, so this section describes the state it fixed. It also has no test file.
 Both defects below have therefore never cost a served row; they would have, the moment a ledger
 appeared.
 
@@ -99,7 +100,16 @@ and 0 missing**, with and without `sortBy`.
 
 `hasMore` returned **false** on a board with `TotalJobsCount` 248 — do not use it as the
 pagination terminator. `TotalJobsCount` is the honest signal, and the current loop is right to
-use it. 199 of 1,331 hiring boards exceed one page; the largest is 4,947.
+use it.
+
+**How many Boards actually paginate** — read against the committed ledger, not the sweep, for the
+reason §8 gives: **262 of 991** hiring Boards exceed one 200-row page. The largest real employer
+Board is Marriott at **13,379** postings (67 pages), comfortably inside `_MAX_PAGES = 100`. Only
+one Board in the ledger would exhaust that cap — Oracle's own 78,431-posting load-test instance,
+which would need 393 pages and is excluded in `config.EXCLUDED_BOARDS` instead. So the cap is
+never expected to fire on a real Board; if it does, `mark_truncated` says so rather than serving a
+short list silently. (The exploratory sweep's own figures — 199 of 1,331 over one page, largest
+4,947 — count *sites*, and are not the ones to size a page cap against.)
 
 ## 6. No rate limit found, and concurrency above ~32 is counter-productive
 
@@ -124,6 +134,13 @@ Experience site".
 
 This is the right source for `company`, and it is the only reason to enumerate sites at all,
 since §3 removes the scraping need and §4 the URL need.
+
+**Not carried into the scraper.** `company` still falls back to the slug. The measurement says
+which source to use, not that the change made the switch — at ADR-0114's bar this needs its own
+pass: `SiteName` is non-generic on 97% of 150 hosts against the `<title>` route's 94%, but the
+names carry wrappers that ADR-0114's rules exist to strip ("Ciklum General referral", "daa All
+Open Jobs", "SDU Career Site", "Job Listings at Liquidity Services Inc."). That is a
+`company_name.py` rule set and its own sample, not a line in this scraper.
 
 ## 8. Is it worth wiring?
 
