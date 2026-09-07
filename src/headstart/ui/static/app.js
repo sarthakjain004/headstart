@@ -113,6 +113,8 @@ async function signOut(){
 function toggleRail(){
   const rail = el('rail');
   const open = rail.classList.toggle('open');
+  const btn = el('filtersbtn');
+  if (btn) btn.setAttribute('aria-expanded', String(open));
   // The panel opens above the button that was just pressed (ADR-0114 puts it over the
   // results), so without this the rows shift down and the filters land off-screen.
   if (open) rail.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -210,6 +212,13 @@ const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
   const f = currentFilters(), box = el('active');
+  // The panel is closed by default now (ADR-0114), so the button has to carry how many
+  // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
+  const btn = el('filtersbtn'), n = Object.keys(f).length;
+  if (btn){
+    btn.textContent = n ? `Filters (${n})` : 'Filters';
+    btn.classList.toggle('has', n > 0);
+  }
   box.innerHTML = Object.entries(f).map(([k,v]) =>
     `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(v === 'true' ? 'yes' : v)}` +
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
@@ -489,31 +498,29 @@ function draw(rows, target){
     const s = Number(r.score) || 0, pct = matchPct(s);
     return `
     <div class="card" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
-      <div class="hd">
-        <div style="flex:1; min-width:0">
-          <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
-          <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+      <div class="who">
+        <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
+        <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}</div>
+        <div class="tags">
+          ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
+          ${r.remote? '<span class="tag rem">remote</span>':''}
+          ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
+          ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
+          ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
+          ${r.ats? '<span class="src" title="Read directly from this company\'s '+esc(r.ats)+' board \u2014 not a repost">via '+esc(r.ats)+'</span>':''}
         </div>
-        ${starBtn(r.id)}
-        ${ranked? `<div class="match" role="img"
-             aria-label="Match ${pct} percent — how close this job is to your search, on a fixed scale that gives the same job the same number every time"
-             title="Match strength — semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+      </div>
+      <div class="pay">${payLabel(r)? esc(payLabel(r)) : '<span class="nopay" title="This board did not publish one">\u2014</span>'}</div>
+      ${ranked? `<div class="match" role="img"
+             aria-label="Match ${pct} percent \u2014 how close this job is to your search, on a fixed scale that gives the same job the same number every time"
+             title="Match strength \u2014 semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
           <div class="v" aria-hidden="true">${pct}%</div>
-        </div>` : ''}
-      </div>
-      <div class="tags">
-        ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
-        ${r.remote? '<span class="tag rem">remote</span>':''}
-        ${payLabel(r)? '<span class="tag pay">'+esc(payLabel(r))+'</span>':''}
-        ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
-        ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
-        ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
-        ${r.ats? '<span class="tag src" title="Read directly from this company\'s '+esc(r.ats)+' board — not a repost">via '+esc(r.ats)+'</span>':''}
-      </div>
+        </div>` : '<div class="match"></div>'}
+      ${starBtn(r.id)}
     </div>`; }).join('');
 }
 

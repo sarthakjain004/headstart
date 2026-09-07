@@ -9,8 +9,8 @@
        "AI startup" register contradicts what the product now says about itself on the Data tab.
        Hue is spent on exceptions (new, pays, remote), never on chrome. ---- */
 :root{
-  --ground:#171614; --raise:#201E1B; --raise-2:#2A2724; --rule:#38342F; --rule-2:#4B463F;
-  --ink:#F2EFE9; --ink-2:#BDB6AA; --ink-3:#8E877B;
+  --ground:#131211; --raise:#2A2724; --raise-2:#353128; --rule:#454039; --rule-2:#5C554C;
+  --ink:#F2EFE9; --ink-2:#BDB6AA; --ink-3:#968F82;
   --accent:#5FBFB0; --violet:#A99BE0; --amber:#E0A526; --lime:#A9CC6B;
   --coral:#E58374;
   /* Trends chart categorical palette (dataviz skill's validated default instance, snapped
@@ -62,7 +62,7 @@ body{
   transition:background .3s ease, color .3s ease;
 }
 
-.shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:26px 22px 80px; }
+.shell{ position:relative; z-index:1; max-width:1320px; margin:0 auto; padding:18px 22px 72px; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
    than at the top of the document: `#q` autofocuses, so anything earlier is never reached by
@@ -81,8 +81,8 @@ body{
 .disclose b{ color:var(--ink); }
 
 /* ---- masthead ---- */
-.top{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 16px;
-  grid-template-areas:"brand right" "tagline tagline"; margin-bottom:26px; }
+.top{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 16px;
+  grid-template-areas:"brand right" "tagline tagline"; margin-bottom:14px; }
 .top-right{ grid-area:right; }
 .brand{ grid-area:brand; display:flex; align-items:center; gap:11px; }
 .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
@@ -112,7 +112,7 @@ body{
 /* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0114).
        The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
        it costs one row and returns the width to the results. ---- */
-.tabs{ display:flex; gap:2px; margin:0 0 20px; border-bottom:1px solid var(--rule);
+.tabs{ display:flex; gap:2px; margin:0 0 16px; border-bottom:1px solid var(--rule);
   overflow-x:auto; scrollbar-width:none; }
 .tabs::-webkit-scrollbar{ display:none; }
 .nav-item{ display:flex; align-items:center; gap:8px; padding:10px 14px; white-space:nowrap;
@@ -129,7 +129,7 @@ body{
 .panel[hidden]{ display:none !important; }
 
 /* ---- search ---- */
-.hero{ margin-bottom:22px; }
+.hero{ margin-bottom:14px; }
 .searchbar{ display:flex; gap:10px; }
 .field{ flex:1; }
 .field input{ width:100%; padding:17px 19px; border-radius:var(--r-xl); font:inherit; font-size:16px;
@@ -143,8 +143,12 @@ body{
   transition:transform var(--step), box-shadow var(--step), filter var(--step); }
 .go:hover{ transform:translateY(-2px); filter:brightness(1.06); }
 .go:active{ transform:translateY(0); }
-.hint{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:12px;
-  color:var(--ink-3); font-size:12.5px; }
+/* One scrollable row, not three stacked ones: on a phone these suggestions cost 3 lines of
+   the first screen, above any actual job. */
+.hint{ display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:nowrap;
+  overflow-x:auto; scrollbar-width:none; color:var(--ink-3); font-size:12.5px; }
+.hint::-webkit-scrollbar{ display:none; }
+.hint .chip{ flex:none; }
 .chip{ border:1px dashed var(--rule-2); background:transparent; color:var(--ink-2);
   padding:6px 12px; border-radius:var(--r-pill); font:inherit; font-size:12.5px; cursor:pointer;
   transition:border-color var(--step), color var(--step), transform var(--step); }
@@ -190,8 +194,10 @@ textarea:focus{ border-color:var(--violet); }
    groups flow into as many columns as the width allows rather than one tall column. */
 .rail{ display:none; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
-.rail.open{ display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
-  gap:10px 26px; align-items:start; }
+.rail.open{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:4px 24px; align-items:start; max-height:min(46vh,340px); overflow-y:auto; }
+/* Capped on purpose. Open, this panel used to run ~900px and push every result off screen,
+   so changing a filter showed the user nothing — the one moment they most need to see rows. */
 .rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
   color:var(--ink-3); margin:0 0 10px; }
 /* Each group is a column of the panel grid, so the vertical rules that separated them in a
@@ -231,6 +237,9 @@ textarea:focus{ border-color:var(--violet); }
   color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; outline:none; }
 .filters-btn{ display:none; }
 .filters-btn{ display:inline-block; }
+/* A filter that is applied but out of sight needs to announce itself on the control that
+   hides it. */
+.filters-btn.has{ border-color:var(--accent); color:var(--accent); }
 .active{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
 .pill{ display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:5px 10px;
   border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule-2);
@@ -241,53 +250,63 @@ textarea:focus{ border-color:var(--violet); }
 .pill button:hover{ color:var(--coral); }
 @keyframes pop{ from{ opacity:0; transform:scale(.86); } to{ opacity:1; transform:none; } }
 
-/* ---- result cards ---- */
-.card{ position:relative; background:var(--raise); border:1px solid var(--rule);
-  border-radius:var(--r-lg); padding:16px 18px 15px; margin-bottom:11px; overflow:hidden;
-  animation:rise .42s cubic-bezier(.2,.7,.3,1) both;
-  transition:border-color var(--step), transform var(--step), box-shadow var(--step); }
-.card:hover{ transform:translateY(-2px); border-color:var(--rule-2); box-shadow:var(--shadow); }
+/* ---- result cards (ADR-0114). A row, not a box: the whole point of the full width is that
+       salary and match land at the SAME x on every row, so the eye scans one column down the
+       page instead of re-reading each card left to right. The text block is bounded to a
+       readable measure (the skill's 65-75ch rule); the freed width goes to alignment, not to
+       stretching one line of text across 1276px. ---- */
+.card{ position:relative; display:grid; align-items:center; gap:0 20px;
+  grid-template-columns:minmax(0,1fr) 190px 46px 34px;
+  background:var(--raise); border:1px solid var(--rule);
+  border-radius:var(--r-lg); padding:13px 16px 13px 18px; margin-bottom:8px; overflow:hidden;
+  animation:rise .3s cubic-bezier(.2,.7,.3,1) both;
+  transition:border-color var(--step), background var(--step); }
+.card:hover{ border-color:var(--rule-2); background:var(--raise-2); }
 .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
-  background:var(--tone,var(--accent)); opacity:.85; }
-@keyframes rise{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
-.card .hd{ display:flex; align-items:flex-start; gap:14px; }
-.card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:16px;
-  letter-spacing:-.01em; line-height:1.35; }
+  background:var(--tone,var(--accent)); opacity:.8; }
+@keyframes rise{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+.card .who{ min-width:0; max-width:74ch; }
+.card a.title{ color:var(--ink); text-decoration:none; font-weight:600; font-size:15.5px;
+  letter-spacing:-.01em; line-height:1.3; }
 .card a.title:hover{ color:var(--accent); }
-/* The link leaves for the employer's own board, which is the product's central claim — so
-   the card marks it rather than making the reader hover and parse a URL. */
 .card a.title .ext{ width:11px; height:11px; margin-left:5px; vertical-align:baseline;
   color:var(--ink-3); }
 .card a.title:hover .ext{ color:var(--accent); }
 .sr{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip-path:inset(50%); white-space:nowrap; border:0; }
-.card .org{ color:var(--ink-2); font-size:13px; margin-top:3px; }
+.card .org{ color:var(--ink-2); font-size:13px; margin-top:2px; }
 .card .org span{ color:var(--ink-3); }
+
+/* Pay is the field the decision turns on, so it gets its own column and its own weight —
+   it used to be one chip among six, the same size as "3d ago". */
+.card .pay{ font:600 13.5px/1.3 var(--mono); font-variant-numeric:tabular-nums;
+  color:var(--ink); text-align:right; }
+.card .nopay{ color:var(--ink-3); font-weight:400; }
+
 /* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
    colour-blindness. pathLength=100 on the circles makes the dasharray a straight percent. */
-.match{ flex:none; width:44px; height:44px; position:relative; }
+.match{ width:44px; height:44px; position:relative; }
 .ring{ width:44px; height:44px; display:block; transform:rotate(-90deg); }
 .ring circle{ fill:none; stroke-width:3.5; }
 .ring-track{ stroke:var(--rule); }
 .ring-fill{ stroke:var(--tone,var(--accent)); stroke-linecap:round;
-  stroke-dasharray:0 100; animation:ringfill .7s .1s cubic-bezier(.2,.7,.3,1) forwards; }
+  stroke-dasharray:0 100; animation:ringfill .6s .1s cubic-bezier(.2,.7,.3,1) forwards; }
 @keyframes ringfill{ to{ stroke-dasharray:var(--p,50) 100; } }
 .match .v{ position:absolute; inset:0; display:grid; place-items:center;
   font:600 10.5px var(--mono); font-variant-numeric:tabular-nums; color:var(--tone,var(--accent)); }
-.card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:11px; }
-.tag{ font:500 11.5px var(--sans); padding:4px 10px; border-radius:var(--r-pill);
+
+.card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center; }
+.tag{ font:500 11px var(--sans); padding:2px 8px; border-radius:var(--r-pill);
   background:var(--raise-2); border:1px solid var(--rule); color:var(--ink-2); }
+.card:hover .tag{ background:var(--ground); }
 .tag.mono{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
-.tag.new{ background:color-mix(in srgb, var(--amber) 16%, transparent); color:var(--amber);
-  border-color:color-mix(in srgb, var(--amber) 34%, transparent); font-weight:600; }
-.tag.pay{ background:color-mix(in srgb, var(--lime) 15%, transparent); color:var(--lime);
-  border-color:color-mix(in srgb, var(--lime) 32%, transparent); }
-.tag.rem{ background:color-mix(in srgb, var(--violet) 16%, transparent); color:var(--violet);
-  border-color:color-mix(in srgb, var(--violet) 34%, transparent); }
-/* Provenance, not a category — so no hue of its own (those are spoken for: amber=new,
-   lime=pays, violet=remote). It stays the neutral chip and earns its weight from the word. */
-.tag.src::before{ content:""; display:inline-block; width:4px; height:4px; border-radius:50%;
-  background:var(--accent); margin-right:6px; vertical-align:1.5px; }
+/* Two hues, not four. Amber says "arrived recently", violet says "remote" — the two facts a
+   scanner filters on. Everything else is neutral, and provenance is plain text. */
+.tag.new{ background:color-mix(in srgb, var(--amber) 15%, transparent); color:var(--amber);
+  border-color:color-mix(in srgb, var(--amber) 32%, transparent); font-weight:600; }
+.tag.rem{ background:color-mix(in srgb, var(--violet) 15%, transparent); color:var(--violet);
+  border-color:color-mix(in srgb, var(--violet) 32%, transparent); }
+.card .src{ font:500 11px var(--sans); color:var(--ink-3); }
 
 .pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
 .pager .ghost{ padding:8px 16px; }
@@ -489,6 +508,17 @@ textarea:focus{ border-color:var(--violet); }
 /* The tab strip is horizontal at every width now, so it needs no breakpoint of its own —
    it simply scrolls when the tabs outgrow the viewport. */
 
+/* The row layout needs width to be a row. Below this the aligned columns cost more than
+   they buy, so the card folds: text on the left, pay and match on a second line under it. */
+@media (max-width:760px){
+  .card{ grid-template-columns:minmax(0,1fr) auto auto; gap:0 12px;
+    grid-template-areas:"who who who" "pay match star"; row-gap:10px; }
+  .card .who{ grid-area:who; max-width:none; }
+  .card .pay{ grid-area:pay; text-align:left; align-self:center; }
+  .card .match{ grid-area:match; }
+  .card .star{ grid-area:star; }
+}
+
 /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
    shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
 @media (max-width:560px){
@@ -540,7 +570,7 @@ textarea:focus{ border-color:var(--violet); }
 
 /* ---- the Data tab (ADR-0112). Running prose, so it gets a measure and a type scale of its
        own — the rest of this page is controls and cards, which want neither. ---- */
-.doc{ max-width:70ch; margin-inline:auto; }
+.doc{ max-width:70ch; }
 .doc-hd h2{ font:600 22px/1.25 var(--serif); margin:0 0 8px; letter-spacing:-.01em; }
 .doc-hd p{ color:var(--ink-2); font-size:14.5px; margin:0 0 30px; text-wrap:pretty; }
 .doc-sec{ border-top:1px solid var(--rule); padding-top:22px; margin-bottom:26px; }
