@@ -135,7 +135,26 @@ def _gated_boards(
             continue
         if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
             continue  # measurement expired — re-admit it and measure again
-        tech_per_min = scores.get(key, 0.0) / (row.seconds / 60)
+        # The score and the seconds come off different clocks, and only one of them keeps up.
+        # `update_ledgers.priority` builds its snapshot from *rows in the scraped jobs file*, so a
+        # Board that scrapes and returns nothing contributes no row, takes `update_priority`'s
+        # "absent from the snapshot — carry unchanged" branch, and keeps its last good score
+        # indefinitely. Its cost row, meanwhile, is rewritten every run. So the ratio below rises
+        # without limit on exactly the Boards this gate is for, and **the collapse it exists to
+        # catch is what blinds it to one**: measured 2026-09-07, `careers.te.com` read 6.32
+        # tech/min — clear of the threshold — while returning 0 jobs in five consecutive runs and
+        # setting the whole scrape stage's makespan. ADR-0116 has the reasoning; ADR-0115's
+        # writeup has the episode that exposed it.
+        #
+        # The Board's own measured `jobs` is the half that stayed current, so it gets a veto. Units
+        # are safe without reinterpreting the threshold: tech jobs are a subset of all jobs, so a
+        # completed scrape that found **no** jobs found no tech ones either. And a 0 here always
+        # means a completed scrape — `board_cost.update` keeps the previous count for a
+        # budget-killed Board on purpose, since "a 0 there would erase what the last full scrape
+        # saw".
+        tech_per_min = (
+            0.0 if row.jobs == 0 else scores.get(key, 0.0) / (row.seconds / 60)
+        )
         if tech_per_min < _GATE_MIN_TECH_PER_MIN:
             gated[key] = tech_per_min
     return gated
