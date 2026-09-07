@@ -68,10 +68,11 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 #
 # jazzhr and jobvite are disabled on arrival (2026-09-07), on cost rather than correctness. Both
 # are complete, tested, and ship a liveness ledger, so removing them here really is all it takes:
-# 3,636 jazzhr and 401 jobvite Hiring Boards are waiting. They stay off because a cold sweep is
-# ~11 GB for ~5,700 tech Jobs (jazzhr, 5.1% tech share) and ~1.5-2 GB for ~1,640 (jobvite, 7.0%),
-# against a pipeline whose binding constraint is storage — and neither had a measurable India
-# presence. The full measurements are in docs/jazzhr/ and docs/jobvite/.
+# 3,684 jazzhr and 401 jobvite Hiring Boards are waiting. They stay off on storage, this
+# pipeline's binding constraint: jazzhr is 3,684 Boards x 27.5 jobs = ~100k detail fetches at a
+# measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,100 tech Jobs; jobvite is 23,461 postings
+# = ~1.5-2 GB for 7.0% = ~1,640. Neither showed a measurable India presence. The inputs to both
+# sums (jobs/board, tech share, page size) are in docs/jazzhr/ and docs/jobvite/.
 DISABLED_ATS: frozenset[str] = frozenset({"join", "jazzhr", "jobvite"})
 
 

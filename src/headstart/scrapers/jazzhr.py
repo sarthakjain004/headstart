@@ -254,7 +254,7 @@ class JazzHRScraper(BaseScraper):
 
         A departed JazzHR tenant does not 404 — it answers **200** with a parked or job-seeker
         page carrying no ``jobs_table`` shell (75 of 1,000 tenants measured,
-        `docs/jazzhr/2026-09-07_liveness-probe-1000-tenants.txt`). Parsing that yields zero rows,
+        `docs/jazzhr/artifacts/2026-09-07_liveness-probe-1000-tenants.txt`). Parsing that yields zero rows,
         which is indistinguishable from a live board with nothing open, and a whole-and-empty
         Board is the shape that deletes a company's postings: ADR-0083 withholds the eviction for
         exactly one scrape, then ``sync`` evicts every row.

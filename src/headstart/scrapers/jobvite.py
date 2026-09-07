@@ -4,7 +4,8 @@ Everything here was measured against the live pool on 2026-09-07 — 517 tenants
 in all; the captures and the per-board table are in ``docs/jobvite/``.
 
 **There is no public JSON jobs API, and that is a measured result, not an assumption.** A HAR of
-three real boards (Chromium, ``docs/jobvite/artifacts/*.har``) shows the listing and the detail
+three real boards (Chromium, 256 entries; the captures are not committed — see
+``docs/jobvite/LOG.md``) shows the listing and the detail
 page are plain server-rendered navigations: the only first-party XHRs anywhere are
 ``/{slug}/search/facets?nl=1`` (the filter taxonomy — regions/locations/departments/categories/
 jobTypes, no postings) and ``/{slug}/job/{id}/recommend?nl=1`` (five ``{jobEId,title}`` pairs, no

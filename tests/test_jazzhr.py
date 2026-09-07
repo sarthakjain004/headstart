@@ -14,6 +14,8 @@ the host served.
 
 from pathlib import Path
 
+import pytest
+
 from headstart.salary import extract as extract_salary
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
@@ -176,16 +178,50 @@ def test_remote_from_location():
     assert jobs[1].remote is False
 
 
-def test_empty_board_and_departed_tenant_both_parse_to_nothing():
-    """A live board with nothing open renders the table shell with no rows; a departed tenant
-    renders no shell at all. Telling those apart is the liveness probe's job — here both are
-    simply zero Jobs, and neither may raise."""
+def test_parse_of_a_shell_with_no_rows_is_an_empty_board():
+    """A live board with nothing open renders the table shell with no rows. `parse` is a pure
+    function of what it was handed, so it returns zero Jobs and does not raise — the departed
+    tenant never reaches it, because `_listing` refuses to hand one over (see below)."""
     shell_only = LISTING.split('<tr id="row_job_')[0] + "</table></body></html>"
     assert _parse(listing=shell_only) == []
-    assert (
-        _parse(listing="<html><title>JazzHR - Inactive Career Page</title></html>")
-        == []
+
+
+def test_a_departed_tenant_raises_instead_of_reading_as_an_empty_board(monkeypatch):
+    """The failure this guard exists to stop.
+
+    A departed JazzHR tenant answers **200** with a parked page and no `jobs_table` shell (75 of
+    1,000 tenants measured). Parsed, that is indistinguishable from a live board with nothing
+    open — and a whole-and-empty Board is what deletes a company's postings: ADR-0083 withholds
+    the eviction for one scrape, then `sync` evicts every row. Raising makes it a Board error, so
+    ADR-0053 drops the Board out of the eviction scope instead.
+
+    The liveness probe knows this marker too, but runs on its own TTL — a tenant that departs
+    between sweeps arrives with a stale `live` verdict, which is exactly when this has to fire.
+    """
+    scraper = get_scraper("jazzhr", "restopros", "Fallback Co")
+    monkeypatch.setattr(
+        type(scraper),
+        "_get",
+        lambda self, url=None: (
+            "<html><title>JazzHR - Inactive Career Page</title></html>"
+        ),
     )
+    with pytest.raises(Exception, match="jobs_table"):
+        scraper._listing()
+
+
+def test_a_live_board_with_nothing_open_does_not_raise(monkeypatch):
+    """The control for the guard above, and the risk it introduces.
+
+    An empty-but-live board still renders the shell, so it must pass the guard and parse to zero
+    Jobs. Verified against the ledger this PR ships: 608 jazzhr rows are `live` with `jobs=0`, and
+    `check_liveness.p_jazzhr` only records `live` when `id="jobs_table"` is present — so the shell
+    really is what an empty board serves.
+    """
+    shell_only = LISTING.split('<tr id="row_job_')[0] + "</table></body></html>"
+    scraper = get_scraper("jazzhr", "restopros", "Fallback Co")
+    monkeypatch.setattr(type(scraper), "_get", lambda self, url=None: shell_only)
+    assert scraper._listing() == shell_only
 
 
 def test_slug_from_is_the_bare_tenant_label():

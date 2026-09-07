@@ -9,8 +9,8 @@ and this file is the working. Captures are in `artifacts/`.
 
 ## What the browser found that HTML scraping would have missed
 
-Three HAR captures (Chromium via Playwright, `artifacts/*_browser.har`,
-`artifacts/*_facets-xhr.har`). **Jobvite's public career site makes no first-party XHR for
+Three HAR captures (Chromium via Playwright; **not committed** — see the note at the end
+of this file for why, and for the one sentence they establish). **Jobvite's public career site makes no first-party XHR for
 postings.** Every `jobs.jobvite.com` entry is a `document` navigation; the Angular bundle
 (`jv.careersite.desktop.app.js`, 400 KB) contains exactly one `$http.get`. Two first-party JSON
 endpoints exist and neither is a jobs API:
