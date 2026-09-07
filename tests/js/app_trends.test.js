@@ -499,7 +499,7 @@ test('a healthy series indexes its RAW COUNT to 100, not its share', () => {
   const ok = { name: 'ok', label: 'ok', points: [8, 9, 12, 16], latest: 16 };
   // `totals` MUST vary. With a flat denominator, index-of-count and index-of-share are the
   // same numbers, so the test cannot fail if share-indexing came back — and indexing the count
-  // was an explicit product decision (ADR-0118), which makes it exactly the thing to pin.
+  // was an explicit product decision (ADR-0119), which makes it exactly the thing to pin.
   // Doubling the denominator halves every share: index-of-share would be [100, 75, 75, 67].
   t.set({ ...f, series: [ok, ...f.series], stamps: ['1', '2', '3', '4'],
           totals: [100, 150, 200, 300] }, null);

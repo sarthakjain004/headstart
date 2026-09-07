@@ -48,7 +48,7 @@
     <span class="ctl" id="trends-unit-ctl">
       <span class="ctl-label" id="trends-lbl-unit">Unit</span>
       <span class="seg" id="trends-unit" role="radiogroup" aria-labelledby="trends-lbl-unit">
-        {# Change is the DEFAULT (ADR-0118) and this markup is the first-paint state — nothing
+        {# Change is the DEFAULT (ADR-0119) and this markup is the first-paint state — nothing
            calls setUnit before the first draw, so these three attributes must agree with
            app.js's `trendUnit` initialiser or the group checks one button and draws another. #}
         <button data-unit="share" role="radio" aria-checked="false" tabindex="-1">Share</button>
@@ -131,7 +131,7 @@
        shortening it would cost meaning. -->
   <div class="chart-note" id="trends-chart-note">
   <div class="note" id="trends-foot"></div>
-  {# Open by default. ADR-0118's own Consequences say this caveat "gets more load-bearing, not
+  {# Open by default. ADR-0119's own Consequences say this caveat "gets more load-bearing, not
      less" under an indexed chart — folding it shut was the one change that contradicted the
      ADR it shipped with. On a wide panel it sits beside the caption rather than under it, so
      being open costs no height at all. #}

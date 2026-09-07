@@ -1216,7 +1216,7 @@ async function onGoogleCredential(resp){
    pipeline run; this draws a line per series and ranks them by size. Two measures ("All
    openings" = live stock, "New this week" = rows first seen inside the flow window) and three
    units: Change (each family's own count indexed to 100 at the window's start), Share (of the
-   whole index) and Count (raw openings). Change is the default (ADR-0118) — the panel's
+   whole index) and Count (raw openings). Change is the default (ADR-0119) — the panel's
    heading asks which roles are GROWING, and only an indexed axis answers that for eight
    families whose latest counts differ by 7x. Its one cost is that raw counts move with our
    coverage, so the plot draws the whole index's own growth as a dashed reference line and the
@@ -1457,7 +1457,7 @@ function setTrendsBusy(on){
 //
 // This is not always what the chart plots — under Change the plot is indexed (seriesValues
 // below) — but it is always what the legend, the table and the tooltip report, because those
-// are the magnitude surfaces. ADR-0118 splits the work that way on purpose: shapes on the
+// are the magnitude surfaces. ADR-0119 splits the work that way on purpose: shapes on the
 // plot, magnitudes in the text beside it.
 function levelValue(v, j){
   if (v == null) return null;
@@ -1468,7 +1468,7 @@ function levelValue(v, j){
 
 // What the PLOT draws for a series. Under Share and Count that is the level. Under Change each
 // series is divided by its own first measured level and multiplied by 100, so every line starts
-// together at 100 and traces its own movement (ADR-0118).
+// together at 100 and traces its own movement (ADR-0119).
 //
 // Change indexes the raw COUNT, not the share. That is a deliberate choice with a cost: the
 // index grows as scraping coverage does, so a run that adds a board lifts every line at once
@@ -1498,7 +1498,7 @@ function seriesValues(s){
   // The base is the first MEASURED level, not the first truthy one: `find(v => v)` skipped a
   // real measurement of zero and indexed off a later point, so a family sitting at 0 early was
   // drawn starting at 0 rather than 100, spiked to 800, and dragged the axis to 0-800 —
-  // crushing every other line into ~24px. That is the exact pathology ADR-0118 removed. A base
+  // crushing every other line into ~24px. That is the exact pathology ADR-0119 removed. A base
   // under the floor is no base: two openings would turn one posting into +50%.
   const base = indexBase(s);
   if (base == null) return level.map(() => null);
@@ -1559,7 +1559,7 @@ function fmtCompact(v){
 // unrelated numbers rather than one scale. Returns the top of the axis and its tick values.
 // The same nice-number stepping over a range that need not start at zero. Change is the case
 // that needs it: indexed values sit around 100, so a zero-based axis would put every line in
-// the top tenth of the plot and hand back the empty band ADR-0118 exists to remove.
+// the top tenth of the plot and hand back the empty band ADR-0119 exists to remove.
 function niceBounds(min, max){
   const span = Math.max(max - min, Math.abs(max) * 0.02, 1e-6);
   // Six gaps, not five. A two-sided axis pays the rounding twice — once at each end — so the
@@ -1703,7 +1703,7 @@ function drawTrends(){
     const dl = trendDelta(other.points);
     const j = d.stamps.length - 1;
     const latest = other.points[j] == null ? null : levelValue(other.points[j], j);
-    // No hide toggle and no swatch: since ADR-0118 Other is on neither the plot nor its scale,
+    // No hide toggle and no swatch: since ADR-0119 Other is on neither the plot nor its scale,
     // so there is no line to hide and no colour to key. The row is a reconciliation figure —
     // it says where the rest of the index went — and it reads as one.
     legendRows.push(`<li class="other"><span class="row" data-name="__other__"
@@ -1723,14 +1723,14 @@ function drawTrends(){
   const H = Math.max(240, legendH, Math.min(520, Math.max(Math.round(W * 0.36), Math.min(viewportH, Math.round(W * 0.8)))));
   const PAD_L = 46, PAD_B = 22, PAD_T = 10;
 
-  // Other is not drawn (ADR-0118). It is a reconciliation bucket, not a category: it was the
+  // Other is not drawn (ADR-0119). It is a reconciliation bucket, not a category: it was the
   // topmost line at 27% and, because the maximum is taken across everything drawn, it alone
   // set the scale that squashed the eight real categories. It keeps its legend and table rows,
   // so the share it accounts for is still on screen — it just stops dictating the axis.
   // A hidden series leaves the plot AND the scale — rescaling is the point of hiding one.
   const drawn = charted.filter(s => !hiddenSeries.has(s.name));
   const vals = drawn.flatMap(s => seriesValues(s)).filter(v => v != null);
-  // The whole index's own growth, indexed on the same base as the series (ADR-0118). Count
+  // The whole index's own growth, indexed on the same base as the series (ADR-0119). Count
   // indexing rides on raw openings, so a run that adds a board lifts every family at once:
   // over this window `totals` runs 277,754 -> 335,355, +20.7%, and 7 of 8 families end above
   // 100 largely because of it. Without this line a reader cannot tell "this role is hiring
@@ -1791,7 +1791,7 @@ function drawTrends(){
   const x = i => PAD_L + (d.stamps.length < 2 ? 0 : i * (W - PAD_L - PAD_R) / (d.stamps.length - 1));
 
   let svg = '';
-  // The whole index's own growth, indexed on the same base as the series (ADR-0118). Count
+  // The whole index's own growth, indexed on the same base as the series (ADR-0119). Count
   // indexing rides on raw openings, so a run that adds a board lifts every family at once:
   // measured over this fixture's window `totals` runs 277,754 -> 335,355, +20.7%, and 7 of 8
   // families end above 100 largely because of it. Without this line the reader cannot tell
@@ -2260,7 +2260,7 @@ function setUnit(value, shareLocked){
   // ones has no reading. Count and Change both do: "312 fresh AI/ML roles" is a number, and
   // indexing those counts is the only way to compare eight families running from 8.4k down to
   // 961. Hiding the whole group took Change away in the view that needs it most, and since
-  // Change is now the default (ADR-0118) it also meant the metric toggle silently changed the
+  // Change is now the default (ADR-0119) it also meant the metric toggle silently changed the
   // unit under the reader.
   if (el('trends-unit-static')) el('trends-unit-static').hidden = !shareLocked;
   seg.querySelectorAll('button').forEach(b => {

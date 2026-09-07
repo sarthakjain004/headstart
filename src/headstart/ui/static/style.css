@@ -22,7 +22,7 @@
      mechanism, so these are read by SLOT, never re-ordered per chart. Re-derived 2026-09-07
      against the ADR-0116 surfaces, because the figures here had drifted from the palette they
      describe: worst series-vs-surface contrast is 3.19 dark (--series-6 #008300 on --raise) and
-     2.17 light (--series-4 #EDA100 on white). Neither is slot 7, so ADR-0118's re-step of that
+     2.17 light (--series-4 #EDA100 on white). Neither is slot 7, so ADR-0119's re-step of that
      slot did not move either number. The light figure is under 3:1 and was before ADR-0116 too
      — a pre-existing gap, called out there rather than inherited silently; its relief is the
      table view. */
@@ -614,7 +614,7 @@ textarea:focus{ border-color:var(--accent); }
 .chart-note .kind{ margin:8px 0 0; max-width:74ch; }
 /* Two columns where there is room. The caption block used 640px of a 1940px panel, so the
    ADR-0057 caveat can be visible for free rather than folded to save height — which is what
-   ADR-0118 asks for when it says that caveat gets more load-bearing under an indexed chart. */
+   ADR-0119 asks for when it says that caveat gets more load-bearing under an indexed chart. */
 @media (min-width:1100px){
   .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start; }
   .chart-note #trends-foot, .chart-note .note-more{ margin:0; max-width:none; }

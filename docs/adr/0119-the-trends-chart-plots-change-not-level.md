@@ -1,4 +1,4 @@
-# ADR-0118: The trends chart plots change, not level
+# ADR-0119: The trends chart plots change, not level
 
 **Status:** accepted · **Date:** 2026-09-07 · **Refines the panel ADR-0040 introduced and ADR-0051 split by role; changes no ledger, no API field, and no stored data**
 
