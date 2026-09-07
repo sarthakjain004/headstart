@@ -132,9 +132,12 @@ const age = d => {
 };
 // Indexed inside the window the user asked for, so the badge always means "newer than your
 // filter" — defaulting to 24h when no window is set. `first_seen` is ours, so it always parses.
+// Capped at 48h rather than tracking the filter window. Tied to the window, a "last 7 days"
+// filter badged EVERY row — a badge on every row is chrome, not signal, and the row it most
+// needs to distinguish is the one that arrived overnight.
 const isNew = s => {
   const t = Date.parse(s || ''); if (isNaN(t)) return false;
-  const hours = Number((el('seen') && el('seen').value) || 24);
+  const hours = Math.min(Number((el('seen') && el('seen').value) || 24), 48);
   return Date.now() - t < hours * 3600000;
 };
 // `salary` (the raw display string, per-ATS formatted) is only ever populated from a
