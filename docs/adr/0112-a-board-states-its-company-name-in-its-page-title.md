@@ -91,7 +91,7 @@ The floor — never a *non-name* — is the claim this ADR actually makes, and i
 twice by measurement and repaired twice, most recently by a 1,971-Board sweep that found
 `lever:schmidt-entities` serving "jobs". Both repairs are pinned by tests. State it as a claim
 that has survived its latest attempt, not as one nothing could break: 1,111 names resolved in that
-sweep and, after the fix, none is a non-name. A wider 8,228-Board census resolving 6,531 names
+sweep and, after the fix, none is a non-name. A wider 8,210-Board census resolving 6,531 names
 then found exactly one: `lever:pip`, recorded under Known misses below.
 
 That last class is the same shape as the `hiringOrganization` field Workday is excluded over, so
@@ -118,13 +118,13 @@ An earlier draft of this section claimed those three "exhaust the positions a to
 so the set was closed. That is false, and worth recording as the kind of claim to distrust: a
 token can also sit medially ("Acme Careers Portal"), the leading alternative matches one phrasing
 rather than a position ("Jobs at Acme" passes), and the singular passes ("Acme Career"). None has
-been observed across 1,519 live Boards, so none is handled — this module rejects only shapes
+been observed across those 3,690 Boards, so none is handled — this module rejects only shapes
 someone really serves. Expect a fourth shape rather than assuming there cannot be one.
 
 Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are real
 employers a `\b`-bounded rule would refuse.
 
-It costs recall, and the honest number is not zero. A census of all 3,700 live lever and keka
+It costs recall, and the honest number is not zero. A census of all 3,690 lever and keka Hiring
 Boards fires the rule six times: three page labels it exists for, and **three real employers** it
 refuses — `lever:pmaconsultants` ("PMA Consultants Careers", 29 real postings), `lever:bananajobs`
 ("Banana Jobs") and `lever:assurance` ("Assurance Careers"). All three keep their slug. Refusing is
@@ -167,6 +167,15 @@ support, and Workday's case shows that "some name" is not automatically better t
 
 ## Two things this change surfaced
 
+**A fourth was found later, on a different ATS, and that is the lesson.** `ashby:krakensandbox`
+titles itself "Kraken Sandbox Jobs" and serves three template postings ("Basic Job Template",
+"Admin Assistant Testing"). It went undetected for eight review rounds because the fake-tenant
+hunt had only ever been run against **ripplehire** — the ATS where the first one turned up. The
+same pass had also justified dropping `sandbox` from `_PLACEHOLDER` as "never observed", which was
+a claim about where we had looked, not about what exists. Both are corrected. Its two siblings
+(`ashby:bento`, `ripplehire:tenant1`) serve 0 postings, so ADR-0034's content-confirmation rule
+has nothing to read and they are left to `_PLACEHOLDER` instead.
+
 **Three vendor Boards had to be blocklisted, not renamed.** Reading titles is also a way of
 *finding* fake tenants: `ripplehire:itcinfotech` titles itself "ITC Infotech Demo" and
 `ripplehire:labs-axisqa` is a QA tenant with 1,226 postings. The sharp one is
@@ -193,6 +202,11 @@ Site" — a notice, not a name — and nothing here refuses it: 40 characters is
 but the floor should be read with this in mind. It is *not* fixed here on purpose: telling prose
 from a name in a 40-character string needs a judgement this module cannot make from a regex, and
 a rule fitted to this one Board would refuse real names for no measured gain.
+
+`eightfold:whirlpool.eightfold.ai` titles itself "Whirlpool Corporation" — a real, clean company
+name that no eightfold pattern matches, because the wrapper this ATS is registered for ("Careers
+at …", "… Careers") simply is not there. A recall miss caused by the patterns being anchored,
+which is the same anchoring that keeps them safe.
 
 `lever:springrecruits` loses a 70-character title to `_MAX_LEN`, and `lever:bananajobs`
 ("Banana Jobs") loses a real name to `_PAGE_LABEL`'s trailing "Jobs". Both keep their slug.

@@ -118,6 +118,10 @@ def test_a_board_that_calls_itself_a_demo_is_refused():
         from_title("ripplehire", "ITC Infotech Demo Careers | x", "itcinfotech") is None
     )
     assert from_title("ripplehire", "Your Company Careers | x", "prodtest") is None
+    # a trailing "Sandbox" — dropped once as "never observed", then found on two live ashby
+    # Boards, one of which was serving three template postings
+    assert from_title("ashby", "Kraken Sandbox Jobs", "krakensandbox") is None
+    assert from_title("ashby", "Bento Setup Sandbox Jobs", "bento") is None
     assert (
         from_title("ripplehire", "Tata Steel Ltd Careers | x", "tatasteel")
         == "Tata Steel Ltd"

@@ -92,6 +92,10 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # either way to exclude) — exactly the false-positive risk this list's own rule warns
         # against.
         "keka:csdemo",  # 681 postings
+        "ashby:krakensandbox",  # 3 postings; content-confirmed "Basic Job Template",
+        # "Admin Assistant Testing" — Kraken's sandbox tenant, found by reading titles
+        # (ADR-0112). Its siblings `ashby:bento` and `ripplehire:tenant1` are left alone:
+        # both serve 0 postings, so there is no content to confirm and nothing to remove.
         "keka:salesdemo",  # 153 postings
         # Lever's own demo/sandbox/QA tenants (found during lever's salary-extraction pass,
         # 2026-08-22, reading real board content — not from the slug alone, per this list's own

@@ -106,14 +106,14 @@ _SEPARATORS = ("|", "—", "–", " - ", "::")
 #:   * the whole string — `lever:schmidt-entities` serves "jobs", which reached 16 real Jobs as
 #:     their company before this branch caught it
 #:
-#: Shapes this deliberately does **not** catch, because none has been observed live in 1,519
-#: Boards and this module only ever rejects a shape someone really serves: a medial token ("Acme
+#: Shapes this deliberately does **not** catch, because none has been observed across the 3,690
+#: lever and keka Hiring Boards swept and this module only ever rejects a shape someone really serves: a medial token ("Acme
 #: Careers Portal"), a leading token in another phrasing ("Jobs at Acme", "Careers Acme"), and
 #: the singular ("Acme Career"). If one shows up, add it — do not pre-empt it.
 #:
 #: Anchored rather than matching on word boundaries, because "Career Group" and "Job&Talent" are
-#: real employers a `\b`-bounded rule would refuse. Measured across all 3,700 live lever and keka
-#: Boards, it fires six times: three page labels it exists for, and three real employers it costs
+#: real employers a `\b`-bounded rule would refuse. Measured across all 3,690 lever and keka
+#: Hiring Boards, it fires six times: three page labels it exists for, and three real employers it costs
 #: — `lever:pmaconsultants` ("PMA Consultants Careers", 29 postings), `lever:bananajobs` ("Banana
 #: Jobs") and `lever:assurance` ("Assurance Careers") — which keep their slug. That is the deliberate trade: stripping the word
 #: instead would turn "Destination Careers" into "Destination", a confident wrong name, where
@@ -150,21 +150,25 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
 
 
 #: A board that says out loud it is not a real employer. Reading titles is also a way of *finding*
-#: the vendor tenants ADR-0034 exists to remove, and exactly two shapes were seen doing it: a
-#: trailing marker ("ITC Infotech Demo") and the unfilled placeholder itself ("Your Company").
-#: Both of those Boards are now blocklisted, so this rule guards the *next* one rather than any
-#: Board live today — the blocklist is the real defence and this is the cheaper backstop.
+#: the vendor tenants ADR-0034 exists to remove, and three shapes have been observed doing it: a
+#: trailing "Demo" (`ripplehire:itcinfotech`), the unfilled placeholder itself (`ripplehire:
+#: tenant1` serves "Your Company Careers | …"), and a trailing "Sandbox" (`ashby:krakensandbox`,
+#: `ashby:bento`).
 #:
-#: Anchored, and holding only the two observed shapes, for two reasons. "Sandbox VR" and "Test
-#: Rite Group" are real employers that a rule matching these words anywhere refused. And a
-#: trailing "sandbox"/"uat"/"qa" was never observed at all — an earlier draft carried them, plus a
-#: comment citing a greenhouse board named literally "Test", which this rule can never see because
-#: greenhouse has no ``board_page``.
+#: The sandbox case is a correction worth keeping. An earlier draft carried `sandbox|uat|qa` and
+#: they were dropped as "never observed" — which was only true of the ATSes searched at the time,
+#: because the fake-tenant hunt had been run against ripplehire alone. A later ashby census found
+#: both. "Never observed" is a statement about where you looked.
 #:
-#: It cannot catch a QA tenant that titles itself after the company it imitates —
-#: `ripplehire:tenant1-mph` served "Mphasis" — so that one went to the blocklist, which is the
-#: only thing that can.
-_PLACEHOLDER = re.compile(r"(?:\sdemo|^your\s+company)$", re.IGNORECASE)
+#: Anchored, not matched anywhere: "Sandbox VR" and "Test Rite Group" are real employers a loose
+#: rule refused. `uat`/`qa` stay out, still unobserved — but on the evidence above, expect them.
+#:
+#: This does not only guard future Boards: `ripplehire:tenant1` is live and Scrapable today, and
+#: is refused here rather than by the blocklist (it serves 0 postings, so ADR-0034's
+#: content-confirmation rule has nothing to read). It cannot catch a QA tenant that titles itself
+#: after the company it imitates — `ripplehire:tenant1-mph` served "Mphasis" — so that one went to
+#: the blocklist, which is the only thing that can.
+_PLACEHOLDER = re.compile(r"(?:\s(?:demo|sandbox)|^your\s+company)$", re.IGNORECASE)
 
 
 def looks_like_slug(name: str | None) -> bool:
