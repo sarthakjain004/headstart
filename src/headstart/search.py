@@ -717,7 +717,7 @@ class JobSearch:
             if self.has_min_salary_annual
             else []
         )
-        # The Data tab's coverage counts (ADR-0112), filled on first use. Not counted here:
+        # The Data tab's coverage counts (ADR-0113), filled on first use. Not counted here:
         # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
         # asked for the tab yet.
         self._coverage: dict[str, Any] | None = None
@@ -943,7 +943,7 @@ class JobSearch:
     def n_seen_within(self, hours: int) -> int | None:
         """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
 
-        The door's freshness proof (ADR-0111). Exact, which is the whole reason it is there:
+        The door's freshness proof (ADR-0112). Exact, which is the whole reason it is there:
         `first_seen` is written by us on arrival, and a row that lacks it predates the column
         (ADR-0031) and therefore cannot be new — so unlike a coverage share this window has no
         unknown bucket to hand-wave. Compiled through :func:`build_filter` rather than a
@@ -965,7 +965,7 @@ class JobSearch:
         )
 
     def coverage(self) -> dict[str, Any]:
-        """What share of the served table actually carries each field (ADR-0112).
+        """What share of the served table actually carries each field (ADR-0113).
 
         The Data tab's numbers. Every one is counted here rather than written down, because a
         coverage figure in prose is stale the moment the next run lands — README §"The served
@@ -980,7 +980,7 @@ class JobSearch:
         workplace-type field, others fall back to ``models.is_remote`` over the location text,
         several OR the two — so no single sentence describes the column. Successive revisions
         of this docstring asserted "the board's flag" and then "an inference" with equal
-        confidence, and two attempts to count the split were both wrong; see ADR-0112.
+        confidence, and two attempts to count the split were both wrong; see ADR-0113.
 
         Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
         `headstart.facets` measured that primitive at 4–6 ms against a 316,606-row table,

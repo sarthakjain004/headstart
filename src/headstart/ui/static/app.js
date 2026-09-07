@@ -30,7 +30,7 @@ function showTab(name){
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
 
-/* ---- The Data tab's coverage counts (ADR-0112). Fetched on first open, never on page load:
+/* ---- The Data tab's coverage counts (ADR-0113). Fetched on first open, never on page load:
    the tab is a minority of visits and the counts, though cheap, are not free on the first one.
 
    Every row is a share of the served index, phrased as what a user would actually ask —

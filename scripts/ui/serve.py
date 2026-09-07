@@ -50,7 +50,7 @@ def index():
             # The Data tab's browse line reads this to name the ordering actually in force.
             "has_first_seen": _searcher.has_first_seen,
         },
-        # The Data tab links out to the public repo (ADR-0112). Hardcoded here rather than
+        # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
         repo="https://github.com/sarthakjain004/headstart",
         auth_on=False,  # the local renderer has no sign-in, so nothing is stored
@@ -78,7 +78,7 @@ def index():
 
 @app.route("/coverage")
 def coverage():
-    """The Data tab's live counts (ADR-0112) — the Space route's local twin."""
+    """The Data tab's live counts (ADR-0113) — the Space route's local twin."""
     return jsonify(_searcher.coverage())
 
 

@@ -1,4 +1,4 @@
-# ADR-0112: Publish the index's own limits in the product, measured live
+# ADR-0113: Publish the index's own limits in the product, measured live
 
 **Status:** accepted · **Date:** 2026-09-07 · **Extends ADR-0084's counting rule to coverage; makes README §"What this optimises for" reachable from the UI**
 
@@ -62,9 +62,9 @@ location string" — and that went into this ADR, the code and a test comment. A
 review counted differently again, and an attempt to settle it by grepping the `remote=`
 assignments produced a third number, because the constructions vary too much to count that way.
 
-So the number is gone, and the standing rule is the prose form of ADR-0111's tile rule: **a figure
+So the number is gone, and the standing rule is the prose form of ADR-0112's tile rule: **a figure
 that cannot be established cheaply and reliably is not asserted at all** — and it binds our own
-documents, not only the product's surfaces. ADR-0111's Context carried an invented "39 words"
+documents, not only the product's surfaces. ADR-0112's Context carried an invented "39 words"
 through eight rounds of review precisely because every reviewer was checking what the *UI*
 claimed. What is safe to say is
 qualitative — many boards publish a workplace-type field and the scraper uses it, others are read

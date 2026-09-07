@@ -106,7 +106,7 @@ class _Table:
         ]
 
     def count_rows(self, filter=None):
-        # Coverage (ADR-0112) counts with a filter; everything else counts the table. One
+        # Coverage (ADR-0113) counts with a filter; everything else counts the table. One
         # of the two rows is given each field so a percentage that is neither 0 nor 100
         # comes back — a fake that answered `2` to everything would pass a renderer that
         # had silently divided by the wrong total.
@@ -278,7 +278,7 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     client = auth_app.app.test_client()
     page = client.get("/").data
     assert b"Sign in to search" in page
-    # Not "jobs indexed": the door itself now says "tech jobs indexed right now" (ADR-0111).
+    # Not "jobs indexed": the door itself now says "tech jobs indexed right now" (ADR-0112).
     # The tab shell is what only the signed-in page has.
     assert b'data-tab="search"' not in page
     # The door's Google button carries the real client id — a drifted placeholder would
@@ -1071,14 +1071,14 @@ def test_trends_multiple_ats_params_union(ats_trends_app):
     assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
 
 
-# ── The trust surfaces (ADR-0111, ADR-0112) ────────────────────────────────────────────
+# ── The trust surfaces (ADR-0112, ADR-0113) ────────────────────────────────────────────
 # These assert *claims*, not markup. Each one is a sentence the product makes to a stranger
 # who has no way to check it from inside the page; a refactor that drops one should fail
 # here rather than ship a quieter, less accountable door.
 
 
 def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
-    """ADR-0111: what it is, proof, what sign-in costs, and how to check — then the button."""
+    """ADR-0112: what it is, proof, what sign-in costs, and how to check — then the button."""
     page = auth_app.app.test_client().get("/").data.decode()
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
@@ -1105,7 +1105,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert "signing out drops the session" in page
     # …and the links that make the rest checkable.
     assert "github.com/sarthakjain004/headstart" in page
-    # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0111
+    # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0112
     # changed the page around it, which is exactly when this gets dropped by accident).
     assert page.index("Why the jobs hold up") < page.index("Sign in to search")
     assert 'id="openout"' in page
@@ -1130,7 +1130,7 @@ def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
 
 
 def test_coverage_counts_the_served_table_rather_than_asserting(app):
-    """ADR-0112: the Data tab's numbers are measured, so they cannot go stale in prose."""
+    """ADR-0113: the Data tab's numbers are measured, so they cannot go stale in prose."""
     d = app.app.test_client().get("/coverage").json
     assert d["total"] == 2
     # One of two rows carries each field — a real ratio, not a placeholder. One count per
@@ -1139,7 +1139,7 @@ def test_coverage_counts_the_served_table_rather_than_asserting(app):
     assert d["fields"]["min_years"] == 1
     # `remote` is never a coverage field: it is a facet, not a gap — a share would answer
     # "how many are remote", which the rail's own counts already answer. (Its provenance is
-    # mixed, and four successive drafts described it wrongly; see ADR-0112.)
+    # mixed, and four successive drafts described it wrongly; see ADR-0113.)
     assert "remote" not in d["fields"]
     assert "atses" not in d  # nothing reads it; the template has its own list
 
@@ -1182,7 +1182,7 @@ def test_the_data_tab_states_scope_gaps_and_provenance(app):
     # The ATS list is rendered from the index's own whitelist, not typed in.
     assert "Read from 2 providers" in page
     assert ">greenhouse<" in page and ">lever<" in page
-    # ADR-0112: every claim links the decision behind it. The eviction section in particular
+    # ADR-0113: every claim links the decision behind it. The eviction section in particular
     # must carry ADR-0053 as well as ADR-0083 — an earlier draft described the window as
     # "hours, not minutes" and omitted the scope exclusion, which has no drain at all and was
     # measured serving one board's closed jobs for 22 days.

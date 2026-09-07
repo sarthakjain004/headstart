@@ -1,4 +1,4 @@
-# ADR-0111: The door earns the sign-in before it asks for it
+# ADR-0112: The door earns the sign-in before it asks for it
 
 **Status:** accepted · **Date:** 2026-09-07 · **Extends ADR-0042 (the wall itself is unchanged)**
 
@@ -22,7 +22,7 @@ handed over, how much is in the index, or that the entire pipeline behind it is 
 > The same paragraph also listed "where the jobs come from" among what the old door omits, which
 > those fifteen words plainly do not. Both were invented, in the Context that motivates a decision
 > whose entire subject is not asserting unverified numbers — and they survived eight reviews that
-> were busy checking the *product's* claims. The rule this ADR states for tiles, and ADR-0112
+> were busy checking the *product's* claims. The rule this ADR states for tiles, and ADR-0113
 > states for prose, evidently has to bind an ADR's own Context too.
 
 That shape is the problem. Asking for an identity provider's credential before showing any

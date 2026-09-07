@@ -197,13 +197,13 @@ app.config.update(
 # from the caller's own cookie, so it can only tell you what you sent.
 _PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe"}
 
-# The public repository, named once *for the Space*. Both trust surfaces (ADR-0111's door,
-# ADR-0112's Data tab) link into it, and "check it yourself" is the claim they both rest on,
+# The public repository, named once *for the Space*. Both trust surfaces (ADR-0112's door,
+# ADR-0113's Data tab) link into it, and "check it yourself" is the claim they both rest on,
 # so a rename must not leave half of one page's links dead. `scripts/ui/serve.py` necessarily
 # keeps its own copy — it is the local renderer and shares no config with this module.
 _REPO = "https://github.com/sarthakjain004/headstart"
 
-# The door's freshness window (ADR-0111). Seven days rather than 24 hours: a single day's
+# The door's freshness window (ADR-0112). Seven days rather than 24 hours: a single day's
 # intake swings with which Boards the run happened to slice, and a tile that halves overnight
 # for no reason the visitor can see reads as broken rather than as honest.
 _DOOR_NEW_HOURS = 168
@@ -859,7 +859,7 @@ def me():
 
 @app.route("/coverage")
 def coverage():
-    """What the served table actually carries, counted live (ADR-0112).
+    """What the served table actually carries, counted live (ADR-0113).
 
     The Data tab reads this. Its own route rather than a field on ``index`` because the tab
     is opened by a minority of visits and the counts, though cheap, are not free on the
@@ -873,7 +873,7 @@ def coverage():
 def index():
     if _AUTH_ON and not session.get("email"):
         # The door states what this is and proves it before asking for an identity
-        # (ADR-0111). Every number is read rather than written, and every one is EXACT —
+        # (ADR-0112). Every number is read rather than written, and every one is EXACT —
         # a tile that can only be approximated does not go on this page. Two table
         # queries: the row count the signed-in header already makes, and the freshness
         # window (~5 ms each, ADR-0084's primitive). `n_new` is None on a table with no
@@ -919,7 +919,7 @@ def index():
         # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
-        repo=_REPO,  # the Data tab's "check any of it" links (ADR-0112)
+        repo=_REPO,  # the Data tab's "check any of it" links (ADR-0113)
         # The Data tab's storage list must describe THIS deployment. With the wall off there
         # is no account, so it says so rather than listing what a different one would keep.
         auth_on=_AUTH_ON,
