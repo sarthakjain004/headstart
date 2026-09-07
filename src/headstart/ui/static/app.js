@@ -618,7 +618,7 @@ function jobCard(r, i, canHide){
   const ranked = r.score != null;
   const s = Number(r.score) || 0, pct = matchPct(s);
   const hidden = r.id && dismissed.has(r.id);
-  const cls = ['card', ranked && 'ranked', r.closed && 'gone', hidden && 'dismissed'].filter(Boolean).join(' ');
+  const cls = ['card', r.closed && 'gone', hidden && 'dismissed'].filter(Boolean).join(' ');
   return `
     <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
