@@ -140,10 +140,10 @@ def test_plan_ships_the_detail_skip_list_to_the_shards(tmp_path, monkeypatch):
         assert fh.read().strip() == "eightfold:acme:1"
 
 
-def _cost(seconds: float, day: str = "2026-08-18"):
+def _cost(seconds: float, day: str = "2026-08-18", jobs: int = 1):
     from headstart.board_cost import BoardCost
 
-    return BoardCost(seconds=seconds, jobs=0, updated_at=day)
+    return BoardCost(seconds=seconds, jobs=jobs, updated_at=day)
 
 
 def test_the_gate_drops_a_giant_board_that_yields_almost_no_tech():
@@ -185,6 +185,30 @@ def test_the_gate_never_touches_a_cheap_board():
         today="2026-08-18",
     )
     assert gated == {}
+
+
+def test_the_gate_catches_a_board_whose_measured_yield_collapsed_to_zero():
+    """The SuccessFactors User-Agent denylist incident (2026-09-07).
+
+    `careers.te.com` kept a carried tech-job score of 171.7 from before its Board started
+    getting 403'd on every detail page, because a scrape that yields zero jobs writes no
+    priority-ledger row to decay it (board_priority.update: "boards absent from the snapshot
+    carry their row unchanged"). The gate divided that stale score by this run's own measured
+    seconds and cleared its threshold 3x over — for a Board this run's own cost row says
+    returned nothing. `BoardCost.jobs` is refreshed every run a Board is actually scraped
+    (`board_cost.update` overwrites it unconditionally for anything in `measured`), so it is the
+    one signal here that cannot go stale the way the carried score can — a measured zero must not
+    be outvoted by a remembered non-zero.
+    """
+    gated = ps._gated_boards(
+        ["successfactors:careers.te.com"],
+        {"successfactors:careers.te.com": _cost(1631.0, jobs=0)},
+        {
+            "successfactors:careers.te.com": 171.7
+        },  # stale score from before the collapse
+        today="2026-08-18",
+    )
+    assert "successfactors:careers.te.com" in gated
 
 
 def test_the_gate_never_drops_a_board_it_has_not_measured():

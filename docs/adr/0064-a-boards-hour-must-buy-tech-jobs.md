@@ -10,6 +10,13 @@
 > **Amended 2026-08-28 by [ADR-0096](0096-one-key-for-both-board-ledgers.md).** `_gated_boards` took a `(cost_key, priority_key)` pair because the two ledgers were keyed
 > differently; they now share `board_identity` and it takes one key. The gate's behaviour is
 > unchanged — measured at 15 Boards gated either way.
+>
+> **Amended 2026-09-07 (PR #376).** Property 1 said "its own measurement" but only ever meant the
+> priority *score*, which a scrape yielding zero jobs writes no row to decay — so a Board whose
+> real yield collapsed to zero could clear the gate forever on a stale non-zero score. That is
+> exactly how the SuccessFactors User-Agent-denylist incident sat unnoticed for five runs
+> (`docs/pipeline/2026-09-07_five-run-log-review.md` §2). `BoardCost.jobs`, refreshed every run a
+> Board is scraped regardless of yield, now overrides a stale score when it reads zero.
 
 ## Context
 

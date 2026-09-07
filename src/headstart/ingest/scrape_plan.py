@@ -126,6 +126,24 @@ def _gated_boards(
     Only ever judges a Board on **its own** measurement. An unmeasured Board is costed from its
     ATS's median by :func:`costs_for`, and gating on that would drop a Board for its ATS's
     reputation before it ever had a record of its own.
+
+    That includes the score itself. ``scores`` is a *carried* priority-ledger value — a scrape
+    that yields zero jobs writes no priority row to decay it (``board_priority.update``: a Board
+    absent from the snapshot carries its row unchanged), so a Board whose real yield has
+    collapsed to zero can keep a stale non-zero score forever. ``BoardCost.jobs`` has no such
+    hole: ``board_cost.update`` overwrites it unconditionally for every Board this run actually
+    measured, whether it yielded anything or not. So a measured zero there is trusted over the
+    score outright — the one incident this is written for (2026-09-07) is a Board that cleared
+    the gate 3x over on a four-day-stale score while its own cost row said 0 jobs, every run, for
+    five runs running.
+
+    One deliberate gap: `BoardCost` carries no flag for *unfinished* — a Board's very first
+    measurement can be killed mid-fetch with `jobs=0` recorded only because nothing had completed
+    yet, not because a full pass returned nothing (`board_cost.update` stores exactly that shape
+    when there is no prior row to fall back on). That reads the same as a genuine zero here and
+    gates the Board too early. Same as any other wrong call this gate makes, the 14-day recheck
+    below bounds the cost to one shard-hour, not a Board lost forever — the existing safety valve,
+    not a new one.
     """
     today = today or datetime.now(UTC).strftime("%Y-%m-%d")
     gated: dict[str, float] = {}
@@ -135,7 +153,9 @@ def _gated_boards(
             continue
         if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
             continue  # measurement expired — re-admit it and measure again
-        tech_per_min = scores.get(key, 0.0) / (row.seconds / 60)
+        tech_per_min = (
+            0.0 if row.jobs == 0 else scores.get(key, 0.0) / (row.seconds / 60)
+        )
         if tech_per_min < _GATE_MIN_TECH_PER_MIN:
             gated[key] = tech_per_min
     return gated
