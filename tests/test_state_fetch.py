@@ -555,10 +555,12 @@ def test_fetch_omits_the_rate_when_nothing_landed_to_divide(
 # *called*, not that it round-trips bytes correctly.
 #
 # This was `pytest.importorskip("requests")` on the belief that `requests` was not a base
-# dependency — true at the time, and the reason this whole section silently skipped in CI while
-# `state_fetch` imported `requests` unconditionally in production. The dependency is declared now
-# (pyproject `[project] dependencies`), so import it plainly: if it ever goes missing again, these
-# tests must fail rather than quietly not run.
+# dependency — true at the time, and the reason `state_fetch` had *zero* CI coverage while
+# production imported `requests` unconditionally. The skip sat at module scope, so it aborted
+# collection of this entire file, not just the section below it: CI collected 1,906 tests at
+# 4289031 against 1,953 here, the whole 47. The dependency is declared now (pyproject
+# `[project] dependencies`), so import it plainly: if it ever goes missing again, collection
+# must fail rather than quietly not run.
 import http.server
 import threading
 from contextlib import contextmanager
